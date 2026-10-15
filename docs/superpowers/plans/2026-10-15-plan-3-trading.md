@@ -2,49 +2,121 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A phone-first web app and API in which a seller picks a payment method, takes a buyer's offer (or posts one), funds a 2-of-3 escrow from their own wallet with a `monero:` link, the buyer pays fiat and taps I've paid, and the seller presses and holds to release; with mutual cancel, extend, buyer no-show auto-refund, trader-side dispute opening, encrypted chat and nudges, every screen matching its X2F App board.
+## Revision 2026-10-15
 
-**Architecture:** A new pure package `@x2f/trade` holds the quote and fee-placement maths and the trade state machine, shared by server and browser. `apps/api` (Fastify + PostgreSQL, created by Plan 2) gains offers, trades, chat, nudge and price routes; the server is the only clock and applies every state change through the state machine. A moderation service inside the API joins every escrow as the `mod` party via Plan 1's `runParty`, watches the chain and runs the one automatic path (buyer no-show refund). The browser runs its own `runParty` in a Web Worker against `apps/relay` and a new `apps/node-proxy`, saving state to IndexedDB so every escrow step resumes after a reload. `apps/web` (React + Vite) implements the canvas boards.
+This revision applies every Plan 3 finding and cross-plan item in `2026-10-15-plans-2-3-review.md`. Each line says how the item was resolved. "OD-n" means the plan builds a default and the owner confirms it (see Owner decisions).
 
-**Tech Stack:** Node 22.23.3, npm 11.21.0 (`npx -y npm@11.21.0`), TypeScript 7.0.2 strict, vitest 5.0.3, React 19.3.0, react-dom 19.3.0, react-router 8.4.0, Vite 8.3.2, @vitejs/plugin-react 6.1.1, @playwright/test 1.63.0, fastify 5.12.5, pg 8.23.1, qrcode 1.5.4, lucide-react 1.49.0, @fontsource/familjen-grotesk 5.3.0, @fontsource/atkinson-hyperlegible-next 5.3.0, @fontsource/atkinson-hyperlegible-mono 5.3.0, Semgrep 1.178.0. Plus Plan 1's packages.
+- **P3-C1** The moderator party moves out of the API into `apps/moderation`, a separate process with no inbound network surface and its own database. It signs a participant attestation, and each trader's app verifies the attestation against a pinned key and checks its own slot. The seller's refund address comes from a seller-signed envelope. The moderator signs only a guarded auto-refund, and Plan 4 rulings through a verifier that refuses everything in this plan. Both trader apps show escrow-check words. Tests: a swapped participant list aborts setup, and a static separation check (Tasks 8, 10, 12; OD-1).
+- **P3-C2** `chain`, `setup-done`, `settled`, `tick`, `pause`, `resume` and `escalate` require `by === 'system'`. The events route accepts only a whitelist, and `by` comes from the session (Tasks 2, 6).
+- **P3-C3** Each side funds its own escrow subaddress. Payouts use `depositReceived`, and each side gets its own excess back. Tests cover a deposit that is unpaid, part paid and fully paid (Tasks 1, 7).
+- **P3-C4** New Task 30: Log in, confirm-it's-you and Security settings.
+- **P3-I1** The assumed block is replaced by "Plan 2 interface (consumed)" with Plan 2's real names. The "delete Task 16" clause is removed.
+- **P3-I2** HMAC tickets are dropped. The relay gets a private admin listener that verifies a moderator-signed registration and calls `registerTrade`. Access uses Plan 1's join challenge, and channels are derived IDs, never the trade code (Tasks 7, 8).
+- **P3-I3** The runner buffers one `release.txset` until the local `settle`. A fresh `state.export` round follows any abandoned tx set. `proposed` comes from `pending().payouts`, which is decoded by `describeMultisigTxSet`. There is a regtest test for refund, then paid, then release (Tasks 7, 10).
+- **P3-I4** `secured` and `releasable` follow unlocked balances after the post-funding export round, not a confirmation count. A "Releasable in N min" chip is added, and tests mine 12 blocks (Tasks 2, 9, 23, 31).
+- **P3-I5** Added `setupBy` (15 min, then `cancelled`) and `settleBy` (15 min, then back to the previous state, with dispute allowed). One test each (Task 2).
+- **P3-I6** Option B: a lapse or late funds that the buyer's app does not co-sign within 30 min escalate to a human moderator (Plan 4). The watcher keeps watching closed escrows for 30 days (Tasks 2, 9; OD-2).
+- **P3-I7** Task 22 adds the buyer's deposit funding (link, QR, chip, missed-deadline copy). `depositFor` takes USD cents from the price feed and has a configurable large-trade knob (Tasks 1, 22; OD-3).
+- **P3-I8** `take` always requires the taker's `walletId`. The poster picks theirs on the "accepted your offer" sheet while the trade waits in `setup`. At most one trade awaits funding per buy ad and amount, tested with five concurrent sellers. Review Focus 4 is reworded (Tasks 5, 19).
+- **P3-I9** D1 and D2 are promoted to real tasks: Buy browse (Task 17), BuyQuote (Task 18), and DisputeOpen, DisputeRoom and DisputeRuling for traders (Task 27). Moderator tools stay in Plan 4.
+- **P3-I10** Default (a): the network fee comes off payout index 0, as in Plan 1. BuyQuote's "Paid by <seller>" copy changes on the canvas (Tasks 18, 31; OD-4).
+- **P3-I11** The rate and fiat total lock at `take`. Test: the fiat total at funding equals the quote (Tasks 2, 5, 22; OD-5).
+- **P3-I12** `trade_events` stores no addresses (only `addressEnd`). A purge role nulls `buyer_payout` and `seller_refund` 90 days after close, never while a dispute is open, and the purge is tested (Task 6).
+- **P3-I13** Web Push is in Plan 3, with only the two generic payloads. An auto-refund needs proof that the final alert was delivered, otherwise it escalates (Tasks 10, 19).
+- **P3-I14** Wallet copy is changed so it no longer claims a PGP backup. The escrow-key PGP backup is assigned to Plan 6, matching spec 10 phase 3 "PGP-encrypted backups". The lost-device test is in Task 10 (Tasks 29, 33).
+- **P3-I15** Added `Referrer-Policy: no-referrer`, COOP and HSTS. Explorer links use `rel="noreferrer noopener"`. Request logging is off, and a log-grep test checks for trade codes (Tasks 6, 13).
+- **P3-I16** Old Task 4 → Tasks 4–6. Old Task 6 → Tasks 7–10. Old Task 8 → Tasks 13–15. Old Task 16 → Tasks 28–29.
+- **P3-I17** Pinned fake-indexeddb, happy-dom, @testing-library/react, @types/react, @types/react-dom, @types/qrcode, @fastify/static, web-push and @types/web-push. One audit gate, `npm audit --omit=dev`. vite is pinned to 8.3.1 (published 2026-09-24).
+- **P3-I18** New Task 32: a stagenet smoke run and a 25-trade load check.
+- **P3-I19** System `pause` and `resume` events shift every deadline, and the timer loop does not tick while paused. Tested (Tasks 2, 9).
+- **P3-I20** Methods with `legalReview` are refused (`method-unavailable`) and hidden on PostOffer. Tested (Tasks 4, 21).
+- **P3-I21** Added a chat identity route. Identities are bound to one device, and the guard is persisted per chat. Envelopes are capped at 16 KiB. Chat storage in the API is recorded as an owner spec edit (Task 20; OD-9).
+- **P3-M1** Test commands use `npm test -- --project <name>`.
+- **P3-M2** Chat notice uses the spec 6.6 text. The Desktop board fix is a controller step (Task 20).
+- **P3-M3** Fiat in both parties' currencies (Task 18), "What is this?" (Task 14) and "Suggest a missing method" (Tasks 3, 16) are built. "Use your own Monero node" is deferred to Plan 6, because it needs a CSP `connect-src` change.
+- **P3-M4** The fee sentence goes on PostOffer and the onboarding Welcome screen, pending owner sign-off (Tasks 21, 28; OD-7).
+- **P3-M5** Silent nudge drops return the same `202`. Distinct codes are kept only for the sender's own limits (Task 26).
+- **P3-M6** `support.js` capture is a controller step. Pixel diffs are reported, not blocking, and the structural checks block (Task 15).
+- **P3-M7** Task 31 lists the expected first failure, and every fix names its owning task.
+- **P3-M8** "Builds on" lists all four Plan 1 amendments. Vite aliases `net` and `tls` to empty modules (Task 13).
+- **P3-M9** Tested: browse routes need no session, participants and attestation need a participant session, and SSE carries only the viewer's own events (Tasks 4, 8, 19).
+- **P3-M10** `disputeAfterRefundDays: 90` and buyer disputes before paying (`securing` and `secured`) are built as defaults (Task 2; OD-8).
+- **P3-M11** Roadmap update: Nudge moves to Plan 3 (Task 33).
+- **P3-M12** Funding copy no longer promises "fast" for wallet-sent funding. Added a manual iOS check of Cake and Edge `monero:` links (Task 22).
+- **X-1** Plan 2 names are used throughout (see Plan 2 interface block). Nudge settings live at `/v1/account/nudges`.
+- **X-2** No default payout wallet: the taker picks at take and the poster picks on the accepted sheet, every trade (OD-11).
+- **X-3** Take, post, release and every trade write require `kind = 'trader'` and a full session.
+- **X-4** Wallet adds during a take go through Plan 2's action-bound confirm. Task 30's confirm sheet is the only UI for it.
+- **X-5** Option (a)'s device signing key is not needed for P3-C1 as resolved here. TOFU is listed as Plan 6 hardening.
+- **X-6** Owners assigned in the roadmap (Task 33): security-key tap to fund → Plan 6, escrow-key PGP backup → Plan 6, require a security key to log in → Plan 6, Web Push → Plan 3.
+- **X-7** API→relay registration is defined (moderator-signed admin call, Task 7), and Plan 1's relay interface is amended.
+- **X-8** Every Plan 3 refusal code joins Plan 2's `ApiErrorCode` and is thrown as `ApiError`.
+- **X-9** One origin, `credentials: 'same-origin'`. Plan 3 passes a same-origin `fetch` to `createAuthApi`.
+- **X-10** Plan 3 migrations are `1xx`, one per task that needs schema.
+- **X-11** Every plan uses the same gates: `npm audit --omit=dev` and `npm test -- --project`.
+- **X-12** One retention scheduler runs `purgeExpired`, `purgeChats` and `purgeTradeAddresses` (Task 6).
 
-**Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md` — sections 1, 2 (all), 3.2 lessons, 3.3, 4, 6.4, 6.5, 6.6 (trade codes, chat notice), 7, 8, 9, 11.1, 11.4, 11.5. Boards: Claude Design **X2F App** (https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH), mirrored in `design/x2f-app/*.dc.html`; tokens `design/design-system/tokens.json`; rules `design/design-system/README.md`.
+---
 
-**Builds on:** Plan 1 (`docs/superpowers/plans/2026-10-15-plan-1-escrow-core.md`), whose Interfaces are consumed exactly. One additive change to Plan 1 code: `EscrowSession.incoming()` (Task 6) and relay tickets (Task 5).
+**Goal:** A phone-first web app and API in which a seller picks a payment method, takes a buyer's offer (or posts one), funds a 2-of-3 escrow from their own wallet with a `monero:` link, the buyer pays fiat and taps I've paid, and the seller presses and holds to release; with the Buy side, mutual cancel, extend, buyer no-show auto-refund, trader-side disputes, login and security settings, encrypted chat, nudges and push, every screen matching its X2F App board.
 
-## Assumed Plan 2 interface (reconcile here only)
+**Architecture:** A pure package `@x2f/trade` holds quote and payout maths, the trade state machine, channel IDs, attestations and escrow-check words, shared by server, moderation service and browser. `apps/api` (Fastify + PostgreSQL, from Plan 2) owns offers, trades, chat, nudges, push and the server clock; it holds **no escrow key of any kind**. `apps/moderation` is a separate process with no listening socket and its own database: it holds the moderator key and the long-term moderation signing key, attests participants, registers relay channels, watches the chain, and signs only the guarded auto-refund (Plan 4 adds rulings). Browsers run their own `runParty` in a Web Worker against `apps/relay` and `apps/node-proxy`, verify the attestation, and resume from IndexedDB. `apps/web` (React + Vite) implements the canvas boards.
 
-Plan 2 was not written when this plan was. Everything Plan 3 needs from it is below; if Plan 2's names differ, change this block and the tasks follow.
+**Tech Stack:** Node 22.23.3, npm 11.21.0 (`npx -y npm@11.21.0`), TypeScript 7.0.2 strict, vitest 5.0.3, React 19.3.0, react-dom 19.3.0, @types/react 19.3.0, @types/react-dom 19.3.0, react-router 8.4.0, Vite 8.3.1, @vitejs/plugin-react 6.1.1, @playwright/test 1.63.0, happy-dom 20.14.5, @testing-library/react 16.3.3, fake-indexeddb 6.2.5, fastify 5.12.5, @fastify/static 10.1.5, pg 8.23.1, qrcode 1.5.4, @types/qrcode 1.5.6, web-push 3.6.7, @types/web-push 3.6.4, lucide-react 1.49.0, @fontsource/familjen-grotesk 5.3.0, @fontsource/atkinson-hyperlegible-next 5.3.0, @fontsource/atkinson-hyperlegible-mono 5.3.0, Semgrep 1.178.0. Plus Plan 1's and Plan 2's packages.
 
-- `apps/api` exists (package `@x2f/api`) with `buildApi(o: ApiOptions): Promise<FastifyInstance>`; route plugins register with `app.register(plugin, { prefix: '/v1' })`.
-- `app.db: pg.Pool`. Migrations are numbered SQL files in `apps/api/migrations/NNN_name.sql`, applied by `npm run migrate -w @x2f/api`. Table `users(id uuid primary key, username text unique, created_at timestamptz)`.
-- `app.requireUser` preHandler sets `req.user: { id: string; username: string }` or replies `401 {"error":"login-required"}`.
-- `listWallets(db: pg.Pool, userId: string): Promise<Wallet[]>`, `type WalletApp = 'cake' | 'edge' | 'feather' | 'monerujo' | 'stack' | 'gui-cli' | 'ledger' | 'trezor' | 'other'`, `interface Wallet { id: string; app: WalletApp; label: string; address: string; isDefaultPayout: boolean; usableAt: Date }` (`usableAt` is in the future while the opt-in 24-hour wait runs). `POST /v1/wallets` (with confirm-it's-you) and the setup endpoints (username, PGP key and challenge, password, backup) exist.
-- Web: `useSession(): { user: { id: string; username: string } | null; loading: boolean }` from `apps/web/src/session/useSession.ts`.
-- **Screens:** Plan 3 builds the Setup* and Wallet boards (Task 16) against those endpoints. If Plan 2 builds them instead, delete Task 16.
+**Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md` — sections 1, 2 (all), 3 (all), 4, 6.1–6.6, 7, 8, 9, 11. Boards: Claude Design **X2F App** (https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH), mirrored in `design/x2f-app/*.dc.html`; tokens `design/design-system/tokens.json`; rules `design/design-system/README.md`. Review: `docs/superpowers/plans/2026-10-15-plans-2-3-review.md`.
+
+**Builds on:** Plan 1, consumed as finalised:
+- `@x2f/core`: `Role = 'buyer' | 'seller' | 'mod'`, `ROLES`, `newTradeCode`, `normalizeTradeCode`, `feeFor`, `X2F_FEE_BPS`.
+- `@x2f/protocol`: `generateIdentity(): Promise<Identity>` (`signPublic`, `boxPublic` hex; `signSecret`, `boxSecret`); `seal(a: { trade; from; seq; type; payload; to: Role[]; me; participants }): Promise<Envelope>`; `open(e, { me; myRole; participants; trade; guard }): Promise<{ type: string; payload: unknown }>`; `Envelope = { v: 1; trade; from; seq; slots: Record<Role, string>; nonce; kh; ct; ctNonce; sig }` (`type` is inside the ciphertext); `ProtocolError` codes `bad-signature | not-participant | wrong-trade | replay | not-for-me | too-large`; `ReplayGuard` with `toJSON(): { trade; seen }` and `ReplayGuard.from(json)`; `Participants = Record<Role, PublicKeys>`.
+- `@x2f/escrow`: `EscrowSession`, `Payout`, `runParty`/`PartyHandle` (strict in-order state machine), `wsTransport` (performs the relay join challenge, signing `x2f/relay-join/v1\0` + channel + `\0` + role + `\0` + challenge), `autoRefundDecision`; the co-signer verifies the whole transaction set.
+- `apps/relay`: `buildRelay(o)` and in-process `registerTrade(channel, signPublics)`.
+
+Plan 3 makes four additive amendments to Plan 1 code, all in Task 7: (1) `EscrowSession.address(index)` and `incoming()` with subaddress indices; (2) `PartyHandle.pending()` plus a runner that buffers one `release.txset` until the local `settle`; (3) `PartyHandle.refresh()`, an export/import round after funding and after any abandoned tx set; (4) a relay admin listener that verifies a moderator-signed registration and calls `registerTrade`.
+
+## Plan 2 interface (consumed)
+
+- `buildApi(deps: Deps): Promise<FastifyInstance>`, `Deps = { config; db: pg.Pool; clock: () => Date; leaked; addresses }`. Route plugins register with `app.register(plugin, { prefix: '/v1' })` and use `deps.db` and `deps.clock` (never `new Date()`). Migrations: `apps/api/migrations/NNN_*.sql` via `npm run migrate -w @x2f/api`; Plan 3 uses `101`–`199`.
+- Table `accounts(id uuid, username, username_key, kind 'trader'|'staff'|'owner', disabled_at, …)`; foreign keys are `account_id`.
+- `requireSession(opts?: { fresh?: boolean; allowRecovery?: boolean })` sets `req.auth = { sessionId, accountId, kind, level, confirmedAt }`; 401 `not-authenticated`; 403 `account-disabled` (P2-I9). Plan 3's `requireTrader` = `requireSession()` plus `kind === 'trader'` (403 `method-not-allowed` otherwise).
+- `usableWallets(db, accountId, now): Promise<Wallet[]>`; `GET /v1/wallets` → `{ id, app, label, address, addressEnd, usableFrom, usable }[]`; `WALLET_APPS = ['cake','edge','feather','monerujo','stack','monero-gui-cli','ledger-trezor','other']`; `POST /v1/wallets` behind Plan 2's action-bound confirm (P2-C2: `{ action: 'add-wallet', addressHash }` → `confirmToken`).
+- `class ApiError(status, code: ApiErrorCode, extra?)`; Plan 3 adds its codes to `ApiErrorCode`: `own-offer`, `out-of-range`, `not-enough-trades`, `trading-hold`, `trading-paused`, `price-unavailable`, `method-unavailable`, `already-waiting`, `ad-busy`, `wallet-not-ready`, `wrong-state`, `wrong-party`, `too-early`, `too-late`, `deposit-missing`, `no-extensions-left`, `not-releasable`, `event-not-allowed`, `identity-exists`, `bad-proof`, `too-soon`, `no-shared-context`.
+- Browser: `createAuthApi({ baseUrl, fetch })`, `withConfirm`, `AuthApiError`, `registerWithWebAuthn`, `loginWithWebAuthn`; `me()` → `GET /v1/account/me`. Plan 3's `useSession()` (`apps/web/src/session/useSession.ts`) is a thin hook over `me()`; Plan 3 passes `fetch = (u, i) => fetch(u, { ...i, credentials: 'same-origin' })`.
+- Plan 2 builds no screens; Plan 3 builds all of them.
+
+## Owner decisions (built with the default; owner confirms before Task 31)
+
+- **OD-1 (P3-C1)** Separate moderation process + attestation + seller-signed refund address + escrow-check words. Account device keys with trust on first use are Plan 6 hardening.
+- **OD-2 (P3-I6)** Lapse refunds the buyer doesn't co-sign, and late funds, go to a human moderator. The alternative, a second automatic case, needs a spec 3.3 change.
+- **OD-3 (P3-I7)** Deposit: spec 11.4 default (15% at $200 or more for buyers with fewer than 3 trades). `largeTradeUsdCents` (a deposit for everyone above it) is off (`null`) until the owner sets it.
+- **OD-4 (P3-I10)** The release network fee comes off payout index 0. BuyQuote copy changes to "Network fee · about 0.0001 XMR, taken from the payout".
+- **OD-5 (P3-I11)** The rate and fiat total lock at Trade. Spec 2.2 step 5 wording changes from "The price locks at this moment" to "The price was locked when the trade started".
+- **OD-7 (P3-M4)** Fee sentence: "You pay X2F 1% of each completed trade from your own ads. Taking an offer is free."
+- **OD-8 (P3-M10)** Dispute after refund within 90 days; either side may dispute in `securing` and `secured`.
+- **OD-9 (P3-I21)** Spec 8 gets the line "Chat envelopes are stored by the API (ciphertext only); the relay carries escrow and signal messages."
+- **OD-11 (X-2)** No default payout wallet; always ask.
 
 ## Global Constraints
 
-- Non-custodial: X2F holds at most one key per trade (the moderator's). The only automatic moderator signature is the buyer no-show refund, gated by Plan 1's `autoRefundDecision` and paying only the seller's refund address recorded at setup.
-- Every dependency pinned exactly, published at least 14 days before 2026-10-15 (check `npx -y npm@11.21.0 view <pkg> time --json`; the versions above were checked). `npm audit` reports 0 vulnerabilities. `npm run check` (typecheck, tests, audit, Semgrep 1.178.0, copy lint) passes at the end of every task.
+- **Custody (spec 1, 3.1):** X2F's servers hold at most one key per trade, the moderator's, and only inside `apps/moderation`. Buyer and seller escrow keys and trade identities are generated and kept on their devices. No API route accepts, stores or returns a secret key, and no X2F component can produce two signatures on its own. The moderator signs only the auto-refund guarded by `autoRefundDecision`, paying only the refund address the seller's own identity signed (Plan 4 adds rulings verified inside `apps/moderation`). This assumes an honest client bundle; tamper defence (SRI, native builds) is Plan 6.
+- Every dependency is pinned exactly and was published at least 14 days before 2026-10-15 (`npx -y npm@11.21.0 view <pkg> time --json`). `npm audit --omit=dev` reports 0. `npm run check` (typecheck, tests, audit, Semgrep 1.178.0, copy lint, separation check) passes at the end of every task. Tests run as `npm test -- --project <workspace>`.
 - Monero amounts are `bigint` atomic units everywhere; fiat is `bigint` cents. Shown as XMR with 6 decimals and fiat beside it in `ink-muted`.
-- Fee: 1% (`feeFor` from `@x2f/core`), paid only by the ad poster, on completed trades only. The taker never sees a fee line anywhere (quote, fund, pay, released). The poster sees it itemised on the released screen: `X2F fee (1%, your ad) −0.012500 XMR` above `You receive`.
-- Timers (server clock only): seller funds within **30 min**; escrow secured at **10** confirmations; buyer pays within **90 min** from secured; seller may extend by **30 min, at most twice**; final alert **15 min**; seller confirm window from the payment method profile (about **2 h** instant apps, up to **24 h** wires).
-- Trade codes from `newTradeCode()`; the code is the trade ID in URLs, headers, memos and logs.
-- Privacy: no analytics, no third-party scripts, styles or fonts (fonts self-hosted from @fontsource). OS-level notifications show only generic text ("Someone nudged you on X2F", "Something changed in a trade on X2F"). Server logs never contain trade codes, addresses, amounts or IPs.
-- CSP on every HTML response: `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' <RELAY_ORIGIN> <NODE_PROXY_ORIGIN>; img-src 'self' data:; style-src 'self'; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`.
-- Design: night theme first; Monero orange fill only on the one primary action per screen (`data-primary` attribute, exactly one per screen); amber `caution` = waiting, teal `escrow` = escrow/done, rose `danger` = disputes/scam warnings, each always with a word and an icon; no emoji, no exclamation marks; usernames rendered exactly as set (no `text-transform`, no truncation without a full-name tooltip). Body text ≥ 16px on phones. No shadows except where a board draws one.
-- Visual parity: every screen task names its board and passes `expectParity` (Task 8) at 390×844; trade-room screens also at 1280×800 against the Desktop board. Never run Playwright with `--update-snapshots` (it would overwrite the board references).
-- Copy comes from the boards verbatim; spec wording where no board exists.
-
-**Known gap for the owner (not solved here):** participant identity keys for a trade are distributed by the API. A compromised API could hand the seller a fake buyer key and, holding the moderator key, control two keys. Task 6 pins the moderation service's long-term signing key in the web build, which does not close this. Raise before the Plan 6 audit.
+- Fee: 1% (`feeFor`), paid only by the ad poster, on completed trades only. The taker never sees a fee line anywhere (quote, fund, pay, released). The poster sees `X2F fee (1%, your ad) −0.012500 XMR` above `You receive` on the released screen.
+- Timers (server clock only): setup **15 min**; seller funds within **30 min**; buyer deposit within **30 min** of funding being seen; escrow secured when all funds are unlocked after the post-funding export round (10 blocks for Monero, 12 in tests); buyer pays within **90 min** from secured; extend by **30 min, at most twice**; final alert **15 min**; signing (`settling`) **15 min**; seller confirm window from the method profile (**120** min instant apps, up to **1440** wires); maintenance pauses all of them.
+- Trade codes come from `newTradeCode()`. The code is the trade's ID in URLs, memos and the UI. Relay channels use `channelFor(code, kind)`, never the code.
+- Who may trade: posting, taking, every trade write and every chat write need `requireTrader` (full session, `kind = 'trader'`, not disabled). Browsing (`/v1/methods`, `/v1/offers`, `/v1/price`) needs no session.
+- Privacy: no analytics and no third-party scripts, styles or fonts (fonts are self-hosted from @fontsource). OS notifications and push payloads are exactly "Someone nudged you on X2F" or "Something changed in a trade on X2F". `disableRequestLogging: true`. Logs never contain trade codes, channel IDs, addresses, amounts or IPs. `trade_events` holds no addresses.
+- Headers on every response: `Referrer-Policy: no-referrer`, `Cross-Origin-Opener-Policy: same-origin`, `Strict-Transport-Security: max-age=63072000; includeSubDomains`, `X-Content-Type-Options: nosniff`. On HTML responses, add this CSP: `default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self' <RELAY_ORIGIN> <NODE_PROXY_ORIGIN>; img-src 'self' data:; style-src 'self'; font-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'`. External links use `rel="noreferrer noopener"`.
+- Design: night theme first. Monero orange fill only on the one primary action per screen (`data-primary`, exactly one). Amber `caution` = waiting, teal `escrow` = escrow or done, rose `danger` = disputes or scam warnings, violet only for the "X2F Moderator" badge; each always with a word and an icon. No emoji, no exclamation marks. Usernames are rendered exactly as set (no `text-transform`, no truncation without a full-name tooltip). Body text ≥ 16 px on phones.
+- Visual parity: every screen task names its board and runs `expectParity` (Task 15) at 390×844; trade-room screens also at 1280×800 against the Desktop board. Structural checks block; pixel diffs are reported for a person to review. Never run Playwright with `--update-snapshots`.
+- Copy comes from the boards verbatim; spec wording where no board exists; OD copy where an owner decision changes a board.
 
 ## Review Focus
 
-1. **The page is backgrounded, reloaded or closed mid-setup, mid-funding or mid-release** (Phase 0 lesson): it resumes from IndexedDB and the trade settles exactly once. Test owned by Task 7 and Task 17.
-2. **The seller sends the wrong amount** (short, or more than asked): short stays "Received X of Y, send the rest" and lapses at the deadline with a full refund to the seller; any excess goes back to the seller as an extra output on every outcome. Tests owned by Tasks 1 and 6.
-3. **The phone's clock is wrong by ±10 min:** countdowns and what buttons allow follow the server's deadlines, never the device clock. Tests owned by Tasks 2 and 9.
-4. **Two takers race for one offer, or one buyer takes the same offer twice while waiting for funding:** exactly one wins; the second gets a clear refusal. Test owned by Task 4.
+1. **The page is backgrounded, reloaded or closed mid-setup, mid-funding or mid-release** (Phase 0 lesson): it resumes from IndexedDB and the trade settles exactly once. Tests owned by Tasks 12 and 31.
+2. **Either side sends the wrong amount** (short or over): a short seller stays at "Received X of Y, send the rest" and lapses with a full refund; each side's excess goes back to that side on every outcome; an unpaid deposit is never paid out to the buyer. Tests owned by Tasks 1 and 9.
+3. **The phone's clock is wrong by ±10 min:** countdowns and what buttons allow follow the server's deadlines, never the device clock. Tests owned by Tasks 2 and 22.
+4. **Many people take one ad at once:** a sell ad serves every buyer concurrently (one waiting take per buyer); a buy ad has at most one trade awaiting funding per amount, so five sellers racing get one trade and four `ad-busy`. Test owned by Task 5.
 5. **The price feed is down, stale (> 5 min) or sources disagree:** Trade is disabled with "Price unavailable right now" rather than quoting an old rate. Test owned by Task 3.
 
 ---
@@ -52,39 +124,39 @@ Plan 2 was not written when this plan was. Everything Plan 3 needs from it is be
 ### Task 1: Quote and payout maths (`@x2f/trade`)
 
 **Files:**
-- Create: `packages/trade/package.json`, `packages/trade/tsconfig.json`, `packages/trade/src/money.ts`, `packages/trade/src/payouts.ts`, `packages/trade/src/deposit.ts`, `packages/trade/src/moneroUri.ts`, `packages/trade/src/index.ts`
-- Test: `packages/trade/test/money.test.ts`, `packages/trade/test/payouts.test.ts`, `packages/trade/test/moneroUri.test.ts`
+- Create: `packages/trade/package.json`, `packages/trade/tsconfig.json`, `packages/trade/src/{money,payouts,deposit,moneroUri,index}.ts`
+- Test: `packages/trade/test/{money,payouts,deposit,moneroUri}.test.ts`
 
 **Interfaces:**
 - Consumes: `feeFor`, `Role` from `@x2f/core`; `Payout` from `@x2f/escrow`.
 - Produces:
   - `type Side = 'sell' | 'buy'` (what the ad poster does with XMR); `posterRole(side: Side): 'seller' | 'buyer'`
-  - `interface Price { currency: string; centsPerXmr: bigint }`
-  - `rateFor(market: Price, marginBps: number): Price` — `centsPerXmr × (10000 + marginBps) / 10000`, rounded half up
-  - `fiatCents(amountAtomic: bigint, rate: Price): bigint` — rounded half up to the cent
-  - `atomicForFiat(cents: bigint, rate: Price): bigint` — floor (for "enter a fiat amount")
-  - `formatXmr(atomic: bigint, decimals = 6): string`; `formatFiat(cents: bigint, currency: string): string` (`$412.50`)
-  - `escrowPlan(a: { amountAtomic: bigint; poster: 'seller' | 'buyer'; depositAtomic: bigint }): { sellerFundsAtomic: bigint; depositAtomic: bigint; feeAtomic: bigint }` — `sellerFundsAtomic = amount + (poster === 'seller' ? fee : 0n)`
+  - `interface Price { currency: string; centsPerXmr: bigint }`; `rateFor(market: Price, marginBps: number): Price` (round half up); `fiatCents(atomic: bigint, rate: Price): bigint` (half up); `atomicForFiat(cents: bigint, rate: Price): bigint` (floor); `toUsdCents(cents: bigint, from: Price, usd: Price): bigint`
+  - `formatXmr(atomic: bigint, decimals = 6): string`; `formatFiat(cents: bigint, currency: string): string`
+  - `escrowPlan(a: { amountAtomic: bigint; poster: 'seller' | 'buyer'; depositAtomic: bigint }): { sellerFundsAtomic: bigint; depositAtomic: bigint; feeAtomic: bigint }`, where `sellerFundsAtomic = amount + (poster === 'seller' ? fee : 0n)`
+  - `depositReceived(depositDue: bigint, buyerReceived: bigint): bigint` = `min(depositDue, buyerReceived)`
   - `type SettleKind = 'release' | 'mutual-cancel' | 'auto-refund' | 'lapse-refund'`
-  - `payoutsFor(a: { kind: SettleKind; amountAtomic: bigint; feeAtomic: bigint; poster: 'seller' | 'buyer'; depositAtomic: bigint; balanceAtomic: bigint; buyerPayout: string; sellerRefund: string; feeWallet: string }): Payout[]` — index 0 always bears the network fee (Plan 1 rule):
-    - release, poster seller: `[buyer: amount + deposit, fee: fee, seller: excess?]`
-    - release, poster buyer: `[buyer: amount − fee + deposit, fee: fee, seller: excess?]`
-    - mutual-cancel: `[seller: balance − deposit, buyer: deposit?]`
-    - auto-refund and lapse-refund: `[seller: balance]` (exactly one payout, as `autoRefundDecision` requires)
-    - `excess = balance − (sellerFunds + deposit)`, output added only when > 0; outputs of 0 are omitted; throws `RangeError('underfunded')` for release when `balance < sellerFunds + deposit`
-  - `DEPOSIT_RULE = { freeBelowUsdCents: 20000n, newBuyerUnderTrades: 3, rateBps: 1500n }` and `depositFor(a: { amountAtomic: bigint; fiatUsdCents: bigint; buyerCompletedTrades: number }): bigint` — 15% of amount when the buyer has fewer than 3 completed trades and the trade is $200 or more, else `0n`. (Spec 11.4 proposed default; owner confirms.)
-  - `moneroUri(address: string, amountAtomic: bigint): string` — `monero:<address>?tx_amount=<decimal, trailing zeros trimmed>`
+  - `payoutsFor(a: { kind: SettleKind; amountAtomic: bigint; feeAtomic: bigint; poster: 'seller' | 'buyer'; sellerFundsAtomic: bigint; depositDueAtomic: bigint; sellerReceivedAtomic: bigint; buyerReceivedAtomic: bigint; buyerPayout: string; sellerRefund: string; feeWallet: string }): Payout[]`. Seller funds land on escrow subaddress 0 and the buyer deposit on subaddress 1, so each received figure is known per side. Index 0 bears the network fee (Plan 1). Let `sellerExcess = sellerReceived − sellerFunds` and `buyerBack = buyerReceived` (deposit plus any excess):
+    - release, poster seller: `[buyer: amount + buyerBack, fee: fee, seller: sellerExcess?]`
+    - release, poster buyer: `[buyer: amount − fee + buyerBack, fee: fee, seller: sellerExcess?]`
+    - mutual-cancel and lapse-refund: `[seller: sellerReceived, buyer: buyerBack?]`
+    - auto-refund: `[seller: sellerReceived + buyerReceived]` (exactly one payout; a ghosting buyer loses the deposit, spec 2.5)
+    - zero outputs are omitted; release throws `RangeError('underfunded')` when `sellerReceived < sellerFunds` or `buyerReceived < depositDue`.
+  - `DEPOSIT_RULE = { freeBelowUsdCents: 20000n, newBuyerUnderTrades: 3, rateBps: 1500n, largeTradeUsdCents: null as bigint | null }`; `depositFor(a: { amountAtomic: bigint; usdCents: bigint; buyerCompletedTrades: number }, rule = DEPOSIT_RULE): bigint` returns 15% when (`trades < 3` and `usd ≥ $200`) or (`largeTradeUsdCents !== null` and `usd ≥ largeTradeUsdCents`), else `0n` (OD-3).
+  - `moneroUri(address: string, amountAtomic: bigint): string` → `monero:<address>?tx_amount=<decimal, trailing zeros trimmed>`
 
-- [ ] **Step 1: Failing tests.**
-  - `rateFor({currency:'USD',centsPerXmr:32990n}, 40)` → `33122n`; `fiatCents(1_250_000_000_000n, {currency:'USD',centsPerXmr:33000n}) === 41250n`; `formatXmr(1_237_500_000_000n) === '1.237500'`; `formatFiat(41250n,'USD') === '$412.50'`.
-  - `escrowPlan({amountAtomic:1_250_000_000_000n, poster:'seller', depositAtomic:0n}).sellerFundsAtomic === 1_262_500_000_000n`; poster buyer → `1_250_000_000_000n`.
-  - Release, poster buyer, balance exact: `[{buyer,1_237_500_000_000n},{fee,12_500_000_000n}]`. Release, poster seller, balance 1.2626 XMR: third output `{seller, 100_000_000n}`. Release with balance short by 1 atomic unit throws `underfunded`. Mutual cancel with deposit 0.1875 XMR: seller first, buyer second. Auto-refund is a single payout of the whole balance.
-  - `depositFor` at $199.99 / 0 trades → `0n`; $200.00 / 2 trades → 15%; $5,000 / 3 trades → `0n`.
-  - `moneroUri('4Abc', 1_250_000_000_000n) === 'monero:4Abc?tx_amount=1.25'`; `moneroUri('4Abc', 1n)` ends `tx_amount=0.000000000001`.
-- [ ] **Step 2:** `npm test -w @x2f/trade`; expect FAIL (modules missing).
-- [ ] **Step 3:** Implement the files above; export from `src/index.ts`.
+- [ ] **Step 1: Write the failing tests.**
+  - `rateFor({currency:'USD',centsPerXmr:32990n}, 40)` → `33122n`; `fiatCents(1_250_000_000_000n, {currency:'USD',centsPerXmr:33000n}) === 41250n`; `formatXmr(1_237_500_000_000n) === '1.237500'`; `formatFiat(41250n,'USD') === '$412.50'`; `toUsdCents(10000n, EUR@30000, USD@33000) === 11000n`.
+  - `escrowPlan(1.25 XMR, poster seller, 0).sellerFundsAtomic === 1_262_500_000_000n`; for poster buyer it is `1_250_000_000_000n`.
+  - Release, poster buyer, exact funding: `[{buyer,1_237_500_000_000n},{fee,12_500_000_000n}]`. Release, poster seller, seller sent 1.2626 XMR: third output `{seller, 100_000_000n}`. Short by 1 atomic unit throws `underfunded`.
+  - **P3-C3:** seller funded 1.2625, deposit 0.1875 due. Cancel with deposit unpaid → `[{seller, 1_262_500_000_000n}]` only. Partly paid 0.1 → `[{seller,1.2625},{buyer,0.1}]`. Fully paid → buyer gets exactly 0.1875. A buyer overpaying 0.2 gets 0.2 back.
+  - Auto-refund with deposit paid is one payout of the whole balance.
+  - `depositFor`: $199.99 / 0 trades → `0n`; $200.00 / 2 trades → 15%; $5,000 / 3 trades → `0n`; with `largeTradeUsdCents: 100000n`, $1,000 / 50 trades → 15%.
+  - `moneroUri('4Abc', 1_250_000_000_000n) === 'monero:4Abc?tx_amount=1.25'`; for `1n` it ends `tx_amount=0.000000000001`.
+- [ ] **Step 2:** `npm test -- --project @x2f/trade`; expect FAIL (modules missing).
+- [ ] **Step 3:** Implement the files above and export them from `src/index.ts`.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(trade): quote, fee placement and payouts`.
+- [ ] **Step 5:** Commit `feat(trade): quote, fee placement, per-side payouts`.
 
 ### Task 2: Trade state machine (`@x2f/trade`)
 
@@ -95,365 +167,736 @@ Plan 2 was not written when this plan was. Everything Plan 3 needs from it is be
 **Interfaces:**
 - Consumes: Task 1.
 - Produces:
-  - `TIMERS = { fundMin: 30, securedConfirmations: 10, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, disputeAfterRefundDays: 90 }`
+  - `TIMERS = { setupMin: 15, fundMin: 30, depositMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundDays: 90 }`
   - `type TradeState = 'setup' | 'funding' | 'securing' | 'secured' | 'paid' | 'refund_requested' | 'settling' | 'released' | 'refunded' | 'lapsed' | 'cancelled' | 'disputed'`
-  - `interface Trade { code: string; offerId: string; poster: 'seller' | 'buyer'; sellerId: string; buyerId: string; methodId: string; amountAtomic: bigint; feeAtomic: bigint; depositAtomic: bigint; sellerFundsAtomic: bigint; lockedRate: Price | null; confirmWindowMin: number; state: TradeState; escrowAddress: string | null; receivedAtomic: bigint; confirmations: number; takenAt: Date; fundBy: Date | null; fundingSeenAt: Date | null; depositBy: Date | null; securedAt: Date | null; payBy: Date | null; extensions: number; paidAt: Date | null; confirmBy: Date | null; finalAlertAt: Date | null; cancelProposedBy: 'buyer' | 'seller' | null; settling: SettleKind | null; txHash: string | null; dispute: { by: 'buyer' | 'seller'; at: Date } | null; closedAt: Date | null }`
-  - `type TradeEvent = { type: 'setup-done'; escrowAddress: string } | { type: 'chain'; receivedAtomic: bigint; confirmations: number; rateNow: Price } | { type: 'mark-paid' } | { type: 'extend' } | { type: 'request-refund' } | { type: 'propose-cancel' } | { type: 'accept-cancel' } | { type: 'withdraw-cancel' } | { type: 'release-started' } | { type: 'settled'; kind: SettleKind; txHash: string } | { type: 'open-dispute' } | { type: 'tick' }`
-  - `apply(t: Trade, e: TradeEvent, by: 'buyer' | 'seller' | 'system', now: Date): Trade` — pure; throws `TradeRuleError` with `code: 'wrong-state' | 'wrong-party' | 'too-early' | 'too-late' | 'deposit-missing' | 'no-extensions-left'`
-  - `nextDeadline(t: Trade): Date | null` (for the server's timer loop)
+  - `interface Trade { code; offerId; poster: 'seller'|'buyer'; sellerId; buyerId; methodId; amountAtomic; feeAtomic; depositAtomic; sellerFundsAtomic; lockedRate: Price; fiatCents: bigint; confirmWindowMin: number; state: TradeState; escrowAddress: string | null; depositAddress: string | null; sellerReceivedAtomic: bigint; buyerReceivedAtomic: bigint; unlockedAtomic: bigint; exported: boolean; releasable: boolean; takenAt: Date; setupBy: Date | null; fundBy: Date | null; fundingSeenAt: Date | null; depositBy: Date | null; securedAt: Date | null; payBy: Date | null; extensions: number; paidAt: Date | null; confirmBy: Date | null; finalAlertAt: Date | null; cancelProposedBy: 'buyer'|'seller'|null; settling: SettleKind | null; settleFrom: TradeState | null; settleBy: Date | null; pausedAt: Date | null; txHash: string | null; dispute: { by: 'buyer'|'seller'|'system'; at: Date } | null; closedAt: Date | null }`. `lockedRate` and `fiatCents` are fixed at take (OD-5).
+  - `type TradeEvent = { type: 'setup-done'; escrowAddress: string; depositAddress: string } | { type: 'chain'; sellerReceivedAtomic: bigint; buyerReceivedAtomic: bigint; unlockedAtomic: bigint; exported: boolean } | { type: 'mark-paid' } | { type: 'extend' } | { type: 'request-refund' } | { type: 'propose-cancel' } | { type: 'accept-cancel' } | { type: 'withdraw-cancel' } | { type: 'release-started' } | { type: 'settled'; kind: SettleKind; txHash: string } | { type: 'open-dispute' } | { type: 'escalate' } | { type: 'pause' } | { type: 'resume' } | { type: 'tick' }`
+  - `SYSTEM_EVENTS = ['setup-done','chain','settled','escalate','pause','resume','tick'] as const`; `CLIENT_EVENTS = ['mark-paid','extend','request-refund','propose-cancel','accept-cancel','withdraw-cancel','release-started','open-dispute'] as const`
+  - `apply(t: Trade, e: TradeEvent, by: 'buyer' | 'seller' | 'system', now: Date): Trade` is pure and throws `TradeRuleError { code: 'wrong-state' | 'wrong-party' | 'too-early' | 'too-late' | 'deposit-missing' | 'no-extensions-left' | 'not-releasable' }`
+  - `nextDeadline(t: Trade): Date | null`; `releasableEta(t: Trade, blockSeconds = 120): number | null` (minutes)
 
 Rules the tests pin (one test each):
-- `setup-done` → `funding`, `fundBy = now + 30 min`. `tick` after `fundBy` with `receivedAtomic < sellerFundsAtomic` → `lapsed` (any partial funds are then refunded, Task 6).
-- `chain` with `receivedAtomic ≥ sellerFundsAtomic` → `securing`, `lockedRate = rateNow` (only the first time), `fundingSeenAt = now`, `depositBy = now + 30 min` when a deposit is due.
-- `chain` with `confirmations ≥ 10` and `receivedAtomic ≥ sellerFunds + deposit` → `secured`, `payBy = now + 90 min`.
-- `mark-paid` (buyer) allowed in `securing` (buyer may pay early), `secured` and `refund_requested`; refused `deposit-missing` while a due deposit has not arrived; sets `confirmBy = now + confirmWindowMin` and clears `finalAlertAt`.
-- `extend` (seller) only in `secured`, `now ≥ payBy`, `extensions < 2` → `payBy = now + 30 min`; third time → `no-extensions-left`.
-- `request-refund` (seller) only when not paid and `now > payBy` (or `now > depositBy` while the deposit is missing) → `refund_requested`, `finalAlertAt = now`.
-- `propose-cancel` from either side in `funding` … `paid`; `accept-cancel` by the other side → `settling` / `mutual-cancel`, or straight to `cancelled` when nothing was ever received; the proposer cannot accept their own.
-- `release-started` (seller) in `securing`, `secured` or `paid` → `settling` / `release`.
-- `open-dispute`: seller in `paid` any time; buyer in `paid` only after `confirmBy` (`too-early` before); buyer in `refunded` within 90 days → `disputed`. In `disputed`, `tick` changes nothing.
+- **System-only (P3-C2):** each of `SYSTEM_EVENTS` with `by` buyer or seller → `wrong-party`; each of `CLIENT_EVENTS` with `by: 'system'` → `wrong-party`.
+- Take → `setup` with `setupBy = takenAt + 15 min`; `tick` past `setupBy` → `cancelled`, no penalty (P3-I5). `setup-done` → `funding`, `fundBy = now + 30 min`.
+- `tick` after `fundBy` with `sellerReceived < sellerFunds` → `lapsed`.
+- `chain` with `sellerReceived ≥ sellerFunds` → `securing`, `fundingSeenAt = now`, `depositBy = now + 30 min` when a deposit is due. `lockedRate` never changes after take.
+- `chain` sets `releasable = exported && unlocked ≥ sellerReceived + buyerReceived`. `secured` requires `releasable && sellerReceived ≥ sellerFunds && buyerReceived ≥ deposit`; then `payBy = now + 90 min` (P3-I4).
+- `mark-paid` (buyer) in `securing`, `secured`, `refund_requested`; `deposit-missing` while a due deposit has not arrived; sets `paidAt`, `confirmBy = now + confirmWindowMin`, clears `finalAlertAt`.
+- `extend` (seller) only in `secured` with `now ≥ payBy` and `extensions < 2`; then `payBy = now + 30 min`. A third time → `no-extensions-left`.
+- `request-refund` (seller) only when unpaid and `now > payBy` (or `now > depositBy` while the deposit is missing) → `refund_requested`, `finalAlertAt = now`.
+- `propose-cancel` by either side in `funding` … `paid`. `accept-cancel` by the other side → `settling`/`mutual-cancel` only when `releasable` (`not-releasable` otherwise), or straight to `cancelled` when nothing was ever received. A proposer cannot accept their own.
+- `release-started` (seller) in `secured` or `paid`, only when `releasable` → `settling`/`release`, `settleFrom` = previous state, `settleBy = now + 15 min`. `tick` past `settleBy` returns to `settleFrom` (P3-I5).
+- `open-dispute`: either side in `securing` or `secured` (OD-8); seller in `paid` any time; buyer in `paid` only after `confirmBy` (`too-early` before); either side in `settling` after `settleBy`; buyer in `refunded` within 90 days → `disputed`. In `disputed`, `tick` changes nothing.
+- `escalate` (system) from `lapsed` with funds, or from `released`, `refunded` or `cancelled` (late funds) → `disputed` with `dispute.by = 'system'`.
+- `pause` sets `pausedAt`; `tick` while paused changes nothing; `resume` moves every non-null future deadline by `now − pausedAt` (P3-I19).
 - `settled` → `released` or `refunded`, `closedAt = now`.
 
-- [ ] **Step 1:** Write the failing tests above, plus the clock-skew test (Review Focus 3): `apply` is only ever given the server's `now`; a `mark-paid` with `now` 1 ms after a lapsed `fundBy` is refused `wrong-state`.
-- [ ] **Step 2:** `npm test -w @x2f/trade`; expect FAIL.
-- [ ] **Step 3:** Implement `apply` as a `switch` on `e.type` guarded by state and party; no I/O.
+- [ ] **Step 1:** Write the failing tests above, plus the clock-skew test (Review Focus 3): `apply` is only ever given the server's `now`, and a `mark-paid` 1 ms after a lapsed `fundBy` is refused with `wrong-state`.
+- [ ] **Step 2:** `npm test -- --project @x2f/trade`; expect FAIL.
+- [ ] **Step 3:** Implement `apply` as a `switch` on `e.type`, guarded by `SYSTEM_EVENTS` membership, state and party. No I/O.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(trade): trade state machine with server-clock timers`.
+- [ ] **Step 5:** Commit `feat(trade): trade state machine with system-only events, timeouts and pause`.
 
-### Task 3: Payment method profiles, method lists and the price feed (`apps/api`)
+### Task 3: Payment method profiles, method lists, suggestions and the price feed (`apps/api`)
 
 **Files:**
-- Create: `data/payment-method-profiles.json`, `apps/api/src/methods/profiles.ts`, `apps/api/src/methods/routes.ts`, `apps/api/src/price/feed.ts`, `apps/api/src/price/routes.ts`
+- Create: `data/payment-method-profiles.json`, `apps/api/migrations/101_method_suggestions.sql`, `apps/api/src/methods/{profiles,routes}.ts`, `apps/api/src/price/{feed,routes}.ts`
 - Test: `apps/api/test/profiles.test.ts`, `apps/api/test/price.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `interface MethodProfile { id: string; whatItIs: string; landsIn: string; checkPrompt: string; arrival: 'instant' | 'same-day' | 'days'; confirmWindowMin: number; fields: { key: string; label: string; kind: 'email-or-phone' | 'iban' | 'account' | 'postal' | 'text' }[] }`. Launch profiles: Zelle, Cash App, Revolut, Wise, Bank transfer (ACH), SEPA, Cash by mail, Custom method (spec 11.5 plus the PostOffer board). Zelle: `whatItIs: "Zelle: a US bank-to-bank instant transfer built into most US banking apps."`, `landsIn: "your bank account, checked in your bank's app"`, `confirmWindowMin: 120`. Wires: `1440`.
-  - `getProfile(id: string): MethodProfile | null`; ids match `data/payment-methods.json`; a method without a profile can be browsed but posting it uses Custom method with the name prefilled.
-  - `GET /v1/methods?side=sell|buy&currency=USD&sort=buyers|rate|az` → `{ live: MethodRow[]; all: MethodRow[] }`, `MethodRow = { id: string; name: string; group: string; offers: number; bestRate: string | null }`. `live` contains only methods with at least one live offer in that currency; `all` is the full catalog A–Z.
-  - `interface PriceSource { name: string; fetch(currency: string): Promise<bigint> }` (cents per XMR); `createPriceFeed(sources: PriceSource[], o: { minSources: 2; maxAgeMs: 300_000; pollMs: 60_000 })` with `current(currency: string): Price | null` — median of the sources that answered in the last poll; `null` when fewer than 2 answered or the last good median is older than 5 min. Sources are configured in `PRICE_SOURCES` (spec open decision 6; at least three exchanges, owner picks).
-  - `GET /v1/price?currency=USD` → `{ centsPerXmr: string; at: string }` or `503 {"error":"price-unavailable"}`.
+  - `interface MethodProfile { id; whatItIs; landsIn; checkPrompt; arrival: 'instant' | 'same-day' | 'days'; confirmWindowMin: number; fields: { key; label; kind: 'email-or-phone' | 'iban' | 'account' | 'postal' | 'text' }[] }`. Launch profiles: Zelle, Cash App, Revolut, Wise, Bank transfer (ACH), SEPA, Cash by mail, Custom method. Zelle: `whatItIs: "Zelle: a US bank-to-bank instant transfer built into most US banking apps."`, `landsIn: "your bank account, checked in your bank's app"`, `confirmWindowMin: 120`. Wires: `1440`.
+  - `getProfile(id): MethodProfile | null`; `isAvailable(id): boolean`, which is false when the catalog entry has `legalReview` (P3-I20).
+  - `GET /v1/methods?side&currency&sort=buyers|rate|az` (no session) → `{ live: MethodRow[]; all: MethodRow[] }`, `MethodRow = { id; name; group; offers; bestRate: string | null }`. Unavailable methods are excluded.
+  - `POST /v1/method-suggestions { name: string (1–60), country?: string }` (`requireTrader`) → 202. Stored without the account id (P3-M3).
+  - `createPriceFeed(sources: PriceSource[], o: { minSources: 2; maxAgeMs: 300_000; pollMs: 60_000 })`, `current(currency): Price | null`. It returns the median of the sources that answered the last poll, or `null` when fewer than 2 answered or the median is older than 5 min. `PRICE_SOURCES` env (spec 11.6). `GET /v1/price?currency` (no session) → `{ centsPerXmr: string; at: string }` or 503 `price-unavailable`.
 
-- [ ] **Step 1: Failing tests:** every profile's id exists in the catalog and has a non-empty `landsIn`; no `landsIn` contains the method name ("arrived in Zelle" can't happen); median of 3 sources `[32900, 33000, 39000]` → `33000`; one source answering → `null`; last good median 5 min + 1 ms old → `null` and `/v1/price` returns 503 (Review Focus 5); `GET /v1/methods` with one live Zelle USD offer lists Zelle in `live` and every catalog method in `all`.
-- [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Implement. Sources fetched with `fetch` and a 5 s timeout; no source failure throws past the feed.
+- [ ] **Step 1: Write the failing tests:**
+  - Every profile id exists in the catalog and has a non-empty `landsIn`, and no `landsIn` contains the method name.
+  - The median of `[32900, 33000, 39000]` → `33000`. One source → `null`. A median 5 min + 1 ms old → `null` and a 503 (Review Focus 5).
+  - `GET /v1/methods` with one live Zelle USD offer lists Zelle in `live`; SBP, Mir and YooMoney appear in neither list.
+  - `/v1/methods` and `/v1/price` answer with no cookie (P3-M9).
+  - A suggestion row has no account column.
+- [ ] **Step 2:** Run `npm test -- --project @x2f/api`; expect FAIL.
+- [ ] **Step 3:** Implement. Sources use `fetch` with a 5 s timeout, and no source failure throws past the feed.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(api): method profiles, live method lists, median price feed`.
+- [ ] **Step 5:** Commit `feat(api): method profiles, live lists, suggestions, median price feed`.
 
-### Task 4: Offers and taking an offer (`apps/api`)
+### Task 4: Offers (`apps/api`)
 
 **Files:**
-- Create: `apps/api/migrations/101_trading.sql`, `apps/api/src/offers/routes.ts`, `apps/api/src/trades/store.ts`, `apps/api/src/trades/view.ts`, `apps/api/src/trades/routes.ts`, `apps/api/src/traders/summary.ts`
-- Test: `apps/api/test/offers.test.ts`, `apps/api/test/take.test.ts`, `apps/api/test/view.test.ts`
+- Create: `apps/api/migrations/102_offers.sql`, `apps/api/src/offers/routes.ts`, `apps/api/src/traders/summary.ts`
+- Test: `apps/api/test/offers.test.ts`
 
 **Interfaces:**
-- Consumes: Tasks 1–3; `newTradeCode` from `@x2f/core`; Plan 2's `requireUser`, `listWallets`.
+- Consumes: Task 3; `requireTrader`.
 - Produces:
-  - Tables: `offers(id, poster_id, side, method_id, currency, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at)`, `trades(code primary key, …every Trade field…, buyer_payout text, seller_refund text, seller_wallet_app text)`, `trade_events(id bigserial, code, at, by, event jsonb)` (insert-only; a trigger rejects UPDATE and DELETE), `trading_holds(user_id, created_at, lifted_at)` and `site_flags(trading_paused boolean default false)` (both written by Plan 4, enforced here).
-  - `POST /v1/offers` `{ side, methodId, currency, marginBps, minFiatCents, maxFiatCents, minTrades: 0|5|10|50, terms }`; `PATCH /v1/offers/:id` `{ status: 'live'|'paused'|'removed' }` (poster only); `GET /v1/offers?side&method&currency&sort=best|online|trades` → `OfferCard[]`, `OfferCard = { id; poster: TraderSummary; rate: string; marginBps; minFiatCents; maxFiatCents; depositRequired: boolean }`.
-  - `TraderSummary = { username: string; completedTrades: number; online: boolean; lastSeenAt: string; typicalMinutes: number | null; positivePct: number | null; badges: string[] }` — `positivePct` and `badges` stay `null`/`[]` until Plan 5 fills them.
-  - `POST /v1/offers/:id/take` `{ amountAtomic: string; walletId: string }` → `{ code }`. Refusals (`409 {error}`): `own-offer`, `out-of-range`, `not-enough-trades`, `trading-hold`, `trading-paused`, `price-unavailable`, `already-waiting` (one take awaiting funding per buyer per offer, enforced by a partial unique index), `wallet-not-ready` (wallet `usableAt` in the future). The taker's wallet becomes the buyer payout (taker is buyer) or the seller refund and funding app (taker is seller). The poster's default payout wallet fills their side until the payout wallet picker exists (dependent task D1).
-  - `toTradeView(t: Trade, viewerId: string, serverNow: Date): TradeView` — the single serializer for `GET /v1/trades/:code`; includes `role`, `counterparty: TraderSummary`, `profile: MethodProfile`, deadlines as ISO strings, `serverNow`, and `fee` **only when the viewer is the poster**. Non-participants get 404.
-  - Every write goes through `applyEvent(db, code, e, by): Promise<Trade>` in `store.ts`: `SELECT … FOR UPDATE`, `apply` (Task 2), update row, insert `trade_events`, publish to the event bus (Task 10).
+  - Tables: `offers(id, account_id, side, method_id, currency, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at)`; `trading_holds(account_id, created_at, lifted_at)` and `site_flags(trading_paused boolean default false, maintenance_since timestamptz)`, written by Plan 4 and enforced here.
+  - `POST /v1/offers { side, methodId, currency, marginBps, minFiatCents, maxFiatCents, minTrades: 0|5|10|50, terms }`. Refusals: `method-unavailable` (P3-I20), `trading-hold`, `trading-paused`. `PATCH /v1/offers/:id { status: 'live'|'paused'|'removed' }` (poster only).
+  - `GET /v1/offers?side&method&currency&sort=best|online|trades` (no session) → `OfferCard[]`, `OfferCard = { id; poster: TraderSummary; rate: string; marginBps; minFiatCents; maxFiatCents; depositRequired: boolean }`.
+  - `TraderSummary = { username; completedTrades; online; lastSeenAt; typicalMinutes: number | null; positivePct: number | null; badges: string[] }` (Plan 5 fills the last two).
 
-- [ ] **Step 1: Failing tests:** post and list an offer; poster cannot take own offer; amount outside min–max refused; a 0-trade taker refused on a `minTrades: 5` offer; a held user cannot post or take; **two concurrent takes by the same buyer on one offer → exactly one `{code}`, the other `already-waiting`** (Review Focus 4, run with `Promise.all` against a real Postgres); `toTradeView` for the taker has no `fee` key at any state, for the poster has `fee.atomic === '12500000000'`; a third user gets 404; `trade_events` UPDATE raises.
-- [ ] **Step 2:** Run (`docker run postgres` or the Plan 2 test database); expect FAIL.
+- [ ] **Step 1: Write the failing tests:**
+  - Post and list an offer, logged out (P3-M9).
+  - A staff account cannot post (`method-not-allowed`).
+  - SBP → 409 `method-unavailable`.
+  - A held account and a paused site cannot post.
+  - Only the poster can PATCH.
+- [ ] **Step 2:** Run `npm test -- --project @x2f/api`; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(api): offers, take with guards, role-aware trade view`.
+- [ ] **Step 5:** Commit `feat(api): offers with method and hold guards`.
 
-### Task 5: Trade identities and relay tickets
-
-**Files:**
-- Create: `apps/api/src/trades/identity.ts`
-- Modify: `apps/relay/src/server.ts` (ticket check)
-- Test: `apps/api/test/identity.test.ts`, `apps/relay/test/ticket.test.ts`
-
-**Interfaces:**
-- Consumes: `Participants` from `@x2f/protocol`; `buildRelay` from `apps/relay`.
-- Produces:
-  - `POST /v1/trades/:code/identity` `{ signPublic, boxPublic }` (once per role; second call 409); `GET /v1/trades/:code/participants` → `Participants` once buyer, seller and mod have registered, else `202`.
-  - `POST /v1/trades/:code/relay-ticket` → `{ url: string }` where the URL is `<RELAY>/v1/trade/<code>?role=<role>&exp=<unix>&t=<base64url HMAC-SHA256(RELAY_TICKET_SECRET, code|role|exp)>`, valid 10 min. Chats get the same with the chat code.
-  - `buildRelay` gains option `ticketSecret: Uint8Array`; the relay closes with **4401** when the ticket is missing, expired, or for another code or role. Plan 1's tests keep passing with a test secret.
-
-- [ ] **Step 1: Failing tests:** participants appear only when all three registered; a buyer cannot register the seller's identity; relay: valid ticket connects; expired, wrong-role and wrong-code tickets close 4401; constant-time comparison (`timingSafeEqual`).
-- [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Implement.
-- [ ] **Step 4:** `npm run check` (includes Plan 1's relay tests); expect PASS.
-- [ ] **Step 5:** Commit `feat: trade identities and signed relay tickets`.
-
-### Task 6: Moderation service — escrow party, chain watcher, timers, auto-refund
+### Task 5: Taking an offer (`apps/api`)
 
 **Files:**
-- Create: `apps/api/src/moderation/party.ts`, `apps/api/src/moderation/keystore.ts`, `apps/api/src/moderation/watcher.ts`, `apps/api/src/moderation/timers.ts`, `apps/api/src/moderation/autoRefund.ts`
-- Modify: `packages/escrow/src/engine.ts`, `packages/escrow/src/monero.ts` (add `incoming()`)
-- Test: `packages/escrow/test/incoming.test.ts`, `apps/api/test/moderation.test.ts` (regtest)
+- Create: `apps/api/migrations/103_trades.sql`, `apps/api/src/trades/take.ts`
+- Test: `apps/api/test/take.test.ts`
 
 **Interfaces:**
-- Consumes: `runParty`, `MoneroMultisigEngine`, `autoRefundDecision`, `generateIdentity` (Plan 1); `applyEvent` (Task 4); `payoutsFor` (Task 1); price feed (Task 3).
+- Consumes: Tasks 1–4; `newTradeCode`; `usableWallets`.
 - Produces:
-  - `EscrowSession.incoming(): Promise<{ txHash: string; amountAtomic: bigint; confirmations: number }[]>` (additive; monero-ts `getIncomingTransfers` / `getTxs`, including pool).
-  - `startModeration(app: FastifyInstance, o: { daemonUri: string; relayUrl: string; keystoreKey: Uint8Array; feeWallet: string; signingKey: Uint8Array }): { stop(): Promise<void> }` — for every trade entering `setup`: generates the mod identity, signs its public keys with the long-term moderation key (public half pinned in the web build as `VITE_MOD_SIGNING_PUBLIC`), registers it, runs `runParty` as `mod` with `PartyState` stored AES-256-GCM-encrypted in `mod_party_state` (key from `MOD_KEYSTORE_KEY`, never in the database). On `ready()` applies `setup-done`.
-  - Watcher: every 15 s per open escrow, `sync()` + `incoming()` → `chain` event with the sum received, the minimum confirmations and `rateNow`. Detects the escrow emptying → `settled` with the reported tx hash.
-  - Timer loop: every 5 s applies `tick` to trades whose `nextDeadline` has passed.
-  - Auto-refund: for `refund_requested` trades, once `autoRefundDecision({ paymentDeadline, markedPaidAt, finalAlertAt, now, recordedRefundAddress: seller_refund, proposed })` returns `ok`, calls `handle.settle({ kind: 'release', to: payoutsFor({kind:'auto-refund',…}), builder: 'seller', cosigner: 'mod' })`. The seller's app built and sent that release when the seller tapped Cancel & get refund (Task 15); the relay holds it. Any `ok: false` is logged by reason and retried on the next tick; nothing else ever makes the mod party settle in this plan.
-  - Lapse refund: a `lapsed` trade with `receivedAtomic > 0` is refunded seller-built and buyer-cosigned (`payoutsFor` `lapse-refund`); the buyer's app co-signs automatically because it pays only the seller's recorded refund address (Task 7).
+  - Tables: `trades(code primary key, …every Trade field…, buyer_payout text, seller_refund text, seller_wallet_app text)`; `trade_events(id bigserial, code, at, by, event jsonb)`.
+  - `POST /v1/offers/:id/take { amountAtomic: string; walletId: string }` (`requireTrader`) → `{ code }`. `walletId` is required every time. It is the buyer's payout wallet when the taker buys, and the seller's refund and funding wallet when the taker sells. The rate and the fiat total lock here (OD-5). The trade starts in `setup` with the poster's wallet unset.
+  - `POST /v1/trades/:code/wallet { walletId }` (poster only, in `setup`, once) sets the poster's side. This backs the "accepted your offer" sheet (Task 19).
+  - Refusals (409): `own-offer`, `out-of-range`, `not-enough-trades`, `trading-hold`, `trading-paused`, `price-unavailable`, `method-unavailable`, `wallet-not-ready` (wallet not in `usableWallets`), `already-waiting` (one trade in `setup`/`funding` per taker per sell ad), `ad-busy` (one trade in `setup`/`funding` per buy ad and amount; spec 2.2 step 4). Both limits are enforced by partial unique indexes.
 
-- [ ] **Step 1: Failing tests** (regtest, real relay, three parties; buyer and seller are Node `runParty` instances):
-  - `incoming()` lists a funding tx with confirmations rising after mining.
-  - Trade reaches `funding` after setup; funding short by 0.1 XMR stays `funding` and lapses at `fundBy` (fake clock), then refunds the seller in full (Review Focus 2).
-  - Funding 0.1 XMR over: release pays the excess to the seller's refund address.
-  - Mining 10 blocks moves `securing` → `secured`.
-  - Buyer never pays; seller requests refund; at `finalAlertAt + 15 min − 1 ms` nothing moves; at `+ 15 min + 1 ms` the seller's refund address receives the balance minus network fee.
-  - Buyer marks paid during the final alert: no refund is ever signed.
-  - A seller-built auto-refund paying any other address is refused (`wrong-destination`) and nothing is broadcast.
-  - Restarting the API mid-setup resumes the mod party from `mod_party_state`.
+- [ ] **Step 1: Write the failing tests:**
+  - A poster cannot take their own offer.
+  - Out-of-range and `minTrades` refusals.
+  - A waiting wallet → `wallet-not-ready`.
+  - **Five concurrent seller takes of the same amount on one buy ad (`Promise.all`, real Postgres) → exactly one `{code}`, four `ad-busy`.**
+  - Three different buyers take one sell ad at once → three codes; the same buyer twice → `already-waiting` (Review Focus 4).
+  - `lockedRate` and `fiatCents` are stored at take.
+  - The poster's wallet route refuses the taker and a second call.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(api): moderation party, chain watcher, timers and guarded auto-refund`.
+- [ ] **Step 5:** Commit `feat(api): take with wallet choice and race-safe limits`.
 
-### Task 7: Browser escrow runtime and the node proxy
+### Task 6: Trade store, view, events route, retention and log hygiene (`apps/api`)
 
 **Files:**
-- Create: `apps/node-proxy/package.json`, `apps/node-proxy/src/server.ts`, `apps/web/src/escrow/worker.ts`, `apps/web/src/escrow/store.ts`, `apps/web/src/escrow/policy.ts`, `apps/web/src/escrow/useEscrow.ts`
-- Test: `apps/node-proxy/test/proxy.test.ts`, `apps/web/test/escrow-store.test.ts`, `apps/web/test/policy.test.ts`
+- Create: `apps/api/migrations/104_trade_retention.sql`, `apps/api/src/trades/{store,view,routes,purge}.ts`, `apps/api/src/retention/scheduler.ts`
+- Test: `apps/api/test/{store,view,events-route,purge,logs}.test.ts`
 
 **Interfaces:**
-- Consumes: `runParty`, `wsTransport`, `MoneroMultisigEngine`, `generateIdentity` (Plan 1); trade routes (Tasks 4, 5).
+- Consumes: Tasks 2, 5.
 - Produces:
-  - `buildNodeProxy(o: { upstream: string }): FastifyInstance` — serves Monero's own paths **at its root** (monero-ts keeps only host and port): POST `/json_rpc` (allowlisted methods only: `get_info`, `get_last_block_header`, `get_block_header_by_height`, `get_block_headers_range`, `get_fee_estimate`, `get_version`, `get_output_distribution`, `hard_fork_info`), `/getblocks.bin`, `/getblocks_by_height.bin`, `/gethashes.bin`, `/get_o_indexes.bin`, `/getouts.bin`, `/get_transaction_pool_hashes.bin`, `/get_transactions`, `/sendrawtransaction`, `/get_height`, `/get_info`, `/is_key_image_spent`, `/get_transaction_pool`. Everything else 404. CORS only for the web origin. No request logging beyond counts.
-  - `escrowStore`: IndexedDB database `x2f-escrow`, one record per trade code `{ partyState, identity (secret keys wrapped), seq }`. A non-extractable AES-GCM `CryptoKey` (stored in IndexedDB) wraps the identity secrets and the session password; deleted when the trade closes.
-  - `cosignPolicy(t: TradeView, txPayouts: Payout[]): boolean` — the buyer's app co-signs automatically only (a) a `lapse-refund` that pays exactly the whole balance to the trade's recorded seller refund address, or (b) a release whose first payout is its own payout address with the expected amount; the seller's app co-signs only a mutual cancel matching `payoutsFor('mutual-cancel')`.
-  - `useEscrow(code: string): { phase: 'idle' | 'setting-up' | 'ready' | 'signing' | 'done' | 'error'; keepOpen: boolean; release(): Promise<void>; buildRefund(): Promise<void>; proposeCancelSign(): Promise<void> }` — runs `runParty` in `worker.ts` (one worker per open trade), fetches participants and a relay ticket, verifies the mod identity's signature against `VITE_MOD_SIGNING_PUBLIC`, resumes automatically on page load for every stored trade. `keepOpen` is true while setup or signing is running and drives the "Keep X2F open while we secure the trade" bar.
+  - `applyEvent(db, code, e: TradeEvent, by): Promise<Trade>`: `SELECT … FOR UPDATE`, then `apply`, update the row, insert into `trade_events` with addresses replaced by `addressEnd` (last 6), then `publish` (Task 19).
+  - `POST /v1/trades/:code/events { type }` (`requireTrader`, participant). It accepts only `CLIENT_EVENTS` (anything else → 400 `event-not-allowed`). `by` comes from the session's role in the trade; a body `by` is ignored.
+  - `toTradeView(t, viewerId, serverNow): TradeView` is the single serializer for `GET /v1/trades/:code`. It includes `role`, `counterparty: TraderSummary`, `profile`, deadlines as ISO strings, `serverNow`, `releasableEtaMin`, and `fee` **only for the poster**. Non-participants get 404.
+  - `trade_events` trigger: UPDATE and DELETE are refused, except DELETE by role `x2f_purge`. `purgeTradeAddresses(db, now)`, running as `x2f_purge`, nulls `buyer_payout` and `seller_refund` 90 days after `closed_at`, never while a dispute is open (P3-I12).
+  - `startRetention(deps)`: every 10 min runs Plan 2's `purgeExpired`, `purgeChats` (Task 20) and `purgeTradeAddresses` (X-12).
 
-- [ ] **Step 1: Failing tests:** proxy forwards an allowlisted `json_rpc` call and `/getblocks.bin`, refuses `json_rpc` `stop_daemon` and any path with a prefix (`/daemon/json_rpc` → 404); the store round-trips a `PartyState` and its stored secrets are not readable as plaintext from IndexedDB (fake-indexeddb in vitest); `cosignPolicy` accepts the two allowed shapes and refuses a lapse refund to any other address or with a second output.
+- [ ] **Step 1: Write the failing tests:**
+  - Each of `chain`, `setup-done`, `settled`, `tick`, `escalate`, `pause`, `resume` posted by a participant → 400 `event-not-allowed`, and the state is unchanged (P3-C2).
+  - A body `{type:'mark-paid', by:'seller'}` from the buyer is applied as the buyer.
+  - The taker view has no `fee` key in any state; the poster view has `fee.atomic === '12500000000'`; a third user gets 404.
+  - No `trade_events.event` contains a full address.
+  - Purge nulls addresses at +90 days, keeps them on a disputed trade, and the app role cannot UPDATE `trade_events`.
+  - **Logs:** a full trade lifecycle against a captured logger contains no trade code, address or IP (P3-I15).
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Implement; monero-ts runs inside the worker (needs `'wasm-unsafe-eval'`, already in the CSP).
-- [ ] **Step 4:** `npm run check`; expect PASS. (The reload-mid-release test lives in Task 17 because it needs two browsers.)
-- [ ] **Step 5:** Commit `feat(web): resumable browser escrow runtime; node proxy at root paths`.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(api): trade store, role-aware view, guarded events, retention`.
 
-### Task 8: Web app shell, tokens and the parity harness
+### Task 7: Plan 1 amendments — subaddresses, buffered tx sets, refresh rounds, relay registration
 
 **Files:**
-- Create: `apps/web/package.json`, `apps/web/vite.config.ts`, `apps/web/index.html`, `apps/web/src/main.tsx`, `apps/web/src/App.tsx`, `apps/web/src/theme/tokens.css` (generated), `apps/web/src/theme/fonts.css`, `apps/web/src/api/client.ts`, `apps/web/src/ui/{Button,StatusChip,Countdown,Amount,TradeHeader,BottomNav,DesktopShell,Sheet,BadgePill,EscrowDots}.tsx`, `apps/web/src/fixtures/boards.ts`, `tools/tokens-to-css.ts`, `tools/copy-lint.ts`, `tools/parity/capture-refs.ts`, `design/x2f-app/refs/*.png`, `apps/web/e2e/playwright.config.ts`, `apps/web/e2e/parity.ts`, `apps/web/e2e/shell.spec.ts`
+- Modify: `packages/escrow/src/{engine,monero,party}.ts`, `apps/relay/src/server.ts`, `apps/relay/src/main.ts`
+- Create: `packages/trade/src/channels.ts`, `apps/relay/src/admin.ts`
+- Test: `packages/escrow/test/{incoming,buffer}.test.ts`, `apps/relay/test/admin.test.ts`, `packages/trade/test/channels.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `EscrowSession.address(index = 0): Promise<string>` (subaddress 1 = buyer deposit); `EscrowSession.incoming(): Promise<{ txHash; amountAtomic; subaddressIndex: number; confirmations; unlocked: boolean }[]>` (monero-ts `getTransfers({ isIncoming: true })` including the pool).
+  - Runner: one `release.txset` per outcome is buffered until the local `settle` instead of being dropped. `PartyHandle.pending(): Promise<{ txSet: string; payouts: Payout[]; builder: Role } | null>`, decoded with `describeMultisigTxSet`. `PartyHandle.refresh(): Promise<{ balance: bigint; unlocked: bigint }>` runs a `state.export`/import round. The runner calls it automatically once funds are first seen and before any build that follows an abandoned tx set (research 1.8–1.9 nonce reuse).
+  - `channelFor(code: string, kind: 'escrow' | 'signals' | 'chat'): string` = base32(HKDF-SHA256(ikm = normalized code, info = `x2f/relay-channel/v1/<kind>`, 20 bytes)). It is the `trade` string in every Envelope and relay path.
+  - Relay: `buildRelay` gains `{ adminPort: number; modSigningPublic: string }`. A second listener bound to the private interface serves `POST /v1/admin/trades { channel, signPublics: Record<Role,string>, at, sig }`. It verifies the Ed25519 `sig` over `x2f/relay-register/v1\0` + canonical JSON with `modSigningPublic`, refuses `at` older than 60 s, then calls `registerTrade(channel, signPublics)`. The public listener has no admin route.
+
+- [ ] **Step 1: Write the failing tests** (regtest):
+  - Seller pays subaddress 0 and buyer pays subaddress 1 → `incoming()` reports both with their index, and `unlocked` turns true after 12 blocks.
+  - A `release.txset` arriving before the mod's `settle` is returned by `pending()` and signed by the later `settle`.
+  - An abandoned tx set is followed by a `refresh()` before the next `buildRelease` (spy on the session).
+  - Relay admin: a valid signed registration lets a joined client in. A bad signature, a stale `at`, or the admin path on the public port → refused. The join challenge for an unregistered channel closes the socket (4401).
+  - `channelFor` is deterministic, differs per kind, and never contains the code.
+  - Plan 1's relay and party tests pass with registration added to their fixtures.
+- [ ] **Step 2:** Run `npm test -- --project @x2f/escrow --project @x2f/relay --project @x2f/trade`; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(escrow,relay): subaddress funding, buffered tx sets, refresh rounds, signed channel registration`.
+
+### Task 8: Moderation service — separate process, identities and attestation (P3-C1)
+
+**Files:**
+- Create: `apps/moderation/{package.json,src/main.ts,src/keystore.ts,src/link.ts,src/attest.ts}`, `apps/moderation/migrations/001_mod.sql`, `apps/api/src/internal/routes.ts`, `apps/api/src/trades/identity.ts`, `packages/trade/src/{attestation,checkWords}.ts`, `tools/separation-check.ts`
+- Modify: root `package.json` (`check` runs `separation-check`)
+- Test: `apps/moderation/test/attest.test.ts`, `apps/api/test/identity.test.ts`, `packages/trade/test/attestation.test.ts`, `tools/test/separation.test.ts`
+
+**Interfaces:**
+- Consumes: `generateIdentity`, `Participants`; Task 7 (`channelFor`, relay admin).
+- Produces:
+  - `POST /v1/trades/:code/identity { signPublic, boxPublic, proof }` (`requireTrader`, role from the session, once per role → 409 `identity-exists`). The schema has `additionalProperties: false`. `proof` = Ed25519 signature by the identity over `x2f/trade-identity/v1\0` + code + `\0` + role + `\0` + signPublic + boxPublic (400 `bad-proof`).
+  - `interface Attestation { v: 1; trade: string; channels: Partial<Record<'escrow' | 'signals' | 'chat', string>>; participants: Participants; issuedAt: string }` (a trade gets `escrow` and `signals`; a chat gets `chat`; each must equal `channelFor(trade, kind)`); `attestationBytes(a): Uint8Array` (domain `x2f/attestation/v1\0` + canonical JSON); `verifyAttestation(a, sig, modSigningPublic, me: { role: 'buyer'|'seller'; signPublic: string }): void`. It throws `AttestationError('bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel')`.
+  - `GET /v1/trades/:code/attestation` (participant only) → `{ attestation, sig }` or 202.
+  - `escrowCheckWords(participants: Participants, escrowAddress: string): [string, string, string, string]`, from SHA-256 over both, indexed into a bundled 2048-word list.
+  - `apps/moderation`: `startModeration(o: { apiInternalUrl: string; relayAdminUrl: string; daemonUri: string; db: pg.Pool; keystoreKey: Uint8Array; signingSecret: Uint8Array; feeWallet: string })`. It opens **no listening socket** and depends on neither fastify nor `@x2f/api`. Its database `x2f_moderation` holds `mod_party_state` (AES-256-GCM under `MOD_KEYSTORE_KEY`) and `signed_terms`; the API's DB role has no grant on it. Each loop it pulls `GET <api-internal>/internal/v1/work` and posts `POST /internal/v1/reports`. Both are signed with the moderation key, and the API verifies them with `MOD_SIGNING_PUBLIC`. For each trade with buyer and seller registered, it verifies both proofs, generates the mod identity, signs the `Attestation`, posts it, and registers both channels with the relay.
+  - API internal listener: a separate port on the private interface, serving only `/internal/v1/*`. It holds no secrets beyond `MOD_SIGNING_PUBLIC`.
+  - `separation-check.ts` fails when `apps/api` or `apps/web` reference `MOD_KEYSTORE_KEY`, `MOD_SIGNING_SECRET`, `@x2f/moderation` or `generateIdentity`, or when `apps/moderation` imports `fastify` or `node:http` servers.
+
+- [ ] **Step 1: Write the failing tests:**
+  - Attestation appears only after both traders registered.
+  - A buyer cannot register as seller.
+  - A body with `signSecret` → 400.
+  - A bad proof → `bad-proof`.
+  - `verifyAttestation` throws `not-me` when the buyer slot holds another key and `bad-signature` for a re-signed copy.
+  - **Swapped list:** the API stores a second buyer identity it generated itself → the real buyer's verification throws `not-me` (setup aborts), and no attestation exists that lists both the real seller and an API-chosen mod.
+  - An unsigned or wrongly signed report to `/internal/v1/reports` → 401.
+  - `separation-check` flags a planted `process.env.MOD_KEYSTORE_KEY` in `apps/api`.
+  - The API role's `SELECT` on `x2f_moderation.mod_party_state` fails.
+  - Check words are equal for equal inputs and differ when one key changes.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(moderation): separate moderation process, signed participant attestation`.
+
+### Task 9: Moderator party, chain watcher and timer loop
+
+**Files:**
+- Create: `apps/moderation/src/{party,watcher}.ts`, `apps/api/src/trades/timers.ts`
+- Test: `apps/moderation/test/watcher.test.ts` (regtest), `apps/api/test/timers.test.ts`
+
+**Interfaces:**
+- Consumes: `runParty`, `PartyHandle.refresh`, `incoming` (Task 7); `applyEvent` (Task 6).
+- Produces:
+  - Moderation runs `runParty` as `mod` on `channelFor(code,'escrow')` with the attested participants. On `ready()` it reports `setup-done { escrowAddress: address(0), depositAddress: address(1) }`.
+  - Watcher: every 15 s per open escrow, `incoming()` + `refresh()` once funds appear → reports `chain` (per-subaddress sums, unlocked sum, `exported`). Emptying → `settled` with the tx hash. Closed escrows stay watched for 30 days; funds arriving after close → report `late-funds`, which the API turns into `escalate` (P3-I6, OD-2).
+  - API timer loop (`startTimers(deps)`): every 5 s, `tick` for trades whose `nextDeadline` passed. When `site_flags.maintenance_since` is set or cleared, it applies `pause`/`resume` to all open trades and skips ticks meanwhile. A `lapsed` trade with funds whose lapse refund is not co-signed within `lapseCosignMin` → `escalate`.
+
+- [ ] **Step 1: Write the failing tests** (regtest, real relay, Node buyer and seller parties):
+  - Setup reaches `funding`.
+  - Short by 0.1 XMR stays `funding` and lapses at `fundBy` (fake clock).
+  - Buyer deposit on subaddress 1 is counted as buyer funds.
+  - 10 blocks: still `securing` (not unlocked in practice). 12 blocks plus refresh → `secured` (P3-I4).
+  - Funds sent after `released` → `late-funds` → `disputed`.
+  - Timers: maintenance on for 20 min moves `payBy` by 20 min and no tick fires meanwhile.
+  - Restarting the moderation process mid-setup resumes from `mod_party_state`.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(moderation): mod party, chain watcher, timers with pause`.
+
+### Task 10: Guarded auto-refund, signed terms and signals
+
+**Files:**
+- Create: `apps/moderation/src/{signals,autoRefund,rulings}.ts`
+- Test: `apps/moderation/test/autoRefund.test.ts` (regtest)
+
+**Interfaces:**
+- Consumes: `seal`/`open`/`ReplayGuard`; `pending()`; `autoRefundDecision`; `payoutsFor`; `apply`.
+- Produces:
+  - Signals channel (`channelFor(code,'signals')`, sealed to all three roles, own `ReplayGuard` persisted as `{trade, seen}`). Types: `trade.terms` (seller: `{ refundAddress }`; buyer: `{ payoutAddress }`; sent once at setup), `trade.paid` (buyer), `trade.extend` and `trade.refund-request` (seller), and `trade.ack` (mod → sender).
+  - The moderation service keeps its own shadow `Trade`, fed only by its chain watcher and by signals it opened itself, through the same `apply`. `recordedRefundAddress` = the seller-signed `trade.terms`, stored in `signed_terms`, **never** the API's `seller_refund`.
+  - Auto-refund: when the shadow trade is `refund_requested`, `pending()` holds a seller-built tx set, and the API reports the final alert delivered (SSE open or push accepted, Task 19), the service calls `autoRefundDecision({ paymentDeadline: shadow.payBy, markedPaidAt: shadow.paidAt, finalAlertAt: shadow.finalAlertAt, now, recordedRefundAddress, proposed: pending.payouts })`. On `ok` it calls `settle({ kind:'release', to: pending.payouts, builder:'seller', cosigner:'mod' })`. With no delivery proof after 15 min it reports `escalate`. Every `ok:false` is reported with its reason only.
+  - `rulings.ts`: `verifyRuling(r: unknown): false`. It is the only other path to `settle` as mod; Plan 4 replaces it with staff hardware-key verification.
+
+- [ ] **Step 1: Write the failing tests:**
+  - The buyer never pays and the seller requests a refund: at `finalAlertAt + 15 min − 1 ms` nothing is signed; at `+15 min + 1 ms` the seller's signed refund address receives the balance minus the network fee.
+  - **The API's `seller_refund` is overwritten with an attacker address → the refund still goes only to the seller-signed address.**
+  - **The API reports `refund_requested` while the mod received a valid `trade.paid` → nothing is signed.**
+  - A seller-built refund paying another address → `wrong-destination`, nothing broadcast.
+  - **P3-I3:** refund requested → buyer marks paid in the final alert → seller releases → exactly one tx is broadcast, paying the buyer, after a `refresh()` round.
+  - No delivery proof → `escalate`.
+  - `verifyRuling` refuses every input.
+  - **Lost device (spec 9):** the buyer's store is deleted after funding → mutual cancel is impossible and the trade can only end by auto-refund or escalation (the ruling path is Plan 4).
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(moderation): auto-refund from signed terms and signals only`.
+
+### Task 11: Node proxy (`apps/node-proxy`)
+
+**Files:**
+- Create: `apps/node-proxy/{package.json,src/server.ts,src/main.ts}`
+- Test: `apps/node-proxy/test/proxy.test.ts`
+
+**Interfaces:**
+- Produces: `buildNodeProxy(o: { upstream: string; webOrigin: string }): FastifyInstance`. It serves Monero's own paths **at its root**. POST `/json_rpc` allows only `get_info`, `get_last_block_header`, `get_block_header_by_height`, `get_block_headers_range`, `get_fee_estimate`, `get_version`, `get_output_distribution` and `hard_fork_info`. The other paths are `/getblocks.bin`, `/getblocks_by_height.bin`, `/gethashes.bin`, `/get_o_indexes.bin`, `/getouts.bin`, `/get_transaction_pool_hashes.bin`, `/get_transactions`, `/sendrawtransaction`, `/get_height`, `/get_info`, `/is_key_image_spent` and `/get_transaction_pool`. Everything else → 404. CORS only for `webOrigin`; `disableRequestLogging`.
+
+- [ ] **Step 1: Write the failing tests:** an allowlisted `json_rpc` call and `/getblocks.bin` are forwarded; `stop_daemon` is refused; `/daemon/json_rpc` → 404; another origin gets no CORS header.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(node-proxy): allowlisted node proxy at root paths`.
+
+### Task 12: Browser escrow runtime
+
+**Files:**
+- Create: `apps/web/src/escrow/{worker,store,policy,useEscrow,signals}.ts`
+- Test: `apps/web/test/{escrow-store,policy,attestation-flow}.test.ts` (vitest `happy-dom` + `fake-indexeddb`)
+
+**Interfaces:**
+- Consumes: `runParty`, `wsTransport`, `generateIdentity`, `seal`/`open`; Tasks 7, 8, 10.
+- Produces:
+  - `escrowStore`: IndexedDB `x2f-escrow`, one record per trade code `{ identity (secrets wrapped), partyState, signalGuard, signalSeq }`, wrapped by a non-extractable AES-GCM `CryptoKey`. The record is deleted when the trade closes. Secrets never leave the worker except wrapped.
+  - `cosignPolicy(ctx: { role; own: { payout?: string; refund?: string }; received: { seller: bigint; buyer: bigint }; trade: TradeView; signedTerms: { payout: string; refund: string } }, tx: { builder: Role; payouts: Payout[] }): boolean`. `received` comes from the device's **own** session `incoming()`, never the API. The buyer co-signs only (a) a seller-built release equal to `payoutsFor('release')` with index 0 its own payout address, or (b) a seller-built lapse refund equal to `payoutsFor('lapse-refund')`. The seller co-signs only a buyer-built mutual cancel equal to `payoutsFor('mutual-cancel')`. Either side co-signs a mod-built tx only when every output to that side goes to its own address (Plan 4 rulings).
+  - `useEscrow(code): { phase: 'idle'|'registering'|'verifying'|'setting-up'|'ready'|'signing'|'done'|'error'; error: 'participants-mismatch' | null; checkWords: string[] | null; keepOpen: boolean; release(); buildRefund(); proposeCancelSign(); signal(type) }`. It generates the identity in the worker, registers it with its proof, polls the attestation, runs `verifyAttestation` against `VITE_MOD_SIGNING_PUBLIC` (on failure: `participants-mismatch`, stop, no funding address shown), sends `trade.terms`, then runs `runParty` with the attested participants. It resumes every stored trade on page load. On `lapsed` with funds received, the seller's app builds the lapse refund automatically, and the buyer's app co-signs it through `cosignPolicy`.
+
+- [ ] **Step 1: Write the failing tests:**
+  - The store round-trips and no stored value contains the plaintext secret.
+  - `cosignPolicy` accepts the allowed shapes and refuses: a lapse refund to another address, any extra output, a release whose buyer output differs by one atomic unit, and a mod-built tx paying the counterparty from this side's share.
+  - **A stubbed API returning an attestation without this device's key → `phase 'error'`, `participants-mismatch`, `runParty` never called.**
+  - `checkWords` match between two stubbed devices.
+- [ ] **Step 2:** Run `npm test -- --project @x2f/web`; expect FAIL.
+- [ ] **Step 3:** Implement. monero-ts runs in the worker (`'wasm-unsafe-eval'` is in the CSP).
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): resumable escrow runtime with attestation check`.
+
+### Task 13: Web shell, tokens, fonts, CSP and security headers
+
+**Files:**
+- Create: `apps/web/{package.json,vite.config.ts,index.html}`, `apps/web/src/{main,App}.tsx`, `apps/web/src/theme/{tokens.css,fonts.css}`, `apps/web/src/api/client.ts`, `tools/tokens-to-css.ts`, `apps/api/src/static/serve.ts`, `apps/web/e2e/{playwright.config.ts,shell.spec.ts}`
+- Test: `apps/api/test/headers.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `tokens.css`: every `tokens.json` colour as `--x2f-<name>` under `:root[data-theme=night]` (the default) and `[data-theme=day]`, plus spacing, radius and type tokens. Generated by `npm run tokens`; a stale-file test.
+  - `api(path, init?)`: `credentials: 'same-origin'`, bigints as strings, throws `AuthApiError`-shaped errors. `useServerClock(serverNow): () => Date`.
+  - Routes: `/sell`, `/sell/:methodId`, `/buy`, `/buy/:methodId`, `/post`, `/trade/:code`, `/trade/:code/dispute`, `/wallets`, `/setup/*`, `/login`, `/settings/security`. Phones get `BottomNav`; ≥ 1024 px gets `DesktopShell`.
+  - Vite: `resolve.alias` maps `net` and `tls` to an empty module (research §3, P3-M8). The fixture mode `VITE_FIXTURES=1` is excluded from production builds.
+  - `serveWeb(app)` (@fastify/static) sends the CSP and the Global Constraints headers. API responses get the non-CSP headers.
+
+- [ ] **Step 1: Write the failing tests:**
+  - `shell.spec.ts` loads `/sell` with zero CSP violations and zero requests to other origins.
+  - Tokens are fresh.
+  - The production bundle contains none of `satoshi_ghost`, `mira.k`, `fixture`.
+  - `headers.test.ts`: `Referrer-Policy: no-referrer`, COOP, HSTS and nosniff on an API route and on `index.html`.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check` and `npx playwright test -c apps/web/e2e/playwright.config.ts shell`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): app shell, tokens, CSP and security headers`.
+
+### Task 14: UI kit
+
+**Files:**
+- Create: `apps/web/src/ui/{Button,StatusChip,Countdown,Amount,TradeHeader,MethodExplainer,BottomNav,DesktopShell,Sheet,BadgePill,EscrowDots,HoldButton,ModeratorBadge,ExternalLink}.tsx`
+- Test: `apps/web/test/ui.test.tsx`, `apps/web/test/HoldButton.test.tsx`
+
+**Interfaces:**
+- Produces:
+  - `<Button variant="primary">` renders the orange fill and `data-primary`. `<StatusChip tone="caution|escrow|danger" icon label>` is a type error without `label`. `<Countdown deadline serverClock>` renders `data-mask=clock`.
+  - `<TradeHeader>`: tapping the method name opens `MethodExplainer` with `whatItIs` (spec 2.6, P3-M3).
+  - `HoldButton({ holdMs = 1500, disabled, onComplete, label, holdingLabel })`: pointer and keyboard (Space/Enter) hold. The fill goes 0→100% over 1.5 s, an early release resets it, and `onComplete` fires once. Under reduced motion it shows the text "Keep holding… 1.0 s".
+  - `<ModeratorBadge>`: violet shield and "X2F Moderator". `<ExternalLink>` always sets `rel="noreferrer noopener"` and `target="_blank"`.
+
+- [ ] **Step 1: Write the failing tests:**
+  - HoldButton: 1,499 ms does not complete; 1,500 ms completes once; disabled ignores holds; a keyboard hold works.
+  - The method name opens the explainer.
+  - `ExternalLink` has `noreferrer`.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): UI kit`.
+
+### Task 15: Parity harness, board references and copy-lint
+
+**Files:**
+- Create: `apps/web/e2e/parity.ts`, `tools/parity/serve-boards.ts`, `tools/parity/capture-refs.ts`, `design/x2f-app/refs/*.png`, `tools/copy-lint.ts`, `apps/web/src/fixtures/boards.ts`
 - Modify: root `package.json` (`check` runs `copy-lint`)
 
 **Interfaces:**
 - Produces:
-  - `tokens.css`: every `tokens.json` colour as `--x2f-<name>` under `:root[data-theme=night]` (default) and `[data-theme=day]`, plus spacing, radius and type tokens. Generated by `npm run tokens`; the test fails if it is stale.
-  - `api(path, init?)` typed fetch with `credentials: 'same-origin'`, JSON bigints as strings; `useServerClock(serverNow: string): () => Date` (offset from the last response; countdowns use it).
-  - `<Button variant="primary">` renders the orange fill and `data-primary`; `<StatusChip tone="caution|escrow|danger" icon label>` refuses (type error) to render without `label`.
-  - Routes: `/sell`, `/sell/:methodId`, `/buy`, `/buy/:methodId`, `/post`, `/trade/:code`, `/wallets`, `/setup/*`. Phones get `BottomNav` (Trade, Post offer, Wallets, Profile); ≥ 1024 px gets `DesktopShell` (X2F, Buy, Sell, My trades, Wallets) from the Desktop board.
-  - Fixture mode: `VITE_FIXTURES=1` builds only (`?fixture=<Board>` loads the board's example data from `fixtures/boards.ts`). A test asserts the production bundle contains none of `satoshi_ghost`, `mira.k`, `fixture`.
-  - `capture-refs.ts`: fetches the canvas runtime with the Artifact tool (`action: read`, url = X2F App, `path: 'support.js'`) into `design/x2f-app/support.js`, serves `design/x2f-app/` locally, and screenshots each board at its `$preview` size into `design/x2f-app/refs/<Board>.png`. If the canvas does not publish `support.js`, stop and ask the controller for exported board PNGs.
-  - `expectParity(page: Page, board: string, o?: { masks?: Locator[]; viewport?: '390x844' | '1280x800' })` — `toHaveScreenshot` with `snapshotPathTemplate` pointed at `design/x2f-app/refs/{arg}{ext}`, `maxDiffPixelRatio: 0.03`, animations disabled, always masking `[data-mask=example]` (board-only "Example" tags) and `[data-mask=clock]` (ticking countdowns); also asserts exactly one `[data-primary]`, no horizontal scroll, and no element with `text-transform` on `[data-username]`.
-  - `copy-lint.ts`: fails on `!` in JSX text or string literals under `apps/web/src/` (except `!==`, `!=`, and code), and on any emoji code point.
-  - `index.html` served with the CSP from Global Constraints (Vite dev and the API's static handler); all assets hashed; Subresource Integrity is Plan 6.
+  - **Controller step (not a script):** the controller fetches the canvas runtime with the Artifact tool (`action: read`, url = X2F App, `path: 'support.js'`) into `design/x2f-app/support.js`. If the canvas has none, the controller asks the owner for exported board PNGs.
+  - `capture-refs.ts`: serves `design/x2f-app/` and screenshots each board at its `canvas.json` size into `refs/<Board>.png`.
+  - `expectParity(page, board, o?: { masks?: Locator[]; viewport?: '390x844' | '1280x800' })`. Blocking: exactly one `[data-primary]`, no horizontal scroll, no `text-transform` on `[data-username]`, and every board text node (minus `[data-mask]` regions) present verbatim. Reported, not blocking: a `toHaveScreenshot` diff at `maxDiffPixelRatio: 0.03`, attached to the report for a person to review (P3-M6).
+  - `copy-lint.ts`: fails on `!` in JSX text or string literals under `apps/web/src/` (code operators excluded) and on any emoji code point.
 
-- [ ] **Step 1: Failing tests:** `shell.spec.ts` loads `/sell` with the CSP header and records zero CSP violations and zero requests to any origin other than self; tokens are fresh; copy-lint flags a planted `"Done!"` and a planted emoji; the 1280×800 header matches the top 64 px of `Desktop.png`.
+- [ ] **Step 1: Write the failing tests:** copy-lint flags a planted `"Done!"` and an emoji; `expectParity` fails a page with two `[data-primary]`; the 1280×800 header text matches the Desktop board.
 - [ ] **Step 2:** Run; expect FAIL.
-- [ ] **Step 3:** Implement; run `capture-refs.ts` once and commit the PNGs.
-- [ ] **Step 4:** `npm run check` and `npx playwright test -c apps/web/e2e/playwright.config.ts shell`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): app shell, tokens, CSP and board parity harness`.
+- [ ] **Step 3:** Implement, then run the controller step and `capture-refs.ts` and commit the PNGs.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): board parity harness and copy-lint`.
 
-### Task 9: Main and SellOffers screens, quote sheet and the Trade button
+### Task 16: Sell browse — Main and SellOffers
 
-**Board:** `Main.dc.html` (1 · Sell: pick how you get paid), `SellOffers.dc.html` (2 · Sell: buyers paying via Zelle).
+**Boards:** `Main.dc.html`, `SellOffers.dc.html`.
 
 **Files:**
-- Create: `apps/web/src/screens/Main.tsx`, `apps/web/src/screens/Offers.tsx`, `apps/web/src/screens/QuoteSheet.tsx`, `apps/web/src/screens/OfferCard.tsx`
-- Test: `apps/web/e2e/browse.spec.ts`, `apps/web/test/quote.test.ts`
+- Create: `apps/web/src/screens/browse/{MethodList,OfferList,OfferCard,SuggestMethodSheet}.tsx`
+- Test: `apps/web/e2e/browse-sell.spec.ts`
 
 **Interfaces:**
-- Consumes: `GET /v1/methods`, `GET /v1/offers`, `GET /v1/price`, `POST /v1/offers/:id/take`; Task 1 maths; `useSession`.
-- Produces: `/sell` lists "Buyers paying in USD" then "All payment methods" A–Z (rows read `No USD buyers right now · post an offer`), currency chips, search, Sort (Most buyers, Best rate, A–Z), empty search copy from the board. `/sell/:methodId` shows offer cards with Trade (online, eligible) or Message / Nudge (offline), the market price line, Sort (Best price, Online now, Most trades), badges (`BadgePill`, at most 2 featured, `+N` popover). `/buy` and `/buy/:methodId` reuse the same components with mirrored copy ("How do you want to pay?"); parity for buy is dependent task D1.
-  - Quote sheet (no board yet; built from design-system parts, parity in D1): amount in XMR or fiat, **Max** (offer max at current rate), then the XMR amount, the ad's rate, the fiat total, network fee (fast), deposit when `depositFor` > 0, one final total. **No X2F fee line.** Primary button **Trade**.
-  - Trade when logged out: routes to `/setup` with `returnTo` and resumes the take after setup. Trade when logged in: picks the user's funding wallet (seller) or default payout wallet (buyer), calls `take`, routes to `/trade/:code`.
+- Consumes: `GET /v1/methods`, `/v1/offers`, `/v1/price`, `POST /v1/method-suggestions`.
+- Produces: `/sell` shows "Buyers paying in USD", then "All payment methods" A–Z, currency chips, search, Sort (Most buyers, Best rate, A–Z), and the board's empty-search copy with a "Suggest it" link (P3-M3). `/sell/:methodId` shows offer cards with Trade (online, eligible) or Message / Nudge (offline), the market price line, Sort, and badges (at most 2 featured, `+N` popover). `MethodList` and `OfferList` take a `side` prop that Task 17 reuses.
 
-- [ ] **Step 1: Failing tests:** parity for both boards at 390×844 with `?fixture=`; the quote sheet for a taker never contains "X2F fee" or "1%"; Trade disabled with "Price unavailable right now" when `/v1/price` returns 503; logged-out Trade lands on `/setup/username` and, after a stubbed setup, on `/trade/<code>`; the method list in another currency (EUR) shows only offers in EUR.
+- [ ] **Step 1: Write the failing tests:** parity for both boards; EUR shows only EUR offers; logged out, the list renders with no session request failing; a suggestion posts and shows the board-style confirmation.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): sell browse`.
+
+### Task 17: Buy browse — BuyMain and BuyOffers
+
+**Boards:** `BuyMain.dc.html`, `BuyOffers.dc.html`.
+
+**Files:**
+- Create: `apps/web/src/screens/browse/BuyCopy.ts`
+- Test: `apps/web/e2e/browse-buy.spec.ts`
+
+**Interfaces:**
+- Consumes: Task 16 components with `side="buy"`.
+- Produces: `/buy` ("How do you want to pay?") and `/buy/:methodId` ("Buy XMR via Zelle", "Releases in ~N min", footer "You pay no X2F fee when you take an offer.").
+
+- [ ] **Step 1: Write the failing tests:** parity for both boards; offers sort by Best price ascending.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): buy browse`.
+
+### Task 18: Quotes and the Trade button — BuyQuote and the seller quote
+
+**Boards:** `BuyQuote.dc.html`. The seller quote has no board; it mirrors BuyQuote's parts.
+
+**Files:**
+- Create: `apps/web/src/screens/quote/{BuyQuote,SellQuote,WalletPicker,useTake}.tsx`
+- Test: `apps/web/e2e/quote.spec.ts`, `apps/web/test/quote.test.ts`
+
+**Interfaces:**
+- Consumes: `POST /v1/offers/:id/take`, `GET /v1/wallets`, `withConfirm` (via Task 30's sheet), Task 1 maths.
+- Produces:
+  - BuyQuote: You pay (fiat) or XMR, the board's range help, "Which wallet gets paid?" (`WalletPicker` over `usable` wallets; "Add another wallet" goes through confirm-it's-you, X-4), You receive, Rate, Network fee (OD-4 copy), Deposit, the fiat total in both parties' currencies when they differ (P3-M3), "Nothing changes after you tap Trade…", and the primary **Trade**. No X2F fee line.
+  - SellQuote: amount or **Max**, the funding and refund wallet picker, the same rows; no fee line.
+  - `useTake`: logged out → `/setup` with `returnTo`, resuming the take after setup; logged in → `take` → `/trade/:code`.
+
+- [ ] **Step 1: Write the failing tests:**
+  - Parity BuyQuote.
+  - A taker's quote never contains "X2F fee" or "1%".
+  - Trade is disabled with "Price unavailable right now" on a 503.
+  - Trade is disabled until a usable wallet is picked.
+  - Logged-out Trade → `/setup/username`, then `/trade/<code>` after a stubbed setup.
+  - The quote's fiat total equals the `fiatCents` the trade stores (OD-5).
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the specs and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): browse methods and offers, quote, Trade`.
+- [ ] **Step 5:** Commit `feat(web): quotes with wallet picker and Trade`.
 
-### Task 10: Live events, encrypted chat and the moderator notice
+### Task 19: Live events, Web Push and the accepted-offer sheet
 
 **Files:**
-- Create: `apps/api/migrations/102_chat.sql`, `apps/api/src/events/bus.ts`, `apps/api/src/events/routes.ts`, `apps/api/src/chat/routes.ts`, `apps/api/src/chat/retention.ts`, `apps/web/src/api/events.ts`, `apps/web/src/chat/chatCrypto.ts`, `apps/web/src/chat/ChatPanel.tsx`
-- Test: `apps/api/test/chat.test.ts`, `apps/web/test/chatCrypto.test.ts`
+- Create: `apps/api/migrations/105_push.sql`, `apps/api/src/events/{bus,routes}.ts`, `apps/api/src/push/{routes,send}.ts`, `apps/web/src/api/events.ts`, `apps/web/public/sw.js`, `apps/web/src/push/usePush.ts`, `apps/web/src/screens/AcceptedSheet.tsx`
+- Test: `apps/api/test/{events,push}.test.ts`, `apps/web/e2e/accepted.spec.ts`
 
 **Interfaces:**
-- Consumes: `seal`, `open`, `ReplayGuard`, `generateIdentity` (Plan 1); moderation service (Task 6) for the chat's mod identity.
 - Produces:
-  - `GET /v1/events` (Server-Sent Events, one per logged-in user): `{type:'trade', code, state}`, `{type:'accepted', code, by: username}` (to the poster: "<username> accepted your offer"), `{type:'chat', chat}`, `{type:'nudge', from: username, context}`. `publish(userId, ev)` in `bus.ts`.
-  - Conversations: `POST /v1/chats` `{ offerId }` → `{ chat }` (a code from `newTradeCode`, roles buyer/seller fixed by the offer side, mod identity created by the moderation service); a trade taken after chatting reuses that chat, otherwise `take` creates one. `POST /v1/chats/:chat/envelopes` (an `Envelope` sealed to buyer, seller **and** mod) and `GET /v1/chats/:chat/envelopes?after=<id>`. The server stores ciphertext only.
-  - Retention: `purgeChats(now)` deletes envelopes 90 days after the linked trade closes (never while a dispute is open) and pre-trade chats after 7 days without a message.
-  - `ChatPanel` shows at the top, always: "Encrypted. If a dispute is opened, a moderator can read this conversation." (Desktop board text). System cards render trade events (e.g. "mira.k marked the payment as sent: $412.50 via Zelle, memo K7M2-9QXA-4FTR-8WPN").
+  - `GET /v1/events` (SSE, `requireTrader`): `{type:'trade', code, state}`, `{type:'accepted', code, by}`, `{type:'chat', chat}`, `{type:'nudge', from, context}`. `publish(accountId, ev)` delivers only to that account's streams. `delivered(accountId): boolean` (any open stream).
+  - `POST /v1/account/push { endpoint, keys }` and `DELETE`. `sendPush(accountId, kind: 'nudge' | 'trade')` uses web-push with VAPID (`VAPID_PUBLIC`, `VAPID_PRIVATE`). The payload is exactly "Someone nudged you on X2F" or "Something changed in a trade on X2F", with no code and no URL beyond `/`. It returns true when a push service answered 201.
+  - Final-alert delivery: on `request-refund`, the API publishes, pushes to the buyer, and records `final_alert_delivered = delivered || pushAccepted`, which is reported to moderation (Task 10).
+  - `AcceptedSheet`: on `accepted`, the poster sees "<username> accepted your offer" and picks their wallet (`POST /v1/trades/:code/wallet`). Setup starts after that.
 
-- [ ] **Step 1: Failing tests:** an envelope posted by the buyer opens for the seller and for the mod identity and for nobody else; a non-participant gets 404 on both chat routes; a replayed envelope is rejected by the reader's `ReplayGuard`; the chat notice renders in every chat; retention keeps a disputed trade's chat past 90 days; SSE delivers `accepted` to the poster within 1 s of a take.
+- [ ] **Step 1: Write the failing tests:**
+  - SSE delivers `accepted` to the poster within 1 s and never to a third account (P3-M9).
+  - The push payload for each kind is exactly the generic string.
+  - `final_alert_delivered` is false with no stream and no subscription.
+  - The accepted sheet posts the wallet and the room moves to "Setting up escrow".
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat: live events and end-to-end encrypted trade chat`.
+- [ ] **Step 5:** Commit `feat: live events, generic Web Push, accepted-offer sheet`.
 
-### Task 11: PostOffer screen
+### Task 20: Encrypted chat
 
-**Board:** `PostOffer.dc.html` (3 · Post an offer).
+**Files:**
+- Create: `apps/api/migrations/106_chat.sql`, `apps/api/src/chat/{routes,retention}.ts`, `apps/web/src/chat/{chatCrypto,ChatPanel}.tsx`
+- Test: `apps/api/test/chat.test.ts`, `apps/web/test/chatCrypto.test.ts`
+
+**Interfaces:**
+- Consumes: `seal`, `open`, `ReplayGuard`, `generateIdentity`; moderation (chat mod identity via the Task 8 attestation flow, `channels.chat`).
+- Produces:
+  - `POST /v1/chats { offerId }` → `{ chat }` (a code from `newTradeCode`; roles fixed by the offer side). A take reuses the chat. `POST /v1/chats/:chat/identity` has the same proof rule and one per role (P3-I21). `GET /v1/chats/:chat/attestation`.
+  - `POST /v1/chats/:chat/envelopes` takes an `Envelope` with `trade = channelFor(chat,'chat')`, sealed to buyer, seller and mod (`type: 'chat.msg'` inside). The body is at most 16 KiB (413 above). `GET …/envelopes?after=<id>`. The server stores ciphertext only.
+  - Device binding: the chat identity lives on the device that created it. The sender's `seq` is a persisted per-chat counter. Each reader persists its `ReplayGuard` JSON per chat. Another device of the same account shows "This conversation is open on another device" read-only.
+  - `purgeChats(now)`: envelopes are deleted 90 days after the linked trade closes (never while disputed); pre-trade chats after 7 days without a message.
+  - `ChatPanel` always shows "Chats are encrypted. If a dispute is opened, a moderator can read this conversation." (spec 6.6, P3-M2), plus system cards for trade events.
+  - **Controller step:** change the Desktop board's notice to the spec text on the canvas and in `design/x2f-app/Desktop.dc.html`, then re-capture `Desktop.png`.
+
+- [ ] **Step 1: Write the failing tests:**
+  - An envelope from the buyer opens for the seller and the mod identity, and for nobody else.
+  - A non-participant gets 404.
+  - A replay is rejected after a reload (the persisted guard).
+  - 16 KiB + 1 → 413.
+  - Retention keeps a disputed chat past 90 days.
+  - The notice text is exact.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: end-to-end encrypted chat`.
+
+### Task 21: PostOffer
+
+**Board:** `PostOffer.dc.html`.
 
 **Files:**
 - Create: `apps/web/src/screens/PostOffer.tsx`
 - Test: `apps/web/e2e/post.spec.ts`
 
 **Interfaces:**
-- Consumes: `POST /v1/offers`, `GET /v1/price`, method profiles.
-- Produces: I want to (Sell XMR / Buy XMR), payment method, currency, price as a margin with − / + (follows the market; shows today's price), smallest and largest trade, terms (optional), minimum completed trades (Anyone, 5+, 10+, 50+), and the "How others will see it" preview line (`Selling XMR via Zelle · USD · you`). Primary: **Post offer**. Logged out → setup, then back here with the form intact. Copy states the poster pays 1% on completed trades (spec 11.1: "learns of it … in the terms"); exact sentence: "You pay X2F 1% of each completed trade from this ad. Takers pay no X2F fee."
+- Consumes: `POST /v1/offers`, `GET /v1/price`, profiles.
+- Produces: the board form (I want to, payment method (unavailable methods hidden, P3-I20), currency, margin −/+ with today's price, smallest and largest trade, terms, minimum completed trades, the "How others will see it" line). Primary **Post offer**. The OD-7 fee sentence sits under the preview. Logged out → setup, then back with the form intact.
 
-- [ ] **Step 1: Failing tests:** parity at 390×844; min > max refused inline; margin steps by 0.1% and the preview price updates; posting returns to `/sell/:methodId` with the new offer visible; a held user sees the API's refusal as text, not a crash.
+- [ ] **Step 1: Write the failing tests:** parity; min > max is refused inline; margin steps by 0.1%; posting returns to `/sell/:methodId` with the offer visible; SBP is absent from the picker; a held user sees the API refusal as text.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(web): post an offer`.
 
-### Task 12: TradeFund screen (seller funds escrow)
+### Task 22: TradeFund and the buyer deposit
 
-**Board:** `TradeFund.dc.html` (1 · Seller funds escrow).
+**Board:** `TradeFund.dc.html`.
 
 **Files:**
-- Create: `apps/web/src/screens/TradeRoom.tsx` (routes role × state to a screen), `apps/web/src/screens/TradeFund.tsx`, `apps/web/src/screens/FundFallback.tsx`
+- Create: `apps/web/src/screens/trade/{TradeRoom,TradeFund,FundFallback,DepositFund,SetupStatus}.tsx`
 - Test: `apps/web/e2e/fund.spec.ts`
 
 **Interfaces:**
-- Consumes: `TradeView` (Task 4), `useEscrow` (Task 7), `moneroUri`, `qrcode` (SVG string rendered as `img src=data:`).
-- Produces: header "Selling to <username>", `Trade <code> · <method>`; amber chip "Waiting for you to fund" with the 30-minute countdown; the escrow explainer and the three outcomes; amounts (You send to escrow, Rate (locked when you fund), Network fee (fast), You receive). **Primary: "Open in <wallet app name>"** linking `moneroUri(escrowAddress, sellerFundsAtomic)`, shown on Android and iOS only; desktop gets QR and copy address as the main content (Phase 0: Linux has no `monero:` handler). "Use another wallet (QR code or address)" opens `FundFallback`. When the seller is the poster, a muted line "Includes X2F fee (1%, your ad) 0.012500 XMR"; the taker seller never sees it. While setup runs: "Setting up escrow" with `EscrowDots` and the keep-open bar. After funding is seen: "Received 1.000000 of 1.250000 XMR, send the rest" when short; otherwise the trade room moves on. Buyer's view of `funding`: BuyerPay layout with amber "Waiting for <seller> to fund" (provisional, D1).
+- Consumes: `TradeView`, `useEscrow`, `moneroUri`, `qrcode`.
+- Produces:
+  - `TradeRoom` routes role × state to a screen.
+  - `SetupStatus`: "Setting up escrow", `EscrowDots`, the keep-open bar, the escrow-check words once ready ("Escrow check: four words. They match on <counterparty>'s screen."), and on `participants-mismatch` a danger state, "Security check failed. Don't fund this trade.", with Cancel.
+  - TradeFund (seller): the board's header, chip, explainer and amounts. **Primary "Open in <wallet app>"** → `moneroUri(escrowAddress, sellerFundsAtomic)` on Android and iOS only; desktop gets QR and copy as the main content. The network-fee row reads "Network fee · set in your wallet" (P3-M12). The poster-seller sees "Includes X2F fee (1%, your ad) 0.012500 XMR". When short: "Received 1.000000 of 1.250000 XMR, send the rest".
+  - `DepositFund` (buyer, deposit due, P3-I7): amber chip "Deposit needed" with the `depositBy` countdown, an "Open in <wallet>" link to `moneroUri(depositAddress, depositAtomic)`, QR and copy. When missed: "The deposit didn't arrive in time. The seller can cancel and get a refund." Before funding, the buyer sees "Waiting for <seller> to fund".
+  - **Manual check (P3-M12):** on an iPhone, Cake Wallet and Edge open a `monero:` link with the address and amount filled in. Record the result in `docs/manual-checks.md`.
 
-- [ ] **Step 1: Failing tests:** parity at 390×844 (mask: none beyond defaults); the link href equals `moneroUri(...)` exactly; on a desktop UA the primary is the copy button and no `monero:` link is the primary; the countdown follows `serverNow` even with the browser clock set 10 min ahead (`page.clock`) (Review Focus 3); a taker seller's screen contains no "X2F fee".
+- [ ] **Step 1: Write the failing tests:**
+  - Parity.
+  - The link href equals `moneroUri(...)`.
+  - On a desktop UA the primary is Copy.
+  - The countdown follows `serverNow` with the browser clock 10 min ahead (`page.clock`, Review Focus 3).
+  - The taker seller sees no "X2F fee".
+  - Deposit due → `DepositFund` with the deposit URI.
+  - `participants-mismatch` → no address on screen.
+  - The fiat total equals the quote's.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): fund escrow with monero: link or QR`.
+- [ ] **Step 5:** Commit `feat(web): fund escrow, buyer deposit, escrow check`.
 
-### Task 13: BuyerPay screen and the desktop trade room
+### Task 23: BuyerPay and the desktop trade room
 
-**Boards:** `BuyerPay.dc.html` (2 · Buyer pays and uploads proof), `Desktop.dc.html` (Desktop · buyer paying, 1280×800).
+**Boards:** `BuyerPay.dc.html`, `Desktop.dc.html`.
 
 **Files:**
-- Create: `apps/web/src/screens/BuyerPay.tsx`, `apps/web/src/screens/PaidConfirmSheet.tsx`, `apps/web/src/screens/CancelSheet.tsx`, `apps/web/src/screens/DisputeSheet.tsx`, `apps/web/src/screens/TradeTimeline.tsx`
+- Create: `apps/web/src/screens/trade/{BuyerPay,PaidConfirmSheet,CancelSheet,TradeTimeline}.tsx`
 - Test: `apps/web/e2e/pay.spec.ts`
 
 **Interfaces:**
-- Consumes: `POST /v1/trades/:code/events` `{ type }` (a thin route over `applyEvent`, added here to `apps/api/src/trades/routes.ts`); `ChatPanel`; method profile fields.
+- Consumes: `POST /v1/trades/:code/events`; `useEscrow().signal('trade.paid')`; `ChatPanel`.
 - Produces:
-  - Escrow chip: amber "Securing escrow" with "Confirmations 3 of 10 · about 14 min" (2 min per confirmation), teal "Escrow secured" at 10; "Time to pay 90 min / Clock starts when escrow settles, in N min" until secured, then the countdown.
-  - Payment details: Send exactly, `<method> to` (seller's details from the profile `fields`), Memo = trade code, the own-name warning. Proof upload is Plan 5: its slot is omitted and masked in parity.
-  - **I've paid** opens `PaidConfirmSheet`: checkbox "I sent exactly $412.50 via Zelle with K7M2-9QXA-4FTR-8WPN in the memo", **Yes, I've paid** / **Not yet**; without proof it adds "Sending without proof makes disputes harder."
-  - `CancelSheet` (Cancel trade): proposes a mutual cancel; after I've paid it first shows the danger warning "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid." The other side sees an accept/decline card.
-  - `DisputeSheet` (Open dispute): when the rules allow (Task 2), confirms and applies `open-dispute`; the room then shows a rose chip "Dispute open" and "A moderator will join this chat." The full dispute room is dependent task D2. When not yet allowed it explains when it will be ("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.").
-  - Desktop (≥ 1024 px): `TradeTimeline` (Escrow funded, You pay · N min left, Seller confirms, XMR released), the counterparty card and `ChatPanel` side by side, per the Desktop board.
+  - Escrow chips: amber "Securing escrow" with "Confirmations 3 of 10 · about 14 min"; amber "Releasable in N min" while funds are confirmed but not yet unlocked (spec 7, P3-I4); teal "Escrow secured". "Time to pay 90 min / Clock starts when escrow settles…", then the countdown.
+  - Payment details from the profile `fields`, Memo = trade code, the own-name warning. The proof slot (Plan 5) is masked.
+  - **I've paid** opens `PaidConfirmSheet` (checkbox "I sent exactly $412.50 via Zelle with K7M2-9QXA-4FTR-8WPN in the memo", **Yes, I've paid** / **Not yet**, plus "Sending without proof makes disputes harder."). Yes posts `mark-paid` **and** sends the `trade.paid` signal, and shows "Marked as paid" only after the mod's `trade.ack`.
+  - `CancelSheet`: after paid, it first shows the danger warning "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid." The other side gets an accept/decline card.
+  - Desktop: `TradeTimeline`, counterparty card and `ChatPanel` per the Desktop board.
 
-- [ ] **Step 1: Failing tests:** parity BuyerPay at 390×844 and Desktop at 1280×800 (mask proof slot); I've paid without ticking the box does nothing; Not yet leaves the state `secured`; Yes moves to `paid` and the seller's room receives the system card; the post-paid cancel shows the warning before proposing; Open dispute before `confirmBy` shows the explanation and sends nothing.
+- [ ] **Step 1: Write the failing tests:**
+  - Parity BuyerPay at 390×844 and Desktop at 1280×800.
+  - The box unticked → nothing happens. Not yet → state stays `secured`. Yes → `paid`, the seller gets the system card, and the signal is sent.
+  - The post-paid cancel shows the warning first.
+  - "Releasable in N min" shows at 10 confirmations before unlock.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): buyer pays, confirm step, cancel and dispute entry, desktop room`.
+- [ ] **Step 5:** Commit `feat(web): buyer pays, confirm step, cancel, desktop room`.
 
-### Task 14: SellerConfirm (press and hold) and the released screen
+### Task 24: SellerConfirm and Released
 
-**Boards:** `SellerConfirm.dc.html` (3 · Seller checks bank and releases), `Review.dc.html` (4 · Released, rate the trade — the released part; the rating cards are Plan 5 and masked).
+**Boards:** `SellerConfirm.dc.html`, `Review.dc.html` (the released part; the rating cards are Plan 5 and masked).
 
 **Files:**
-- Create: `apps/web/src/ui/HoldButton.tsx`, `apps/web/src/screens/SellerConfirm.tsx`, `apps/web/src/screens/Released.tsx`; add `GET /v1/trades/:code/confirmations` to `apps/api/src/trades/routes.ts`
-- Test: `apps/web/test/HoldButton.test.tsx`, `apps/web/e2e/release.spec.ts`
+- Create: `apps/web/src/screens/trade/{SellerConfirm,Released}.tsx`; add `GET /v1/trades/:code/confirmations` to `apps/api/src/trades/routes.ts`
+- Test: `apps/web/e2e/release.spec.ts`
 
 **Interfaces:**
-- Consumes: `useEscrow().release()`; `payoutsFor('release')`; profile `checkPrompt`, `confirmWindowMin`.
+- Consumes: `HoldButton`, `useEscrow().release()`, the profile `checkPrompt`.
 - Produces:
-  - `HoldButton({ holdMs = 1500, disabled, onComplete, label, holdingLabel })` — pointer and keyboard (Space/Enter held) hold; fill sweeps 0→100% over 1.5 s; release early resets to 0; `onComplete` fires once. Under reduced motion the fill is replaced by a numeric "Keep holding… 1.0 s" text.
-  - SellerConfirm: "<buyer>: Payment sent", confirm countdown, "Check your bank account for $412.50 sent via Zelle" (text from the profile, never "arrived in Zelle"), the reminder "Screenshot checks catch mistakes, but only your bank proves the money arrived." (smart proof card is Plan 5, masked), checkbox "I checked my bank account myself and the $412.50 from Zelle is there.", then the HoldButton with the board's three lines (Payment received / Hold to release 1.25 XMR to mira.k / hint). "Payment not received" opens `DisputeSheet` (seller may dispute any time after paid).
-  - On complete: `release()` builds and sends the release; the buyer's app co-signs via `cosignPolicy`; states `settling` → `released`.
-  - Released: "Released", "<amount> XMR is yours" (buyer) or "Released by you" copy per board, destination "your external wallet ending …k3Fz", live confirmations "1 of 10" from `/confirmations`, "View on the Monero blockchain" with the explorer note. **Poster only:** Trade amount, `X2F fee (1%, your ad) −0.012500 XMR`, You receive. Taker: no fee row, no "1%".
+  - SellerConfirm: "<buyer>: Payment sent", confirm countdown, "Check your bank account for $412.50 sent via Zelle" (from the profile), the screenshot reminder (smart proof card masked), the checkbox, and HoldButton with the board's three lines. HoldButton is disabled with "Releasable in N min" until `releasable`. "Payment not received" → DisputeOpen (Task 27).
+  - On complete: `release-started`, then `release()`; the buyer's app co-signs via `cosignPolicy`; `settling` → `released`.
+  - Released: the board copy, the destination ending, confirmations "1 of 10" from `/confirmations`, and "View on the Monero blockchain" as an `ExternalLink` with the explorer note. **Poster only:** Trade amount, `X2F fee (1%, your ad) −0.012500 XMR`, You receive.
 
-- [ ] **Step 1: Failing tests:** HoldButton: releasing at 1,499 ms does not complete, holding 1,500 ms completes exactly once, disabled ignores holds, keyboard hold works; parity for both boards at 390×844; release disabled until the checkbox is ticked; poster-buyer released view shows the fee row above You receive with `−0.012500 XMR`, taker view has none; confirmations update from 1 to 2 of 10 after a mined block (regtest in Task 17, stubbed here).
+- [ ] **Step 1: Write the failing tests:** parity for both boards; release is disabled until the checkbox is ticked and while not releasable; the poster-buyer view shows the fee row and the taker view has none; the explorer link has `rel="noreferrer noopener"`.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Run the specs and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): press-and-hold release and released screen with poster fee`.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): press-and-hold release and released screen`.
 
-### Task 15: SellerRefund, extend, nudge
+### Task 25: SellerRefund, extend and the buyer's final alert
 
-**Board:** `SellerRefund.dc.html` (Alt · buyer missed the deadline); Nudge on `SellOffers.dc.html`.
+**Board:** `SellerRefund.dc.html`.
 
 **Files:**
-- Create: `apps/web/src/screens/SellerRefund.tsx`, `apps/web/src/nudge/useNudge.ts`, `apps/web/src/nudge/buzz.ts`, `apps/api/migrations/103_nudge.sql`, `apps/api/src/nudge/routes.ts`
-- Test: `apps/api/test/nudge.test.ts`, `apps/web/e2e/refund.spec.ts`
+- Create: `apps/web/src/screens/trade/{SellerRefund,FinalAlert}.tsx`
+- Test: `apps/web/e2e/refund.spec.ts`
 
 **Interfaces:**
-- Consumes: trade events route; `useEscrow().buildRefund()`; event bus.
+- Consumes: the events route; `useEscrow().buildRefund()` and `signal('trade.refund-request' | 'trade.extend')`.
+- Produces: SellerRefund (seller, `secured` past `payBy`, unpaid). It shows the board copy and the dispute-after-refund warning before the tap. Primary **Cancel & get refund**: `request-refund`, then the signal, then `buildRefund()` sends the auto-refund tx set, which the runner buffers. **Give 30 more min** (`extend` + signal; hidden after 2). **Nudge <buyer>**. `FinalAlert` (buyer, `refund_requested`): danger chip "The seller is cancelling. If you already paid, tap I've paid now.", the 15-minute countdown, and I've paid as the primary.
+
+- [ ] **Step 1: Write the failing tests:** parity; Give 30 more min twice, then hidden; Cancel & get refund sends exactly one tx set and one signal; the buyer sees FinalAlert with the server-clock countdown.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): seller refund, extend, final alert`.
+
+### Task 26: Nudges
+
+**Board:** Nudge on `SellOffers.dc.html`.
+
+**Files:**
+- Create: `apps/api/migrations/107_nudge.sql`, `apps/api/src/nudge/routes.ts`, `apps/web/src/nudge/{useNudge,buzz}.ts`
+- Test: `apps/api/test/nudge.test.ts`, `apps/web/e2e/nudge.spec.ts`
+
+**Interfaces:**
 - Produces:
-  - SellerRefund (seller, `secured` past `payBy`, not paid): copy from the board; primary **Cancel & get refund** (applies `request-refund`, then `buildRefund()` signs and sends the auto-refund release to the relay); **Give 30 more min** (hidden after 2 extensions); **Nudge <buyer>**. The board's dispute-after-refund warning is shown before the tap. Buyer side during `refund_requested`: danger chip "The seller is cancelling. If you already paid, tap I've paid now." with the 15-minute countdown and I've paid as primary.
-  - `POST /v1/nudges` `{ to: username, context: chat | code }`; `PUT /v1/me/nudges` `{ enabled: boolean, quietFrom: 'HH:MM' | null, quietTo: 'HH:MM' | null, tz: string }` (enabled by default); `POST /v1/blocks` `{ username }`. Refusals: `no-shared-context` (needs an open chat or active trade), `too-soon` (one per sender per 10 min), `recipient-busy` (3 received per hour from everyone), `blocked`, `quiet-hours`, `nudges-off`.
-  - Delivery: SSE `nudge` → in-app "Wake up, <name> wants to trade" and a WebAudio buzz while the tab is open (`buzz.ts`, no audio file); when the tab is hidden, a `Notification` with exactly "Someone nudged you on X2F". Web Push for closed tabs and native alarm channels are Plan 6.
+  - `POST /v1/nudges { to: username, context: chat | code }`. Sender-own refusals: `no-shared-context`, `too-soon` (one per sender per 10 min). Silent drops (`recipient-busy` 3/hour, blocked, quiet hours, nudges off) all return the same `202` as a delivered nudge (P3-M5).
+  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { username }`.
+  - Delivery: SSE `nudge` → "Wake up, <name> wants to trade" and a WebAudio buzz while the tab is open. A hidden tab gets a `Notification` "Someone nudged you on X2F". A closed tab gets Web Push `nudge` (Task 19).
 
-- [ ] **Step 1: Failing tests:** each nudge refusal reason, including the 3-per-hour cap across three senders; quiet hours in the recipient's time zone; parity SellerRefund at 390×844; Give 30 more min twice, then hidden; a hidden-tab nudge produces a Notification whose title and body contain neither username nor amount.
+- [ ] **Step 1: Write the failing tests:**
+  - `no-shared-context` and `too-soon`.
+  - Blocked, quiet-hours, nudges-off and 4th-in-an-hour each return a 202 indistinguishable from a delivered one (same body, same headers).
+  - Quiet hours apply in the recipient's time zone.
+  - A hidden-tab Notification contains neither username nor amount.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: nudges with private limits`.
+
+### Task 27: Trader-side disputes — DisputeOpen, DisputeRoom, DisputeRuling
+
+**Boards:** `DisputeOpen.dc.html`, `DisputeRoom.dc.html`, `DisputeRuling.dc.html`.
+
+**Files:**
+- Create: `apps/api/migrations/108_disputes.sql`, `apps/api/src/disputes/routes.ts`, `apps/web/src/screens/dispute/{DisputeOpen,DisputeRoom,DisputeRuling}.tsx`
+- Test: `apps/api/test/disputes.test.ts`, `apps/web/e2e/dispute.spec.ts`
+
+**Interfaces:**
+- Consumes: `open-dispute`; `ChatPanel`; `cosignPolicy` (mod-built branch).
+- Produces:
+  - Tables `disputes(code, opened_by, reason, note, opened_at, due_at, status)`, `dispute_rulings(code, outcome, reason, evidence jsonb, moderator_username, ruled_at, appeal_until)` and `dispute_appeals(code, by, why, at)`. Plan 3 writes disputes and appeals; Plan 4 writes rulings, `due_at` and moderator joins.
+  - `POST /v1/trades/:code/dispute { reason: 'paid'|'silent'|'terms'|'other', note }` → `open-dispute`. When not yet allowed, the screen explains when ("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.") and sends nothing. `POST /v1/trades/:code/appeal { why }` is accepted only before `appeal_until`.
+  - DisputeOpen: the board's reasons, note and the "moderator will read this trade's chat" line. The evidence region is masked (Plan 5).
+  - DisputeRoom: "In dispute" rose chip, "<amount> XMR locked in escrow", the deadline line, and `ModeratorBadge` with the join banner when a moderator has joined (from server records only). The unblurred-proof request is masked (Plan 5).
+  - DisputeRuling: the ruling card, the destination ending, evidence, the appeal window and the appeal sheet. When the mod-built tx arrives, the app co-signs only through `cosignPolicy`.
+  - Dispute after refund: a `refunded` trade within 90 days shows "Open a dispute" for the buyer.
+
+- [ ] **Step 1: Write the failing tests:**
+  - Parity for all three boards (fixtures for the moderator and ruling records).
+  - Open before `confirmBy` shows the explanation and sends nothing.
+  - An appeal after the window → 409 `too-late`.
+  - A mod-built tx paying the counterparty from this side's share is refused.
+  - The violet badge renders only inside a disputed trade.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the specs and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat: seller refund and extend, nudges with limits`.
+- [ ] **Step 5:** Commit `feat: trader-side disputes`.
 
-### Task 16: Your wallets and Getting started screens
+### Task 28: Getting started (onboarding)
 
-**Boards:** `Wallet.dc.html` (3 · Your wallets); `SetupUsername`, `SetupLogin`, `SetupPgpKey`, `SetupPgpChallenge`, `SetupPassword`, `SetupBackup`, `SetupWallet`, `SetupWelcome` (Getting started row). Delete this task if Plan 2 builds these screens.
+**Boards:** `SetupWelcome`, `SetupUsername`, `SetupLogin`, `SetupPgpKey`, `SetupPgpChallenge`, `SetupPassword`, `SetupBackup`, `SetupWallet` (and `SetupWelcome` as the end screen).
 
 **Files:**
-- Create: `apps/web/src/screens/Wallet.tsx`, `apps/web/src/screens/setup/{Username,Login,PgpKey,PgpChallenge,Password,Backup,Wallet,Welcome}.tsx`, `apps/web/src/screens/setup/SetupFlow.tsx`
-- Test: `apps/web/e2e/setup.spec.ts`, `apps/web/e2e/wallets.spec.ts`
+- Create: `apps/web/src/screens/setup/{SetupFlow,Username,Login,PgpKey,PgpChallenge,Password,Backup,Wallet,Welcome}.tsx`, `apps/web/src/session/useSession.ts`
+- Test: `apps/web/e2e/setup.spec.ts`
 
 **Interfaces:**
-- Consumes: Plan 2 endpoints (see the assumed interface block); `returnTo` from Task 9 and Task 11.
-- Produces: the setup flow in board order (username 5–20 chars of letters, numbers, dots, dashes, underscores, shown exactly as typed; login method with PGP first; method setup; optional backup with "Skip for now"; link a wallet; Welcome with **Start trading** → `returnTo`). Wallet list (name, address end, role, status, never a balance), Add a wallet with app picker, the Edge Full Sync tip, confirm-it's-you on save, the per-trade escrow key row ("1 escrow key on this device for trade <code>…") fed from `escrowStore`, the optional fresh-address tip.
+- Consumes: Plan 2 `createAuthApi` and the register routes; `returnTo` (Tasks 18, 21).
+- Produces: the setup flow in board order. Username is 5–20 characters, shown as typed. Login method has PGP first. Backup has "Skip for now". Link a wallet uses the first-wallet path. Welcome has **Start trading** → `returnTo`, and the OD-7 fee sentence (P3-M4).
 
-- [ ] **Step 1: Failing tests:** parity for all nine boards at 390×844; username `Mira.K_` is shown as `Mira.K_` everywhere after setup; the escrow key row appears while a trade is open and disappears when it closes; a wallet in its 24-hour wait shows its status and cannot be picked for a take.
+- [ ] **Step 1: Write the failing tests:** parity for every Setup board; `Mira.K_` shows as `Mira.K_` after setup; the take resumes after Welcome.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): getting started`.
+
+### Task 29: Your wallets
+
+**Board:** `Wallet.dc.html`.
+
+**Files:**
+- Create: `apps/web/src/screens/Wallets.tsx`
+- Test: `apps/web/e2e/wallets.spec.ts`
+
+**Interfaces:**
+- Consumes: `GET/POST/DELETE /v1/wallets` (via the confirm sheet, Task 30), `escrowStore`.
+- Produces: the wallet list (name, address end, status, never a balance), Add a wallet with the app picker, the Edge Full Sync tip, the optional fresh-address tip, and the per-trade escrow key row from `escrowStore`. The board's "is backed up to your PGP key" changes to "It stays on this device and is deleted when the trade closes." (P3-I14). That change is also made on the canvas as a controller step, with `Wallet.png` re-captured.
+
+- [ ] **Step 1: Write the failing tests:** parity; no "backed up" text; the escrow key row appears while a trade is open and disappears after; a waiting wallet shows its status and is absent from the take picker.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): your wallets`.
+
+### Task 30: Log in, confirm-it's-you and Security settings (P3-C4)
+
+**Boards:** `SetupLogin` and `SetupBackup` (reused); everything else from design-system parts.
+
+**Files:**
+- Create: `apps/web/src/screens/auth/{Login,BackupLogin,ConfirmSheet}.tsx`, `apps/web/src/screens/settings/{Security,Methods,Totp,RecoveryCodes,PayoutWait,Devices,Alerts}.tsx`
+- Test: `apps/web/e2e/login.spec.ts`, `apps/web/e2e/security.spec.ts`
+
+**Interfaces:**
+- Consumes: Plan 2 `createAuthApi`, `withConfirm`, `loginWithWebAuthn`, `registerWithWebAuthn`; the soft authenticator from Plan 2 Task 7 in tests.
+- Produces:
+  - `/login`: PGP (copy message, paste code), passkey, security key, password (+ TOTP when asked), and a "Use a backup" link → `BackupLogin` (recovery code or TOTP per Plan 2's rules). An expired session anywhere routes here with `returnTo`.
+  - `ConfirmSheet({ action })`: the `prove` callback for `withConfirm`, offering the account's methods. It is the only UI for Plan 2's action-bound confirm (X-4).
+  - `/settings/security`: login methods (list, add, remove; last-method guard), TOTP enrolment with QR, recovery codes (show once), "Make new payout addresses wait 24 hours" (spec 6.3), devices with remote log-out, and the alerts list (spec 6.4).
+
+- [ ] **Step 1: Write the failing tests:** one e2e login per method (PGP via a test key, passkey and security key via the soft authenticator, password + TOTP, recovery code); an expired session returns to the same screen after login; adding a wallet opens ConfirmSheet exactly once; removing the last method is refused with Plan 2's message; ending another device's session logs it out.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the specs and `npm run check`; expect PASS.
-- [ ] **Step 5:** Commit `feat(web): your wallets and getting started`.
+- [ ] **Step 5:** Commit `feat(web): log in, confirm-it's-you, security settings`.
 
-### Task 17: End-to-end trades between two browsers on regtest
+### Task 31: End-to-end trades between two browsers on regtest
 
 **Files:**
-- Create: `apps/web/e2e/stack.ts` (starts regtest, relay, node proxy, API with moderation, Vite preview), `apps/web/e2e/trade.e2e.spec.ts`
+- Create: `apps/web/e2e/stack.ts` (regtest, relay with admin port, node proxy, API with internal port, moderation process, Vite preview), `apps/web/e2e/trade.e2e.spec.ts`
 
 **Interfaces:**
-- Consumes: everything above; Plan 1's regtest harness. Funding in tests is done by a regtest wallet paying the URI's address and amount (parsed from the Open in … link or the copy button).
+- Consumes: everything above; Plan 1's regtest harness. Funding uses a regtest wallet paying the address and amount parsed from the Open in … link or the copy button. Tests mine **12** blocks after funding.
 
-- [ ] **Step 1: Failing tests,** each run at 390×844 and at 1280×800, two browser contexts (seller, buyer):
-  - Taker seller, poster buyer: browse → Trade → fund → 10 blocks → I've paid → hold to release → buyer's payout wallet receives amount − 1% − network fee; the fee wallet receives exactly 1%; only the buyer's released screen shows the fee row.
+- [ ] **Step 1: Write the failing tests**, each at 390×844 and 1280×800, with two browser contexts:
+  - Taker seller, poster buyer: browse → Trade → accepted sheet → fund → 12 blocks → I've paid → hold → the buyer's wallet receives amount − 1% − network fee; the fee wallet receives exactly 1%; only the buyer sees the fee row.
   - Taker buyer, poster seller: the seller funds amount + 1%; the buyer receives within the network fee of the full amount and never sees a fee.
-  - Mutual cancel after funding: seller gets everything back minus network fee; no fee output.
-  - Buyer no-show: clock advanced past `payBy`; Cancel & get refund; buyer stays silent; after 15 min the refund lands with the seller **with the seller's page closed**.
-  - Lapse: seller never funds; the buyer's room says the trade ended with no penalty.
-  - **Reload the seller's page during the hold-to-release signing and the buyer's page during co-signing:** both resume; exactly one release tx; the trade ends `released` (Review Focus 1).
-- [ ] **Step 2:** Run; expect FAIL until wiring gaps are fixed in the owning tasks' files.
-- [ ] **Step 3:** Fix what the runs expose, each with a unit test in the owning task's test file.
+  - Deposit trade: the buyer funds the deposit; release returns it to the buyer. A cancel with the deposit unpaid pays the seller everything.
+  - Mutual cancel after funding: no fee output.
+  - Buyer no-show: clock past `payBy`; Cancel & get refund; buyer silent with an open SSE stream; after 15 min the refund lands **with the seller's page closed**.
+  - Lapse: the seller never funds; the buyer's room says the trade ended with no penalty.
+  - **Reload the seller's page during signing and the buyer's page during co-signing:** both resume, exactly one release tx, ending `released` (Review Focus 1).
+  - **Swapped participants:** the API test hook replaces the buyer identity → the buyer's room shows "Security check failed" and the seller's check words differ from the buyer's.
+- [ ] **Step 2:** Run. The expected first failure is `stack.ts` timing out waiting for the moderation process's first `/internal/v1/work` poll, until the internal port is wired into the stack.
+- [ ] **Step 3:** For each failure, fix it in the owning task's files with a unit test in that task's test file, and name the task in the commit message (`fix(task-N): …`).
 - [ ] **Step 4:** `npx playwright test -c apps/web/e2e/playwright.config.ts` and `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `test: end-to-end trades on regtest at phone and desktop sizes`.
 
-### Task 18: Security review of the plan's code
+### Task 32: Stagenet smoke run and load check (P3-I18)
+
+**Files:**
+- Create: `tools/stagenet/smoke.ts`, `tools/load/trades.ts`, `docs/perf/plan-3-load.md`
+
+- [ ] **Step 1:** `smoke.ts` runs one full release and one auto-refund between two Node trader parties and the real moderation process on stagenet with real block times. Expected: both settle, and the measured times are recorded.
+- [ ] **Step 2:** `trades.ts` opens 25 concurrent trades on regtest (12-block mining every 2 min). Record the moderation process's RSS, the per-trade sync lag and the time to `secured`. Pass: lag < 60 s and no OOM.
+- [ ] **Step 3:** Write the numbers and any limit (for example, max open trades per moderation process) in `docs/perf/plan-3-load.md`.
+- [ ] **Step 4:** Commit `test: stagenet smoke and 25-trade load check`.
+
+### Task 33: Security review, roadmap and follow-ups
 
 **Files:**
 - Create: `docs/security/plan-3-review.md`
+- Modify: `docs/superpowers/plans/2026-10-15-roadmap.md`
 
-- [ ] **Step 1:** Run the Claude Security scan over `packages/trade`, `apps/api`, `apps/web`, `apps/relay`, `apps/node-proxy`; run Semgrep 1.178.0 and `npm audit`.
-- [ ] **Step 2:** Fix every confirmed finding in the owning task's files with a test that would have caught it; re-run `npm run check`.
-- [ ] **Step 3:** Record findings, fixes, accepted risks with reasons, and the known gap on participant-key distribution in `docs/security/plan-3-review.md`.
-- [ ] **Step 4:** Commit `docs: plan 3 security review`.
-
----
-
-## Dependent tasks (boards still being designed)
-
-Each starts when its board lands on the X2F App canvas, and adds `expectParity` for it; the behaviour already exists unless noted.
-
-- **D1 · Buy side.** Buy method list and seller offers (`/buy`, `/buy/:methodId`), the buyer's "waiting for the seller to fund" state, the quote sheet, and the **payout wallet picker** after Trade or on "<username> accepted your offer" (new behaviour: replaces the default-payout-wallet shortcut in Task 4).
-- **D2 · Disputes from the trader side.** The dispute room with the moderator present (violet "X2F Moderator" badge, join banner, ruling card), the published deadline and live status, appeal, dispute-after-refund entry from a refunded trade, and the trading-hold notice on Post offer and Trade. Rulings and staff tools stay in Plan 4.
-- **D3 · Plan 5 regions now masked:** proof upload and blur (BuyerPay, Desktop), smart proof card (SellerConfirm), rating and "How's X2F doing?" (Review), the review-before-next-trade gate.
+- [ ] **Step 1:** Run the Claude Security scan over `packages/trade`, `apps/api`, `apps/moderation`, `apps/web`, `apps/relay` and `apps/node-proxy`; run Semgrep 1.178.0 and `npm audit --omit=dev`.
+- [ ] **Step 2:** Fix every confirmed finding in the owning task's files with a test that would have caught it, then re-run `npm run check`.
+- [ ] **Step 3:** Record in `docs/security/plan-3-review.md`: the findings and fixes; the P3-C1 design and its residual risks (the API can register a fake identity, but that holds one key at most; a compromised API can delay or prompt a refund that still pays only the seller's signed address; client-bundle tamper is Plan 6); and every OD with the owner's answer.
+- [ ] **Step 4:** Update the roadmap: Nudge and Web Push are in Plan 3 (P3-M11). Plan 6 gets the security-key tap to fund, the escrow-key PGP backup (spec 6.4), "require a security key to log in", "use your own Monero node", device-key TOFU (OD-1) and SRI. Plan 4 gets rulings via `verifyRuling`, the moderator join records, and the lost-device ruling test.
+- [ ] **Step 5:** Commit `docs: plan 3 security review and roadmap`.
