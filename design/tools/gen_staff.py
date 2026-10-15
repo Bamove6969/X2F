@@ -281,42 +281,65 @@ files["StaffSettings.dc.html"] = page("Settings", sidebar("Settings") + f'''
     </div>
   </main>''', STATIC, 1240)
 
-# 4. Activity log
-rows = [
-  ("Today 09:42", "sarah.v", "Senior moderator", "Approved ruling on trade #4790: release to buyer, 1.80 XMR"),
-  ("Today 09:31", "dmitri_k", "Moderator", "Proposed ruling on trade #4790 (above limit, sent for approval)"),
-  ("Today 09:12", "dmitri_k", "Moderator", "Opened the chat on disputed trade #4790"),
-  ("Today 08:55", "dmitri_k", "Moderator", "Requested the unblurred payment proof on trade #4790"),
-  ("Yesterday 22:10", "lumen.k", "Owner", "Created an invite link for a new moderator (Mon–Fri, 09:00–17:00 UTC)"),
-  ("Yesterday 19:00", "system", "", "Ended dmitri_k's session at the end of their login hours"),
-  ("Yesterday 18:03", "lumen.k", "Owner", "Changed the large-trade limit from 500 to 1,000 USD"),
-  ("Yesterday 14:27", "tobi.w", "Helper", "Answered support ticket #311"),
-]
-trs = "\n".join(f'''            <tr style="border-top: 1px solid #20262f;"><td style="padding: 12px; white-space: nowrap; {MUTED}">{t}</td><td style="padding: 12px; font-weight: 600; {MONO}">{who}</td><td style="padding: 12px; {MUTED}">{role}</td><td style="padding: 12px;">{what}</td></tr>''' for t, who, role, what in rows)
+# 4. Activity log (search by trade code filters to that trade)
 files["StaffLog.dc.html"] = page("Activity log", sidebar("Activity log") + f'''
   <main style="flex: 1 1 0; min-width: 0; padding: 32px; display: flex; flex-direction: column;">
     <div style="max-width: 1000px; width: 100%; display: flex; flex-direction: column; gap: 20px;">
       <section style="display: flex; flex-direction: column; gap: 6px;">
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Activity log</h1>
-        <p style="margin: 0; font-size: 15px; line-height: 22px; {MUTED}">Every staff action, including yours. Entries can't be edited or deleted by anyone. Opening a dispute chat or an unblurred proof always appears here.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; {MUTED}">Every staff action and every step of every trade. Entries can't be edited or deleted by anyone. Opening a dispute chat or an unblurred proof always appears here.</p>
       </section>
-      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-        <label for="who" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Filter by person</label>
-        <select id="who" style="{INPUT}"><option>Everyone</option><option>sarah.v</option><option>dmitri_k</option><option>tobi.w</option><option>lumen.k</option></select>
-        <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Search by trade number</label>
-        <input id="q" type="search" placeholder="Trade number" style="{INPUT}">
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+        <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Trade code</label>
+        <input id="q" type="search" value="{{{{q}}}}" onChange="{{{{onQ}}}}" placeholder="Trade code, e.g. 3HW8-ZD2N-RT6K-Q9VB" spellcheck="false" style="width: 340px; {INPUT} {MONO}">
+        <sc-for list="{{{{chips}}}}" as="c" hint-placeholder-count="2">
+          <button type="button" onClick="{{{{c.pick}}}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid #6b7584; background: transparent; color: #eef1f5; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; cursor: pointer;">{{{{c.code}}}}</button>
+        </sc-for>
+        <sc-if value="{{{{filtered}}}}" hint-placeholder-val="{{{{false}}}}">
+          <button type="button" onClick="{{{{clear}}}}" style="height: 36px; padding: 0 12px; border: 0; background: transparent; color: #ff7a1a; font-family: inherit; font-size: 14px; cursor: pointer;">Show everything</button>
+        </sc-if>
       </div>
+      <span style="font-size: 14px; {MUTED}">{{{{summary}}}}</span>
       <div style="overflow-x: auto;">
-        <table style="width: 100%; min-width: 760px; border-collapse: collapse; font-size: 15px;">
-          <thead><tr style="text-align: left; font-size: 13px; {MUTED}"><th scope="col" style="padding: 10px 12px; font-weight: 600;">When</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Who</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Role</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">What they did</th></tr></thead>
+        <table style="width: 100%; min-width: 860px; border-collapse: collapse; font-size: 15px;">
+          <thead><tr style="text-align: left; font-size: 13px; {MUTED}"><th scope="col" style="padding: 10px 12px; font-weight: 600;">When</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Trade</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Who</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">What happened</th></tr></thead>
           <tbody>
-{trs}
+            <sc-for list="{{{{rows}}}}" as="r" hint-placeholder-count="8">
+            <tr style="border-top: 1px solid #20262f;"><td style="padding: 12px; white-space: nowrap; {MUTED}">{{{{r.t}}}}</td><td style="padding: 12px; {MONO} font-size: 14px;">{{{{r.code}}}}</td><td style="padding: 12px; white-space: nowrap;"><span style="font-weight: 600; {MONO}">{{{{r.who}}}}</span> <span style="font-size: 13px; {MUTED}">{{{{r.role}}}}</span></td><td style="padding: 12px;">{{{{r.what}}}}</td></tr>
+            </sc-for>
           </tbody>
         </table>
       </div>
-      <p style="margin: 0; font-size: 13px; {MUTED}">Entries are examples.</p>
+      <p style="margin: 0; font-size: 13px; {MUTED}">Every trade gets a random 16-character code in four groups (letters and numbers, no look-alikes such as 0 and O). You can search with or without the dashes. Codes reveal nothing about how many trades X2F handles. Entries are examples.</p>
     </div>
-  </main>''', STATIC, 800)
+  </main>''',
+'''class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { q: '' }; }
+  renderVals() {
+    const A = '3HW8-ZD2N-RT6K-Q9VB', B = 'K7M2-9QXA-4FTR-8WPN';
+    const bare = (x) => x.toUpperCase().replace(/[^0-9A-Z]/g, '');
+    const all = [
+      ['Today 09:42', A, 'sarah.v', 'Senior moderator', 'Approved the ruling: release 1.80 XMR to the buyer'],
+      ['Today 09:31', A, 'dmitri_k', 'Moderator', 'Proposed a ruling: release to the buyer (above the limit, sent for approval)'],
+      ['Today 09:20', B, 'mira.k', 'Buyer', "Tapped I've paid and uploaded proof"],
+      ['Today 09:12', A, 'dmitri_k', 'Moderator', 'Opened the trade chat'],
+      ['Today 08:55', A, 'dmitri_k', 'Moderator', 'Requested the unblurred payment proof'],
+      ['Today 08:47', B, 'system', '', 'Escrow secured after 10 confirmations'],
+      ['Today 08:40', A, 'system', '', 'Dispute opened by the buyer; assigned to dmitri_k'],
+      ['Today 08:25', B, 'satoshi_ghost', 'Seller', 'Funded the escrow with 1.25 XMR'],
+      ['Yesterday 22:10', '', 'lumen.k', 'Owner', 'Created an invite link for a new moderator (Mon to Fri, 09:00 to 17:00 UTC)'],
+      ['Yesterday 19:00', '', 'system', '', "Ended dmitri_k's session at the end of their login hours"],
+      ['Yesterday 18:03', '', 'lumen.k', 'Owner', 'Changed the large-trade limit from 500 to 1,000 USD']
+    ];
+    const q = bare(this.state.q);
+    const hits = q ? all.filter((r) => bare(r[1]) === q) : all;
+    const rows = hits.map((r) => ({ t: r[0], code: r[1] || '', who: r[2], role: r[3], what: r[4] }));
+    const summary = q ? (hits.length ? hits.length + ' entries for trade ' + this.state.q.trim().toUpperCase() + ', newest first.' : 'No entries for ' + this.state.q.trim().toUpperCase() + '. Check the code and try again.') : 'Showing everything, newest first.';
+    return { rows, summary, q: this.state.q, filtered: !!q,
+      chips: [A, B].map((code) => ({ code, pick: () => this.setState({ q: code }) })),
+      onQ: (e) => this.setState({ q: e.target.value }), clear: () => this.setState({ q: '' }) };
+  }
+}''', 900)
 
 os.makedirs(OUT, exist_ok=True)
 for name, html in files.items():
