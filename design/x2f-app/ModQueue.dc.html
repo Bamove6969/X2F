@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Disputes</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:#ff7a1a}a:hover{color:#ffa060}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
+input::placeholder{color:#9aa4b2}
+</style>
+</helmet>
+<div style="min-height: 1000px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;">
+  <nav aria-label="Staff tools" style="flex: 0 0 240px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #20262f; display: flex; flex-direction: column; gap: 4px;">
+    <span style="display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700;">X2F <span style="font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 13px; font-weight: 600; color: #b69cff;">Staff</span></span>
+      <a href="StaffOverview.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Overview</a>
+      <a href="ModQueue.dc.html" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; background: #20262f; color: #eef1f5; font-weight: 600;">Disputes</a>
+      <a href="StaffList.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Staff</a>
+      <a href="StaffPerformance.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Performance</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Training library</a>
+      <a href="StaffLog.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Activity log</a>
+      <a href="StaffSettings.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Settings</a>
+    <span style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 14px;"><span style="color: #b69cff;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>dmitri_k <span style="color: #9aa4b2;">· Moderator</span></span>
+  </nav>
+  <main style="flex: 1 1 0; min-width: 0; padding: 32px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="max-width: 1000px; width: 100%; display: flex; flex-direction: column; gap: 20px;">
+      <header style="display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px;">
+        <section style="display: flex; flex-direction: column; gap: 6px;">
+          <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Disputes</h1>
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: #9aa4b2;">Open disputes, closest deadline first. A moderator must reply within 4 hours of a dispute opening.</p>
+        </section>
+        <button type="button" onClick="{{takeNext}}" disabled="{{noneFree}}" style="{{takeStyle}}">Take next case</button>
+      </header>
+
+      <div style="display: flex; flex-wrap: wrap; gap: 12px;">
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: #171b22;"><span style="font-size: 13px; color: #9aa4b2;">Open</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px;">5</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: #171b22;"><span style="font-size: 13px; color: #9aa4b2;">Overdue</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; color: #ff6b8a;">1</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: #171b22;"><span style="font-size: 13px; color: #9aa4b2;">Unassigned</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; color: #f2c14e;">{{freeCount}}</span></div>
+        <div style="display: flex; flex-direction: column; gap: 2px; min-width: 160px; padding: 14px 16px; border-radius: 12px; background: #171b22;"><span style="font-size: 13px; color: #9aa4b2;">Need a second approval</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px;">2</span></div>
+      </div>
+
+      <div role="radiogroup" aria-label="Show" style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+        <sc-for list="{{filters}}" as="f" hint-placeholder-count="4">
+          <button type="button" role="radio" aria-checked="{{f.on}}" onClick="{{f.pick}}" style="{{f.style}}">{{f.label}}</button>
+        </sc-for>
+      </div>
+
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; min-width: 960px; border-collapse: collapse; font-size: 15px;">
+          <thead><tr style="text-align: left; font-size: 13px; color: #9aa4b2;">
+            <th scope="col" style="padding: 10px 12px; font-weight: 600;">Trade</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Amount</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Method</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Opened by</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Waiting · deadline</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Approval</th><th scope="col" style="padding: 10px 12px; font-weight: 600;">Assigned to</th><th scope="col" style="padding: 10px 12px;"><span style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Actions</span></th>
+          </tr></thead>
+          <tbody>
+            <sc-for list="{{rows}}" as="r" hint-placeholder-count="5">
+            <tr style="border-top: 1px solid #20262f; vertical-align: top;">
+              <td style="padding: 14px 12px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; white-space: nowrap;">{{r.code}}</td>
+              <td style="padding: 14px 12px; text-align: right; white-space: nowrap;"><span style="display: block; font-family: 'Atkinson Hyperlegible Mono', monospace;">{{r.xmr}} XMR</span><span style="font-size: 13px; color: #9aa4b2;">{{r.usd}}</span></td>
+              <td style="padding: 14px 12px;">{{r.method}}</td>
+              <td style="padding: 14px 12px; color: #9aa4b2;">{{r.by}}</td>
+              <td style="padding: 14px 12px; min-width: 170px;">
+                <span style="display: block; font-size: 13px; color: #9aa4b2;">Waiting {{r.waiting}}</span>
+                <span style="{{r.dlStyle}}">{{r.deadline}}</span>
+                <span role="progressbar" aria-label="{{r.barLabel}}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{r.pct}}" style="display: block; margin-top: 6px; width: 140px; height: 4px; border-radius: 999px; background: #20262f; overflow: hidden;"><span style="{{r.barStyle}}"></span></span>
+              </td>
+              <td style="padding: 14px 12px;"><span style="{{r.apStyle}}">{{r.approval}}</span></td>
+              <td style="padding: 14px 12px; white-space: nowrap;"><span style="{{r.whoStyle}}">{{r.who}}</span></td>
+              <td style="padding: 14px 12px; text-align: right; white-space: nowrap;">
+                <sc-if value="{{r.free}}" hint-placeholder-val="{{false}}">
+                  <button type="button" onClick="{{r.take}}" style="height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #6b7584; background: transparent; color: #eef1f5; font-family: inherit; font-size: 14px; cursor: pointer;">Take</button>
+                </sc-if>
+                <sc-if value="{{r.taken}}" hint-placeholder-val="{{true}}">
+                  <a href="{{r.href}}" style="display: inline-flex; align-items: center; height: 36px; padding: 0 12px; border-radius: 8px; border: 1px solid #6b7584; color: #eef1f5; font-size: 14px; text-decoration: none;">Open case</a>
+                </sc-if>
+              </td>
+            </tr>
+            </sc-for>
+          </tbody>
+        </table>
+      </div>
+      <sc-if value="{{empty}}" hint-placeholder-val="{{false}}">
+        <p style="margin: 0; font-size: 15px; color: #9aa4b2;">Nothing here right now.</p>
+      </sc-if>
+      <p style="margin: 0; font-size: 13px; line-height: 18px; color: #9aa4b2;">Rulings at or above the 1,000 USD large-trade limit need a second approval from a senior moderator or the owner. Opening a case's chat or asking for unblurred proof is written to the activity log. Codes and amounts are examples.</p>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { filter: 'all', mine: {} }; }
+  renderVals() {
+    const ME = 'dmitri_k';
+    const AMBER = '#f2c14e', TEAL = '#4cc3d9', ROSE = '#ff6b8a';
+    const cases = [
+      { id: 'm3tb', code: 'M3TB-9HQZ-6WCR-1FXA', xmr: '2.10', usd: '$693.00', method: 'Cash by mail', by: 'Seller', waiting: '4 h 25 min', deadline: 'Overdue by 25 min', tone: ROSE, pct: 100, approval: '', who: ME },
+      { id: 'p9vc', code: 'P9VC-6KE1-YB4M-2HJD', xmr: '0.40', usd: '$132.00', method: 'Revolut', by: 'Seller', waiting: '3 h 45 min', deadline: 'Reply due in 15 min', tone: AMBER, pct: 94, approval: '', who: '' },
+      { id: '7rwd', code: '7RWD-3MXE-KQ84-HN2T', xmr: '4.00', usd: '$1,320.00', method: 'Zelle', by: 'Buyer', waiting: '2 h 40 min', deadline: 'Reply due in 1 h 20 min', tone: AMBER, pct: 67, approval: 'Needs second approval', who: ME, href: 'ModCase.dc.html' },
+      { id: 'k7m2', code: 'K7M2-9QXA-4FTR-8WPN', xmr: '1.25', usd: '$412.50', method: 'Zelle', by: 'Buyer', waiting: '3 h 16 min', deadline: 'Replied in 38 min', tone: TEAL, pct: 16, approval: '', who: 'sarah.v' },
+      { id: 'b8ne', code: 'B8NE-4YJW-2PVK-7DSG', xmr: '6.50', usd: '$2,145.00', method: 'Bank transfer (ACH)', by: 'Buyer', waiting: '1 d 2 h', deadline: 'Replied in 1 h 05 min', tone: TEAL, pct: 27, approval: 'Ruling waiting for lumen.k', who: 'sarah.v' }
+    ];
+    const mine = this.state.mine;
+    const withWho = cases.map((c) => Object.assign({}, c, { who: mine[c.id] ? ME : c.who }));
+    const f = this.state.filter;
+    const pass = (c) => f === 'all' || (f === 'mine' && c.who === ME) || (f === 'free' && !c.who) || (f === 'approval' && !!c.approval);
+    const count = (id) => withWho.filter((c) => id === 'all' || (id === 'mine' && c.who === ME) || (id === 'free' && !c.who) || (id === 'approval' && !!c.approval)).length;
+    const filters = [['all', 'All open'], ['mine', 'Assigned to you'], ['free', 'Unassigned'], ['approval', 'Needs approval']].map(([id, label]) => ({
+      label: label + ' (' + count(id) + ')',
+      on: f === id ? 'true' : 'false',
+      style: 'height: 36px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; cursor: pointer; ' + (f === id ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
+      pick: () => this.setState({ filter: id })
+    }));
+    const take = (id) => this.setState({ mine: Object.assign({}, this.state.mine, { [id]: true }) });
+    const rows = withWho.filter(pass).map((c) => ({
+      code: c.code, xmr: c.xmr, usd: c.usd, method: c.method, by: c.by, waiting: c.waiting,
+      deadline: c.deadline, pct: c.pct,
+      barLabel: 'Time used of the 4-hour reply deadline',
+      dlStyle: 'display: block; font-size: 14px; font-weight: 600; color: ' + c.tone + ';',
+      barStyle: 'display: block; height: 100%; width: ' + c.pct + '%; background: ' + c.tone + ';',
+      approval: c.approval || 'Not needed',
+      apStyle: c.approval ? 'display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: 999px; border: 1px solid ' + AMBER + '; color: ' + AMBER + '; font-size: 13px; font-weight: 600;' : 'font-size: 14px; color: #9aa4b2;',
+      who: c.who ? (c.who === ME ? 'You' : c.who) : 'Unassigned',
+      whoStyle: c.who ? 'font-family: \'Atkinson Hyperlegible Mono\', monospace; font-weight: 600;' : 'color: ' + AMBER + '; font-weight: 600;',
+      free: !c.who, taken: !!c.who,
+      href: c.href || '#',
+      take: () => take(c.id)
+    }));
+    const free = withWho.filter((c) => !c.who);
+    return {
+      filters, rows, empty: rows.length === 0,
+      freeCount: free.length,
+      noneFree: free.length === 0,
+      takeStyle: 'display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (free.length ? 'border: 0; background: #ff7a1a; color: #1a0e05; cursor: pointer;' : 'border: 1px solid #6b7584; background: transparent; color: #9aa4b2; cursor: not-allowed;'),
+      takeNext: () => { if (free.length) take(free[0].id); }
+    };
+  }
+}
+</script>
+</body>
+</html>

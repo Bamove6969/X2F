@@ -253,6 +253,80 @@
       "title": "6 · Moderator performance, with charts",
       "expand": "fill",
       "is_interactive": true
+    },
+    "BuyMain.dc.html": {
+      "x": 0,
+      "y": 9276,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Buy: pick how you pay",
+      "is_interactive": true
+    },
+    "BuyOffers.dc.html": {
+      "x": 470,
+      "y": 9276,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · Buy: sellers taking Zelle",
+      "is_interactive": true
+    },
+    "BuyQuote.dc.html": {
+      "x": 940,
+      "y": 9276,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · Buy: amount, wallet, what you get",
+      "is_interactive": true
+    },
+    "DisputeOpen.dc.html": {
+      "x": 0,
+      "y": 10720,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Open a dispute",
+      "is_interactive": true
+    },
+    "DisputeRoom.dc.html": {
+      "x": 470,
+      "y": 10720,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · Moderator joined the trade room",
+      "is_interactive": true
+    },
+    "DisputeRuling.dc.html": {
+      "x": 940,
+      "y": 10720,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · Ruling and appeal",
+      "is_interactive": true
+    },
+    "ModQueue.dc.html": {
+      "x": 0,
+      "y": 12164,
+      "w": 1280,
+      "h": 1000,
+      "page": "all",
+      "title": "1 · Dispute queue",
+      "is_interactive": true,
+      "expand": "fill"
+    },
+    "ModCase.dc.html": {
+      "x": 1360,
+      "y": 12164,
+      "w": 1280,
+      "h": 1600,
+      "page": "all",
+      "title": "2 · Case view and ruling tools",
+      "is_interactive": true,
+      "expand": "fill"
     }
   },
   "order": [
@@ -281,7 +355,15 @@
     "StaffSettings.dc.html",
     "StaffLog.dc.html",
     "StaffOverview.dc.html",
-    "StaffPerformance.dc.html"
+    "StaffPerformance.dc.html",
+    "BuyMain.dc.html",
+    "BuyOffers.dc.html",
+    "BuyQuote.dc.html",
+    "DisputeOpen.dc.html",
+    "DisputeRoom.dc.html",
+    "DisputeRuling.dc.html",
+    "ModQueue.dc.html",
+    "ModCase.dc.html"
   ],
   "notes": {
     "browse": {
@@ -330,6 +412,30 @@
       "text": "Owner & staff tools · desktop",
       "kind": "title1",
       "maxW": 8080,
+      "page": "all"
+    },
+    "buyside": {
+      "x": 0,
+      "y": 8976,
+      "text": "Buy side · phone",
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all"
+    },
+    "disputes": {
+      "x": 0,
+      "y": 10420,
+      "text": "Disputes · phone (trader view)",
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all"
+    },
+    "modtools": {
+      "x": 0,
+      "y": 11864,
+      "text": "Moderator tools · desktop",
+      "kind": "title1",
+      "maxW": 2640,
       "page": "all"
     }
   },
