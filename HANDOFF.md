@@ -106,6 +106,14 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
   3. Run `npm i monero-ts@0.11.16 --ignore-scripts && node spike.mjs`.
 - `npm audit` flagged one high and one moderate advisory in monero-ts's transitive dependencies. They must be resolved before production.
 
+## Moderators (agreed 2026-10-15, to be written into the spec)
+
+- **Roles:** Owner (creates and removes moderators, sets the large-trade limit, sees every log, co-approves every ruling above the limit) and Moderator (rules alone below the limit). Later the owner can tick "Can co-approve large rulings" on trusted moderators. Helpers (questions only, no evidence) come with the community room.
+- **Chats are encrypted but moderators can read them** when a dispute is opened on that trade; every read is logged; users are told in every chat.
+- **Dispute records are kept and logged; training uses anonymized copies** (Buyer/Seller, personal details masked). Confirm with owner if unsure.
+- Proposed, awaiting owner approval: owner login by hardware security keys only, staff accounts separate from trading accounts, a violet shield "X2F Moderator" badge shown only in disputed trade rooms, a moderator dashboard (queue, case view, ruling tools, training library).
+- Community room ideas are parked in `docs/community-room-plan.md`.
+
 ## Open decisions (owner's call)
 
 1. **Fees: decided 2026-10-14.** 1% per completed trade, paid only by the ad poster. Takers never see a fee line.
