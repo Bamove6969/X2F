@@ -32,7 +32,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 
 ### Platform and architecture
 - **One codebase:** a website (installable web app) wrapped as iOS and Android apps with Capacitor. It's built with TypeScript and React.
-- **Wallet:** a real built-in Monero wallet, like MetaMask but for Monero, built on **monero-ts**. Keys stay on the device. External wallets (Cake, Feather, Monerujo, Stack, the official GUI/CLI, Ledger, Trezor) can fund an escrow by QR and receive payouts. They **cannot** take part in escrow signing, because Monero has no "connect wallet" standard.
+- **No built-in wallet (decided 2026-10-14).** The owner wants X2F to be purely a facilitator, never a "money man". Users link the Monero wallets they already use under **Your wallets** (Cake Wallet, Edge, Feather, Monerujo, Stack, Monero GUI/CLI, Ledger/Trezor, Other): payouts go there, and sellers fund via "Open in Cake Wallet" (a `monero:` payment link with address and amount) or QR. No balances, no recovery phrase. The app still creates **one temporary escrow key per trade** (monero-ts), because no Monero wallet can join a multisig or has a MetaMask-style connect for Monero (WalletConnect in Cake/Edge covers other chains). Seller funding window is now **30 minutes**.
 - **Escrow:** each trade gets a fresh **2-of-3 multisig** between buyer, seller and moderator. X2F holds at most one key, the moderator's. There is no automatic third key.
 - **Backend:** Fastify and PostgreSQL for offers, login challenges, reputation and disputes. It holds no funds. An end-to-end encrypted relay carries chat and escrow messages.
 - **Building on Haveno was rejected.** Its Java engine can't run in a browser, so a web app would have to become custodial.
@@ -76,12 +76,12 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - Every badge is a teal pill with a small line icon. New is amber.
 
 ### Accounts and security
-- No sign-up form at the door. The wallet is created on the first "I'm in".
+- No sign-up form at the door. Login setup happens on the first "I'm in" or ad post; no wallet is created.
 - **PGP login is recommended and shown first.** The user pastes a public key, decrypts a challenge and pastes back the phrase. The phrase is single-use, expires after 5 minutes and names the site and time.
 - Accepted keys: **RSA 4096+, Ed25519, Ed448**.
 - Passkeys, security keys (FIDO2) and **TOTP** (6 digits, 30 s; a second factor or backup, never the only login).
 - **A backup login method is mandatory.**
-- Optional hardening: an address allowlist with a 24-hour delay, spending limits, PGP-signed addresses, a device list, and a wallet backup encrypted to the user's own PGP key.
+- Optional hardening: an address allowlist with a 24-hour delay, spending limits, PGP-signed addresses, a device list, and an escrow-key backup encrypted to the user's own PGP key.
 
 ### Design system
 - Night-first.
@@ -120,7 +120,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 ## Next steps, in order
 
-1. **Getting started screens** (next agreed design step): choose a login method, the PGP challenge, the mandatory backup and the recovery phrase.
+1. **Getting started screens** (next agreed design step): choose a login method, the PGP challenge, the mandatory backup and linking a wallet (no recovery phrase: there is no built-in wallet).
 2. Buy side (mirrors Sell), then the moderator dashboard.
 3. Bring the desktop view up to date with the phone screens (popups, badge icons) when convenient.
 4. **Phase 0 proof:** rerun the escrow test **in a real browser and on a phone** over a real network.

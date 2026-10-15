@@ -119,7 +119,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "3 · Wallet",
+      "title": "3 · Your wallets",
       "is_interactive": true
     }
   },
@@ -157,7 +157,7 @@
     "account": {
       "x": 0,
       "y": 2588,
-      "text": "Profile & wallet · phone",
+      "text": "Profile & your wallets · phone",
       "kind": "title1",
       "maxW": 1330,
       "page": "all"
