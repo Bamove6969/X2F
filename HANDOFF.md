@@ -1,6 +1,6 @@
 # X2F handoff
 
-Last updated: 2026-10-14, about 21:15 PDT, at the end of the first working session.
+Last updated: 2026-10-15, about 01:56 PDT. **Spec approved by the owner 2026-10-15 01:56 PDT.** Next: the implementation plan (writing-plans).
 
 ## What X2F is
 
@@ -39,7 +39,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 
 ### Trade flow (all approved)
 1. **Browse.** Pick a payment method, then see offers. Anyone can chat with as many traders as they like before committing.
-2. The buyer taps **"I'm in"** and picks a payout: their X2F wallet or an external wallet. External is recommended for larger amounts.
+2. Whoever takes an offer taps **Trade** (decided 2026-10-15; replaces "I'm in"); the poster sees "<username> accepted your offer". The buyer picks which of their own wallets gets paid.
 3. The seller **funds**. This is the key turn and the commitment. The seller has a 10-minute funding window.
 4. **"Securing escrow"** shows in amber with a confirmations bar (for example 3 of 10, about 20 min). At 10 confirmations it turns teal: **"Escrow secured"**.
 5. The buyer's **90-minute payment timer starts once the escrow is settled**. The buyer pays, uploads optional proof and taps **I've paid**. A confirmation step follows: "I sent exactly $X via Y with memo Z". The seller is alerted automatically.
@@ -76,7 +76,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - Every badge is a teal pill with a small line icon. New is amber.
 
 ### Accounts and security
-- No sign-up form at the door. Login setup happens on the first "I'm in" or ad post; no wallet is created.
+- No sign-up form at the door. Login setup happens on the first Trade tap or ad post; no wallet is created.
 - **PGP login is recommended and shown first.** The user pastes a public key, decrypts a challenge and pastes back the phrase. The phrase is single-use, expires after 5 minutes and names the site and time.
 - Accepted keys: **RSA 4096+, Ed25519, Ed448**.
 - Passkeys, security keys (FIDO2) and **TOTP** (6 digits, 30 s; a second factor or backup, never the only login).
