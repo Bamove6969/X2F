@@ -1,0 +1,561 @@
+{
+ "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers.",
+ "methods": [
+  {
+   "id": "UPHOLD",
+   "name": "Uphold",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MONEY_BEAM",
+   "name": "MoneyBeam (N26)",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "REVOLUT",
+   "name": "Revolut",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PERFECT_MONEY",
+   "name": "Perfect Money",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SEPA",
+   "name": "SEPA",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SEPA_INSTANT",
+   "name": "SEPA Instant",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SPEI",
+   "name": "SPEI",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "FASTER_PAYMENTS",
+   "name": "Faster Payments (UK)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "GCASH",
+   "name": "GCash",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "NATIONAL_BANK",
+   "name": "National bank transfer",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "JAPAN_BANK",
+   "name": "Japan bank transfer (Furikomi)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "AUSTRALIA_PAYID",
+   "name": "PayID (Australia)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SAME_BANK",
+   "name": "Transfer within the same bank",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SPECIFIC_BANKS",
+   "name": "Transfer with specific banks",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SWISH",
+   "name": "Swish",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "ALI_PAY",
+   "name": "Alipay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "WECHAT_PAY",
+   "name": "WeChat Pay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "ZELLE",
+   "name": "Zelle",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "INTERAC_E_TRANSFER",
+   "name": "Interac e-Transfer",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "US_POSTAL_MONEY_ORDER",
+   "name": "US Postal money order",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CASH_DEPOSIT",
+   "name": "Cash deposit at bank",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MERCADO_PAGO",
+   "name": "Mercado Pago",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MOMO",
+   "name": "MoMo",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MONEY_GRAM",
+   "name": "MoneyGram",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "WESTERN_UNION",
+   "name": "Western Union",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "HAL_CASH",
+   "name": "HalCash",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "F2F",
+   "name": "Cash in person (face to face)",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PROMPT_PAY",
+   "name": "PromptPay",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "ADVANCED_CASH",
+   "name": "Advcash",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "TRANSFERWISE",
+   "name": "Wise",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "TRANSFERWISE_USD",
+   "name": "Wise (USD)",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYSERA",
+   "name": "Paysera",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAXUM",
+   "name": "Paxum",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "NEFT",
+   "name": "NEFT (India)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "RTGS",
+   "name": "RTGS (India)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "IMPS",
+   "name": "IMPS (India)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "UPI",
+   "name": "UPI",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYTM",
+   "name": "Paytm",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "NEQUI",
+   "name": "Nequi",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "BIZUM",
+   "name": "Bizum",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PIX",
+   "name": "PIX",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "AMAZON_GIFT_CARD",
+   "name": "Amazon eGift card",
+   "group": "Gift cards & vouchers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAY_BY_MAIL",
+   "name": "Cash by mail",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CASH_AT_ATM",
+   "name": "Cash at ATM",
+   "group": "Cash & money orders",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CAPITUAL",
+   "name": "Capitual",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CELPAY",
+   "name": "CelPay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MONESE",
+   "name": "Monese",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MPESA",
+   "name": "M-Pesa",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SATISPAY",
+   "name": "Satispay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "TIKKIE",
+   "name": "Tikkie",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "VERSE",
+   "name": "Verse",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "STRIKE",
+   "name": "Strike",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SWIFT",
+   "name": "International wire (SWIFT)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "ACH_TRANSFER",
+   "name": "Bank transfer (ACH)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "DOMESTIC_WIRE_TRANSFER",
+   "name": "Domestic wire transfer",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CASH_APP",
+   "name": "Cash App",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "VENMO",
+   "name": "Venmo",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYPAL",
+   "name": "PayPal",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYSAFE",
+   "name": "Paysafecard",
+   "group": "Gift cards & vouchers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "BLIK",
+   "name": "BLIK",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "VIPPS_MOBILEPAY",
+   "name": "Vipps MobilePay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "TWINT",
+   "name": "TWINT",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "NIP",
+   "name": "NIP (Nigeria)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAGO_MOVIL",
+   "name": "Pago Móvil",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "QRIS",
+   "name": "QRIS",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAPARA",
+   "name": "Papara",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "RAAST",
+   "name": "Raast",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYNOW",
+   "name": "PayNow",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "WERO",
+   "name": "Wero",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "FPS",
+   "name": "FPS (Hong Kong)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "DUITNOW",
+   "name": "DuitNow",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "MB_WAY",
+   "name": "MB WAY",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "PAYPAY",
+   "name": "PayPay",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "SBP",
+   "name": "SBP (Russia)",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false,
+   "legalReview": "sanctions: needs lawyer sign-off before launch"
+  },
+  {
+   "id": "MIR",
+   "name": "Mir card",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false,
+   "legalReview": "sanctions: needs lawyer sign-off before launch"
+  },
+  {
+   "id": "YOOMONEY",
+   "name": "YooMoney",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false,
+   "legalReview": "sanctions: needs lawyer sign-off before launch"
+  },
+  {
+   "id": "UKRAINE_CARD",
+   "name": "Ukrainian bank card transfer",
+   "group": "Bank transfers",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "KASPI",
+   "name": "Kaspi",
+   "group": "Payment apps",
+   "source": "haveno PaymentMethod.java (names only)",
+   "verified": false
+  },
+  {
+   "id": "CUSTOM",
+   "name": "Custom method",
+   "group": "Other",
+   "source": "x2f",
+   "verified": true
+  }
+ ]
+}
