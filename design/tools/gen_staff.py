@@ -291,10 +291,14 @@ files["StaffLog.dc.html"] = page("Activity log", sidebar("Activity log") + f'''
       </section>
       <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
         <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Trade code</label>
-        <input id="q" type="search" value="{{{{q}}}}" onChange="{{{{onQ}}}}" placeholder="Trade code, e.g. 3HW8-ZD2N-RT6K-Q9VB" spellcheck="false" style="width: 340px; {INPUT} {MONO}">
-        <sc-for list="{{{{chips}}}}" as="c" hint-placeholder-count="2">
-          <button type="button" onClick="{{{{c.pick}}}}" style="height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid #6b7584; background: transparent; color: #eef1f5; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; cursor: pointer;">{{{{c.code}}}}</button>
-        </sc-for>
+        <input id="q" type="search" value="{{{{q}}}}" onChange="{{{{onQ}}}}" placeholder="Type or paste a trade code" spellcheck="false" style="width: 340px; {INPUT} {MONO}">
+        <label for="active" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Active disputes</label>
+        <select id="active" onChange="{{{{onPick}}}}" style="{INPUT} max-width: 100%;">
+          <option value="">Active disputes ({{{{activeCount}}}})</option>
+          <sc-for list="{{{{active}}}}" as="a" hint-placeholder-count="2">
+            <option value="{{{{a.code}}}}">{{{{a.label}}}}</option>
+          </sc-for>
+        </select>
         <sc-if value="{{{{filtered}}}}" hint-placeholder-val="{{{{false}}}}">
           <button type="button" onClick="{{{{clear}}}}" style="height: 36px; padding: 0 12px; border: 0; background: transparent; color: #ff7a1a; font-family: inherit; font-size: 14px; cursor: pointer;">Show everything</button>
         </sc-if>
@@ -316,11 +320,12 @@ files["StaffLog.dc.html"] = page("Activity log", sidebar("Activity log") + f'''
 '''class Component extends DCLogic {
   constructor(props) { super(props); this.state = { q: '' }; }
   renderVals() {
-    const A = '3HW8-ZD2N-RT6K-Q9VB', B = 'K7M2-9QXA-4FTR-8WPN';
+    const A = '3HW8-ZD2N-RT6K-Q9VB', B = 'K7M2-9QXA-4FTR-8WPN', C = 'P9VC-6KE1-YB4M-2HJD';
     const bare = (x) => x.toUpperCase().replace(/[^0-9A-Z]/g, '');
     const all = [
-      ['Today 09:42', A, 'sarah.v', 'Senior moderator', 'Approved the ruling: release 1.80 XMR to the buyer'],
-      ['Today 09:31', A, 'dmitri_k', 'Moderator', 'Proposed a ruling: release to the buyer (above the limit, sent for approval)'],
+      ['Today 09:50', C, 'system', '', 'Dispute opened by the seller: payment not received; waiting for a moderator'],
+      ['Today 09:44', C, 'nightjar', 'Buyer', "Tapped I've paid"],
+      ['Today 09:31', A, 'dmitri_k', 'Moderator', 'Proposed a ruling: release 1.80 XMR to the buyer (above the limit, waiting for your approval)'],
       ['Today 09:20', B, 'mira.k', 'Buyer', "Tapped I've paid and uploaded proof"],
       ['Today 09:12', A, 'dmitri_k', 'Moderator', 'Opened the trade chat'],
       ['Today 08:55', A, 'dmitri_k', 'Moderator', 'Requested the unblurred payment proof'],
@@ -336,7 +341,11 @@ files["StaffLog.dc.html"] = page("Activity log", sidebar("Activity log") + f'''
     const rows = hits.map((r) => ({ t: r[0], code: r[1] || '', who: r[2], role: r[3], what: r[4] }));
     const summary = q ? (hits.length ? hits.length + ' entries for trade ' + this.state.q.trim().toUpperCase() + ', newest first.' : 'No entries for ' + this.state.q.trim().toUpperCase() + '. Check the code and try again.') : 'Showing everything, newest first.';
     return { rows, summary, q: this.state.q, filtered: !!q,
-      chips: [A, B].map((code) => ({ code, pick: () => this.setState({ q: code }) })),
+      active: [
+        { code: A, label: A + ' · Zelle · 1.80 XMR · waiting for your approval' },
+        { code: C, label: C + ' · Revolut · 0.40 XMR · waiting for a moderator' }
+      ], activeCount: 2,
+      onPick: (e) => this.setState({ q: e.target.value }),
       onQ: (e) => this.setState({ q: e.target.value }), clear: () => this.setState({ q: '' }) };
   }
 }''', 900)
