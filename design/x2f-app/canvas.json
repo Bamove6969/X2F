@@ -89,7 +89,7 @@
     },
     "Desktop.dc.html": {
       "x": 0,
-      "y": 4332,
+      "y": 5776,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -121,6 +121,69 @@
       "page": "all",
       "title": "3 · Your wallets",
       "is_interactive": true
+    },
+    "SetupUsername.dc.html": {
+      "x": 0,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Pick a username",
+      "is_interactive": true
+    },
+    "SetupLogin.dc.html": {
+      "x": 470,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · How will you log in?",
+      "is_interactive": true
+    },
+    "SetupPgpKey.dc.html": {
+      "x": 940,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · PGP: paste your public key",
+      "is_interactive": true
+    },
+    "SetupPgpChallenge.dc.html": {
+      "x": 1410,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · PGP: prove it's your key",
+      "is_interactive": true
+    },
+    "SetupBackup.dc.html": {
+      "x": 1880,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "4 · Backup login (optional)",
+      "is_interactive": true
+    },
+    "SetupWallet.dc.html": {
+      "x": 2350,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "5 · Where should your XMR go?",
+      "is_interactive": true
+    },
+    "SetupPassword.dc.html": {
+      "x": 2820,
+      "y": 4332,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "Alt 3 · Set a password",
+      "is_interactive": true
     }
   },
   "order": [
@@ -135,7 +198,14 @@
     "Desktop.dc.html",
     "Profile.dc.html",
     "BadgeSettings.dc.html",
-    "Wallet.dc.html"
+    "Wallet.dc.html",
+    "SetupUsername.dc.html",
+    "SetupLogin.dc.html",
+    "SetupPgpKey.dc.html",
+    "SetupPgpChallenge.dc.html",
+    "SetupBackup.dc.html",
+    "SetupWallet.dc.html",
+    "SetupPassword.dc.html"
   ],
   "notes": {
     "browse": {
@@ -164,10 +234,18 @@
     },
     "desktop": {
       "x": 0,
-      "y": 4032,
+      "y": 5476,
       "text": "Desktop · buyer paying",
       "kind": "title1",
       "maxW": 1280,
+      "page": "all"
+    },
+    "setup": {
+      "x": 0,
+      "y": 4032,
+      "text": "Getting started · phone",
+      "kind": "title1",
+      "maxW": 3210,
       "page": "all"
     }
   },

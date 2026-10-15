@@ -80,7 +80,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - **PGP login is recommended and shown first.** The user pastes a public key, decrypts a challenge and pastes back the phrase. The phrase is single-use, expires after 5 minutes and names the site and time.
 - Accepted keys: **RSA 4096+, Ed25519, Ed448**.
 - Passkeys, security keys (FIDO2) and **TOTP** (6 digits, 30 s; a second factor or backup, never the only login).
-- **A backup login method is mandatory.**
+- **A backup login is optional but strongly recommended** (decided 2026-10-14; owner: LocalMonero only had passwords, and X2F holds no coins). **Passwords are allowed** for users who want a simple one (12+ chars, Argon2id, leaked-list check).
 - Optional hardening: an address allowlist with a 24-hour delay, spending limits, PGP-signed addresses, a device list, and an escrow-key backup encrypted to the user's own PGP key.
 
 ### Design system
@@ -120,7 +120,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 ## Next steps, in order
 
-1. **Getting started screens** (next agreed design step): choose a login method, the PGP challenge, the mandatory backup and linking a wallet (no recovery phrase: there is no built-in wallet).
+1. **Getting started screens: done 2026-10-14** (canvas row "Getting started"): username, login method, PGP key + challenge, password alternative, optional backup, link a wallet. Owner to review screen by screen.
 2. Buy side (mirrors Sell), then the moderator dashboard.
 3. Bring the desktop view up to date with the phone screens (popups, badge icons) when convenient.
 4. **Phase 0 passed (GO), 2026-10-14:** escrow ran in desktop Chrome plus Firefox on Android over Wi-Fi; see `spikes/phase0-browser/RESULTS.md`. Left: iPhone Safari, open internet and Tor, stagenet, and resume-after-background.
@@ -133,6 +133,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 - The owner reviews one screen at a time with screenshots and wants precise, honest wording. They push back on anything confusing or over-claimed.
 - Do design work **in Claude Design**: X2F App canvas and X2F design system.
 - Commit spec changes with the author set: `git -c user.name="flem" -c user.email="bamove@gmail.com" commit`. No global git identity is configured.
+- **Security scans run during coding, not just before launch** (owner's instruction): scan every code change with Claude Security and Semgrep, and fix Security Guidance warnings as they appear.
 - Security plugins are installed: Claude Security, Security Guidance, and Semgrep (logged in as Bamove6969; the CLI isn't installed yet).
 - A **duplicate session** of this conversation was running and watching the canvases. Close extras under `/tasks`.
 
