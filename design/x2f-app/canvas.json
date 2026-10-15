@@ -193,6 +193,46 @@
       "page": "all",
       "title": "6 · Welcome, start trading",
       "is_interactive": true
+    },
+    "OwnerSetup.dc.html": {
+      "x": 0,
+      "y": 7176,
+      "w": 1280,
+      "h": 1180,
+      "page": "all",
+      "title": "1 · First-run: create the owner account",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "StaffList.dc.html": {
+      "x": 1360,
+      "y": 7176,
+      "w": 1280,
+      "h": 1000,
+      "page": "all",
+      "title": "2 · Staff: add, set login hours, switch off",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "StaffSettings.dc.html": {
+      "x": 2720,
+      "y": 7176,
+      "w": 1280,
+      "h": 1240,
+      "page": "all",
+      "title": "3 · Settings: limits and pay",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "StaffLog.dc.html": {
+      "x": 4080,
+      "y": 7176,
+      "w": 1280,
+      "h": 800,
+      "page": "all",
+      "title": "4 · Activity log",
+      "expand": "fill",
+      "is_interactive": true
     }
   },
   "order": [
@@ -215,7 +255,11 @@
     "SetupBackup.dc.html",
     "SetupWallet.dc.html",
     "SetupPassword.dc.html",
-    "SetupWelcome.dc.html"
+    "SetupWelcome.dc.html",
+    "OwnerSetup.dc.html",
+    "StaffList.dc.html",
+    "StaffSettings.dc.html",
+    "StaffLog.dc.html"
   ],
   "notes": {
     "browse": {
@@ -256,6 +300,14 @@
       "text": "Getting started · phone",
       "kind": "title1",
       "maxW": 3680,
+      "page": "all"
+    },
+    "staff": {
+      "x": 0,
+      "y": 6876,
+      "text": "Owner & staff tools · desktop",
+      "kind": "title1",
+      "maxW": 5360,
       "page": "all"
     }
   },
