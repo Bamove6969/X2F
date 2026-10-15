@@ -228,9 +228,29 @@
       "x": 4080,
       "y": 7176,
       "w": 1280,
-      "h": 800,
+      "h": 900,
       "page": "all",
       "title": "4 · Activity log",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "StaffOverview.dc.html": {
+      "x": 5440,
+      "y": 7176,
+      "w": 1280,
+      "h": 1500,
+      "page": "all",
+      "title": "5 · Overview: emergency stop, earnings, banner",
+      "expand": "fill",
+      "is_interactive": true
+    },
+    "StaffPerformance.dc.html": {
+      "x": 6800,
+      "y": 7176,
+      "w": 1280,
+      "h": 900,
+      "page": "all",
+      "title": "6 · Moderator performance",
       "expand": "fill",
       "is_interactive": true
     }
@@ -259,7 +279,9 @@
     "OwnerSetup.dc.html",
     "StaffList.dc.html",
     "StaffSettings.dc.html",
-    "StaffLog.dc.html"
+    "StaffLog.dc.html",
+    "StaffOverview.dc.html",
+    "StaffPerformance.dc.html"
   ],
   "notes": {
     "browse": {
@@ -307,7 +329,7 @@
       "y": 6876,
       "text": "Owner & staff tools · desktop",
       "kind": "title1",
-      "maxW": 5360,
+      "maxW": 8080,
       "page": "all"
     }
   },

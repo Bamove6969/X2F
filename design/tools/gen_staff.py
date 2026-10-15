@@ -44,7 +44,7 @@ input::placeholder{{color:#9aa4b2}}
 STATIC = "class Component extends DCLogic {\n  renderVals() { return {}; }\n}"
 
 def sidebar(current):
-    items = [("Disputes", "#"), ("Staff", "StaffList.dc.html"), ("Training library", "#"), ("Activity log", "StaffLog.dc.html"), ("Settings", "StaffSettings.dc.html")]
+    items = [("Overview", "StaffOverview.dc.html"), ("Disputes", "#"), ("Staff", "StaffList.dc.html"), ("Performance", "StaffPerformance.dc.html"), ("Training library", "#"), ("Activity log", "StaffLog.dc.html"), ("Settings", "StaffSettings.dc.html")]
     links = "\n".join(
         f'      <a href="{href}"{" aria-current=\"page\"" if name == current else ""} style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; {"background: #20262f; color: #eef1f5; font-weight: 600;" if name == current else "color: #9aa4b2;"}">{name}</a>'
         for name, href in items)
@@ -349,6 +349,123 @@ files["StaffLog.dc.html"] = page("Activity log", sidebar("Activity log") + f'''
       onQ: (e) => this.setState({ q: e.target.value }), clear: () => this.setState({ q: '' }) };
   }
 }''', 900)
+
+# 5. Overview: emergency stop, earnings, announcement banner, maintenance mode
+def card(title, body):
+    return f'''      <section aria-label="{title}" style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 12px; background: #171b22;">
+        <h2 style="margin: 0; font-size: 20px; font-weight: 600;">{title}</h2>
+{body}
+      </section>'''
+
+stop = f'''        <sc-if value="{{{{live}}}}" hint-placeholder-val="{{{{true}}}}">
+          <p style="margin: 0; display: flex; align-items: center; gap: 8px; font-size: 16px; color: #4cc3d9;">{CHECK}X2F is live. New trades are open.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">If something goes wrong, such as an attack or a serious bug, pause every new trade and offer at once. Trades already in escrow can still be released, refunded or disputed, so nobody's coins get stuck.</p>
+          <div><button type="button" onClick="{{{{askStop}}}}" style="height: 48px; padding: 0 20px; border: 1px solid #ff6b8a; border-radius: 12px; background: transparent; color: #ff6b8a; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Pause all new trades</button></div>
+        </sc-if>
+        <sc-if value="{{{{confirming}}}}" hint-placeholder-val="{{{{false}}}}">
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Tap your security key to pause all new trades. Everyone will see a notice until you resume.</p>
+          <div style="display: flex; gap: 8px;"><button type="button" onClick="{{{{doStop}}}}" style="height: 48px; padding: 0 20px; border: 0; border-radius: 12px; background: #ff6b8a; color: #1f0a10; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Tap key and pause</button><button type="button" onClick="{{{{cancel}}}}" style="{SECONDARY}">Cancel</button></div>
+        </sc-if>
+        <sc-if value="{{{{paused}}}}" hint-placeholder-val="{{{{false}}}}">
+          <p style="margin: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid #ff6b8a; font-size: 16px; line-height: 24px; color: #ff6b8a; font-weight: 600;">New trades are paused since 01:20 UTC. Trades in escrow are carrying on.</p>
+          <div><button type="button" onClick="{{{{resume}}}}" style="{PRIMARY}">Tap key and resume trading</button></div>
+        </sc-if>'''
+
+earn = f'''        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 14px; {MUTED}">This month</span><span style="{MONO} font-size: 26px; font-weight: 500;">4.82 XMR</span><span style="font-size: 13px; {MUTED}">about $1,590 · 211 trades</span></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 14px; {MUTED}">Last month</span><span style="{MONO} font-size: 26px; font-weight: 500;">3.07 XMR</span><span style="font-size: 13px; {MUTED}">about $1,013 · 140 trades</span></div>
+          <div style="display: flex; flex-direction: column; gap: 4px;"><span style="font-size: 14px; {MUTED}">All time</span><span style="{MONO} font-size: 26px; font-weight: 500;">7.89 XMR</span><span style="font-size: 13px; {MUTED}">about $2,603</span></div>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">The 1% fee from each completed trade goes to X2F's fee wallet ending <span style="{MONO} color: #eef1f5;">…9Fq2</span>. This page reads it with a view-only key; the key that can spend from it stays offline, never on the server. Figures are examples.</p>'''
+
+banner = f'''        <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Show a message at the top of every screen, for every user. Change or remove it whenever you like.</p>
+        <label for="msg" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">Message
+          <input id="msg" type="text" value="{{{{text}}}}" onChange="{{{{onText}}}}" maxlength="140" style="{INPUT}">
+        </label>
+        <div role="radiogroup" aria-label="Banner type" style="display: flex; flex-wrap: wrap; gap: 8px;">
+          <sc-for list="{{{{kinds}}}}" as="k" hint-placeholder-count="2">
+            <button type="button" role="radio" aria-checked="{{{{k.on}}}}" onClick="{{{{k.pick}}}}" style="{{{{k.style}}}}">{{{{k.label}}}}</button>
+          </sc-for>
+        </div>
+        <span style="font-size: 14px; {MUTED}">Preview</span>
+        <div aria-label="Banner preview" style="{{{{previewStyle}}}}">{{{{text}}}}</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px;"><button type="button" onClick="{{{{toggleBanner}}}}" style="{PRIMARY}">{{{{bannerCta}}}}</button></div>
+        <span style="font-size: 13px; {MUTED}">{{{{bannerState}}}}</span>'''
+
+maint = f'''        <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">For planned upgrades. Users see the message below instead of the app; trades in escrow keep their timers paused until you switch it off.</p>
+        <label for="mm" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">Message to users
+          <input id="mm" type="text" value="X2F is being upgraded. Back by 03:00 UTC." style="{INPUT}">
+        </label>
+        <label style="display: flex; align-items: center; gap: 10px; font-size: 15px; cursor: pointer;"><input type="checkbox" style="width: 20px; height: 20px; margin: 0; accent-color: #ff7a1a;">Maintenance mode on</label>'''
+
+files["StaffOverview.dc.html"] = page("Overview", sidebar("Overview") + f'''
+  <main style="flex: 1 1 0; min-width: 0; padding: 32px; display: flex; flex-direction: column;">
+    <div style="max-width: 1000px; width: 100%; display: flex; flex-direction: column; gap: 20px;">
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Overview</h1>
+        <p style="margin: 0; font-size: 15px; {MUTED}">Owner controls. Every change here is recorded in the activity log.</p>
+      </section>
+{card("Emergency stop", stop)}
+{card("Earnings", earn)}
+{card("Announcement banner", banner)}
+{card("Maintenance mode", maint)}
+    </div>
+  </main>''',
+'''class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { stop: 'live', text: 'Zelle payments may take longer this weekend because of a bank holiday.', kind: 'info', shown: false }; }
+  renderVals() {
+    const st = this.state.stop, kind = this.state.kind;
+    const kinds = [{ id: 'info', label: 'Information', color: '#4cc3d9' }, { id: 'warn', label: 'Warning', color: '#f2c14e' }];
+    const base = 'height: 40px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; cursor: pointer; ';
+    const cur = kinds.find((k) => k.id === kind);
+    return {
+      live: st === 'live', confirming: st === 'confirm', paused: st === 'paused',
+      askStop: () => this.setState({ stop: 'confirm' }), doStop: () => this.setState({ stop: 'paused' }),
+      cancel: () => this.setState({ stop: 'live' }), resume: () => this.setState({ stop: 'live' }),
+      text: this.state.text, onText: (e) => this.setState({ text: e.target.value }),
+      kinds: kinds.map((k) => ({ label: k.label, on: kind === k.id ? 'true' : 'false',
+        style: base + (kind === k.id ? 'border: 1px solid #ff7a1a; background: #20262f; color: #eef1f5; font-weight: 600;' : 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;'),
+        pick: () => this.setState({ kind: k.id }) })),
+      previewStyle: 'padding: 12px 16px; border-radius: 8px; background: #20262f; border-left: 4px solid ' + cur.color + '; color: #eef1f5; font-size: 15px; line-height: 22px;',
+      toggleBanner: () => this.setState({ shown: !this.state.shown }),
+      bannerCta: this.state.shown ? 'Remove banner' : 'Show to everyone',
+      bannerState: this.state.shown ? 'Showing to everyone now.' : 'Not showing.'
+    };
+  }
+}''', 1500)
+
+# 6. Moderator performance
+perf = [
+  ("sarah.v", "Senior moderator", "41", "38 min", "3 h 10 min", "0 of 41", "96%", "1", ""),
+  ("dmitri_k", "Moderator", "17", "1 h 52 min", "6 h 40 min", "3 of 17", "82%", "1", "warn"),
+  ("lumen.k", "Owner", "9", "22 min", "1 h 05 min", "0 of 9", "100%", "1", ""),
+]
+prow = "\n".join(f'''            <tr style="border-top: 1px solid #20262f;"><td style="padding: 14px 12px; font-weight: 600; {MONO}">{n}</td><td style="padding: 14px 12px; {MUTED}">{r}</td><td style="padding: 14px 12px; text-align: right; {MONO}">{c}</td><td style="padding: 14px 12px; text-align: right; {MONO}">{f}</td><td style="padding: 14px 12px; text-align: right; {MONO}">{t}</td><td style="padding: 14px 12px; text-align: right; {MONO} {"color: #f2c14e;" if w else ""}">{o}</td><td style="padding: 14px 12px; text-align: right; {MONO}">{d}</td><td style="padding: 14px 12px; text-align: right; {MONO}">{q}</td></tr>''' for n, r, c, f, t, o, d, q, w in perf)
+files["StaffPerformance.dc.html"] = page("Performance", sidebar("Performance") + f'''
+  <main style="flex: 1 1 0; min-width: 0; padding: 32px; display: flex; flex-direction: column;">
+    <div style="max-width: 1000px; width: 100%; display: flex; flex-direction: column; gap: 20px;">
+      <section style="display: flex; flex-direction: column; gap: 6px;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Moderator performance</h1>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; {MUTED}">How quickly and how well each person handles disputes. Use it for coaching, pay and deciding who becomes a senior moderator.</p>
+      </section>
+      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <label for="per" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Period</label>
+        <select id="per" style="{INPUT}"><option>Last 30 days</option><option>Last 90 days</option><option>All time</option></select>
+      </div>
+      <div style="overflow-x: auto;">
+        <table style="width: 100%; min-width: 900px; border-collapse: collapse; font-size: 15px;">
+          <thead><tr style="font-size: 13px; {MUTED}">
+            <th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: left;">Name</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: left;">Role</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Cases</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Typical first reply</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Typical time to ruling</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Overturned on appeal</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Replied within deadline</th><th scope="col" style="padding: 10px 12px; font-weight: 600; text-align: right;">Open now</th>
+          </tr></thead>
+          <tbody>
+{prow}
+          </tbody>
+        </table>
+      </div>
+      <p style="margin: 0; padding: 12px 14px; border-radius: 8px; border: 1px solid #f2c14e; font-size: 14px; line-height: 20px;">dmitri_k had 3 rulings overturned on appeal this month and replied within the 4-hour deadline 82% of the time. Their overturned cases are a good place to start a coaching chat, and they earn no pay under the current rules.</p>
+      <p style="margin: 0; font-size: 13px; {MUTED}">Typical means the middle value, so one slow case doesn't skew it. Figures are examples.</p>
+    </div>
+  </main>''', STATIC, 900)
 
 os.makedirs(OUT, exist_ok=True)
 for name, html in files.items():
