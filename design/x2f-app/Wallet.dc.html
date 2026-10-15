@@ -66,7 +66,7 @@ input::placeholder{color:#9aa4b2}
           </button>
         </span>
       </label>
-      <span style="font-size: 12px; line-height: 16px; color: #9aa4b2;">New addresses can receive payouts after 24 hours. This stops someone who gets into your account from redirecting your coins.</span>
+      <span style="font-size: 12px; line-height: 16px; color: #9aa4b2;">Saving asks you to confirm it's you. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.</span>
     </section>
 
     <section aria-label="Escrow keys" style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0;">
@@ -94,7 +94,7 @@ class Component extends DCLogic {
     const wallets = [
       { name: 'Cake Wallet', addr: '…k3Fz', role: ' · gets payouts', status: 'Ready', statusStyle: ready, statusNote: '' },
       { name: 'Ledger (via Feather)', addr: '…9QbP', role: ' · for large trades', status: 'Ready', statusStyle: ready, statusNote: '' },
-      { name: 'Edge', addr: '…7HcW', role: '', status: 'Usable in 18 h', statusStyle: waiting, statusNote: 'New addresses wait 24 h' }
+      { name: 'Edge', addr: '…7HcW', role: '', status: 'Ready', statusStyle: ready, statusNote: 'Added today' }
     ];
     const names = ['Cake Wallet', 'Edge', 'Feather', 'Monerujo', 'Stack', 'Monero GUI', 'Ledger or Trezor', 'Other'];
     const app = this.state.app;

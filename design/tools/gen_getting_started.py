@@ -257,7 +257,7 @@ files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBacku
         </button>
       </span>
     </label>
-    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">This first wallet can receive payouts right away. If you add another wallet later, it waits 24 hours before it can be paid. That way, if someone ever got into your X2F account, they couldn't quickly switch your payouts to their own wallet.</p>
+    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your wallet for each trade.</p>''',
     f'    <a href="BuyerPay.dc.html" style="{PRIMARY}">Finish and return to your trade</a>',
 '''class Component extends DCLogic {

@@ -81,7 +81,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - Accepted keys: **RSA 4096+, Ed25519, Ed448**.
 - Passkeys, security keys (FIDO2) and **TOTP** (6 digits, 30 s; a second factor or backup, never the only login).
 - **A backup login is optional but strongly recommended** (decided 2026-10-14; owner: LocalMonero only had passwords, and X2F holds no coins). **Passwords are allowed** for users who want a simple one (10+ chars with upper, lower, number and symbol; Argon2id; leaked-list check). Usernames 5–20 characters.
-- Optional hardening: an address allowlist with a 24-hour delay, spending limits, PGP-signed addresses, a device list, and an escrow-key backup encrypted to the user's own PGP key.
+- Adding a payout wallet asks the user to confirm it's them and always shows an alert. Optional hardening: a 24-hour wait for new payout wallets (opt-in, so fresh addresses per trade stay easy), spending limits, PGP-signed addresses, a device list, and an escrow-key backup encrypted to the user's own PGP key.
 
 ### Design system
 - Night-first.
