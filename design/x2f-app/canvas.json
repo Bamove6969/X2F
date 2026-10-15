@@ -1,35 +1,183 @@
 {
   "v": 3,
-  "createdOnFiles": {"v": 1, "at": "2026-10-15T04:05:00Z"},
+  "createdOnFiles": {
+    "v": 1,
+    "at": "2026-10-15T04:05:00Z"
+  },
   "title": "X2F App",
-  "launch": {"view": "canvas", "page": "browse"},
+  "launch": {
+    "view": "canvas",
+    "page": "all"
+  },
   "pages": [
-    {"id": "browse", "name": "Browse & offers"},
-    {"id": "trade", "name": "Trade room"},
-    {"id": "account", "name": "Profile & wallet"}
+    {
+      "id": "all",
+      "name": "All screens"
+    }
   ],
   "boards": {
-    "Main.dc.html": {"x": 0, "y": 0, "w": 390, "h": 844, "page": "browse", "title": "1 · Sell: pick how you get paid", "is_interactive": true},
-    "SellOffers.dc.html": {"x": 470, "y": 0, "w": 390, "h": 844, "page": "browse", "title": "2 · Sell: buyers paying via Zelle", "is_interactive": true},
-    "PostOffer.dc.html": {"x": 940, "y": 0, "w": 390, "h": 844, "page": "browse", "title": "3 · Post an offer", "is_interactive": true},
-    "TradeFund.dc.html": {"x": 0, "y": 0, "w": 390, "h": 844, "page": "trade", "title": "1 · Seller funds escrow", "is_interactive": true},
-    "BuyerPay.dc.html": {"x": 470, "y": 0, "w": 390, "h": 844, "page": "trade", "title": "2 · Buyer pays and uploads proof", "is_interactive": true},
-    "SellerConfirm.dc.html": {"x": 940, "y": 0, "w": 390, "h": 844, "page": "trade", "title": "3 · Seller checks bank and releases", "is_interactive": true},
-    "Review.dc.html": {"x": 1410, "y": 0, "w": 390, "h": 844, "page": "trade", "title": "4 · Released, rate the trade", "is_interactive": true},
-    "SellerRefund.dc.html": {"x": 1880, "y": 0, "w": 390, "h": 844, "page": "trade", "title": "Alt · buyer missed the deadline"},
-    "Desktop.dc.html": {"x": 0, "y": 1300, "w": 1280, "h": 800, "page": "trade", "title": "Desktop · buyer paying"},
-    "Profile.dc.html": {"x": 0, "y": 0, "w": 390, "h": 844, "page": "account", "title": "1 · Trader profile", "is_interactive": true},
-    "BadgeSettings.dc.html": {"x": 470, "y": 0, "w": 390, "h": 844, "page": "account", "title": "2 · Your badges (settings)", "is_interactive": true},
-    "Wallet.dc.html": {"x": 940, "y": 0, "w": 390, "h": 844, "page": "account", "title": "3 · Wallet", "is_interactive": true}
+    "Main.dc.html": {
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Sell: pick how you get paid",
+      "is_interactive": true
+    },
+    "SellOffers.dc.html": {
+      "x": 470,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · Sell: buyers paying via Zelle",
+      "is_interactive": true
+    },
+    "PostOffer.dc.html": {
+      "x": 940,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · Post an offer",
+      "is_interactive": true
+    },
+    "TradeFund.dc.html": {
+      "x": 0,
+      "y": 1444,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Seller funds escrow",
+      "is_interactive": true
+    },
+    "BuyerPay.dc.html": {
+      "x": 470,
+      "y": 1444,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · Buyer pays and uploads proof",
+      "is_interactive": true
+    },
+    "SellerConfirm.dc.html": {
+      "x": 940,
+      "y": 1444,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · Seller checks bank and releases",
+      "is_interactive": true
+    },
+    "Review.dc.html": {
+      "x": 1410,
+      "y": 1444,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "4 · Released, rate the trade",
+      "is_interactive": true
+    },
+    "SellerRefund.dc.html": {
+      "x": 1880,
+      "y": 1444,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "Alt · buyer missed the deadline"
+    },
+    "Desktop.dc.html": {
+      "x": 0,
+      "y": 4332,
+      "w": 1280,
+      "h": 800,
+      "page": "all",
+      "title": "Desktop · buyer paying"
+    },
+    "Profile.dc.html": {
+      "x": 0,
+      "y": 2888,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "1 · Trader profile",
+      "is_interactive": true
+    },
+    "BadgeSettings.dc.html": {
+      "x": 470,
+      "y": 2888,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "2 · Your badges (settings)",
+      "is_interactive": true
+    },
+    "Wallet.dc.html": {
+      "x": 940,
+      "y": 2888,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "3 · Wallet",
+      "is_interactive": true
+    }
   },
-  "order": ["Main.dc.html", "SellOffers.dc.html", "PostOffer.dc.html", "TradeFund.dc.html", "BuyerPay.dc.html", "SellerConfirm.dc.html", "Review.dc.html", "SellerRefund.dc.html", "Desktop.dc.html", "Profile.dc.html", "BadgeSettings.dc.html", "Wallet.dc.html"],
+  "order": [
+    "Main.dc.html",
+    "SellOffers.dc.html",
+    "PostOffer.dc.html",
+    "TradeFund.dc.html",
+    "BuyerPay.dc.html",
+    "SellerConfirm.dc.html",
+    "Review.dc.html",
+    "SellerRefund.dc.html",
+    "Desktop.dc.html",
+    "Profile.dc.html",
+    "BadgeSettings.dc.html",
+    "Wallet.dc.html"
+  ],
   "notes": {
-    "browse": {"x": 0, "y": -300, "text": "Browse & offers · phone", "kind": "title1", "maxW": 1330, "page": "browse"},
-    "tradeph": {"x": 0, "y": -300, "text": "Trade room · phone", "kind": "title1", "maxW": 2270, "page": "trade"},
-    "tradedk": {"x": 0, "y": 1000, "text": "Trade room · desktop", "kind": "title1", "maxW": 1280, "page": "trade"},
-    "account": {"x": 0, "y": -300, "text": "Profile & wallet · phone", "kind": "title1", "maxW": 1330, "page": "account"}
+    "browse": {
+      "x": 0,
+      "y": -300,
+      "text": "Browse & offers · phone",
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all"
+    },
+    "tradeph": {
+      "x": 0,
+      "y": 1144,
+      "text": "Trade room · phone",
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "all"
+    },
+    "account": {
+      "x": 0,
+      "y": 2588,
+      "text": "Profile & wallet · phone",
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all"
+    },
+    "desktop": {
+      "x": 0,
+      "y": 4032,
+      "text": "Desktop · buyer paying",
+      "kind": "title1",
+      "maxW": 1280,
+      "page": "all"
+    }
   },
   "designSystems": [
-    {"title": "X2F", "namespace": "x2f", "artifact": "https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM", "version": "1792021943-b4cf", "copiedAt": "2026-10-15T04:05:00Z"}
+    {
+      "title": "X2F",
+      "namespace": "x2f",
+      "artifact": "https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM",
+      "version": "1792021943-b4cf",
+      "copiedAt": "2026-10-15T04:05:00Z"
+    }
   ]
 }
