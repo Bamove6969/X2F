@@ -76,7 +76,7 @@ files["SetupUsername.dc.html"] = shell("Pick a username", 1, "SellOffers.dc.html
       <input id="uname" type="text" value="lumen.k" autocomplete="off" spellcheck="false" style="{INPUT} {MONO}">
     </label>
     <span style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #4cc3d9;">{CHECK}lumen.k is available</span>
-    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">3 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.</p>''',
+    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real name or used elsewhere.</p>''',
     f'    <a href="SetupLogin.dc.html" style="{PRIMARY}">Continue</a>', STATIC)
 
 # 2. Login method
@@ -107,7 +107,7 @@ files["SetupLogin.dc.html"] = shell("How will you log in?", 2, "SetupUsername.dc
       { id: 'key', name: 'Security key', next: '#', cta: 'Continue with security key',
         desc: 'A YubiKey or similar. Tap it to log in. It never leaves your hands.' },
       { id: 'password', name: 'Password', next: 'SetupPassword.dc.html', cta: 'Continue with a password',
-        desc: 'Prefer a simple password? That works too. At least 12 characters; four random words make a good one.' }
+        desc: 'Prefer a password? That works too. At least 10 characters, with upper and lower case, a number and a symbol.' }
     ];
     const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 14px 16px; border-radius: 12px; background: #171b22; color: #eef1f5; font-family: inherit; text-align: left; cursor: pointer; ';
     const pick = this.state.pick;
@@ -183,17 +183,19 @@ Wm3n…
 }''')
 
 # Alt. Password
-files["SetupPassword.dc.html"] = shell("Set a password", 3, "SetupLogin.dc.html", f'''{h1("Set a password", "Keep it simple if you like. Long beats complicated.")}
+files["SetupPassword.dc.html"] = shell("Set a password", 3, "SetupLogin.dc.html", f'''{h1("Set a password", "At least 10 characters, mixing upper and lower case, a number and a symbol.")}
     <label for="pw" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">
       Password
-      <input id="pw" type="password" value="orbit lantern maple river" autocomplete="new-password" style="{INPUT}">
+      <input id="pw" type="password" value="Orbit-lantern-74" autocomplete="new-password" style="{INPUT}">
     </label>
     <label for="pw2" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">
       Type it again
-      <input id="pw2" type="password" value="orbit lantern maple river" autocomplete="new-password" style="{INPUT}">
+      <input id="pw2" type="password" value="Orbit-lantern-74" autocomplete="new-password" style="{INPUT}">
     </label>
     <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; font-size: 14px; color: #4cc3d9;">
-      <li style="display: flex; align-items: center; gap: 8px;">{CHECK}12 characters or more</li>
+      <li style="display: flex; align-items: center; gap: 8px;">{CHECK}10 characters or more</li>
+      <li style="display: flex; align-items: center; gap: 8px;">{CHECK}Upper and lower case letters</li>
+      <li style="display: flex; align-items: center; gap: 8px;">{CHECK}A number and a symbol</li>
       <li style="display: flex; align-items: center; gap: 8px;">{CHECK}Not on the list of leaked passwords</li>
       <li style="display: flex; align-items: center; gap: 8px;">{CHECK}Both match</li>
     </ul>

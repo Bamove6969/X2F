@@ -80,7 +80,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - **PGP login is recommended and shown first.** The user pastes a public key, decrypts a challenge and pastes back the phrase. The phrase is single-use, expires after 5 minutes and names the site and time.
 - Accepted keys: **RSA 4096+, Ed25519, Ed448**.
 - Passkeys, security keys (FIDO2) and **TOTP** (6 digits, 30 s; a second factor or backup, never the only login).
-- **A backup login is optional but strongly recommended** (decided 2026-10-14; owner: LocalMonero only had passwords, and X2F holds no coins). **Passwords are allowed** for users who want a simple one (12+ chars, Argon2id, leaked-list check).
+- **A backup login is optional but strongly recommended** (decided 2026-10-14; owner: LocalMonero only had passwords, and X2F holds no coins). **Passwords are allowed** for users who want a simple one (10+ chars with upper, lower, number and symbol; Argon2id; leaked-list check). Usernames 5–20 characters.
 - Optional hardening: an address allowlist with a 24-hour delay, spending limits, PGP-signed addresses, a device list, and an escrow-key backup encrypted to the user's own PGP key.
 
 ### Design system

@@ -65,7 +65,7 @@ class Component extends DCLogic {
       { id: 'key', name: 'Security key', next: '#', cta: 'Continue with security key',
         desc: 'A YubiKey or similar. Tap it to log in. It never leaves your hands.' },
       { id: 'password', name: 'Password', next: 'SetupPassword.dc.html', cta: 'Continue with a password',
-        desc: 'Prefer a simple password? That works too. At least 12 characters; four random words make a good one.' }
+        desc: 'Prefer a password? That works too. At least 10 characters, with upper and lower case, a number and a symbol.' }
     ];
     const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 14px 16px; border-radius: 12px; background: #171b22; color: #eef1f5; font-family: inherit; text-align: left; cursor: pointer; ';
     const pick = this.state.pick;
