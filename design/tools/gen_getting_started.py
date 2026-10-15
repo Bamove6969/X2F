@@ -258,7 +258,7 @@ files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBacku
       </span>
     </label>
     <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">This first wallet can receive payouts right away. If you add another wallet later, it waits 24 hours before it can be paid. That way, if someone ever got into your X2F account, they couldn't quickly switch your payouts to their own wallet.</p>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">For extra privacy, paste a fresh address from your wallet for each trade. Monero addresses never expire, so older ones keep working too.</p>''',
+    <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your wallet for each trade.</p>''',
     f'    <a href="BuyerPay.dc.html" style="{PRIMARY}">Finish and return to your trade</a>',
 '''class Component extends DCLogic {
   constructor(props) { super(props); this.state = { app: 'Cake Wallet' }; }
