@@ -43,7 +43,7 @@ input::placeholder,textarea::placeholder{{color:#9aa4b2}}
       <span style="font-size: 13px; {MUTED}">Step {step} of 5</span>
     </div>
     <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="{step}" style="display: flex; gap: 4px;">{segs}</div>
-    <span style="font-size: 13px; line-height: 18px; {MUTED}">Your trade with satoshi_ghost waits while you finish. About 2 minutes.</span>
+    <span style="font-size: 13px; line-height: 18px; {MUTED}">Takes about 2 minutes.</span>
   </header>
   <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;">
 {body}
@@ -259,7 +259,7 @@ files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBacku
     </label>
     <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.</p>
     <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your wallet for each trade.</p>''',
-    f'    <a href="BuyerPay.dc.html" style="{PRIMARY}">Finish and return to your trade</a>',
+    f'    <a href="SetupWelcome.dc.html" style="{PRIMARY}">Finish setup</a>',
 '''class Component extends DCLogic {
   constructor(props) { super(props); this.state = { app: 'Cake Wallet' }; }
   renderVals() {
@@ -275,6 +275,51 @@ files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBacku
     return { apps, appName: app === 'Other' ? 'your wallet' : app, edgeTip: app === 'Edge' };
   }
 }''')
+
+# Welcome (end of setup)
+files["SetupWelcome.dc.html"] = f'''<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Welcome to X2F</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+{FONTS}
+<style>
+body{{margin:0}}
+a:focus-visible{{outline:2px solid #eef1f5;outline-offset:2px}}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <main style="flex-grow: 1; padding: 72px 24px 24px; display: flex; flex-direction: column; gap: 28px;">
+    <span aria-hidden="true" style="display: flex; width: 64px; height: 64px; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid #4cc3d9; color: #4cc3d9;">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l4 4 10-10"/></svg>
+    </span>
+    <section style="display: flex; flex-direction: column; gap: 10px;">
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 34px; line-height: 38px; font-weight: 700; letter-spacing: -0.02em;">Welcome to X2F, lumen.k</h1>
+      <p style="margin: 0; font-size: 17px; line-height: 26px; {MUTED}">Your account is ready. Trade Monero for cash, bank transfers and payment apps, with every trade protected by escrow.</p>
+    </section>
+    <ul aria-label="Your setup" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="{MUTED}">You log in with</span><span>PGP key</span></li>
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="{MUTED}">Backup login</span><span>Authenticator app</span></li>
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="{MUTED}">You get paid to</span><span>Cake Wallet <span style="{MONO} {MUTED}">…k3Fz</span></span></li>
+    </ul>
+    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">You can change any of these later in Settings.</p>
+  </main>
+  <footer style="padding: 16px;">
+    <a href="Main.dc.html" style="{PRIMARY}">Start trading</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{{"$preview":{{"width":390,"height":844}}}}'>
+{STATIC}
+</script>
+</body>
+</html>
+'''
 
 os.makedirs(OUT, exist_ok=True)
 for name, html in files.items():
