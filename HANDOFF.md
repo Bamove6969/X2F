@@ -108,7 +108,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 ## Open decisions (owner's call)
 
-1. **Fees and business model.** Proposed: 0.5–1% paid by the ad poster.
+1. **Fees: decided 2026-10-14.** 1% per completed trade, paid only by the ad poster. Takers never see a fee line.
 2. **Legal and jurisdiction.** Get a crypto lawyer before mainnet. Even non-custodial platforms have been hit (Tornado Cash, the UK FCA warning about LocalCoinSwap).
 3. **Moderators:** who they are, how they're paid, deadlines and thresholds.
 4. **Buyer deposit thresholds.**
