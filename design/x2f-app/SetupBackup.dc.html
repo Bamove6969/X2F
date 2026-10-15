@@ -30,10 +30,10 @@ input::placeholder,textarea::placeholder{color:#9aa4b2}
   </header>
   <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;">
     <section style="display: flex; flex-direction: column; gap: 6px;">
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">Add a backup login?</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">Recommended. X2F has no email or phone number for you, so if you lose your key or forget your password, nobody can get you back in.</p>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">Add a backup way to log in</h1>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let you back in.</p>
     </section>
-    <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #171b22; font-size: 14px; line-height: 20px;">Your coins are always safe in your own wallet. What you'd lose is this account and its reputation.</p>
+    <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #171b22; font-size: 14px; line-height: 20px;">Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.</p>
     <div role="radiogroup" aria-label="Backup method" style="display: flex; flex-direction: column;">
       <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
         <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
@@ -57,9 +57,9 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: 'totp' }; }
   renderVals() {
     const defs = [
-      { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: '6-digit codes from any authenticator app.' },
-      { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar, kept somewhere safe.' },
-      { id: 'pgp2', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare key stored apart from your main one.' },
+      { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
+      { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar that you keep somewhere safe.' },
+      { id: 'pgp2', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare PGP key stored separately from your main one.' },
       { id: 'codes', name: 'Printed recovery codes', short: 'recovery codes', desc: 'Ten one-time codes to print or write down.' }
     ];
     const pick = this.state.pick;

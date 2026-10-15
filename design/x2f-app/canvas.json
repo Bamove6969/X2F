@@ -137,7 +137,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "2 · How will you log in?",
+      "title": "2 · How do you want to log in?",
       "is_interactive": true
     },
     "SetupPgpKey.dc.html": {
@@ -146,7 +146,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "3 · PGP: paste your public key",
+      "title": "3 · PGP: add your public key",
       "is_interactive": true
     },
     "SetupPgpChallenge.dc.html": {
@@ -155,7 +155,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "3 · PGP: prove it's your key",
+      "title": "3 · PGP: decrypt your first login code",
       "is_interactive": true
     },
     "SetupBackup.dc.html": {
@@ -164,7 +164,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "4 · Backup login (optional)",
+      "title": "4 · Backup way to log in (optional)",
       "is_interactive": true
     },
     "SetupWallet.dc.html": {
@@ -173,7 +173,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "5 · Where should your XMR go?",
+      "title": "5 · Where should we send your XMR?",
       "is_interactive": true
     },
     "SetupPassword.dc.html": {
@@ -182,7 +182,7 @@
       "w": 390,
       "h": 844,
       "page": "all",
-      "title": "Alt 3 · Set a password",
+      "title": "Alt 3 · Choose a password",
       "is_interactive": true
     }
   },

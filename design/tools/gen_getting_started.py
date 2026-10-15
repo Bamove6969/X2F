@@ -80,7 +80,7 @@ files["SetupUsername.dc.html"] = shell("Pick a username", 1, "SellOffers.dc.html
     f'    <a href="SetupLogin.dc.html" style="{PRIMARY}">Continue</a>', STATIC)
 
 # 2. Login method
-files["SetupLogin.dc.html"] = shell("How will you log in?", 2, "SetupUsername.dc.html", f'''{h1("How will you log in?", "Pick one now. You can add more later in Settings.")}
+files["SetupLogin.dc.html"] = shell("How do you want to log in?", 2, "SetupUsername.dc.html", f'''{h1("How do you want to log in?", "Choose one for now. You can add others later in Settings.")}
     <div role="radiogroup" aria-label="Login method" style="display: flex; flex-direction: column; gap: 10px;">
       <sc-for list="{{{{methods}}}}" as="m" hint-placeholder-count="4">
         <button type="button" role="radio" aria-checked="{{{{m.on}}}}" onClick="{{{{m.pick}}}}" style="{{{{m.style}}}}">
@@ -93,21 +93,21 @@ files["SetupLogin.dc.html"] = shell("How will you log in?", 2, "SetupUsername.dc
         </button>
       </sc-for>
     </div>
-    <a href="#" style="display: inline-flex; align-items: center; height: 44px; font-size: 15px;">What's PGP?</a>''',
+    <a href="#" style="display: inline-flex; align-items: center; height: 44px; font-size: 15px;">New to PGP?</a>''',
     f'    <a href="{{{{next}}}}" style="{PRIMARY}">{{{{cta}}}}</a>',
 '''class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: 'pgp' }; }
   renderVals() {
     const defs = [
       { id: 'pgp', name: 'PGP key', rec: true, next: 'SetupPgpKey.dc.html', cta: 'Continue with PGP key',
-        desc: 'No password to remember, and nothing for anyone to steal from X2F: we only ever hold your public key.',
-        later: 'Logging in later: copy the message X2F shows, decrypt it in your PGP app, paste the phrase back. A few seconds once you know it.' },
+        desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
+        later: 'Each time you log in, X2F shows a short encrypted message. Your PGP app decrypts it, and you paste back the code inside. It takes a few seconds.' },
       { id: 'passkey', name: 'Passkey', next: '#', cta: 'Continue with passkey',
-        desc: 'Unlock with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.' },
+        desc: 'Log in with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.' },
       { id: 'key', name: 'Security key', next: '#', cta: 'Continue with security key',
-        desc: 'A YubiKey or similar. Tap it to log in. It never leaves your hands.' },
+        desc: 'Log in by tapping a YubiKey or similar key plugged into your phone or computer.' },
       { id: 'password', name: 'Password', next: 'SetupPassword.dc.html', cta: 'Continue with a password',
-        desc: 'Prefer a password? That works too. At least 10 characters, with upper and lower case, a number and a symbol.' }
+        desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.' }
     ];
     const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 14px 16px; border-radius: 12px; background: #171b22; color: #eef1f5; font-family: inherit; text-align: left; cursor: pointer; ';
     const pick = this.state.pick;
@@ -123,7 +123,7 @@ files["SetupLogin.dc.html"] = shell("How will you log in?", 2, "SetupUsername.dc
 }''')
 
 # 3. PGP public key
-files["SetupPgpKey.dc.html"] = shell("Paste your public key", 3, "SetupLogin.dc.html", f'''{h1("Paste your PGP public key", "Your public key only. Never paste the private one: X2F will never ask for it.")}
+files["SetupPgpKey.dc.html"] = shell("Paste your public key", 3, "SetupLogin.dc.html", f'''{h1("Add your PGP public key", "Paste the public key from your PGP app. X2F never asks for your private key, so don't paste it here.")}
     <label for="pub" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">
       Public key
       <textarea id="pub" rows="6" spellcheck="false" style="padding: 10px 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; {MONO} font-size: 13px; line-height: 18px; resize: none;">-----BEGIN PGP PUBLIC KEY BLOCK-----
@@ -138,16 +138,16 @@ mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p
       <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px;"><span style="{MUTED}">Expires</span><span>Never</span></div>
       <div style="display: flex; flex-direction: column; gap: 4px; font-size: 14px;"><span style="{MUTED}">Fingerprint (your account ID)</span><span style="{MONO} font-size: 13px; line-height: 18px;">3F2A 9C41 7B0E D5A2 61C8  0E4B 92D7 1F6A C3B8 0D15</span></div>
     </section>
-    <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">Accepted: RSA 4096 or larger, Ed25519, Ed448. Expired or revoked keys are turned away with a note on why. Example key shown.</p>''',
+    <p style="margin: 0; font-size: 13px; line-height: 18px; {MUTED}">We accept RSA keys of 4096 bits or more, Ed25519 and Ed448. If a key has expired or been revoked, we'll tell you. This is an example key.</p>''',
     f'    <a href="SetupPgpChallenge.dc.html" style="{PRIMARY}">Continue</a>', STATIC)
 
 # 4. PGP challenge
-files["SetupPgpChallenge.dc.html"] = shell("Prove it's your key", 3, "SetupPgpKey.dc.html", f'''{h1("Prove it's your key", "This is exactly how every login will work.")}
+files["SetupPgpChallenge.dc.html"] = shell("Prove it's your key", 3, "SetupPgpKey.dc.html", f'''{h1("Decrypt your first login code", "You'll do the same thing each time you log in.")}
     <sc-if value="{{{{waiting}}}}" hint-placeholder-val="{{{{true}}}}">
     <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 22px;">
-      <li>Copy the message below.</li>
-      <li>Decrypt it in your PGP app (Kleopatra, GPG Suite or OpenKeychain).</li>
-      <li>Paste the phrase it reveals.</li>
+      <li>Copy the encrypted message below.</li>
+      <li>Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.</li>
+      <li>Paste the code from inside the message.</li>
     </ol>
     <section aria-label="Encrypted message" style="display: flex; flex-direction: column; gap: 8px;">
       <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -161,16 +161,16 @@ Wm3n…
 -----END PGP MESSAGE-----</pre>
     </section>
     <label for="phrase" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">
-      Decrypted phrase
-      <input id="phrase" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the phrase here" style="{INPUT} {MONO}">
+      Code from the message
+      <input id="phrase" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the code" style="{INPUT} {MONO}">
     </label>
-    <p style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #f2c14e; font-size: 13px; line-height: 18px;">The decrypted message names X2F and the current time. If it names another site or an old time, stop: someone may be trying to phish you.</p>
+    <p style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #f2c14e; font-size: 13px; line-height: 18px;">The decrypted message also names X2F and today's date and time. If it names a different site or an old time, stop and don't paste anything. Someone may be trying to phish you.</p>
     </sc-if>
     <sc-if value="{{{{done}}}}" hint-placeholder-val="{{{{false}}}}">
     <section aria-label="Key verified" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #4cc3d9;">
       <span style="display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: #4cc3d9;">{CHECK}Key verified</span>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">That's how every login works: copy, decrypt, paste. No password to forget or leak.</p>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">A phishing site can't reuse a phrase: each one works once, expires in 5 minutes and names X2F.</p>
+      <p style="margin: 0; font-size: 15px; line-height: 22px;">You'll log in the same way from now on: copy the message, decrypt it, paste the code.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
     </section>
     </sc-if>''',
     f'''    <sc-if value="{{{{waiting}}}}" hint-placeholder-val="{{{{true}}}}"><button type="button" onClick="{{{{verify}}}}" style="{PRIMARY}">Verify</button></sc-if>
@@ -183,7 +183,7 @@ Wm3n…
 }''')
 
 # Alt. Password
-files["SetupPassword.dc.html"] = shell("Set a password", 3, "SetupLogin.dc.html", f'''{h1("Set a password", "At least 10 characters, mixing upper and lower case, a number and a symbol.")}
+files["SetupPassword.dc.html"] = shell("Set a password", 3, "SetupLogin.dc.html", f'''{h1("Choose a password", "At least 10 characters, with upper and lower case letters, a number and a symbol.")}
     <label for="pw" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; {MUTED}">
       Password
       <input id="pw" type="password" value="Orbit-lantern-74" autocomplete="new-password" style="{INPUT}">
@@ -199,12 +199,12 @@ files["SetupPassword.dc.html"] = shell("Set a password", 3, "SetupLogin.dc.html"
       <li style="display: flex; align-items: center; gap: 8px;">{CHECK}Not on the list of leaked passwords</li>
       <li style="display: flex; align-items: center; gap: 8px;">{CHECK}Both match</li>
     </ul>
-    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">We store only a one-way scramble of it, so even X2F can't read it. There's no email to reset it with, so keep it somewhere safe, like a password manager.</p>''',
+    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">X2F stores a scrambled version that can't be turned back into your password. We have no email address to reset it with, so keep it in a password manager or somewhere else safe.</p>''',
     f'    <a href="SetupBackup.dc.html" style="{PRIMARY}">Set password</a>', STATIC)
 
 # 4. Backup (optional)
-files["SetupBackup.dc.html"] = shell("Add a backup login?", 4, "SetupPgpChallenge.dc.html", f'''{h1("Add a backup login?", "Recommended. X2F has no email or phone number for you, so if you lose your key or forget your password, nobody can get you back in.")}
-    <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #171b22; font-size: 14px; line-height: 20px;">Your coins are always safe in your own wallet. What you'd lose is this account and its reputation.</p>
+files["SetupBackup.dc.html"] = shell("Add a backup login?", 4, "SetupPgpChallenge.dc.html", f'''{h1("Add a backup way to log in", "We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let you back in.")}
+    <p style="margin: 0; padding: 12px 14px; border-radius: 12px; background: #171b22; font-size: 14px; line-height: 20px;">Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.</p>
     <div role="radiogroup" aria-label="Backup method" style="display: flex; flex-direction: column;">
       <sc-for list="{{{{opts}}}}" as="o" hint-placeholder-count="4">
         <button type="button" role="radio" aria-checked="{{{{o.on}}}}" onClick="{{{{o.pick}}}}" style="{{{{o.style}}}}">
@@ -222,9 +222,9 @@ files["SetupBackup.dc.html"] = shell("Add a backup login?", 4, "SetupPgpChalleng
   constructor(props) { super(props); this.state = { pick: 'totp' }; }
   renderVals() {
     const defs = [
-      { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: '6-digit codes from any authenticator app.' },
-      { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar, kept somewhere safe.' },
-      { id: 'pgp2', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare key stored apart from your main one.' },
+      { id: 'totp', name: 'Authenticator app', short: 'authenticator app', desc: 'Six-digit codes from any authenticator app.' },
+      { id: 'key', name: 'Security key', short: 'security key', desc: 'A YubiKey or similar that you keep somewhere safe.' },
+      { id: 'pgp2', name: 'Second PGP key', short: 'second PGP key', desc: 'A spare PGP key stored separately from your main one.' },
       { id: 'codes', name: 'Printed recovery codes', short: 'recovery codes', desc: 'Ten one-time codes to print or write down.' }
     ];
     const pick = this.state.pick;
@@ -239,7 +239,7 @@ files["SetupBackup.dc.html"] = shell("Add a backup login?", 4, "SetupPgpChalleng
 }''')
 
 # 5. Link a wallet
-files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBackup.dc.html", f'''{h1("Where should your XMR go?", "Pick the wallet you want paid to. X2F never holds your coins.")}
+files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBackup.dc.html", f'''{h1("Where should we send your XMR?", "Choose the wallet you want to be paid to. X2F never holds your coins.")}
     <div role="radiogroup" aria-label="Wallet app" style="display: flex; flex-wrap: wrap; gap: 8px;">
       <sc-for list="{{{{apps}}}}" as="a" hint-placeholder-count="8">
         <button type="button" role="radio" aria-checked="{{{{a.on}}}}" onClick="{{{{a.pick}}}}" style="{{{{a.style}}}}">{{{{a.label}}}}</button>
@@ -257,8 +257,8 @@ files["SetupWallet.dc.html"] = shell("Where should your XMR go?", 5, "SetupBacku
         </button>
       </span>
     </label>
-    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Your first wallet works right away. Wallets you add later wait 24 hours before they can receive payouts, so someone who gets into your account can't redirect your coins.</p>''',
-    f'    <a href="BuyerPay.dc.html" style="{PRIMARY}">Finish and go to the trade</a>',
+    <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">This first wallet can receive payouts straight away. Any wallet you add later has to wait 24 hours, which stops someone who gets into your account from sending your coins elsewhere.</p>''',
+    f'    <a href="BuyerPay.dc.html" style="{PRIMARY}">Finish and return to your trade</a>',
 '''class Component extends DCLogic {
   constructor(props) { super(props); this.state = { app: 'Cake Wallet' }; }
   renderVals() {

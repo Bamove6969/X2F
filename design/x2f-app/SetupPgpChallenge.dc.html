@@ -30,14 +30,14 @@ input::placeholder,textarea::placeholder{color:#9aa4b2}
   </header>
   <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;">
     <section style="display: flex; flex-direction: column; gap: 6px;">
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">Prove it's your key</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">This is exactly how every login will work.</p>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">Decrypt your first login code</h1>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">You'll do the same thing each time you log in.</p>
     </section>
     <sc-if value="{{waiting}}" hint-placeholder-val="{{true}}">
     <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 22px;">
-      <li>Copy the message below.</li>
-      <li>Decrypt it in your PGP app (Kleopatra, GPG Suite or OpenKeychain).</li>
-      <li>Paste the phrase it reveals.</li>
+      <li>Copy the encrypted message below.</li>
+      <li>Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.</li>
+      <li>Paste the code from inside the message.</li>
     </ol>
     <section aria-label="Encrypted message" style="display: flex; flex-direction: column; gap: 8px;">
       <div style="display: flex; align-items: center; justify-content: space-between;">
@@ -51,16 +51,16 @@ Wm3n…
 -----END PGP MESSAGE-----</pre>
     </section>
     <label for="phrase" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: #9aa4b2;">
-      Decrypted phrase
-      <input id="phrase" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the phrase here" style="height: 48px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace;">
+      Code from the message
+      <input id="phrase" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the code" style="height: 48px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace;">
     </label>
-    <p style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #f2c14e; font-size: 13px; line-height: 18px;">The decrypted message names X2F and the current time. If it names another site or an old time, stop: someone may be trying to phish you.</p>
+    <p style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid #f2c14e; font-size: 13px; line-height: 18px;">The decrypted message also names X2F and today's date and time. If it names a different site or an old time, stop and don't paste anything. Someone may be trying to phish you.</p>
     </sc-if>
     <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
     <section aria-label="Key verified" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #4cc3d9;">
       <span style="display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: #4cc3d9;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg>Key verified</span>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">That's how every login works: copy, decrypt, paste. No password to forget or leak.</p>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">A phishing site can't reuse a phrase: each one works once, expires in 5 minutes and names X2F.</p>
+      <p style="margin: 0; font-size: 15px; line-height: 22px;">You'll log in the same way from now on: copy the message, decrypt it, paste the code.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
     </section>
     </sc-if>
   </main>
