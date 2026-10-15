@@ -123,7 +123,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 1. **Getting started screens** (next agreed design step): choose a login method, the PGP challenge, the mandatory backup and linking a wallet (no recovery phrase: there is no built-in wallet).
 2. Buy side (mirrors Sell), then the moderator dashboard.
 3. Bring the desktop view up to date with the phone screens (popups, badge icons) when convenient.
-4. **Phase 0 proof:** rerun the escrow test **in a real browser and on a phone** over a real network.
+4. **Phase 0 passed (GO), 2026-10-14:** escrow ran in desktop Chrome plus Firefox on Android over Wi-Fi; see `spikes/phase0-browser/RESULTS.md`. Left: iPhone Safari, open internet and Tor, stagenet, and resume-after-background.
 5. Once the spec is reviewed and approved, use the **writing-plans** skill for the implementation plan.
 6. Verify each payment method against the provider's website, and grow the catalog.
 
