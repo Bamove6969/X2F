@@ -101,7 +101,7 @@ files["SetupLogin.dc.html"] = shell("How do you want to log in?", 2, "SetupUsern
     const defs = [
       { id: 'pgp', name: 'PGP key', rec: true, next: 'SetupPgpKey.dc.html', cta: 'Continue with PGP key',
         desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for anyone to steal from us.',
-        later: 'Each time you log in, X2F shows a short encrypted message. Your PGP app decrypts it, and you paste back the code inside. It takes a few seconds.' },
+        later: 'Each time you log in, X2F shows a message locked with your public key. Only your private key can unlock it, so you decrypt it in your PGP app and paste in the login code inside. Without your private key, nobody can get that code, and each one works only once.' },
       { id: 'passkey', name: 'Passkey', next: '#', cta: 'Continue with passkey',
         desc: 'Log in with your face, fingerprint or phone PIN. Apple or Google keep it synced across your devices.' },
       { id: 'key', name: 'Security key', next: '#', cta: 'Continue with security key',
@@ -169,7 +169,7 @@ Wm3n…
     <sc-if value="{{{{done}}}}" hint-placeholder-val="{{{{false}}}}">
     <section aria-label="Key verified" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid #4cc3d9;">
       <span style="display: flex; align-items: center; gap: 8px; font-size: 17px; font-weight: 600; color: #4cc3d9;">{CHECK}Key verified</span>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">You'll log in the same way from now on: copy the message, decrypt it, paste the code.</p>
+      <p style="margin: 0; font-size: 15px; line-height: 22px;">Every login works this way from now on. X2F shows a message locked to your key, your PGP app unlocks it with your private key, and you paste in the code.</p>
       <p style="margin: 0; font-size: 14px; line-height: 20px; {MUTED}">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
     </section>
     </sc-if>''',
