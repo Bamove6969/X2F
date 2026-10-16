@@ -9,6 +9,9 @@
 
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 
+/** Longest raw input considered (16 symbols plus generous separators). */
+const MAX_INPUT_LENGTH = 64;
+
 /** Set of valid characters for fast lookup. */
 const VALID = new Set(ALPHABET);
 
@@ -39,6 +42,7 @@ export function newTradeCode(): string {
 /**
  * Normalize a user-entered trade code.
  *
+ * - Rejects non-string input and input longer than 64 characters.
  * - Rejects any non-ASCII input up front (toUpperCase() would turn 'ß' into
  *   'SS' and the Kelvin sign into 'K').
  * - Uppercases the input.
@@ -50,6 +54,8 @@ export function newTradeCode(): string {
  * @returns The grouped code (XXXX-XXXX-XXXX-XXXX) or `null` on invalid input.
  */
 export function normalizeTradeCode(input: string): string | null {
+  if (typeof input !== 'string') return null;
+  if (input.length > MAX_INPUT_LENGTH) return null;
   if (/[^\x00-\x7f]/.test(input)) return null;
   const upper = input.toUpperCase().replace(/[\s-]/g, '');
 

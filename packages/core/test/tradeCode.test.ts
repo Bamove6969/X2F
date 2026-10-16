@@ -88,6 +88,22 @@ describe('normalizeTradeCode', () => {
     expect(normalizeTradeCode('ı000-0000-0000-0000')).toBeNull();
   });
 
+  test('returns null for non-string input', () => {
+    for (const bad of [undefined, null, 42, {}, ['K7M2-9QXA-4FTR-8WPN']]) {
+      expect(normalizeTradeCode(bad as unknown as string)).toBeNull();
+    }
+  });
+
+  test('returns null for input longer than 64 chars', () => {
+    expect(normalizeTradeCode('0'.repeat(65))).toBeNull();
+  });
+
+  test('accepts a 64-char input padded with separators', () => {
+    const padded = '0000000000000000' + '-'.repeat(48);
+    expect(padded).toHaveLength(64);
+    expect(normalizeTradeCode(padded)).toBe('0000-0000-0000-0000');
+  });
+
   test('is idempotent', () => {
     const once = normalizeTradeCode('k7m2 9qxa-4ftr8wpn');
     expect(once).not.toBeNull();
