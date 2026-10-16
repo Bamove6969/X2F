@@ -22,23 +22,26 @@ describe('generateIdentity', () => {
 });
 
 describe('joinMessage', () => {
+  const c = 'A'.repeat(43) + '=';
+  const c2 = 'B'.repeat(42) + 'A=';
+
   it('is the domain-separated, NUL-joined bytes', () => {
-    const m = joinMessage('K7M2-9QXA-4FTR-8WPN', 'seller', 'Y2hhbGxlbmdl');
+    const m = joinMessage('K7M2-9QXA-4FTR-8WPN', 'seller', c);
     expect(m).toBeInstanceOf(Uint8Array);
-    expect(new TextDecoder().decode(m)).toBe('x2f/relay-join/v1\0K7M2-9QXA-4FTR-8WPN\0seller\0Y2hhbGxlbmdl');
+    expect(new TextDecoder().decode(m)).toBe(`x2f/relay-join/v1\0K7M2-9QXA-4FTR-8WPN\0seller\0${c}`);
   });
 
   it('differs by role, code and challenge', () => {
     const d = (m: Uint8Array) => new TextDecoder().decode(m);
-    const base = d(joinMessage('A', 'buyer', 'c'));
-    expect(d(joinMessage('A', 'seller', 'c'))).not.toBe(base);
-    expect(d(joinMessage('B', 'buyer', 'c'))).not.toBe(base);
-    expect(d(joinMessage('A', 'buyer', 'd'))).not.toBe(base);
+    const base = d(joinMessage('A', 'buyer', c));
+    expect(d(joinMessage('A', 'seller', c))).not.toBe(base);
+    expect(d(joinMessage('B', 'buyer', c))).not.toBe(base);
+    expect(d(joinMessage('A', 'buyer', c2))).not.toBe(base);
   });
 
-  it('rejects an unknown role or a NUL inside a part', () => {
-    expect(() => joinMessage('A', 'admin' as 'buyer', 'c')).toThrow(TypeError);
-    expect(() => joinMessage('A\0', 'buyer', 'c')).toThrow(TypeError);
-    expect(() => joinMessage('A', 'buyer', 'c\0')).toThrow(TypeError);
+  it('rejects an unknown role or a NUL inside the code', () => {
+    expect(() => joinMessage('A', 'admin' as 'buyer', c)).toThrow(TypeError);
+    expect(() => joinMessage('A\0', 'buyer', c)).toThrow(TypeError);
+    expect(() => joinMessage('A', 'buyer', `${c}\0`)).toThrow(TypeError);
   });
 });

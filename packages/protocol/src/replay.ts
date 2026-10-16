@@ -1,44 +1,35 @@
 import type { Role } from '@x2f/core';
-import { MAX_TRADE_LEN, hasExactKeys, isPlainObject, isRole } from './roles.js';
+import { hasExactKeys, isPlainObject, isRole, isValidSeq, isValidTrade } from './roles.js';
 
 export interface ReplayGuardJSON {
-  trade: string | null;
+  trade: string;
   seen: Partial<Record<Role, number>>;
 }
 
-const validSeq = (s: unknown): s is number => typeof s === 'number' && Number.isSafeInteger(s) && s >= 0;
-
 /**
- * Accepts only a strictly increasing seq per sender, and binds to one trade id on the first
- * accepted message. open() calls accept() last, after full success.
+ * Replay protection for one trade: accepts only a strictly increasing seq per sender.
+ * The trade is fixed at construction; open() rejects envelopes for any other trade
+ * ('wrong-trade') and calls accept() last, only after full success.
  */
 export class ReplayGuard {
-  #trade: string | null;
+  readonly #trade: string;
   readonly #seen = new Map<Role, number>();
 
-  constructor(trade?: string) {
-    if (trade !== undefined && (typeof trade !== 'string' || trade.length > MAX_TRADE_LEN)) {
-      throw new TypeError('ReplayGuard: invalid trade');
-    }
-    this.#trade = trade ?? null;
+  constructor(trade: string) {
+    if (!isValidTrade(trade)) throw new TypeError('ReplayGuard: invalid trade');
+    this.#trade = trade;
   }
 
-  get trade(): string | null {
+  get trade(): string {
     return this.#trade;
   }
 
-  acceptsTrade(trade: string): boolean {
-    return this.#trade === null || this.#trade === trade;
-  }
-
-  /** Records and returns true only for a valid, strictly newer seq (and matching trade if given). */
-  accept(from: Role, seq: number, trade?: string): boolean {
-    if (!isRole(from) || !validSeq(seq)) return false;
-    if (trade !== undefined && !this.acceptsTrade(trade)) return false;
+  /** Records and returns true only for a valid role and a strictly newer, valid seq. */
+  accept(from: Role, seq: number): boolean {
+    if (!isRole(from) || !isValidSeq(seq)) return false;
     const last = this.#seen.get(from);
     if (last !== undefined && seq <= last) return false;
     this.#seen.set(from, seq);
-    if (trade !== undefined) this.#trade = trade;
     return true;
   }
 
@@ -49,14 +40,12 @@ export class ReplayGuard {
   static from(json: unknown): ReplayGuard {
     if (!isPlainObject(json) || !hasExactKeys(json, ['trade', 'seen'])) throw new TypeError('ReplayGuard.from: bad shape');
     const { trade, seen } = json;
-    if (trade !== null && (typeof trade !== 'string' || trade.length > MAX_TRADE_LEN)) {
-      throw new TypeError('ReplayGuard.from: bad trade');
-    }
+    if (!isValidTrade(trade)) throw new TypeError('ReplayGuard.from: bad trade');
     if (!isPlainObject(seen) || Object.getOwnPropertySymbols(seen).length > 0) throw new TypeError('ReplayGuard.from: bad seen');
-    const g = new ReplayGuard(trade ?? undefined);
+    const g = new ReplayGuard(trade);
     for (const k of Object.getOwnPropertyNames(seen)) {
       const v = seen[k];
-      if (!isRole(k) || !validSeq(v)) throw new TypeError('ReplayGuard.from: bad seen entry');
+      if (!isRole(k) || !isValidSeq(v)) throw new TypeError('ReplayGuard.from: bad seen entry');
       g.#seen.set(k, v);
     }
     return g;

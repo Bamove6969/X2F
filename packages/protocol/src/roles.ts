@@ -19,3 +19,13 @@ export function hasExactKeys(o: object, keys: readonly string[]): boolean {
 }
 
 export const MAX_TRADE_LEN = 256;
+
+/** Trade ids: 1..256 printable ASCII characters, no spaces or control characters. */
+export function isValidTrade(t: unknown): t is string {
+  return typeof t === 'string' && /^[\x21-\x7e]{1,256}$/.test(t);
+}
+
+/** A non-negative safe integer that is not -0. */
+export function isValidSeq(s: unknown): s is number {
+  return typeof s === 'number' && Number.isSafeInteger(s) && s >= 0 && !Object.is(s, -0);
+}

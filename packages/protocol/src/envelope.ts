@@ -17,7 +17,7 @@ import { ProtocolError } from './errors.js';
 import type { Identity } from './identity.js';
 import { canonicalJson, decodePayload, encodePayload } from './payload.js';
 import { ReplayGuard } from './replay.js';
-import { MAX_TRADE_LEN, hasExactKeys, isPlainObject, isRole } from './roles.js';
+import { MAX_TRADE_LEN, hasExactKeys, isPlainObject, isRole, isValidSeq, isValidTrade } from './roles.js';
 
 export interface PublicKeys {
   signPublic: string;
@@ -62,6 +62,8 @@ export interface OpenArgs {
   participants: Partial<Participants>;
   trade: string;
   guard: ReplayGuard;
+  /** Accept envelopes whose `from` is `myRole` (re-reading one's own messages). Default false. */
+  allowSelf?: boolean;
 }
 
 export interface Opened {
@@ -82,7 +84,8 @@ const CT_LENS: ReadonlySet<number> = new Set(BUCKETS.map((b) => b + MAC_LEN));
 const b64Len = (bytes: number): number => 4 * Math.ceil(bytes / 3);
 const CANONICAL_B64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 const LOWER_HEX = /^[0-9a-f]*$/;
-const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+// ignoreBOM keeps a leading BOM in the output, so the canonical comparison rejects it.
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const utf8Encoder = new TextEncoder();
 
 const bad = (msg: string): ProtocolError => new ProtocolError('bad-signature', msg);
@@ -104,6 +107,8 @@ function unpad(data: Uint8Array): Uint8Array {
   let i = data.length - 1;
   while (i >= 0 && data[i] === 0) i--;
   if (i < 0 || data[i] !== 0x80) throw bad('Invalid plaintext: bad padding');
+  // The bucket must be the smallest that fits, exactly as pad() chooses.
+  if (BUCKETS.find((b) => b >= i + 1) !== data.length) throw bad('Invalid plaintext: bucket too large');
   return data.subarray(0, i);
 }
 
@@ -168,21 +173,41 @@ function signedMessage(u: Unsigned): Uint8Array {
 
 // ── seal ────────────────────────────────────────────────────────────────
 
+/** Two roles sharing a signPublic or boxPublic would let one key speak for both. */
+function assertDistinctKeys(participants: Partial<Participants>, where: string): void {
+  const sign = new Set<string>();
+  const box = new Set<string>();
+  for (const role of ROLES) {
+    if (!Object.prototype.hasOwnProperty.call(participants, role)) continue;
+    const p = participants[role] as unknown;
+    if (!isPlainObject(p)) continue;
+    const sp = p['signPublic'];
+    const bp = p['boxPublic'];
+    if (typeof sp === 'string') {
+      if (sign.has(sp.toLowerCase())) throw new TypeError(`${where}: two roles share a signPublic`);
+      sign.add(sp.toLowerCase());
+    }
+    if (typeof bp === 'string') {
+      if (box.has(bp.toLowerCase())) throw new TypeError(`${where}: two roles share a boxPublic`);
+      box.add(bp.toLowerCase());
+    }
+  }
+}
+
 /**
  * Seal `{type, payload}` for the roles in `to`. Throws TypeError on invalid arguments or an
  * unrepresentable payload, ProtocolError('too-large') when the plaintext exceeds 65535 bytes.
  *
  * Only recipients can decrypt. A sender who wants to re-read its own message later must
- * include itself in `to`; otherwise its own slot is random bytes and open() gives 'not-for-me'.
+ * include itself in `to` (and open it with `allowSelf: true`); otherwise its own slot is
+ * random bytes and open() gives 'not-for-me'.
  */
 export async function seal(a: SealArgs): Promise<Envelope> {
   await sodium.ready;
   if (typeof a.type !== 'string') throw new TypeError('seal: type must be a string');
-  if (typeof a.trade !== 'string' || a.trade.length === 0 || a.trade.length > MAX_TRADE_LEN) {
-    throw new TypeError('seal: invalid trade');
-  }
+  if (!isValidTrade(a.trade)) throw new TypeError('seal: invalid trade');
   if (!isRole(a.from)) throw new TypeError('seal: unknown from role');
-  if (!Number.isSafeInteger(a.seq) || a.seq < 0) throw new TypeError('seal: seq must be a non-negative safe integer');
+  if (!isValidSeq(a.seq)) throw new TypeError('seal: seq must be a non-negative safe integer');
   if (!Array.isArray(a.to) || a.to.length === 0) throw new TypeError('seal: `to` must name at least one recipient');
   for (const r of a.to) if (!isRole(r)) throw new TypeError('seal: unknown recipient role');
   if (!isPlainObject(a.participants)) throw new TypeError('seal: invalid participants');
@@ -195,6 +220,7 @@ export async function seal(a: SealArgs): Promise<Envelope> {
       throw new TypeError(`seal: invalid participant keys for ${role}`);
     }
   }
+  assertDistinctKeys(a.participants, 'seal');
   const mine = a.participants[a.from];
   if (a.me.signPublic !== mine.signPublic || a.me.boxPublic !== mine.boxPublic) {
     throw new TypeError('seal: identity does not match participants[from]');
@@ -207,13 +233,16 @@ export async function seal(a: SealArgs): Promise<Envelope> {
   ) {
     throw new TypeError('seal: signSecret does not match signPublic');
   }
-  if (
-    !(boxSecret instanceof Uint8Array) ||
-    boxSecret.length !== KEY_LEN ||
-    !sodium.memcmp(sodium.crypto_scalarmult_base(boxSecret), keys[a.from].box)
-  ) {
+  if (!(boxSecret instanceof Uint8Array) || boxSecret.length !== KEY_LEN) {
     throw new TypeError('seal: boxSecret does not match boxPublic');
   }
+  let boxPub: Uint8Array;
+  try {
+    boxPub = sodium.crypto_scalarmult_base(boxSecret);
+  } catch {
+    throw new TypeError('seal: invalid boxSecret');
+  }
+  if (!sodium.memcmp(boxPub, keys[a.from].box)) throw new TypeError('seal: boxSecret does not match boxPublic');
 
   const inner = canonicalJson({ type: a.type, payload: encodePayload(a.payload) });
   const padded = pad(utf8Encoder.encode(inner));
@@ -221,20 +250,25 @@ export async function seal(a: SealArgs): Promise<Envelope> {
   // One content key, one ciphertext for everyone.
   const key = sodium.randombytes_buf(KEY_LEN);
   const ctNonce = sodium.randombytes_buf(NONCE_LEN);
-  const ct = sodium.crypto_secretbox_easy(padded, ctNonce, key);
   const nonce = sodium.randombytes_buf(NONCE_LEN);
-  const recipients = new Set<Role>(a.to);
   const slots = {} as Record<Role, string>;
-  for (const role of ROLES) {
-    slots[role] = toB64(
-      recipients.has(role)
-        ? sodium.crypto_box_easy(key, nonce, keys[role].box, boxSecret)
-        : sodium.randombytes_buf(SLOT_LEN),
-    );
+  let ct: Uint8Array;
+  let kh: string;
+  try {
+    ct = sodium.crypto_secretbox_easy(padded, ctNonce, key);
+    const recipients = new Set<Role>(a.to);
+    for (const role of ROLES) {
+      slots[role] = toB64(
+        recipients.has(role)
+          ? sodium.crypto_box_easy(key, nonce, keys[role].box, boxSecret)
+          : sodium.randombytes_buf(SLOT_LEN),
+      );
+    }
+    kh = sodium.to_hex(sodium.crypto_generichash(32, key, null));
+  } finally {
+    sodium.memzero(key);
+    sodium.memzero(padded);
   }
-  const kh = sodium.to_hex(sodium.crypto_generichash(32, key, null));
-  sodium.memzero(key);
-  sodium.memzero(padded);
 
   const unsigned: Unsigned = {
     v: 1,
@@ -255,18 +289,48 @@ export async function seal(a: SealArgs): Promise<Envelope> {
 
 const CT_MAX_CHARS = b64Len(MAX_PADDED + MAC_LEN);
 
-/** Shape: plain object, exact keys, primitive types and length caps before any decoding. */
-function checkShape(e: unknown): Unsigned & { sig: string } {
-  if (!isPlainObject(e) || !hasExactKeys(e, ENVELOPE_KEYS)) throw bad('Invalid envelope: bad shape');
-  const { v, trade, from, seq, slots, nonce, kh, ct, ctNonce, sig } = e;
+/**
+ * Copy exactly `keys` from an untrusted object into a fresh null-prototype object, reading
+ * each property once through its descriptor (no getters run; Proxy `get` traps are never
+ * used). Accessors, non-enumerable or symbol keys, extra or missing keys are rejected. Any
+ * exception (e.g. from a Proxy trap) becomes bad-signature. Only the snapshot is used after.
+ */
+function snapshot(o: unknown, keys: readonly string[], field: string): Record<string, unknown> {
+  try {
+    if (typeof o !== 'object' || o === null || Array.isArray(o)) throw new Error('not an object');
+    const proto = Object.getPrototypeOf(o) as unknown;
+    if (proto !== Object.prototype && proto !== null) throw new Error('not plain');
+    const own = Reflect.ownKeys(o);
+    if (own.length !== keys.length) throw new Error('key count');
+    const out = Object.create(null) as Record<string, unknown>;
+    for (const k of own) {
+      if (typeof k !== 'string' || !keys.includes(k) || Object.prototype.hasOwnProperty.call(out, k)) throw new Error('key');
+      const d = Object.getOwnPropertyDescriptor(o, k);
+      if (d === undefined || !('value' in d) || d.enumerable !== true) throw new Error('accessor');
+      out[k] = d.value;
+    }
+    return out;
+  } catch {
+    throw bad(`Invalid ${field}: bad shape`);
+  }
+}
+
+interface Snapshot extends Unsigned {
+  readonly sig: string;
+}
+
+/** Shape: snapshot, primitive types and length caps before any decoding. */
+function checkShape(e: unknown): Snapshot {
+  const s = snapshot(e, ENVELOPE_KEYS, 'envelope');
+  const { v, trade, from, seq, nonce, kh, ct, ctNonce, sig } = s;
   if (v !== 1) throw bad('Invalid v');
   if (typeof trade !== 'string' || trade.length > MAX_TRADE_LEN) throw bad('Invalid trade');
   if (typeof from !== 'string' || from.length > 16) throw bad('Invalid from');
-  if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0) throw bad('Invalid seq');
-  if (!isPlainObject(slots) || !hasExactKeys(slots, ROLES)) throw bad('Invalid slots');
+  if (!isValidSeq(seq)) throw bad('Invalid seq');
+  const slots = snapshot(s['slots'], ROLES, 'slots');
   for (const r of ROLES) {
-    const s = slots[r];
-    if (typeof s !== 'string' || s.length > b64Len(SLOT_LEN)) throw bad(`Invalid slots.${r}`);
+    const v2 = slots[r];
+    if (typeof v2 !== 'string' || v2.length > b64Len(SLOT_LEN)) throw bad(`Invalid slots.${r}`);
   }
   const capped: Array<[string, unknown, number]> = [
     ['nonce', nonce, b64Len(NONCE_LEN)],
@@ -278,30 +342,63 @@ function checkShape(e: unknown): Unsigned & { sig: string } {
   for (const [name, val, max] of capped) {
     if (typeof val !== 'string' || val.length > max) throw bad(`Invalid ${name}`);
   }
-  return e as unknown as Unsigned & { sig: string };
+  return Object.freeze({
+    v: 1,
+    trade,
+    from: from as Role,
+    seq,
+    slots: Object.freeze({ buyer: slots['buyer'] as string, seller: slots['seller'] as string, mod: slots['mod'] as string }),
+    nonce: nonce as string,
+    kh: kh as string,
+    ct: ct as string,
+    ctNonce: ctNonce as string,
+    sig: sig as string,
+  });
+}
+
+/** Parse the decrypted plaintext; it must be exactly the canonical text seal would produce. */
+function parsePlaintext(padded: Uint8Array): Opened {
+  const text = utf8Decoder.decode(unpad(padded));
+  const parsed = JSON.parse(text) as unknown;
+  if (!isPlainObject(parsed) || !hasExactKeys(parsed, INNER_KEYS) || typeof parsed['type'] !== 'string') {
+    throw new Error('bad inner shape');
+  }
+  const opened: Opened = { type: parsed['type'], payload: decodePayload(parsed['payload']) };
+  // Rejects duplicate keys, key order, whitespace, escapes, number forms and a BOM.
+  if (canonicalJson({ type: opened.type, payload: encodePayload(opened.payload) }) !== text) {
+    throw new Error('non-canonical plaintext');
+  }
+  return opened;
 }
 
 /**
- * Verify and decrypt an envelope from the relay. Every rejection is a ProtocolError:
- * shape → wrong-trade → not-participant → field encodings → signature → unwrap ('not-for-me')
- * → kh → decrypt/unpad/parse → replay (checked and committed only after full success).
+ * Verify and decrypt an envelope from the relay. `e` is untrusted input of any shape; it is
+ * snapshotted once and only the snapshot is used. Every rejection of `e` is a ProtocolError:
+ * shape → wrong-trade → not-participant → field encodings → signature → self ('not-for-me'
+ * unless `allowSelf`) → unwrap ('not-for-me') → kh → decrypt/unpad/canonical parse → replay
+ * (checked and committed only after full success). Invalid OpenArgs throw TypeError.
+ *
+ * Message identity is (trade, from, seq), or kh + ct for content; never a hash of the wire
+ * bytes, which are not unique (e.g. JSON formatting of the envelope itself).
  */
-export async function open(e: Envelope, a: OpenArgs): Promise<Opened> {
+export async function open(e: unknown, a: OpenArgs): Promise<Opened> {
   await sodium.ready;
   if (!isRole(a.myRole)) throw new TypeError('open: unknown myRole');
   if (!(a.guard instanceof ReplayGuard)) throw new TypeError('open: guard must be a ReplayGuard');
+  if (!isPlainObject(a.participants)) throw new TypeError('open: invalid participants');
+  assertDistinctKeys(a.participants, 'open');
 
   const env = checkShape(e);
 
-  if (env.trade !== a.trade || !a.guard.acceptsTrade(a.trade)) throw new ProtocolError('wrong-trade', 'Envelope is for another trade');
+  if (env.trade !== a.trade || a.guard.trade !== a.trade) throw new ProtocolError('wrong-trade', 'Envelope is for another trade');
 
   const from = env.from;
   const sender = isRole(from) && Object.prototype.hasOwnProperty.call(a.participants, from) ? a.participants[from] : undefined;
   if (!isRole(from) || sender === undefined) throw new ProtocolError('not-participant', 'Sender is not a participant');
 
   const senderKeys = participantKeys(sender, 'participants[from]');
-  const slot = b64Field(env.slots[a.myRole], (n) => n === SLOT_LEN, b64Len(SLOT_LEN), `slots.${a.myRole}`);
   for (const r of ROLES) b64Field(env.slots[r], (n) => n === SLOT_LEN, b64Len(SLOT_LEN), `slots.${r}`);
+  const slot = b64Field(env.slots[a.myRole], (n) => n === SLOT_LEN, b64Len(SLOT_LEN), `slots.${a.myRole}`);
   const nonce = b64Field(env.nonce, (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'nonce');
   const ctNonce = b64Field(env.ctNonce, (n) => n === NONCE_LEN, b64Len(NONCE_LEN), 'ctNonce');
   const ct = b64Field(env.ct, (n) => CT_LENS.has(n), CT_MAX_CHARS, 'ct');
@@ -316,36 +413,40 @@ export async function open(e: Envelope, a: OpenArgs): Promise<Opened> {
   }
   if (!verified) throw bad('Invalid sig');
 
+  if (from === a.myRole && a.allowSelf !== true) {
+    throw new ProtocolError('not-for-me', 'Envelope is from this role (pass allowSelf to read it)');
+  }
+
   let key: Uint8Array;
   try {
     key = sodium.crypto_box_open_easy(slot, nonce, senderKeys.box, a.me.boxSecret);
   } catch {
     throw new ProtocolError('not-for-me', 'Envelope is not addressed to this role');
   }
-  if (key.length !== KEY_LEN || !sodium.memcmp(sodium.crypto_generichash(32, key, null), kh)) {
-    throw bad('Invalid kh: content key does not match');
-  }
 
   let padded: Uint8Array;
   try {
-    padded = sodium.crypto_secretbox_open_easy(ct, ctNonce, key);
-  } catch {
-    throw bad('Invalid ct: decryption failed');
+    if (key.length !== KEY_LEN || !sodium.memcmp(sodium.crypto_generichash(32, key, null), kh)) {
+      throw bad('Invalid kh: content key does not match');
+    }
+    try {
+      padded = sodium.crypto_secretbox_open_easy(ct, ctNonce, key);
+    } catch {
+      throw bad('Invalid ct: decryption failed');
+    }
   } finally {
     sodium.memzero(key);
   }
 
   let opened: Opened;
   try {
-    const parsed = JSON.parse(utf8Decoder.decode(unpad(padded))) as unknown;
-    if (!isPlainObject(parsed) || !hasExactKeys(parsed, INNER_KEYS) || typeof parsed['type'] !== 'string') {
-      throw new Error('bad inner shape');
-    }
-    opened = { type: parsed['type'], payload: decodePayload(parsed['payload']) };
+    opened = parsePlaintext(padded);
   } catch {
     throw bad('Invalid plaintext');
+  } finally {
+    sodium.memzero(padded);
   }
 
-  if (!a.guard.accept(from, env.seq, a.trade)) throw new ProtocolError('replay', 'Sequence number already seen');
+  if (!a.guard.accept(from, env.seq)) throw new ProtocolError('replay', 'Sequence number already seen');
   return opened;
 }

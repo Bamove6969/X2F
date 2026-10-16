@@ -52,7 +52,7 @@ const sealB = (payload: unknown = { hello: 'world' }, over: SealOver = {}) =>
   seal({ trade, from: 'buyer', seq: 1, type: 'test', payload, to: ['seller'], me: buyer, participants, ...over });
 
 const openAs = (e: unknown, role: Role, over: Partial<Parameters<typeof open>[1]> = {}) =>
-  open(e as Envelope, { me: ids()[role], myRole: role, participants, trade, guard: new ReplayGuard(), ...over });
+  open(e as Envelope, { me: ids()[role], myRole: role, participants, trade, guard: new ReplayGuard(trade), ...over });
 
 const code = async (p: Promise<unknown>): Promise<string> => {
   try {
@@ -79,8 +79,8 @@ describe('round trip', () => {
   });
 
   it('a sender must include itself in `to` to re-read its own message', async () => {
-    expect(await code(openAs(await sealB(1), 'buyer'))).toBe('not-for-me');
-    expect((await openAs(await sealB(1, { to: ['seller', 'buyer'] }), 'buyer')).payload).toBe(1);
+    expect(await code(openAs(await sealB(1), 'buyer', { allowSelf: true }))).toBe('not-for-me');
+    expect((await openAs(await sealB(1, { to: ['seller', 'buyer'] }), 'buyer', { allowSelf: true })).payload).toBe(1);
   });
 
   it('envelope has exactly the final key set and no outer type (R9)', async () => {
@@ -210,7 +210,7 @@ describe('each ProtocolError code', () => {
   });
 
   it('replay: same envelope twice; lower and equal seq', async () => {
-    const guard = new ReplayGuard();
+    const guard = new ReplayGuard(trade);
     const e5 = await sealB(1, { seq: 5 });
     await openAs(e5, 'seller', { guard });
     expect(await code(openAs(e5, 'seller', { guard }))).toBe('replay');
@@ -263,7 +263,7 @@ describe('check order', () => {
   });
 
   it('replay is last: a tampered copy of a seen envelope is bad-signature, not replay', async () => {
-    const guard = new ReplayGuard();
+    const guard = new ReplayGuard(trade);
     const e = await sealB(1, { to: ['seller'] });
     await openAs(e, 'seller', { guard });
     expect(await code(openAs({ ...e, ct: (await sealB()).ct }, 'seller', { guard }))).toBe('bad-signature');
@@ -272,29 +272,28 @@ describe('check order', () => {
   });
 
   it('failures never advance the guard', async () => {
-    const guard = new ReplayGuard();
+    const guard = new ReplayGuard(trade);
     const hi = await sealB(1, { seq: 100 });
     await expect(openAs({ ...hi, sig: '00'.repeat(64) }, 'seller', { guard })).rejects.toBeInstanceOf(ProtocolError);
     const badKh = craft({ sender: buyer, from: 'buyer', trade, seq: 101, participants, padded: pad(innerBytes('t', 1)), wrapTo: ['seller'], khKey: new Uint8Array(32) });
     expect(await code(openAs(badKh, 'seller', { guard }))).toBe('bad-signature');
     const badPad = craft({ sender: buyer, from: 'buyer', trade, seq: 102, participants, padded: new Uint8Array(256), wrapTo: ['seller'] });
     expect(await code(openAs(badPad, 'seller', { guard }))).toBe('bad-signature');
-    expect(guard.toJSON()).toEqual({ trade: null, seen: {} });
+    expect(guard.toJSON()).toEqual({ trade, seen: {} });
     expect(await code(openAs(await sealB(1, { seq: 1 }), 'seller', { guard }))).toBe('ok');
   });
 
   it('a later envelope not addressed to me does not make an earlier one a replay', async () => {
-    const guard = new ReplayGuard();
+    const guard = new ReplayGuard(trade);
     const first = await sealB('first', { seq: 1, to: ['seller'] });
     const later = await sealB('later', { seq: 2, to: ['mod'] });
     expect(await code(openAs(later, 'seller', { guard }))).toBe('not-for-me');
     expect((await openAs(first, 'seller', { guard })).payload).toBe('first');
   });
 
-  it('the guard binds to the trade on first success', async () => {
-    const guard = new ReplayGuard();
+  it('a guard bound to one trade rejects envelopes of another trade', async () => {
+    const guard = new ReplayGuard(trade);
     await openAs(await sealB(), 'seller', { guard });
-    expect(guard.trade).toBe(trade);
     const t2 = 'ZZZZ-ZZZZ-ZZZZ-ZZZZ';
     const other = await seal({ trade: t2, from: 'buyer', seq: 9, type: 't', payload: 1, to: ['seller'], me: buyer, participants });
     expect(await code(openAs(other, 'seller', { guard, trade: t2 }))).toBe('wrong-trade');

@@ -17,7 +17,7 @@ beforeAll(async () => {
 const sealP = (payload: unknown) =>
   seal({ trade, from: 'buyer', seq: 1, type: 't', payload, to: ['seller'], me: buyer, participants });
 const roundTrip = async (payload: unknown) =>
-  (await open(await sealP(payload), { me: seller, myRole: 'seller', participants, trade, guard: new ReplayGuard() })).payload;
+  (await open(await sealP(payload), { me: seller, myRole: 'seller', participants, trade, guard: new ReplayGuard(trade) })).payload;
 
 const nest = (n: number): unknown => {
   let v: unknown = 1;
