@@ -1,0 +1,20 @@
+{
+  "name": "x2f",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "engines": { "node": ">=22.12 <23" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "audit": "npm audit --omit=dev",
+    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off packages apps tools",
+    "check": "bash tools/check.sh"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "7.3.6",
+    "vitest": "5.0.3"
+  }
+}
