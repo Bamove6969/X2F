@@ -29,18 +29,19 @@ FPRS="$(gpg --batch --with-colons --fingerprint | awk -F: '$1 == "fpr" { print $
 printf '%s\n' "${FPRS}" | grep -qx "${EXPECTED_FPR}" || fail "key fingerprint is not ${EXPECTED_FPR}"
 
 # Decrypting a clearsigned file writes the verified plaintext and reports signature status.
-# gpg's exit code is deliberately not trusted on its own: the status lines decide.
-STATUS="$(gpg --batch --status-fd 1 --output "${WORK}/plain.txt" --decrypt "${HASHES_FILE}" 2>/dev/null || true)"
+# Both the status lines and gpg's exit code must say good (status checked first for a precise reason).
+GPG_RC=0
+STATUS="$(gpg --batch --status-fd 1 --output "${WORK}/plain.txt" --decrypt "${HASHES_FILE}" 2>/dev/null)" || GPG_RC=$?
 BAD="$(printf '%s\n' "${STATUS}" | awk '$1 == "[GNUPG:]" && $2 ~ /^(EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|EXPSIG)$/ { print $2; exit }')"
 [ -z "${BAD}" ] || fail "signature rejected (${BAD}): bad, expired, revoked or unverifiable"
 printf '%s\n' "${STATUS}" | grep -q '^\[GNUPG:\] GOODSIG ' || fail "no good signature (GOODSIG missing)"
+[ "${GPG_RC}" -eq 0 ] || fail "gpg exited ${GPG_RC}"
 # VALIDSIG field 11 (awk $12) is the primary key fingerprint, even when a subkey signed.
 PRIMARY="$(printf '%s\n' "${STATUS}" | awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { print $12 }')"
 [ "${PRIMARY}" = "${EXPECTED_FPR}" ] || fail "signing key is not ${EXPECTED_FPR}"
 
 # Only the verified plaintext is trusted for the hash line.
-LINE="$(grep -E "^[0-9a-f]{64}  ${NAME}\$" "${WORK}/plain.txt" || true)"
-[ "${LINE}" = "${EXPECTED_SHA256}  ${NAME}" ] || fail "signed hashes do not list ${EXPECTED_SHA256} for ${NAME}"
+grep -Fxq "${EXPECTED_SHA256}  ${NAME}" "${WORK}/plain.txt" || fail "signed hashes do not list ${EXPECTED_SHA256} for ${NAME}"
 
 ACTUAL="$(sha256sum "${TARBALL}" | awk '{ print $1 }')"
 [ "${ACTUAL}" = "${EXPECTED_SHA256}" ] || fail "tarball sha256 mismatch"

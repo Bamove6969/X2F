@@ -20,7 +20,8 @@ BIN_DIR="${ROOT}/.regtest/bin"
 FINAL_DIR="${BIN_DIR}/monero-x86_64-linux-gnu-v${VERSION}"
 MONEROD="${FINAL_DIR}/monerod"
 
-if [ -x "${MONEROD}" ]; then
+# Trust the cached binary only if it still matches the hash recorded when it was installed.
+if [ -x "${MONEROD}" ] && (cd "${FINAL_DIR}" && sha256sum -c --quiet monerod.sha256 >/dev/null 2>&1); then
   exit 0
 fi
 
@@ -41,6 +42,9 @@ bash "${HERE}/verify-release.sh" "${WORK}/binaryfate.asc" "${WORK}/hashes.txt" "
 mkdir "${WORK}/extract"
 tar -xjf "${WORK}/${TARBALL}" -C "${WORK}/extract"
 [ -x "${WORK}/extract/monero-x86_64-linux-gnu-v${VERSION}/monerod" ] || { echo "fetch-monerod: monerod missing after extract" >&2; exit 1; }
+EXTRACTED="${WORK}/extract/monero-x86_64-linux-gnu-v${VERSION}"
+(cd "${EXTRACTED}" && sha256sum monerod > monerod.sha256)
 rm -rf "${FINAL_DIR}"
-mv "${WORK}/extract/monero-x86_64-linux-gnu-v${VERSION}" "${FINAL_DIR}"
+# mv -T fails if a concurrent run already put a directory there, instead of nesting into it.
+mv -T "${EXTRACTED}" "${FINAL_DIR}"
 echo "fetch-monerod: installed ${MONEROD}"

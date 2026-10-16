@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
 import { fundedWallet, startRegtest, type Regtest } from './regtest.js';
@@ -11,11 +10,12 @@ async function start(): Promise<Regtest> {
 }
 
 
-function monerodCount(): number {
+function alive(pid: number): boolean {
   try {
-    return Number(execFileSync('pgrep', ['-fc', '\\.regtest/bin/.*/monerod'], { encoding: 'utf8' }).trim());
+    process.kill(pid, 0);
+    return true;
   } catch {
-    return 0; // pgrep exits 1 when nothing matches
+    return false;
   }
 }
 
@@ -45,13 +45,11 @@ describe('regtest harness', () => {
   });
 
   it('stop leaves no monerod process and removes the data dir', async () => {
-    const before = monerodCount();
     const node = await start();
     expect(existsSync(node.dataDir)).toBe(true);
-    expect(monerodCount()).toBe(before + 1);
+    expect(alive(node.pid)).toBe(true);
     await node.stop();
-    started.length = 0;
-    expect(monerodCount()).toBe(before);
+    expect(alive(node.pid)).toBe(false);
     expect(existsSync(node.dataDir)).toBe(false);
   });
 });

@@ -11,6 +11,7 @@ const MONEROD = join(REGTEST_DIR, 'bin', 'monero-x86_64-linux-gnu-v0.18.5.3', 'm
 
 export interface Regtest {
   rpcUri: string;
+  pid: number;
   dataDir: string;
   stop(): Promise<void>;
 }
@@ -21,9 +22,17 @@ const FUNDING_BLOCKS = 80;
 const CONFIRMATION_BLOCKS = 12;
 
 const children = new Set<ChildProcess>();
-process.on('exit', () => {
+function killChildren(): void {
   for (const c of children) c.kill('SIGKILL');
-});
+}
+process.on('exit', killChildren);
+// Handling a signal suppresses its default exit, so re-raise it once the children are gone.
+for (const sig of ['SIGINT', 'SIGTERM'] as const) {
+  process.once(sig, () => {
+    killChildren();
+    process.kill(process.pid, sig);
+  });
+}
 
 const reserved = new Set<number>();
 
@@ -44,6 +53,12 @@ async function freePort(): Promise<number> {
       return port;
     }
   }
+}
+
+function spawnFailure(child: ChildProcess): Promise<never> {
+  return new Promise((_, reject) => {
+    child.once('error', (e) => reject(new Error(`could not start monerod: ${e.message}`)));
+  });
 }
 
 async function waitForInfo(rpcUri: string, child: ChildProcess): Promise<void> {
@@ -93,6 +108,8 @@ export async function startRegtest(): Promise<Regtest> {
     { stdio: 'ignore' },
   );
   children.add(child);
+  const failed = spawnFailure(child);
+  failed.catch(() => undefined); // surfaced through the race below; avoid an unhandled rejection after start
 
   const stop = async (): Promise<void> => {
     if (child.exitCode === null && child.signalCode === null) {
@@ -108,12 +125,12 @@ export async function startRegtest(): Promise<Regtest> {
   };
 
   try {
-    await waitForInfo(rpcUri, child);
+    await Promise.race([waitForInfo(rpcUri, child), failed]);
   } catch (e) {
     await stop();
     throw e;
   }
-  return { rpcUri, dataDir, stop };
+  return { rpcUri, pid: child.pid ?? -1, dataDir, stop };
 }
 
 export async function mine(rpcUri: string, blocks: number, address: string): Promise<void> {

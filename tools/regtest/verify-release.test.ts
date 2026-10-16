@@ -5,7 +5,8 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
-const SCRIPT = fileURLToPath(new URL('./verify-release.sh', import.meta.url));
+// VERIFY_RELEASE_SCRIPT lets mutation checks point the suite at a scratch copy of the script.
+const SCRIPT = process.env.VERIFY_RELEASE_SCRIPT ?? fileURLToPath(new URL('./verify-release.sh', import.meta.url));
 const NAME = 'monero-fake.tar.bz2';
 
 let dir: string;
@@ -35,7 +36,7 @@ function exportKey(k: Key): string {
   return f;
 }
 
-function sign(k: Key, fakedTime?: string): { hashes: string; tarball: string; sha: string } {
+function sign(k: Key, fakedTime?: string, signer: string = k.fpr): { hashes: string; tarball: string; sha: string } {
   const tarball = join(dir, NAME);
   writeFileSync(tarball, `fake tarball ${n++}`);
   const sha = execFileSync('sha256sum', [tarball], { encoding: 'utf8' }).split(' ')[0] ?? '';
@@ -43,13 +44,18 @@ function sign(k: Key, fakedTime?: string): { hashes: string; tarball: string; sh
   writeFileSync(plain, `${sha}  ${NAME}\n`);
   const faked = fakedTime ? ['--faked-system-time', fakedTime] : [];
   const hashes = join(dir, `hashes-${n}.txt`);
-  gpg([...faked, '--local-user', k.fpr, '--clearsign', '--output', hashes, plain]);
+  gpg([...faked, '--local-user', signer, '--clearsign', '--output', hashes, plain]);
   return { hashes, tarball, sha };
 }
 
 function run(key: string, hashes: string, tarball: string, fpr: string, sha: string): { status: number; stderr: string } {
   const r = spawnSync('bash', [SCRIPT, key, hashes, tarball, fpr, sha], { encoding: 'utf8' });
   return { status: r.status ?? -1, stderr: r.stderr };
+}
+
+function subkeyFpr(k: Key): string {
+  const fprs = gpg(['--with-colons', '--list-keys', k.pub]).split('\n').filter((l) => l.startsWith('fpr:'));
+  return fprs[1]?.split(':')[9] ?? '';
 }
 
 describe('verify-release.sh (offline)', () => {
@@ -119,5 +125,48 @@ describe('verify-release.sh (offline)', () => {
     gpg(['--output', rev, '--gen-revoke', k.fpr], 'y\n0\n\ny\n');
     gpg(['--import', rev]);
     { const r = run(exportKey(k), s.hashes, s.tarball, k.fpr, s.sha); expect(r.status).toBe(1); expect(r.stderr).toMatch(/REVKEYSIG/); }
+  });
+
+  it('rejects a key file holding the expected key when an attacker key signed', () => {
+    const good = makeKey('1y');
+    const attacker = makeKey('1y');
+    const s = sign(attacker);
+    const both = join(dir, 'both.asc');
+    writeFileSync(both, readFileSync(exportKey(good)) + readFileSync(exportKey(attacker)).toString());
+    const r = run(both, s.hashes, s.tarball, good.fpr, s.sha);
+    expect(r.status).toBe(1);
+    expect(r.stderr).toMatch(/signing key is not/);
+  });
+
+  it('accepts a signature made by a signing subkey of the expected primary key', () => {
+    const k = makeKey('1y');
+    gpg(['--quick-add-key', k.fpr, 'ed25519', 'sign', '1y']);
+    const sub = subkeyFpr(k);
+    expect(sub).not.toBe('');
+    expect(sub).not.toBe(k.fpr);
+    const s = sign(k, undefined, `${sub}!`);
+    const r = run(exportKey(k), s.hashes, s.tarball, k.fpr, s.sha);
+    expect(r.stderr).toBe('');
+    expect(r.status).toBe(0);
+  });
+
+  it('takes the hash line only from the signed body, not text before or after it', () => {
+    const k = makeKey('1y');
+    const s = sign(k);
+    const line = `${s.sha}  ${NAME}\n`;
+    const body = join(dir, 'other-body.txt');
+    writeFileSync(body, 'nothing here\n');
+    const signed = join(dir, 'other-signed.txt');
+    gpg(['--local-user', k.fpr, '--clearsign', '--output', signed, body]);
+    const text = readFileSync(signed, 'utf8');
+    const before = join(dir, 'line-before.txt');
+    writeFileSync(before, line + text);
+    const after = join(dir, 'line-after.txt');
+    writeFileSync(after, text + line);
+    for (const f of [before, after]) {
+      const r = run(exportKey(k), f, s.tarball, k.fpr, s.sha);
+      expect(r.status).toBe(1);
+      expect(r.stderr).toMatch(/signed hashes do not list/);
+    }
   });
 });
