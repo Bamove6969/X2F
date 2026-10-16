@@ -9,6 +9,7 @@ set -euo pipefail
 VERSION="0.18.5.3"
 TARBALL="monero-linux-x64-v${VERSION}.tar.bz2"
 EXPECTED_SHA256="3333d0e04c9cbe3023e7e2b6dd369c407f36bb8df5b05fb0a19d7685b3d56dfc"
+MONEROD_SHA256="dd29703a5a1abf76b06c917276377b16b60668362ddd1459109537e212f4148c"
 EXPECTED_FPR="81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92"
 KEY_URL="https://raw.githubusercontent.com/monero-project/monero/master/utils/gpg_keys/binaryfate.asc"
 HASHES_URL="https://www.getmonero.org/downloads/hashes.txt"
@@ -20,8 +21,8 @@ BIN_DIR="${ROOT}/.regtest/bin"
 FINAL_DIR="${BIN_DIR}/monero-x86_64-linux-gnu-v${VERSION}"
 MONEROD="${FINAL_DIR}/monerod"
 
-# Trust the cached binary only if it still matches the hash recorded when it was installed.
-if [ -x "${MONEROD}" ] && (cd "${FINAL_DIR}" && sha256sum -c --quiet monerod.sha256 >/dev/null 2>&1); then
+# Trust the cached binary only if it matches the pinned hash of the verified release's monerod.
+if [ -x "${MONEROD}" ] && [ "$(sha256sum "${MONEROD}" | cut -d' ' -f1)" = "${MONEROD_SHA256}" ]; then
   exit 0
 fi
 
@@ -43,7 +44,7 @@ mkdir "${WORK}/extract"
 tar -xjf "${WORK}/${TARBALL}" -C "${WORK}/extract"
 [ -x "${WORK}/extract/monero-x86_64-linux-gnu-v${VERSION}/monerod" ] || { echo "fetch-monerod: monerod missing after extract" >&2; exit 1; }
 EXTRACTED="${WORK}/extract/monero-x86_64-linux-gnu-v${VERSION}"
-(cd "${EXTRACTED}" && sha256sum monerod > monerod.sha256)
+[ "$(sha256sum "${EXTRACTED}/monerod" | cut -d' ' -f1)" = "${MONEROD_SHA256}" ] || { echo "fetch-monerod: extracted monerod does not match the pinned sha256" >&2; exit 1; }
 rm -rf "${FINAL_DIR}"
 # mv -T fails if a concurrent run already put a directory there, instead of nesting into it.
 mv -T "${EXTRACTED}" "${FINAL_DIR}"
