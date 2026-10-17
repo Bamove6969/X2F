@@ -445,33 +445,77 @@ describe('party runner over the relay on regtest', () => {
     void mod;
   });
 
-  it('a garbage tx set from the builder is refused and settlement still completes', async () => {
+  it('a garbage tx set or a jump to attempt 20 from the builder cannot lock the co-signer', async () => {
     const t = await newTrade();
     const amount = XMR;
     await readyAndFund(t, amount);
     const dest = await newTestWallet(node.rpcUri);
     try {
       const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
-      const garbage = await seal({
-        trade: t.code,
-        from: 'seller',
-        // A plausible next seq: a far-future one would make the seller's real messages replays.
-        seq: t.stores.seller.current()!.seq + 1,
-        type: 'release.txset',
-        payload: { key: 'release.txset:1', txSet: 'not a tx set' },
-        to: ['buyer'],
-        me: t.ids.seller,
-        participants: t.participants,
-      });
-      t.taps.buyer.inject(garbage);
-      const [b, s] = await Promise.all([
-        t.parties.buyer.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }),
-        t.parties.seller.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }),
-      ]);
+      const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
+      // Pause the real seller so the fakes below take the next sequence numbers.
+      await t.parties.seller.stop();
+      const buyerDone = t.parties.buyer.settle(o);
+      await expect.poll(() => t.stores.buyer.current()?.release?.outcome, { timeout: 60_000 }).toBeTruthy();
+      const tag = t.stores.buyer.current()!.release!.outcome.slice(0, 16);
+      let seq = t.stores.seller.current()!.seq;
+      const fake = (key: string, payload: Record<string, string>) =>
+        seal({ trade: t.code, from: 'seller', seq: ++seq, type: key.split(':')[0]!, payload: { key, ...payload }, to: ['buyer'], me: t.ids.seller, participants: t.participants });
+      // Before the real seller acts: a garbage set for attempt 1 and an export for attempt 20.
+      t.taps.buyer.inject(await fake(`release.txset:${tag}.1`, { txSet: 'not a tx set' }));
+      t.taps.buyer.inject(await fake(`state.export:${tag}.20`, { hex: 'x' }));
+      await expect.poll(() => t.stores.buyer.current()?.received[`release.txset:${tag}.1`]?.seller, { timeout: 60_000 }).toBeTruthy();
+      t.parties.seller = startParty(t, 'seller').party; // its first two seqs are now replays; resends get past them
+      const [b, s] = await Promise.all([buyerDone, t.parties.seller.settle(o)]);
       expect(b).toMatch(/^[0-9a-f]{64}$/);
       expect(s).toBeNull();
       expect(ignoredBy.buyer).toContain('cosign-payout-mismatch');
-      expect(t.stores.buyer.current()!.release!.attempt).toBeGreaterThan(1);
+      expect(t.stores.buyer.current()!.release!.attempt).toBe(2); // refused once, never jumped to 20
+    } finally {
+      await dest.close();
+    }
+  });
+
+  it('a party that checked the addresses can settle even if a peer withholds its confirmation', async () => {
+    const code = newTradeCode();
+    const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
+    const participants = Object.fromEntries(ROLES.map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
+    relay.registerTrade(code, { buyer: ids.buyer.signPublic, seller: ids.seller.signPublic, mod: ids.mod.signPublic });
+    const stores = { buyer: memoryStore(), seller: memoryStore(), mod: memoryStore() };
+    const base = { code, ids, participants, stores };
+    const buyer = startParty(base, 'buyer');
+    const seller = startParty(base, 'seller');
+    const mod = startParty(base, 'mod');
+    // The moderator confirms to the buyer only, then goes silent.
+    let modConfirmed = false;
+    stores.mod.onSave = (x) => {
+      if (x.sent['msig.ready:0']) modConfirmed = true;
+    };
+    let forwarded = false;
+    mod.tap.dropSend = () => {
+      if (!modConfirmed) return false;
+      if (!forwarded) {
+        forwarded = true;
+        buyer.tap.inject(mod.tap.out[mod.tap.out.length - 1]!);
+      }
+      return true;
+    };
+    const address = await buyer.party.ready();
+    await expect.poll(() => stores.seller.current()?.sent['msig.ready:0'] !== undefined, { timeout: 60_000 }).toBe(true);
+    // A different setup message from the moderator no longer kills the seller.
+    seller.tap.inject(await seal({ trade: code, from: 'mod', seq: 1_000_000, type: 'msig.prepare', payload: { key: 'msig.prepare:0', hex: 'other' }, to: ['buyer', 'seller'], me: ids.mod, participants }));
+    await funder.setDaemonConnection({ uri: node.rpcUri });
+    await funder.sync();
+    await funder.createTx({ accountIndex: 0, address, amount: XMR, relay: true });
+    await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }];
+      const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
+      const [b, s] = await Promise.all([buyer.party.settle(o), seller.party.settle(o)]);
+      expect(b).toMatch(/^[0-9a-f]{64}$/);
+      expect(s).toBeNull();
+      expect(ignoredBy.seller).toContain('setup-after-ready');
     } finally {
       await dest.close();
     }

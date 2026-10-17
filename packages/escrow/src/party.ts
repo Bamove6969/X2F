@@ -36,15 +36,17 @@ interface Received {
   digest: string;
 }
 
-type ReleasePhase = 'waiting-funds' | 'export' | 'built' | 'cosigning' | 'signed' | 'done';
+type ReleasePhase = 'waiting-funds' | 'export' | 'built' | 'cosigning' | 'signed' | 'done' | 'exhausted';
 
 interface ReleaseState {
-  /** Digest of the outcome being settled. */
+  /** Digest of the outcome being settled; its first 16 hex chars tag every release message. */
   outcome: string;
   part: 'builder' | 'cosigner';
   counterpart: Role;
-  /** Each failed build or check starts a new attempt with a fresh export (fresh nonces). */
+  /** Per outcome: each failed build or check starts a new attempt with a fresh export. */
   attempt: number;
+  /** Set once any tx set was built or received for this outcome; then it can't be switched. */
+  committed?: boolean;
   phase: ReleasePhase;
   txSet?: string;
   signedHex?: string;
@@ -109,10 +111,12 @@ const READY = 'msig.ready:0';
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
-const RELEASE_KEY = /^(state\.export|release\.txset|release\.done):(\d{1,2})$/;
-const exportKey = (n: number): string => `state.export:${n}`;
-const txSetKey = (n: number): string => `release.txset:${n}`;
-const DONE = 'release.done:0';
+// Release keys carry the outcome's tag, so messages for different outcomes never mix.
+const RELEASE_KEY = /^(state\.export|release\.txset|release\.done):([0-9a-f]{16})\.(\d{1,2})$/;
+const tagOf = (outcome: string): string => outcome.slice(0, 16);
+const exportKey = (r: ReleaseState, n = r.attempt): string => `state.export:${tagOf(r.outcome)}.${n}`;
+const txSetKey = (r: ReleaseState): string => `release.txset:${tagOf(r.outcome)}.${r.attempt}`;
+const doneKey = (r: ReleaseState): string => `release.done:${tagOf(r.outcome)}.0`;
 
 function digestOf(key: string, payload: unknown): string {
   return sodium.to_hex(sodium.crypto_generichash(32, canonicalJson({ key, payload }), null));
@@ -156,10 +160,10 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === ADDR) return Object.keys(p).length === 4 && typeof p.address === 'string' && typeof p.prev === 'string' && echoOk();
   if (key === READY) return exactStrings(p, ['key', 'address']);
   const rel = RELEASE_KEY.exec(key);
-  if (!rel || Number(rel[2]) > MAX_ATTEMPT) return false;
+  if (!rel || Number(rel[3]) > MAX_ATTEMPT) return false;
   if (rel[1] === 'state.export') return exactStrings(p, ['key', 'hex']);
   if (rel[1] === 'release.txset') return exactStrings(p, ['key', 'txSet']);
-  return key === DONE && exactStrings(p, ['key', 'txHash']);
+  return rel[3] === '0' && exactStrings(p, ['key', 'txHash']);
 }
 
 const isSetupKey = (key: string): boolean => key === PREPARE || key === MAKE || key === ADDR || key === READY || KEX.test(key);
@@ -173,7 +177,8 @@ const RETRYABLE = new Set(['bad-payouts', 'not-ready', 'payout-mismatch']);
  * party that sends different content to different peers is caught (equivocation) before
  * anyone advances. Each party checks all three addresses, then confirms (msig.ready); ready()
  * resolves only once both peers have confirmed too, so nobody funds an escrow that one of the
- * others could not settle. After that, setup messages are ignored.
+ * others could not settle. A party that has checked the addresses itself can settle, and
+ * from then on ignores setup messages, even if a peer withholds its confirmation.
  *
  * Settlement waits until the escrow is funded, fully unlocked and matches the outcome. The
  * builder and co-signer swap fresh multisig state, the builder sends one tx set, the
@@ -205,7 +210,11 @@ export function runParty(a: PartyArgs): PartyHandle {
     readyReject = rej;
   });
   readyP.catch(() => undefined);
+  /** Both peers confirmed: the funding signal for ready(). */
   let isReady = false;
+  /** This party has checked all three addresses itself: enough to settle, and setup is over. */
+  const checked = (): boolean => state.sent[READY] !== undefined;
+  let readyResends = 0;
   let settleOutcome: Outcome | null = null;
   let settleWaiter: { resolve: (v: string | null) => void; reject: (e: unknown) => void } | null = null;
 
@@ -268,14 +277,17 @@ export function runParty(a: PartyArgs): PartyHandle {
       await send(state.step, peers); // the final kex message, in case a peer lost it
       await send(ADDR, peers);
       await send(READY, peers);
-    } else {
+    } else if (readyResends < 5) {
+      // A few more, in case a peer lost ours; an uninvolved peer may stay offline for good.
+      readyResends += 1;
       await send(READY, peers.filter((p) => !pastSetup(p)));
     }
     const rel = state.release;
     if (!rel) return;
-    if (rel.phase !== 'waiting-funds') await send(exportKey(rel.attempt), [rel.counterpart]);
-    if (rel.part === 'builder' && rel.phase === 'built') await send(txSetKey(rel.attempt), [rel.counterpart]);
-    if (rel.phase === 'done' && rel.part === 'cosigner') await send(DONE, [rel.counterpart]);
+    if (rel.phase === 'exhausted') return;
+    if (rel.phase !== 'waiting-funds') await send(exportKey(rel), [rel.counterpart]);
+    if (rel.part === 'builder' && rel.phase === 'built') await send(txSetKey(rel), [rel.counterpart]);
+    if (rel.phase === 'done' && rel.part === 'cosigner') await send(doneKey(rel), [rel.counterpart]);
   };
 
   // Resends back off while nothing happens and restart quickly after progress.
@@ -366,11 +378,17 @@ export function runParty(a: PartyArgs): PartyHandle {
   // ── Settlement ────────────────────────────────────────────────────────
 
   /** Start a new attempt: drop this attempt's work; the next step exports afresh. */
-  const nextAttempt = async (rel: ReleaseState, to = 0): Promise<void> => {
-    rel.attempt = Math.max(rel.attempt + 1, to);
-    if (rel.attempt > MAX_ATTEMPT) throw new PartyError('bad-state', 'too many settlement attempts');
-    rel.phase = 'waiting-funds';
+  const nextAttempt = async (rel: ReleaseState): Promise<void> => {
+    rel.attempt += 1;
     delete rel.txSet;
+    if (rel.attempt > MAX_ATTEMPT) {
+      // Give up on this outcome only; the party stays alive and can settle another.
+      rel.phase = 'exhausted';
+      await saveState();
+      settleWaiter?.reject(new PartyError('bad-outcome', 'settlement attempts for this outcome are used up'));
+      return;
+    }
+    rel.phase = 'waiting-funds';
     await saveState();
   };
 
@@ -389,56 +407,50 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
   };
 
-  /** The highest attempt the counterpart has exported for. */
-  const counterpartAttempt = (cp: Role): number => {
-    let n = 0;
-    for (const k of Object.keys(state.received)) {
-      const m = /^state\.export:(\d+)$/.exec(k);
-      if (m && state.received[k]?.[cp]) n = Math.max(n, Number(m[1]));
-    }
-    return n;
-  };
+  /** The counterpart moved one attempt ahead (it refused or failed ours). Never jump further. */
+  const counterpartNext = (rel: ReleaseState): boolean => state.received[exportKey(rel, rel.attempt + 1)]?.[rel.counterpart] !== undefined;
 
   const advanceRelease = async (): Promise<void> => {
     const o = settleOutcome;
     const rel = state.release;
-    if (!o || !rel || !isReady || rel.outcome !== outcomeDigest(o)) return;
+    if (!o || !rel || !checked() || rel.outcome !== outcomeDigest(o) || rel.phase === 'exhausted') return;
     const cp = rel.counterpart;
     const theirs = (key: string): Received | undefined => state.received[key]?.[cp];
 
-    // The counterpart moved to a later attempt (e.g. it refused our set): follow, unless we signed.
-    const ahead = counterpartAttempt(cp);
-    if (ahead > rel.attempt && (rel.phase === 'waiting-funds' || rel.phase === 'export' || rel.phase === 'built')) {
-      await nextAttempt(rel, ahead);
+    // The counterpart moved to the next attempt (e.g. it refused our set): follow, unless we signed.
+    if (counterpartNext(rel) && (rel.phase === 'waiting-funds' || rel.phase === 'export' || rel.phase === 'built')) {
+      await nextAttempt(rel);
+      if ((rel.phase as ReleasePhase) === 'exhausted') return;
     }
 
     if (rel.phase === 'waiting-funds') {
       if (!(await fundsReady(o))) return;
-      state.sent[exportKey(rel.attempt)] = { hex: await session.exportState() };
+      state.sent[exportKey(rel)] = { hex: await session.exportState() };
       rel.phase = 'export';
       await persist(); // the export's nonces are saved with the wallet before they are sent
-      await send(exportKey(rel.attempt), [cp]);
+      await send(exportKey(rel), [cp]);
     }
 
     if (rel.part === 'builder') {
-      const exp = theirs(exportKey(rel.attempt));
+      const exp = theirs(exportKey(rel));
       if (rel.phase === 'export' && exp) {
         try {
           await importPeer(exp);
           if (!(await fundsReady(o))) throw new EscrowError('not-ready');
           const { txSet } = await session.buildRelease(o.to);
           rel.phase = 'built';
+          rel.committed = true;
           rel.txSet = txSet;
-          state.sent[txSetKey(rel.attempt)] = { txSet };
+          state.sent[txSetKey(rel)] = { txSet };
           await persist(); // the set is saved before it leaves the device; never rebuilt
-          await send(txSetKey(rel.attempt), [cp]);
+          await send(txSetKey(rel), [cp]);
         } catch (e) {
           if (!(e instanceof EscrowError) || !RETRYABLE.has(e.code)) throw e;
           ignored(`build-${e.code}`);
           await nextAttempt(rel);
         }
       }
-      const done = theirs(DONE);
+      const done = theirs(doneKey(rel));
       if (rel.phase === 'built' && done) {
         rel.phase = 'done';
         rel.txHash = String(done.payload.txHash);
@@ -449,8 +461,8 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
 
     // Co-signer.
-    const exp = theirs(exportKey(rel.attempt));
-    const tx = theirs(txSetKey(rel.attempt));
+    const exp = theirs(exportKey(rel));
+    const tx = theirs(txSetKey(rel));
     if (rel.phase === 'export' && exp && tx) {
       try {
         await importPeer(exp);
@@ -464,6 +476,7 @@ export function runParty(a: PartyArgs): PartyHandle {
         return;
       }
       rel.phase = 'cosigning';
+      rel.committed = true;
       rel.txSet = String(tx.payload.txSet);
       await persist(); // from here on, never sign any other set for this trade
     }
@@ -490,9 +503,9 @@ export function runParty(a: PartyArgs): PartyHandle {
         if (!(await session.txSeen(rel.txHash))) return; // retried on the next tick
       }
       rel.phase = 'done';
-      state.sent[DONE] = { txHash: rel.txHash };
+      state.sent[doneKey(rel)] = { txHash: rel.txHash };
       await saveState();
-      await send(DONE, [cp]);
+      await send(doneKey(rel), [cp]);
     }
     if (rel.phase === 'done') settleWaiter?.resolve(rel.txHash ?? null);
   };
@@ -501,16 +514,15 @@ export function runParty(a: PartyArgs): PartyHandle {
     const digest = outcomeDigest(o);
     const rel = state.release;
     if (rel && rel.outcome === digest) return;
-    // A built set carries this party's partial signature, so it counts as signed too.
-    if (rel && (rel.phase === 'built' || rel.phase === 'cosigning' || rel.phase === 'signed' || rel.phase === 'done')) {
-      throw new PartyError('bad-outcome', 'already signed for another outcome');
-    }
+    // Once a set was built or accepted for checking under this outcome, it may still complete,
+    // so the outcome can no longer be switched.
+    if (rel && rel.committed) throw new PartyError('bad-outcome', 'already signed for another outcome');
     const part = a.role === o.builder ? 'builder' : 'cosigner';
     state.release = {
       outcome: digest,
       part,
       counterpart: part === 'builder' ? o.cosigner : o.builder,
-      attempt: rel ? rel.attempt + 1 : 1,
+      attempt: 1, // attempts are counted per outcome
       phase: 'waiting-funds',
     };
     await saveState();
@@ -539,19 +551,23 @@ export function runParty(a: PartyArgs): PartyHandle {
     const { key: k, ...rest } = p;
     const key = k as string;
     const payload = rest as Received['payload'];
-    if (isSetupKey(key) && isReady) {
+    // Once this party has checked the addresses, setup is over for it: only peers' READY still counts.
+    if (isSetupKey(key) && key !== READY && state.address !== null && checked()) {
       ignored('setup-after-ready');
       return;
     }
-    if (!isSetupKey(key) && state.release && from !== state.release.counterpart) {
-      ignored('not-counterpart');
-      return;
+    if (!isSetupKey(key)) {
+      const rel = state.release;
+      if (!rel || from !== rel.counterpart || !key.includes(`:${tagOf(rel.outcome)}.`)) {
+        ignored('not-current-release');
+        return;
+      }
     }
     const digest = digestOf(key, payload);
     const slot = (state.received[key] ??= {});
     const seen = slot[from];
     if (seen) {
-      if (seen.digest !== digest && isSetupKey(key)) throw new PartyError('equivocation', `${from} sent two versions of ${key}`);
+      if (seen.digest !== digest && isSetupKey(key) && !checked()) throw new PartyError('equivocation', `${from} sent two versions of ${key}`);
       ignored('duplicate');
       return;
     }
@@ -565,7 +581,7 @@ export function runParty(a: PartyArgs): PartyHandle {
   const advance = async (): Promise<void> => {
     if (!state.address) await advanceSetup();
     else await checkAddresses();
-    if (settleOutcome && isReady) {
+    if (settleOutcome && state.address !== null && checked()) {
       await beginRelease(settleOutcome);
       await advanceRelease();
     }
@@ -649,7 +665,7 @@ export function runParty(a: PartyArgs): PartyHandle {
       void run(async () => {
         const rel = state.release;
         const switching = rel !== null && rel.outcome !== outcomeDigest(o);
-        if (switching && ['built', 'cosigning', 'signed', 'done'].includes(rel.phase)) {
+        if (switching && rel.committed) {
           mine.reject(new PartyError('bad-outcome', 'already signed for another outcome')); // the earlier settle() keeps going
           return;
         }
