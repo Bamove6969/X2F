@@ -1,3 +1,10 @@
 node_modules/
 dist/
 .regtest/
+.tsbuild/
+docs/
+design/
+research/
+data/
+spikes/
+package-lock.json

@@ -10,7 +10,7 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "audit": "npm audit --omit=dev",
-    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off packages apps tools",
+    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off .",
     "check": "sh tools/check.sh"
   },
   "devDependencies": {
