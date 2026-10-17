@@ -46,6 +46,7 @@ Recovered reference material (partial, for comparison only — the rulings win):
 - TOCTOU (settled 2026-10-17 review): cosign describes and signs the same immutable hex; in v0.18 signing rebuilds the tx from the construction data describe reads and compares it with the stored tx. Re-describing adds nothing. cosign also checks the broadcast hash equals the signed tx's hash.
 - R24 (2026-10-17 review): cosign refuses any non-zero or missing unlock time (a builder could otherwise lock the payouts indefinitely). describeMultisigTxSet in monero-ts 0.11.16 fills unlockTime (0n on a normal set).
 - R25: build and cosign refuse while balance ≠ unlocked balance (`not-ready`), so a release is always a full sweep; buildRelease self-checks its set with checkTxSet.
+- Task 8: if cosign throws build-failed after submitMultisigTxHex (hash mismatch), treat the outcome as unknown and check the chain; never rebuild and resend.
 - OPEN for Task 8 (I1): any surplus sent to the escrow beyond the funded amount makes trade-derived payouts fail closed (bad-payouts / payout-mismatch). Task 8 must decide who absorbs a surplus (proposed: payouts[0], fee output always exact) and derive amounts identically on both sides.
 
 ## Task 7 — relay (apps/relay) — final reviewed design (round 4 was in progress)

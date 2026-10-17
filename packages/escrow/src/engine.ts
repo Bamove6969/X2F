@@ -8,7 +8,8 @@ export type EscrowErrorCode =
   | 'payout-mismatch'
   | 'bad-payouts'
   | 'not-ready'
-  | 'build-failed';
+  | 'build-failed'
+  | 'bad-saved-session';
 
 export class EscrowError extends Error {
   readonly code: EscrowErrorCode;
@@ -19,8 +20,16 @@ export class EscrowError extends Error {
   }
 }
 
+/** A session's wallet as saved bytes: base64 keys (encrypted by the password) and cache. */
+export interface SavedSession {
+  v: 1;
+  keys: string;
+  cache: string;
+}
+
 export interface EscrowEngine {
   create(o: { daemonUri: string; password: string }): Promise<EscrowSession>;
+  resume(saved: SavedSession, o: { daemonUri: string; password: string }): Promise<EscrowSession>;
 }
 
 /**
@@ -40,5 +49,7 @@ export interface EscrowSession {
   buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[] }>;
   /** Check the tx set against `expected`, then sign exactly that set and broadcast it. */
   cosign(txSet: string, expected: Payout[]): Promise<string>;
+  /** Save after every step so a paused or reloaded app can resume without redoing it. */
+  save(): Promise<SavedSession>;
   close(): Promise<void>;
 }

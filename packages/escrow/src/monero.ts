@@ -6,7 +6,8 @@ import {
   MoneroWalletFull,
   type MoneroTxWallet,
 } from 'monero-ts';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Payout } from './engine.js';
+import { EscrowError, type EscrowEngine, type EscrowSession, type Payout, type SavedSession } from './engine.js';
+import { fromBase64, toBase64 } from './base64.js';
 import { checkPayouts, checkTxSet, sumPayouts, type DescribedTx } from './verify.js';
 
 export type EscrowNetwork = 'regtest' | 'stagenet' | 'mainnet';
@@ -119,6 +120,12 @@ export class MoneroMultisigSession implements EscrowSession {
     return hashes[0]!;
   }
 
+  async save(): Promise<SavedSession> {
+    const [keys, cache] = await this.wallet.getData();
+    if (!keys || !cache) throw new EscrowError('build-failed', 'wallet returned no data');
+    return { v: 1, keys: toBase64(keys), cache: toBase64(cache) };
+  }
+
   close(): Promise<void> {
     return this.wallet.close();
   }
@@ -129,6 +136,20 @@ export class MoneroMultisigEngine implements EscrowEngine {
 
   async create(o: { daemonUri: string; password: string }): Promise<MoneroMultisigSession> {
     const wallet = await MoneroWalletFull.createWallet(walletConfig(this.opts.network, o.daemonUri, o.password));
+    return new MoneroMultisigSession(wallet, o.daemonUri, o.password);
+  }
+
+  async resume(saved: SavedSession, o: { daemonUri: string; password: string }): Promise<MoneroMultisigSession> {
+    if (saved?.v !== 1 || typeof saved.keys !== 'string' || typeof saved.cache !== 'string') {
+      throw new EscrowError('bad-saved-session');
+    }
+    const config = walletConfig(this.opts.network, o.daemonUri, o.password);
+    config.setKeysData(fromBase64(saved.keys));
+    config.setCacheData(fromBase64(saved.cache));
+    // monero-ts 0.11.16 drops the regtest flag when a worker reopens wallet data, so a
+    // resumed regtest wallet runs in-process. Other networks keep the worker.
+    if (this.opts.network === 'regtest') config.setProxyToWorker(false);
+    const wallet = await MoneroWalletFull.openWallet(config);
     return new MoneroMultisigSession(wallet, o.daemonUri, o.password);
   }
 }
