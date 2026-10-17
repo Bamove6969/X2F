@@ -1,0 +1,75 @@
+# Plan 1 rebuild: binding rulings and lessons from the first build
+
+The first build of Plan 1 (2026-10-15) was reviewed task by task and then lost when the machine was reinstalled (its branches were never pushed). Everything below was decided or found during that build. It is BINDING for the rebuild and overrides the plan text where they differ. The plan is docs/superpowers/plans/2026-10-15-plan-1-escrow-core.md; the spec is docs/superpowers/specs/2026-10-14-x2f-design.md; threat research is docs/security/research-2026-10-15-escrow-threats.md.
+
+Recovered reference material (partial, for comparison only — the rulings win): .superpowers/kit/recovered-diffs/ (Task 2 complete diff `review-9f76e08..4058794.diff`; Task 1 fix diff; truncated reads of Task 3/4/5/7 diffs) and .superpowers/kit/recovered-files/packages/escrow/ (Task 5's monero.ts, verify.ts and tests as last written).
+
+## Toolchain (Task 1)
+- Node 22.23.3 LTS (this machine: ~/.nvm/versions/node/v22.23.3). Node 20 is end of life.
+- npm: install deps with `npx -y npm@11.21.0 install --save-exact` (older npm crashes on the vitest 5 peer set). Document in docs/dev-setup.md.
+- vitest 5.0.3 with `vitest.config.ts` using `test.projects` (vitest 5 removed workspaces; a `vitest.workspace.ts` is silently ignored). List project dirs explicitly (e.g. 'packages/*', 'tools/regtest', 'apps/relay'); a stray file in apps/ breaks a glob.
+- TypeScript 7.0.2 strict (noUncheckedIndexedAccess, exactOptionalPropertyTypes, verbatimModuleSyntax, NodeNext). Typecheck per workspace with `tsc --noEmit` (tsc -b leaked compiled tests into vitest).
+- Semgrep 1.178.0 in a venv at ~/.local/semgrep-venv; `npm run semgrep` scans packages apps tools with p/typescript p/nodejs p/secrets, `--error --metrics=off`. Semgrep scans only git-tracked files: `git add` new files before `npm run check`. Empty scan roots error: keep `apps/.gitkeep` until apps/relay exists.
+- `tools/check.sh` (npm run check): typecheck, tests, `npm audit --omit=dev` (0 vulnerabilities), Semgrep (0 findings); fails clearly if Node 22 or the Semgrep venv is missing; root package.json `"engines": {"node": ">=22.12 <23"}` and `.nvmrc` 22.23.3.
+- Every dependency pinned exactly and published at least 14 days before the day it's added. Known-good pins: typescript 7.0.2, vitest 5.0.3, vite 7.3.6 and @types/node 22.20.4 (vitest peers), tsx 4.23.15, monero-ts 0.11.16, libsodium-wrappers 0.8.4, fastify 5.12.5, @fastify/websocket 11.3.1, ws 8.22.0.
+- Root `overrides` (R12): "serialize-javascript": "7.1.2", "uuid": "11.1.1" — takes npm audit from 3 (2 high) to 0 with monero-ts still loading.
+- Commits: author `git -c user.name="flem" -c user.email="bamove@gmail.com"`; end each message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01RxVgv1kNnijwFKq33m4Cs2`.
+
+## Task 2 — trade codes and fees (@x2f/core)
+- Recovered diff is the reviewed implementation; reuse it. Lesson: `normalizeTradeCode` must reject non-ASCII input up front (`toUpperCase()` turns ß into SS and the Kelvin sign into K). Add tests: a distribution test that all 32 symbols occur over ~2,000 codes; lowercase u, tab/newline separators, empty input, idempotence; feeFor(100n)=1n, feeFor(199n)=1n, a value above Number.MAX_SAFE_INTEGER; name the 10_000n denominator.
+
+## Task 3 — protocol envelopes (@x2f/protocol) — final reviewed design
+- R9: `type` lives inside the encrypted payload; plaintext = canonical JSON {type, payload} padded (0x80 then zeros) to the smallest bucket of 256, 1024, 4096, 16384, 65536 bytes; over 65535 bytes → ProtocolError 'too-large' (message must not include the length). open() returns {type, payload}.
+- R15 (anti-equivocation): encrypt the padded plaintext ONCE with crypto_secretbox_easy under a fresh random 32-byte key K and its own nonce (ctNonce); wrap K per recipient with crypto_box_easy using one shared random nonce; the signed envelope carries kh = hex(crypto_generichash(32, K)); open() checks generichash(K) == kh with sodium.memcmp before decrypting.
+- R16 (hide recipients): `slots` always has all three roles; non-recipient slots are random bytes of the identical length (48 bytes); unwrap failure → 'not-for-me', only after the signature verifies.
+- Final Envelope: { v: 1; trade; from; seq; slots: Record<Role,string>; nonce; kh; ct; ctNonce; sig }. Exact key set enforced; unknown keys or non-object → 'bad-signature'.
+- Signature: Ed25519 detached over "x2f/envelope/v1\0" + canonical JSON (keys sorted, no whitespace) of every field except sig. Lower-case hex only. Base64 via sodium.to_base64/from_base64 with base64_variants.ORIGINAL — NO Node Buffer in src (must run in browsers). Every from_base64/from_hex wrapped so decode failures become ProtocolError('bad-signature') naming the field, never the value. Length caps before canonicalisation and decode (trade ≤ 256 chars).
+- Check order in open(): shape → wrong-trade → not-participant (from not a role present in participants; R14) → structure/lengths → signature ('bad-signature', incl. a key that doesn't match the claimed role — the Haveno pattern) → unwrap ('not-for-me') → kh → decrypt/unpad/parse ('bad-signature') → replay guard LAST (commit only after full success).
+- Keys: boxPublic must equal crypto_sign_ed25519_pk_to_curve25519(signPublic) (checked in seal and open). seal validates `to` (non-empty, roles present), that me matches participants[from], and that signSecret's last 32 bytes equal signPublic (memcmp).
+- Payload encoding: plain objects (prototype Object.prototype or null), arrays, strings, finite numbers, booleans, null, bigint only; bigint as {__t:'bigint', v} with user keys matching /^~*__t$/ escaped by one '~'; throw TypeError for Date, Map, Set, typed arrays, class instances, NaN, Infinity, undefined, -0, symbol keys, sparse arrays, extra array properties; depth cap 64; __proto__/constructor kept as own data.
+- ReplayGuard: strictly increasing seq per sender; binds to one trade id on first success; JSON {trade, seen}; `from` validates strictly.
+- Doc on seal: a sender who wants to re-read its own message must include itself in `to`.
+- Tests that must exist: every ProtocolError path; equivocation (two different keys/plaintexts under one valid signature rejected for at least one recipient); recipient sets indistinguishable; a later envelope not addressed to me does not make an earlier one a replay; real buyer sealing as from:'mod' → bad-signature; swapping/adding a valid-role slot breaks the signature; non-canonical base64 in each field → bad-signature; a deterministic 200-mutation fuzz asserting open() only ever throws ProtocolError.
+- Export `joinMessage(code, role, challengeB64): Uint8Array` = bytes of "x2f/relay-join/v1\0" + code + "\0" + role + "\0" + challenge (used by the relay, Task 7).
+
+## Task 4 — regtest harness (tools/regtest, package @x2f/regtest)
+- Split verification into `verify-release.sh KEY HASHES TARBALL EXPECTED_FPR EXPECTED_SHA256`; `fetch-monerod.sh` downloads and calls it. Require `[GNUPG:] GOODSIG`, reject EXPKEYSIG|REVKEYSIG|BADSIG|ERRSIG|EXPSIG, compare VALIDSIG field 11 (primary fingerprint, awk $12) exactly to 81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92. Grep the hash line from gpg's verified plaintext. Hardcoded sha256 3333d0e04c9cbe3023e7e2b6dd369c407f36bb8df5b05fb0a19d7685b3d56dfc for monero-linux-x64-v0.18.5.3.tar.bz2 must match too. curl `--proto '=https' --proto-redir '=https' --tlsv1.2 --fail`. Throwaway GNUPGHOME; trap runs `gpgconf --homedir "$GNUPGHOME" --kill all` before deleting it. Extract to a temp dir, move into place atomically. Comment: getmonero hashes.txt lists only the current release (fails closed on a new release).
+- Offline tests of verify-release.sh: happy path; tampered hashes; flipped tarball byte; wrong fingerprint; missing/different hash line; expired key; revoked key.
+- Harness: free ports allocated sequentially and distinct (rpc and p2p); `--p2p-bind-port` and `--no-zmq` so nodes run side by side; stop() SIGTERM→SIGKILL after 10 s, removes the data dir; exit hook kills children. monero-ts wallets cache the daemon height: call setDaemonConnection before sync. Wallets: networkType MAINNET + regtest: true. Fund with 80 blocks; mine 12 (not 10) after funding before expecting unlocked funds.
+
+## Task 5 — EscrowEngine (@x2f/escrow)
+- R10 + R23: cosign verifies the WHOLE tx set and fails closed: exactly one transaction; outputs exactly the expected payouts (matched by address — describeMultisigTxSet returns destinations in hash-map order), the first payout short by exactly the network fee, the fee output exact; network fee ≤ 0.01 XMR; inputs are the escrow's; NO change output at all (R23 — a builder can mark change as a subaddress output and make it unrecoverable without the decoded set showing it; releases always sweep the full escrow).
+- describeMultisigTxSet in monero-ts 0.11.16 exposes tx count, destinations, change amount/address, fee, input/output sums and inputs (confirmed on regtest).
+- Import both peers' multisig state in one call (importing separately causes "stale data" on signing).
+- R2: the "one key alone" test has the builder call cosign() on its own tx set → rejected ("already signed by this private key"), nothing broadcast.
+- Tests (regtest): setup convergence (4 message rounds), release with fee output, taker-pays-nothing, swapped address, skimmed fee (+1 atomic), extra 1-atomic output to an attacker, inflated network fee, any change output, one key alone. Two-tx set: unit test.
+- Open question the first review did not finish: verify that what gets signed is the same transaction that was checked (TOCTOU); consider re-describing the set right before signing.
+
+## Task 7 — relay (apps/relay) — final reviewed design (round 4 was in progress)
+- Validate the exact Envelope key set; never decrypt or verify; pass bytes through unchanged.
+- R1: path code normalized with normalizeTradeCode must equal envelope.trade exactly, else close 4400. Enforce envelope.from === authenticated role.
+- R13/R20: signed join — relay sends 32 random bytes; client replies within 10 s with {role, sig} over joinMessage(code, role, challenge); verified against the registered signPublic; else 4401; unknown trade → 4404 after the challenge; trade unregistered during the join check → 4404. In-process registerTrade(code, signPublics)/unregisterTrade(code), no network route; registerTrade throws RelayAtCapacityError when full. Messages before auth are never queued or forwarded. Per-connection token-bucket rate limit → 4429.
+- @fastify/websocket options.maxPayload = maxEnvelopeBytes (262144); oversize frames close 1009 and are logged {reason:'too-large'}.
+- Queues: caps by count, bytes per trade and total; a full queue rejects the NEW message (send a 'queue-full' frame), never evicts. Each queued frame is an exact-size copy made with Buffer.allocUnsafeSlow + copy (Buffer.from pools frames under 4 KiB into shared 8 KiB slabs); export and test `exactCopy` (byteOffset 0, buffer.byteLength === length for 300 B and 200 KB slices).
+- Backpressure: before forwarding live, if peer.bufferedAmount + frame > maxPeerBufferedBytes, terminate the slow peer (log 4408) and queue the frame. On join, drain the queue with a capped pump (send only while bufferedAmount + next ≤ maxPeerBufferedBytes; re-check on a short unref'd timer); live frames for a recipient with queued frames wait behind them (in order, exactly once).
+- One live socket per (trade, role): replacing an idle old socket closes it politely with 4409 (terminate after ~1 s if the close doesn't finish); a backlogged old socket is terminated. (Duplicate tabs must see 4409 so they stop reconnecting.)
+- Memory budget (R21, corrected): RELAY_MEMORY_BUDGET_BYTES default 1 GiB = B; maxPeerBufferedBytes = 2 × maxEnvelopeBytes (512 KiB) and must be ≥ maxEnvelopeBytes; per-trade queue share 1 MiB; total queue ≈ B/4; per-connection cost = maxEnvelopeBytes + 64 KiB; per-trade cost = one queue share + 3 × peer buffer + 3 × per-connection cost; unauthReserve = maxUnauthenticated × per-connection cost; trades = floor((0.7B − totalQueue − unauthReserve) / (3·peer + 3·perConn)) capped at totalQueue / perTradeShare; maxConnections = 3·trades + maxUnauthenticated. validateOptions rejects non-positive/NaN/>2^31−1 values, maxConnections < 3·maxTrades, and any set breaking the bound. Test exact derived counts.
+- Counter caps maxConnections and maxUnauthenticated close new sockets with 1013 (no IPs). Logging: counts and reasons only — never contents, IPs or trade codes (test with a captured logger). stats() exposes counters only. Delivery is at-most-once, in order (document it; Task 8 must resend by seq). main.ts registers no trades until Plan 3; float parse for RELAY_RATE_REFILL_PER_SEC.
+- Tests to keep: join replay with a different challenge fails; replacement races; byte-for-byte pass-through; late joiner order; queue expiry with fake timers; a paused reader is bounded then receives all frames in order exactly once; a live frame sent while the pump drains arrives last.
+
+## Task 8 — party runner (not reached in the first build)
+- R11: strict state machine accepting each (sender role, message type, round) once and in order; participants and the moderator key fixed at trade creation from a source outside the protocol messages. Resume by seq after relay disconnects (relay is at-most-once).
+
+## Task 9 — auto-refund guard
+- RefundPayout {address: string; amountAtomic: bigint} (or the engine's Payout once Task 5 is merged). Allowed only when now > paymentDeadline strictly, markedPaidAt === null, finalAlertAt present and now ≥ finalAlertAt + 15 min, exactly one payout to the recorded refund address (exact string equality) with amount > 0n. Check order window-open → buyer-marked-paid → final-alert-pending → wrong-destination. Invalid Dates never allow. Pure function. Prove the tests bite with a mutation check.
+
+## Process lessons
+- Push every finished task to GitHub immediately (the first build was lost because branches stayed local).
+- The security-guidance hook reviews every commit; treat its findings like reviewer findings.
+
+## Carry-forward from Task 3 rebuild review (binding for Task 8 and Task 7)
+- **Cross-envelope sender equivocation:** a malicious party can seal seq 7 "A" to one peer and a separate seq 7 "B" to another; each guard accepts. R15 only covers ONE envelope. Task 8 MUST send every multisig key-exchange round to all parties in a single envelope, and peers MUST echo/cross-check (from, seq, kh) before advancing a round. All three parties MUST confirm the final multisig address matches before funding.
+- **Gaps/resends:** a relay that withholds seq 5 and delivers 6 makes 5 a permanent replay; resends are re-sealed with a new seq, never re-sent.
+- **Persistence:** save the ReplayGuard state BEFORE acting on a message.
+- **Message identity** is (trade, from, seq) or kh+ct, never a hash of wire bytes (the wire form is malleable under a valid signature).
+- **Task 7:** the relay join challenge is canonical base64 of 32 random bytes; the client rejects anything else.
