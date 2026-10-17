@@ -389,13 +389,29 @@ describe('relay after a rejection or close', () => {
     const queued = Array.from({ length: 40 }, (_, n) => envelope(code, 'buyer', n + 1, pad));
     for (const e of queued) b.ws.send(e);
     await expect.poll(() => relay.stats().queuedFrames).toBe(80);
-    const s = connect(url, code);
-    const { challenge } = JSON.parse(await s.next()) as { challenge: string };
-    s.ws.send(JSON.stringify({ role: 'seller', sig: sign(i.seller, code, 'seller', challenge) }));
+    const s = await join(url, code, 'seller', i.seller);
+    // The first queued frame is in, so the drain is running (32 KiB peer buffer, ~1 MiB queued).
+    expect(await s.next()).toBe(queued[0]);
     const live = envelope(code, 'buyer', 41);
     b.ws.send(live);
-    expect(JSON.parse(await s.next())).toEqual({ type: 'joined' });
+    queued.shift();
     for (const e of [...queued, live]) expect(await s.next()).toBe(e);
+  });
+
+  it('caps total connections with close 1013', async () => {
+    // A 4 MiB budget fits one trade, so three joined parties plus one unauthenticated socket fill it.
+    const { relay, url } = await start({ memoryBudgetBytes: 4 * 1024 ** 2, maxEnvelopeBytes: 4096, maxUnauthenticated: 1 });
+    expect(relay.limits.maxConnections).toBe(4);
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    await join(url, code, 'buyer', i.buyer);
+    await join(url, code, 'seller', i.seller);
+    await join(url, code, 'mod', i.mod);
+    const pending = connect(url, code);
+    await pending.next();
+    const extra = connect(url, code);
+    expect(await extra.closed).toBe(CLOSE.full);
   });
 
   it('sends a challenge that is canonical base64 of 32 bytes', async () => {
