@@ -1,0 +1,15 @@
+{
+  "name": "@x2f/escrow",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": { "typecheck": "tsc --noEmit" },
+  "dependencies": {
+    "@x2f/core": "0.0.0",
+    "monero-ts": "0.11.16"
+  },
+  "devDependencies": {
+    "@x2f/regtest": "0.0.0"
+  }
+}
