@@ -1,0 +1,21 @@
+import { buildRelay } from './server.js';
+
+function num(name: string): number | undefined {
+  const v = process.env[name];
+  return v === undefined || v === '' ? undefined : Number.parseFloat(v);
+}
+
+const overrides = Object.fromEntries(
+  Object.entries({
+    maxEnvelopeBytes: num('RELAY_MAX_ENVELOPE_BYTES'),
+    memoryBudgetBytes: num('RELAY_MEMORY_BUDGET_BYTES'),
+    maxUnauthenticated: num('RELAY_MAX_UNAUTHENTICATED'),
+    rateRefillPerSec: num('RELAY_RATE_REFILL_PER_SEC'),
+  }).filter(([, v]) => v !== undefined),
+);
+
+// Trades are registered in-process by the API in Plan 3; until then this relay serves none.
+const relay = await buildRelay(overrides, (e) => console.log(JSON.stringify(e)));
+const port = num('RELAY_PORT') ?? 8787;
+await relay.app.listen({ host: process.env.RELAY_HOST ?? '127.0.0.1', port });
+console.log(JSON.stringify({ reason: 'listening', maxTrades: relay.limits.maxTrades }));
