@@ -103,21 +103,42 @@ export class MoneroMultisigSession implements EscrowSession {
     return { txSet, payouts: decoded.flatMap((tx) => tx.destinations) };
   }
 
-  async cosign(txSet: string, expected: Payout[]): Promise<string> {
+  async signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }> {
     const decoded = await this.wallet.describeMultisigTxSet(txSet);
     checkTxSet(decoded.getTxs().map(describe), expected, await this.sweepableBalance());
     // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
     // signing rebuilds the tx from the same construction data that describe decoded and
     // compares it with the stored tx, so what was checked is what gets signed.
     const signed = await this.wallet.signMultisigTxHex(txSet);
-    const hex = signed.getSignedMultisigTxHex();
-    if (!hex) throw new EscrowError('build-failed', 'signing produced no tx');
-    const signedHashes = signed.getTxHashes() ?? [];
-    const hashes = await this.wallet.submitMultisigTxHex(hex);
-    if (hashes.length !== 1 || signedHashes.length !== 1 || hashes[0] !== signedHashes[0]) {
-      throw new EscrowError('build-failed', 'broadcast tx differs from the signed tx');
-    }
+    const signedHex = signed.getSignedMultisigTxHex();
+    const hashes = signed.getTxHashes() ?? [];
+    if (!signedHex || hashes.length !== 1) throw new EscrowError('build-failed', 'signing produced no single tx');
+    return { signedHex, txHash: hashes[0]! };
+  }
+
+  async submit(signedHex: string): Promise<string> {
+    const hashes = await this.wallet.submitMultisigTxHex(signedHex);
+    if (hashes.length !== 1) throw new EscrowError('build-failed', `expected 1 tx hash, got ${hashes.length}`);
     return hashes[0]!;
+  }
+
+  async cosign(txSet: string, expected: Payout[]): Promise<string> {
+    const { signedHex, txHash } = await this.signRelease(txSet, expected);
+    const broadcast = await this.submit(signedHex);
+    if (broadcast !== txHash) throw new EscrowError('build-failed', 'broadcast tx differs from the signed tx');
+    return txHash;
+  }
+
+  async txSeen(txHash: string): Promise<boolean> {
+    if (!/^[0-9a-f]{64}$/.test(txHash)) return false;
+    const res = await fetch(`${this.daemonUri}/get_transactions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ txs_hashes: [txHash] }),
+    });
+    if (!res.ok) return false;
+    const body = (await res.json()) as { txs?: { tx_hash?: string }[]; missed_tx?: string[] };
+    return (body.txs ?? []).some((t) => t.tx_hash === txHash) && !(body.missed_tx ?? []).includes(txHash);
   }
 
   async save(): Promise<SavedSession> {

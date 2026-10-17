@@ -19,33 +19,41 @@ const engine = new MoneroMultisigEngine({ network: 'regtest' });
 const XMR = 1_000_000_000_000n;
 const MAX_NET_FEE = XMR / 100n;
 
-function memoryStore(): PartyStore & { current(): PartyState | null } {
+function memoryStore(): PartyStore & { current(): PartyState | null; onSave?: ((x: PartyState) => void) | undefined } {
   let s: PartyState | null = null;
-  return {
+  const store: PartyStore & { current(): PartyState | null; onSave?: ((x: PartyState) => void) | undefined } = {
     load: async () => (s ? structuredClone(s) : null),
     save: async (x) => {
       s = structuredClone(x);
+      store.onSave?.(x);
     },
     current: () => s,
   };
+  return store;
 }
 
-/** A transport that can be fed extra frames and records what it received. */
-function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen: unknown[] } {
+/** A transport that can be fed extra frames, records what it received, and can drop sends. */
+function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen: unknown[]; dropSend: (n: number) => boolean; sent: number } {
   const injected: unknown[] = [];
   const seen: unknown[] = [];
-  return {
-    send: (e) => inner.send(e),
+  const t = {
+    sent: 0,
+    dropSend: (_n: number) => false,
+    send: (e: Envelope) => {
+      t.sent += 1;
+      if (!t.dropSend(t.sent)) inner.send(e);
+    },
     next: async () => {
       const f = injected.length > 0 ? injected.shift() : await inner.next();
       seen.push(f);
       return f;
     },
-    onReconnect: (cb) => inner.onReconnect(cb),
+    onReconnect: (cb: () => void) => inner.onReconnect(cb),
     close: () => inner.close(),
-    inject: (f) => injected.push(f),
+    inject: (f: unknown) => injected.push(f),
     seen,
   };
+  return t;
 }
 
 interface Trade {
@@ -83,8 +91,11 @@ describe('party runner over the relay on regtest', () => {
     await node?.stop();
   });
 
+  const ignoredBy: Record<Role, string[]> = { buyer: [], seller: [], mod: [] };
+
   function startParty(t: Pick<Trade, 'code' | 'ids' | 'participants' | 'stores'>, role: Role) {
     const tap = tapped(wsTransport({ url: relayUrl, code: t.code, role, me: t.ids[role] }));
+    ignoredBy[role] = [];
     const party = runParty({
       role,
       trade: t.code,
@@ -95,6 +106,8 @@ describe('party runner over the relay on regtest', () => {
       daemonUri: node.rpcUri,
       password: `pw-${role}`,
       store: t.stores[role],
+      resendMs: 500,
+      onIgnored: (reason) => ignoredBy[role].push(reason),
     });
     running.push(party);
     return { party, tap };
@@ -205,6 +218,8 @@ describe('party runner over the relay on regtest', () => {
     t.taps.buyer.inject(captured);
     const addresses = await Promise.all(ROLES.map((r) => t.parties[r].ready()));
     expect(new Set(addresses).size).toBe(1);
+    expect(ignoredBy.buyer).toContain('bad-signature'); // the outsider signed as the seller
+    expect(ignoredBy.buyer).toContain('replay');
   });
 
   it('catches a seller who sends different setup messages to the buyer and the moderator', async () => {
@@ -230,6 +245,9 @@ describe('party runner over the relay on regtest', () => {
         const err = await p.ready().then(() => null, (e: unknown) => e);
         expect((err as { code?: string }).code).toBe('equivocation');
       }
+      // The moderator's cross-check names the cheat: the seller's messages differ between peers.
+      const modErr = await mod.ready().then(() => null, (e: unknown) => e);
+      expect(String(modErr)).toMatch(/seller sent different messages|seller saw a different message/);
     } finally {
       out.close();
       await w1.close();
@@ -255,15 +273,20 @@ describe('party runner over the relay on regtest', () => {
     try {
       const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
       const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
-      // Kill the seller as soon as it has saved the tx set it built.
+      // The seller saves its built set, then dies before the set leaves the device.
+      t.stores.seller.onSave = (x) => {
+        if (x.release?.phase === 'built') t.taps.seller.dropSend = () => true;
+      };
       const buyerDone = t.parties.buyer.settle(o);
       const sellerDone = t.parties.seller.settle(o).catch(() => 'stopped');
-      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 120_000, interval: 5 }).toMatch(/^(built|done)$/);
+      await expect.poll(() => t.stores.seller.current()?.release?.phase, { timeout: 120_000, interval: 5 }).toBe('built');
+      t.stores.seller.onSave = undefined;
       const builtSet = t.stores.seller.current()!.release!.txSet;
       await t.parties.seller.stop();
       expect(await sellerDone).toBe('stopped');
       const restarted = startParty(t, 'seller');
       t.parties.seller = restarted.party;
+      await t.parties.seller.ready(); // the normal order: wait for ready, then settle
       const [hash, sellerResult] = await Promise.all([buyerDone, t.parties.seller.settle(o)]);
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
@@ -273,6 +296,85 @@ describe('party runner over the relay on regtest', () => {
       expect(got).toBeGreaterThan(amount - MAX_NET_FEE);
       expect(got).toBeLessThan(amount);
       void escrow;
+    } finally {
+      await dest.close();
+    }
+  });
+
+  it('a co-signer that dies after signing but before broadcasting finishes after a restart', async () => {
+    const t = await newTrade();
+    const amount = XMR;
+    await readyAndFund(t, amount);
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
+      const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
+      t.stores.buyer.onSave = (x) => {
+        if (x.release?.phase === 'signed') throw new Error('power cut');
+      };
+      const sellerDone = t.parties.seller.settle(o);
+      const first = await t.parties.buyer.settle(o).then(() => null, (e: unknown) => e);
+      expect(String(first)).toMatch(/power cut/);
+      expect(t.stores.buyer.current()?.release?.phase).toBe('signed');
+      t.stores.buyer.onSave = undefined;
+      const restarted = startParty(t, 'buyer');
+      t.parties.buyer = restarted.party;
+      await t.parties.buyer.ready();
+      const hash = await t.parties.buyer.settle(o);
+      expect(hash).toBe(t.stores.buyer.current()!.release!.txHash);
+      expect(await sellerDone).toBeNull();
+      await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
+      const got = await balanceOf(dest);
+      expect(got).toBeGreaterThan(amount - MAX_NET_FEE);
+      expect(got).toBeLessThan(amount);
+    } finally {
+      await dest.close();
+    }
+  });
+
+  it('settle() before ready and before funding waits, then settles; lost messages are resent', async () => {
+    const t = await newTrade();
+    // Lose the buyer's 2nd to 4th messages; the resend timer must recover.
+    t.taps.buyer.dropSend = (n) => n >= 2 && n <= 4;
+    const amount = XMR;
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
+      const o: Outcome = { kind: 'release', to, builder: 'mod', cosigner: 'seller' };
+      const settled = Promise.all(ROLES.map((r) => t.parties[r].settle(o)));
+      await readyAndFund(t, amount);
+      const results = await settled;
+      expect(results[ROLES.indexOf('seller')]).toMatch(/^[0-9a-f]{64}$/);
+      expect(results[ROLES.indexOf('buyer')]).toBeNull();
+      expect(t.taps.buyer.sent).toBeGreaterThan(4);
+    } finally {
+      await dest.close();
+    }
+  });
+
+  it('after setup, a stray setup message from the third party is ignored, not fatal', async () => {
+    const t = await newTrade();
+    const amount = XMR;
+    await readyAndFund(t, amount);
+    const junk = await seal({
+      trade: t.code,
+      from: 'buyer',
+      seq: 10_000,
+      type: 'msig.prepare',
+      payload: { key: 'msig.prepare:0', hex: 'x' },
+      to: ['seller', 'mod'],
+      me: t.ids.buyer,
+      participants: t.participants,
+    });
+    t.taps.seller.inject(junk);
+    t.taps.mod.inject(junk);
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
+      const [, s, m] = await Promise.all(ROLES.map((r) => t.parties[r].settle({ kind: 'release', to, builder: 'mod', cosigner: 'seller' })));
+      expect(s).toMatch(/^[0-9a-f]{64}$/);
+      expect(m).toBeNull();
+      expect(ignoredBy.seller).toContain('setup-after-ready');
     } finally {
       await dest.close();
     }

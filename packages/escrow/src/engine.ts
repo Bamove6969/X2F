@@ -49,6 +49,12 @@ export interface EscrowSession {
   buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[] }>;
   /** Check the tx set against `expected`, then sign exactly that set and broadcast it. */
   cosign(txSet: string, expected: Payout[]): Promise<string>;
+  /** cosign's first half: check, then sign. Nothing is signed if the check fails. */
+  signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }>;
+  /** cosign's second half: broadcast a signed set; returns its tx hash. */
+  submit(signedHex: string): Promise<string>;
+  /** Whether the daemon knows this tx, in the pool or on chain. */
+  txSeen(txHash: string): Promise<boolean>;
   /**
    * Save after every step so a paused or reloaded app can resume without redoing it.
    * Never resume a save older than the last cosign, and run a fresh exportState/importState
