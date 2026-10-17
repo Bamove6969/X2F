@@ -2,8 +2,8 @@
 # Fetch monerod v0.18.5.3 into .regtest/bin, verifying the release signature and checksum
 # via verify-release.sh. Idempotent: exits early when the verified binary is in place.
 #
-# Note: getmonero.org's hashes.txt lists only the current release, so once a newer Monero
-# release is published this script fails closed (no matching line) until the pins are updated.
+# getmonero.org's hashes.txt lists only the current release, so the signed hashes.txt for
+# v0.18.5.3 is fetched from the monero-site commit that published it. gpg still verifies it.
 set -euo pipefail
 
 VERSION="0.18.5.3"
@@ -12,7 +12,7 @@ EXPECTED_SHA256="3333d0e04c9cbe3023e7e2b6dd369c407f36bb8df5b05fb0a19d7685b3d56df
 MONEROD_SHA256="dd29703a5a1abf76b06c917276377b16b60668362ddd1459109537e212f4148c"
 EXPECTED_FPR="81AC591FE9C4B65C5806AFC3F0AF4D462A0BDF92"
 KEY_URL="https://raw.githubusercontent.com/monero-project/monero/master/utils/gpg_keys/binaryfate.asc"
-HASHES_URL="https://www.getmonero.org/downloads/hashes.txt"
+HASHES_URL="https://raw.githubusercontent.com/monero-project/monero-site/141bec879f7fe119b4754a9d622343adf941d6c0/downloads/hashes.txt"
 TARBALL_URL="https://downloads.getmonero.org/cli/${TARBALL}"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
