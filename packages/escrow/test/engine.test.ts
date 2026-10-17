@@ -132,11 +132,13 @@ describe('MoneroMultisigEngine on regtest', () => {
   });
 
   it('refuses a release that leaves change behind', async () => {
+    // Payouts[0] is short by 0.1 XMR so the wallet adds a change output; the change check
+    // runs before the amount checks, which the message pins.
     const set = await rawSet(e.seller, [
       { address: payouts[0]!.address, amountAtomic: payouts[0]!.amountAtomic - XMR / 10n },
       payouts[1]!,
     ]);
-    await expectMismatch(e.buyer.cosign(set, payouts));
+    await expect(e.buyer.cosign(set, payouts)).rejects.toThrow(/change output present/);
   });
 
   it('buildRelease refuses payouts that do not sweep the escrow', async () => {
@@ -145,7 +147,12 @@ describe('MoneroMultisigEngine on regtest', () => {
 
   it('one key alone cannot spend: the builder cannot co-sign its own set', async () => {
     const { txSet } = await e.seller.buildRelease(payouts);
-    await expect(e.seller.cosign(txSet, payouts)).rejects.toThrow();
+    const err = await e.seller.cosign(txSet, payouts).then(() => null, (x: unknown) => x);
+    expect(err).not.toBeInstanceOf(EscrowError);
+    expect(String(err)).toMatch(/already signed/i);
+    await mine(node.rpcUri, 1, await funder.getPrimaryAddress());
+    expect((await e.buyer.sync()).unlocked).toBe(amount);
+    expect(await received(node.rpcUri, buyerWallet)).toBe(0n);
   });
 
   it('releases with the 1% fee as a second output; the network fee comes off the buyer', async () => {
@@ -161,19 +168,30 @@ describe('MoneroMultisigEngine on regtest', () => {
     expect(await received(node.rpcUri, attacker)).toBe(0n);
   });
 
-  it('taker pays nothing: a single payout sweeps the escrow to the buyer', async () => {
+  it('taker pays nothing: a single payout sweeps the escrow, only once fully unlocked', async () => {
     const t = await setupEscrow(node.rpcUri);
     const buyer2 = await newTestWallet(node.rpcUri);
     try {
       await fund(node.rpcUri, funder, t, amount);
+      // A top-up that is still locked: no release until all of it can be swept.
+      await funder.createTx({ accountIndex: 0, address: t.address, amount: XMR / 100n, relay: true });
+      await mine(node.rpcUri, 1, await funder.getPrimaryAddress());
+      await t.seller.sync();
       await pair(t.seller, t.buyer);
       const single: Payout[] = [{ address: await buyer2.getPrimaryAddress(), amountAtomic: amount }];
+      await expect(t.seller.buildRelease(single)).rejects.toThrow(/not-ready/);
+      // Once unlocked, payouts that ignore the surplus are refused; the sweep must cover it.
+      await mine(node.rpcUri, 11, await funder.getPrimaryAddress());
+      for (const p of [t.buyer, t.seller]) await p.sync();
+      await expect(t.seller.buildRelease(single)).rejects.toThrow(/bad-payouts/);
+      await pair(t.seller, t.buyer);
+      single[0] = { address: single[0]!.address, amountAtomic: amount + XMR / 100n };
       const { txSet } = await t.seller.buildRelease(single);
       await t.buyer.cosign(txSet, single);
       await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
       const got = await received(node.rpcUri, buyer2);
-      expect(got).toBeLessThan(amount);
-      expect(got).toBeGreaterThan(amount - MAX_NET_FEE);
+      expect(got).toBeLessThan(single[0]!.amountAtomic);
+      expect(got).toBeGreaterThan(single[0]!.amountAtomic - MAX_NET_FEE);
     } finally {
       await buyer2.close();
       for (const p of [t.buyer, t.seller, t.mod]) await p.close();

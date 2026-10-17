@@ -6,6 +6,7 @@ export const MAX_NETWORK_FEE = 10_000_000_000n;
 /** What the co-signer learns from decoding a tx set; mirrors monero-ts describeMultisigTxSet. */
 export interface DescribedTx {
   fee: bigint | undefined;
+  unlockTime: bigint | undefined;
   changeAmount: bigint | undefined;
   inputSum: bigint | undefined;
   outputSum: bigint | undefined;
@@ -35,7 +36,8 @@ export function sumPayouts(payouts: readonly Payout[]): bigint {
 /**
  * Fail closed unless the decoded set is exactly one transaction that sweeps the whole
  * escrow to `expected`: same addresses, every amount exact except payouts[0], which is
- * short by exactly the network fee; no change output at all; fee within MAX_NETWORK_FEE.
+ * short by exactly the network fee; no change output at all; no unlock time; fee within
+ * MAX_NETWORK_FEE.
  * A change output is refused because a builder can hide a payment to itself as "change".
  */
 export function checkTxSet(txs: readonly DescribedTx[], expected: readonly Payout[], escrowBalance: bigint): void {
@@ -46,6 +48,8 @@ export function checkTxSet(txs: readonly DescribedTx[], expected: readonly Payou
   if (fee === undefined || fee <= 0n) fail('missing network fee');
   if (fee > MAX_NETWORK_FEE) fail('network fee too high');
   if (changeAmount !== 0n) fail('change output present');
+  // A non-zero unlock time would lock the payouts for as long as the builder chose.
+  if (tx.unlockTime !== 0n) fail('unlock time set');
   if (sumPayouts(expected) !== escrowBalance) fail('payouts do not sweep the escrow');
   if (inputSum !== escrowBalance) fail('inputs are not the escrow balance');
   if (tx.destinations.length !== expected.length) fail('wrong number of outputs');

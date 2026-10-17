@@ -36,6 +36,10 @@ describe('autoRefundDecision', () => {
     expect(autoRefundDecision(facts({ markedPaidAt: after(deadline, 1) }))).toEqual({ ok: false, reason: 'buyer-marked-paid' });
   });
 
+  it('treats any non-null marked-paid value as marked paid, even a corrupt date', () => {
+    expect(autoRefundDecision(facts({ markedPaidAt: new Date(Number.NaN) }))).toEqual({ ok: false, reason: 'buyer-marked-paid' });
+  });
+
   it('refuses before the final alert has run for 15 minutes', () => {
     expect(autoRefundDecision(facts({ now: after(alert, FINAL_ALERT_MS - 1) }))).toEqual({ ok: false, reason: 'final-alert-pending' });
   });
@@ -52,6 +56,7 @@ describe('autoRefundDecision', () => {
     expect(autoRefundDecision(facts({ proposed: [] }))).toEqual(refuse);
     expect(autoRefundDecision(facts({ proposed: [{ address: REFUND, amountAtomic }, { address: 'attacker', amountAtomic: 1n }] }))).toEqual(refuse);
     expect(autoRefundDecision(facts({ proposed: [{ address: REFUND, amountAtomic: 0n }] }))).toEqual(refuse);
+    expect(autoRefundDecision(facts({ proposed: [{ address: REFUND, amountAtomic: -1n }] }))).toEqual(refuse);
     expect(autoRefundDecision(facts({ recordedRefundAddress: '', proposed: [{ address: '', amountAtomic }] }))).toEqual(refuse);
   });
 

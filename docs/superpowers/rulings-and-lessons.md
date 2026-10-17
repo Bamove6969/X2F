@@ -43,7 +43,10 @@ Recovered reference material (partial, for comparison only — the rulings win):
 - Import both peers' multisig state in one call (importing separately causes "stale data" on signing).
 - R2: the "one key alone" test has the builder call cosign() on its own tx set → rejected ("already signed by this private key"), nothing broadcast.
 - Tests (regtest): setup convergence (4 message rounds), release with fee output, taker-pays-nothing, swapped address, skimmed fee (+1 atomic), extra 1-atomic output to an attacker, inflated network fee, any change output, one key alone. Two-tx set: unit test.
-- Open question the first review did not finish: verify that what gets signed is the same transaction that was checked (TOCTOU); consider re-describing the set right before signing.
+- TOCTOU (settled 2026-10-17 review): cosign describes and signs the same immutable hex; in v0.18 signing rebuilds the tx from the construction data describe reads and compares it with the stored tx. Re-describing adds nothing. cosign also checks the broadcast hash equals the signed tx's hash.
+- R24 (2026-10-17 review): cosign refuses any non-zero or missing unlock time (a builder could otherwise lock the payouts indefinitely). describeMultisigTxSet in monero-ts 0.11.16 fills unlockTime (0n on a normal set).
+- R25: build and cosign refuse while balance ≠ unlocked balance (`not-ready`), so a release is always a full sweep; buildRelease self-checks its set with checkTxSet.
+- OPEN for Task 8 (I1): any surplus sent to the escrow beyond the funded amount makes trade-derived payouts fail closed (bad-payouts / payout-mismatch). Task 8 must decide who absorbs a surplus (proposed: payouts[0], fee output always exact) and derive amounts identically on both sides.
 
 ## Task 7 — relay (apps/relay) — final reviewed design (round 4 was in progress)
 - Validate the exact Envelope key set; never decrypt or verify; pass bytes through unchanged.
@@ -61,7 +64,7 @@ Recovered reference material (partial, for comparison only — the rulings win):
 - R11: strict state machine accepting each (sender role, message type, round) once and in order; participants and the moderator key fixed at trade creation from a source outside the protocol messages. Resume by seq after relay disconnects (relay is at-most-once).
 
 ## Task 9 — auto-refund guard
-- RefundPayout {address: string; amountAtomic: bigint} (or the engine's Payout once Task 5 is merged). Allowed only when now > paymentDeadline strictly, markedPaidAt === null, finalAlertAt present and now ≥ finalAlertAt + 15 min, exactly one payout to the recorded refund address (exact string equality) with amount > 0n. Check order window-open → buyer-marked-paid → final-alert-pending → wrong-destination. Invalid Dates never allow. Pure function. Prove the tests bite with a mutation check.
+- RefundPayout {address: string; amountAtomic: bigint} (or the engine's Payout once Task 5 is merged). Allowed only when now > paymentDeadline strictly, markedPaidAt === null, finalAlertAt present and now ≥ finalAlertAt + 15 min, exactly one payout to the recorded refund address (exact string equality) with amount > 0n. Check order window-open → buyer-marked-paid → final-alert-pending → wrong-destination. Invalid Dates never allow. Pure function. Prove the tests bite with a mutation check. For Plan 3: the guard does not check finalAlertAt > paymentDeadline; the timers must only send the final alert after the window ends.
 
 ## Process lessons
 - Push every finished task to GitHub immediately (the first build was lost because branches stayed local).

@@ -13,6 +13,7 @@ const expected: Payout[] = [
 function goodTx(): DescribedTx {
   return {
     fee: NET_FEE,
+    unlockTime: 0n,
     changeAmount: 0n,
     inputSum: BALANCE,
     outputSum: BALANCE - NET_FEE,
@@ -72,6 +73,16 @@ describe('checkTxSet', () => {
     tx.changeAmount = 1n;
     refused([tx]);
     tx.changeAmount = undefined;
+    refused([tx]);
+  });
+
+  it('refuses any unlock time', () => {
+    const tx = goodTx();
+    tx.unlockTime = 1n;
+    refused([tx]);
+    tx.unlockTime = 10_000_000n;
+    refused([tx]);
+    tx.unlockTime = undefined;
     refused([tx]);
   });
 

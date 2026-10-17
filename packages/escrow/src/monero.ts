@@ -27,6 +27,7 @@ function describe(tx: MoneroTxWallet): DescribedTx {
   const dests = tx.getOutgoingTransfer()?.getDestinations() ?? [];
   return {
     fee: tx.getFee(),
+    unlockTime: tx.getUnlockTime(),
     changeAmount: tx.getChangeAmount(),
     inputSum: tx.getInputSum(),
     outputSum: tx.getOutputSum(),
@@ -76,10 +77,17 @@ export class MoneroMultisigSession implements EscrowSession {
     await this.wallet.importMultisigHex(peers);
   }
 
+  /** The whole escrow, refusing while any of it is still locked so a release is a full sweep. */
+  private async sweepableBalance(): Promise<bigint> {
+    const [balance, unlocked] = [await this.wallet.getBalance(), await this.wallet.getUnlockedBalance()];
+    if (balance !== unlocked) throw new EscrowError('not-ready', 'part of the escrow is still locked');
+    return unlocked;
+  }
+
   async buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[] }> {
     checkPayouts(payouts);
-    const unlocked = await this.wallet.getUnlockedBalance();
-    if (sumPayouts(payouts) !== unlocked) throw new EscrowError('bad-payouts', 'payouts must sweep the whole escrow');
+    const balance = await this.sweepableBalance();
+    if (sumPayouts(payouts) !== balance) throw new EscrowError('bad-payouts', 'payouts must sweep the whole escrow');
     const txs = await this.wallet.createTxs(new MoneroTxConfig({
       accountIndex: 0,
       destinations: payouts.map((p) => new MoneroDestination(p.address, p.amountAtomic)),
@@ -89,19 +97,25 @@ export class MoneroMultisigSession implements EscrowSession {
     if (txs.length !== 1) throw new EscrowError('build-failed', `expected 1 transaction, got ${txs.length}`);
     const txSet = txs[0]!.getTxSet()?.getMultisigTxHex();
     if (!txSet) throw new EscrowError('build-failed', 'no multisig tx set');
-    const decoded = await this.wallet.describeMultisigTxSet(txSet);
-    return { txSet, payouts: decoded.getTxs().flatMap((tx) => describe(tx).destinations) };
+    const decoded = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
+    checkTxSet(decoded, payouts, balance);
+    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations) };
   }
 
   async cosign(txSet: string, expected: Payout[]): Promise<string> {
     const decoded = await this.wallet.describeMultisigTxSet(txSet);
-    checkTxSet(decoded.getTxs().map(describe), expected, await this.wallet.getUnlockedBalance());
-    // Sign the exact hex that was checked; never re-fetch or rebuild it.
+    checkTxSet(decoded.getTxs().map(describe), expected, await this.sweepableBalance());
+    // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
+    // signing rebuilds the tx from the same construction data that describe decoded and
+    // compares it with the stored tx, so what was checked is what gets signed.
     const signed = await this.wallet.signMultisigTxHex(txSet);
     const hex = signed.getSignedMultisigTxHex();
     if (!hex) throw new EscrowError('build-failed', 'signing produced no tx');
+    const signedHashes = signed.getTxHashes() ?? [];
     const hashes = await this.wallet.submitMultisigTxHex(hex);
-    if (hashes.length !== 1) throw new EscrowError('build-failed', `expected 1 tx hash, got ${hashes.length}`);
+    if (hashes.length !== 1 || signedHashes.length !== 1 || hashes[0] !== signedHashes[0]) {
+      throw new EscrowError('build-failed', 'broadcast tx differs from the signed tx');
+    }
     return hashes[0]!;
   }
 
