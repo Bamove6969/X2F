@@ -216,6 +216,7 @@ export function runParty(a: PartyArgs): PartyHandle {
   const checked = (): boolean => state.sent[READY] !== undefined;
   let readyResends = 0;
   let checkedResends = 0;
+  let mismatchLogged = false;
   let settleOutcome: Outcome | null = null;
   let settleWaiter: { resolve: (v: string | null) => void; reject: (e: unknown) => void } | null = null;
 
@@ -375,7 +376,8 @@ export function runParty(a: PartyArgs): PartyHandle {
       if (confirmed[p]!.payload.address !== state.address) {
         // This party has checked the addresses and can still settle with the honest peer, so a
         // wrong confirmation only means "don't fund": ready() fails, the party lives on.
-        ignored('ready-mismatch');
+        if (!mismatchLogged) ignored('ready-mismatch');
+        mismatchLogged = true;
         readyReject(new PartyError('address-mismatch', `${p} confirmed another escrow address`));
         return;
       }
@@ -568,6 +570,10 @@ export function runParty(a: PartyArgs): PartyHandle {
     const payload = rest as Received['payload'];
     // Once this party has checked the addresses, setup is over for it: only peers' READY still counts.
     if (isSetupKey(key) && key !== READY && state.address !== null && checked()) {
+      // A peer still resending setup has not heard everything from us: answer it again.
+      readyResends = 0;
+      checkedResends = 0;
+      nextResendAt = 0;
       ignored('setup-after-ready');
       return;
     }
