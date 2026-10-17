@@ -12,3 +12,4 @@ export {
   type PublicKeys,
   type SealArgs,
 } from './envelope.js';
+export { canonicalJson } from './payload.js';
