@@ -215,6 +215,7 @@ export function runParty(a: PartyArgs): PartyHandle {
   /** This party has checked all three addresses itself: enough to settle, and setup is over. */
   const checked = (): boolean => state.sent[READY] !== undefined;
   let readyResends = 0;
+  let checkedResends = 0;
   let settleOutcome: Outcome | null = null;
   let settleWaiter: { resolve: (v: string | null) => void; reject: (e: unknown) => void } | null = null;
 
@@ -273,7 +274,9 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (!state.address) {
       if (state.step !== PREPARE) await send(prevKeyOf(state.step), peers);
       await send(state.step, peers);
-    } else if (!isReady) {
+    } else if (!isReady && checkedResends < 20) {
+      // Capped: a peer that never confirms may be offline for the whole trade.
+      if (checked()) checkedResends += 1;
       await send(state.step, peers); // the final kex message, in case a peer lost it
       await send(ADDR, peers);
       await send(READY, peers);
@@ -369,7 +372,13 @@ export function runParty(a: PartyArgs): PartyHandle {
     const confirmed = state.received[READY];
     if (!confirmed || peers.some((p) => !confirmed[p])) return;
     for (const p of peers) {
-      if (confirmed[p]!.payload.address !== state.address) throw new PartyError('address-mismatch', `${p} confirmed another escrow address`);
+      if (confirmed[p]!.payload.address !== state.address) {
+        // This party has checked the addresses and can still settle with the honest peer, so a
+        // wrong confirmation only means "don't fund": ready() fails, the party lives on.
+        ignored('ready-mismatch');
+        readyReject(new PartyError('address-mismatch', `${p} confirmed another escrow address`));
+        return;
+      }
     }
     isReady = true;
     readyResolve(state.address);
@@ -378,8 +387,14 @@ export function runParty(a: PartyArgs): PartyHandle {
   // ── Settlement ────────────────────────────────────────────────────────
 
   /** Start a new attempt: drop this attempt's work; the next step exports afresh. */
+  /**
+   * A refused or failed attempt also lifts the outcome lock: a set this party built earlier may
+   * still complete, but it pays an outcome this party approved, and the caller may now switch
+   * (e.g. after dust changed the escrow balance).
+   */
   const nextAttempt = async (rel: ReleaseState): Promise<void> => {
     rel.attempt += 1;
+    rel.committed = false;
     delete rel.txSet;
     if (rel.attempt > MAX_ATTEMPT) {
       // Give up on this outcome only; the party stays alive and can settle another.

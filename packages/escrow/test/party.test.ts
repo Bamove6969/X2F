@@ -502,8 +502,11 @@ describe('party runner over the relay on regtest', () => {
     };
     const address = await buyer.party.ready();
     await expect.poll(() => stores.seller.current()?.sent['msig.ready:0'] !== undefined, { timeout: 60_000 }).toBe(true);
-    // A different setup message from the moderator no longer kills the seller.
-    seller.tap.inject(await seal({ trade: code, from: 'mod', seq: 1_000_000, type: 'msig.prepare', payload: { key: 'msig.prepare:0', hex: 'other' }, to: ['buyer', 'seller'], me: ids.mod, participants }));
+    // A wrong confirmation and a different setup message from the moderator no longer kill the seller.
+    seller.tap.inject(await seal({ trade: code, from: 'mod', seq: 1_000_000, type: 'msig.ready', payload: { key: 'msig.ready:0', address: 'x' }, to: ['seller'], me: ids.mod, participants }));
+    seller.tap.inject(await seal({ trade: code, from: 'mod', seq: 1_000_001, type: 'msig.prepare', payload: { key: 'msig.prepare:0', hex: 'other' }, to: ['buyer', 'seller'], me: ids.mod, participants }));
+    const sellerReady = await seller.party.ready().then(() => 'ready', (e: unknown) => (e as { code?: string }).code);
+    expect(sellerReady).toBe('address-mismatch'); // the seller won't fund, but it can still settle
     await funder.setDaemonConnection({ uri: node.rpcUri });
     await funder.sync();
     await funder.createTx({ accountIndex: 0, address, amount: XMR, relay: true });
@@ -516,6 +519,7 @@ describe('party runner over the relay on regtest', () => {
       expect(b).toMatch(/^[0-9a-f]{64}$/);
       expect(s).toBeNull();
       expect(ignoredBy.seller).toContain('setup-after-ready');
+      expect(ignoredBy.seller).toContain('ready-mismatch');
     } finally {
       await dest.close();
     }
