@@ -28,6 +28,10 @@ describe('deriveLimits', () => {
     expect(() => deriveLimits({ rateRefillPerSec: 0.5 })).not.toThrow();
   });
 
+  it('rejects an envelope limit larger than a trade queue share', () => {
+    expect(() => deriveLimits({ maxEnvelopeBytes: 1024 ** 2 + 1 })).toThrow(/queue share/);
+  });
+
   it('rejects a budget too small for one trade', () => {
     expect(() => deriveLimits({ memoryBudgetBytes: 8 * 1024 * 1024 })).toThrow(/too small/);
   });

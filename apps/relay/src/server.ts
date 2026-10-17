@@ -20,7 +20,9 @@ export const CLOSE = {
 
 const ENVELOPE_KEYS = ['v', 'trade', 'from', 'seq', 'slots', 'nonce', 'kh', 'ct', 'ctNonce', 'sig'] as const;
 const PUMP_RETRY_MS = 10;
-const REPLACE_GRACE_MS = 1000;
+const PUMP_RETRY_MAX_MS = 1000;
+/** After a close frame, wait this long for the client's reply, then cut the TCP connection. */
+const CLOSE_GRACE_MS = 1000;
 
 export class RelayAtCapacityError extends Error {
   constructor() {
@@ -68,6 +70,9 @@ interface Conn {
   tokens: number;
   refilledAt: number;
   pumpTimer: NodeJS.Timeout | undefined;
+  pumpDelay: number;
+  /** Replaced by a newer socket for the same role: an idle one is told 4409, a backlogged one cut. */
+  retired(): void;
 }
 
 interface TradeState {
@@ -76,6 +81,7 @@ interface TradeState {
   queuedBytes: number;
   queuedFrames: number;
   sockets: Partial<Record<Role, Conn>>;
+  closed: boolean;
 }
 
 export interface RelayStats {
@@ -110,7 +116,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
   let unauthenticated = 0;
   let totalQueuedBytes = 0;
 
-  const app = Fastify({ logger: false, disableRequestLogging: true });
+  const app = Fastify({ logger: false });
   await app.register(websocket, { options: { maxPayload: limits.maxEnvelopeBytes } });
   app.get('/healthz', async () => ({ ok: true }));
 
@@ -121,9 +127,16 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     for (const r of ROLES) trade.queues[r] = [];
   }
 
-  /** Send queued frames while the peer's buffer has room; retry shortly while any remain. */
+  /** Close with a code the client can read, then cut the connection if it doesn't answer. */
+  function closeSoon(ws: WebSocket, code: number): void {
+    if (ws.readyState === ws.OPEN) ws.close(code);
+    setTimeout(() => ws.terminate(), CLOSE_GRACE_MS).unref();
+  }
+
+  /** Send queued frames while the peer's buffer has room; retry with backoff while any remain. */
   function pump(trade: TradeState, conn: Conn): void {
     const q = trade.queues[conn.role];
+    let sent = 0;
     while (q.length > 0 && conn.ws.readyState === conn.ws.OPEN) {
       const next = q[0]!;
       if (conn.ws.bufferedAmount + next.length > limits.maxPeerBufferedBytes) break;
@@ -132,26 +145,35 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
       trade.queuedFrames -= 1;
       totalQueuedBytes -= next.length;
       conn.ws.send(next, { binary: false });
+      sent += 1;
     }
+    conn.pumpDelay = sent > 0 ? PUMP_RETRY_MS : Math.min(conn.pumpDelay * 2, PUMP_RETRY_MAX_MS);
     if (q.length > 0 && conn.ws.readyState === conn.ws.OPEN && conn.pumpTimer === undefined) {
       conn.pumpTimer = setTimeout(() => {
         conn.pumpTimer = undefined;
         if (trade.sockets[conn.role] === conn) pump(trade, conn);
-      }, PUMP_RETRY_MS);
+      }, conn.pumpDelay);
       conn.pumpTimer.unref();
     }
   }
 
   /** Deliver live if the recipient is caught up, else queue. False when the queue is full. */
   function deliver(trade: TradeState, to: Role, frame: Buffer): boolean {
-    const peer = trade.sockets[to];
+    if (trade.closed) return false;
+    let peer = trade.sockets[to];
+    // A peer that is closing would drop the frame silently; treat it as offline and queue.
+    if (peer && peer.ws.readyState !== peer.ws.OPEN) {
+      delete trade.sockets[to];
+      peer = undefined;
+    }
     const q = trade.queues[to];
     if (peer && q.length === 0) {
       if (peer.ws.bufferedAmount + frame.length <= limits.maxPeerBufferedBytes) {
         peer.ws.send(frame, { binary: false });
         return true;
       }
-      log({ reason: 'slow-peer' });
+      log({ reason: 'slow-peer-4408' });
+      delete trade.sockets[to];
       peer.ws.terminate();
     }
     if (
@@ -174,7 +196,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
   app.get('/v1/trade/:code', { websocket: true }, (ws, req) => {
     if (connections >= limits.maxConnections || unauthenticated >= limits.maxUnauthenticated) {
       log({ reason: 'at-capacity' });
-      ws.close(CLOSE.full);
+      closeSoon(ws, CLOSE.full);
       return;
     }
     connections += 1;
@@ -182,10 +204,17 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     let conn: Conn | undefined;
     let trade: TradeState | undefined;
     let joinTimer: NodeJS.Timeout | undefined;
+    let dead = false;
 
+    // Once rejected, a socket is dead: ws keeps emitting messages until the close handshake
+    // ends, so every handler checks `dead` and nothing it sends is used.
     const fail = (code: number, reason: string): void => {
+      if (dead) return;
+      dead = true;
       log({ reason });
-      ws.close(code);
+      clearTimeout(joinTimer);
+      if (conn && trade && trade.sockets[conn.role] === conn) delete trade.sockets[conn.role];
+      closeSoon(ws, code);
     };
 
     ws.on('close', () => {
@@ -248,16 +277,11 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
       const old = t.sockets[role];
       if (old) {
         log({ reason: 'replaced' });
-        if (old.ws.bufferedAmount === 0) {
-          old.ws.close(CLOSE.replaced);
-          setTimeout(() => old.ws.terminate(), REPLACE_GRACE_MS).unref();
-        } else {
-          old.ws.terminate();
-        }
+        old.retired();
       }
       unauthenticated -= 1;
       trade = t;
-      conn = { ws, role, tokens: limits.rateBurst, refilledAt: Date.now(), pumpTimer: undefined };
+      conn = { ws, role, tokens: limits.rateBurst, refilledAt: Date.now(), pumpTimer: undefined, pumpDelay: PUMP_RETRY_MS, retired };
       t.sockets[role] = conn;
       ws.send(JSON.stringify({ type: 'joined' }));
       pump(t, conn);
@@ -289,7 +313,20 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
       if (full && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'queue-full', seq: env.seq }));
     };
 
-    ws.on('message', (data: RawData) => {
+    const retired = (): void => {
+      if (dead) return;
+      dead = true;
+      if (ws.bufferedAmount === 0) closeSoon(ws, CLOSE.replaced);
+      else ws.terminate();
+    };
+
+    ws.on('message', (data: RawData, isBinary: boolean) => {
+      if (dead || ws.readyState !== ws.OPEN) return;
+      if (trade && trades.get(code) !== trade) return; // the trade was closed
+      if (isBinary) {
+        fail(conn ? CLOSE.badEnvelope : CLOSE.badJoin, 'binary-frame');
+        return;
+      }
       const bytes = toBytes(data);
       // The first message must be the join; a failed join closes the socket, so nothing
       // sent before authentication is ever queued or forwarded.
@@ -315,15 +352,20 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
         if (typeof hex !== 'string' || !/^[0-9a-f]{64}$/.test(hex)) throw new TypeError(`registerTrade: bad key for ${r}`);
         keys[r] = sodium.from_hex(hex);
       }
-      trades.set(code, { keys, queues: { buyer: [], seller: [], mod: [] }, queuedBytes: 0, queuedFrames: 0, sockets: {} });
+      trades.set(code, { keys, queues: { buyer: [], seller: [], mod: [] }, queuedBytes: 0, queuedFrames: 0, sockets: {}, closed: false });
     },
     closeTrade(rawCode) {
       const code = normalizeTradeCode(rawCode);
       const t = code === null ? undefined : trades.get(code);
       if (!t || code === null) return;
       trades.delete(code);
+      t.closed = true;
       dropQueue(t);
-      for (const r of ROLES) t.sockets[r]?.ws.close(CLOSE.unknownTrade);
+      for (const r of ROLES) {
+        const s = t.sockets[r];
+        delete t.sockets[r];
+        if (s) closeSoon(s.ws, CLOSE.unknownTrade);
+      }
     },
     stats() {
       let queuedFrames = 0;

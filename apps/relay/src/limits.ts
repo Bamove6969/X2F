@@ -45,6 +45,7 @@ function positive(name: string, v: number, integer: boolean): void {
 export function deriveLimits(overrides: Partial<RelayOptions> = {}): RelayLimits {
   const o: RelayOptions = { ...DEFAULT_OPTIONS, ...overrides };
   for (const [k, v] of Object.entries(o) as [keyof RelayOptions, number][]) positive(k, v, k !== 'rateRefillPerSec');
+  if (o.maxEnvelopeBytes > PER_TRADE_QUEUE_BYTES) throw new RangeError('maxEnvelopeBytes must fit in one trade queue share (1 MiB)');
   const maxPeerBufferedBytes = 2 * o.maxEnvelopeBytes;
   const perConnection = o.maxEnvelopeBytes + PER_CONNECTION_OVERHEAD;
   const totalQueueBytes = Math.floor(o.memoryBudgetBytes / 4);

@@ -317,6 +317,97 @@ describe('relay', () => {
   });
 });
 
+describe('relay after a rejection or close', () => {
+  it('stops relaying for a socket it rejected, even if the client keeps sending', async () => {
+    const { relay, url } = await start();
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const s = await join(url, code, 'seller', i.seller);
+    const b = await join(url, code, 'buyer', i.buyer);
+    // Ignore the server's close frame: keep the socket open from the client side.
+    (b.ws as unknown as { _receiver: { removeAllListeners(e: string): void } })._receiver.removeAllListeners('conclude');
+    b.ws.send('not json');
+    for (let n = 1; n <= 5; n++) b.ws.send(envelope(code, 'buyer', n));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(s.frames).toEqual([]);
+    expect(relay.stats().queuedFrames).toBe(0);
+  });
+
+  it('leaves no queued bytes behind when frames arrive as the trade closes', async () => {
+    const { relay, url } = await start();
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const b = await join(url, code, 'buyer', i.buyer);
+    for (let n = 1; n <= 20; n++) b.ws.send(envelope(code, 'buyer', n, 'x'.repeat(20_000)));
+    relay.closeTrade(code);
+    for (let n = 21; n <= 40; n++) b.ws.send(envelope(code, 'buyer', n, 'x'.repeat(20_000)));
+    await b.closed;
+    await new Promise((r) => setTimeout(r, 200));
+    expect(relay.stats()).toMatchObject({ trades: 0, queuedFrames: 0, queuedBytes: 0 });
+  });
+
+  it('refuses binary frames before and after joining', async () => {
+    const { relay, url } = await start();
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const s = await join(url, code, 'seller', i.seller);
+    const b = await join(url, code, 'buyer', i.buyer);
+    b.ws.send(Buffer.from(envelope(code, 'buyer', 1)), { binary: true });
+    expect(await b.closed).toBe(CLOSE.badEnvelope);
+    const pre = connect(url, code);
+    await pre.next();
+    pre.ws.send(Buffer.from('{}'), { binary: true });
+    expect(await pre.closed).toBe(CLOSE.badJoin);
+    expect(s.frames).toEqual([]);
+  });
+
+  it('queues for a peer that is closing instead of dropping the frame', async () => {
+    const { relay, url } = await start();
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const b = await join(url, code, 'buyer', i.buyer);
+    const s = await join(url, code, 'seller', i.seller);
+    s.ws.send('garbage'); // the seller's socket is now closing
+    await s.closed;
+    b.ws.send(envelope(code, 'buyer', 1));
+    await expect.poll(() => relay.stats().queuedFrames).toBe(2);
+    const s2 = await join(url, code, 'seller', i.seller);
+    expect(await s2.next()).toBe(envelope(code, 'buyer', 1));
+  });
+
+  it('delivers a live frame sent during a drain after the queued ones', async () => {
+    const { relay, url } = await start({ maxEnvelopeBytes: 16_384 });
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const b = await join(url, code, 'buyer', i.buyer);
+    const pad = 'x'.repeat(12_000);
+    const queued = Array.from({ length: 40 }, (_, n) => envelope(code, 'buyer', n + 1, pad));
+    for (const e of queued) b.ws.send(e);
+    await expect.poll(() => relay.stats().queuedFrames).toBe(80);
+    const s = connect(url, code);
+    const { challenge } = JSON.parse(await s.next()) as { challenge: string };
+    s.ws.send(JSON.stringify({ role: 'seller', sig: sign(i.seller, code, 'seller', challenge) }));
+    const live = envelope(code, 'buyer', 41);
+    b.ws.send(live);
+    expect(JSON.parse(await s.next())).toEqual({ type: 'joined' });
+    for (const e of [...queued, live]) expect(await s.next()).toBe(e);
+  });
+
+  it('sends a challenge that is canonical base64 of 32 bytes', async () => {
+    const { url } = await start();
+    const c = connect(url, newTradeCode());
+    const { type, challenge } = JSON.parse(await c.next()) as { type: string; challenge: string };
+    expect(type).toBe('challenge');
+    expect(challenge).toMatch(/^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/);
+    expect(sodium.from_base64(challenge, sodium.base64_variants.ORIGINAL)).toHaveLength(32);
+  });
+});
+
 describe('exactCopy', () => {
   it('copies into a buffer of exactly the frame size', () => {
     for (const n of [300, 200_000]) {

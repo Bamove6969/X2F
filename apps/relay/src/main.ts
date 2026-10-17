@@ -1,8 +1,12 @@
 import { buildRelay } from './server.js';
 
-function num(name: string): number | undefined {
+/** A numeric setting; junk such as "512k" is refused rather than read as 512. */
+function num(name: string, integer = true): number | undefined {
   const v = process.env[name];
-  return v === undefined || v === '' ? undefined : Number.parseFloat(v);
+  if (v === undefined || v === '') return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n) || (integer && !Number.isInteger(n))) throw new RangeError(`${name} must be ${integer ? 'an integer' : 'a number'}`);
+  return n;
 }
 
 const overrides = Object.fromEntries(
@@ -10,7 +14,7 @@ const overrides = Object.fromEntries(
     maxEnvelopeBytes: num('RELAY_MAX_ENVELOPE_BYTES'),
     memoryBudgetBytes: num('RELAY_MEMORY_BUDGET_BYTES'),
     maxUnauthenticated: num('RELAY_MAX_UNAUTHENTICATED'),
-    rateRefillPerSec: num('RELAY_RATE_REFILL_PER_SEC'),
+    rateRefillPerSec: num('RELAY_RATE_REFILL_PER_SEC', false),
   }).filter(([, v]) => v !== undefined),
 );
 
