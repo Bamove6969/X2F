@@ -125,6 +125,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 7. **Price feed sources.**
 8. Post an offer: badge requirements are **shown openly** on the form (owner, 2026-10-17). Pricing: market ± % (default) or a fixed price per XMR, with a stale-price warning (owner, 2026-10-17).
 9. A seller bond for disputes after refunds? (Deferred.)
+10. **Extra XMR sent to an escrow goes to the ad poster** at the end of the trade, like a tip (owner, 2026-10-17). The X2F fee stays exact. The exact-amount funding link and QR keep overpaying rare. Proposed, not yet decided: wait about 1 hour for locked dust, then pay out what is unlocked.
 
 ## Next steps, in order
 

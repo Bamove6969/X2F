@@ -18,7 +18,7 @@ This is an in-house review. It does not replace the external code and cryptograp
 |---|---|---|---|
 | 1 | High (proven on regtest) | A dishonest builder could make the honest co-signer's wallet refuse to sign (a set built on stale multisig nonces). The refusal was a non-`EscrowError` and killed the party; on restart it hit the same set again, so that outcome was locked and a dispute was forced. | **Fixed.** `signRelease` and `buildRelease` turn wallet refusals into retryable `EscrowError`s; the party starts a fresh attempt (new export, new nonces) and the outcome lock lifts. Test: `engine.test.ts` "a set built on stale signing data is a refused attempt". |
 | 2 | High (proven) | Anyone could hold the relay's 64 unauthenticated slots by opening sockets and never answering the join challenge, locking everyone out. | **Mitigated.** Join timeout cut from 10 s to 3 s. **Residual:** a per-source limit is needed and must live in the front proxy / onion service, because the relay itself never sees or stores IPs (privacy rule). Plan 6 (deployment) must add it. |
-| 3 | Medium (proven) | Extra coins sent to the escrow stall settlement: one surplus payment makes trade-derived payouts fail closed; dust sent every few blocks keeps part of the balance locked indefinitely. | **Open, owner decision.** Plan 3 must decide who gets a surplus and how long to wait for locked dust before settling the unlocked amount. Until then the code fails closed (nobody can be paid the wrong amount). |
+| 3 | Medium (proven) | Extra coins sent to the escrow stall settlement: one surplus payment makes trade-derived payouts fail closed; dust sent every few blocks keeps part of the balance locked indefinitely. | **Decided, Plan 3 to build.** The owner decided (2026-10-17) that a surplus goes to the ad poster, with the X2F fee kept exact. How long to wait for locked dust is still a proposal (about 1 hour). Until Plan 3, the code fails closed (nobody can be paid the wrong amount). |
 | 4 | Medium | One trade participant could fill the trade's whole relay queue for an offline peer (e.g. the moderator), delaying the other party. | **Fixed.** Per-sender cap: one sender may use at most half of a trade's queue share. Test: `relay.test.ts` "one sender cannot fill the whole trade queue". |
 
 ## Confirmed sound (tried and held up)
@@ -32,7 +32,7 @@ This is an in-house review. It does not replace the external code and cryptograp
 
 ## Open items for Plan 3 and the external audit
 
-- Surplus and dust policy (finding 3).
+- Surplus to the ad poster (finding 3, decided); the locked-dust wait is still a proposal.
 - Per-source connection limits in front of the relay (finding 2).
 - From the Task 8 review: the builder accepts the co-signer's reported tx hash without checking it; `txSeen` counts a pool transaction as done and uses a raw `fetch`; a submit rejected for good retries forever (Plan 3 should watch the chain); daemon calls have no timeouts.
 - Saved wallet data: keys use wallet2's single KDF round and no MAC; Plan 3 must use a strong random secret, stored apart from the saved session (R27).
