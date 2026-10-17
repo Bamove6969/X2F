@@ -148,11 +148,25 @@ describe('MoneroMultisigEngine on regtest', () => {
   it('one key alone cannot spend: the builder cannot co-sign its own set', async () => {
     const { txSet } = await e.seller.buildRelease(payouts);
     const err = await e.seller.cosign(txSet, payouts).then(() => null, (x: unknown) => x);
-    expect(err).not.toBeInstanceOf(EscrowError);
+    // The wallet refuses ("already signed by this private key"), reported as a refused attempt.
+    expect((err as EscrowError).code).toBe('payout-mismatch');
     expect(String(err)).toMatch(/already signed/i);
     await mine(node.rpcUri, 1, await funder.getPrimaryAddress());
     expect((await e.buyer.sync()).unlocked).toBe(amount);
     expect(await received(node.rpcUri, buyerWallet)).toBe(0n);
+  });
+
+  it('a set built on stale signing data is a refused attempt, not a crash', async () => {
+    // The seller builds on the buyer's first export; the buyer then exports again (fresh
+    // nonces), so the old set can no longer be signed by the buyer.
+    await pair(e.seller, e.buyer);
+    const { txSet } = await e.seller.buildRelease(payouts);
+    await pair(e.seller, e.buyer);
+    const err = await e.buyer.signRelease(txSet, payouts).then(() => null, (x: unknown) => x);
+    expect(err).toBeInstanceOf(EscrowError);
+    expect((err as EscrowError).code).toBe('payout-mismatch');
+    expect(String(err)).toMatch(/wallet refused to sign/);
+    await pair(e.seller, e.buyer);
   });
 
   it('releases with the 1% fee as a second output; the network fee comes off the buyer', async () => {

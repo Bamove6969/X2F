@@ -89,12 +89,18 @@ export class MoneroMultisigSession implements EscrowSession {
     checkPayouts(payouts);
     const balance = await this.sweepableBalance();
     if (sumPayouts(payouts) !== balance) throw new EscrowError('bad-payouts', 'payouts must sweep the whole escrow');
-    const txs = await this.wallet.createTxs(new MoneroTxConfig({
-      accountIndex: 0,
-      destinations: payouts.map((p) => new MoneroDestination(p.address, p.amountAtomic)),
-      subtractFeeFrom: [0],
-      relay: false,
-    }));
+    let txs: MoneroTxWallet[];
+    try {
+      txs = await this.wallet.createTxs(new MoneroTxConfig({
+        accountIndex: 0,
+        destinations: payouts.map((p) => new MoneroDestination(p.address, p.amountAtomic)),
+        subtractFeeFrom: [0],
+        relay: false,
+      }));
+    } catch (e) {
+      // e.g. multisig state not yet imported: a fresh attempt can recover.
+      throw new EscrowError('not-ready', `could not build: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
     if (txs.length !== 1) throw new EscrowError('build-failed', `expected 1 transaction, got ${txs.length}`);
     const txSet = txs[0]!.getTxSet()?.getMultisigTxHex();
     if (!txSet) throw new EscrowError('build-failed', 'no multisig tx set');
@@ -118,7 +124,14 @@ export class MoneroMultisigSession implements EscrowSession {
     // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
     // signing rebuilds the tx from the same construction data that describe decoded and
     // compares it with the stored tx, so what was checked is what gets signed.
-    const signed = await this.wallet.signMultisigTxHex(txSet);
+    let signed: Awaited<ReturnType<MoneroWalletFull['signMultisigTxHex']>>;
+    try {
+      signed = await this.wallet.signMultisigTxHex(txSet);
+    } catch (e) {
+      // The wallet refused to sign (e.g. the set was built on stale nonces): nothing was signed,
+      // so this is a refused attempt, not a fatal error.
+      throw new EscrowError('payout-mismatch', `wallet refused to sign: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
     const signedHex = signed.getSignedMultisigTxHex();
     const hashes = signed.getTxHashes() ?? [];
     if (!signedHex || hashes.length !== 1) throw new EscrowError('build-failed', 'signing produced no single tx');

@@ -386,13 +386,13 @@ describe('relay after a rejection or close', () => {
     register(relay, code, i);
     const b = await join(url, code, 'buyer', i.buyer);
     const pad = 'x'.repeat(12_000);
-    const queued = Array.from({ length: 40 }, (_, n) => envelope(code, 'buyer', n + 1, pad));
+    const queued = Array.from({ length: 20 }, (_, n) => envelope(code, 'buyer', n + 1, pad));
     for (const e of queued) b.ws.send(e);
-    await expect.poll(() => relay.stats().queuedFrames).toBe(80);
+    await expect.poll(() => relay.stats().queuedFrames).toBe(40);
     const s = await join(url, code, 'seller', i.seller);
     // The first queued frame is in, so the drain is running (32 KiB peer buffer, ~1 MiB queued).
     expect(await s.next()).toBe(queued[0]);
-    const live = envelope(code, 'buyer', 41);
+    const live = envelope(code, 'buyer', 21);
     b.ws.send(live);
     queued.shift();
     for (const e of [...queued, live]) expect(await s.next()).toBe(e);
@@ -412,6 +412,23 @@ describe('relay after a rejection or close', () => {
     await pending.next();
     const extra = connect(url, code);
     expect(await extra.closed).toBe(CLOSE.full);
+  });
+
+  it('one sender cannot fill the whole trade queue for an offline peer', async () => {
+    const { relay, url } = await start({ maxEnvelopeBytes: 131_072 });
+    const code = newTradeCode();
+    const i = await ids();
+    register(relay, code, i);
+    const b = await join(url, code, 'buyer', i.buyer);
+    const s = await join(url, code, 'seller', i.seller);
+    const big = 'x'.repeat(100_000);
+    // Each buyer frame is queued for the offline moderator only (the seller is online).
+    for (let n = 1; n <= 6; n++) b.ws.send(envelope(code, 'buyer', n, big));
+    expect(JSON.parse(await b.next())).toMatchObject({ type: 'queue-full' });
+    // The seller can still queue for the moderator.
+    s.ws.send(envelope(code, 'seller', 1));
+    await new Promise((r) => setTimeout(r, 200));
+    expect(s.frames.filter((f) => f.includes('queue-full'))).toEqual([]);
   });
 
   it('sends a challenge that is canonical base64 of 32 bytes', async () => {

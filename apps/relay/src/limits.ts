@@ -24,7 +24,8 @@ export const DEFAULT_OPTIONS: RelayOptions = {
   maxQueuedPerTrade: 1000,
   rateBurst: 50,
   rateRefillPerSec: 20,
-  joinTimeoutMs: 10_000,
+  // Short, so sockets that never answer the challenge free their slot quickly.
+  joinTimeoutMs: 3_000,
 };
 
 const MAX_INT = 2 ** 31 - 1;

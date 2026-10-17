@@ -77,9 +77,11 @@ interface Conn {
 
 interface TradeState {
   keys: Record<Role, Uint8Array>;
-  queues: Record<Role, Buffer[]>;
+  queues: Record<Role, { frame: Buffer; from: Role }[]>;
   queuedBytes: number;
   queuedFrames: number;
+  /** Queued bytes per sender, so one party cannot fill the trade's whole queue share. */
+  queuedBy: Record<Role, number>;
   sockets: Partial<Record<Role, Conn>>;
   closed: boolean;
 }
@@ -124,7 +126,10 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     totalQueuedBytes -= trade.queuedBytes;
     trade.queuedBytes = 0;
     trade.queuedFrames = 0;
-    for (const r of ROLES) trade.queues[r] = [];
+    for (const r of ROLES) {
+      trade.queues[r] = [];
+      trade.queuedBy[r] = 0;
+    }
   }
 
   /** Close with a code the client can read, then cut the connection if it doesn't answer. */
@@ -138,10 +143,11 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     const q = trade.queues[conn.role];
     let sent = 0;
     while (q.length > 0 && conn.ws.readyState === conn.ws.OPEN) {
-      const next = q[0]!;
+      const { frame: next, from } = q[0]!;
       if (conn.ws.bufferedAmount + next.length > limits.maxPeerBufferedBytes) break;
       q.shift();
       trade.queuedBytes -= next.length;
+      trade.queuedBy[from] -= next.length;
       trade.queuedFrames -= 1;
       totalQueuedBytes -= next.length;
       conn.ws.send(next, { binary: false });
@@ -158,7 +164,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
   }
 
   /** Deliver live if the recipient is caught up, else queue. False when the queue is full. */
-  function deliver(trade: TradeState, to: Role, frame: Buffer): boolean {
+  function deliver(trade: TradeState, to: Role, frame: Buffer, from: Role): boolean {
     if (trade.closed) return false;
     let peer = trade.sockets[to];
     // A peer that is closing would drop the frame silently; treat it as offline and queue.
@@ -179,13 +185,15 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     if (
       trade.queuedFrames + 1 > limits.maxQueuedPerTrade ||
       trade.queuedBytes + frame.length > limits.perTradeQueueBytes ||
+      trade.queuedBy[from] + frame.length > limits.perTradeQueueBytes / 2 ||
       totalQueuedBytes + frame.length > limits.totalQueueBytes
     ) {
       log({ reason: 'queue-full' });
       return false;
     }
-    q.push(frame);
+    q.push({ frame, from });
     trade.queuedBytes += frame.length;
+    trade.queuedBy[from] += frame.length;
     trade.queuedFrames += 1;
     totalQueuedBytes += frame.length;
     const live = trade.sockets[to];
@@ -309,7 +317,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
       }
       const frame = exactCopy(bytes);
       let full = false;
-      for (const to of ROLES) if (to !== c.role && !deliver(t, to, frame)) full = true;
+      for (const to of ROLES) if (to !== c.role && !deliver(t, to, frame, c.role)) full = true;
       if (full && ws.readyState === ws.OPEN) ws.send(JSON.stringify({ type: 'queue-full', seq: env.seq }));
     };
 
@@ -352,7 +360,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
         if (typeof hex !== 'string' || !/^[0-9a-f]{64}$/.test(hex)) throw new TypeError(`registerTrade: bad key for ${r}`);
         keys[r] = sodium.from_hex(hex);
       }
-      trades.set(code, { keys, queues: { buyer: [], seller: [], mod: [] }, queuedBytes: 0, queuedFrames: 0, sockets: {}, closed: false });
+      trades.set(code, { keys, queues: { buyer: [], seller: [], mod: [] }, queuedBytes: 0, queuedFrames: 0, queuedBy: { buyer: 0, seller: 0, mod: 0 }, sockets: {}, closed: false });
     },
     closeTrade(rawCode) {
       const code = normalizeTradeCode(rawCode);
