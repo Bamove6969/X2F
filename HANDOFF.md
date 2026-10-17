@@ -111,7 +111,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 - **Roles:** Owner (creates and removes moderators, sets the large-trade limit, sees every log, co-approves every ruling above the limit) and Moderator (rules alone below the limit). Later the owner can tick "Can co-approve large rulings" on trusted moderators. Helpers (questions only, no evidence) come with the community room.
 - **Chats are encrypted but moderators can read them** when a dispute is opened on that trade; every read is logged; users are told in every chat.
 - **Dispute records are kept 30 days after the dispute closes, for training, then deleted** (owner, 2026-10-17). Training uses anonymized copies (Buyer/Seller, personal details masked), kept 6 months, then deleted; trainees never see real details. **No IP addresses are logged, even in disputes** (owner, 2026-10-17).
-- Proposed, awaiting owner approval: owner login by hardware security keys only, staff accounts separate from trading accounts, a violet shield "X2F Moderator" badge shown only in disputed trade rooms, a moderator dashboard (queue, case view, ruling tools, training library).
+- **Approved by owner 2026-10-17:** owner logs in with a hardware security key and a PGP key; staff accounts separate from trading accounts; a violet shield "X2F Moderator" badge shown only in disputed trade rooms, with a hard-to-copy look such as a holographic shimmer (to design on the canvas); the moderator dashboard (queue, case view, ruling tools, training library).
 - Community room ideas are parked in `docs/community-room-plan.md`.
 
 ## Open decisions (owner's call)
@@ -123,7 +123,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 5. **Sanctioned rails** (SBP, Mir, YooMoney). They need a lawyer's sign-off.
 6. **Gift cards:** allowed or not.
 7. **Price feed sources.**
-8. Post an offer: add a fixed-price option, and badge requirements behind "More options"? (Asked, not yet answered.)
+8. Post an offer: badge requirements are **shown openly** on the form (owner, 2026-10-17). Fixed-price option: still open.
 9. A seller bond for disputes after refunds? (Deferred.)
 
 ## Next steps, in order
