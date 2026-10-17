@@ -103,9 +103,18 @@ export class MoneroMultisigSession implements EscrowSession {
     return { txSet, payouts: decoded.flatMap((tx) => tx.destinations) };
   }
 
+  async checkRelease(txSet: string, expected: Payout[]): Promise<void> {
+    let txs: DescribedTx[];
+    try {
+      txs = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
+    } catch {
+      throw new EscrowError('payout-mismatch', 'tx set could not be decoded');
+    }
+    checkTxSet(txs, expected, await this.sweepableBalance());
+  }
+
   async signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }> {
-    const decoded = await this.wallet.describeMultisigTxSet(txSet);
-    checkTxSet(decoded.getTxs().map(describe), expected, await this.sweepableBalance());
+    await this.checkRelease(txSet, expected);
     // Sign the exact hex that was checked; never re-fetch or rebuild it. In monero v0.18,
     // signing rebuilds the tx from the same construction data that describe decoded and
     // compares it with the stored tx, so what was checked is what gets signed.

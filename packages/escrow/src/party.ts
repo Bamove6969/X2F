@@ -93,8 +93,10 @@ export interface PartyArgs {
   daemonUri: string;
   password: string;
   store: PartyStore;
-  /** How often to resend unanswered messages and re-check funds. Default 3 s. */
+  /** How often to re-check funds and progress; also the first resend delay. Default 3 s. */
   resendMs?: number;
+  /** Resends back off exponentially up to this, and restart at resendMs on progress. Default 60 s. */
+  resendMaxMs?: number;
   /** Told about every ignored envelope or message, with a reason (no contents). */
   onIgnored?: (reason: string) => void;
 }
@@ -102,6 +104,8 @@ export interface PartyArgs {
 const PREPARE = 'msig.prepare:0';
 const MAKE = 'msig.make:1';
 const ADDR = 'msig.addr:0';
+/** "I have checked all three addresses": nobody funds until both peers confirm too. */
+const READY = 'msig.ready:0';
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
@@ -150,6 +154,7 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === PREPARE) return exactStrings(p, ['key', 'hex']);
   if (key === MAKE) return Object.keys(p).length === 3 && typeof p.hex === 'string' && echoOk();
   if (key === ADDR) return Object.keys(p).length === 4 && typeof p.address === 'string' && typeof p.prev === 'string' && echoOk();
+  if (key === READY) return exactStrings(p, ['key', 'address']);
   const rel = RELEASE_KEY.exec(key);
   if (!rel || Number(rel[2]) > MAX_ATTEMPT) return false;
   if (rel[1] === 'state.export') return exactStrings(p, ['key', 'hex']);
@@ -157,7 +162,7 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   return key === DONE && exactStrings(p, ['key', 'txHash']);
 }
 
-const isSetupKey = (key: string): boolean => key === PREPARE || key === MAKE || key === ADDR || KEX.test(key);
+const isSetupKey = (key: string): boolean => key === PREPARE || key === MAKE || key === ADDR || key === READY || KEX.test(key);
 const RETRYABLE = new Set(['bad-payouts', 'not-ready', 'payout-mismatch']);
 
 /**
@@ -166,8 +171,9 @@ const RETRYABLE = new Set(['bad-payouts', 'not-ready', 'payout-mismatch']);
  * Setup: prepare → make → kex rounds → addr. Each message goes to both peers in ONE
  * envelope and echoes the digests of the previous step's messages from the other two, so a
  * party that sends different content to different peers is caught (equivocation) before
- * anyone advances. All three confirm the same escrow address before ready() resolves. After
- * that, setup messages are ignored, so a peer cannot disturb settlement with them.
+ * anyone advances. Each party checks all three addresses, then confirms (msig.ready); ready()
+ * resolves only once both peers have confirmed too, so nobody funds an escrow that one of the
+ * others could not settle. After that, setup messages are ignored.
  *
  * Settlement waits until the escrow is funded, fully unlocked and matches the outcome. The
  * builder and co-signer swap fresh multisig state, the builder sends one tx set, the
@@ -248,19 +254,40 @@ export function runParty(a: PartyArgs): PartyHandle {
     return n === 2 ? MAKE : `msig.kex:${n - 1}`;
   };
 
+  /** Peers that have sent a settlement message have clearly finished setup. */
+  const pastSetup = (p: Role): boolean =>
+    Object.keys(state.received).some((k) => !isSetupKey(k) && state.received[k]?.[p] !== undefined);
+
   /** Resend everything a peer may still be waiting for. Duplicates are ignored by peers. */
   const resend = async (): Promise<void> => {
+    lastResend = Date.now();
     if (!state.address) {
       if (state.step !== PREPARE) await send(prevKeyOf(state.step), peers);
       await send(state.step, peers);
-    } else {
+    } else if (!isReady) {
+      await send(state.step, peers); // the final kex message, in case a peer lost it
       await send(ADDR, peers);
+      await send(READY, peers);
+    } else {
+      await send(READY, peers.filter((p) => !pastSetup(p)));
     }
     const rel = state.release;
     if (!rel) return;
     if (rel.phase !== 'waiting-funds') await send(exportKey(rel.attempt), [rel.counterpart]);
     if (rel.part === 'builder' && rel.phase === 'built') await send(txSetKey(rel.attempt), [rel.counterpart]);
-    if (rel.phase === 'done') await send(DONE, [rel.counterpart]);
+    if (rel.phase === 'done' && rel.part === 'cosigner') await send(DONE, [rel.counterpart]);
+  };
+
+  // Resends back off while nothing happens and restart quickly after progress.
+  const baseMs = a.resendMs ?? 3000;
+  const maxMs = a.resendMaxMs ?? 60_000;
+  let resendDelay = baseMs;
+  let nextResendAt = 0;
+  let lastResend = 0;
+  let tickQueued = false;
+  const progressed = (): void => {
+    resendDelay = baseMs;
+    nextResendAt = Date.now() + baseMs;
   };
 
   // ── Setup ─────────────────────────────────────────────────────────────
@@ -311,15 +338,26 @@ export function runParty(a: PartyArgs): PartyHandle {
       await persist();
       await send(next, peers);
     }
-    checkAddresses();
+    await checkAddresses();
   };
 
-  const checkAddresses = (): void => {
+  /** Check all three addresses, confirm, and become ready once both peers have confirmed. */
+  const checkAddresses = async (): Promise<void> => {
     const got = state.received[ADDR];
     if (isReady || !state.address || !got || peers.some((p) => !got[p])) return;
+    if (!state.sent[READY]) {
+      for (const p of peers) {
+        checkEcho(ADDR, p, got[p]!.payload);
+        if (got[p]!.payload.address !== state.address) throw new PartyError('address-mismatch', `${p} reports another escrow address`);
+      }
+      state.sent[READY] = { address: state.address };
+      await saveState();
+      await send(READY, peers);
+    }
+    const confirmed = state.received[READY];
+    if (!confirmed || peers.some((p) => !confirmed[p])) return;
     for (const p of peers) {
-      checkEcho(ADDR, p, got[p]!.payload);
-      if (got[p]!.payload.address !== state.address) throw new PartyError('address-mismatch', `${p} reports another escrow address`);
+      if (confirmed[p]!.payload.address !== state.address) throw new PartyError('address-mismatch', `${p} confirmed another escrow address`);
     }
     isReady = true;
     readyResolve(state.address);
@@ -340,6 +378,15 @@ export function runParty(a: PartyArgs): PartyHandle {
   const fundsReady = async (o: Outcome): Promise<boolean> => {
     const { balance, unlocked } = await session.sync();
     return balance > 0n && balance === unlocked && sumPayouts(o.to) === balance;
+  };
+
+  /** Import the counterpart's export; garbage counts as a refused attempt, not a crash. */
+  const importPeer = async (exp: Received): Promise<void> => {
+    try {
+      await session.importState([String(exp.payload.hex)]);
+    } catch {
+      throw new EscrowError('payout-mismatch', 'counterpart export could not be imported');
+    }
   };
 
   /** The highest attempt the counterpart has exported for. */
@@ -376,8 +423,8 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.part === 'builder') {
       const exp = theirs(exportKey(rel.attempt));
       if (rel.phase === 'export' && exp) {
-        await session.importState([String(exp.payload.hex)]);
         try {
+          await importPeer(exp);
           if (!(await fundsReady(o))) throw new EscrowError('not-ready');
           const { txSet } = await session.buildRelease(o.to);
           rel.phase = 'built';
@@ -405,8 +452,17 @@ export function runParty(a: PartyArgs): PartyHandle {
     const exp = theirs(exportKey(rel.attempt));
     const tx = theirs(txSetKey(rel.attempt));
     if (rel.phase === 'export' && exp && tx) {
-      await session.importState([String(exp.payload.hex)]);
-      await session.sync();
+      try {
+        await importPeer(exp);
+        await session.sync();
+        // Check before committing to this set, so a garbage set cannot lock the outcome.
+        await session.checkRelease(String(tx.payload.txSet), o.to);
+      } catch (e) {
+        if (!(e instanceof EscrowError) || !RETRYABLE.has(e.code)) throw e;
+        ignored(`cosign-${e.code}`);
+        await nextAttempt(rel);
+        return;
+      }
       rel.phase = 'cosigning';
       rel.txSet = String(tx.payload.txSet);
       await persist(); // from here on, never sign any other set for this trade
@@ -445,7 +501,8 @@ export function runParty(a: PartyArgs): PartyHandle {
     const digest = outcomeDigest(o);
     const rel = state.release;
     if (rel && rel.outcome === digest) return;
-    if (rel && (rel.phase === 'cosigning' || rel.phase === 'signed' || rel.phase === 'done')) {
+    // A built set carries this party's partial signature, so it counts as signed too.
+    if (rel && (rel.phase === 'built' || rel.phase === 'cosigning' || rel.phase === 'signed' || rel.phase === 'done')) {
       throw new PartyError('bad-outcome', 'already signed for another outcome');
     }
     const part = a.role === o.builder ? 'builder' : 'cosigner';
@@ -501,12 +558,13 @@ export function runParty(a: PartyArgs): PartyHandle {
     slot[from] = { payload, digest };
     state.guard = guard.toJSON();
     await saveState(); // saved before acting on it
+    progressed();
     await advance();
   };
 
   const advance = async (): Promise<void> => {
     if (!state.address) await advanceSetup();
-    else checkAddresses();
+    else await checkAddresses();
     if (settleOutcome && isReady) {
       await beginRelease(settleOutcome);
       await advanceRelease();
@@ -550,16 +608,28 @@ export function runParty(a: PartyArgs): PartyHandle {
       };
       await persist();
     }
-    a.transport.onReconnect(() => void run(resend));
-    timer = setInterval(
-      () =>
-        void run(async () => {
-          await resend();
+    // Loss signals (reconnect, queue-full) resend at most once per base interval.
+    a.transport.onReconnect(() => {
+      if (Date.now() - lastResend >= baseMs) void run(resend);
+    });
+    timer = setInterval(() => {
+      if (tickQueued) return; // a slow daemon call is still running; don't pile up ticks
+      tickQueued = true;
+      void run(async () => {
+        try {
+          if (Date.now() >= nextResendAt) {
+            await resend();
+            nextResendAt = Date.now() + resendDelay;
+            resendDelay = Math.min(resendDelay * 2, maxMs);
+          }
           await advance();
-        }),
-      a.resendMs ?? 3000,
-    );
+        } finally {
+          tickQueued = false;
+        }
+      });
+    }, baseMs);
     await resend();
+    nextResendAt = Date.now() + resendDelay;
     await advance();
   });
   void loop();
@@ -572,23 +642,21 @@ export function runParty(a: PartyArgs): PartyHandle {
       }
       if (a.role !== o.builder && a.role !== o.cosigner) return Promise.resolve(null);
       if (failure) return Promise.reject(failure);
+      let mine!: { resolve: (v: string | null) => void; reject: (e: unknown) => void };
       const p = new Promise<string | null>((resolve, reject) => {
-        settleWaiter?.reject(new PartyError('bad-outcome', 'replaced by a later settle()'));
-        settleWaiter = { resolve, reject };
+        mine = { resolve, reject };
       });
-      const previous = settleOutcome;
-      settleOutcome = o;
       void run(async () => {
-        try {
-          await advance();
-        } catch (e) {
-          if (e instanceof PartyError && e.code === 'bad-outcome') {
-            settleOutcome = previous; // keep settling what this party already signed
-            settleWaiter?.reject(e);
-            return;
-          }
-          throw e;
+        const rel = state.release;
+        const switching = rel !== null && rel.outcome !== outcomeDigest(o);
+        if (switching && ['built', 'cosigning', 'signed', 'done'].includes(rel.phase)) {
+          mine.reject(new PartyError('bad-outcome', 'already signed for another outcome')); // the earlier settle() keeps going
+          return;
         }
+        settleWaiter?.reject(new PartyError('bad-outcome', 'replaced by a later settle()'));
+        settleWaiter = mine;
+        settleOutcome = o;
+        await advance();
       });
       return p;
     },

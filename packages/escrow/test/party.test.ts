@@ -33,14 +33,16 @@ function memoryStore(): PartyStore & { current(): PartyState | null; onSave?: ((
 }
 
 /** A transport that can be fed extra frames, records what it received, and can drop sends. */
-function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen: unknown[]; dropSend: (n: number) => boolean; sent: number } {
+function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen: unknown[]; out: Envelope[]; dropSend: (n: number) => boolean; sent: number } {
   const injected: unknown[] = [];
   const seen: unknown[] = [];
   const t = {
     sent: 0,
+    out: [] as Envelope[],
     dropSend: (_n: number) => false,
     send: (e: Envelope) => {
       t.sent += 1;
+      t.out.push(e);
       if (!t.dropSend(t.sent)) inner.send(e);
     },
     next: async () => {
@@ -108,6 +110,7 @@ describe('party runner over the relay on regtest', () => {
       store: t.stores[role],
       resendMs: 500,
       onIgnored: (reason) => ignoredBy[role].push(reason),
+      resendMaxMs: 2000,
     });
     running.push(party);
     return { party, tap };
@@ -247,7 +250,7 @@ describe('party runner over the relay on regtest', () => {
       }
       // The moderator's cross-check names the cheat: the seller's messages differ between peers.
       const modErr = await mod.ready().then(() => null, (e: unknown) => e);
-      expect(String(modErr)).toMatch(/seller sent different messages|seller saw a different message/);
+      expect(String(modErr)).toMatch(/seller sent different messages to buyer and me/);
     } finally {
       out.close();
       await w1.close();
@@ -375,6 +378,100 @@ describe('party runner over the relay on regtest', () => {
       expect(s).toMatch(/^[0-9a-f]{64}$/);
       expect(m).toBeNull();
       expect(ignoredBy.seller).toContain('setup-after-ready');
+    } finally {
+      await dest.close();
+    }
+  });
+
+  it('recovers when the final setup message to a peer is lost', async () => {
+    const code = newTradeCode();
+    const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
+    const participants = Object.fromEntries(ROLES.map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
+    relay.registerTrade(code, { buyer: ids.buyer.signPublic, seller: ids.seller.signPublic, mod: ids.mod.signPublic });
+    const stores = { buyer: memoryStore(), seller: memoryStore(), mod: memoryStore() };
+    const base = { code, ids, participants, stores };
+    // Drop the seller's first send of its last kex message (the step before the address).
+    let dropNext = false;
+    let dropped = false;
+    stores.seller.onSave = (x) => {
+      if (!dropped && !x.address && x.step === 'msig.kex:2' && x.sent['msig.kex:2']) dropNext = true;
+    };
+    const started = ROLES.map((r) => startParty(base, r));
+    const seller = started[ROLES.indexOf('seller')]!;
+    seller.tap.dropSend = () => {
+      if (dropNext && !dropped) {
+        dropped = true;
+        return true;
+      }
+      return false;
+    };
+    const addresses = await Promise.all(started.map((x) => x.party.ready()));
+    expect(dropped).toBe(true);
+    expect(new Set(addresses).size).toBe(1);
+  });
+
+  it('nobody becomes ready while one peer hides its address from another', async () => {
+    const code = newTradeCode();
+    const ids = { buyer: await generateIdentity(), seller: await generateIdentity(), mod: await generateIdentity() };
+    const participants = Object.fromEntries(ROLES.map((r) => [r, { signPublic: ids[r].signPublic, boxPublic: ids[r].boxPublic }])) as Participants;
+    relay.registerTrade(code, { buyer: ids.buyer.signPublic, seller: ids.seller.signPublic, mod: ids.mod.signPublic });
+    const stores = { buyer: memoryStore(), seller: memoryStore(), mod: memoryStore() };
+    const base = { code, ids, participants, stores };
+    const buyer = startParty(base, 'buyer');
+    const seller = startParty(base, 'seller');
+    const mod = startParty(base, 'mod');
+    // Once the moderator has its address, it sends nothing more to the relay; its address
+    // message reaches the buyer only (delivered straight into the buyer's inbox).
+    let modHasAddress = false;
+    stores.mod.onSave = (x) => {
+      if (x.address) modHasAddress = true;
+    };
+    let forwarded = 0;
+    mod.tap.dropSend = () => {
+      if (!modHasAddress) return false;
+      const last = mod.tap.out[mod.tap.out.length - 1]!;
+      if (forwarded < 3) {
+        forwarded += 1;
+        buyer.tap.inject(last);
+      }
+      return true;
+    };
+    await expect.poll(() => stores.buyer.current()?.received['msig.addr:0']?.mod !== undefined, { timeout: 120_000 }).toBe(true);
+    const settledEarly = await Promise.race([
+      Promise.any([buyer.party.ready(), seller.party.ready()]).then(() => 'ready'),
+      new Promise((r) => setTimeout(() => r('waiting'), 8000)),
+    ]);
+    expect(settledEarly).toBe('waiting');
+    void mod;
+  });
+
+  it('a garbage tx set from the builder is refused and settlement still completes', async () => {
+    const t = await newTrade();
+    const amount = XMR;
+    await readyAndFund(t, amount);
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
+      const garbage = await seal({
+        trade: t.code,
+        from: 'seller',
+        // A plausible next seq: a far-future one would make the seller's real messages replays.
+        seq: t.stores.seller.current()!.seq + 1,
+        type: 'release.txset',
+        payload: { key: 'release.txset:1', txSet: 'not a tx set' },
+        to: ['buyer'],
+        me: t.ids.seller,
+        participants: t.participants,
+      });
+      t.taps.buyer.inject(garbage);
+      const [b, s] = await Promise.all([
+        t.parties.buyer.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }),
+        t.parties.seller.settle({ kind: 'release', to, builder: 'seller', cosigner: 'buyer' }),
+      ]);
+      expect(b).toMatch(/^[0-9a-f]{64}$/);
+      expect(s).toBeNull();
+      expect(ignoredBy.buyer).toContain('cosign-payout-mismatch');
+      expect(t.stores.buyer.current()!.release!.attempt).toBeGreaterThan(1);
     } finally {
       await dest.close();
     }
