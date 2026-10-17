@@ -110,7 +110,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 - **Roles:** Owner (creates and removes moderators, sets the large-trade limit, sees every log, co-approves every ruling above the limit) and Moderator (rules alone below the limit). Later the owner can tick "Can co-approve large rulings" on trusted moderators. Helpers (questions only, no evidence) come with the community room.
 - **Chats are encrypted but moderators can read them** when a dispute is opened on that trade; every read is logged; users are told in every chat.
-- **Dispute records are kept and logged; training uses anonymized copies** (Buyer/Seller, personal details masked). Confirm with owner if unsure.
+- **Dispute records are kept 30 days after the dispute closes, for training, then deleted** (owner, 2026-10-17). Training uses anonymized copies (Buyer/Seller, personal details masked). **No IP addresses are logged, even in disputes** (owner, 2026-10-17).
 - Proposed, awaiting owner approval: owner login by hardware security keys only, staff accounts separate from trading accounts, a violet shield "X2F Moderator" badge shown only in disputed trade rooms, a moderator dashboard (queue, case view, ruling tools, training library).
 - Community room ideas are parked in `docs/community-room-plan.md`.
 
