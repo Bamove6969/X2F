@@ -394,6 +394,7 @@ Applied every Plan 2 item and cross-plan reconciliation from the review. Authori
 - Consumes: Tasks 4–8; otpauth 9.5.2; `newRecoveryCode`, `normalizeRecoveryCode`.
 - Produces:
   - `007_totp_recovery.sql`: `totp(account_id uuid pk fk, secret_enc bytea not null, last_step bigint not null default 0, created_at)`; `recovery_codes(id uuid pk, account_id uuid fk, code_hash bytea unique not null, used_at timestamptz)`; `alter table sessions add column hold_until timestamptz`.
+  - No patterns (owner, spec 6.2): the TOTP secret is 20 bytes from `crypto.randomBytes` per enrolment, never derived from the username, account ID, time, a counter, `serverKey` or any shared seed; recovery codes come only from `newRecoveryCode()` (80 bits from `getRandomValues`, bias-free). No other source of randomness is allowed for either.
   - TOTP: 20-byte secret, `issuer: 'X2F'`, `label: <username>`, SHA1, 6 digits, period 30, window ±1 step. `sealSecret(deps, secret) / openSecret(deps, sealed)` — AES-256-GCM under `subkey('totp')`, random 12-byte nonce prepended; used both in `totp.secret_enc` and in the enrolment challenge's `payload` (never plaintext). `verifyTotp(deps, accountId, code): Promise<boolean>` accepts only a matching step greater than `last_step` and sets it in the same statement (`… where last_step < $step`).
   - `RECOVERY_HOLD_MS = 24 * 3_600_000`; `TOTP_BACKUP_DAILY = 5`.
   - Routes:
@@ -410,6 +411,7 @@ Applied every Plan 2 item and cross-plan reconciliation from the review. Authori
   - Replay order (P2-I2), on a fresh enrolment at step S: the S−1 code → accepted; the same S−1 code again → refused; the S code → accepted; S again → refused; then S−1 → refused; a code from S−2 (−60 s) on a new enrolment → refused.
   - Wrong codes at `login/second-factor` reach `slow-down` on the 4th failure; a correct passkey login for the same account still succeeds meanwhile.
   - `confirm/password` without `totp` once enrolled → 401 `credentials-invalid`.
+  - No patterns: 1,000 TOTP enrolments (across accounts, and re-enrolling one account) give 1,000 distinct secrets; two accounts with the same username at different times, or the same account re-enrolled, never share a secret; 10,000 recovery codes are all distinct and each of the 32 symbols appears at every position at 1/32 ± 0.5% (a bias check, not a proof).
   - Recovery codes: 10 returned, matching the trade-code format, all distinct; one logs in once (`level='recovery'`, `hold_until` null, `recovery-login` alert); its second use fails; regenerating invalidates the old set.
   - TOTP backup (P2-I1): a correct code → recovery session with `hold_until = now + 24 h` and a `recovery-login` alert written at once; `POST /v1/account/pgp/start` at +23:59:59 → `recovery-hold`; at +24:00:00 → allowed. A full session calling `DELETE /v1/account/recovery-sessions/:id` ends it (next request `not-authenticated`). The 6th backup TOTP attempt in one UTC day → `slow-down`, even with a correct code.
   - A recovery session on a full-only route → `recovery-session`; it cannot obtain a confirm token (`confirm/password` → `recovery-session`).
