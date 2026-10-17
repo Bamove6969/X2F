@@ -169,12 +169,12 @@
 **Interfaces:**
 - Consumes: `Envelope` type from `@x2f/protocol` (shape only; the relay never opens envelopes); `normalizeTradeCode` from `@x2f/core`.
 - Produces:
-  - `buildRelay(o: { maxEnvelopeBytes: number; retainMs: number; maxQueuedPerTrade: number }): FastifyInstance`, defaults `262_144`, `86_400_000`, `1000`
-  - WebSocket route `GET /v1/trade/:code` with a `role` query. The relay forwards every envelope to the other connected parties of that trade, queues it for any that aren't connected, and delivers the queue in order on reconnect. It rejects (closes with code 4400) any envelope whose `trade` field differs from the path code, larger than the limit, or not valid JSON with the `Envelope` keys. Queues expire after `retainMs`.
+  - `buildRelay(o: { maxEnvelopeBytes: number; maxQueuedPerTrade: number }): FastifyInstance`, defaults `262_144`, `1000`; `closeTrade(code: string): void` deletes that trade's queue
+  - WebSocket route `GET /v1/trade/:code` with a `role` query. The relay forwards every envelope to the other connected parties of that trade, queues it for any that aren't connected, and delivers the queue in order on reconnect. It rejects (closes with code 4400) any envelope whose `trade` field differs from the path code, larger than the limit, or not valid JSON with the `Envelope` keys. Queues never expire on a timer: they are kept until the trade closes (completed, cancelled, refunded, or ended by a moderator's ruling), when `closeTrade` deletes them. Plan 3 calls `closeTrade` from the trade state machine.
   - `GET /healthz` → `200 {"ok":true}`
 - Logging: connection counts and rejections only, never envelope contents, IPs or trade codes.
 
-- [ ] **Step 1: Failing tests:** two clients exchange envelopes both ways; a client that connects late receives queued envelopes in order; wrong-trade, oversized and malformed envelopes close the socket with 4400; queues expire (fake timers); the relay passes `boxes` through byte for byte.
+- [ ] **Step 1: Failing tests:** two clients exchange envelopes both ways; a client that connects late receives queued envelopes in order; wrong-trade, oversized and malformed envelopes close the socket with 4400; a queue survives 30 days offline (fake timers) and is deleted by `closeTrade`; the relay passes `boxes` through byte for byte.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement on fastify 5.12.5 with @fastify/websocket 11.3.1.
 - [ ] **Step 4:** `npm run check`; expect PASS.
