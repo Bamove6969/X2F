@@ -119,7 +119,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 1. **Fees: decided 2026-10-14.** 1% per completed trade, paid only by the ad poster. Takers never see a fee line.
 2. **Legal and jurisdiction.** Get a crypto lawyer before mainnet. The Terms of Service text will come from that lawyer (owner, 2026-10-17: none yet). Designed on the canvas (Getting started, screen 0, placeholder text): a Terms screen at the start of setup that must be scrolled to the bottom before "I accept" works, shown again when the terms change. Even non-custodial platforms have been hit (Tornado Cash, the UK FCA warning about LocalCoinSwap).
 3. **Moderators:** who they are, how they're paid, deadlines and thresholds.
-4. **Buyer deposit thresholds.**
+4. **Buyer deposits: decided 2026-10-17, none.** Plan 3 must drop the deposit (P3-C3/P3-I7 parts, Task 22's DepositFund, `depositFor`, subaddress 1).
 5. **Sanctioned rails** (SBP, Mir, YooMoney). They need a lawyer's sign-off.
 6. **Gift cards:** allowed or not.
 7. **Price feed sources.**
