@@ -122,7 +122,7 @@ export class MoneroMultisigSession implements EscrowSession {
 
   async save(): Promise<SavedSession> {
     const [keys, cache] = await this.wallet.getData();
-    if (!keys || !cache) throw new EscrowError('build-failed', 'wallet returned no data');
+    if (!keys || !cache) throw new EscrowError('bad-saved-session', 'wallet returned no data to save');
     return { v: 1, keys: toBase64(keys), cache: toBase64(cache) };
   }
 
@@ -144,12 +144,21 @@ export class MoneroMultisigEngine implements EscrowEngine {
       throw new EscrowError('bad-saved-session');
     }
     const config = walletConfig(this.opts.network, o.daemonUri, o.password);
-    config.setKeysData(fromBase64(saved.keys));
-    config.setCacheData(fromBase64(saved.cache));
+    try {
+      config.setKeysData(fromBase64(saved.keys));
+      config.setCacheData(fromBase64(saved.cache));
+    } catch {
+      throw new EscrowError('bad-saved-session', 'not base64');
+    }
     // monero-ts 0.11.16 drops the regtest flag when a worker reopens wallet data, so a
     // resumed regtest wallet runs in-process. Other networks keep the worker.
     if (this.opts.network === 'regtest') config.setProxyToWorker(false);
-    const wallet = await MoneroWalletFull.openWallet(config);
+    let wallet: MoneroWalletFull;
+    try {
+      wallet = await MoneroWalletFull.openWallet(config);
+    } catch {
+      throw new EscrowError('bad-saved-session', 'could not open (corrupt data or wrong password)');
+    }
     return new MoneroMultisigSession(wallet, o.daemonUri, o.password);
   }
 }
