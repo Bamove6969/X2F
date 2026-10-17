@@ -129,7 +129,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 ## Next steps, in order
 
-1. **Getting started screens: done 2026-10-14** (canvas row "Getting started"): username, login method, PGP key + challenge, password alternative, optional backup, link a wallet. Owner to review screen by screen.
+1. **Getting started screens: done 2026-10-14** (canvas row "Getting started"): username, login method, PGP key + challenge, password alternative, optional backup, link a wallet. **Approved by owner 2026-10-17** after these edits: "See the FAQ for recommended PGP apps" link; "no password for a hacker to compromise from us"; X2F never creates PGP keys (FAQ link); login messages signed with the official X2F PGP key; backup screen says funds are never at risk; "Authenticator App (TOTP)"; "newly added wallet addresses" wait 24 h; Settings link on the welcome screen. Still to design: Settings (with Security settings) and FAQ pages.
 2. Buy side (mirrors Sell), then the moderator dashboard.
 3. Bring the desktop view up to date with the phone screens (popups, badge icons) when convenient.
 4. **Phase 0 passed (GO), 2026-10-14:** escrow ran in desktop Chrome plus Firefox on Android over Wi-Fi; see `spikes/phase0-browser/RESULTS.md`. Left: iPhone Safari, open internet and Tor, stagenet, and resume-after-background.
