@@ -3,6 +3,7 @@ import Fastify, { LogController, type FastifyError, type FastifyInstance, type F
 import type pg from 'pg';
 import type { Config } from './config.js';
 import { originHook } from './auth/origin.js';
+import { passwordRoutes } from './auth/password.js';
 import { logoutRoute } from './auth/sessions.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -149,6 +150,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   app.get('/healthz', async () => ({ ok: true }));
   logoutRoute(app);
+  passwordRoutes(app);
 
   return app;
 }

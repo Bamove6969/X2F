@@ -27,7 +27,7 @@ describe('migrations', () => {
   it('applies every migration once on an empty database, then nothing', async () => {
     const db = await emptyDb();
     try {
-      expect(await migrate(db)).toEqual(['001_accounts.sql', '002_sessions.sql', '003_confirm.sql']);
+      expect(await migrate(db)).toEqual(['001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql']);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();

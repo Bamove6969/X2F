@@ -1,5 +1,6 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { purgeExpired } from './auth/challenges.js';
+import { openLeakedList } from './auth/leaked.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
@@ -29,8 +30,8 @@ const deps: Deps = {
   config,
   db,
   clock: () => new Date(),
-  // TODO(Tasks 6, 12, 8, 7): openLeakedList, moneroAddressValidator, fileAttestationPolicy, loadPgpSigner.
-  leaked: notBuilt('leaked list (Task 6)'),
+  // TODO(Tasks 12, 8, 7): moneroAddressValidator, fileAttestationPolicy, loadPgpSigner.
+  leaked: await openLeakedList(config.leakedListPath),
   addresses: notBuilt('address validator (Task 12)'),
   attestation: notBuilt('attestation policy (Task 8)'),
   pgpSigner: notBuilt('PGP signer (Task 7)'),

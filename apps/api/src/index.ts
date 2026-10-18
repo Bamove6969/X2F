@@ -24,3 +24,9 @@ export {
 export {
   dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
 } from './auth/throttle.js';
+export { assertTermsAccepted, assertUsername, createAccount } from './accounts.js';
+export { openLeakedList } from './auth/leaked.js';
+export { parseConfirmAction } from './auth/actionInput.js';
+export {
+  DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, verifyPassword,
+} from './auth/password.js';
