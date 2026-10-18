@@ -3,10 +3,23 @@ export {
   type AddressValidator, type AttestationPolicy, type BuildOptions, type Deps, type LeakedList, type PgpSigner,
 } from './app.js';
 export { assertSigningKeyFile, loadConfig, subkey, type Config } from './config.js';
-export { createPool } from './db/pool.js';
+export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
 export {
   ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
 } from './limits.js';
 export { startRetention, type RetentionJob, type RetentionLog } from './retention.js';
+export { addAlert, type AlertKind } from './alerts.js';
+export { consumeChallenge, purgeExpired, type ChallengeRow } from './auth/challenges.js';
+export {
+  COOKIE_ATTRS, DEVICE_COOKIE, TRUSTED_DEVICE_TTL_MS, deviceHash, ensureDeviceCookie, isTrusted, trustDevice,
+} from './auth/device.js';
+export { originHook, requestOrigin } from './auth/origin.js';
+export {
+  ONBOARDING_MS, SESSION_COOKIE, assertNotDisabled, endAllSessions, endOtherSessions, endSession, logoutRoute,
+  requireSession, sessionPolicy, startSession, type AuthContext, type LoginMethod, type SessionLevel,
+} from './auth/sessions.js';
+export {
+  dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
+} from './auth/throttle.js';

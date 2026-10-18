@@ -11,3 +11,8 @@ export function createPool(databaseUrl: string, max = 10): pg.Pool {
   });
   return pool;
 }
+
+/** Anything that runs a parameterised query: the pool or one checked-out client (inside a transaction). */
+export interface Queryable {
+  query<R extends pg.QueryResultRow = pg.QueryResultRow>(text: string, values?: unknown[]): Promise<pg.QueryResult<R>>;
+}

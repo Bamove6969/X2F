@@ -1,4 +1,5 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { purgeExpired } from './auth/challenges.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
@@ -36,7 +37,7 @@ const deps: Deps = {
 };
 
 // Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.
-const jobs: RetentionJob[] = [];
+const jobs: RetentionJob[] = [purgeExpired];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);

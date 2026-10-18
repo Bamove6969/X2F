@@ -1,6 +1,9 @@
+import fastifyCookie from '@fastify/cookie';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
+import { originHook } from './auth/origin.js';
+import { logoutRoute } from './auth/sessions.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
 
@@ -40,6 +43,8 @@ declare module 'fastify' {
   interface FastifyInstance {
     /** Per-app request budgets on `deps.clock` (P2-I8). */
     budgets: Budgets;
+    /** The app's dependencies, for hooks that receive only the request (`requireSession`, the origin check). */
+    deps: Deps;
   }
 }
 
@@ -115,6 +120,12 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.decorate('budgets', newBudgets(deps.clock));
+  app.decorate('deps', deps);
+  app.decorateRequest('auth', null as never);
+  await app.register(fastifyCookie);
+
+  // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
+  app.addHook('onRequest', originHook);
 
   // Only JSON bodies: the built-in text/plain parser would let a cross-site form post a JSON body.
   app.removeContentTypeParser('text/plain');
@@ -137,6 +148,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   });
 
   app.get('/healthz', async () => ({ ok: true }));
+  logoutRoute(app);
 
   return app;
 }

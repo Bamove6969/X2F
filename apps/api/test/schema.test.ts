@@ -24,10 +24,10 @@ const FULL_ENV = {
 };
 
 describe('migrations', () => {
-  it('applies 001 once on an empty database, then nothing', async () => {
+  it('applies every migration once on an empty database, then nothing', async () => {
     const db = await emptyDb();
     try {
-      expect(await migrate(db)).toEqual(['001_accounts.sql']);
+      expect(await migrate(db)).toEqual(['001_accounts.sql', '002_sessions.sql']);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
@@ -202,16 +202,17 @@ describe('app', () => {
     }
   });
 
+  // Same-origin requests (Task 4's origin check refuses POSTs without one; see origin.test.ts).
   it('accepts only JSON bodies; text/plain JSON gets 415', async () => {
     const { app } = await testApp();
     try {
       app.post('/healthz-echo', async (req) => ({ got: req.body }));
       const plain = await app.inject({
-        method: 'POST', url: '/healthz-echo', headers: { 'content-type': 'text/plain' }, payload: '{"a":1}',
+        method: 'POST', url: '/healthz-echo', headers: { origin: 'https://x2f.test', 'content-type': 'text/plain' }, payload: '{"a":1}',
       });
       expect(plain.statusCode).toBe(415);
       expect(plain.json()).toEqual({ error: 'unsupported-media-type' });
-      const json = await app.inject({ method: 'POST', url: '/healthz-echo', payload: { a: 1 } });
+      const json = await app.inject({ method: 'POST', url: '/healthz-echo', headers: { origin: 'https://x2f.test' }, payload: { a: 1 } });
       expect(json.statusCode).toBe(200);
       expect(json.json()).toEqual({ got: { a: 1 } });
     } finally {
@@ -224,7 +225,7 @@ describe('app', () => {
     try {
       app.post('/healthz-echo', async () => ({ ok: true }));
       const big = await app.inject({
-        method: 'POST', url: '/healthz-echo', headers: { 'content-type': 'application/json' },
+        method: 'POST', url: '/healthz-echo', headers: { origin: 'https://x2f.test', 'content-type': 'application/json' },
         payload: JSON.stringify({ a: 'x'.repeat(16 * 1024) }),
       });
       expect(big.statusCode).toBe(413);
