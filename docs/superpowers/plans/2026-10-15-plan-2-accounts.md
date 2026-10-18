@@ -69,6 +69,8 @@ Owner decisions of 2026-10-17 applied before building. Authority: spec > this re
 - **R13 Notes:** PGP codes are not throttled per guess, only `start` is limited (Global Constraints, spec 6.2); Plan 4's owner setup code goes to stderr outside the logger (Global Constraints).
 - **R14 Plan 4 reconciliation:** Plan 2 now produces the helpers Plan 4 assumes (below).
 
+- **R16** PGP user IDs (owner, 2026-10-17): stripped where the key survives it (v6), otherwise stored only encrypted (`armored_enc`, `subkey('pgp-key')`); never shown, logged or used (Task 7).
+
 ## Plan 4 reconciliation
 
 Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) builds on these Plan 2 exports; each is produced by the task named:
@@ -345,7 +347,8 @@ Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) bu
 **Interfaces:**
 - Consumes: Tasks 2, 4, 5, 6 (`createAccount`, `assertUsername`), `newLoginCode`, `normalizeLoginCode`.
 - Produces:
-  - `005_pgp.sql`: `pgp_keys(id uuid pk, account_id uuid fk, fingerprint text unique not null, armored text not null, created_at, last_used_at)`.
+  - `005_pgp.sql`: `pgp_keys(id uuid pk, account_id uuid fk, fingerprint text unique not null, armored_enc bytea not null, created_at, last_used_at)` (R16).
+  - R16 (owner, 2026-10-17: email in keys is never recorded or used): before storing, `storableKey(armored)` removes every user ID packet and its certifications when the key stays usable without them (v6 keys); otherwise (v4) the key is kept whole. Either way the armored text is stored only as `armored_enc` = AES-256-GCM under `subkey('pgp-key')` (Task 3's `subkey` label union gains `'pgp-key'`), random 12-byte nonce prepended, and decrypted only in memory to encrypt a challenge. User IDs are never returned by any route, logged, searched or compared. Tests: a v6 key with `name <a@b.c>` is stored with no user ID and still receives a challenge it can decrypt; a v4 key with an email is stored whole; neither `pgp_keys` row nor any log line contains `a@b.c` or `-----BEGIN`; `GET` routes never include a user ID.
   - `interface PgpSigner { key: openpgp.PrivateKey; fingerprint: string; publicArmored: string }`; `loadPgpSigner(path: string, expectedFingerprint: string): Promise<PgpSigner>` (R7) — reads the file, refuses a public-only or passphrase-protected key, and throws naming `X2F_PGP_SIGNING_FINGERPRINT` when the key's fingerprint differs; `main.ts` calls it before listening and exits on error. Every message from `issuePgpChallenge` and `decoyPgpChallenge` is signed with `deps.pgpSigner.key`.
   - `GET /v1/pgp/signing-key` (no session) → `{ fingerprint, publicKey }` — the public half only, for the site and the FAQ.
   - `completeLogin(deps, req, reply, a: { account: { id: string; kind: AccountKind }; factor: LoginFactor; pendingId?: string; deviceLabel: string; afterAuthenticate?: (accountId: string) => Promise<void> }): Promise<{ status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: MethodType[] }>` in `login.ts`, with `type LoginFactor = { method: 'pgp'; fingerprint: string } | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean }` — the one way every PGP and WebAuthn login finish ends: runs `afterAuthenticate`, `assertNotDisabled`, then for a trader `startSession`. For staff and the owner it answers 403 `method-not-allowed` until Task 10 replaces that branch with the two-factor flow (R1).
