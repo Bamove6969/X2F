@@ -15,6 +15,7 @@ export { consumeChallenge, purgeExpired, type ChallengeRow } from './auth/challe
 export {
   COOKIE_ATTRS, DEVICE_COOKIE, TRUSTED_DEVICE_TTL_MS, deviceHash, ensureDeviceCookie, isTrusted, trustDevice,
 } from './auth/device.js';
+export { CONFIRM_TTL_MS, issueConfirmToken, redeemConfirm, requireConfirm } from './auth/confirm.js';
 export { originHook, requestOrigin } from './auth/origin.js';
 export {
   ONBOARDING_MS, SESSION_COOKIE, assertNotDisabled, endAllSessions, endOtherSessions, endSession, logoutRoute,
