@@ -2,8 +2,6 @@
  * Actions that need a confirm-it's-you token, shared by browser and server:
  * the hash a token is bound to, and the words shown to the person.
  */
-import { sha256Hex } from './sha256.js';
-
 export type MethodType = 'pgp' | 'passkey' | 'security-key' | 'password' | 'totp' | 'recovery-codes';
 
 export type ConfirmAction =
@@ -24,8 +22,13 @@ function canonical(a: ConfirmAction): string {
   return `{${parts.join(',')}}`;
 }
 
-/** SHA-256 hex of the action's canonical JSON. */
-export function actionHash(a: ConfirmAction): string {
+async function sha256Hex(text: string): Promise<string> {
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/** SHA-256 hex (WebCrypto) of the action's canonical JSON. */
+export function actionHash(a: ConfirmAction): Promise<string> {
   return sha256Hex(canonical(a));
 }
 
@@ -49,9 +52,8 @@ export function describeAction(a: ConfirmAction): string {
 }
 
 /** SHA-256 hex (WebCrypto) of the trimmed address. */
-export async function addressHash(address: string): Promise<string> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', new TextEncoder().encode(address.trim()));
-  return Array.from(new Uint8Array(digest), (b) => b.toString(16).padStart(2, '0')).join('');
+export function addressHash(address: string): Promise<string> {
+  return sha256Hex(address.trim());
 }
 
 /** Last 6 characters of the trimmed address. */

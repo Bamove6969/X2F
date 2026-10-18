@@ -15,8 +15,8 @@ vi.mock('openpgp', async (importOriginal) => {
   return { ...orig, readKeys: vi.fn(orig.readKeys) };
 });
 
-// The server clock in these tests: an hour ahead, so keys generated during
-// the run are not newer than `now` (a key is not valid before its creation).
+// The server clock in most of these tests: an hour ahead, so keys generated
+// during the run are older than `now` (see 'clock skew' for the opposite).
 const now = new Date(Date.now() + 3_600_000);
 
 beforeAll(async () => {
@@ -168,6 +168,31 @@ describe('inspectPublicKey refuses', () => {
     expect(await inspectPublicKey(k.publicKey, now)).toMatchObject({ ok: false, reason: 'key-no-encryption' });
   });
 
+  test('RSA 2048 primary with a curve25519 subkey is weak, naming 2048', async () => {
+    const k = await openpgp.generateKey({
+      type: 'rsa',
+      rsaBits: 2048,
+      userIDs: [{ name: 'T' }],
+      subkeys: [{ type: 'ecc', curve: 'curve25519Legacy' }],
+    });
+    const r = await inspectPublicKey(k.publicKey, now);
+    expect(r).toMatchObject({ ok: false, reason: 'key-weak' });
+    if (!r.ok) expect(r.detail).toContain('2048');
+  });
+
+  test('an RSA 1024 encryption subkey is weak, not missing (openpgp would skip it by default)', async () => {
+    const k = await openpgp.generateKey({
+      type: 'ecc',
+      curve: 'ed25519Legacy',
+      userIDs: [{ name: 'T' }],
+      subkeys: [{ type: 'rsa', rsaBits: 1024 }],
+      config: { minRSABits: 1024 },
+    });
+    const r = await inspectPublicKey(k.publicKey, now);
+    expect(r).toMatchObject({ ok: false, reason: 'key-weak' });
+    if (!r.ok) expect(r.detail).toContain('1024');
+  });
+
   test('a strong primary with a weak encryption subkey is weak', async () => {
     const k = await openpgp.generateKey({
       type: 'ecc',
@@ -176,6 +201,42 @@ describe('inspectPublicKey refuses', () => {
       subkeys: [{ type: 'ecc', curve: 'nistP256' }],
     });
     expect(await inspectPublicKey(k.publicKey, now)).toMatchObject({ ok: false, reason: 'key-weak' });
+  });
+});
+
+describe('clock skew', () => {
+  const real = new Date();
+  const ahead = new Date(Math.floor(real.getTime() / 1000) * 1000 + 600_000);
+
+  test('a key created after the server clock is not yet valid, checked before strength', async () => {
+    for (const o of [
+      { type: 'ecc', curve: 'ed25519Legacy' },
+      { type: 'rsa', rsaBits: 2048 },
+    ] as const) {
+      const k = await openpgp.generateKey({ ...o, userIDs: [{ name: 'T' }], date: ahead });
+      const r = await inspectPublicKey(k.publicKey, real);
+      expect(r).toEqual({
+        ok: false,
+        reason: 'key-not-yet-valid',
+        detail: `This key's creation time (${ahead.toISOString()}) is ahead of X2F's clock. Check your computer's clock, or try again after that time.`,
+      });
+    }
+  });
+
+  test('a subkey created after the server clock is not yet valid', async () => {
+    const k = await openpgp.generateKey({
+      type: 'ecc',
+      curve: 'ed25519Legacy',
+      userIDs: [{ name: 'T' }],
+      date: new Date(real.getTime() - 86_400_000),
+      subkeys: [{ date: ahead }],
+    });
+    expect(await inspectPublicKey(k.publicKey, real)).toMatchObject({ ok: false, reason: 'key-not-yet-valid' });
+  });
+
+  test('the same key is accepted once the clock reaches its creation time', async () => {
+    const k = await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'T' }], date: ahead });
+    expect(await inspectPublicKey(k.publicKey, ahead)).toMatchObject({ ok: true });
   });
 });
 
@@ -225,7 +286,7 @@ describe('encryptChallenge', () => {
     const b = await keys.rsa4096();
     const s = await keys.signing();
     const signingKey = await openpgp.readPrivateKey({ armoredKey: s.privateKey });
-    const armored = await encryptChallenge(text, [a.publicKey, b.publicKey], signingKey);
+    const armored = await encryptChallenge(text, [a.publicKey, b.publicKey], signingKey, now);
     return { a, b, s, signingKey, armored };
   }
 
@@ -257,11 +318,51 @@ describe('encryptChallenge', () => {
     const decryptionKeys = await openpgp.readPrivateKey({ armoredKey: a.privateKey });
     const verificationKeys = await openpgp.readKey({ armoredKey: s.publicKey });
     const message = await openpgp.readMessage({ armoredMessage: armored });
-    const { data, signatures } = await openpgp.decrypt({ message, decryptionKeys, verificationKeys, expectSigned: true });
+    const { data, signatures } = await openpgp.decrypt({
+      message,
+      decryptionKeys,
+      verificationKeys,
+      expectSigned: true,
+      date: now,
+    });
     expect(data).toBe(text);
     expect(signatures.length).toBe(1);
     expect(signatures[0]?.keyID.equals(signingKey.getKeyID())).toBe(true);
     await expect(signatures[0]?.verified).resolves.toBe(true);
+  });
+
+  test('fails closed instead of falling back to a weak subkey (strict config)', async () => {
+    const t0 = new Date(Math.floor(Date.now() / 1000) * 1000 - 3 * 86_400_000);
+    const k = await openpgp.generateKey({
+      type: 'ecc',
+      curve: 'ed25519Legacy',
+      userIDs: [{ name: 'T' }],
+      date: t0,
+      subkeys: [
+        // Older, weak encryption subkey (ECDH on NIST P-256).
+        { type: 'ecc', curve: 'nistP256', date: t0 },
+        // Newer, strong subkey that expires after one day.
+        { type: 'ecc', curve: 'curve25519Legacy', date: new Date(t0.getTime() + 3_600_000), keyExpirationTime: 86_400 },
+      ],
+    });
+    const signingKey = await openpgp.readPrivateKey({ armoredKey: (await keys.oldSigning()).privateKey });
+    const beforeExpiry = new Date(t0.getTime() + 2 * 3_600_000);
+    // At registration time the strong subkey is the one in use.
+    expect(await inspectPublicKey(k.publicKey, beforeExpiry)).toMatchObject({ ok: true });
+    expect(await encryptChallenge(text, [k.publicKey], signingKey, beforeExpiry)).toContain('BEGIN PGP MESSAGE');
+    // After it expires, only the weak subkey is left: refuse rather than use it.
+    await expect(encryptChallenge(text, [k.publicKey], signingKey, now)).rejects.toThrow();
+  });
+
+  test('refuses an RSA 2048 recipient', async () => {
+    const signingKey = await openpgp.readPrivateKey({ armoredKey: (await keys.oldSigning()).privateKey });
+    await expect(encryptChallenge(text, [(await keys.rsa2048()).publicKey], signingKey, now)).rejects.toThrow();
+  });
+
+  test('uses the given clock: a recipient key created after `now` is refused', async () => {
+    const signingKey = await openpgp.readPrivateKey({ armoredKey: (await keys.oldSigning()).privateKey });
+    const k = await openpgp.generateKey({ type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'T' }] });
+    await expect(encryptChallenge(text, [k.publicKey], signingKey, new Date(Date.now() - 86_400_000))).rejects.toThrow();
   });
 
   test('verifying with another Ed25519 key throws', async () => {
@@ -270,7 +371,7 @@ describe('encryptChallenge', () => {
     const other = await openpgp.readKey({ armoredKey: (await keys.ed25519LegacyB()).publicKey });
     const message = await openpgp.readMessage({ armoredMessage: armored });
     await expect(
-      openpgp.decrypt({ message, decryptionKeys, verificationKeys: other, expectSigned: true }),
-    ).rejects.toThrow();
+      openpgp.decrypt({ message, decryptionKeys, verificationKeys: other, expectSigned: true, date: now }),
+    ).rejects.toThrow(/signing key/i);
   });
 });

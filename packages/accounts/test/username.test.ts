@@ -19,7 +19,12 @@ describe('checkUsername', () => {
     expect(checkUsername('аlice')).toEqual({ ok: false, reason: 'characters' });
   });
 
-  test.each(['X2F.Support', 'the_admin', 'Moder-ator', 'adminbob', 'staff_42', 'livesupport', 'owner'])(
+  test('very long raw input is refused as length before any other work', () => {
+    expect(checkUsername('a'.repeat(65))).toEqual({ ok: false, reason: 'length' });
+    expect(checkUsername('а'.repeat(100_000))).toEqual({ ok: false, reason: 'length' });
+  });
+
+  test.each(['X2F.Support', 'the_admin', 'Moder-ator', 'adminbob', 'staff_42', 'livesupport', 'owner', 'staffer1', 'x2fbob'])(
     'reserved: %s',
     (name) => {
       expect(checkUsername(name)).toEqual({ ok: false, reason: 'reserved' });

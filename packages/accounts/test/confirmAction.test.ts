@@ -19,35 +19,37 @@ describe('describeAction', () => {
 });
 
 describe('actionHash', () => {
-  test('independent of key order', () => {
-    const x = actionHash({ kind: 'add-wallet', addressEnd: 'q2k3Fz', addressHash: 'ab12' });
-    const y = actionHash({ addressHash: 'ab12', addressEnd: 'q2k3Fz', kind: 'add-wallet' });
+  test('is async (WebCrypto)', () => {
+    expect(actionHash({ kind: 'set-password' })).toBeInstanceOf(Promise);
+  });
+
+  test('independent of key order', async () => {
+    const x = await actionHash({ kind: 'add-wallet', addressEnd: 'q2k3Fz', addressHash: 'ab12' });
+    const y = await actionHash({ addressHash: 'ab12', addressEnd: 'q2k3Fz', kind: 'add-wallet' });
     expect(x).toBe(y);
   });
 
-  test('changes when addressHash changes', () => {
-    const x = actionHash({ kind: 'add-wallet', addressHash: 'ab12', addressEnd: 'q2k3Fz' });
-    const y = actionHash({ kind: 'add-wallet', addressHash: 'ab13', addressEnd: 'q2k3Fz' });
+  test('changes when addressHash changes', async () => {
+    const x = await actionHash({ kind: 'add-wallet', addressHash: 'ab12', addressEnd: 'q2k3Fz' });
+    const y = await actionHash({ kind: 'add-wallet', addressHash: 'ab13', addressEnd: 'q2k3Fz' });
     expect(x).not.toBe(y);
   });
 
-  test('is SHA-256 hex of canonical JSON with sorted keys', () => {
+  test('is SHA-256 hex of canonical JSON with sorted keys', async () => {
     const a: ConfirmAction = { kind: 'remove-method', method: 'pgp', id: 'm1' };
-    expect(actionHash(a)).toBe(sha256('{"id":"m1","kind":"remove-method","method":"pgp"}'));
-    expect(actionHash({ kind: 'set-password' })).toBe(sha256('{"kind":"set-password"}'));
+    expect(await actionHash(a)).toBe(sha256('{"id":"m1","kind":"remove-method","method":"pgp"}'));
+    expect(await actionHash({ kind: 'set-password' })).toBe(sha256('{"kind":"set-password"}'));
   });
 
-  test('different kinds differ', () => {
-    expect(actionHash({ kind: 'set-password' })).not.toBe(actionHash({ kind: 'new-recovery-codes' }));
+  test('different kinds differ', async () => {
+    expect(await actionHash({ kind: 'set-password' })).not.toBe(await actionHash({ kind: 'new-recovery-codes' }));
   });
 
-  test('non-ASCII and long inputs hash like node:crypto', () => {
-    for (const len of [0, 1, 55, 56, 63, 64, 65, 119, 120, 1000]) {
-      const id = 'é\u{1F600}"\\'.repeat(len);
-      expect(actionHash({ kind: 'remove-method', method: 'totp', id })).toBe(
-        sha256(JSON.stringify({ id, kind: 'remove-method', method: 'totp' })),
-      );
-    }
+  test('non-ASCII input hashes its UTF-8 bytes', async () => {
+    const id = 'é\u{1F600}"\\';
+    expect(await actionHash({ kind: 'remove-method', method: 'totp', id })).toBe(
+      sha256(JSON.stringify({ id, kind: 'remove-method', method: 'totp' })),
+    );
   });
 });
 

@@ -11,6 +11,8 @@ export type UsernameCheck =
   | { ok: false; reason: 'length' | 'characters' | 'reserved' };
 
 const USERNAME_RE = /^[A-Za-z0-9._-]{5,20}$/;
+/** UTF-16 code units; anything longer is refused before any other work. */
+const MAX_RAW_LENGTH = 64;
 
 const RESERVED_TOKENS = new Set([
   'admin',
@@ -41,6 +43,8 @@ function isReserved(key: string): boolean {
 
 export function checkUsername(input: string): UsernameCheck {
   if (typeof input !== 'string') return { ok: false, reason: 'characters' };
+  // Refuse huge input before spreading it into code points.
+  if (input.length > MAX_RAW_LENGTH) return { ok: false, reason: 'length' };
   // Length in code points, so an astral character counts once.
   const len = [...input].length;
   if (len < 5 || len > 20) return { ok: false, reason: 'length' };

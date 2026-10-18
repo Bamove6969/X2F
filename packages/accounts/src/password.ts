@@ -6,6 +6,8 @@
 
 export const PASSWORD_MIN = 10;
 export const PASSWORD_MAX = 256;
+/** UTF-16 code units; anything longer is refused before any other work. */
+const MAX_RAW_LENGTH = 1024;
 
 export type PasswordRule = 'length' | 'upper' | 'lower' | 'number' | 'symbol' | 'too-long';
 export type PasswordCheck = { ok: true } | { ok: false; missing: PasswordRule[] };
@@ -21,6 +23,8 @@ export function normalizePassword(pw: string): string {
 }
 
 export function checkPassword(pw: string): PasswordCheck {
+  // Refuse huge input before NFC and spreading it into code points.
+  if (pw.length > MAX_RAW_LENGTH) return { ok: false, missing: ['too-long'] };
   const chars = [...normalizePassword(pw)];
   const missing: PasswordRule[] = [];
   if (chars.length < PASSWORD_MIN) missing.push('length');

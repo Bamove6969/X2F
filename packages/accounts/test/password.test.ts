@@ -20,6 +20,11 @@ describe('checkPassword', () => {
     expect(checkPassword('Aa1!' + 'x'.repeat(252))).toEqual({ ok: true });
   });
 
+  test('raw input over 1024 code units is refused early as too-long only', () => {
+    expect(checkPassword('Aa1!'.repeat(257))).toEqual({ ok: false, missing: ['too-long'] });
+    expect(checkPassword('x'.repeat(1_000_000))).toEqual({ ok: false, missing: ['too-long'] });
+  });
+
   test('accepts Unicode letters', () => {
     expect(checkPassword('Ünïcödé-Pass1')).toEqual({ ok: true });
   });

@@ -41,3 +41,7 @@ export const revoked = once(async () => {
 });
 /** The stand-in for the official X2F signing key. */
 export const signing = once(() => gen({ type: 'ecc', curve: 'ed25519Legacy' }));
+/** A signing key made ten days ago, for tests that encrypt at past dates. */
+export const oldSigning = once(() =>
+  gen({ type: 'ecc', curve: 'ed25519Legacy', date: new Date(Date.now() - 10 * 86_400_000) }),
+);
