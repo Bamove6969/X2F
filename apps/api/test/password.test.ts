@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -150,6 +151,18 @@ describe('POST /v1/register/password', () => {
     expect(hash).not.toHaveBeenCalled();
   });
 
+  it('strips control characters from the device label', async () => {
+    const res = await post('/v1/register/password', { username: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS });
+    expect(res.statusCode).toBe(201);
+    const ok = await post('/v1/login/password', { username: 'labelnul1', password: GOOD, deviceLabel: 'c\u0000d' });
+    expect(ok.statusCode).toBe(200);
+    const id = (await accountRow('labelnul1'))!.id;
+    const { rows } = await deps.db.query<{ device_label: string }>(
+      'select device_label from sessions where account_id = $1 order by created_at, device_label', [id],
+    );
+    expect(rows.map((r) => r.device_label).sort()).toEqual(['ab', 'cd']);
+  });
+
   it('refuses a body with missing or non-string fields', async () => {
     const res = await post('/v1/register/password', { username: 'shapeless', password: 12, deviceLabel: 'x', acceptedTerms: TERMS });
     expect(res.statusCode).toBe(400);
@@ -194,6 +207,7 @@ describe('POST /v1/login/password', () => {
       ['staffer01', GOOD],
       ['shape0001', 'Wrong-Horse-9'],
       ['аlice', GOOD],
+      ['bad\u0000name', GOOD],
     ];
     for (const [username, password] of cases) {
       const verify = vi.spyOn(argon2, 'verify');
@@ -204,12 +218,23 @@ describe('POST /v1/login/password', () => {
       expect(verify, username).toHaveBeenCalledTimes(1);
       verify.mockRestore();
     }
+    // A malformed name is throttled under a hash of it, never the raw input (a NUL would break Postgres).
+    const nulKey = `password:name:~${createHash('sha256').update('bad\u0000name').digest('hex')}:anon`;
+    const { rows } = await deps.db.query<{ failures: number }>('select failures from login_throttle where key = $1', [nulKey]);
+    expect(rows).toEqual([{ failures: 1 }]);
   });
 
   it('verifies the dummy hash when the account is unknown', async () => {
     const verify = vi.spyOn(argon2, 'verify');
     await login('ghost0001', GOOD);
     expect(verify).toHaveBeenCalledWith(DUMMY_HASH, GOOD);
+  });
+
+  it('answers 413 to a body over 4 KiB without verifying', async () => {
+    const verify = vi.spyOn(argon2, 'verify');
+    const res = await login('bigbody02', `Aa1!${'x'.repeat(5000)}`);
+    expect(res.statusCode).toBe(413);
+    expect(verify).not.toHaveBeenCalled();
   });
 
   it('refuses a disabled account after the password checks out', async () => {
@@ -247,6 +272,18 @@ describe('POST /v1/confirm/password', () => {
     expect(slow.json()).toMatchObject({ error: 'slow-down' });
   });
 
+  it('answers 413 to a body over 4 KiB without verifying', async () => {
+    const reg = await register('confirm03');
+    const verify = vi.spyOn(argon2, 'verify');
+    const res = await post(
+      '/v1/confirm/password',
+      { password: `Aa1!${'x'.repeat(5000)}`, action: { kind: 'set-password' } },
+      { [SESSION_COOKIE]: cookie(reg, SESSION_COOKIE)! },
+    );
+    expect(res.statusCode).toBe(413);
+    expect(verify).not.toHaveBeenCalled();
+  });
+
   it('needs a session and a well-formed action', async () => {
     const anon = await post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } });
     expect(anon.json()).toEqual({ error: 'not-authenticated' });
@@ -272,6 +309,19 @@ describe('budgets (P2-I8)', () => {
     const results = await Promise.all([login('budget001', 'Wrong-Horse-9'), login('budget001', 'Wrong-Horse-9')]);
     expect(results.map((r) => r.statusCode).sort()).toEqual([401, 503]);
     expect(results.find((r) => r.statusCode === 503)!.json()).toEqual({ error: 'busy' });
+  });
+
+  it('a busy refusal never uses up a throttle try', async () => {
+    await register('busyslot1');
+    for (let i = 0; i < 4; i++) expect((await login('busyslot1', 'Wrong-Horse-9')).statusCode).toBe(401);
+    setNow(new Date(now.getTime() + 2000)); // the wait after the 4th failure is over
+    const full = new Semaphore(0, 0);
+    const run = vi.spyOn(ARGON2_SLOTS, 'run').mockImplementation((fn) => full.run(fn));
+    const busy = await login('busyslot1', GOOD);
+    expect(busy.statusCode).toBe(503);
+    expect(busy.json()).toEqual({ error: 'busy' });
+    run.mockRestore();
+    expect((await login('busyslot1', GOOD)).statusCode).toBe(200);
   });
 
   it('answers 503 busy to the 21st register within a minute', async () => {
