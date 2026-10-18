@@ -71,6 +71,28 @@ describe('startRetention', () => {
     await expect(stop()).resolves.toBeUndefined();
   });
 
+  it('keeps ticking when a tick finishes synchronously (a job that throws at once, or no jobs)', async () => {
+    vi.useFakeTimers();
+    let calls = 0;
+    const syncThrow = {
+      name: 'sync-throw',
+      run: (() => {
+        calls++;
+        throw new Error('boom');
+      }) as unknown as RetentionJob['run'],
+    };
+    const logs: RetentionLog[] = [];
+    const stop = startRetention({ db: {} as pg.Pool, clock: () => new Date() }, [syncThrow], 1_000, (e) => logs.push(e));
+    await vi.advanceTimersByTimeAsync(3_000);
+    expect(calls).toBe(3);
+    expect(logs).toEqual([1, 2, 3].map(() => ({ job: 'sync-throw', failed: true })));
+    await stop();
+
+    const stopEmpty = startRetention({ db: {} as pg.Pool, clock: () => new Date() }, [], 1_000, () => {});
+    await vi.advanceTimersByTimeAsync(3_000);
+    await expect(stopEmpty()).resolves.toBeUndefined();
+  });
+
   it('defaults to a 10-minute tick and runs jobs in order', async () => {
     vi.useFakeTimers();
     const order: string[] = [];

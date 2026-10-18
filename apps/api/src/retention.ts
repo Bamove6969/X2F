@@ -25,23 +25,25 @@ export function startRetention(
   let stopped = false;
   let inFlight: Promise<void> | null = null;
   const run = async () => {
-    try {
-      for (const job of jobs) {
-        if (stopped) return;
-        try {
-          const rows = await job.run(deps.db, deps.clock());
-          log({ job: job.name, rows });
-        } catch {
-          log({ job: job.name, failed: true });
-        }
+    for (const job of jobs) {
+      if (stopped) return;
+      try {
+        const rows = await job.run(deps.db, deps.clock());
+        log({ job: job.name, rows });
+      } catch {
+        log({ job: job.name, failed: true });
       }
-    } finally {
-      inFlight = null;
     }
   };
   const tick = () => {
     if (inFlight || stopped) return;
-    inFlight = run();
+    // run() may settle synchronously (no jobs, or jobs that throw at once), so it is cleared
+    // through the promise rather than inside run(), which would leave a stale settled promise.
+    const p = run();
+    inFlight = p;
+    void p.finally(() => {
+      if (inFlight === p) inFlight = null;
+    });
   };
   const timer = setInterval(tick, everyMs);
   timer.unref();

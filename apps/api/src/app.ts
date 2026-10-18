@@ -106,6 +106,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
         res: (res) => ({ statusCode: res.statusCode }),
         // Typed by fastify as returning message and stack; leaving them out is the point.
         err: logError as unknown as (e: FastifyError) => { type: string; message: string; stack: string },
+        error: logError,
       },
       hooks: { logMethod },
       redact: { paths: ['req.body', 'req.headers.cookie', 'res.headers["set-cookie"]'], censor: '[redacted]' },

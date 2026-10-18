@@ -43,13 +43,16 @@ function alive(pid: number): boolean {
  * still alive keeps its container, so two test runs on one machine do not stop each other's.
  */
 async function stopLeftovers(): Promise<void> {
-  const lines = (await docker('ps', '-q', '--filter', `label=${LABEL}`, '--format', `{{.ID}} {{.Label "${LABEL}"}}`))
+  // No -q: with it Docker ignores --format and prints bare IDs.
+  const lines = (await docker('ps', '--filter', `label=${LABEL}`, '--format', `{{.ID}} {{.Label "${LABEL}"}}`))
     .split('\n')
     .filter(Boolean);
   for (const line of lines) {
     const [cid, owner] = line.split(' ');
+    // Only a well-formed PID label whose process is gone marks a leftover; anything else is left alone.
+    if (!cid || !owner || !/^[1-9]\d{0,9}$/.test(owner)) continue;
     const pid = Number(owner);
-    if (!cid || (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid))) continue;
+    if (pid === process.pid || alive(pid)) continue;
     await docker('stop', '-t', '1', cid).catch(() => undefined);
   }
 }

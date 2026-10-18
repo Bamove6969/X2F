@@ -305,6 +305,20 @@ describe('app', () => {
     }
   });
 
+  it("applies the same error whitelist under the 'error' key", async () => {
+    const { app, logs } = await testApp();
+    try {
+      const e = Object.assign(new Error('Key (username_key)=(markerqq5) already exists'), {
+        code: '23505', detail: 'Key (username_key)=(markerqq5) already exists.',
+      });
+      app.log.error({ error: e }, 'failed');
+      expect(logs.some((l) => l.includes('"error":{"type":"Error","code":"23505"}'))).toBe(true);
+      expect(logs.filter((l) => l.includes('markerqq5'))).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
   it('does not log the address it listens on', async () => {
     const { app, logs } = await testApp();
     try {
