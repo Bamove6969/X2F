@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { checkPassword, checkUsername, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
@@ -79,8 +79,10 @@ async function passwordFor(deps: Pick<Deps, 'db'>, where: { usernameKey: string 
 }
 
 /**
- * Throttled password check on one account's (or unknown name's) `password` key: 429 while the key
- * waits, otherwise one Argon2 verify; a failure is counted and answered 401 `credentials-invalid`.
+ * Throttled password check on one account's (or unknown name's) `password` key: one Argon2 verify,
+ * a failure counted and answered 401 `credentials-invalid`. The throttle check runs only once an
+ * Argon2 slot is held, so a 503 `busy` refusal never claims (and so never wastes) a throttle try;
+ * a 429 refusal releases the slot without verifying.
  */
 async function checkCredentials(
   deps: Deps,
@@ -90,8 +92,10 @@ async function checkCredentials(
   password: string,
 ): Promise<string> {
   const key = await throttleKey(deps, req, 'password', found.accountId ? { id: found.accountId } : { usernameKey: nameKey });
-  await throttleCheck(deps, key);
-  const verified = await verifyPassword(found.hash, password);
+  const verified = await ARGON2_SLOTS.run(async () => {
+    await throttleCheck(deps, key);
+    return argon2.verify(found.hash, normalizePassword(password));
+  });
   if (!verified || !found.real || found.accountId === null) {
     await throttleFail(deps, key, found.accountId);
     throw new ApiError(401, 'credentials-invalid');
@@ -101,11 +105,12 @@ async function checkCredentials(
 }
 
 /**
- * The name an unknown or malformed username is throttled under. Raw input over 64 code units is
- * cut (checkUsername refuses it anyway), so a key never grows with the request.
+ * The name a malformed username is throttled under: `~` + SHA-256 hex of its first 64 code units.
+ * Never the raw input (a NUL would make Postgres refuse the key), and `~` cannot start a valid
+ * username key, so it never shares a key with a real name.
  */
 function nameKeyOf(username: string): string {
-  return username.slice(0, 64).toLowerCase();
+  return `~${createHash('sha256').update(username.slice(0, 64)).digest('hex')}`;
 }
 
 async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
