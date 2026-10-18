@@ -72,6 +72,8 @@ Owner decisions of 2026-10-17 applied before building. Authority: spec > this re
 
 - **R16** PGP user IDs (owner, 2026-10-17): stripped where the key survives it (v6), otherwise stored only encrypted (`armored_enc`, `subkey('pgp-key')`); never shown, logged or used (Task 7).
 
+- **R17** (Task 5 review, for Tasks 10 and 12): `requireConfirm` attaches the resolved `ConfirmAction` to `req.confirmedAction`; Task 12 stores exactly the address that was confirmed (hash computed once), and runs its own address checks (`address-integrated`, format) in schema validation BEFORE `requireConfirm` so a refused request never burns a token. Task 10's method removal takes `confirmToken` in a JSON body (a `DELETE` with a body, or `POST …/remove`).
+
 ## Plan 4 reconciliation
 
 Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) builds on these Plan 2 exports; each is produced by the task named:
