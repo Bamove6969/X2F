@@ -1,4 +1,4 @@
-import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, rm, stat, truncate, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -69,9 +69,17 @@ describe('leaked list', () => {
     await expect(openLeakedList(odd)).rejects.toThrow(/multiple of 20/);
   });
 
-  it('works on an empty list', async () => {
+  it('refuses an empty list at startup', async () => {
     const empty = join(dir, 'empty.bin');
     await writeFile(empty, Buffer.alloc(0));
-    expect(await (await openLeakedList(empty)).has('Password123!')).toBe(false);
+    await expect(openLeakedList(empty)).rejects.toThrow(/empty/);
+  });
+
+  it('fails a lookup when a record cannot be read in full (file shrank after opening)', async () => {
+    const out = join(dir, 'shrink.bin');
+    await buildLeakedList(lines(hibpLines([['a', 20], ['b', 20], ['c', 20]])), out);
+    const shrinking = await openLeakedList(out);
+    await truncate(out, 20);
+    await expect(shrinking.has('Password123!')).rejects.toThrow(/short read/);
   });
 });

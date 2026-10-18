@@ -13,9 +13,9 @@ const RECORD = 20;
 export async function openLeakedList(path: string): Promise<LeakedList> {
   const fh = await open(path, 'r');
   const { size } = await fh.stat();
-  if (size % RECORD !== 0) {
+  if (size === 0 || size % RECORD !== 0) {
     await fh.close();
-    throw new Error('leaked list: file size is not a multiple of 20');
+    throw new Error(size === 0 ? 'leaked list: file is empty' : 'leaked list: file size is not a multiple of 20');
   }
   const count = size / RECORD;
   return {
@@ -27,7 +27,8 @@ export async function openLeakedList(path: string): Promise<LeakedList> {
       let hi = count - 1;
       while (lo <= hi) {
         const mid = (lo + hi) >>> 1;
-        await fh.read(buf, 0, RECORD, mid * RECORD);
+        const { bytesRead } = await fh.read(buf, 0, RECORD, mid * RECORD);
+        if (bytesRead !== RECORD) throw new Error('leaked list: short read (file changed after startup)');
         const c = Buffer.compare(buf, target);
         if (c === 0) return true;
         if (c < 0) lo = mid + 1;
