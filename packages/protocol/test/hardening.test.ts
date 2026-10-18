@@ -199,8 +199,9 @@ describe('M6 joinMessage challenge is canonical base64 of 32 bytes', () => {
   });
 
   it.each<[string, string]>([
-    ['too short', sodium.to_base64(new Uint8Array(31), sodium.base64_variants.ORIGINAL)],
-    ['too long', sodium.to_base64(new Uint8Array(33), sodium.base64_variants.ORIGINAL)],
+    // Literals: it.each arguments are built at collection time, before sodium.ready resolves.
+    ['too short', `${'A'.repeat(42)}==`], // 31 zero bytes
+    ['too long', 'A'.repeat(44)], // 33 zero bytes
     ['no padding', 'A'.repeat(43)],
     ['dirty trailing bits', `${'A'.repeat(42)}B=`],
     ['url-safe', `${'-'.repeat(42)}A=`],
