@@ -85,3 +85,6 @@ Recovered reference material (partial, for comparison only — the rulings win):
 - **Persistence:** save the ReplayGuard state BEFORE acting on a message.
 - **Message identity** is (trade, from, seq) or kh+ct, never a hash of wire bytes (the wire form is malleable under a valid signature).
 - **Task 7:** the relay join challenge is canonical base64 of 32 random bytes; the client rejects anything else.
+
+## Plan 2 rulings
+- R28 (Task 4 review, 2026-10-18): a throttle check that passes while a wait applies (failures > 3) claims the slot with a compare-and-set on `last_failure_at`, so a parallel burst gets exactly one try per wait; the opening burst within the 3 free failures is accepted.

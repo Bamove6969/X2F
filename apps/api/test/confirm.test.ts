@@ -190,6 +190,10 @@ describe('onboarding and recovery exemptions', () => {
   it('lets the creating session skip the token within 30 minutes, only where the route allows it', async () => {
     const s = await session({ firstSession: true });
     expect((await post('/t/first-wallet', s.token, { address: ADDR_A, first: true })).statusCode).toBe(200);
+    // A token that is sent is always redeemed, even inside the onboarding window.
+    const sent = await post('/t/first-wallet', s.token, { address: ADDR_A, first: true, confirmToken: 'A'.repeat(43) });
+    expect(sent.statusCode).toBe(403);
+    expect(sent.json()).toEqual({ error: 'confirm-invalid' });
     // The route's own predicate (first wallet only) still applies.
     expect((await post('/t/first-wallet', s.token, { address: ADDR_A, first: false })).json()).toMatchObject({ error: 'confirm-required' });
     expect((await post('/t/add-method', s.token, {})).statusCode).toBe(200);
