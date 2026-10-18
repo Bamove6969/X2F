@@ -50,6 +50,9 @@ export interface BuildOptions {
 
 export const BODY_LIMIT = 16 * 1024;
 
+/** Spread into `app.listen()`: the default "Server listening at http://host:port" names the bind address. */
+export const LISTEN_OPTIONS = { listenTextResolver: () => 'listening' };
+
 /** R5: a request in a log line is its method and route pattern, nothing else. */
 function logRequest(req: FastifyRequest): { method?: string; route?: string } {
   const out: { method?: string; route?: string } = {};
@@ -57,6 +60,34 @@ function logRequest(req: FastifyRequest): { method?: string; route?: string } {
   const route = req.routeOptions?.url;
   if (typeof route === 'string') out.route = route;
   return out;
+}
+
+/**
+ * An error in a log line is its class name and code only. Its message, stack and fields such as
+ * Postgres' `detail` ("Key (col)=(value)") or fastify's "already sent ... in /url" can quote row
+ * values, URLs and trade codes.
+ */
+function logError(e: unknown): { type: string; code?: string } {
+  const out: { type: string; code?: string } = { type: e instanceof Error ? e.name : 'Error' };
+  const code = (e as { code?: unknown } | null)?.code;
+  if (typeof code === 'string') out.code = code;
+  return out;
+}
+
+export const WITHHELD_MESSAGE = 'message withheld (may contain a URL)';
+
+/**
+ * pino hook run on every log call. A string argument with '/' or '?' (a URL, a path, a query) is
+ * replaced; and a call with an error but no message gets a fixed one, because pino would otherwise
+ * copy `err.message` into `msg`.
+ */
+function logMethod(this: unknown, args: unknown[], method: (...a: unknown[]) => void): void {
+  const out = args.map((a) => (typeof a === 'string' && /[/?]/.test(a) ? WITHHELD_MESSAGE : a));
+  const first = out[0];
+  if (first !== null && typeof first === 'object' && typeof out[1] !== 'string' && (first instanceof Error || 'err' in first)) {
+    out.splice(1, 0, 'error');
+  }
+  method.apply(this, out);
 }
 
 export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<FastifyInstance> {
@@ -73,7 +104,10 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
       serializers: {
         req: logRequest,
         res: (res) => ({ statusCode: res.statusCode }),
+        // Typed by fastify as returning message and stack; leaving them out is the point.
+        err: logError as unknown as (e: FastifyError) => { type: string; message: string; stack: string },
       },
+      hooks: { logMethod },
       redact: { paths: ['req.body', 'req.headers.cookie', 'res.headers["set-cookie"]'], censor: '[redacted]' },
       ...(options.logStream ? { stream: options.logStream } : {}),
     },
@@ -92,7 +126,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     if (err instanceof ApiError) {
       const retry = err.extra?.retryAfterSeconds;
       if (typeof retry === 'number') void reply.header('retry-after', String(retry));
-      return reply.code(err.status).send({ error: err.code, ...err.extra });
+      return reply.code(err.status).send({ ...err.extra, error: err.code });
     }
     const status = typeof err.statusCode === 'number' ? err.statusCode : 500;
     if (status === 415) return reply.code(415).send({ error: 'unsupported-media-type' });

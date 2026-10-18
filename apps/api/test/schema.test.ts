@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { migrate } from '../src/db/migrate.js';
@@ -246,6 +247,70 @@ describe('app', () => {
       expect(res.statusCode).toBe(503);
       expect(res.json()).toEqual({ error: 'busy', retryAfterSeconds: 30 });
       expect(res.headers['retry-after']).toBe('30');
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('never lets extra override the error code', async () => {
+    const { app } = await testApp();
+    try {
+      app.get('/clash', async () => {
+        throw new ApiError(400, 'bad-request', { error: 'something-else', field: 'x' });
+      });
+      const res = await app.inject({ method: 'GET', url: '/clash' });
+      expect(res.json()).toEqual({ error: 'bad-request', field: 'x' });
+    } finally {
+      await app.close();
+    }
+  });
+
+  it("keeps the URL out of fastify's own 'reply already sent' warning", async () => {
+    const { app, logs } = await testApp();
+    try {
+      app.get('/x/:code', async (_req, reply) => {
+        void reply.send({ first: true });
+        return reply.send({ second: true });
+      });
+      const res = await app.inject({ method: 'GET', url: '/x/K7M2-9QXA-4FTR-8WPN?trade=K7M2-9QXA-4FTR-8WPN' });
+      expect(res.json()).toEqual({ first: true });
+      expect(logs.length).toBeGreaterThan(0); // the warning itself is still logged
+      expect(logs.filter((l) => l.includes('K7M2') || l.includes('/x/'))).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('logs a database error by type and code only, never row values', async () => {
+    const marker = 'MarkerZq7Wv';
+    const { app, deps, logs } = await testApp();
+    try {
+      app.get('/dup', async () => {
+        const insert = () =>
+          deps.db.query(
+            `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
+            [marker, marker.toLowerCase(), randomBytes(32)],
+          );
+        await insert();
+        await insert();
+        return { ok: true };
+      });
+      const res = await app.inject({ method: 'GET', url: '/dup' });
+      expect(res.statusCode).toBe(500);
+      expect(logs.some((l) => l.includes('"code":"23505"'))).toBe(true);
+      expect(logs.filter((l) => l.toLowerCase().includes(marker.toLowerCase()))).toEqual([]);
+      expect(logs.filter((l) => /"(stack|detail|message)"/.test(l))).toEqual([]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('does not log the address it listens on', async () => {
+    const { app, logs } = await testApp();
+    try {
+      await app.listen({ ...LISTEN_OPTIONS, host: '127.0.0.1', port: 0 });
+      expect(logs.some((l) => l.includes('listening'))).toBe(true);
+      expect(logs.filter((l) => l.includes('127.0.0.1'))).toEqual([]);
     } finally {
       await app.close();
     }

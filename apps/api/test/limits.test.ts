@@ -40,6 +40,28 @@ describe('Semaphore', () => {
     await expect(s.run(async () => 'd')).resolves.toBe('d');
   });
 
+  it('never runs more than its limit, even while slots are handed to waiters under contention', async () => {
+    const s = new Semaphore(2, 50);
+    let active = 0;
+    let max = 0;
+    const task = async () => {
+      active++;
+      max = Math.max(max, active);
+      await new Promise((r) => setTimeout(r, 1));
+      active--;
+    };
+    const runs: Promise<void>[] = [];
+    // Each finishing task queues a new one at the moment its slot is being handed over.
+    const chained = async (left: number): Promise<void> => {
+      await s.run(task);
+      if (left > 0) runs.push(chained(left - 1));
+    };
+    for (let i = 0; i < 10; i++) runs.push(chained(3));
+    while (runs.length) await runs.shift();
+    expect(max).toBe(2);
+    expect(active).toBe(0);
+  });
+
   it('releases its slot when the task throws', async () => {
     const s = new Semaphore(1, 0);
     await expect(s.run(async () => Promise.reject(new Error('x')))).rejects.toThrow('x');

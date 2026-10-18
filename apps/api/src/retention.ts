@@ -12,19 +12,19 @@ const jsonLine = (e: RetentionLog) => process.stdout.write(`${JSON.stringify(e)}
 /**
  * Runs every job in order each tick (default 10 minutes). One job's failure is logged as
  * `{ job, failed: true }` (never the error, which may quote data) and does not stop the others.
- * A tick that is still running when the next is due makes that next tick skip. Returns `stop`.
+ * A tick that is still running when the next is due makes that next tick skip. Returns `stop`,
+ * which starts no further job and resolves once the job in flight (if any) has finished, so the
+ * caller can then close the pool.
  */
 export function startRetention(
   deps: Pick<Deps, 'db' | 'clock'>,
   jobs: RetentionJob[],
   everyMs = 600_000,
   log: (e: RetentionLog) => void = jsonLine,
-): () => void {
+): () => Promise<void> {
   let stopped = false;
-  let busy = false;
-  const tick = async () => {
-    if (busy) return;
-    busy = true;
+  let inFlight: Promise<void> | null = null;
+  const run = async () => {
     try {
       for (const job of jobs) {
         if (stopped) return;
@@ -36,13 +36,18 @@ export function startRetention(
         }
       }
     } finally {
-      busy = false;
+      inFlight = null;
     }
   };
-  const timer = setInterval(() => void tick(), everyMs);
+  const tick = () => {
+    if (inFlight || stopped) return;
+    inFlight = run();
+  };
+  const timer = setInterval(tick, everyMs);
   timer.unref();
-  return () => {
+  return async () => {
     stopped = true;
     clearInterval(timer);
+    await inFlight;
   };
 }

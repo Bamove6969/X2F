@@ -16,6 +16,8 @@ declare module 'vitest' {
 export const POSTGRES_IMAGE =
   'postgres:17.11-alpine3.24@sha256:b0f9560a2de083e2cc7382e75f808c7381a32852a7ec49117deedb300e552b24';
 export const TEMPLATE_DB = 'x2f_template';
+/** Every harness container carries this label, valued with the PID of the test run that started it. */
+export const LABEL = 'x2f-api-test';
 
 const run = promisify(execFile);
 const NO_DOCKER = 'api tests need Docker (see docs/dev-setup.md)';
@@ -27,15 +29,41 @@ async function docker(...args: string[]): Promise<string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+function alive(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (e) {
+    return (e as NodeJS.ErrnoException).code === 'EPERM';
+  }
+}
+
+/**
+ * Stops containers left by earlier runs that died before teardown (e.g. a killed vitest). A run
+ * still alive keeps its container, so two test runs on one machine do not stop each other's.
+ */
+async function stopLeftovers(): Promise<void> {
+  const lines = (await docker('ps', '-q', '--filter', `label=${LABEL}`, '--format', `{{.ID}} {{.Label "${LABEL}"}}`))
+    .split('\n')
+    .filter(Boolean);
+  for (const line of lines) {
+    const [cid, owner] = line.split(' ');
+    const pid = Number(owner);
+    if (!cid || (Number.isInteger(pid) && pid > 0 && pid !== process.pid && alive(pid))) continue;
+    await docker('stop', '-t', '1', cid).catch(() => undefined);
+  }
+}
+
 export default async function setup(project: TestProject): Promise<() => Promise<void>> {
   try {
     await docker('info', '--format', '{{.ServerVersion}}');
   } catch {
     throw new Error(NO_DOCKER);
   }
+  await stopLeftovers();
   const password = randomBytes(18).toString('hex');
   const id = await docker(
-    'run', '-d', '--rm', '--tmpfs', '/var/lib/postgresql/data',
+    'run', '-d', '--rm', '--label', `${LABEL}=${process.pid}`, '--tmpfs', '/var/lib/postgresql/data',
     '-e', `POSTGRES_PASSWORD=${password}`, '-p', '127.0.0.1::5432', POSTGRES_IMAGE,
   );
   const stop = async () => {

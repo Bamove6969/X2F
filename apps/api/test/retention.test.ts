@@ -48,6 +48,29 @@ describe('startRetention', () => {
     expect(count).toBe(3);
   });
 
+  it('stop waits for the tick in flight, so the pool can then be closed', async () => {
+    vi.useFakeTimers();
+    let release!: () => void;
+    let finished = false;
+    const slow: RetentionJob = {
+      name: 'slow',
+      run: () => new Promise<number>((r) => (release = () => r(1))).then((n) => ((finished = true), n)),
+    };
+    const later: RetentionJob = { name: 'later', run: async () => 0 };
+    const logs: RetentionLog[] = [];
+    const stop = startRetention({ db: {} as pg.Pool, clock: () => new Date() }, [slow, later], 1_000, (e) => logs.push(e));
+    await vi.advanceTimersByTimeAsync(1_000);
+    let stopped = false;
+    const done = stop().then(() => (stopped = true));
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    release();
+    await done;
+    expect(finished).toBe(true);
+    expect(logs).toEqual([{ job: 'slow', rows: 1 }]); // 'later' never starts after stop
+    await expect(stop()).resolves.toBeUndefined();
+  });
+
   it('defaults to a 10-minute tick and runs jobs in order', async () => {
     vi.useFakeTimers();
     const order: string[] = [];

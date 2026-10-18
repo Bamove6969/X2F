@@ -1,4 +1,4 @@
-import { buildApi, type Deps } from './app.js';
+import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
@@ -40,10 +40,10 @@ const jobs: RetentionJob[] = [];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);
-await app.listen({ host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
+await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
 const shutdown = async () => {
-  stopRetention();
+  await stopRetention(); // lets a purge in flight finish before the pool closes
   await app.close();
   await db.end();
 };

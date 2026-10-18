@@ -1,5 +1,5 @@
 export {
-  buildApi, BODY_LIMIT,
+  buildApi, BODY_LIMIT, LISTEN_OPTIONS, WITHHELD_MESSAGE,
   type AddressValidator, type AttestationPolicy, type BuildOptions, type Deps, type LeakedList, type PgpSigner,
 } from './app.js';
 export { assertSigningKeyFile, loadConfig, subkey, type Config } from './config.js';
