@@ -92,8 +92,6 @@ const STRICT_CONFIG: openpgp.Config = Object.freeze({
     enums.publicKey.ecdsa,
     enums.publicKey.aedh,
     enums.publicKey.aedsa,
-    enums.publicKey.pqc_mlkem_x25519,
-    enums.publicKey.pqc_mldsa_ed25519,
   ]),
   rejectCurves: new Set([
     enums.curve.nistP256,
