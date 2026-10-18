@@ -30,3 +30,10 @@ export { parseConfirmAction } from './auth/actionInput.js';
 export {
   DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, verifyPassword,
 } from './auth/password.js';
+export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
+export {
+  WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
+  verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
+  webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
+} from './auth/webauthn.js';
