@@ -1,6 +1,7 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
+import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
@@ -24,17 +25,22 @@ function port(raw: string | undefined): number {
 
 const config = loadConfig(process.env);
 await assertSigningKeyFile(config.pgpSigningKeyPath);
+// R7: refuses a public-only or passphrase-protected key and a fingerprint other than
+// X2F_PGP_SIGNING_FINGERPRINT; the process exits before listening.
+const pgpSigner = await loadPgpSigner(config.pgpSigningKeyPath, config.pgpSigningFingerprint);
+// R18: the decoy key pool (includes an RSA-4096 key) is made before the first request.
+await decoyPrivateKeys();
 
 const db = createPool(config.databaseUrl);
 const deps: Deps = {
   config,
   db,
   clock: () => new Date(),
-  // TODO(Tasks 12, 8, 7): moneroAddressValidator, fileAttestationPolicy, loadPgpSigner.
+  // TODO(Tasks 12, 8): moneroAddressValidator, fileAttestationPolicy.
   leaked: await openLeakedList(config.leakedListPath),
   addresses: notBuilt('address validator (Task 12)'),
   attestation: notBuilt('attestation policy (Task 8)'),
-  pgpSigner: notBuilt('PGP signer (Task 7)'),
+  pgpSigner,
 };
 
 // Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.

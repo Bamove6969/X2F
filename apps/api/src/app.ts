@@ -4,6 +4,7 @@ import type pg from 'pg';
 import type { Config } from './config.js';
 import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
+import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { logoutRoute } from './auth/sessions.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -23,12 +24,7 @@ export interface AttestationPolicy {
   isAllowed(aaguid: string, fmt: string): boolean;
 }
 /** Task 7: the official X2F PGP signing key (R7). */
-export interface PgpSigner {
-  // TODO(Task 7): `openpgp.PrivateKey` once apps/api depends on openpgp.
-  key: unknown;
-  fingerprint: string;
-  publicArmored: string;
-}
+export type { PgpSigner } from './auth/pgp.js';
 
 export interface Deps {
   config: Config;
@@ -151,6 +147,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.get('/healthz', async () => ({ ok: true }));
   logoutRoute(app);
   passwordRoutes(app);
+  await pgpRoutes(app);
 
   return app;
 }

@@ -74,6 +74,8 @@ Owner decisions of 2026-10-17 applied before building. Authority: spec > this re
 
 - **R17** (Task 5 review, for Tasks 10 and 12): `requireConfirm` attaches the resolved `ConfirmAction` to `req.confirmedAction`; Task 12 stores exactly the address that was confirmed (hash computed once), and runs its own address checks (`address-integrated`, format) in schema validation BEFORE `requireConfirm` so a refused request never burns a token. Task 10's method removal takes `confirmToken` in a JSON body (a `DELETE` with a body, or `POST …/remove`).
 
+- **R18** (Task 7 review, 2026-10-18): the single per-process Ed25519 decoy key is replaced by a decoy pool generated at startup (Ed25519 v4 ×2, v6 Ed25519/X25519 ×2, RSA-4096); each unknown username gets a fixed profile of 1 or 2 pool keys chosen by HMAC under `subkey('decoy')`, so repeated starts for one name look alike. A `refreshedKey` that matches no stored key gets a decoy encrypted to that submitted key, so a keyserver copy cannot test a username. A matching `refreshedKey` is merged into the stored key (`Key.update`), never replaces it, so an old copy cannot undo a revocation. Challenges record the Origin's host and `finish` must come from the same one; the login `start` limit tag uses its own label `subkey('pgp-start')`; login `finish` uses the `pendingId` stored with the challenge.
+
 ## Plan 4 reconciliation
 
 Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) builds on these Plan 2 exports; each is produced by the task named:

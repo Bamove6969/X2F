@@ -30,3 +30,8 @@ export { parseConfirmAction } from './auth/actionInput.js';
 export {
   DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, verifyPassword,
 } from './auth/password.js';
+export {
+  PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,
+  openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
+} from './auth/pgp.js';
+export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
