@@ -49,9 +49,18 @@ function presentedToken(req: FastifyRequest): string | null {
   return typeof v === 'string' && TOKEN.test(v) ? v : null;
 }
 
-/** Trimmed, at most 60 code points; chosen by the client, never read from request headers. */
+/**
+ * Control and format characters (bidi overrides, zero-width, NUL) removed, then trimmed and cut to
+ * 60 code points; chosen by the client, never read from request headers.
+ */
 function cleanLabel(label: string): string {
-  return Array.from(label.trim()).slice(0, DEVICE_LABEL_MAX).join('').trim();
+  const visible = label.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
+  return Array.from(visible).slice(0, DEVICE_LABEL_MAX).join('').trim();
+}
+
+/** The earlier of the absolute deadline and the idle deadline from `now`; stored as `expires_at` so idle sessions get purged. */
+function deadline(createdAt: Date, now: Date, p: { idleMs: number; absoluteMs: number }): Date {
+  return new Date(Math.min(createdAt.getTime() + p.absoluteMs, now.getTime() + p.idleMs));
 }
 
 /**
@@ -82,13 +91,16 @@ export async function startSession(
   const client = await deps.db.connect();
   let sessionId: string;
   let absoluteMs: number;
+  let expiresAt: Date;
   try {
     await client.query('begin');
     try {
       const acct = await client.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [a.accountId]);
       const kind = acct.rows[0]?.kind;
       if (!kind) throw new ApiError(401, 'not-authenticated');
-      absoluteMs = sessionPolicy(kind, a.level).absoluteMs;
+      const policy = sessionPolicy(kind, a.level);
+      absoluteMs = policy.absoluteMs;
+      expiresAt = deadline(now, now, policy);
       if (presented) {
         await client.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [
           tokenHash(presented), now,
@@ -100,7 +112,7 @@ export async function startSession(
         [
           a.accountId, tokenHash(token), a.level, label,
           a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
-          now, new Date(now.getTime() + absoluteMs),
+          now, expiresAt,
         ],
       );
       sessionId = rows[0]!.id;
@@ -132,6 +144,7 @@ interface SessionRow {
   account_id: string;
   level: SessionLevel;
   onboarding_until: Date | null;
+  created_at: Date;
   last_seen_at: Date;
   expires_at: Date;
   revoked_at: Date | null;
@@ -156,7 +169,7 @@ export function requireSession(
     const token = presentedToken(req);
     if (!token) throw new ApiError(401, 'not-authenticated');
     const { rows } = await deps.db.query<SessionRow>(
-      `select s.id, s.account_id, s.level, s.onboarding_until, s.last_seen_at, s.expires_at, s.revoked_at,
+      `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
               a.kind, a.disabled_at, a.terms_version
          from sessions s join accounts a on a.id = s.account_id
         where s.token_hash = $1`,
@@ -165,8 +178,12 @@ export function requireSession(
     const row = rows[0];
     const now = deps.clock();
     if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
-    const { idleMs } = sessionPolicy(row.kind, row.level);
-    if (now.getTime() >= row.expires_at.getTime() || now.getTime() - row.last_seen_at.getTime() >= idleMs) {
+    const policy = sessionPolicy(row.kind, row.level);
+    if (
+      now.getTime() >= row.expires_at.getTime() ||
+      now.getTime() - row.last_seen_at.getTime() >= policy.idleMs ||
+      now.getTime() - row.created_at.getTime() >= policy.absoluteMs
+    ) {
       throw new ApiError(401, 'not-authenticated');
     }
     if (row.disabled_at !== null) throw new ApiError(403, 'account-disabled');
@@ -175,7 +192,12 @@ export function requireSession(
     if (row.kind === 'trader' && row.terms_version !== deps.config.termsVersion && !opts.allowStaleTerms) {
       throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
     }
-    await deps.db.query('update sessions set last_seen_at = $2 where id = $1 and last_seen_at < $2', [row.id, now]);
+    // expires_at is the idle deadline capped by the absolute one (created_at + absolute), so
+    // purgeExpired removes idle sessions too.
+    await deps.db.query(
+      'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
+      [row.id, now, deadline(row.created_at, now, policy)],
+    );
     req.auth = {
       sessionId: row.id,
       accountId: row.account_id,
@@ -215,10 +237,18 @@ export async function endAllSessions(deps: Pick<Deps, 'db' | 'clock'>, accountId
   return r.rowCount ?? 0;
 }
 
-/** `POST /v1/logout`: ends this session (recovery sessions and stale Terms included) and clears the cookie. */
+/**
+ * `POST /v1/logout`: revokes the session the cookie names, whatever its state (live, recovery,
+ * stale Terms, expired, disabled account), and always clears the cookie. Never 401: a browser
+ * holding a dead cookie can still get rid of it.
+ */
 export function logoutRoute(app: FastifyInstance): void {
-  app.post('/v1/logout', { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) }, async (req, reply) => {
-    await endSession(req.server.deps, req.auth.sessionId);
+  app.post('/v1/logout', async (req, reply) => {
+    const token = presentedToken(req);
+    if (token) {
+      const { db, clock } = req.server.deps;
+      await db.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [tokenHash(token), clock()]);
+    }
     void reply.clearCookie(SESSION_COOKIE, COOKIE_ATTRS);
     return { ok: true };
   });

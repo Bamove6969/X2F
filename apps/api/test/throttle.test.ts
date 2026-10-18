@@ -135,6 +135,37 @@ describe('throttle', () => {
     expect(await failures(key)).toBe(4);
   });
 
+  it('lets exactly one of a parallel burst through once a wait ends (I1)', async () => {
+    const id = await seedAccount(deps, { username: name() });
+    const key = await keyFor({ accountId: id });
+    for (let i = 0; i < 10; i++) await throttleFail(deps, key, id);
+    after(31);
+    const results = await Promise.allSettled(Array.from({ length: 20 }, () => throttleCheck(deps, key)));
+    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const refused = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    expect(refused).toHaveLength(19);
+    for (const r of refused) {
+      expect(r.reason).toBeInstanceOf(ApiError);
+      expect(r.reason).toMatchObject({ status: 429, code: 'locked' });
+      expect(r.reason.extra.retryAfterSeconds).toBeGreaterThan(0);
+      expect(r.reason.extra.retryAfterSeconds).toBeLessThanOrEqual(30);
+    }
+    // The same during the slow-down phase (4th failure, 2 s wait).
+    const other = await keyFor({ usernameKey: 'burst.user' });
+    for (let i = 0; i < 4; i++) await throttleFail(deps, other, null);
+    after(2);
+    const burst = await Promise.allSettled(Array.from({ length: 20 }, () => throttleCheck(deps, other)));
+    expect(burst.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    expect(burst.filter((r) => r.status === 'rejected').map((r) => (r as PromiseRejectedResult).reason.code)).toEqual(
+      Array(19).fill('slow-down'),
+    );
+    // The free failures are not claimed (ruling R28: the opening burst is accepted).
+    const free = await keyFor({ usernameKey: 'free.user' });
+    for (let i = 0; i < 3; i++) await throttleFail(deps, free, null);
+    const open = await Promise.allSettled(Array.from({ length: 5 }, () => throttleCheck(deps, free)));
+    expect(open.every((r) => r.status === 'fulfilled')).toBe(true);
+  });
+
   it('restarts the count on success', async () => {
     const id = await seedAccount(deps, { username: name() });
     const key = await keyFor({ accountId: id });

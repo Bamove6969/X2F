@@ -43,6 +43,11 @@ function waitMs(failures: number): number {
  * Throws 429 `slow-down` (4th-9th failure) or `locked` (10th on) with `retryAfterSeconds` while
  * the wait after the last failure runs. Call it before checking the credential; a refused check
  * adds no failure.
+ *
+ * Once a streak is past the free failures, a passing check claims the try: it moves
+ * `last_failure_at` to now with a compare-and-set, so of a parallel burst arriving when a wait
+ * ends exactly one gets through and the rest see a fresh wait (R28). The burst within the first
+ * 3 free failures is accepted.
  */
 export async function throttleCheck(deps: Pick<Deps, 'db' | 'clock'>, key: string): Promise<void> {
   const { rows } = await deps.db.query<{ failures: number; last_failure_at: Date }>(
@@ -51,12 +56,18 @@ export async function throttleCheck(deps: Pick<Deps, 'db' | 'clock'>, key: strin
   );
   const row = rows[0];
   if (!row) return;
-  const elapsed = deps.clock().getTime() - row.last_failure_at.getTime();
+  const now = deps.clock();
+  const elapsed = now.getTime() - row.last_failure_at.getTime();
   if (elapsed >= STREAK_MS) return;
   const wait = waitMs(row.failures);
-  if (elapsed >= wait) return;
-  const retryAfterSeconds = Math.ceil(Math.min(wait - elapsed, wait) / 1000);
-  throw new ApiError(429, row.failures >= LOCK_AT ? 'locked' : 'slow-down', { retryAfterSeconds });
+  const refuse = (ms: number) =>
+    new ApiError(429, row.failures >= LOCK_AT ? 'locked' : 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil(ms / 1000)) });
+  if (elapsed < wait) throw refuse(Math.min(wait - elapsed, wait));
+  if (row.failures <= FREE_FAILURES) return;
+  const claimed = await deps.db.query('update login_throttle set last_failure_at = $3 where key = $1 and last_failure_at = $2', [
+    key, row.last_failure_at, now,
+  ]);
+  if ((claimed.rowCount ?? 0) === 0) throw refuse(wait);
 }
 
 /**

@@ -24,9 +24,16 @@ const DAY = 24 * HOUR;
 let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
+let current = new Date('2026-10-17T12:00:00Z');
+const now0 = () => current;
 
 beforeAll(async () => {
-  ({ app, deps, setNow } = await testApp());
+  let set: (d: Date) => void;
+  ({ app, deps, setNow: set } = await testApp());
+  setNow = (d) => {
+    current = d;
+    set(d);
+  };
   app.post('/t/login', async (req, reply) => {
     const b = req.body as {
       accountId: string; level?: 'full' | 'recovery'; deviceLabel?: string; firstSession?: boolean; holdUntil?: string;
@@ -169,6 +176,39 @@ describe('sessions', () => {
     expect((await get('/t/me', token)).statusCode).toBe(401);
   });
 
+  it('ends a recovery session after 25 h idle, not at 24 h 59 min (M4)', async () => {
+    const id = await seedAccount(deps, { username: name() });
+    const kept = await login(id, { level: 'recovery' });
+    setNow(new Date(T0.getTime() + 25 * HOUR - MIN));
+    expect((await get('/t/recovery-ok', kept.token)).statusCode).toBe(200);
+    setNow(T0);
+    const idle = await login(id, { level: 'recovery' });
+    setNow(new Date(T0.getTime() + 25 * HOUR));
+    expect((await get('/t/recovery-ok', idle.token)).statusCode).toBe(401);
+  });
+
+  it('moves expires_at to the idle deadline on use, so idle sessions get purged (M1)', async () => {
+    const id = await seedAccount(deps, { username: name() });
+    const { token, sessionId } = await login(id);
+    const expiresAt = async () =>
+      (await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [sessionId])).rows[0]?.expires_at;
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 7 * DAY));
+    setNow(new Date(T0.getTime() + DAY));
+    expect((await get('/t/me', token)).statusCode).toBe(200);
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 8 * DAY));
+    // Near the end the absolute limit wins.
+    for (const d of [7, 13, 19, 25, 29]) {
+      setNow(new Date(T0.getTime() + d * DAY));
+      expect((await get('/t/me', token)).statusCode).toBe(200);
+    }
+    expect(await expiresAt()).toEqual(new Date(T0.getTime() + 30 * DAY));
+    // An idle session is past expires_at and purged an idle week later.
+    const other = await login(id);
+    const stale = new Date(now0().getTime() + 7 * DAY + MIN);
+    await purgeExpired.run(deps.db, stale);
+    expect((await deps.db.query('select 1 from sessions where id = $1', [other.sessionId])).rows).toHaveLength(0);
+  });
+
   it('ends a recovery session after 48 h', async () => {
     const id = await seedAccount(deps, { username: name() });
     const { token } = await login(id, { level: 'recovery' });
@@ -211,6 +251,14 @@ describe('sessions', () => {
     await expect(assertNotDisabled(deps.db, id)).rejects.toMatchObject({ status: 403, code: 'account-disabled' });
     const ok = await seedAccount(deps, { username: name() });
     await expect(assertNotDisabled(deps.db, ok)).resolves.toBeUndefined();
+  });
+
+  it('never asks an owner (null Terms version) for Terms (M4)', async () => {
+    await deps.db.query(`delete from accounts where kind = 'owner'`); // one owner per database
+    const id = await seedAccount(deps, { username: name('boss'), kind: 'owner' });
+    const { rows } = await deps.db.query('select terms_version from accounts where id = $1', [id]);
+    expect(rows[0].terms_version).toBeNull();
+    expect((await get('/t/me', (await login(id)).token)).statusCode).toBe(200);
   });
 
   it('answers terms-required to a trader on a stale Terms version, except with allowStaleTerms (R10)', async () => {
@@ -321,6 +369,20 @@ describe('sessions', () => {
     expect(rec.rows).toEqual([{ detail: { method: 'passkey', deviceLabel: 'Test browser', holdUntil: hold } }]);
   });
 
+  it('strips control and bidi/format characters from the device label (M2)', async () => {
+    const id = await seedAccount(deps, { username: name() });
+    const evil = '\u202Eevil\u202C \u0000Phone\u200B\u2066x\u2069\n\t';
+    const { sessionId } = await login(id, { deviceLabel: evil });
+    const s = await deps.db.query('select device_label from sessions where id = $1', [sessionId]);
+    expect(s.rows[0].device_label).toBe('evil Phonex');
+    const { rows } = await deps.db.query(`select detail from alerts where account_id = $1 and kind = 'new-login'`, [id]);
+    expect(rows[0].detail.deviceLabel).toBe('evil Phonex');
+    // Stripped before cutting: 60 visible characters survive 60 invisible ones.
+    const padded = await login(id, { deviceLabel: '\u200B'.repeat(60) + 'A'.repeat(70) });
+    const p = await deps.db.query('select device_label from sessions where id = $1', [padded.sessionId]);
+    expect(p.rows[0].device_label).toBe('A'.repeat(60));
+  });
+
   it('trusts the device it logs in from', async () => {
     const id = await seedAccount(deps, { username: name() });
     const { res } = await login(id);
@@ -346,6 +408,32 @@ describe('sessions', () => {
     const bad = await app.inject({ method: 'POST', url: '/t/device', headers: { origin: ORIGIN }, cookies: { [DEVICE_COOKIE]: 'x' } });
     expect(bad.json()).toMatchObject({ had: false });
     expect(cookieOf(bad, DEVICE_COOKIE)?.value).not.toBe('x');
+  });
+
+  it('POST /v1/logout clears the cookie even for an expired, disabled or unknown session (M3)', async () => {
+    const id = await seedAccount(deps, { username: name() });
+    const logout = (token?: string) =>
+      app.inject({ method: 'POST', url: '/v1/logout', headers: { origin: ORIGIN }, ...(token ? { cookies: { [SESSION_COOKIE]: token } } : {}) });
+    const expired = await login(id);
+    setNow(new Date(T0.getTime() + 8 * DAY));
+    const r1 = await logout(expired.token);
+    expect(r1.statusCode).toBe(200);
+    expect(cookieOf(r1, SESSION_COOKIE)?.value).toBe('');
+
+    setNow(T0);
+    const live = await login(id);
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [id, T0]);
+    const r2 = await logout(live.token);
+    expect(r2.statusCode).toBe(200);
+    expect(cookieOf(r2, SESSION_COOKIE)?.value).toBe('');
+    const { rows } = await deps.db.query('select revoked_at from sessions where id = $1', [live.sessionId]);
+    expect(rows[0].revoked_at).not.toBeNull();
+
+    for (const t of [undefined, 'garbage', randomBytes(32).toString('base64url')]) {
+      const r = await logout(t);
+      expect(r.statusCode).toBe(200);
+      expect(cookieOf(r, SESSION_COOKIE)?.value).toBe('');
+    }
   });
 
   it('POST /v1/logout ends the session and clears the cookie', async () => {
