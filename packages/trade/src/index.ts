@@ -14,3 +14,19 @@ export {
 } from './money.js';
 export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
+export { TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
+export {
+  CLIENT_EVENTS,
+  SYSTEM_EVENTS,
+  TradeRuleError,
+  apply,
+  newTrade,
+  nextDeadline,
+  releasableEta,
+  type By,
+  type Party,
+  type Trade,
+  type TradeEvent,
+  type TradeRuleCode,
+  type TradeState,
+} from './machine.js';
