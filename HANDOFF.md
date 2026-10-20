@@ -114,6 +114,10 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 - **Approved by owner 2026-10-17:** owner logs in with a hardware security key and a PGP key, both on every login; staff accounts separate from trading accounts; a violet shield "X2F Moderator" badge shown only in disputed trade rooms, with a hard-to-copy look such as a holographic shimmer (to design on the canvas); the moderator dashboard (queue, case view, ruling tools, training library).
 - Community room ideas are parked in `docs/community-room-plan.md`.
 
+## Decided 2026-10-20 (owner)
+- **Security keys:** the owner logs in only with YubiKey 5 keys on firmware 5.7 or newer (owner has ordered two 5.8 keys). Staff may use certified YubiKey 5 (any firmware), the Yubico Security Key series or Google Titan. Applied at the FIDO metadata refresh, due before 2026-11-01.
+- **Extra XMR in an escrow (replaces "extra goes to the ad poster"):** before the buyer marks paid and within the offer's limits, the trade grows to the funded amount at the same rate and both sides are shown the new total; a buyer who can't pay cancels and they redo it. Above the offer's maximum, or arriving after "I've paid", the extra goes back to the seller. Every refund returns everything to the seller.
+
 ## Open decisions (owner's call)
 
 1. **Fees: decided 2026-10-14.** 1% per completed trade, paid only by the ad poster. Takers never see a fee line.

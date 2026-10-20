@@ -28,6 +28,7 @@ import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { requestOrigin } from './origin.js';
+import { assertHoldPassed } from './recovery.js';
 import { requireSession, startSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -744,7 +745,6 @@ async function addKeyStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const key = inspected.get(req);
   if (!key) throw new ApiError(400, 'bad-request');
-  // TODO(Task 9): a recovery session must have passed its hold (`assertHoldPassed`).
   // TODO(Task 10): `assertMethodAllowed(kind, 'pgp')`.
   const { storable, pending } = await pendingKey(deps.config, key.armored, key.fingerprint, deps.clock());
   return issuePgpChallenge(deps, req, {
@@ -803,6 +803,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
       bodyLimit: PGP_BODY_LIMIT,
       preHandler: [
         requireSession({ allowRecovery: true }),
+        assertHoldPassed,
         inspectNewKey,
         requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
       ],
