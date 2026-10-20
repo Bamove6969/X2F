@@ -8,6 +8,7 @@ import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { logoutRoute } from './auth/sessions.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
+import { addSecurityHeaders } from './static/serve.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -120,6 +121,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('deps', deps);
   app.decorateRequest('auth', null as never);
   await app.register(fastifyCookie);
+
+  // Referrer-Policy, COOP, HSTS and nosniff on every response, errors and 404s included (P3-I15).
+  app.addHook('onRequest', addSecurityHeaders);
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);

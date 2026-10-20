@@ -5,6 +5,7 @@ import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
+import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 
 /** A dependency whose task has not landed yet: any use fails loudly instead of misbehaving. */
 function notBuilt<T extends object>(what: string): T {
@@ -24,6 +25,8 @@ function port(raw: string | undefined): number {
 }
 
 const config = loadConfig(process.env);
+// Serves apps/web/dist on this origin when X2F_WEB_ROOT is set (with X2F_RELAY_ORIGIN and X2F_NODE_PROXY_ORIGIN for the CSP).
+const web = webOptionsFromEnv(process.env);
 await assertSigningKeyFile(config.pgpSigningKeyPath);
 // R7: refuses a public-only or passphrase-protected key and a fingerprint other than
 // X2F_PGP_SIGNING_FINGERPRINT; the process exits before listening.
@@ -48,6 +51,7 @@ const jobs: RetentionJob[] = [purgeExpired];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);
+if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
 const shutdown = async () => {

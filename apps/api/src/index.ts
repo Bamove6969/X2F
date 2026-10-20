@@ -35,3 +35,4 @@ export {
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
 export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export { SECURITY_HEADERS, addSecurityHeaders, cspFor, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
