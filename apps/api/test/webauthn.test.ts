@@ -2,10 +2,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { fileAttestationPolicy } from '../src/auth/attestation.js';
-import { requireConfirm } from '../src/auth/confirm.js';
+import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { SESSION_COOKIE, requireSession, startSession } from '../src/auth/sessions.js';
 import {
@@ -40,6 +40,7 @@ let step = 0;
 let ca: TestCa;
 let mdsDir: string;
 let afterAuthCalls: string[] = [];
+let twoFactorCalls: string[] = [];
 
 /** One browser: keeps the cookies the API sets. */
 class Browser {
@@ -84,6 +85,11 @@ beforeAll(async () => {
     },
   });
   await app.register(securityKeyLoginRoutes, { prefix: '/t/staff-only', kinds: ['staff'] });
+  await app.register(securityKeyLoginRoutes, {
+    prefix: '/t/two',
+    kinds: ['owner', 'staff'],
+    afterAuthenticate: async (accountId: string) => void twoFactorCalls.push(accountId),
+  });
 });
 
 afterAll(async () => {
@@ -94,6 +100,8 @@ afterAll(async () => {
 beforeEach(() => {
   setNow(new Date(T0.getTime() + ++step * HOUR));
   afterAuthCalls = [];
+  twoFactorCalls = [];
+  vi.restoreAllMocks();
 });
 
 let nameSeq = 0;
@@ -404,7 +412,8 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(errorOf((await staffAdd(b, selfAtt, 'security-key')).res)).toBe('method-not-allowed');
 
     const unknown = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: NO_STATEMENT, ca } });
-    expect(errorOf((await staffAdd(b, unknown, 'security-key')).res)).toBe('webauthn-failed');
+    // A vendor outside the snapshot is a policy refusal for staff and owner (M6).
+    expect(errorOf((await staffAdd(b, unknown, 'security-key')).res)).toBe('method-not-allowed');
 
     const good = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: ALLOWED, ca } });
     const r2 = await staffAdd(b, good, 'security-key');
@@ -585,5 +594,142 @@ describe('confirm and adding a credential', () => {
   it('sets the device cookie on sign-up and login routes', async () => {
     const res = await new Browser().post('/v1/login/webauthn/start', {});
     expect(res.cookies.find((c) => c.name === DEVICE_COOKIE)).toBeDefined();
+  });
+});
+
+async function usernameOf(accountId: string): Promise<string> {
+  const { rows } = await deps.db.query<{ username: string }>('select username from accounts where id = $1', [accountId]);
+  return rows[0]!.username;
+}
+
+describe('review fixes', () => {
+  it('I1: runs afterAuthenticate only for credentials the account kind may use', async () => {
+    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const ownerKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const ownerPasskey = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const ownerPlainKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const crewKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const crewPlainKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    await insertCredential(ownerId, ownerKey, 'security-key', true);
+    await insertCredential(ownerId, ownerPasskey, 'passkey', false);
+    await insertCredential(ownerId, ownerPlainKey, 'security-key', false);
+    await insertCredential(crewId, crewKey, 'security-key', true);
+    await insertCredential(crewId, crewPlainKey, 'security-key', false);
+    const owner = await usernameOf(ownerId);
+    const crew = await usernameOf(crewId);
+
+    for (const [auth, name] of [[ownerPasskey, owner], [ownerPlainKey, owner], [crewPlainKey, crew]] as const) {
+      const { res } = await usernameLogin(auth, name, new Browser(), '/t/two');
+      expect(res.statusCode).toBe(403);
+      expect(errorOf(res)).toBe('method-not-allowed');
+      expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
+    }
+    expect(twoFactorCalls).toEqual([]);
+
+    await usernameLogin(ownerKey, owner, new Browser(), '/t/two');
+    await usernameLogin(crewKey, crew, new Browser(), '/t/two');
+    expect(twoFactorCalls).toEqual([ownerId, crewId]);
+
+    // Confirm: the unattested passkey is refused at finish even though the challenge is real.
+    const b = await loggedIn(ownerId);
+    const start = await b.post('/v1/confirm/webauthn/start', { action: { kind: 'set-password' } });
+    expect(start.statusCode).toBe(200);
+    const { challengeId, options } = start.json();
+    const fin = await b.post('/v1/confirm/webauthn/finish', { challengeId, response: ownerPasskey.authenticate(options, ORIGIN) });
+    expect(fin.statusCode).toBe(403);
+    expect(errorOf(fin)).toBe('method-not-allowed');
+    await deps.db.query('delete from accounts where id = $1', [ownerId]);
+  });
+
+  it('M1: of two parallel assertions with the same counter, exactly one succeeds', async () => {
+    const { auth } = await signUp('passkey');
+    expect((await discoverableLogin(auth)).res.statusCode).toBe(200); // reports 0
+    expect((await discoverableLogin(auth)).res.statusCode).toBe(200); // reports 1: stored 1
+    const b1 = new Browser();
+    const b2 = new Browser();
+    const s1 = (await b1.post('/v1/login/webauthn/start', {})).json();
+    const s2 = (await b2.post('/v1/login/webauthn/start', {})).json();
+    auth.setCounter(5);
+    const r1 = auth.authenticate(s1.options, ORIGIN);
+    auth.setCounter(5);
+    const r2 = auth.authenticate(s2.options, ORIGIN);
+    const results = await Promise.all([
+      b1.post('/v1/login/webauthn/finish', { challengeId: s1.challengeId, response: r1, deviceLabel: 'A' }),
+      b2.post('/v1/login/webauthn/finish', { challengeId: s2.challengeId, response: r2, deviceLabel: 'B' }),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401]);
+    expect(results.map((r) => errorOf(r) ?? 'ok').sort()).toEqual(['ok', 'webauthn-failed']);
+  });
+
+  it('M2: refuses a credential the challenge did not list', async () => {
+    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    await insertCredential(crewId, key, 'security-key', true);
+    await insertCredential(crewId, pk, 'passkey', false);
+    const { res, options } = await usernameLogin(pk, await usernameOf(crewId), new Browser(), '/t/two');
+    expect(options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    expect(res.statusCode).toBe(401);
+    expect(errorOf(res)).toBe('webauthn-failed');
+    expect(twoFactorCalls).toEqual([]);
+  });
+
+  it('M3: decoys look like real security-key IDs and cost the same queries', async () => {
+    const real = await signUp('security-key');
+    const b = new Browser();
+    const a1 = (await b.post('/v1/login/webauthn/start', { username: 'Ghost.User77' })).json();
+    const a2 = (await b.post('/v1/login/webauthn/start', { username: 'Ghost.User77' })).json();
+    expect(a2.options.allowCredentials).toEqual(a1.options.allowCredentials);
+    for (const c of a1.options.allowCredentials) expect(Buffer.from(c.id, 'base64url')).toHaveLength(64);
+    expect(Buffer.from(real.auth.credentialId, 'base64url')).toHaveLength(64);
+
+    const spy = vi.spyOn(deps.db, 'query');
+    const count = async (username: string) => {
+      spy.mockClear();
+      expect((await b.post('/v1/login/webauthn/start', { username })).statusCode).toBe(200);
+      return spy.mock.calls.length;
+    };
+    const counts = [await count(real.username), await count('Ghost.User77'), await count('bad name!')];
+    expect(new Set(counts).size).toBe(1);
+  });
+
+  it('M4: an add-key challenge cannot be spent at login', async () => {
+    const t = await signUp('passkey');
+    const start = (await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' })).json();
+    const res = await new Browser().post('/v1/login/webauthn/finish', {
+      challengeId: start.challengeId, response: t.auth.authenticate({ ...start.options, rpId: 'x2f.test' }, ORIGIN), deviceLabel: 'D',
+    });
+    expect(res.statusCode).toBe(400);
+    expect(errorOf(res)).toBe('challenge-expired');
+  });
+
+  it('M4: an owner passkey is refused before a real confirm token is spent', async () => {
+    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const b = await loggedIn(ownerId); // not the creating session: no onboarding window
+    const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [ownerId]);
+    const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' } });
+    const res = await b.post('/v1/account/webauthn/start', { kind: 'passkey', confirmToken: token });
+    expect(res.statusCode).toBe(403);
+    expect(errorOf(res)).toBe('method-not-allowed');
+    const { rows } = await deps.db.query('select used_at from confirm_tokens where session_id = $1', [s[0]!.id]);
+    expect(rows).toEqual([{ used_at: null }]);
+    await deps.db.query('delete from accounts where id = $1', [ownerId]);
+  });
+
+  it('M5: stores only known transports', async () => {
+    const b = new Browser();
+    const username = uniqueName('trans');
+    const auth = createSoftAuthenticator({ backedUp: false, userVerified: true });
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { username, kind: 'security-key' })).json();
+    const response = auth.register(options, ORIGIN);
+    response.response.transports = ['usb', 'bogus', 'nfc', 'x'.repeat(500), 'hybrid'] as never;
+    const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query(
+      'select c.transports from webauthn_credentials c join accounts a on a.id = c.account_id where a.username_key = $1',
+      [username.toLowerCase()],
+    );
+    expect(rows[0].transports).toEqual(['usb', 'nfc', 'hybrid']);
   });
 });

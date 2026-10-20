@@ -62,7 +62,7 @@ export function aaguidBytes(uuid: string): Uint8Array {
  * Writes a FIDO metadata folder like `apps/api/data/fido-mds`: one statement per AAGUID in
  * `statements`, rooted at the test CA, and a README whose allowlist holds `allow`.
  */
-export async function writeTestMds(dir: string, ca: TestCa, a: { statements: string[]; allow: string[] }): Promise<void> {
+export async function writeTestMds(dir: string, ca: TestCa, a: { statements: string[]; allow: string[]; nextUpdate?: string | null }): Promise<void> {
   await mkdir(dir, { recursive: true });
   for (const aaguid of a.statements) {
     const statement = {
@@ -85,7 +85,9 @@ export async function writeTestMds(dir: string, ca: TestCa, a: { statements: str
     await writeFile(join(dir, `${aaguid}.json`), JSON.stringify(statement));
   }
   const lines = a.allow.map((g) => `- \`${g}\` Test key`).join('\n');
-  await writeFile(join(dir, 'README.md'), `# Test metadata\n\n- \`00000000-0000-4000-8000-000000000000\` above the heading: ignored\n\n## Allowlist\n\n${lines}\n`);
+  const next = a.nextUpdate === undefined ? '2099-01-01' : a.nextUpdate;
+  const source = next === null ? '' : `- nextUpdate: ${next}\n\n`;
+  await writeFile(join(dir, 'README.md'), `# Test metadata\n\n${source}- \`00000000-0000-4000-8000-000000000000\` above the heading: ignored\n\n## Allowlist\n\n${lines}\n`);
 }
 
 const FLAG_UP = 0x01;
@@ -117,7 +119,8 @@ export function createSoftAuthenticator(o: {
   attestation?: 'none' | { aaguid: string; ca: TestCa } | { aaguid: string; self: true };
 }): SoftAuthenticator {
   const { privateKey, publicKey } = p256();
-  const credId = randomBytes(32);
+  // 64 bytes, the length of a YubiKey's non-discoverable credential ID (as the server's decoys).
+  const credId = randomBytes(64);
   const jwk = publicKey.export({ format: 'jwk' });
   const cosePublicKey = cborEncode(
     new Map<number, CborValue>([

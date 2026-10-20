@@ -55,6 +55,31 @@ describe('fileAttestationPolicy', () => {
     expect(() => parseAllowlist('# nothing here')).toThrow(/Allowlist/);
   });
 
+  it('M7: warns once at startup when the snapshot is past its nextUpdate, naming only the date', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
+    const a = '11111111-2222-4333-8444-555555555555';
+    await writeTestMds(dir, createTestCa(), { statements: [a], allow: [a], nextUpdate: '2026-11-01' });
+    const warnings: string[] = [];
+    const warn = (line: string) => void warnings.push(line);
+    await fileAttestationPolicy(dir, { clock: () => new Date('2026-10-31T23:59:59Z'), warn }).init();
+    expect(warnings).toEqual([]);
+    await fileAttestationPolicy(dir, { clock: () => new Date('2026-11-01T00:00:00Z'), warn }).init();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('2026-11-01');
+    expect(warnings[0]).not.toContain(dir);
+    expect(warnings[0]).not.toMatch(/BEGIN|[A-Za-z0-9+/]{40}/);
+  });
+
+  it('refuses a README without a nextUpdate line, and the repo snapshot has one', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
+    const a = '11111111-2222-4333-8444-555555555555';
+    await writeTestMds(dir, createTestCa(), { statements: [a], allow: [a], nextUpdate: null });
+    await expect(fileAttestationPolicy(dir).init()).rejects.toThrow(/nextUpdate/);
+    const readme = await readFile(join(SNAPSHOT, 'README.md'), 'utf8');
+    expect(readme).toMatch(/^- nextUpdate: 2026-11-01$/m);
+    expect(readme).toMatch(/Refresh/);
+  });
+
   it('refuses to start when an allowlisted AAGUID has no statement, or a file is misnamed', async () => {
     dir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
     const ca = createTestCa();

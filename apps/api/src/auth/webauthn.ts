@@ -18,7 +18,7 @@ import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
-import { hasCertificateChain } from './attestation.js';
+import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
 import { consumeChallenge, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
@@ -35,6 +35,10 @@ const LABEL_MAX = 60;
 /** base64url of a credential ID (at most 1023 bytes, WebAuthn's limit). */
 const CREDENTIAL_ID = /^[A-Za-z0-9_-]{16,1364}$/;
 const ZERO_AAGUID = '00000000-0000-0000-0000-000000000000';
+/** Never an account ID: the credentials query a decoy runs so it costs what a real lookup costs. */
+const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+/** WebAuthn's defined transports; anything else a client reports is dropped. */
+const KNOWN_TRANSPORTS: ReadonlySet<string> = new Set(['usb', 'nfc', 'ble', 'hybrid', 'internal', 'smart-card']);
 
 const b64url = (b: Uint8Array): string => Buffer.from(b).toString('base64url');
 const failed = (): ApiError => new ApiError(401, 'webauthn-failed');
@@ -245,7 +249,9 @@ async function verifyRegistration(
       requireUserVerification: a.kind === 'passkey',
       supportedAlgorithmIDs: ALGORITHMS,
     });
-  } catch {
+  } catch (e) {
+    // Strict metadata: an attested authenticator outside the snapshot is not allowed for staff or the owner.
+    if (a.accountKind !== 'trader' && isUnknownAuthenticator(e)) throw new ApiError(403, 'method-not-allowed');
     throw failed();
   }
   if (!result.verified) throw failed();
@@ -260,7 +266,7 @@ async function verifyRegistration(
     publicKey: info.credential.publicKey,
     counter: info.credential.counter,
     kind,
-    transports: (info.credential.transports ?? []).filter((t) => typeof t === 'string').slice(0, 8),
+    transports: [...new Set((info.credential.transports ?? []).filter((t) => KNOWN_TRANSPORTS.has(t)))],
     backedUp: info.credentialBackedUp,
     deviceType: info.credentialDeviceType,
     attested,
@@ -408,13 +414,14 @@ function allowed(accountKind: AccountKind, c: { kind: string; attested: boolean 
 // Login routes
 
 /**
- * Decoy credential IDs for a username without usable security keys (P2-I7): HMAC-SHA-256 under
+ * Decoy credential IDs for a username without usable security keys (P2-I7): HMAC under
  * `subkey('decoy')` of `username_key ‖ i` for i < 1 + (first HMAC byte mod 2), so repeated calls
- * for one name are identical and different names differ.
+ * for one name are identical and different names differ. HMAC-SHA-512 rather than the plan's
+ * SHA-256, so each ID is 64 bytes like a YubiKey's non-discoverable credential ID (review M3).
  */
 export function decoyCredentialIds(deps: Pick<Deps, 'config'>, usernameKey: string): Buffer[] {
   const key = subkey(deps.config, 'decoy');
-  const mac = (i: number) => createHmac('sha256', key).update(Buffer.concat([Buffer.from(usernameKey, 'utf8'), Buffer.from([i])])).digest();
+  const mac = (i: number) => createHmac('sha512', key).update(Buffer.concat([Buffer.from(usernameKey, 'utf8'), Buffer.from([i])])).digest();
   const first = mac(0);
   const n = 1 + (first[0]! % 2);
   return Array.from({ length: n }, (_, i) => (i === 0 ? first : mac(i)));
@@ -471,25 +478,23 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     const pendingId = optStr(body, 'pendingId');
     const name = checkUsername(username);
     const nameKey = name.ok ? name.key : nameKeyOf(username);
+    // The same queries for a real account, an unknown name and a malformed one (review M3): an
+    // account lookup ('' matches no username key) and a credentials lookup (NIL_UUID matches none).
+    const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [
+      name.ok ? name.key : '',
+    ]);
+    const found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
+    const withPasskeys = found !== null && found.kind === 'staff' && (await pendingAfterPgp(deps, req, found.id, pendingId));
+    let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
+      (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
+    );
     let account: { id: string; kind: AccountKind } | null = null;
-    let creds: Array<{ credential_id: Buffer; kind: CredentialKind }> = [];
-    if (name.ok) {
-      const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [name.key]);
-      const found = rows[0];
-      if (found && opts.kinds.includes(found.kind)) {
-        const withPasskeys = found.kind === 'staff' && (await pendingAfterPgp(deps, req, found.id, pendingId));
-        creds = (await credentialsOf(deps.db, found.id)).filter(
-          (c) => (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
-        );
-        if (creds.some((c) => c.kind === 'security-key')) account = found;
-        else creds = [];
-      }
-    }
-    if (account === null) creds = decoyCredentialIds(deps, nameKey).map((id) => ({ credential_id: id, kind: 'security-key' as const }));
+    if (found !== null && creds.some((c) => c.kind === 'security-key')) account = found;
+    else creds = decoyCredentialIds(deps, nameKey).map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }));
     const options = await buildAssertionOptions(deps, creds);
     const challengeId = await storeChallenge(deps, req, {
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
-      payload: { mode: 'username' },
+      payload: { mode: 'username', listed: creds.map((c) => b64url(c.credential_id)) },
     });
     return { challengeId, options };
   });
@@ -520,6 +525,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       if (!opts.kinds.includes(row.account_kind)) throw failed();
     }
     assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
+    if (ch.payload.mode !== 'discoverable') assertListed(ch, row);
     return completeLogin(deps, req, reply, {
       account: { id: row.account_id, kind: row.account_kind },
       factor: { method: row.kind, credentialId: b64url(row.credential_id), attested: row.attested },
@@ -547,6 +553,16 @@ export async function webauthnLoginRoutes(app: FastifyInstance, opts: LoginRoute
 
 // ---------------------------------------------------------------------------------------------
 // Sign-up, confirm and add-key routes
+
+/**
+ * The credential must be one the challenge offered (`payload.listed`, review M2): a staff passkey
+ * cannot answer a security-key-only challenge. Checked after `assertCredentialAllowed`, so a kind
+ * the account may never use still reads `method-not-allowed`.
+ */
+function assertListed(ch: ChallengeRow, row: CredentialRow): void {
+  const listed = ch.payload.listed;
+  if (!Array.isArray(listed) || !listed.includes(b64url(row.credential_id))) throw failed();
+}
 
 function sameSession(ch: ChallengeRow, req: FastifyRequest, purpose: string): boolean {
   return ch.purpose === purpose && ch.account_id === req.auth.accountId && ch.session_id === req.auth.sessionId && ch.webauthn_challenge !== null;
@@ -616,7 +632,7 @@ async function confirmStart(req: FastifyRequest) {
   const options = await buildAssertionOptions(deps, creds);
   const challengeId = await storeChallenge(deps, req, {
     accountId: req.auth.accountId, sessionId: req.auth.sessionId, purpose: 'confirm', method: 'webauthn', challenge: options.challenge,
-    payload: { action, actionHash: await actionHash(action) },
+    payload: { action, actionHash: await actionHash(action), listed: creds.map((c) => b64url(c.credential_id)) },
   });
   return { challengeId, options };
 }
@@ -628,6 +644,7 @@ async function confirmFinish(req: FastifyRequest) {
   if (!ch || ch.method !== 'webauthn' || !sameSession(ch, req, 'confirm')) throw expired();
   const row = await verifyAssertion(deps, { accountId: req.auth.accountId, response: body.response, expectedChallenge: ch.webauthn_challenge! });
   assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
+  assertListed(ch, row);
   const action: ConfirmAction = parseConfirmAction(ch.payload.action);
   if ((await actionHash(action)) !== ch.payload.actionHash) throw expired();
   const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });

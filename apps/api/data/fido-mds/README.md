@@ -10,7 +10,8 @@ network fetch, and reads the allowlist from this file: only lines of the form
 
 - URL: https://mds3.fidoalliance.org/ (FIDO Alliance Metadata Service v3 BLOB, a signed JWT)
 - Fetched: 2026-10-18, by hand (the server never fetches it)
-- BLOB serial `no`: 291; `nextUpdate`: 2026-11-01
+- BLOB serial `no`: 291
+- nextUpdate: 2026-11-01
 - SHA-256 of the downloaded BLOB: `702351da86b5c742ab053423ca38d77240b790fe9350d2e2f9187f660f2f5d09`
 - The BLOB's JWT signature and certificate chain were verified with `verifyMDSBlob` from
   @simplewebauthn/server 14.0.3 (FIDO MDS root) before extraction.
@@ -23,8 +24,15 @@ reports contain none of `NOT_FIDO_CERTIFIED`, `REVOKED` or any `*_COMPROMISE` /
 that the image fields (`icon`, `iconDark`, `providerLogoLight`, `providerLogoDark`) are removed.
 Preview and release-candidate models (`NOT_FIDO_CERTIFIED`) are left out.
 
+## Refresh
+
+Refresh the snapshot at least by the BLOB's `nextUpdate` (the `- nextUpdate:` line above), and at
+once when FIDO publishes a status change (revocation, compromise) for an allowlisted model. From
+that date on, the API writes a warning line to stderr at every start until the snapshot is
+refreshed; it keeps running on the old snapshot.
+
 To refresh: download the BLOB, verify it the same way, re-run the extraction, update this file
-(date, serial, SHA-256, allowlist) and review the diff of the statements' root certificates.
+(date, serial, `nextUpdate`, SHA-256, allowlist) and review the diff of the statements' root certificates.
 
 ## Allowlist
 
