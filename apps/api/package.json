@@ -18,6 +18,7 @@
     "argon2": "0.45.1",
     "fastify": "5.12.5",
     "openpgp": "6.3.2",
+    "otpauth": "9.5.2",
     "pg": "8.23.1"
   },
   "devDependencies": {

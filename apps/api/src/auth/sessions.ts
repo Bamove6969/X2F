@@ -66,7 +66,8 @@ function deadline(createdAt: Date, now: Date, p: { idleMs: number; absoluteMs: n
 /**
  * Starts a session after a successful login or register. Always mints a new token (a presented
  * cookie is never reused, so a planted one cannot be fixed); a session cookie the request carried
- * is revoked; the device is trusted; later logins (not the first session) add an alert.
+ * is revoked; the device is trusted; later logins (not the first session) add an alert. A
+ * recovery session stores `holdUntil` as its hold (Task 9's TOTP backup login).
  */
 export async function startSession(
   deps: Pick<Deps, 'db' | 'clock'>,
@@ -107,12 +108,14 @@ export async function startSession(
         ]);
       }
       const { rows } = await client.query<{ id: string }>(
-        `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at)
-         values ($1, $2, $3, $4, $5, $6, $6, $7) returning id`,
+        `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until)
+         values ($1, $2, $3, $4, $5, $6, $6, $7, $8) returning id`,
         [
           a.accountId, tokenHash(token), a.level, label,
           a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
           now, expiresAt,
+          // Task 9: only a recovery session carries a hold (`assertHoldPassed`).
+          a.level === 'recovery' ? (a.holdUntil ?? null) : null,
         ],
       );
       sessionId = rows[0]!.id;
