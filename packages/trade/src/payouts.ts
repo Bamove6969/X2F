@@ -7,7 +7,7 @@
  * receiving the trade's XMR and bears the network fee; the X2F fee output is
  * always exactly feeFor(amount).
  *
- * Extra XMR: a trade funded above its amount before "I've paid" grows to the
+ * Extra XMR: a trade funded above its amount before "I've paid" grows, once releasable, to the
  * funded amount within the offer's limits (the state machine does that, so the
  * amount here is already the grown one). Whatever is left above
  * sellerFundsAtomic (dust, above the offer maximum, or after "I've paid") goes
