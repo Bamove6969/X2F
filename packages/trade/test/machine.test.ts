@@ -455,7 +455,7 @@ describe('release and settling', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured());
     const lapsed = run([[chain(10n, 10n, 10), 'system', 3], [{ type: 'tick' }, 'system', 32]], funding());
     const disputed = apply(paid(), { type: 'open-dispute' }, 'seller', at(41));
-    for (const t of [secured(), settling(), disputed, paid(), rr, lapsed]) {
+    for (const t of [funding(), securing(), secured(), settling(), disputed, paid(), rr, lapsed]) {
       expect(apply(t, { type: 'settled', kind: 'release', txHash: hash }, 'system', at(200)).state).toBe('released');
       for (const kind of ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'] as const) {
         const r = apply(t, { type: 'settled', kind, txHash: hash }, 'system', at(200));
@@ -464,9 +464,38 @@ describe('release and settling', () => {
         expect(r.closedAt).toEqual(at(200));
       }
     }
-    for (const t of [taken(), funding(), securing(), refunded()]) {
+    for (const t of [taken(), refunded()]) {
       expect(rule(() => apply(t, { type: 'settled', kind: 'release', txHash: hash }, 'system', at(200)))).toBe('wrong-state');
     }
+  });
+
+  test('reproduced: a buyer-cancel from funding times out back to funding, then its refund lands and is recorded', () => {
+    const part = apply(funding(), chain(FUNDS / 2n, FUNDS / 2n, 10), 'system', at(5));
+    const bc = apply(part, { type: 'buyer-cancel' }, 'buyer', at(10)); // settleBy 25
+    expect(bc.settleFrom).toBe('funding');
+    const back = apply(bc, { type: 'tick' }, 'system', at(26));
+    expect(back.state).toBe('funding');
+    const r = apply(back, { type: 'settled', kind: 'buyer-cancel', txHash: 'bb'.repeat(32) }, 'system', at(28));
+    expect(r.state).toBe('refunded');
+    expect(r.settling).toBe('buyer-cancel');
+    expect(r.txHash).toBe('bb'.repeat(32));
+    expect(r.closedAt).toEqual(at(28));
+    // The buyer keeps the dispute-after-refund window (spec 2.3).
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(60)).state).toBe('disputed');
+  });
+
+  test('reproduced: a buyer-cancel from securing times out back to securing, then its refund lands and is recorded', () => {
+    const bc = apply(securing(), { type: 'buyer-cancel' }, 'buyer', at(6)); // not releasable: settleBy waits
+    expect(bc.settleFrom).toBe('securing');
+    const ready = apply(bc, chain(FUNDS, FUNDS, 10), 'system', at(20)); // settleBy 35
+    expect(ready.settleBy).toEqual(at(35));
+    const back = apply(ready, { type: 'tick' }, 'system', at(36));
+    expect(back.state).toBe('securing');
+    const r = apply(back, { type: 'settled', kind: 'buyer-cancel', txHash: 'bb'.repeat(32) }, 'system', at(40));
+    expect(r.state).toBe('refunded');
+    expect(r.txHash).toBe('bb'.repeat(32));
+    expect(r.closedAt).toEqual(at(40));
+    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(41)).state).toBe('disputed');
   });
 
   test('reproduced: a release that lands after settleBy returned the trade to paid is still recorded', () => {

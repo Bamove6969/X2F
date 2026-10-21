@@ -134,8 +134,8 @@ const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 
 /** States from which the buyer's cancel becomes a refund settlement. */
 const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured', 'paid', 'refund_requested'];
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
-/** States in which a settlement seen on chain is recorded: every open state with a funded escrow. */
-const SETTLED_FROM: readonly TradeState[] = ['secured', 'settling', 'disputed', 'paid', 'refund_requested', 'lapsed'];
+/** States in which a settlement seen on chain is recorded: every open state an escrow can hold coins in. */
+const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'refund_requested', 'lapsed'];
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** Client events still accepted during maintenance: the buyer's own payment and cancel. */
