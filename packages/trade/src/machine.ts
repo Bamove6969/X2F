@@ -327,9 +327,11 @@ function onResume(t: Trade, now: Date): Trade {
   // Every deadline still running at the pause moves by the pause's length. One set during
   // the pause was counted from pausedAt (see `base`), so it now runs from the resume.
   const move = (d: Date | null): Date | null => (d !== null && d.getTime() >= pausedAt ? new Date(d.getTime() + shift) : d);
-  // The final alert is a timestamp, but the auto-refund window it opens is a deadline:
-  // shift it when that window was still open at the pause, so finalAlertAt > payBy still holds.
-  const alertOpen = t.finalAlertAt !== null && addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime() >= pausedAt;
+  // The final alert and the lapse are timestamps, but each opens a window that is a deadline
+  // (the auto-refund window, the lapse co-sign window): shift the timestamp when its window
+  // was still open at the pause, so finalAlertAt > payBy still holds and the co-sign timer is frozen too.
+  const opens = (d: Date | null, windowMin: number): Date | null =>
+    d !== null && addMin(d, windowMin).getTime() >= pausedAt ? new Date(d.getTime() + shift) : d;
   return {
     ...t,
     pausedAt: null,
@@ -338,7 +340,8 @@ function onResume(t: Trade, now: Date): Trade {
     payBy: move(t.payBy),
     confirmBy: move(t.confirmBy),
     settleBy: move(t.settleBy),
-    finalAlertAt: alertOpen && t.finalAlertAt !== null ? new Date(t.finalAlertAt.getTime() + shift) : t.finalAlertAt,
+    finalAlertAt: opens(t.finalAlertAt, TIMERS.finalAlertMin),
+    lapsedAt: opens(t.lapsedAt, TIMERS.lapseCosignMin),
   };
 }
 

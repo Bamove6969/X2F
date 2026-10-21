@@ -673,6 +673,29 @@ describe('pause and resume (P3-I19)', () => {
     expect(r.finalAlertAt!.getTime()).toBeGreaterThan(r.payBy!.getTime());
   });
 
+  test('the final-alert time does not move once its window had closed before the pause (mutant M3)', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window 121 → 136
+    const closed = apply(apply(rr, { type: 'pause' }, 'system', at(136, 1)), { type: 'resume' }, 'system', at(160));
+    expect(closed.finalAlertAt).toEqual(at(121));
+    const edge = apply(apply(rr, { type: 'pause' }, 'system', at(136)), { type: 'resume' }, 'system', at(160));
+    expect(edge.finalAlertAt).toEqual(at(145));
+    const none = apply(apply(secured(), { type: 'pause' }, 'system', at(40)), { type: 'resume' }, 'system', at(60));
+    expect(none.finalAlertAt).toBeNull();
+  });
+
+  test('lapsedAt moves with the pause while the lapse co-sign window is open, not after (M1)', () => {
+    const lapsed = run([[chain(10n, 10n, 10), 'system', 3], [{ type: 'tick' }, 'system', 32]], funding()); // co-sign window 32 → 62
+    expect(lapsed.lapsedAt).toEqual(at(32));
+    const open = apply(apply(lapsed, { type: 'pause' }, 'system', at(40)), { type: 'resume' }, 'system', at(60));
+    expect(open.lapsedAt).toEqual(at(52));
+    const edge = apply(apply(lapsed, { type: 'pause' }, 'system', at(62)), { type: 'resume' }, 'system', at(70));
+    expect(edge.lapsedAt).toEqual(at(40));
+    const closed = apply(apply(lapsed, { type: 'pause' }, 'system', at(62, 1)), { type: 'resume' }, 'system', at(90));
+    expect(closed.lapsedAt).toEqual(at(32));
+    const none = apply(apply(secured(), { type: 'pause' }, 'system', at(40)), { type: 'resume' }, 'system', at(60));
+    expect(none.lapsedAt).toBeNull();
+  });
+
   test('a deadline that already passed when paused does not move; one exactly at the pause does', () => {
     const f = funding(); // fundBy 31
     const r = apply(apply(f, { type: 'pause' }, 'system', at(31)), { type: 'resume' }, 'system', at(41));

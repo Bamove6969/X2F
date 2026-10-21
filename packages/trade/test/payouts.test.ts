@@ -140,6 +140,15 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
     expect(() => payoutsFor({ ...args('release', 'buyer', AMOUNT), sellerFundsAtomic: AMOUNT + FEE_AMOUNT })).toThrow(RangeError);
   });
 
+  test('sellerFunds below the trade are refused, even when the balance would cover a release (mutant M3)', () => {
+    const err = new RangeError('seller funds do not match the trade');
+    // Without the check these would pay a made-up "surplus" to the seller out of the buyer's XMR.
+    for (const kind of KINDS) {
+      expect(() => payoutsFor({ ...args(kind, 'buyer', AMOUNT), sellerFundsAtomic: AMOUNT - 1n })).toThrow(err);
+      expect(() => payoutsFor({ ...args(kind, 'seller', 1_262_500_000_000n), sellerFundsAtomic: AMOUNT })).toThrow(err);
+    }
+  });
+
   test('a negative balance', () => {
     expect(() => payoutsFor(args('auto-refund', 'buyer', -1n))).toThrow(RangeError);
   });
