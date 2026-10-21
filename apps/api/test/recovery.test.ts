@@ -1,7 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { normalizeRecoveryCode } from '@x2f/accounts';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY } from '../src/auth/recovery.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
@@ -96,6 +97,32 @@ async function alerts(accountId: string, kind: string) {
   return rows.map((r) => r.detail);
 }
 
+/**
+ * Runs `n` copies of `run` at once and holds each one just after its query starting with `prefix`
+ * until all `n` have made it, so they truly race on whatever comes next.
+ */
+async function racing<T>(prefix: string, n: number, run: () => Promise<T>): Promise<T[]> {
+  const query = deps.db.query.bind(deps.db) as (text: string, values?: unknown[]) => Promise<unknown>;
+  let reached = 0;
+  let release!: () => void;
+  const barrier = new Promise<void>((r) => { release = r; });
+  const spy = vi.spyOn(deps.db, 'query').mockImplementation((async (text: string, values?: unknown[]) => {
+    const result = await query(text, values);
+    if (text.startsWith(prefix)) {
+      if (++reached === n) release();
+      await barrier;
+    }
+    return result;
+  }) as never);
+  try {
+    const results = await Promise.all(Array.from({ length: n }, run));
+    expect(reached).toBe(n);
+    return results;
+  } finally {
+    spy.mockRestore();
+  }
+}
+
 describe('POST /v1/account/recovery-codes', () => {
   it('returns 10 distinct codes in the trade-code format, stored only as hashes', async () => {
     const { id } = await account();
@@ -104,7 +131,8 @@ describe('POST /v1/account/recovery-codes', () => {
     expect(new Set(codes).size).toBe(10);
     for (const c of codes) expect(c).toMatch(CODE);
     const { rows } = await deps.db.query<{ code_hash: Buffer }>('select code_hash from recovery_codes where account_id = $1', [id]);
-    expect(rows.map((r) => r.code_hash.toString('hex')).sort()).toEqual(codes.map((c) => sha(c).toString('hex')).sort());
+    // Hashed in the normalized form that login compares.
+    expect(rows.map((r) => r.code_hash.toString('hex')).sort()).toEqual(codes.map((c) => sha(normalizeRecoveryCode(c)!).toString('hex')).sort());
   });
 
   it('needs a confirm token outside onboarding and a full session', async () => {
@@ -209,7 +237,8 @@ describe('backup login with a recovery code', () => {
   it('two parallel uses of one code: exactly one logs in', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
-    const results = await Promise.all([0, 1, 2].map(() => backup(new Browser(app), username, 'recovery-code', codes[0]!)));
+    // All three find the code unused before any of them marks it, so only the guarded update decides.
+    const results = await racing('select id from recovery_codes', 3, () => backup(new Browser(app), username, 'recovery-code', codes[0]!));
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401, 401]);
   });
 
@@ -318,7 +347,8 @@ describe('backup login with TOTP (P2-I1)', () => {
     const { id, username } = await account();
     const secret = await withTotp(id);
     const code = codeAt(secret, now);
-    const results = await Promise.all([0, 1, 2].map(() => backup(new Browser(app), username, 'totp', code)));
+    // All three read the secret and match the code before any of them moves `last_step`.
+    const results = await racing('select secret_enc from totp', 3, () => backup(new Browser(app), username, 'totp', code));
     expect(results.map((r) => r.statusCode).sort()).toEqual([200, 401, 401]);
   });
 
