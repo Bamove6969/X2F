@@ -28,7 +28,6 @@ import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { requestOrigin } from './origin.js';
-import { assertHoldPassed } from './recovery.js';
 import { requireSession, startSession } from './sessions.js';
 
 // ---------------------------------------------------------------------------------------------
@@ -803,7 +802,6 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
       bodyLimit: PGP_BODY_LIMIT,
       preHandler: [
         requireSession({ allowRecovery: true }),
-        assertHoldPassed,
         inspectNewKey,
         requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
       ],

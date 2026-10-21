@@ -1,6 +1,7 @@
+import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { hashPassword } from '../src/auth/password.js';
@@ -41,6 +42,7 @@ afterAll(async () => {
 beforeEach(() => {
   // Each test starts an hour later (on a step boundary): budgets refill and throttle streaks end.
   setNow(new Date(T0.getTime() + ++step * HOUR));
+  vi.restoreAllMocks();
 });
 
 const name = (p = 'totp') => `${p}${String(++n).padStart(4, '0')}`;
@@ -99,25 +101,58 @@ describe('TOTP enrolment', () => {
     const { rows } = await deps.db.query<{ secret_enc: Buffer }>('select secret_enc from totp where account_id = $1', [id]);
     expect(rows[0]!.secret_enc.indexOf(raw)).toBe(-1);
     for (const f of forms) expect(rows[0]!.secret_enc.toString('latin1')).not.toContain(f);
-    expect(Buffer.from(openSecret(deps, rows[0]!.secret_enc))).toEqual(raw);
+    expect(Buffer.from(openSecret(deps, id, rows[0]!.secret_enc))).toEqual(raw);
     const { rows: alerts } = await deps.db.query('select detail from alerts where account_id = $1 and kind = $2', [id, 'login-method-added']);
     expect(alerts.map((r) => r.detail)).toEqual([{ method: 'totp' }]);
   });
 
-  it('refuses a wrong code, a used challenge and another session', async () => {
+  it('lets a wrong code be retried until the challenge is used or expires; refuses another session', async () => {
     const { b } = await trader();
     const s = await enrolStart(b);
     const wrong = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: wrongCodeAt(s.secret, now) });
     expect(wrong.statusCode).toBe(401);
     expect(wrong.json()).toEqual({ error: 'code-invalid' });
+    const right = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
+    expect(right.statusCode).toBe(200);
     const again = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
     expect(again.json()).toEqual({ error: 'challenge-expired' });
+
+    const late = await enrolStart(b);
+    setNow(at(5 * 60_000));
+    const expired = await b.post('/v1/account/totp/finish', { challengeId: late.challengeId, code: codeAt(late.secret, now) });
+    expect(expired.json()).toEqual({ error: 'challenge-expired' });
 
     const s2 = await enrolStart(b);
     const other = await trader();
     const res = await other.b.post('/v1/account/totp/finish', { challengeId: s2.challengeId, code: codeAt(s2.secret, now) });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'challenge-expired' });
+  });
+
+  it('keeps at most 3 open enrolments per session, replacing the oldest', async () => {
+    const { b } = await trader();
+    const starts = [await enrolStart(b), await enrolStart(b), await enrolStart(b), await enrolStart(b)];
+    const { rows } = await deps.db.query(
+      `select 1 from challenges where purpose = 'add-totp' and used_at is null and session_id = (
+         select session_id from challenges where id = $1)`,
+      [starts[0]!.challengeId],
+    );
+    expect(rows).toHaveLength(3);
+    const first = await b.post('/v1/account/totp/finish', { challengeId: starts[0]!.challengeId, code: codeAt(starts[0]!.secret, now) });
+    expect(first.json()).toEqual({ error: 'challenge-expired' });
+    const second = await b.post('/v1/account/totp/finish', { challengeId: starts[1]!.challengeId, code: codeAt(starts[1]!.secret, now) });
+    expect(second.statusCode).toBe(200);
+  });
+
+  it('a sealed secret is bound to its account: swapped rows fail closed', async () => {
+    const a = await trader();
+    const b = await trader();
+    const secretA = await enrol(a.b);
+    await enrol(b.b);
+    setNow(at(STEP_MS));
+    await deps.db.query('update totp set secret_enc = (select secret_enc from totp where account_id = $1) where account_id = $2', [a.id, b.id]);
+    expect(await verifyTotp(deps, b.id, codeAt(secretA, now))).toBe(false);
+    expect(await verifyTotp(deps, a.id, codeAt(secretA, now))).toBe(true);
   });
 
   it('needs a confirm token outside onboarding', async () => {
@@ -224,6 +259,11 @@ describe('password login with TOTP (second factor)', () => {
     const slowed = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
     expect(slowed.statusCode).toBe(429);
     expect(slowed.json()).toMatchObject({ error: 'slow-down' });
+    // A refused check does not use up the pending login: after the wait it still finishes.
+    setNow(at(3_000));
+    const later = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
+    expect(later.statusCode).toBe(200);
+    expect(later.json()).toEqual({ status: 'ok' });
 
     // PGP is never throttled by the totp key. TODO(Task 8 merge): also log in with a passkey here.
     const owner = new Browser(app);
@@ -244,13 +284,22 @@ describe('password login with TOTP (second factor)', () => {
 
 describe('POST /v1/confirm/password with TOTP', () => {
   it('requires the current code once TOTP is enrolled', async () => {
-    const { b } = await trader();
+    const { id, b } = await trader();
     const secret = await enrol(b);
     setNow(at(STEP_MS));
     const action = { kind: 'set-password' };
+    // No code: refused before any Argon2 work and counted as a password failure, so neither the
+    // answer nor the throttle tells whether the password was right.
+    const verify = vi.spyOn(argon2, 'verify');
     const missing = await b.post('/v1/confirm/password', { password: GOOD, action });
     expect(missing.statusCode).toBe(401);
     expect(missing.json()).toEqual({ error: 'credentials-invalid' });
+    expect(verify).not.toHaveBeenCalled();
+    const { rows } = await deps.db.query<{ key: string; failures: number }>(
+      "select key, failures from login_throttle where key like 'password:' || $1 || ':%'",
+      [id],
+    );
+    expect(rows.map((r) => r.failures)).toEqual([1]);
     const wrong = await b.post('/v1/confirm/password', { password: GOOD, totp: wrongCodeAt(secret, now), action });
     expect(wrong.json()).toEqual({ error: 'credentials-invalid' });
     const ok = await b.post('/v1/confirm/password', { password: GOOD, totp: codeAt(secret, now), action });
