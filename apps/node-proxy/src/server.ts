@@ -19,11 +19,19 @@ export interface NodeProxyOptions {
   timeoutMs?: number;
   /** Largest request body accepted (default 1 MiB). */
   maxBodyBytes?: number;
-  /** Upstream calls in flight at once; beyond this the proxy answers 503 (default 256). */
+  /** Calls the proxy holds at once, waiting or at the node; beyond this it answers 503 (default 256). */
   maxInFlight?: number;
+  /**
+   * Calls open at the node at once (default 20). Every wallet reaches the node from the proxy's one
+   * address, and monerod caps connections per address (--rpc-max-connections-per-private-ip 25,
+   * -per-public-ip 3, --rpc-max-connections 100 by default), so the proxy queues the rest. A call that
+   * waits longer than timeoutMs for a slot gets 503 `busy`. Keep this below the node's per-IP limit
+   * (docs/dev-setup.md).
+   */
+  maxUpstream?: number;
 }
 
-export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFlight: 256 } as const;
+export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFlight: 256, maxUpstream: 20 } as const;
 
 /**
  * json_rpc methods a wallet may call: the plan's list plus the older names monerod accepts for the
@@ -154,7 +162,34 @@ export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
   const webOrigin = checkOrigin(o.webOrigin);
   const timeoutMs = o.timeoutMs ?? DEFAULTS.timeoutMs;
   const maxInFlight = o.maxInFlight ?? DEFAULTS.maxInFlight;
+  const maxUpstream = o.maxUpstream ?? DEFAULTS.maxUpstream;
   let inFlight = 0;
+
+  // A counting semaphore around the node: at most maxUpstream fetches (and so connections) open.
+  let upstreamOpen = 0;
+  const waiting: (() => void)[] = [];
+  function acquireUpstream(): Promise<void> {
+    if (upstreamOpen < maxUpstream) {
+      upstreamOpen += 1;
+      return Promise.resolve();
+    }
+    return new Promise((resolve, reject) => {
+      const grant = (): void => {
+        clearTimeout(timer);
+        resolve(); // the releasing call's slot passes straight to this one
+      };
+      const timer = setTimeout(() => {
+        waiting.splice(waiting.indexOf(grant), 1);
+        reject(new Refusal(503, 'busy'));
+      }, timeoutMs);
+      waiting.push(grant);
+    });
+  }
+  function releaseUpstream(): void {
+    const next = waiting.shift();
+    if (next) next();
+    else upstreamOpen -= 1;
+  }
 
   const app = Fastify({
     // No logger at all: nothing about requests, callers or their addresses is ever written (spec 4.1).
@@ -198,11 +233,18 @@ export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
     const body = kind === 'rpc' ? rpcBody(raw) : kind === 'json' ? jsonBody(raw) : new Uint8Array(raw);
     if (inFlight >= maxInFlight) throw new Refusal(503, 'busy');
     inFlight += 1;
+    try {
+      await acquireUpstream();
+    } catch (e) {
+      inFlight -= 1;
+      throw e;
+    }
     let released = false;
     const release = (): void => {
       if (!released) {
         released = true;
         inFlight -= 1;
+        releaseUpstream();
         clearTimeout(backstop);
       }
     };
@@ -213,7 +255,9 @@ export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
     try {
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
-        headers: { 'content-type': kind === 'bin' ? 'application/octet-stream' : 'application/json' },
+        // No keep-alive: fetch's pool opens extra connections beside idle ones (measured 38 open for
+        // 20 calls at once), and monerod counts every one against the proxy's address.
+        headers: { 'content-type': kind === 'bin' ? 'application/octet-stream' : 'application/json', connection: 'close' },
         ...(body === undefined ? {} : { body }),
         redirect: 'error',
         signal: AbortSignal.timeout(timeoutMs),

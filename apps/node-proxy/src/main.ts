@@ -21,6 +21,7 @@ const optional = Object.fromEntries(
     timeoutMs: int('NODE_PROXY_TIMEOUT_MS'),
     maxBodyBytes: int('NODE_PROXY_MAX_BODY_BYTES'),
     maxInFlight: int('NODE_PROXY_MAX_IN_FLIGHT'),
+    maxUpstream: int('NODE_PROXY_MAX_UPSTREAM'),
   }).filter(([, v]) => v !== undefined),
 );
 

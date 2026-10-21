@@ -1,7 +1,7 @@
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildNodeProxy, type NodeProxyOptions } from '../src/server.js';
+import { buildNodeProxy, DEFAULTS, type NodeProxyOptions } from '../src/server.js';
 
 const WEB = 'https://x2f.example';
 
@@ -17,6 +17,9 @@ interface Upstream {
   seen: Seen[];
   /** Replaces the default handler (200, echoes a fixed reply). */
   handle: ((s: Seen, res: ServerResponse) => void) | undefined;
+  /** Most requests in progress at once, and most TCP connections open at once. */
+  maxActive: number;
+  maxSockets: number;
 }
 
 const servers: Server[] = [];
@@ -31,8 +34,13 @@ afterEach(async () => {
 });
 
 async function upstream(): Promise<Upstream> {
-  const u: Upstream = { url: '', seen: [], handle: undefined };
+  const u: Upstream = { url: '', seen: [], handle: undefined, maxActive: 0, maxSockets: 0 };
+  let active = 0;
+  let sockets = 0;
   const server = createServer((req, res) => {
+    active += 1;
+    u.maxActive = Math.max(u.maxActive, active);
+    res.once('close', () => (active -= 1));
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
@@ -47,6 +55,11 @@ async function upstream(): Promise<Upstream> {
         res.end(JSON.stringify({ id: '0', jsonrpc: '2.0', result: { height: 123, status: 'OK' } }));
       }
     });
+  });
+  server.on('connection', (socket) => {
+    sockets += 1;
+    u.maxSockets = Math.max(u.maxSockets, sockets);
+    socket.once('close', () => (sockets -= 1));
   });
   servers.push(server);
   await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
@@ -146,6 +159,7 @@ describe('node proxy: forwarding', () => {
     });
     const h = up.seen[0]?.headers ?? {};
     expect(h['content-type']).toBe('application/json');
+    expect(h.connection).toBe('close');
     expect(h.cookie).toBeUndefined();
     expect(h['x-forwarded-for']).toBeUndefined();
     expect(h.authorization).toBeUndefined();
@@ -234,6 +248,32 @@ describe('node proxy: over a real socket', () => {
       client.destroy();
       stuck.mockRestore();
     }
+  });
+
+  it('answers 503 busy to a call that waits for an upstream slot longer than timeoutMs', async () => {
+    const { app, up } = await proxy({ maxUpstream: 1, timeoutMs: 200 });
+    // The only upstream slot is held past timeoutMs by a reply that never ends (freed by the backstop).
+    const stuck = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () =>
+      new Response(new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => undefined) }), { status: 200 }),
+    );
+    const port = await listen(app);
+    const client = request({ host: '127.0.0.1', port, path: '/getblocks.bin', method: 'POST', headers: { 'content-length': '1' } });
+    client.on('error', () => undefined);
+    client.end(Buffer.from([1]));
+    try {
+      while (stuck.mock.calls.length === 0) await new Promise((r) => setTimeout(r, 5));
+      const started = Date.now();
+      const queued = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
+      expect(queued.statusCode).toBe(503);
+      expect(queued.json()).toEqual({ error: 'busy' });
+      expect(Date.now() - started).toBeGreaterThanOrEqual(190);
+      expect(up.seen).toHaveLength(0);
+    } finally {
+      client.destroy();
+      stuck.mockRestore();
+    }
+    const after = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
+    expect(after.statusCode).toBe(200);
   });
 
   it('forwards a body sent with no content type', async () => {
@@ -379,6 +419,26 @@ describe('node proxy: refusals (fail closed)', () => {
     expect((await first).statusCode).toBe(200);
     const third = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
     expect(third.statusCode).toBe(200);
+  });
+
+  it('keeps at most maxUpstream calls open at the node and queues the rest (monerod caps connections per IP)', async () => {
+    expect(DEFAULTS.maxUpstream).toBe(20);
+    for (const o of [{}, { maxUpstream: 3 }]) {
+      const cap = o.maxUpstream ?? DEFAULTS.maxUpstream;
+      const { app, up } = await proxy(o);
+      up.handle = (_s, res) => {
+        setTimeout(() => {
+          res.writeHead(200, { 'content-type': 'application/json' });
+          res.end('{}');
+        }, 20);
+      };
+      const n = 3 * cap + 5;
+      const rs = await Promise.all(Array.from({ length: n }, () => app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' })));
+      expect(rs.map((r) => r.statusCode)).toEqual(Array<number>(n).fill(200));
+      expect(up.seen).toHaveLength(n);
+      expect(up.maxActive, `cap ${cap}`).toBe(cap);
+      expect(up.maxSockets, `cap ${cap}`).toBeLessThanOrEqual(cap);
+    }
   });
 
   it('refuses bad options at build time', () => {
