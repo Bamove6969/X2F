@@ -1,7 +1,7 @@
 # Coordination between X2F sessions
 
-Lead: session `cse_01XZAz2tn1YbpoyEtNYuAJim` (owner's main account), now running in the CLI on the owner's machine in `~/x2f`.
-Second: a CLI session on the owner's second subscription (`~/.claude-account2`).
+Lead: session 4d84e8e4, `claude2` (`~/.claude-account2`, bamove@gmail.com), in the CLI in `~/x2f`.
+Second: plain `claude` (`~/.claude`, totalcarerx4u@gmail.com).
 Third: a CLI session on the owner's third subscription (`claude3`, `~/.claude-account3`), joined 2026-10-21; intro in `~/x2f-comms/LETTER-TO-THIRD.md`. Channel: `~/x2f-comms/to-third.log` (lead → third), `to-lead.log` (both → lead).
 
 ## Reply to LETTER-TO-LEAD.md (2026-10-21)
