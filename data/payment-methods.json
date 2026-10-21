@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers.",
+ "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md.",
  "methods": [
   {
    "id": "UPHOLD",
@@ -23,15 +23,8 @@
    "verified": false
   },
   {
-   "id": "PERFECT_MONEY",
-   "name": "Perfect Money",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
    "id": "SEPA",
-   "name": "SEPA",
+   "name": "SEPA bank transfer",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -136,7 +129,7 @@
   },
   {
    "id": "US_POSTAL_MONEY_ORDER",
-   "name": "US Postal money order",
+   "name": "USPS money order",
    "group": "Cash & money orders",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -199,7 +192,7 @@
   },
   {
    "id": "ADVANCED_CASH",
-   "name": "Advcash",
+   "name": "Volet (formerly Advcash)",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -255,7 +248,7 @@
   },
   {
    "id": "UPI",
-   "name": "UPI",
+   "name": "UPI (India)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -283,7 +276,7 @@
   },
   {
    "id": "PIX",
-   "name": "PIX",
+   "name": "Pix",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -317,13 +310,6 @@
    "verified": false
   },
   {
-   "id": "CELPAY",
-   "name": "CelPay",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
    "id": "MONESE",
    "name": "Monese",
    "group": "Payment apps",
@@ -332,7 +318,7 @@
   },
   {
    "id": "MPESA",
-   "name": "M-Pesa",
+   "name": "M-PESA",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -347,13 +333,6 @@
   {
    "id": "TIKKIE",
    "name": "Tikkie",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
-   "id": "VERSE",
-   "name": "Verse",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -374,14 +353,14 @@
   },
   {
    "id": "ACH_TRANSFER",
-   "name": "Bank transfer (ACH)",
+   "name": "ACH bank transfer (US)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
   },
   {
    "id": "DOMESTIC_WIRE_TRANSFER",
-   "name": "Domestic wire transfer",
+   "name": "Domestic wire transfer (US)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -409,7 +388,7 @@
   },
   {
    "id": "PAYSAFE",
-   "name": "Paysafecard",
+   "name": "PaysafeCard",
    "group": "Gift cards & vouchers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -423,7 +402,7 @@
   },
   {
    "id": "VIPPS_MOBILEPAY",
-   "name": "Vipps MobilePay",
+   "name": "Vipps / MobilePay",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -437,7 +416,7 @@
   },
   {
    "id": "NIP",
-   "name": "NIP (Nigeria)",
+   "name": "NIBSS Instant Payment (NIP, Nigeria)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -451,7 +430,7 @@
   },
   {
    "id": "QRIS",
-   "name": "QRIS",
+   "name": "QRIS (Indonesia)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -514,7 +493,7 @@
   },
   {
    "id": "SBP",
-   "name": "SBP (Russia)",
+   "name": "SBP — Faster Payments System (Russia)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false,
@@ -545,7 +524,7 @@
   },
   {
    "id": "KASPI",
-   "name": "Kaspi",
+   "name": "Kaspi.kz (Kaspi Gold)",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
