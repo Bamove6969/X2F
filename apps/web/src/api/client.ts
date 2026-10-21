@@ -6,6 +6,7 @@ import { useMemo } from 'react';
  */
 export class ApiCallError extends Error {
   readonly status: number;
+  // TODO(Plan 2 auth-client): type as `ApiErrorCode` and use `AuthApiError` once @x2f/auth-client lands.
   readonly code: string;
   readonly detail?: string;
   readonly retryAfterSeconds?: number;
@@ -50,11 +51,25 @@ export function setNavigator(navigate: Go | null, current?: () => Where): void {
   where = current ?? browserWhere;
 }
 
+export const DEFAULT_RETURN = '/sell';
+
+/**
+ * A `returnTo` value that can only lead back into this app: a path starting with exactly one '/',
+ * with no '\\' and no control characters (browsers drop tabs and newlines, so "/\\t/evil.com"
+ * would become "//evil.com"). Anything else, including another origin or a `javascript:` URL,
+ * becomes DEFAULT_RETURN. Use it both when building and when following a `returnTo`.
+ */
+export function safeReturnTo(raw: string | null | undefined): string {
+  if (typeof raw !== 'string' || !raw.startsWith('/') || raw.startsWith('//')) return DEFAULT_RETURN;
+  if (raw.includes('\\') || /[\u0000-\u001f\u007f]/.test(raw)) return DEFAULT_RETURN;
+  return raw;
+}
+
 /** Sends the page to `pathname` (with `returnTo` = here), unless it is already there. */
 function redirect(pathname: string, query: string): void {
   const here = where();
   if (here.pathname === pathname) return;
-  const returnTo = encodeURIComponent(here.pathname + here.search);
+  const returnTo = encodeURIComponent(safeReturnTo(here.pathname + here.search));
   go(`${pathname}?${query}${query ? '&' : ''}returnTo=${returnTo}`);
 }
 

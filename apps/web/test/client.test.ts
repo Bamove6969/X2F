@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiCallError, api, serverClock, setNavigator } from '../src/api/client.js';
+import { ApiCallError, api, safeReturnTo, serverClock, setNavigator } from '../src/api/client.js';
 
 function respond(status: number, body: unknown): typeof fetch {
   return vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
@@ -90,5 +90,41 @@ describe('serverClock', () => {
 
   it('refuses an unreadable server time', () => {
     expect(() => serverClock('soon')).toThrow(/server time/);
+  });
+});
+
+describe('safeReturnTo', () => {
+  it.each([
+    '//evil.com',
+    '//evil.com/sell',
+    '/\\evil.com',
+    '/sell\\..\\x',
+    'https://evil.com',
+    'javascript:alert(1)',
+    'JavaScript:alert(1)',
+    'sell',
+    '',
+    ' /sell',
+    '/\t/evil.com',
+    '/\n/evil.com',
+  ])('refuses %j and falls back to /sell', (raw) => {
+    expect(safeReturnTo(raw)).toBe('/sell');
+  });
+
+  it('refuses a missing value', () => {
+    expect(safeReturnTo(null)).toBe('/sell');
+    expect(safeReturnTo(undefined)).toBe('/sell');
+  });
+
+  it.each(['/sell', '/sell/zelle?sort=rate', '/trade/ABCD-EFGH-JKMN-PQRS', '/wallets?add=1#x'])('keeps the in-app path %j', (raw) => {
+    expect(safeReturnTo(raw)).toBe(raw);
+  });
+
+  it('a redirect never carries an unsafe returnTo', async () => {
+    const go = vi.fn();
+    setNavigator(go, () => ({ pathname: '//evil.com', search: '' }));
+    vi.stubGlobal('fetch', respond(409, { error: 'no-wallet' }));
+    await expect(api('/v1/offers')).rejects.toMatchObject({ code: 'no-wallet' });
+    expect(go).toHaveBeenCalledExactlyOnceWith('/wallets?add=1&returnTo=%2Fsell');
   });
 });

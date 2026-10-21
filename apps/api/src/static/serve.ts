@@ -19,6 +19,15 @@ export function addSecurityHeaders(_req: FastifyRequest, reply: FastifyReply, do
   done();
 }
 
+/**
+ * Fastify's `frameworkErrors` option: requests refused before routing (a malformed URL such as
+ * GET /%zz, an over-long parameter) never run the onRequest hooks, and fastify's default answer
+ * quotes the path. This answers them with SECURITY_HEADERS and a fixed body.
+ */
+export function frameworkErrors(_err: unknown, _req: FastifyRequest, reply: FastifyReply): void {
+  void reply.code(400).headers(SECURITY_HEADERS).send({ error: 'bad-request' });
+}
+
 export interface WebOptions {
   /** The built web app (apps/web/dist). */
   root: string;
@@ -29,6 +38,7 @@ export interface WebOptions {
 }
 
 const CONNECT_SCHEMES = new Set(['https:', 'wss:', 'http:', 'ws:']);
+const SECURE_SCHEMES = new Set(['https:', 'wss:']);
 
 /** An exact origin, so nothing else can ride into the policy. */
 function origin(value: string, name: string): string {
@@ -40,6 +50,10 @@ function origin(value: string, name: string): string {
   }
   if (!CONNECT_SCHEMES.has(url.protocol) || url.origin !== value) {
     throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
+  }
+  // Read at call time: a production process never lets the browser connect in clear text.
+  if (process.env.NODE_ENV === 'production' && !SECURE_SCHEMES.has(url.protocol)) {
+    throw new Error(`web: ${name} must use https or wss in production`);
   }
   return value;
 }
@@ -78,6 +92,17 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   return { root, relayOrigin, nodeProxyOrigin };
 }
 
+function isApiOrFilePath(url: string): boolean {
+  const raw = url.split('?', 1)[0] ?? '';
+  let path: string;
+  try {
+    path = decodeURIComponent(raw).toLowerCase();
+  } catch {
+    return true; // undecodable: never the app page
+  }
+  return path === '/v1' || path.startsWith('/v1/') || /\.[a-z0-9]+$/.test(path);
+}
+
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 /**
@@ -108,9 +133,9 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
 
     scope.get('/', page);
     scope.get('/*', (req, reply) => {
-      const path = req.url.split('?', 1)[0] ?? '';
-      // API paths and file-like paths that were not built are plain 404s, never the app page.
-      if (path === '/v1' || path.startsWith('/v1/') || /\.[A-Za-z0-9]+$/.test(path)) {
+      // API paths (in any case or encoding, e.g. /V1/x or /v1%2fx) and file-like paths that were not
+      // built are plain 404s, never the app page.
+      if (isApiOrFilePath(req.url)) {
         return reply.code(404).send({ error: 'not-found' });
       }
       return page(req, reply);

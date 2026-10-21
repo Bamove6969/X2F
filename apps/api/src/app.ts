@@ -10,7 +10,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
-import { addSecurityHeaders } from './static/serve.js';
+import { addSecurityHeaders, frameworkErrors } from './static/serve.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -103,6 +103,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     // (`logController` is fastify 5.12's replacement for the deprecated top-level `disableRequestLogging`.)
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: BODY_LIMIT,
+    // Malformed URLs are refused before onRequest runs; this keeps the headers and hides the path (P3-I15).
+    frameworkErrors,
     logger: {
       level: 'info',
       base: null, // drops pino's default pid and machine hostname

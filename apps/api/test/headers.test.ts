@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { cspFor, serveWeb, webOptionsFromEnv } from '../src/static/serve.js';
 import { testApp } from './helpers/app.js';
 
@@ -85,6 +85,40 @@ describe('security headers', () => {
   });
 });
 
+describe('requests fastify refuses before routing', () => {
+  it.each(['/%zz', '/v1/%zz', '/sell/%E0%A4%A'])('a malformed URL %s gets 400 bad-request with the headers, without echoing the path', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'bad-request' });
+    expect(res.body).not.toContain('%');
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+
+  it('a non-GET unknown route reaches the root not-found handler, with the headers', async () => {
+    const res = await app.inject({ method: 'POST', url: '/v1/nothing-here', headers: { origin: 'https://x2f.test' }, payload: {} });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+describe('the /v1 check in the web catch-all', () => {
+  it.each(['/V1/x', '/v1%2fx', '/%761/x', '/V1'])('%s is a JSON 404, never the app page', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+
+  it('a path that only starts with the letters v1 is still the app page', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1x' });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBe(CSP);
+  });
+});
+
 describe('cspFor', () => {
   it('builds the Global Constraints policy', () => {
     expect(cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(CSP);
@@ -97,6 +131,30 @@ describe('cspFor', () => {
       expect(() => cspFor({ relayOrigin: RELAY, nodeProxyOrigin: bad })).toThrow(/origin/);
     },
   );
+});
+
+describe('cspFor in production', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it.each(['http://relay.x2f.test', 'ws://relay.x2f.test'])('refuses the clear-text origin %s', (bad) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(() => cspFor({ relayOrigin: bad, nodeProxyOrigin: NODE })).toThrow(/https or wss/);
+    expect(() => cspFor({ relayOrigin: RELAY, nodeProxyOrigin: bad })).toThrow(/https or wss/);
+  });
+
+  it('accepts https and wss origins', () => {
+    vi.stubEnv('NODE_ENV', 'production');
+    expect(cspFor({ relayOrigin: RELAY, nodeProxyOrigin: NODE })).toBe(CSP);
+  });
+
+  it('outside production a local http or ws origin is allowed', () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    expect(cspFor({ relayOrigin: 'ws://127.0.0.1:8090', nodeProxyOrigin: 'http://127.0.0.1:8091' })).toContain(
+      "connect-src 'self' ws://127.0.0.1:8090 http://127.0.0.1:8091;",
+    );
+  });
 });
 
 describe('webOptionsFromEnv', () => {

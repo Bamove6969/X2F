@@ -4,10 +4,21 @@ import { defineConfig, loadEnv } from 'vite';
 
 const empty = fileURLToPath(new URL('./src/empty.ts', import.meta.url));
 
-export default defineConfig(({ mode }) => {
+/** The only build mode that may carry fixture mode (Playwright's board fixtures); see `fixturesOn`. */
+export const FIXTURES_BUILD_MODE = 'fixtures';
+
+/**
+ * Fixture mode needs VITE_FIXTURES=1 and either the dev server (`vite`, not in production mode) or
+ * `vite build --mode fixtures`. Every other build (production, staging, anything else) leaves it out.
+ */
+export function fixturesOn(command: 'build' | 'serve', mode: string, flag: string | undefined): boolean {
+  if (flag !== '1') return false;
+  return command === 'serve' ? mode !== 'production' : mode === FIXTURES_BUILD_MODE;
+}
+
+export default defineConfig(({ command, mode }) => {
   const env = { ...loadEnv(mode, fileURLToPath(new URL('.', import.meta.url)), 'VITE_'), ...process.env };
-  // Fixture mode never reaches a production build, whatever the environment says.
-  const fixtures = mode !== 'production' && env.VITE_FIXTURES === '1';
+  const fixtures = fixturesOn(command, mode, env.VITE_FIXTURES);
   return {
     plugins: [react()],
     resolve: {

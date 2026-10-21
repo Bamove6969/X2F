@@ -40,4 +40,4 @@ export {
   verifyTotp,
 } from './auth/totp.js';
 export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, assertHoldPassed, recoveryRoutes } from './auth/recovery.js';
-export { SECURITY_HEADERS, addSecurityHeaders, cspFor, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
+export { SECURITY_HEADERS, addSecurityHeaders, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';

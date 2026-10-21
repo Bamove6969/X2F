@@ -42,6 +42,11 @@ describe('production bundle', () => {
     for (const word of FORBIDDEN) expect(text, word).not.toContain(word);
   });
 
+  it('a staging (or any other non-fixtures) build mode leaves fixture mode out too', { timeout: 200_000 }, async () => {
+    const text = (await bundleText(await build('staging'))).toLowerCase();
+    for (const word of FORBIDDEN) expect(text, word).not.toContain(word);
+  });
+
   it('a fixtures-mode build does include fixture mode (the check bites)', { timeout: 200_000 }, async () => {
     const text = (await bundleText(await build('fixtures'))).toLowerCase();
     expect(text).toContain('fixture');
