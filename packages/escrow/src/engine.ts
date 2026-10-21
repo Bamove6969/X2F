@@ -9,7 +9,25 @@ export type EscrowErrorCode =
   | 'bad-payouts'
   | 'not-ready'
   | 'build-failed'
-  | 'bad-saved-session';
+  | 'bad-saved-session'
+  /** The daemon did not answer in time (DAEMON_TIMEOUT_MS) or could not be reached: retry later. */
+  | 'daemon-unavailable';
+
+/** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
+export const DAEMON_TIMEOUT_MS = 15_000;
+
+/** One transaction paying the escrow, as the escrow's own wallet sees it (pool included). */
+export interface Incoming {
+  txHash: string;
+  amountAtomic: bigint;
+  /** 0 while in the pool. */
+  confirmations: number;
+  /** Spendable: the wallet's 10-block unlock has passed. */
+  unlocked: boolean;
+}
+
+/** Where the daemon has a transaction: nowhere, in the pool, or in a block. */
+export type TxStatus = 'none' | 'pool' | 'block';
 
 export class EscrowError extends Error {
   readonly code: EscrowErrorCode;
@@ -41,7 +59,10 @@ export interface EscrowSession {
   make(peers: string[]): Promise<string>;
   exchange(peers: string[]): Promise<{ hex: string; ready: boolean }>;
   address(): Promise<string>;
+  /** Throws EscrowError('daemon-unavailable') when the daemon times out or can't be reached. */
   sync(): Promise<{ balance: bigint; unlocked: bigint }>;
+  /** Every transaction paying the escrow, from the last sync (pool included). */
+  incoming(): Promise<Incoming[]>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
@@ -55,7 +76,9 @@ export interface EscrowSession {
   signRelease(txSet: string, expected: Payout[]): Promise<{ signedHex: string; txHash: string }>;
   /** cosign's second half: broadcast a signed set; returns its tx hash. */
   submit(signedHex: string): Promise<string>;
-  /** Whether the daemon knows this tx, in the pool or on chain. */
+  /** Where the daemon has this tx. Throws EscrowError('daemon-unavailable') on a timeout. */
+  txStatus(txHash: string): Promise<TxStatus>;
+  /** True only for a tx in a block, never one that is only in the pool. */
   txSeen(txHash: string): Promise<boolean>;
   /**
    * Save after every step so a paused or reloaded app can resume without redoing it.

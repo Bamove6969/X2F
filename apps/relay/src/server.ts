@@ -4,6 +4,7 @@ import { joinMessage } from '@x2f/protocol';
 import Fastify, { type FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type { RawData, WebSocket } from 'ws';
+import { buildRelayAdmin, type AdminOptions } from './admin.js';
 import { deriveLimits, type RelayLimits, type RelayOptions } from './limits.js';
 
 /** WebSocket close codes the relay uses. */
@@ -102,6 +103,11 @@ export interface Relay {
   /** The trade ended (completed, cancelled, refunded or ruled): delete its queue, close sockets. */
   closeTrade(code: string): void;
   stats(): RelayStats;
+  /**
+   * The private admin listener (moderator-signed register and close), or null when built
+   * without admin options. Listen on a private interface only.
+   */
+  admin: FastifyInstance | null;
 }
 
 /**
@@ -110,7 +116,7 @@ export interface Relay {
  * for anyone offline until the trade closes. It never decrypts or verifies envelopes.
  * Delivery is at most once and in order per recipient; senders resend by seq.
  */
-export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: RelayLog = () => {}): Promise<Relay> {
+export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: RelayLog = () => {}, admin?: AdminOptions): Promise<Relay> {
   await sodium.ready;
   const limits = deriveLimits(overrides);
   const trades = new Map<string, TradeState>();
@@ -346,7 +352,7 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
     });
   });
 
-  return {
+  const relay: Omit<Relay, 'admin'> = {
     app,
     limits,
     registerTrade(rawCode, signPublics) {
@@ -381,4 +387,5 @@ export async function buildRelay(overrides: Partial<RelayOptions> = {}, log: Rel
       return { trades: trades.size, connections, unauthenticated, queuedBytes: totalQueuedBytes, queuedFrames };
     },
   };
+  return { ...relay, admin: admin ? await buildRelayAdmin(relay, admin, log) : null };
 }

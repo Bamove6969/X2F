@@ -14,6 +14,7 @@ import {
   type PartyStore,
   type Transport,
 } from '../src/index.js';
+import { minedWhile } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 const XMR = 1_000_000_000_000n;
@@ -73,6 +74,8 @@ describe('party runner over the relay on regtest', () => {
   let relayUrl: string;
   let funder: MoneroWalletFull;
   const running: PartyHandle[] = [];
+  /** The builder counts a release as done only once the tx is in a block: keep mining while waiting. */
+  const mining = async <T,>(p: Promise<T>): Promise<T> => minedWhile(node.rpcUri, await funder.getPrimaryAddress(), p);
 
   beforeAll(async () => {
     node = await startRegtest();
@@ -148,7 +151,7 @@ describe('party runner over the relay on regtest', () => {
   }
 
   async function settleAll(t: Trade, o: Outcome): Promise<(string | null)[]> {
-    return Promise.all(ROLES.map((r) => t.parties[r].settle(o)));
+    return mining(Promise.all(ROLES.map((r) => t.parties[r].settle(o))));
   }
 
   it('normal release: seller builds, buyer co-signs, buyer and fee wallet are paid', async () => {
@@ -290,7 +293,7 @@ describe('party runner over the relay on regtest', () => {
       const restarted = startParty(t, 'seller');
       t.parties.seller = restarted.party;
       await t.parties.seller.ready(); // the normal order: wait for ready, then settle
-      const [hash, sellerResult] = await Promise.all([buyerDone, t.parties.seller.settle(o)]);
+      const [hash, sellerResult] = await mining(Promise.all([buyerDone, t.parties.seller.settle(o)]));
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
       expect(t.stores.seller.current()!.release!.txSet).toBe(builtSet); // resent, never rebuilt
@@ -325,7 +328,7 @@ describe('party runner over the relay on regtest', () => {
       await t.parties.buyer.ready();
       const hash = await t.parties.buyer.settle(o);
       expect(hash).toBe(t.stores.buyer.current()!.release!.txHash);
-      expect(await sellerDone).toBeNull();
+      expect(await mining(sellerDone)).toBeNull();
       await mine(node.rpcUri, 12, await funder.getPrimaryAddress());
       const got = await balanceOf(dest);
       expect(got).toBeGreaterThan(amount - MAX_NET_FEE);
@@ -346,7 +349,7 @@ describe('party runner over the relay on regtest', () => {
       const o: Outcome = { kind: 'release', to, builder: 'mod', cosigner: 'seller' };
       const settled = Promise.all(ROLES.map((r) => t.parties[r].settle(o)));
       await readyAndFund(t, amount);
-      const results = await settled;
+      const results = await mining(settled);
       expect(results[ROLES.indexOf('seller')]).toMatch(/^[0-9a-f]{64}$/);
       expect(results[ROLES.indexOf('buyer')]).toBeNull();
       expect(t.taps.buyer.sent).toBeGreaterThan(4);
@@ -374,7 +377,7 @@ describe('party runner over the relay on regtest', () => {
     const dest = await newTestWallet(node.rpcUri);
     try {
       const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: amount }];
-      const [, s, m] = await Promise.all(ROLES.map((r) => t.parties[r].settle({ kind: 'release', to, builder: 'mod', cosigner: 'seller' })));
+      const [, s, m] = await mining(Promise.all(ROLES.map((r) => t.parties[r].settle({ kind: 'release', to, builder: 'mod', cosigner: 'seller' }))));
       expect(s).toMatch(/^[0-9a-f]{64}$/);
       expect(m).toBeNull();
       expect(ignoredBy.seller).toContain('setup-after-ready');
@@ -466,7 +469,7 @@ describe('party runner over the relay on regtest', () => {
       t.taps.buyer.inject(await fake(`state.export:${tag}.20`, { hex: 'x' }));
       await expect.poll(() => t.stores.buyer.current()?.received[`release.txset:${tag}.1`]?.seller, { timeout: 60_000 }).toBeTruthy();
       t.parties.seller = startParty(t, 'seller').party; // its first two seqs are now replays; resends get past them
-      const [b, s] = await Promise.all([buyerDone, t.parties.seller.settle(o)]);
+      const [b, s] = await mining(Promise.all([buyerDone, t.parties.seller.settle(o)]));
       expect(b).toMatch(/^[0-9a-f]{64}$/);
       expect(s).toBeNull();
       expect(ignoredBy.buyer).toContain('cosign-payout-mismatch');
@@ -515,7 +518,7 @@ describe('party runner over the relay on regtest', () => {
     try {
       const to = [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }];
       const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
-      const [b, s] = await Promise.all([buyer.party.settle(o), seller.party.settle(o)]);
+      const [b, s] = await mining(Promise.all([buyer.party.settle(o), seller.party.settle(o)]));
       expect(b).toMatch(/^[0-9a-f]{64}$/);
       expect(s).toBeNull();
       expect(ignoredBy.seller).toContain('setup-after-ready');

@@ -10,7 +10,7 @@ import {
   type ReplayGuardJSON,
 } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Payout, type SavedSession } from './engine.js';
+import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
 import { sumPayouts } from './verify.js';
 
@@ -22,7 +22,7 @@ export interface Outcome {
   cosigner: Role;
 }
 
-export type PartyErrorCode = 'equivocation' | 'address-mismatch' | 'bad-outcome' | 'bad-state' | 'stopped';
+export type PartyErrorCode = 'equivocation' | 'address-mismatch' | 'bad-outcome' | 'bad-state' | 'stopped' | 'settled-elsewhere';
 
 export class PartyError extends Error {
   constructor(readonly code: PartyErrorCode, detail?: string) {
@@ -36,7 +36,8 @@ interface Received {
   digest: string;
 }
 
-type ReleasePhase = 'waiting-funds' | 'export' | 'built' | 'cosigning' | 'signed' | 'done' | 'exhausted';
+/** 'superseded': this party's signed tx can never confirm because another tx emptied the escrow. */
+type ReleasePhase = 'waiting-funds' | 'export' | 'built' | 'cosigning' | 'signed' | 'done' | 'exhausted' | 'superseded';
 
 interface ReleaseState {
   /** Digest of the outcome being settled; its first 16 hex chars tag every release message. */
@@ -81,6 +82,11 @@ export interface PartyHandle {
    * one (the earlier promise rejects) unless this party has already signed.
    */
   settle(o: Outcome): Promise<string | null>;
+  /**
+   * The escrow's balance and incoming payments, read inside the party's own work queue so
+   * wallet calls never interleave. Watchers and apps read the escrow only through this.
+   */
+  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[] }>;
   stop(): Promise<void>;
 }
 
@@ -186,7 +192,10 @@ const RETRYABLE = new Set(['bad-payouts', 'not-ready', 'payout-mismatch']);
  * with a fresh export. Exports, built sets, the set being signed and the signed tx are saved
  * before they leave the device; after a restart the same ones are resent or re-signed, never
  * new ones, so signing nonces are never reused on a different message (R26). A broadcast
- * whose result is unknown is resubmitted until the daemon has seen the tx.
+ * whose result is unknown is resubmitted until the tx is in a block, or until the escrow is
+ * seen emptied by another tx ('settled-elsewhere'). The builder counts the co-signer's DONE
+ * only once its own wallet sees the escrow empty and the reported tx in a block. A daemon that
+ * times out (15 s) or can't be reached is retried on the next tick, never fatal.
  *
  * Every incoming envelope is opened (signature, participants, replay); failures are ignored.
  * State is saved before acting. Unanswered messages are resent on a timer and after any
@@ -288,7 +297,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
     const rel = state.release;
     if (!rel) return;
-    if (rel.phase === 'exhausted') return;
+    if (rel.phase === 'exhausted' || rel.phase === 'superseded') return;
     if (rel.phase !== 'waiting-funds') await send(exportKey(rel), [rel.counterpart]);
     if (rel.part === 'builder' && rel.phase === 'built') await send(txSetKey(rel), [rel.counterpart]);
     if (rel.phase === 'done' && rel.part === 'cosigner') await send(doneKey(rel), [rel.counterpart]);
@@ -431,6 +440,10 @@ export function runParty(a: PartyArgs): PartyHandle {
     const o = settleOutcome;
     const rel = state.release;
     if (!o || !rel || !checked() || rel.outcome !== outcomeDigest(o) || rel.phase === 'exhausted') return;
+    if (rel.phase === 'superseded') {
+      settleWaiter?.reject(new PartyError('settled-elsewhere', 'another transaction emptied the escrow'));
+      return;
+    }
     const cp = rel.counterpart;
     const theirs = (key: string): Received | undefined => state.received[key]?.[cp];
 
@@ -469,9 +482,14 @@ export function runParty(a: PartyArgs): PartyHandle {
       }
       const done = theirs(doneKey(rel));
       if (rel.phase === 'built' && done) {
-        rel.phase = 'done';
-        rel.txHash = String(done.payload.txHash);
-        await saveState();
+        // Never take the co-signer's word: done only once this wallet sees the escrow empty and
+        // the reported tx in a block. Until then keep waiting (and resending).
+        const txHash = String(done.payload.txHash);
+        if ((await session.sync()).balance === 0n && (await session.txSeen(txHash))) {
+          rel.phase = 'done';
+          rel.txHash = txHash;
+          await saveState();
+        }
       }
       if (rel.phase === 'done') settleWaiter?.resolve(null);
       return;
@@ -517,7 +535,17 @@ export function runParty(a: PartyArgs): PartyHandle {
         await session.submit(rel.signedHex);
       } catch {
         // Already broadcast (e.g. before a crash) or rejected: only the daemon knows.
-        if (!(await session.txSeen(rel.txHash))) return; // retried on the next tick
+        const status = await session.txStatus(rel.txHash);
+        if (status === 'pool') return; // broadcast; done once it is in a block
+        if (status === 'none') {
+          // Refused for good once another tx has emptied the escrow: stop, never rebuild or resend.
+          if ((await session.sync()).balance === 0n) {
+            rel.phase = 'superseded';
+            await saveState();
+            settleWaiter?.reject(new PartyError('settled-elsewhere', 'another transaction emptied the escrow'));
+          }
+          return; // otherwise retried on the next tick
+        }
       }
       rel.phase = 'done';
       state.sent[doneKey(rel)] = { txHash: rel.txHash };
@@ -559,7 +587,7 @@ export function runParty(a: PartyArgs): PartyHandle {
       }
       throw e;
     }
-    const from = (raw as { from: Role }).from;
+    const from = opened.from; // the signed sender, never the raw frame's field
     const p = opened.payload;
     if (!isRecord(p) || !wellFormed(p, from) || (p.key as string).split(':')[0] !== opened.type) {
       ignored('malformed');
@@ -600,11 +628,21 @@ export function runParty(a: PartyArgs): PartyHandle {
   };
 
   const advance = async (): Promise<void> => {
-    if (!state.address) await advanceSetup();
-    else await checkAddresses();
-    if (settleOutcome && state.address !== null && checked()) {
-      await beginRelease(settleOutcome);
-      await advanceRelease();
+    try {
+      if (!state.address) await advanceSetup();
+      else await checkAddresses();
+      if (settleOutcome && state.address !== null && checked()) {
+        await beginRelease(settleOutcome);
+        await advanceRelease();
+      }
+    } catch (e) {
+      // A slow or unreachable daemon is retried on the next tick. Nothing is saved or sent
+      // between a daemon call and the step it guards, so the step simply runs again.
+      if (e instanceof EscrowError && e.code === 'daemon-unavailable') {
+        ignored('daemon-unavailable');
+        return;
+      }
+      throw e;
     }
   };
 
@@ -696,6 +734,18 @@ export function runParty(a: PartyArgs): PartyHandle {
         await advance();
       });
       return p;
+    },
+    funds() {
+      return new Promise((resolve, reject) => {
+        void run(async () => {
+          try {
+            const { balance, unlocked } = await session.sync();
+            resolve({ balance, unlocked, incoming: await session.incoming() });
+          } catch (e) {
+            reject(e);
+          }
+        }).then(() => reject(failure ?? new PartyError('stopped')));
+      });
     },
     async stop() {
       stopped = true;
