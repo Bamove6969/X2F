@@ -5,6 +5,8 @@
 ## Revision 2026-10-21 (owner)
 - **Funding guard (spec 2.2):** Task 22 TradeFund: the "Open in <wallet>" funding control is a press-and-hold (1.5 s, the Task 14 `HoldButton`) that works once per trade view and then shows "Waiting for your payment…" (the QR/copy fallback stays visible until funded); once `receivedAtomic >= sellerFundsAtomic` is seen (any confirmations), TradeFund replaces the address, QR, copy button and wallet link with "Escrow funded" and never renders them again for that trade (the API's TradeView stops returning the funding URI/address to the seller once funded). Tests: a second hold does nothing; after funding the DOM contains no escrow address or `monero:` URI; reload after funding still shows none.
 
+- **Gift cards (spec 11.8, owner 2026-10-21):** Tasks 3/4: methods in the "Gift cards & vouchers" group carry a `giftCard: true` flag; a gift-card offer requires the card's country and currency; Tasks 18/21/22/23 show a bold warning that the trader receiving the card bears all its risk, with that card's known risks from research/payment-methods/gift-cards.md as facts.
+
 ## Revision 2026-10-18
 
 Owner decisions of 2026-10-17 and the built Plan 1 code applied before building. Authority: spec > `rulings-and-lessons.md` > this revision > earlier text (including Revision 2026-10-15 below, which stays as history).
