@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers.",
+ "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md. Added 2026-10-21 (owner): 13 gift cards and 20 methods LocalMonero offered; unverified until checked like the rest.",
  "methods": [
   {
    "id": "UPHOLD",
@@ -23,15 +23,8 @@
    "verified": false
   },
   {
-   "id": "PERFECT_MONEY",
-   "name": "Perfect Money",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
    "id": "SEPA",
-   "name": "SEPA",
+   "name": "SEPA bank transfer",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -136,7 +129,7 @@
   },
   {
    "id": "US_POSTAL_MONEY_ORDER",
-   "name": "US Postal money order",
+   "name": "USPS money order",
    "group": "Cash & money orders",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -199,7 +192,7 @@
   },
   {
    "id": "ADVANCED_CASH",
-   "name": "Advcash",
+   "name": "Volet (formerly Advcash)",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -255,7 +248,7 @@
   },
   {
    "id": "UPI",
-   "name": "UPI",
+   "name": "UPI (India)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -283,14 +276,14 @@
   },
   {
    "id": "PIX",
-   "name": "PIX",
+   "name": "Pix",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
   },
   {
    "id": "AMAZON_GIFT_CARD",
-   "name": "Amazon eGift card",
+   "name": "Amazon gift card",
    "group": "Gift cards & vouchers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -317,13 +310,6 @@
    "verified": false
   },
   {
-   "id": "CELPAY",
-   "name": "CelPay",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
    "id": "MONESE",
    "name": "Monese",
    "group": "Payment apps",
@@ -332,7 +318,7 @@
   },
   {
    "id": "MPESA",
-   "name": "M-Pesa",
+   "name": "M-PESA",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -347,13 +333,6 @@
   {
    "id": "TIKKIE",
    "name": "Tikkie",
-   "group": "Payment apps",
-   "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
-  },
-  {
-   "id": "VERSE",
-   "name": "Verse",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -374,14 +353,14 @@
   },
   {
    "id": "ACH_TRANSFER",
-   "name": "Bank transfer (ACH)",
+   "name": "ACH bank transfer (US)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
   },
   {
    "id": "DOMESTIC_WIRE_TRANSFER",
-   "name": "Domestic wire transfer",
+   "name": "Domestic wire transfer (US)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -409,7 +388,7 @@
   },
   {
    "id": "PAYSAFE",
-   "name": "Paysafecard",
+   "name": "PaysafeCard",
    "group": "Gift cards & vouchers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -423,7 +402,7 @@
   },
   {
    "id": "VIPPS_MOBILEPAY",
-   "name": "Vipps MobilePay",
+   "name": "Vipps / MobilePay",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -437,7 +416,7 @@
   },
   {
    "id": "NIP",
-   "name": "NIP (Nigeria)",
+   "name": "NIBSS Instant Payment (NIP, Nigeria)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -451,7 +430,7 @@
   },
   {
    "id": "QRIS",
-   "name": "QRIS",
+   "name": "QRIS (Indonesia)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -514,7 +493,7 @@
   },
   {
    "id": "SBP",
-   "name": "SBP (Russia)",
+   "name": "SBP — Faster Payments System (Russia)",
    "group": "Bank transfers",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false,
@@ -545,7 +524,7 @@
   },
   {
    "id": "KASPI",
-   "name": "Kaspi",
+   "name": "Kaspi.kz (Kaspi Gold)",
    "group": "Payment apps",
    "source": "haveno PaymentMethod.java (names only)",
    "verified": false
@@ -556,6 +535,237 @@
    "group": "Other",
    "source": "x2f",
    "verified": true
+  },
+  {
+   "id": "UBER_GIFT_CARD",
+   "name": "Uber gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "VISA_GIFT_CARD",
+   "name": "Visa prepaid gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "MASTERCARD_GIFT_CARD",
+   "name": "Mastercard prepaid gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "APPLE_GIFT_CARD",
+   "name": "Apple gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "GOOGLE_PLAY_GIFT_CARD",
+   "name": "Google Play gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "STEAM_GIFT_CARD",
+   "name": "Steam gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "RAZER_GOLD_GIFT_CARD",
+   "name": "Razer Gold gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "XBOX_GIFT_CARD",
+   "name": "Xbox gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "PLAYSTATION_GIFT_CARD",
+   "name": "PlayStation gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "WALMART_GIFT_CARD",
+   "name": "Walmart gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "TARGET_GIFT_CARD",
+   "name": "Target gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "SEPHORA_GIFT_CARD",
+   "name": "Sephora gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "OTHER_GIFT_CARD",
+   "name": "Other gift card",
+   "group": "Gift cards & vouchers",
+   "source": "research/payment-methods/gift-cards.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "SKRILL",
+   "name": "Skrill",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "NETELLER",
+   "name": "Neteller",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "APPLE_CASH",
+   "name": "Apple Cash",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "CHIME",
+   "name": "Chime",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "PAYSEND",
+   "name": "Paysend",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "MTN_MOMO",
+   "name": "MTN MoMo",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "MIXX_BY_YAS",
+   "name": "Mixx by Yas",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "CHIPPER_CASH",
+   "name": "Chipper Cash",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "EASYPAISA",
+   "name": "Easypaisa",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "AIRTM",
+   "name": "Airtm",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "ASTROPAY",
+   "name": "AstroPay",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "LYDIA",
+   "name": "Lydia",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "POSTEPAY",
+   "name": "Postepay",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "PAYONEER",
+   "name": "Payoneer",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "ZEN",
+   "name": "ZEN",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "AFRIEX",
+   "name": "Afriex",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "REMITLY",
+   "name": "Remitly",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "WORLDREMIT",
+   "name": "WorldRemit",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "RIA",
+   "name": "Ria Money Transfer",
+   "group": "Cash & money orders",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
+  },
+  {
+   "id": "XOOM",
+   "name": "Xoom",
+   "group": "Payment apps",
+   "source": "LocalMonero app list, research/payment-methods/localmonero-gap.md (2026-10-21)",
+   "verified": false
   }
  ]
 }

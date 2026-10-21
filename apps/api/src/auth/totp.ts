@@ -25,26 +25,37 @@ import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throt
 
 export const TOTP_SECRET_BYTES = 20;
 const PERIOD_S = 30;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DIGITS = 6;
 const WINDOW = 1;
 /** An enrolment challenge, and a password login waiting for its code, live 5 minutes. */
 export const TOTP_ENROL_TTL_MS = 5 * 60_000;
 export const SECOND_FACTOR_TTL_MS = 5 * 60_000;
+/** Open enrolment challenges per session; a new start beyond this replaces the oldest. */
+export const TOTP_OPEN_ENROLMENTS = 3;
 
 // ---------------------------------------------------------------------------------------------
 // Sealing
 
-/** AES-256-GCM under `subkey('totp')`: nonce (12) ‖ ciphertext ‖ tag (16). */
-export function sealSecret(deps: Pick<Deps, 'config'>, secret: Uint8Array): Buffer {
+const aad = (accountId: string) => Buffer.from(`x2f/totp/${accountId}`, 'utf8');
+
+/**
+ * AES-256-GCM under `subkey('totp')`, bound to the account (its ID is the associated data):
+ * nonce (12) ‖ ciphertext ‖ tag (16). A sealed secret copied to another account does not open.
+ */
+export function sealSecret(deps: Pick<Deps, 'config'>, accountId: string, secret: Uint8Array): Buffer {
   const nonce = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', subkey(deps.config, 'totp'), nonce, { authTagLength: 16 });
+  cipher.setAAD(aad(accountId));
   const body = Buffer.concat([cipher.update(secret), cipher.final()]);
   return Buffer.concat([nonce, body, cipher.getAuthTag()]);
 }
 
-export function openSecret(deps: Pick<Deps, 'config'>, sealed: Buffer): Uint8Array {
+/** Throws when the sealed secret is malformed, tampered with or sealed for another account. */
+export function openSecret(deps: Pick<Deps, 'config'>, accountId: string, sealed: Buffer): Uint8Array {
   if (sealed.length < 12 + 16) throw new Error('sealed TOTP secret is malformed');
   const decipher = createDecipheriv('aes-256-gcm', subkey(deps.config, 'totp'), sealed.subarray(0, 12), { authTagLength: 16 });
+  decipher.setAAD(aad(accountId));
   decipher.setAuthTag(sealed.subarray(sealed.length - 16));
   return new Uint8Array(Buffer.concat([decipher.update(sealed.subarray(12, sealed.length - 16)), decipher.final()]));
 }
@@ -95,7 +106,13 @@ export async function verifyTotp(deps: Pick<Deps, 'db' | 'clock' | 'config'>, ac
   const { rows } = await deps.db.query<{ secret_enc: Buffer }>('select secret_enc from totp where account_id = $1', [accountId]);
   const row = rows[0];
   if (!row) return dummyTotpCheck(code, now);
-  const step = matchStep(openSecret(deps, row.secret_enc), code, now);
+  let bytes: Uint8Array;
+  try {
+    bytes = openSecret(deps, accountId, row.secret_enc);
+  } catch {
+    return dummyTotpCheck(code, now); // fails closed: a secret that does not open never matches
+  }
+  const step = matchStep(bytes, code, now);
   if (step === null) return false;
   const r = await deps.db.query('update totp set last_step = $2 where account_id = $1 and last_step < $2', [accountId, step]);
   return (r.rowCount ?? 0) > 0;
@@ -162,12 +179,25 @@ async function enrolStart(req: FastifyRequest) {
   // A fresh secret per enrolment, from the OS CSPRNG only (R9).
   const bytes = new Uint8Array(randomBytes(TOTP_SECRET_BYTES));
   const { rows: ch } = await deps.db.query<{ id: string }>(
+    // `n` numbers this session's enrolments in order (the server clock may not move between starts).
     `insert into challenges (account_id, session_id, purpose, method, payload, created_at, expires_at)
-     values ($1, $2, 'add-totp', 'totp', $3, $4, $5) returning id`,
+     select $1, $2, 'add-totp', 'totp',
+            jsonb_build_object('secretEnc', $3::text, 'n', coalesce(max((c.payload->>'n')::bigint), 0) + 1), $4, $5
+       from challenges c where c.session_id = $2 and c.purpose = 'add-totp'
+     returning id`,
     [
-      req.auth.accountId, req.auth.sessionId, JSON.stringify({ secretEnc: sealSecret(deps, bytes).toString('base64') }),
+      req.auth.accountId, req.auth.sessionId, sealSecret(deps, req.auth.accountId, bytes).toString('base64'),
       now, new Date(now.getTime() + TOTP_ENROL_TTL_MS),
     ],
+  );
+  // At most 3 open enrolments per session: older ones beyond that are marked used.
+  await deps.db.query(
+    `update challenges set used_at = $3
+      where id in (
+        select id from challenges
+         where session_id = $1 and purpose = 'add-totp' and used_at is null and expires_at > $3
+         order by (payload->>'n')::bigint desc offset $2)`,
+    [req.auth.sessionId, TOTP_OPEN_ENROLMENTS, now],
   );
   const totp = totpOf(bytes, username);
   return { challengeId: ch[0]!.id, otpauthUri: totp.toString(), secret: totp.secret.base32 };
@@ -175,21 +205,41 @@ async function enrolStart(req: FastifyRequest) {
 
 /**
  * Proves the authenticator app holds the new secret, then enrols it (replacing an earlier one).
- * The challenge is single-use: a wrong code answers 401 `code-invalid` and the person starts again.
+ * A wrong code answers 401 `code-invalid` and may be retried on the same challenge until it
+ * expires (the person only proves they copied a secret they were just shown), but each one counts
+ * on the account's `totp` throttle key, as at `login/second-factor`. The throttle is checked
+ * before the code and nothing is used up first, so a 429 leaves the challenge for a retry; the
+ * right code clears the streak and uses the challenge up with `consumeChallenge`, so it enrols
+ * once even in parallel.
  */
 async function enrolFinish(req: FastifyRequest) {
   const deps = req.server.deps;
   const b = body(req);
+  const challengeId = str(b, 'challengeId');
   const now = deps.clock();
-  const row = await consumeChallenge(deps.db, str(b, 'challengeId'), now);
-  if (!row || row.purpose !== 'add-totp' || row.account_id !== req.auth.accountId || row.session_id !== req.auth.sessionId) {
-    throw new ApiError(400, 'challenge-expired');
-  }
-  const sealed = row.payload.secretEnc;
-  if (typeof sealed !== 'string') throw new ApiError(400, 'challenge-expired');
-  const bytes = openSecret(deps, Buffer.from(sealed, 'base64'));
+  const expired = () => new ApiError(400, 'challenge-expired');
+  if (!UUID.test(challengeId)) throw expired();
+  // Read without using it up; this session's own open enrolment only.
+  const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
+    `select payload from challenges
+      where id = $1 and purpose = 'add-totp' and account_id = $2 and session_id = $3 and used_at is null and expires_at > $4`,
+    [challengeId, req.auth.accountId, req.auth.sessionId, now],
+  );
+  const sealed = rows[0]?.payload.secretEnc;
+  if (typeof sealed !== 'string') throw expired();
+  const bytes = openSecret(deps, req.auth.accountId, Buffer.from(sealed, 'base64'));
+  const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
+  await throttleCheck(deps, key);
   const step = matchStep(bytes, b.code, now);
-  if (step === null) throw new ApiError(401, 'code-invalid');
+  if (step === null) {
+    await throttleFail(deps, key, req.auth.accountId);
+    throw new ApiError(401, 'code-invalid');
+  }
+  await throttleReset(deps, key);
+  const row = await consumeChallenge(deps.db, challengeId, now);
+  if (!row || row.purpose !== 'add-totp' || row.account_id !== req.auth.accountId || row.session_id !== req.auth.sessionId) {
+    throw expired();
+  }
 
   const client = await deps.db.connect();
   try {
@@ -200,7 +250,7 @@ async function enrolFinish(req: FastifyRequest) {
         `insert into totp (account_id, secret_enc, last_step, created_at) values ($1, $2, $3, $4)
          on conflict (account_id) do update set secret_enc = excluded.secret_enc, last_step = excluded.last_step,
            created_at = excluded.created_at`,
-        [req.auth.accountId, sealSecret(deps, bytes), step, now],
+        [req.auth.accountId, sealSecret(deps, req.auth.accountId, bytes), step, now],
       );
       await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'totp' }, now);
       await client.query('commit');
@@ -217,7 +267,8 @@ async function enrolFinish(req: FastifyRequest) {
 /**
  * Finishes a password login that answered `second-factor`. The pending login is single-use and
  * bound to the browser that started it; wrong codes count on the account's `totp` throttle key
- * (with Task 4's device scoping) and answer 401 `code-invalid`.
+ * (with Task 4's device scoping), use the pending login up and answer 401 `code-invalid`. The
+ * throttle is checked before the pending login is used up, so a 429 leaves it for a retry.
  */
 async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
@@ -228,16 +279,23 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
   const code = str(b, 'code');
   const now = deps.clock();
   const device = deviceHash(req);
-  const row = await consumeChallenge(deps.db, pendingId, now);
-  if (
-    !row || row.purpose !== 'second-factor' || row.method !== 'totp' || row.account_id === null ||
-    row.device_hash === null || device === null || !row.device_hash.equals(device)
-  ) {
-    throw new ApiError(400, 'challenge-expired');
-  }
-  const accountId = row.account_id;
+  const expired = () => new ApiError(400, 'challenge-expired');
+  const matches = (r: { purpose: string; method: string; account_id: string | null; device_hash: Buffer | null }) =>
+    r.purpose === 'second-factor' && r.method === 'totp' && r.account_id !== null &&
+    r.device_hash !== null && device !== null && r.device_hash.equals(device);
+  if (!UUID.test(pendingId)) throw expired();
+  // Look first (nothing used up), so a throttle refusal leaves the pending login in place.
+  const { rows: peek } = await deps.db.query<{ purpose: string; method: string; account_id: string | null; device_hash: Buffer | null }>(
+    'select purpose, method, account_id, device_hash from challenges where id = $1 and used_at is null and expires_at > $2',
+    [pendingId, now],
+  );
+  const pending = peek[0];
+  if (!pending || !matches(pending)) throw expired();
+  const accountId = pending.account_id!;
   const key = await throttleKey(deps, req, 'totp', { id: accountId });
   await throttleCheck(deps, key);
+  const row = await consumeChallenge(deps.db, pendingId, now);
+  if (!row || !matches(row) || row.account_id !== accountId) throw expired();
   if (!(await verifyTotp(deps, accountId, code))) {
     await throttleFail(deps, key, accountId);
     throw new ApiError(401, 'code-invalid');

@@ -1,10 +1,12 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { fileAttestationPolicy } from './auth/attestation.js';
 import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
 import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
+import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 
 /** A dependency whose task has not landed yet: any use fails loudly instead of misbehaving. */
 function notBuilt<T extends object>(what: string): T {
@@ -24,6 +26,8 @@ function port(raw: string | undefined): number {
 }
 
 const config = loadConfig(process.env);
+// Serves apps/web/dist on this origin when X2F_WEB_ROOT is set (with X2F_RELAY_ORIGIN and X2F_NODE_PROXY_ORIGIN for the CSP).
+const web = webOptionsFromEnv(process.env);
 await assertSigningKeyFile(config.pgpSigningKeyPath);
 // R7: refuses a public-only or passphrase-protected key and a fingerprint other than
 // X2F_PGP_SIGNING_FINGERPRINT; the process exits before listening.
@@ -31,15 +35,19 @@ const pgpSigner = await loadPgpSigner(config.pgpSigningKeyPath, config.pgpSignin
 // R18: the decoy key pool (includes an RSA-4096 key) is made before the first request.
 await decoyPrivateKeys();
 
+// Task 8: the FIDO metadata snapshot, loaded before listening (no network fetch).
+const attestation = fileAttestationPolicy(config.attestationDir);
+await attestation.init();
+
 const db = createPool(config.databaseUrl);
 const deps: Deps = {
   config,
   db,
   clock: () => new Date(),
-  // TODO(Tasks 12, 8): moneroAddressValidator, fileAttestationPolicy.
+  // TODO(Task 12): moneroAddressValidator.
   leaked: await openLeakedList(config.leakedListPath),
   addresses: notBuilt('address validator (Task 12)'),
-  attestation: notBuilt('attestation policy (Task 8)'),
+  attestation,
   pgpSigner,
 };
 
@@ -48,6 +56,7 @@ const jobs: RetentionJob[] = [purgeExpired];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);
+if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
 const shutdown = async () => {

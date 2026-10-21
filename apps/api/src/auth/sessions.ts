@@ -114,7 +114,7 @@ export async function startSession(
           a.accountId, tokenHash(token), a.level, label,
           a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
           now, expiresAt,
-          // Task 9: only a recovery session carries a hold (`assertHoldPassed`).
+          // Task 9: only a recovery session carries a hold (see `requireSession`'s `allowHeld`).
           a.level === 'recovery' ? (a.holdUntil ?? null) : null,
         ],
       );
@@ -154,6 +154,7 @@ interface SessionRow {
   kind: AccountKind;
   disabled_at: Date | null;
   terms_version: string | null;
+  hold_until: Date | null;
 }
 
 /**
@@ -163,9 +164,15 @@ interface SessionRow {
  * `wrong-account-kind` when `kinds` excludes the account; 403 `terms-required` `{ version }` for a
  * trader on a stale Terms version unless `allowStaleTerms` (R10: only logout, me, terms, methods
  * and sessions routes set it). Touches `last_seen_at`.
+ *
+ * The 24-hour hold of a TOTP backup login fails closed (Task 9, P2-I1): a recovery session whose
+ * `hold_until` is still ahead gets 403 `recovery-hold` `{ holdUntil }` on every recovery-allowed
+ * route unless that route also sets `allowHeld` (only routes that change nothing, such as reading
+ * the account or its methods). So every add-method route (PGP, WebAuthn, password) is held without
+ * a per-route check; at exactly `hold_until` the session passes.
  */
 export function requireSession(
-  opts: { allowRecovery?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean } = {},
+  opts: { allowRecovery?: boolean; allowHeld?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean } = {},
 ): preHandlerAsyncHookHandler {
   return async function (req: FastifyRequest) {
     const deps = req.server.deps;
@@ -173,7 +180,7 @@ export function requireSession(
     if (!token) throw new ApiError(401, 'not-authenticated');
     const { rows } = await deps.db.query<SessionRow>(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
-              a.kind, a.disabled_at, a.terms_version
+              s.hold_until, a.kind, a.disabled_at, a.terms_version
          from sessions s join accounts a on a.id = s.account_id
         where s.token_hash = $1`,
       [tokenHash(token)],
@@ -191,6 +198,9 @@ export function requireSession(
     }
     if (row.disabled_at !== null) throw new ApiError(403, 'account-disabled');
     if (row.level === 'recovery' && !opts.allowRecovery) throw new ApiError(403, 'recovery-session');
+    if (row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime() && !opts.allowHeld) {
+      throw new ApiError(403, 'recovery-hold', { holdUntil: row.hold_until.toISOString() });
+    }
     if (opts.kinds && !opts.kinds.includes(row.kind)) throw new ApiError(403, 'wrong-account-kind');
     if (row.kind === 'trader' && row.terms_version !== deps.config.termsVersion && !opts.allowStaleTerms) {
       throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
