@@ -198,8 +198,13 @@ export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
       if (!released) {
         released = true;
         inFlight -= 1;
+        clearTimeout(backstop);
       }
     };
+    // The upstream call is aborted at timeoutMs; free the slot then even if a reply stream that
+    // nobody reads never reports its close.
+    const backstop = setTimeout(release, timeoutMs + 1000);
+    backstop.unref();
     try {
       const res = await fetch(`${base}${path}`, {
         method: 'POST',
