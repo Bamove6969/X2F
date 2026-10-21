@@ -52,7 +52,7 @@ Risk is risk **to the receiver** (Low / Med / High). Card format details marked 
 | 9 | Xbox / Microsoft gift card | Per currency/country of Microsoft account | Only by redeeming | 25-character code | Med |
 | 10 | PlayStation Store card | Per country of PSN account; account country cannot change | Only by redeeming | 12-character code (unconfirmed) | Med |
 | 11 | Walmart gift card | US only, USD | Walmart site/app/phone with card number + PIN (anyone holding them can check) | 16-digit number + 4-digit PIN (unconfirmed) | **High** |
-| 12 | Target GiftCard | US only, USD | target.com balance page: 15-digit number + access number/PIN | 15-digit number + access number | **High** |
+| 12 | Target GiftCard | US only, USD | target.com balance page (Target account needed): 15-digit number + access number/PIN | 15-digit number + access number | **High** |
 | 13 | Sephora gift card | US (and a separate Canadian card) | sephora.com with card number + PIN | 16-digit number + PIN (8 digits, unconfirmed) | Med |
 | 14 | PaysafeCard | Country-specific PIN currency (EU, UK, others) | Official balance check with 16-digit PIN, no redemption needed; shows transactions | 16-digit PIN; printed receipt or e-PIN | Med |
 | 15 | eBay gift card (not recommended) | US eBay accounts only; being phased out | ebay.com balance page with 13-digit code, or add to account | 13-digit redemption code | Med (and fading) |
@@ -66,7 +66,7 @@ Use these facts in the general gift-card warning:
    - Apple: may "void or deactivate Gift Cards … without a refund" (https://www.apple.com/legal/internet-services/itunes/giftcards/).
    - Google: may "close customer accounts and bill alternative forms of payment" (https://play.google/intl/en_us/card-terms/).
    - Amazon: same wording (https://www.amazon.co.uk/gc-legal).
-   - Target: may "reject or deactivate any gift card" over suspected fraud (search snippet of https://www.target.com/help/article/000130374, **(unconfirmed)** wording).
+   - Target: may "reject or deactivate any gift card" over suspected fraud (https://www.target.com/help/article/000130374).
    - Uber: may "suspend or void" Uber Cash (https://www.uber.com/legal/en/document/?name=uber-gift-cards-terms-of-use&country=united-states&lang=en).
    - Microsoft: may suspend the account or balance (https://support.microsoft.com/en-us/accounts-billing/microsoft-gift-cards-terms-and-conditions).
 3. **Most cards in P2P markets were bought with someone else's money.** The FTC says scammers prefer gift cards because payments are fast, largely irreversible and anonymous (https://www.ftc.gov/news-events/data-visualizations/data-spotlight/2021/12/scammers-prefer-gift-cards-not-just-any-card-will-do). UK police say fraudsters "sell the codes on" (Action Fraud guidance as quoted by https://nbcc.police.uk/news/retailers-get-tuned-in-to-the-itunes-scammers). A card from a scam victim or a stolen credit card is the main way the receiver loses value later through a void or account action **(inferred from items 2–3)**.
@@ -243,11 +243,11 @@ Use these facts in the general gift-card warning:
 ### 11. Walmart gift card
 
 - **Why chosen:** On Paxful's list and an FTC top-5 scam brand in 2021 (sources above).
-- **Regions and currencies:** US, USD. Official terms at walmart.com/giftcardterms were bot-blocked for me.
-- **Balance check:** Walmart site/app/phone with card number and PIN; anyone holding them can check (secondary guides, **(unconfirmed)**).
+- **Regions and currencies:** US, USD. Usable at Walmart and Sam's Club stores in the US and Puerto Rico and online at Walmart.com and Samsclub.com. The card balance is a liability of Wal-Mart Stores Arkansas, LLC. This is card back text reproduced by a corporate reseller (https://www.giftcardpartners.com/order-gift-cards/walmart). The official terms at walmart.com/giftcardterms were bot-blocked for me.
+- **Balance check:** By phone (number printed on the card; 1-888-537-5503 per the same reproduction) or on Walmart's site or app with card number and PIN (secondary guides, **(unconfirmed)**). Anyone holding the numbers can check.
 - **Code format:** 16-digit number and 4-digit PIN (secondary, conflicting sources; **(unconfirmed)**).
 - **Key risk facts for the warning:**
-  - Per reseller reproductions of Walmart's fine print, Walmart may refuse a card over fraud or abuse and take action "including the forfeiture of any remaining card balance" (https://www.giftcardpartners.com/order-gift-cards/walmart, **(unconfirmed)** against walmart.com).
+  - Walmart "may refuse to accept this card and take action, including balance forfeiture" for fraud or abuse. There is "No replacement for lost/stolen cards" (card text via https://www.giftcardpartners.com/order-gift-cards/walmart).
   - Store-rack tampering: Walmart is one of the retailers the FTC says scammers send victims to (FTC 2021 spotlight).
   - The value cannot be moved off the card except by spending at Walmart (inferred). A sender who kept the numbers can spend it in store before the receiver does (inferred).
 - **Suggested ad terms:** Card photo plus receipt. Receiver checks the balance only on walmart.com and spends or adds it to their Walmart account during the trade. US receivers only.
@@ -256,10 +256,10 @@ Use these facts in the general gift-card warning:
 
 - **Why chosen:** The FTC's top brand by reported losses in 2021, with more than twice any other (https://www.ftc.gov/news-events/data-visualizations/data-spotlight/2021/12/scammers-prefer-gift-cards-not-just-any-card-will-do). That makes it heavily present in resale markets **(inferred)**.
 - **Regions and currencies:** US, USD.
-- **Balance check:** The official page is target.com/guest/gift-card-balance (https://www.target.com/guest/gift-card-balance). It takes the 15-digit card number and the access number/PIN. A phone line shows the last five transactions (snippets of https://www.target.com/help/article/000062295).
-- **Code format:** 15-digit card number and an access number under the silver strip (same).
+- **Balance check:** At https://www.target.com/giftcard/check-balance. You enter the "15-digit card number and the Access Number or PIN", and you need a Target account to check (https://www.target.com/help/article/000062295). A phone line shows the last five transactions (search snippet, **(unconfirmed)**). E-mailed eGiftCards must be opened inside a Target.com account (https://www.target.com/help/article/000130374).
+- **Code format:** 15-digit card number and an access number under the silver strip (https://www.target.com/help/article/000062295).
 - **Key risk facts for the warning:**
-  - Target "reserves the right to reject or deactivate any gift card" to prevent fraud (snippet of https://www.target.com/help/article/000130374).
+  - Target "reserves the right to reject or deactivate any gift card" to prevent fraud (https://www.target.com/help/article/000130374).
   - Highest scam-loss brand.
   - Anyone with the number and access code can spend the card in store.
 - **Suggested ad terms:** Card photo plus receipt. Receiver checks only on target.com and moves the value to their Target account wallet during the trade. Whether that blocks in-store use of the physical card is **(unconfirmed)**. US receivers only.
