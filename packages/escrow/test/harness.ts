@@ -40,6 +40,28 @@ export type Tap = Transport & { inject(f: unknown): void; seen: unknown[]; out: 
 export function tapped(inner: Transport): Tap {
   const injected: unknown[] = [];
   const seen: unknown[] = [];
+  // An injected frame wakes a reader blocked on the relay; the relay read stays pending for later.
+  let pending: Promise<{ v: unknown }> | null = null;
+  let wake: (() => void) | null = null;
+  const read = async (): Promise<unknown> => {
+    for (;;) {
+      if (injected.length > 0) return injected.shift();
+      pending ??= inner.next().then(
+        (v) => ({ v }),
+        (e: unknown) => {
+          pending = null;
+          throw e;
+        },
+      );
+      const woke = new Promise<null>((r) => (wake = () => r(null)));
+      const got = await Promise.race([pending, woke]);
+      wake = null;
+      if (got !== null) {
+        pending = null;
+        return got.v;
+      }
+    }
+  };
   const t: Tap = {
     sent: 0,
     out: [],
@@ -50,13 +72,16 @@ export function tapped(inner: Transport): Tap {
       if (!t.dropSend(t.sent)) inner.send(e);
     },
     next: async () => {
-      const f = injected.length > 0 ? injected.shift() : await inner.next();
+      const f = await read();
       seen.push(f);
       return f;
     },
     onReconnect: (cb: () => void) => inner.onReconnect(cb),
     close: () => inner.close(),
-    inject: (f: unknown) => injected.push(f),
+    inject: (f: unknown) => {
+      injected.push(f);
+      wake?.();
+    },
     seen,
   };
   return t;

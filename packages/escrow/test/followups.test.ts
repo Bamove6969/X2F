@@ -52,12 +52,13 @@ describe('Plan 1 follow-ups on regtest', () => {
     return (await funder.createTx({ accountIndex: 0, address, amount, relay: true })).getHash();
   }
 
+  /** Returns the funding tx's hash. */
   async function readyAndFund(t: Trade, amount = XMR): Promise<string> {
     const addresses = await Promise.all(ROLES.map((r) => t.parties[r].ready()));
     expect(new Set(addresses).size).toBe(1);
-    await pay(addresses[0]!, amount);
+    const funding = await pay(addresses[0]!, amount);
     await mine(node.rpcUri, 12, funderAddress);
-    return addresses[0]!;
+    return funding;
   }
 
   it('txSeen is false for a tx only in the pool and true once it is in a block', async () => {
@@ -78,9 +79,9 @@ describe('Plan 1 follow-ups on regtest', () => {
     }
   });
 
-  it('a co-signer reporting a made-up DONE hash leaves the builder waiting', async () => {
+  it('a co-signer reporting a made-up DONE hash, or a real tx that did not spend the escrow, leaves the builder waiting', async () => {
     const t = await kit.newTrade();
-    await readyAndFund(t);
+    const funding = await readyAndFund(t);
     const dest = await newTestWallet(node.rpcUri);
     try {
       const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
@@ -105,6 +106,26 @@ describe('Plan 1 follow-ups on regtest', () => {
       expect(sellerResult).toBe('pending');
       expect(t.stores.seller.current()!.release!.phase).toBe('built');
       expect(t.stores.seller.current()!.release!.txHash).toBeUndefined();
+      // A real tx in a block, while the escrow is empty, that is not the tx that spent it.
+      expect(await s.txSeen(funding)).toBe(true);
+      // A DONE is stored once per outcome and the made-up one holds its slot, so restart the
+      // seller as if the DONE it had received named the funding tx instead.
+      await t.parties.seller.stop();
+      const seller2 = t.stores.seller.current()!;
+      t.stores.seller.set({ ...seller2, received: { ...seller2.received, [`release.done:${tag}.0`]: { buyer: { payload: { txHash: funding }, digest: 'x' } } } });
+      const restarted = kit.startParty(t, 'seller');
+      let restartedResult: unknown = 'pending';
+      void restarted.party.settle(o).then((v) => (restartedResult = v), (e: unknown) => (restartedResult = e));
+      await new Promise((r) => setTimeout(r, 8000));
+      expect(restartedResult).toBe('pending');
+      expect(t.stores.seller.current()!.release!.phase).toBe('built');
+      expect(t.stores.seller.current()!.release!.txHash).toBeUndefined();
+      // The real hash, in the same slot, is accepted: the waiting above was the check, not a stall.
+      await restarted.party.stop();
+      const seller3 = t.stores.seller.current()!;
+      t.stores.seller.set({ ...seller3, received: { ...seller3.received, [`release.done:${tag}.0`]: { buyer: { payload: { txHash: hash! }, digest: 'x' } } } });
+      expect(await kit.startParty(t, 'seller').party.settle(o)).toBeNull();
+      expect(t.stores.seller.current()!.release!).toMatchObject({ phase: 'done', txHash: hash });
     } finally {
       await dest.close();
     }

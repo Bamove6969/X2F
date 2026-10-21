@@ -81,6 +81,12 @@ export interface EscrowSession {
   /** True only for a tx in a block, never one that is only in the pool. */
   txSeen(txHash: string): Promise<boolean>;
   /**
+   * True only when this wallet, as of its last sync, records txHash as a confirmed tx that
+   * spent the escrow's own outputs (it holds the key images after the export round). A real
+   * tx that paid the escrow, or any other tx, is false.
+   */
+  spentBy(txHash: string): Promise<boolean>;
+  /**
    * Save after every step so a paused or reloaded app can resume without redoing it.
    * Never resume a save older than the last cosign, and run a fresh exportState/importState
    * round after any resume: the cache holds signing nonces, and reusing one leaks the key (R26).

@@ -231,6 +231,16 @@ export class MoneroMultisigSession implements EscrowSession {
     return (await this.txStatus(txHash)) === 'block';
   }
 
+  async spentBy(txHash: string): Promise<boolean> {
+    if (!TX_HASH.test(txHash)) return false;
+    try {
+      const txs = await this.wallet.getTxs({ hashes: [txHash], isOutgoing: true, isConfirmed: true });
+      return txs.length === 1 && txs[0]!.getHash() === txHash && txs[0]!.getIsOutgoing() === true && txs[0]!.getIsConfirmed() === true;
+    } catch {
+      return false;
+    }
+  }
+
   async save(): Promise<SavedSession> {
     const [keys, cache] = await this.wallet.getData();
     if (!keys || !cache) throw new EscrowError('bad-saved-session', 'wallet returned no data to save');

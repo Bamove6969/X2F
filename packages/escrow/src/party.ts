@@ -482,10 +482,11 @@ export function runParty(a: PartyArgs): PartyHandle {
       }
       const done = theirs(doneKey(rel));
       if (rel.phase === 'built' && done) {
-        // Never take the co-signer's word: done only once this wallet sees the escrow empty and
-        // the reported tx in a block. Until then keep waiting (and resending).
+        // Never take the co-signer's word: done only once this wallet sees the escrow emptied by
+        // the reported tx, and the daemon has that tx in a block. Until then keep waiting (and
+        // resending).
         const txHash = String(done.payload.txHash);
-        if ((await session.sync()).balance === 0n && (await session.txSeen(txHash))) {
+        if ((await session.sync()).balance === 0n && (await session.spentBy(txHash)) && (await session.txSeen(txHash))) {
           rel.phase = 'done';
           rel.txHash = txHash;
           await saveState();
