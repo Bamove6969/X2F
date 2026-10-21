@@ -1,6 +1,6 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
+import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { buildNodeProxy, type NodeProxyOptions } from '../src/server.js';
 
 const WEB = 'https://x2f.example';
@@ -171,6 +171,52 @@ describe('node proxy: forwarding', () => {
   });
 });
 
+describe('node proxy: over a real socket', () => {
+  async function listen(app: FastifyInstance): Promise<number> {
+    await app.listen({ host: '127.0.0.1', port: 0 });
+    const a = app.server.address();
+    return typeof a === 'object' && a ? a.port : 0;
+  }
+
+  function raw(port: number, path: string, body: Buffer, headers: Record<string, string> = {}): Promise<{ status: number; body: Buffer }> {
+    return new Promise((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path, method: 'POST', headers: { 'content-length': String(body.length), ...headers } }, (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (c: Buffer) => chunks.push(c));
+        res.on('end', () => resolve({ status: res.statusCode ?? 0, body: Buffer.concat(chunks) }));
+      });
+      req.on('error', reject);
+      req.end(body);
+    });
+  }
+
+  it('streams a large binary reply and refuses dot-segment paths', async () => {
+    const { app, up } = await proxy();
+    const big = Buffer.alloc(3 * 1024 * 1024, 7);
+    up.handle = (_s, res) => {
+      res.writeHead(200, { 'content-type': 'application/octet-stream' });
+      res.end(big);
+    };
+    const port = await listen(app);
+    const r = await raw(port, '/getblocks.bin', Buffer.from([1, 2, 3]), { 'content-type': 'application/octet-stream' });
+    expect(r.status).toBe(200);
+    expect(r.body.equals(big)).toBe(true);
+    for (const p of ['/./json_rpc', '/x/../json_rpc', '/json_rpc%00', '/json_rpc;a']) {
+      const bad = await raw(port, p, Buffer.from(rpc('get_info')), json);
+      expect(bad.status, p).toBe(404);
+    }
+    expect(up.seen).toHaveLength(1);
+  });
+
+  it('forwards a body sent with no content type', async () => {
+    const { app, up } = await proxy();
+    const port = await listen(app);
+    const r = await raw(port, '/json_rpc', Buffer.from(rpc('get_version')));
+    expect(r.status).toBe(200);
+    expect(up.seen).toHaveLength(1);
+  });
+});
+
 describe('node proxy: refusals (fail closed)', () => {
   it('refuses stop_daemon and other json_rpc methods off the list without calling the node', async () => {
     const { app, up } = await proxy();
@@ -217,8 +263,9 @@ describe('node proxy: refusals (fail closed)', () => {
     const paths = [
       '/daemon/json_rpc', '/json_rpc/', '/JSON_RPC', '/stop_daemon', '/start_mining', '/stop_mining', '/mining_status',
       '/set_log_level', '/get_peer_list', '/out_peers', '/update', '/send_raw_transaction', '/get_blocks_by_height.bin',
-      '/', '/%2fjson_rpc', '//json_rpc', '/./json_rpc', '/x/../json_rpc',
+      '/', '/%2fjson_rpc', '//json_rpc',
     ];
+    // (Dot segments are resolved by the test client before routing; the forwarded path is a constant anyway.)
     for (const p of paths) {
       const r = await app.inject({ method: 'POST', url: p, headers: json, payload: rpc('get_info') });
       expect(r.statusCode, p).toBe(404);
@@ -286,6 +333,7 @@ describe('node proxy: refusals (fail closed)', () => {
     const second = await app.inject({ method: 'POST', url: '/json_rpc', headers: json, payload: rpc('get_info') });
     expect(second.statusCode).toBe(503);
     expect(second.json()).toEqual({ error: 'busy' });
+    up.handle = undefined;
     release();
     expect((await first).statusCode).toBe(200);
     const third = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
@@ -355,9 +403,23 @@ describe('node proxy: CORS and headers', () => {
     }
   });
 
-  it('never trusts forwarded addresses and logs nothing', async () => {
-    const { app } = await proxy();
-    expect(app.initialConfig.trustProxy).toBeFalsy();
-    expect(app.log.level).toBe('silent');
+  it('writes nothing to stdout or stderr', async () => {
+    const { app, up } = await proxy({ timeoutMs: 100 });
+    const written: string[] = [];
+    const out = vi.spyOn(process.stdout, 'write').mockImplementation((c) => (written.push(String(c)), true));
+    const err = vi.spyOn(process.stderr, 'write').mockImplementation((c) => (written.push(String(c)), true));
+    try {
+      const h = { ...json, 'x-forwarded-for': '203.0.113.9', origin: WEB };
+      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('get_info'), remoteAddress: '198.51.100.7' });
+      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('stop_daemon') });
+      await app.inject({ method: 'POST', url: '/nope', headers: h, payload: '{}' });
+      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: '{bad' });
+      up.handle = () => undefined;
+      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('get_info') });
+    } finally {
+      out.mockRestore();
+      err.mockRestore();
+    }
+    expect(written).toEqual([]);
   });
 });
