@@ -129,6 +129,55 @@ describe('TOTP enrolment', () => {
     expect(res.json()).toEqual({ error: 'challenge-expired' });
   });
 
+  it('throttles wrong codes on the totp key without using the challenge up', async () => {
+    const { id, b } = await trader();
+    const s = await enrolStart(b);
+    for (let i = 1; i <= 4; i++) {
+      const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: wrongCodeAt(s.secret, now) });
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'code-invalid' });
+    }
+    // The 4th failure starts a 2 s wait: a wrong code and even the right one are refused meanwhile.
+    const wrong = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: wrongCodeAt(s.secret, now) });
+    expect(wrong.statusCode).toBe(429);
+    expect(wrong.json()).toMatchObject({ error: 'slow-down' });
+    const slowed = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
+    expect(slowed.statusCode).toBe(429);
+    expect(slowed.json()).toMatchObject({ error: 'slow-down' });
+    // A refused check uses nothing up and adds no failure.
+    const { rows: open } = await deps.db.query('select 1 from challenges where id = $1 and used_at is null', [s.challengeId]);
+    expect(open).toHaveLength(1);
+    const { rows: streak } = await deps.db.query<{ failures: number }>(
+      `select failures from login_throttle where key like 'totp:' || $1 || ':%'`,
+      [id],
+    );
+    expect(streak.map((r) => r.failures)).toEqual([4]);
+
+    // After the wait the right code enrols on the same challenge and clears the streak.
+    setNow(at(3_000));
+    const right = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
+    expect(right.statusCode).toBe(200);
+    expect(right.json()).toEqual({ ok: true });
+    const { rows: cleared } = await deps.db.query(`select 1 from login_throttle where key like 'totp:' || $1 || ':%'`, [id]);
+    expect(cleared).toHaveLength(0);
+  });
+
+  it('locks enrolment after 10 wrong codes in a streak, within one challenge', async () => {
+    const { b } = await trader();
+    const s = await enrolStart(b);
+    // Waits after failures 4-9 are 2, 4, 8, 16, 30, 30 s: wait each out, all inside the 5-minute challenge.
+    const waits = [0, 0, 0, 2, 4, 8, 16, 30, 30, 0];
+    for (const w of waits) {
+      const res = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: wrongCodeAt(s.secret, now) });
+      expect(res.statusCode).toBe(401);
+      setNow(at(w * 1000 + 500));
+    }
+    // 10 failures → a 30 s lock: the right code is refused while it runs.
+    const locked = await b.post('/v1/account/totp/finish', { challengeId: s.challengeId, code: codeAt(s.secret, now) });
+    expect(locked.statusCode).toBe(429);
+    expect(locked.json()).toMatchObject({ error: 'locked' });
+  });
+
   it('keeps at most 3 open enrolments per session, replacing the oldest', async () => {
     const { b } = await trader();
     const starts = [await enrolStart(b), await enrolStart(b), await enrolStart(b), await enrolStart(b)];

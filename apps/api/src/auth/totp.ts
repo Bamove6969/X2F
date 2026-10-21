@@ -206,8 +206,11 @@ async function enrolStart(req: FastifyRequest) {
 /**
  * Proves the authenticator app holds the new secret, then enrols it (replacing an earlier one).
  * A wrong code answers 401 `code-invalid` and may be retried on the same challenge until it
- * expires (the person only proves they copied a secret they were just shown); the right code uses
- * the challenge up with `consumeChallenge`, so it enrols once even in parallel.
+ * expires (the person only proves they copied a secret they were just shown), but each one counts
+ * on the account's `totp` throttle key, as at `login/second-factor`. The throttle is checked
+ * before the code and nothing is used up first, so a 429 leaves the challenge for a retry; the
+ * right code clears the streak and uses the challenge up with `consumeChallenge`, so it enrols
+ * once even in parallel.
  */
 async function enrolFinish(req: FastifyRequest) {
   const deps = req.server.deps;
@@ -225,8 +228,14 @@ async function enrolFinish(req: FastifyRequest) {
   const sealed = rows[0]?.payload.secretEnc;
   if (typeof sealed !== 'string') throw expired();
   const bytes = openSecret(deps, req.auth.accountId, Buffer.from(sealed, 'base64'));
+  const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
+  await throttleCheck(deps, key);
   const step = matchStep(bytes, b.code, now);
-  if (step === null) throw new ApiError(401, 'code-invalid');
+  if (step === null) {
+    await throttleFail(deps, key, req.auth.accountId);
+    throw new ApiError(401, 'code-invalid');
+  }
+  await throttleReset(deps, key);
   const row = await consumeChallenge(deps.db, challengeId, now);
   if (!row || row.purpose !== 'add-totp' || row.account_id !== req.auth.accountId || row.session_id !== req.auth.sessionId) {
     throw expired();
