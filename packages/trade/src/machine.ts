@@ -83,7 +83,8 @@ export interface Trade {
 export type TradeEvent =
   | { type: 'setup-done'; escrowAddress: string }
   | { type: 'chain'; receivedAtomic: bigint; unlockedAtomic: bigint; confirmations: number }
-  | { type: 'mark-paid' }
+  /** `fiatCents` is the total the buyer confirmed paying; refused `total-changed` unless it is the trade's total now. */
+  | { type: 'mark-paid'; fiatCents: bigint }
   | { type: 'extend' }
   | { type: 'request-refund' }
   | { type: 'buyer-cancel' }
@@ -111,7 +112,7 @@ export const CLIENT_EVENTS = [
   'open-dispute',
 ] as const;
 
-export type TradeRuleCode = 'wrong-state' | 'wrong-party' | 'too-early' | 'too-late' | 'no-extensions-left' | 'not-releasable';
+export type TradeRuleCode = 'wrong-state' | 'wrong-party' | 'too-early' | 'too-late' | 'no-extensions-left' | 'not-releasable' | 'total-changed';
 
 export class TradeRuleError extends Error {
   readonly code: TradeRuleCode;
@@ -422,6 +423,9 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       if (s === 'refund_requested' && t.finalAlertAt !== null && base(t, now).getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {
         return fail('too-late');
       }
+      if (typeof e.fiatCents !== 'bigint') throw new RangeError('bad fiat total');
+      // The buyer confirms the total they sent; a trade that grew since their screen showed it is refused.
+      if (e.fiatCents !== t.fiatCents) return fail('total-changed');
       return {
         ...t,
         state: 'paid',

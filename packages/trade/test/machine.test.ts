@@ -64,7 +64,7 @@ const securing = (): Trade => run([[chain(FUNDS, 0n, 1), 'system', 5]], funding(
 /** Secured at minute 30, payBy at minute 120. */
 const secured = (): Trade => run([[chain(FUNDS, FUNDS, 10), 'system', 30]], securing());
 /** Paid at minute 40, confirmBy at minute 160. */
-const paid = (): Trade => run([[{ type: 'mark-paid' }, 'buyer', 40]], secured());
+const paid = (): Trade => run([[{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 40]], secured());
 /** Release started at minute 50, settleBy at minute 65. */
 const settling = (): Trade => run([[{ type: 'release-started' }, 'seller', 50]], paid());
 const refunded = (): Trade => run([[{ type: 'settled', kind: 'buyer-cancel', txHash: 'aa'.repeat(32) }, 'system', 61]], run([[{ type: 'buyer-cancel' }, 'buyer', 45]], secured()));
@@ -72,7 +72,7 @@ const refunded = (): Trade => run([[{ type: 'settled', kind: 'buyer-cancel', txH
 const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   'setup-done': { type: 'setup-done', escrowAddress: '4Escrow' },
   chain: chain(1n, 0n, 0),
-  'mark-paid': { type: 'mark-paid' },
+  'mark-paid': { type: 'mark-paid', fiatCents: 41250n },
   extend: { type: 'extend' },
   'request-refund': { type: 'request-refund' },
   'buyer-cancel': { type: 'buyer-cancel' },
@@ -180,7 +180,7 @@ describe('take, setup and funding', () => {
     expect(t.releasable).toBe(false);
     const later = run([
       [chain(FUNDS, FUNDS, 10), 'system', 30],
-      [{ type: 'mark-paid' }, 'buyer', 40],
+      [{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 40],
     ], t);
     expect(later.lockedRate).toEqual(RATE);
     expect(later.fiatCents).toBe(41250n);
@@ -231,7 +231,7 @@ describe('secured and releasable', () => {
 describe('mark-paid', () => {
   for (const make of [securing, secured, () => run([[{ type: 'request-refund' }, 'seller', 121]], secured())]) {
     test(`buyer in ${make().state}`, () => {
-      const t = apply(make(), { type: 'mark-paid' }, 'buyer', at(122));
+      const t = apply(make(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(122));
       expect(t.state).toBe('paid');
       expect(t.paidAt).toEqual(at(122));
       expect(t.confirmBy).toEqual(at(242));
@@ -241,21 +241,41 @@ describe('mark-paid', () => {
 
   test('refused in refund_requested once the auto-refund window has opened (finalAlertAt + 15 min)', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // finalAlertAt 121
-    expect(apply(rr, { type: 'mark-paid' }, 'buyer', at(136, -1)).state).toBe('paid');
-    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(136)))).toBe('too-late');
+    expect(apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(136, -1)).state).toBe('paid');
+    expect(rule(() => apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(136)))).toBe('too-late');
   });
 
   test("clears the seller's pending cancel proposal, keeps the buyer's", () => {
     const sp = apply(secured(), { type: 'propose-cancel' }, 'seller', at(35));
-    expect(apply(sp, { type: 'mark-paid' }, 'buyer', at(40)).cancelProposedBy).toBeNull();
+    expect(apply(sp, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(40)).cancelProposedBy).toBeNull();
     const bp = apply(secured(), { type: 'propose-cancel' }, 'buyer', at(35));
-    expect(apply(bp, { type: 'mark-paid' }, 'buyer', at(40)).cancelProposedBy).toBe('buyer');
+    expect(apply(bp, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(40)).cancelProposedBy).toBe('buyer');
+  });
+
+  test('refused with total-changed unless it carries the fiat total the trade has now (I-C)', () => {
+    expect(rule(() => apply(secured(), { type: 'mark-paid', fiatCents: 41249n }, 'buyer', at(31)))).toBe('total-changed');
+    expect(rule(() => apply(secured(), { type: 'mark-paid', fiatCents: 41251n }, 'buyer', at(31)))).toBe('total-changed');
+    expect(rule(() => apply(secured(), { type: 'mark-paid', fiatCents: 0n }, 'buyer', at(31)))).toBe('total-changed');
+    expect(apply(secured(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(31)).state).toBe('paid');
+    for (const bad of [41250, '41250', undefined, null]) {
+      expect(() => apply(secured(), { type: 'mark-paid', fiatCents: bad } as unknown as TradeEvent, 'buyer', at(31))).toThrow(RangeError);
+    }
+  });
+
+  test('reproduced: the trade grows a minute before the tap; the tap with the old total is refused, the new total goes through (I-C)', () => {
+    const extra = FUNDS + 10_100_000_000n;
+    const grown = apply(secured(), chain(extra, extra, 10), 'system', at(39));
+    expect(grown.fiatCents).toBe(41580n);
+    expect(rule(() => apply(grown, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(40)))).toBe('total-changed');
+    const p = apply(grown, { type: 'mark-paid', fiatCents: 41580n }, 'buyer', at(41));
+    expect(p.state).toBe('paid');
+    expect(p.fiatCents).toBe(41580n);
   });
 
   test('seller → wrong-party; other states → wrong-state', () => {
-    expect(rule(() => apply(secured(), { type: 'mark-paid' }, 'seller', at(31)))).toBe('wrong-party');
-    expect(rule(() => apply(funding(), { type: 'mark-paid' }, 'buyer', at(2)))).toBe('wrong-state');
-    expect(rule(() => apply(paid(), { type: 'mark-paid' }, 'buyer', at(41)))).toBe('wrong-state');
+    expect(rule(() => apply(secured(), { type: 'mark-paid', fiatCents: 41250n }, 'seller', at(31)))).toBe('wrong-party');
+    expect(rule(() => apply(funding(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(2)))).toBe('wrong-state');
+    expect(rule(() => apply(paid(), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(41)))).toBe('wrong-state');
   });
 });
 
@@ -535,12 +555,12 @@ describe('release and settling', () => {
 
   test('reproduced: the buyer taps I have paid at minute 200, after the auto-refund window opened; the auto-refund lands', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136
-    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(200)))).toBe('too-late');
+    expect(rule(() => apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(200)))).toBe('too-late');
     const r = apply(rr, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(201));
     expect(r.state).toBe('refunded');
     expect(r.settling).toBe('auto-refund');
     // Had a mark-paid slipped in first, the refund seen on chain is still recorded.
-    const slipped = apply(rr, { type: 'mark-paid' }, 'buyer', at(135));
+    const slipped = apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(135));
     expect(apply(slipped, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(201)).state).toBe('refunded');
   });
 
@@ -661,7 +681,7 @@ describe('pause and resume (P3-I19)', () => {
 
   test('a deadline set during the pause counts from the resume, not the pause', () => {
     const p = apply(secured(), { type: 'pause' }, 'system', at(100));
-    const marked = apply(p, { type: 'mark-paid' }, 'buyer', at(110)); // confirm window 120 min
+    const marked = apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(110)); // confirm window 120 min
     expect(marked.paidAt).toEqual(at(110));
     const r = apply(marked, { type: 'resume' }, 'system', at(160));
     expect(r.confirmBy).toEqual(at(280));
@@ -685,16 +705,16 @@ describe('pause and resume (P3-I19)', () => {
     expect(rule(() => apply(p, { type: 'release-started' }, 'seller', at(131)))).toBe('wrong-state');
     expect(rule(() => apply(p, { type: 'open-dispute' }, 'buyer', at(131)))).toBe('wrong-state');
     expect(rule(() => apply(p, { type: 'propose-cancel' }, 'buyer', at(131)))).toBe('wrong-state');
-    expect(apply(p, { type: 'mark-paid' }, 'buyer', at(131)).state).toBe('paid');
+    expect(apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(131)).state).toBe('paid');
     expect(apply(p, { type: 'buyer-cancel' }, 'buyer', at(131)).state).toBe('settling');
   });
 
   test('the auto-refund window does not run out during a pause: mark-paid counts from the pause', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136
     const p = apply(rr, { type: 'pause' }, 'system', at(130));
-    expect(apply(p, { type: 'mark-paid' }, 'buyer', at(200)).state).toBe('paid');
+    expect(apply(p, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(200)).state).toBe('paid');
     const late = apply(rr, { type: 'pause' }, 'system', at(140));
-    expect(rule(() => apply(late, { type: 'mark-paid' }, 'buyer', at(200)))).toBe('too-late');
+    expect(rule(() => apply(late, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(200)))).toBe('too-late');
   });
 
   test('pause twice or resume while running → wrong-state', () => {
@@ -710,14 +730,14 @@ describe('clock skew (Review Focus 3)', () => {
     // 1 ms before the server's deadline: still funding, and the rest arriving secures it.
     const early = apply(part, { type: 'tick' }, 'system', at(31, -1));
     expect(early.state).toBe('funding');
-    const ok = apply(apply(early, chain(FUNDS, FUNDS, 10), 'system', at(31, -1)), { type: 'mark-paid' }, 'buyer', at(31, -1));
+    const ok = apply(apply(early, chain(FUNDS, FUNDS, 10), 'system', at(31, -1)), { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(31, -1));
     expect(ok.state).toBe('paid');
     // 1 ms after: lapsed, late funds do not revive it, and I've paid is refused.
     const lapsed = apply(part, { type: 'tick' }, 'system', at(31, 1));
     expect(lapsed.state).toBe('lapsed');
     const late = apply(lapsed, chain(FUNDS, FUNDS, 10), 'system', at(31, 2));
     expect(late.state).toBe('lapsed');
-    expect(rule(() => apply(late, { type: 'mark-paid' }, 'buyer', at(31, 3)))).toBe('wrong-state');
+    expect(rule(() => apply(late, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(31, 3)))).toBe('wrong-state');
   });
 
   test('a seller whose phone is 10 min fast cannot request a refund before the server payBy', () => {
@@ -731,8 +751,8 @@ describe('clock skew (Review Focus 3)', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136 server time
     expect(nextDeadline(rr)).toEqual(at(136));
     // The phone still shows minute 126, but the server's now is 136.
-    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(136)))).toBe('too-late');
-    expect(apply(rr, { type: 'mark-paid' }, 'buyer', at(136, -1)).state).toBe('paid');
+    expect(rule(() => apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(136)))).toBe('too-late');
+    expect(apply(rr, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(136, -1)).state).toBe('paid');
   });
 
   test('deadlines are computed from the now passed in, never the device clock', () => {
@@ -750,7 +770,7 @@ describe('purity', () => {
   test('apply never mutates its input', () => {
     const s = secured();
     const copy = structuredClone(s);
-    apply(s, { type: 'mark-paid' }, 'buyer', at(40));
+    apply(s, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(40));
     apply(s, chain(FUNDS + 1n, FUNDS, 0), 'system', at(40));
     expect(s).toEqual(copy);
   });
@@ -877,7 +897,7 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(dropped.grown).toBeNull();
     expect(dropped.releasable).toBe(true);
     expect(dropped.state).toBe('secured');
-    const marked = apply(dropped, { type: 'mark-paid' }, 'buyer', at(56));
+    const marked = apply(dropped, { type: 'mark-paid', fiatCents: 41250n }, 'buyer', at(56));
     const st = apply(marked, { type: 'release-started' }, 'seller', at(57));
     expect(st.state).toBe('settling');
     expect(payoutsFor({ kind: 'release', amountAtomic: st.amountAtomic, feeAtomic: st.feeAtomic, poster: st.poster, sellerFundsAtomic: st.sellerFundsAtomic, balanceAtomic: FUNDS, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' })).toEqual([

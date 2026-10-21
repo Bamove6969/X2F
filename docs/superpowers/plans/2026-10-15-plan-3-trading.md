@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-21 (lead decision)
+
+Second review of Tasks 1–2, decided by the lead. Authority: spec > `rulings-and-lessons.md` > this revision > Revision 2026-10-20 > earlier text.
+
+- **Growth only on releasable coins** (Task 2, I-A): extra XMR grows the trade only while the escrow is `releasable` (every coin unlocked, 10 confirmations). On every `chain` event in a growth state the size is worked out again from `grown.fromAtomic` (the amount at take) and the current balance, so a dropped or double-spent extra shrinks the trade back (`grown` returns to `null` when it is back at the take amount) and the trade never needs more than the escrow holds. While some coins are still locked the trade keeps at most its current size. The other growth rules of Revision 2026-10-20 are unchanged (no growth from `paid`, `refund_requested`, `settling` or `disputed`; any dust stays a seller output).
+- **`settled` also from `funding` and `securing`** (Task 2, I-B): a buyer-cancel from either state can time out back there before its refund lands; the refund is then recorded as `refunded` with its `txHash` and `closedAt`, so the buyer keeps the 90-day dispute-after-refund window.
+- **`mark-paid` carries the total the buyer confirmed** (Tasks 2, 6, 23, I-C): the event is `{ type: 'mark-paid'; fiatCents: bigint }` and is refused with the new rule code `total-changed` unless `fiatCents` equals the trade's current `fiatCents`, so a growth just before the tap can never record a bigger total than the buyer saw.
+- **`lapsedAt` moves with a pause** (Task 2): on `resume`, `lapsedAt` shifts by the pause's length when the lapse co-sign window (`lapsedAt + lapseCosignMin`) was still open at the pause, like `finalAlertAt`.
+
 ## Revision 2026-10-20
 
 Owner decision of 2026-10-20 (spec 11.1, item 1) and the Tasks 1–2 review fixes. Authority: spec > `rulings-and-lessons.md` > this revision > Revision 2026-10-18 > earlier text.
@@ -206,7 +215,7 @@ Plan 3 makes these additive amendments to Plan 1 code, all in Task 7: (1) `Escro
   - `TIMERS = { setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundDays: 90 }`
   - `type TradeState = 'setup' | 'funding' | 'securing' | 'secured' | 'paid' | 'refund_requested' | 'settling' | 'released' | 'refunded' | 'lapsed' | 'cancelled' | 'disputed'`
   - `interface Trade { code; offerId; poster: 'seller'|'buyer'; sellerId; buyerId; methodId; amountAtomic; feeAtomic; sellerFundsAtomic; lockedRate: Price; fiatCents: bigint; confirmWindowMin: number; state: TradeState; escrowAddress: string | null; receivedAtomic: bigint; unlockedAtomic: bigint; confirmations: number; releasable: boolean; takenAt: Date; setupBy: Date | null; fundBy: Date | null; fundingSeenAt: Date | null; securedAt: Date | null; payBy: Date | null; extensions: number; paidAt: Date | null; confirmBy: Date | null; finalAlertAt: Date | null; cancelProposedBy: 'buyer'|'seller'|null; settling: SettleKind | null; settleFrom: TradeState | null; settleBy: Date | null; pausedAt: Date | null; txHash: string | null; dispute: { by: 'buyer'|'seller'|'system'; at: Date } | null; closedAt: Date | null }`. `lockedRate` and `fiatCents` are fixed at take (OD-5). `receivedAtomic` is the escrow's whole balance; `confirmations` is the lowest count among its incoming transactions.
-  - `type TradeEvent = { type: 'setup-done'; escrowAddress: string } | { type: 'chain'; receivedAtomic: bigint; unlockedAtomic: bigint; confirmations: number } | { type: 'mark-paid' } | { type: 'extend' } | { type: 'request-refund' } | { type: 'buyer-cancel' } | { type: 'propose-cancel' } | { type: 'accept-cancel' } | { type: 'withdraw-cancel' } | { type: 'release-started' } | { type: 'settled'; kind: SettleKind; txHash: string } | { type: 'open-dispute' } | { type: 'escalate' } | { type: 'pause' } | { type: 'resume' } | { type: 'tick' }`
+  - `type TradeEvent = { type: 'setup-done'; escrowAddress: string } | { type: 'chain'; receivedAtomic: bigint; unlockedAtomic: bigint; confirmations: number } | { type: 'mark-paid'; fiatCents: bigint } | { type: 'extend' } | { type: 'request-refund' } | { type: 'buyer-cancel' } | { type: 'propose-cancel' } | { type: 'accept-cancel' } | { type: 'withdraw-cancel' } | { type: 'release-started' } | { type: 'settled'; kind: SettleKind; txHash: string } | { type: 'open-dispute' } | { type: 'escalate' } | { type: 'pause' } | { type: 'resume' } | { type: 'tick' }`
   - `SYSTEM_EVENTS = ['setup-done','chain','settled','escalate','pause','resume','tick'] as const`; `CLIENT_EVENTS = ['mark-paid','extend','request-refund','buyer-cancel','propose-cancel','accept-cancel','withdraw-cancel','release-started','open-dispute'] as const`
   - `apply(t: Trade, e: TradeEvent, by: 'buyer' | 'seller' | 'system', now: Date): Trade` is pure and throws `TradeRuleError { code: 'wrong-state' | 'wrong-party' | 'too-early' | 'too-late' | 'no-extensions-left' | 'not-releasable' }`
   - `nextDeadline(t: Trade): Date | null`; `releasableEta(t: Trade, blockSeconds = 120): number | null` (minutes)
@@ -324,14 +333,15 @@ Rules the tests pin (one test each):
 - Consumes: Tasks 2, 5.
 - Produces:
   - `applyEvent(db, code, e: TradeEvent, by): Promise<Trade>`: `SELECT … FOR UPDATE`, then `apply`, update the row, insert into `trade_events` with addresses replaced by `addressEnd` (last 6), then `publish` (Task 19).
-  - `POST /v1/trades/:code/events { type }` (`requireTrader`, participant). It accepts only `CLIENT_EVENTS` (anything else → 400 `event-not-allowed`). `by` comes from the session's role in the trade; a body `by` is ignored.
+  - `POST /v1/trades/:code/events { type, fiatCents? }` (`requireTrader`, participant). It accepts only `CLIENT_EVENTS` (anything else → 400 `event-not-allowed`). `by` comes from the session's role in the trade; a body `by` is ignored. `mark-paid` must carry `fiatCents`, the total the buyer confirmed, as a decimal string in the currency's minor units (missing or malformed → 400); one that is not the trade's current `fiatCents` → 409 `total-changed` and nothing changes (Revision 2026-10-21).
   - `toTradeView(t, viewerId, serverNow): TradeView` is the single serializer for `GET /v1/trades/:code`. It includes `role`, `counterparty: TraderSummary`, `profile`, deadlines as ISO strings, `serverNow`, `releasableEtaMin`, `confirmations`, and `fee` **only for the poster**. Non-participants get 404.
   - `trade_events` trigger: UPDATE and DELETE are refused, except DELETE by role `x2f_purge`. `purgeTradeAddresses(db, now)`, running as `x2f_purge`, nulls `buyer_payout` and `seller_refund` 90 days after `closed_at`, never while a dispute is open (P3-I12).
   - `startRetention(deps)`: every 10 min runs Plan 2's `purgeExpired`, `purgeChats` (Task 20) and `purgeTradeAddresses` (X-12).
 
 - [ ] **Step 1: Write the failing tests:**
   - Each of `chain`, `setup-done`, `settled`, `tick`, `escalate`, `pause`, `resume` posted by a participant → 400 `event-not-allowed`, and the state is unchanged (P3-C2).
-  - A body `{type:'mark-paid', by:'seller'}` from the buyer is applied as the buyer; `{type:'buyer-cancel'}` from the seller → 409 `wrong-party`.
+  - A body `{type:'mark-paid', fiatCents:'41250', by:'seller'}` from the buyer is applied as the buyer; `{type:'buyer-cancel'}` from the seller → 409 `wrong-party`.
+  - `mark-paid` with no `fiatCents` → 400; with a total other than the trade's current one (e.g. the total before a growth) → 409 `total-changed`, and the state is unchanged.
   - The taker view has no `fee` key in any state; the poster view has `fee.atomic === '12500000000'`; a third user gets 404.
   - No `trade_events.event` contains a full address.
   - Purge nulls addresses at +90 days, keeps them on a disputed trade, and the app role cannot UPDATE `trade_events`.
@@ -752,13 +762,14 @@ Rules the tests pin (one test each):
 - Produces:
   - Escrow chips: amber "Securing escrow" with "Confirmations 3 of 10 · about 14 min"; amber "Releasable in N min" while funds are confirmed but not yet unlocked (spec 7, P3-I4); teal "Escrow secured". "Time to pay 90 min / Clock starts when escrow settles…", then the countdown.
   - Payment details from the profile `fields`, Memo = trade code, the own-name warning. The proof slot (Plan 5) is masked.
-  - **I've paid** opens `PaidConfirmSheet` (checkbox "I sent exactly $412.50 via Zelle with K7M2-9QXA-4FTR-8WPN in the memo", **Yes, I've paid** / **Not yet**, plus "Sending without proof makes disputes harder."). Yes posts `mark-paid` **and** sends the `trade.paid` signal, and shows "Marked as paid" only after the mod's `trade.ack`.
+  - **I've paid** opens `PaidConfirmSheet` (checkbox "I sent exactly $412.50 via Zelle with K7M2-9QXA-4FTR-8WPN in the memo", **Yes, I've paid** / **Not yet**, plus "Sending without proof makes disputes harder."). Yes posts `mark-paid` with `fiatCents` = the total the sheet showed **and** sends the `trade.paid` signal, and shows "Marked as paid" only after the mod's `trade.ack`. On 409 `total-changed` (the trade grew while the sheet was open) nothing is sent: the sheet re-reads the trade and asks again with the new total (Revision 2026-10-21).
   - Buyer **Cancel** (spec 2.3): before I've paid it is one tap, posting `buyer-cancel` and calling `buyerCancel()`; the XMR goes back to the seller with no agreement needed. After I've paid, `CancelSheet` first shows the danger warning "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid." and cancels only on its confirm button. The seller's room has no cancel-alone action after funding, only **Propose cancel** (mutual cancel), which gives the buyer an accept/decline card.
   - Desktop: `TradeTimeline`, counterparty card and `ChatPanel` per the Desktop board.
 
 - [ ] **Step 1: Write the failing tests:**
   - Parity BuyerPay at 390×844 and Desktop at 1280×800.
   - The box unticked → nothing happens. Not yet → state stays `secured`. Yes → `paid`, the seller gets the system card, and the signal is sent.
+  - A growth while the sheet is open → Yes gets `total-changed`, no signal is sent, the state stays `secured`, and the sheet shows the new total.
   - Before paid, one tap on Cancel → `settling`/`buyer-cancel` and the `trade.cancel` signal is sent. The post-paid cancel shows the warning first and does nothing until confirmed.
   - The seller's funded room offers no cancel-alone control in any state.
   - "Releasable in N min" shows at 10 confirmations before unlock.
