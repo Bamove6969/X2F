@@ -34,8 +34,6 @@ const codeHash = (normalized: string): Buffer => createHash('sha256').update(nor
  * hold or `now ≥ hold_until`; otherwise 403 `recovery-hold` `{ holdUntil }`. Full sessions pass.
  * Place it right after `requireSession({ allowRecovery: true })`.
  */
-// TODO(Task 8 merge): add `assertHoldPassed` to the `POST /v1/account/webauthn/start` preHandlers,
-// right after `requireSession({ allowRecovery: true })`, and test it as the PGP route is tested.
 export async function assertHoldPassed(req: FastifyRequest): Promise<void> {
   if (!req.auth) throw new ApiError(401, 'not-authenticated');
   if (req.auth.level !== 'recovery') return;

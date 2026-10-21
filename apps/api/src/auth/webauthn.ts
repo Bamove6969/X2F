@@ -23,6 +23,7 @@ import { consumeChallenge, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
+import { assertHoldPassed } from './recovery.js';
 import { requireSession, startSession } from './sessions.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
@@ -702,7 +703,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
  * Passkey and security-key sign-up (`/v1/register/webauthn/start|finish`, traders), confirm
  * (`/v1/confirm/webauthn/start|finish`, full session, token bound to the session and the action)
  * and adding a credential (`/v1/account/webauthn/start|finish`, behind `requireConfirm` with the
- * onboarding and recovery exemptions; Task 9 adds the hold check).
+ * onboarding and recovery exemptions, after Task 9's recovery-hold check `assertHoldPassed`).
  */
 export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/register/webauthn/start', registerStart);
@@ -711,7 +712,13 @@ export function webauthnRoutes(app: FastifyInstance): void {
   app.post('/v1/confirm/webauthn/finish', { preHandler: requireSession() }, confirmFinish);
   app.post(
     '/v1/account/webauthn/start',
-    { preHandler: [requireSession({ allowRecovery: true }), requireConfirm(addKeyAction, { onboarding: true, recovery: true })] },
+    {
+      preHandler: [
+        requireSession({ allowRecovery: true }),
+        assertHoldPassed,
+        requireConfirm(addKeyAction, { onboarding: true, recovery: true }),
+      ],
+    },
     addKeyStart,
   );
   app.post('/v1/account/webauthn/finish', { preHandler: requireSession({ allowRecovery: true }) }, addKeyFinish);
