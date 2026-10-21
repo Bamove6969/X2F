@@ -2,6 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-21 (owner)
+- **Funding guard (spec 2.2):** Task 22 TradeFund: the "Open in <wallet>" funding control is a press-and-hold (1.5 s, the Task 14 `HoldButton`) that works once per trade view and then shows "Waiting for your payment…" (the QR/copy fallback stays visible until funded); once `receivedAtomic >= sellerFundsAtomic` is seen (any confirmations), TradeFund replaces the address, QR, copy button and wallet link with "Escrow funded" and never renders them again for that trade (the API's TradeView stops returning the funding URI/address to the seller once funded). Tests: a second hold does nothing; after funding the DOM contains no escrow address or `monero:` URI; reload after funding still shows none.
+
 ## Revision 2026-10-18
 
 Owner decisions of 2026-10-17 and the built Plan 1 code applied before building. Authority: spec > `rulings-and-lessons.md` > this revision > earlier text (including Revision 2026-10-15 below, which stays as history).
