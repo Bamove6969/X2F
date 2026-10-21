@@ -11,6 +11,7 @@ import { issueConfirmToken } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { hasTotp, issueSecondFactor, verifyTotp } from './totp.js';
 
 /** Global Constraints: Argon2id, 64 MiB, 3 passes, 1 lane. */
 const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65_536, timeCost: 3, parallelism: 1 } as const;
@@ -109,7 +110,7 @@ async function checkCredentials(
  * Never the raw input (a NUL would make Postgres refuse the key), and `~` cannot start a valid
  * username key, so it never shares a key with a real name.
  */
-function nameKeyOf(username: string): string {
+export function nameKeyOf(username: string): string {
   return `~${createHash('sha256').update(username.slice(0, 64)).digest('hex')}`;
 }
 
@@ -160,7 +161,11 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   const accountId = await checkCredentials(deps, req, found, nameKey, password);
   // Only after the password checks out, so a disabled account is not revealed to anyone else.
   await assertNotDisabled(deps.db, accountId);
-  // TODO(Task 9): an account with TOTP answers { status: 'second-factor', pendingId } here.
+  // With TOTP enrolled, no session until `POST /v1/login/second-factor` accepts the code.
+  if (await hasTotp(deps.db, accountId)) {
+    const pendingId = await issueSecondFactor(deps, req, { accountId, deviceLabel });
+    return { status: 'second-factor' as const, pendingId, needs: ['totp'] };
+  }
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: 'password', firstSession: false });
   return { status: 'ok' as const };
 }
@@ -170,9 +175,21 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   const { password } = strings(req.body, ['password'] as const);
   const action = parseConfirmAction((req.body as Record<string, unknown>).action);
-  // TODO(Task 9): `totp` is checked here when the account has TOTP.
+  const totp = (req.body as Record<string, unknown>).totp;
+  if (totp !== undefined && typeof totp !== 'string') throw new ApiError(400, 'bad-request');
   const found = await passwordFor(deps, { accountId: req.auth.accountId });
   await checkCredentials(deps, req, found, '', password);
+  // Once TOTP is enrolled, a confirm needs the current code too; a wrong one counts on the `totp` key.
+  if (await hasTotp(deps.db, req.auth.accountId)) {
+    if (totp === undefined) throw new ApiError(401, 'credentials-invalid');
+    const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
+    await throttleCheck(deps, key);
+    if (!(await verifyTotp(deps, req.auth.accountId, totp))) {
+      await throttleFail(deps, key, req.auth.accountId);
+      throw new ApiError(401, 'credentials-invalid');
+    }
+    await throttleReset(deps, key);
+  }
   const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });
   return { confirmToken };
 }

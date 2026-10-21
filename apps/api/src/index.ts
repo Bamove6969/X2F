@@ -35,3 +35,8 @@ export {
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
 export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export {
+  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
+  verifyTotp,
+} from './auth/totp.js';
+export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, assertHoldPassed, recoveryRoutes } from './auth/recovery.js';

@@ -5,7 +5,9 @@ import type { Config } from './config.js';
 import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
+import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
+import { totpRoutes } from './auth/totp.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
 
@@ -148,6 +150,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   logoutRoute(app);
   passwordRoutes(app);
   await pgpRoutes(app);
+  totpRoutes(app);
+  recoveryRoutes(app);
 
   return app;
 }
