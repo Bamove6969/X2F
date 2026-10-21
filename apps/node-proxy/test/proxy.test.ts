@@ -1,7 +1,7 @@
 import { createServer, request, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import type { FastifyInstance } from 'fastify';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { buildNodeProxy, DEFAULTS, type NodeProxyOptions } from '../src/server.js';
+import { BIN_PATHS, buildNodeProxy, DEFAULTS, JSON_PATHS, RPC_METHODS, type NodeProxyOptions } from '../src/server.js';
 
 const WEB = 'https://x2f.example';
 
@@ -109,10 +109,10 @@ describe('node proxy: forwarding', () => {
   it('accepts every allowlisted json_rpc method, including the names wallet2 uses', async () => {
     const { app, up } = await proxy();
     const methods = [
-      'get_info', 'get_last_block_header', 'getlastblockheader', 'get_block_header_by_height', 'getblockheaderbyheight',
-      'get_block_headers_range', 'getblockheadersrange', 'get_fee_estimate', 'get_version', 'get_output_distribution',
-      'hard_fork_info', 'get_block_count', 'getblockcount', 'get_output_histogram', 'get_txpool_backlog',
+      'get_info', 'get_last_block_header', 'get_block_header_by_height', 'getblockheaderbyheight', 'get_block_headers_range',
+      'getblockheadersrange', 'get_fee_estimate', 'get_version', 'get_output_distribution', 'hard_fork_info', 'get_txpool_backlog',
     ];
+    expect([...RPC_METHODS].sort()).toEqual([...methods].sort());
     for (const m of methods) {
       const r = await app.inject({ method: 'POST', url: '/json_rpc', headers: json, payload: rpc(m) });
       expect(r.statusCode, m).toBe(200);
@@ -136,6 +136,8 @@ describe('node proxy: forwarding', () => {
       expect(r.statusCode, p).toBe(200);
     }
     expect(up.seen.map((s) => s.url)).toEqual([...bin, ...plain]);
+    expect([...BIN_PATHS].sort()).toEqual([...bin].sort());
+    expect([...JSON_PATHS].sort()).toEqual([...plain].sort());
   });
 
   it('re-serialises JSON so the node never sees a body the proxy did not check', async () => {
@@ -288,7 +290,8 @@ describe('node proxy: over a real socket', () => {
 describe('node proxy: refusals (fail closed)', () => {
   it('refuses stop_daemon and other json_rpc methods off the list without calling the node', async () => {
     const { app, up } = await proxy();
-    for (const m of ['stop_daemon', 'generateblocks', 'submit_block', 'get_block_template', 'set_bans', 'flush_txpool', 'relay_tx', 'GET_INFO', '']) {
+    const unneeded = ['get_block_count', 'getblockcount', 'getlastblockheader', 'get_output_histogram']; // no wallet call needs these
+    for (const m of [...unneeded, 'stop_daemon', 'generateblocks', 'submit_block', 'get_block_template', 'set_bans', 'flush_txpool', 'relay_tx', 'GET_INFO', '']) {
       const r = await app.inject({ method: 'POST', url: '/json_rpc', headers: json, payload: rpc(m) });
       expect(r.statusCode, m).toBe(403);
       expect(r.json()).toEqual({ error: 'method-not-allowed' });

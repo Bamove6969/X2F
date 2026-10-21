@@ -8,7 +8,7 @@ import Fastify, { LogController, type FastifyError, type FastifyInstance, type F
  * (spec 3.2, Phase 0). It forwards only what a wallet needs, from the web app's origin only, and
  * fails closed: any other path, method or json_rpc call is refused without reaching the node.
  *
- * Run the node itself with `--restricted-rpc` as a second line of defence.
+ * The node must run with `--restricted-rpc` as a second line of defence; main.ts refuses to start otherwise.
  */
 export interface NodeProxyOptions {
   /** The node's RPC base URL, e.g. http://127.0.0.1:18081. Never taken from a request. */
@@ -36,35 +36,40 @@ export const DEFAULT_PORT = 8789;
 
 export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFlight: 256, maxUpstream: 20 } as const;
 
-/**
- * json_rpc methods a wallet may call: the plan's list plus the older names monerod accepts for the
- * same calls, which wallet2 inside monero-ts uses (`getblockheaderbyheight`), and the read-only
- * calls wallet2 and monero-ts's daemon client make (`get_block_count`, `get_output_histogram`,
- * `get_txpool_backlog`).
+/*
+ * Task 11 allowlist (2026-10-21). Fail closed: the plan's entries plus only what monero-ts 0.11.16
+ * (wallet2 inside) is shown to need. test/wallet.test.ts pins it: two real wallets sync, send at
+ * default priority, relay and see the pool tx through the proxy against a restricted regtest node,
+ * and none of their calls may be refused. Entries beyond the plan, and why:
+ *   - json_rpc `getblockheadersrange`, `get_txpool_backlog`: wallet2's adjust_priority (default
+ *     priority) reads recent block headers and the pool backlog. Both seen in the wallet test.
+ *   - `/get_outs.bin`: wallet2 fetches decoy outputs here (monerod's other name for `/getouts.bin`).
+ *   - `/get_output_distribution.bin`: wallet2 reads the output distribution in binary for decoy
+ *     selection. Both seen in the wallet test.
+ *   - json_rpc `getblockheaderbyheight` and `/gettransactions`: wallet2's names for the plan's
+ *     `get_block_header_by_height` and `/get_transactions`, on its fallback paths. Low stakes
+ *     (read-only, same handler as an allowed call), kept so a fallback does not fail closed.
+ * Removed after review: `get_block_count`/`getblockcount` (only MoneroDaemonRpc.getHeight; txSeen's
+ * getTx does not use it), `getlastblockheader` (monero-ts 0.11.16 never calls it) and
+ * `get_output_histogram` (expensive on the node, only a fallback).
  */
+
+/** json_rpc methods a wallet may call. */
 export const RPC_METHODS: ReadonlySet<string> = new Set([
   'get_info',
   'get_last_block_header',
-  'getlastblockheader',
   'get_block_header_by_height',
   'getblockheaderbyheight',
   'get_block_headers_range',
   'getblockheadersrange',
-  'get_block_count',
-  'getblockcount',
   'get_fee_estimate',
   'get_version',
   'get_output_distribution',
-  'get_output_histogram',
   'get_txpool_backlog',
   'hard_fork_info',
 ]);
 
-/**
- * Binary (epee portable storage) paths, forwarded byte for byte. Beside the plan's list:
- * `/get_outs.bin` (monerod's other name for `/getouts.bin`) and `/get_output_distribution.bin`,
- * both of which wallet2 inside monero-ts calls.
- */
+/** Binary (epee portable storage) paths, forwarded byte for byte. */
 export const BIN_PATHS: readonly string[] = [
   '/getblocks.bin',
   '/getblocks_by_height.bin',
@@ -76,7 +81,7 @@ export const BIN_PATHS: readonly string[] = [
   '/get_output_distribution.bin',
 ];
 
-/** JSON paths, re-serialised after parsing. `/gettransactions` is wallet2's name for `/get_transactions`. */
+/** JSON paths, re-serialised after parsing. */
 export const JSON_PATHS: readonly string[] = [
   '/get_transactions',
   '/gettransactions',
