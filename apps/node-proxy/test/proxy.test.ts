@@ -208,6 +208,34 @@ describe('node proxy: over a real socket', () => {
     expect(up.seen).toHaveLength(1);
   });
 
+  it('frees the slot by its backstop timer when a reply stream never closes', async () => {
+    // A node reply whose body never ends and ignores the abort (as a fully buffered body would):
+    // only the backstop timer (timeoutMs + 1 s) frees the slot while the client stays connected.
+    const { app } = await proxy({ maxInFlight: 1, timeoutMs: 100 });
+    const stuck = vi.spyOn(globalThis, 'fetch').mockImplementationOnce(async () =>
+      new Response(new ReadableStream<Uint8Array>({ pull: () => new Promise<void>(() => undefined) }), {
+        status: 200,
+        headers: { 'content-type': 'application/octet-stream' },
+      }),
+    );
+    const port = await listen(app);
+    const client = request({ host: '127.0.0.1', port, path: '/getblocks.bin', method: 'POST', headers: { 'content-length': '1' } });
+    client.on('error', () => undefined);
+    client.end(Buffer.from([1]));
+    try {
+      while (stuck.mock.calls.length === 0) await new Promise((r) => setTimeout(r, 5));
+      await new Promise((r) => setTimeout(r, 50));
+      const held = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
+      expect(held.statusCode).toBe(503);
+      await new Promise((r) => setTimeout(r, 1300));
+      const freed = await app.inject({ method: 'POST', url: '/get_height', headers: json, payload: '{}' });
+      expect(freed.statusCode).toBe(200);
+    } finally {
+      client.destroy();
+      stuck.mockRestore();
+    }
+  });
+
   it('forwards a body sent with no content type', async () => {
     const { app, up } = await proxy();
     const port = await listen(app);
@@ -403,23 +431,24 @@ describe('node proxy: CORS and headers', () => {
     }
   });
 
-  it('writes nothing to stdout or stderr', async () => {
-    const { app, up } = await proxy({ timeoutMs: 100 });
-    const written: string[] = [];
-    const out = vi.spyOn(process.stdout, 'write').mockImplementation((c) => (written.push(String(c)), true));
-    const err = vi.spyOn(process.stderr, 'write').mockImplementation((c) => (written.push(String(c)), true));
-    try {
-      const h = { ...json, 'x-forwarded-for': '203.0.113.9', origin: WEB };
-      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('get_info'), remoteAddress: '198.51.100.7' });
-      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('stop_daemon') });
-      await app.inject({ method: 'POST', url: '/nope', headers: h, payload: '{}' });
-      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: '{bad' });
-      up.handle = () => undefined;
-      await app.inject({ method: 'POST', url: '/json_rpc', headers: h, payload: rpc('get_info') });
-    } finally {
-      out.mockRestore();
-      err.mockRestore();
-    }
-    expect(written).toEqual([]);
+  it('has no logger and never reads forwarded addresses (no trustProxy)', async () => {
+    const up = await upstream();
+    const app = buildNodeProxy({ upstream: up.url, webOrigin: WEB });
+    proxies.push(app);
+    const seen: string[] = [];
+    app.addHook('onRequest', async (req) => {
+      seen.push(`${req.ip} ${req.host} ${req.protocol}`);
+    });
+    const r = await app.inject({
+      method: 'POST',
+      url: '/json_rpc',
+      headers: { ...json, host: 'proxy.local', 'x-forwarded-for': '203.0.113.9', 'x-forwarded-host': 'evil.example', 'x-forwarded-proto': 'https' },
+      payload: rpc('get_info'),
+      remoteAddress: '198.51.100.7',
+    });
+    expect(r.statusCode).toBe(200);
+    expect(seen).toEqual(['198.51.100.7 proxy.local http']);
+    // A pino logger (logger: true or any options object) has a level; Fastify's no-op logger has none.
+    expect(app.log.level).toBeUndefined();
   });
 });
