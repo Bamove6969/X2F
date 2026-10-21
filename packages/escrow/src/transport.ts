@@ -34,7 +34,7 @@ const CHALLENGE_B64 = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/;
 
 /**
  * A relay connection for one role in one trade, using the platform WebSocket (browsers,
- * Node 22). Answers the signed join challenge, reconnects with backoff, and holds
+ * Node 24). Answers the signed join challenge, reconnects with backoff, and holds
  * outgoing envelopes until joined.
  */
 export function wsTransport(a: { url: string; code: string; role: Role; me: Identity }): Transport {

@@ -5,13 +5,14 @@ The first build of Plan 1 (2026-10-15) was reviewed task by task and then lost w
 Recovered reference material (partial, for comparison only — the rulings win): .superpowers/kit/recovered-diffs/ (Task 2 complete diff `review-9f76e08..4058794.diff`; Task 1 fix diff; truncated reads of Task 3/4/5/7 diffs) and .superpowers/kit/recovered-files/packages/escrow/ (Task 5's monero.ts, verify.ts and tests as last written).
 
 ## Toolchain (Task 1)
-- Node 22.23.3 LTS (this machine: ~/.nvm/versions/node/v22.23.3). Node 20 is end of life.
+- Node 24.22.1 Active LTS (this machine: ~/.nvm/versions/node/v24.22.1). Moved from 22.23.3 on 2026-10-21 (owner's decision): 22 gets security fixes only and ends April 2027. Node 20 is end of life.
+- The 14-day rule below covers npm packages, not the Node runtime (owner's decision, 2026-10-21). Node security releases are adopted right away: they come from nodejs.org with signed checksums, a different risk from a new npm package.
 - npm: install deps with `npx -y npm@11.21.0 install --save-exact` (older npm crashes on the vitest 5 peer set). Document in docs/dev-setup.md.
 - vitest 5.0.3 with `vitest.config.ts` using `test.projects` (vitest 5 removed workspaces; a `vitest.workspace.ts` is silently ignored). List project dirs explicitly (e.g. 'packages/*', 'tools/regtest', 'apps/relay'); a stray file in apps/ breaks a glob.
 - TypeScript 7.0.2 strict (noUncheckedIndexedAccess, exactOptionalPropertyTypes, verbatimModuleSyntax, NodeNext). Typecheck per workspace with `tsc --noEmit` (tsc -b leaked compiled tests into vitest).
 - Semgrep 1.178.0 in a venv at ~/.local/semgrep-venv; `npm run semgrep` scans packages apps tools with p/typescript p/nodejs p/secrets, `--error --metrics=off`. Semgrep scans only git-tracked files: `git add` new files before `npm run check`. Empty scan roots error: keep `apps/.gitkeep` until apps/relay exists.
-- `tools/check.sh` (npm run check): typecheck, tests, `npm audit --omit=dev` (0 vulnerabilities), Semgrep (0 findings); fails clearly if Node 22 or the Semgrep venv is missing; root package.json `"engines": {"node": ">=22.12 <23"}` and `.nvmrc` 22.23.3.
-- Every dependency pinned exactly and published at least 14 days before the day it's added. Known-good pins: typescript 7.0.2, vitest 5.0.3, vite 7.3.6 and @types/node 22.20.4 (vitest peers), tsx 4.23.15, monero-ts 0.11.16, libsodium-wrappers 0.8.4, fastify 5.12.5, @fastify/websocket 11.3.1, ws 8.22.0.
+- `tools/check.sh` (npm run check): typecheck, tests, `npm audit --omit=dev` (0 vulnerabilities), Semgrep (0 findings); fails clearly if Node 24 or the Semgrep venv is missing; root package.json `"engines": {"node": ">=24.22.1 <25"}` and `.nvmrc` 24.22.1.
+- Every dependency pinned exactly and published at least 14 days before the day it's added. Known-good pins: typescript 7.0.2, vitest 5.0.3, vite 7.3.6 and @types/node 24.19.1 (vitest peers), tsx 4.23.15, monero-ts 0.11.16, libsodium-wrappers 0.8.4, fastify 5.12.5, @fastify/websocket 11.3.1, ws 8.22.0.
 - Root `overrides` (R12): "serialize-javascript": "7.1.2", "uuid": "11.1.1" — takes npm audit from 3 (2 high) to 0 with monero-ts still loading.
 - Commits: author `git -c user.name="flem" -c user.email="bamove@gmail.com"`; end each message with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01RxVgv1kNnijwFKq33m4Cs2`.
 
