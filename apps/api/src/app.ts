@@ -10,6 +10,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
+import { addSecurityHeaders, frameworkErrors } from './static/serve.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -102,6 +103,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     // (`logController` is fastify 5.12's replacement for the deprecated top-level `disableRequestLogging`.)
     logController: new LogController({ disableRequestLogging: true }),
     bodyLimit: BODY_LIMIT,
+    // Malformed URLs are refused before onRequest runs; this keeps the headers and hides the path (P3-I15).
+    frameworkErrors,
     logger: {
       level: 'info',
       base: null, // drops pino's default pid and machine hostname
@@ -122,6 +125,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('deps', deps);
   app.decorateRequest('auth', null as never);
   await app.register(fastifyCookie);
+
+  // Referrer-Policy, COOP, HSTS and nosniff on every response, errors and 404s included (P3-I15).
+  app.addHook('onRequest', addSecurityHeaders);
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);

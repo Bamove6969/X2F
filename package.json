@@ -12,6 +12,7 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "npm run typecheck --workspaces --if-present",
+    "tokens": "tsx tools/tokens-to-css.ts",
     "audit": "npm audit --omit=dev",
     "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off packages apps tools",
     "check": "bash tools/check.sh"
@@ -26,6 +27,9 @@
   "overrides": {
     "serialize-javascript": "7.1.2",
     "uuid": "11.1.1",
-    "fastify-plugin": "6.0.0"
+    "fastify-plugin": "6.0.0",
+    "rolldown": "1.2.12",
+    "@fastify/send": "4.1.1",
+    "@fastify/accept-negotiator": "2.1.0"
   }
 }
