@@ -1,5 +1,7 @@
 export {
   ATOMIC_PER_XMR,
+  MAX_MARGIN_BPS,
+  amountForFunds,
   atomicForFiat,
   escrowPlan,
   fiatCents,

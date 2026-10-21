@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
+  amountForFunds,
+  payoutsFor,
   SYSTEM_EVENTS,
   TIMERS,
   TradeRuleError,
@@ -22,11 +25,21 @@ const RATE = { currency: 'USD', centsPerXmr: 33000n };
 
 type By = 'buyer' | 'seller' | 'system';
 
+const TAKE = {
+  code: 'ABCD2345EFGH6789',
+  offerId: 'offer-1',
+  sellerId: 'acct-s',
+  buyerId: 'acct-b',
+  methodId: 'revolut',
+  amountAtomic: AMOUNT,
+  lockedRate: RATE,
+  confirmWindowMin: 120,
+  minFiatCents: 10_000n, // $100
+  maxFiatCents: 50_000n, // $500; the trade is $412.50
+};
+
 function taken(poster: 'seller' | 'buyer' = 'seller'): Trade {
-  return newTrade(
-    { code: 'ABCD2345EFGH6789', offerId: 'offer-1', poster, sellerId: 'acct-s', buyerId: 'acct-b', methodId: 'revolut', amountAtomic: AMOUNT, lockedRate: RATE, confirmWindowMin: 120 },
-    T0,
-  );
+  return newTrade({ ...TAKE, poster }, T0);
 }
 
 function rule(fn: () => unknown): string {
@@ -111,6 +124,24 @@ describe('take, setup and funding', () => {
     expect(t.sellerFundsAtomic).toBe(FUNDS);
     expect(t.fiatCents).toBe(41250n);
     expect(taken('buyer').sellerFundsAtomic).toBe(AMOUNT);
+    expect(t.minFiatCents).toBe(10_000n);
+    expect(t.maxFiatCents).toBe(50_000n);
+    expect(t.grown).toBeNull();
+    expect(t.lapsedAt).toBeNull();
+  });
+
+  test('newTrade refuses bad terms', () => {
+    const bad = [
+      { ...TAKE, poster: 'seller' as const, amountAtomic: 1n }, // fiat total rounds to 0
+      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 1441 },
+      { ...TAKE, poster: 'seller' as const, confirmWindowMin: 0 },
+      { ...TAKE, poster: 'seller' as const, minFiatCents: 50_000n }, // $412.50 below the minimum
+      { ...TAKE, poster: 'seller' as const, maxFiatCents: 40_000n }, // above the maximum
+      { ...TAKE, poster: 'seller' as const, minFiatCents: 0n },
+      { ...TAKE, poster: 'seller' as const, sellerId: 'acct-b' },
+    ];
+    for (const a of bad) expect(() => newTrade(a, T0)).toThrow(RangeError);
+    expect(newTrade({ ...TAKE, poster: 'seller', confirmWindowMin: 1440 }, T0).confirmWindowMin).toBe(1440);
   });
 
   test('tick past setupBy → cancelled, no penalty', () => {
@@ -133,7 +164,13 @@ describe('take, setup and funding', () => {
     expect(part.state).toBe('funding');
     expect(apply(part, { type: 'tick' }, 'system', at(31)).state).toBe('funding');
     expect(apply(part, { type: 'tick' }, 'system', at(31, 1)).state).toBe('lapsed');
-    expect(apply(funding(), { type: 'tick' }, 'system', at(31, 1)).state).toBe('lapsed');
+    const lapsedPart = apply(part, { type: 'tick' }, 'system', at(31, 1));
+    expect(lapsedPart.lapsedAt).toEqual(at(31, 1));
+    expect(lapsedPart.closedAt).toBeNull(); // coins to refund: still open
+    const empty = apply(funding(), { type: 'tick' }, 'system', at(31, 1));
+    expect(empty.state).toBe('lapsed');
+    expect(empty.lapsedAt).toEqual(at(31, 1));
+    expect(empty.closedAt).toEqual(at(31, 1)); // nothing to refund: closed
   });
 
   test('chain with received ≥ sellerFunds → securing; lockedRate never changes', () => {
@@ -175,12 +212,12 @@ describe('secured and releasable', () => {
   });
 
   test('a late surplus clears releasable until it unlocks, with no deadline on the wait', () => {
-    const t = run([[chain(FUNDS + 1000n, FUNDS, 0), 'system', 50]], secured());
-    expect(t.state).toBe('secured');
+    const t = run([[chain(FUNDS + 1000n, FUNDS, 0), 'system', 50]], paid());
+    expect(t.state).toBe('paid');
     expect(t.releasable).toBe(false);
     expect(rule(() => apply(t, { type: 'release-started' }, 'seller', at(51)))).toBe('not-releasable');
     const later = apply(t, { type: 'tick' }, 'system', at(5000));
-    expect(later.state).toBe('secured');
+    expect(later.state).toBe('paid');
     expect(apply(later, chain(FUNDS + 1000n, FUNDS + 1000n, 10), 'system', at(5001)).releasable).toBe(true);
   });
 
@@ -201,6 +238,19 @@ describe('mark-paid', () => {
       expect(t.finalAlertAt).toBeNull();
     });
   }
+
+  test('refused in refund_requested once the auto-refund window has opened (finalAlertAt + 15 min)', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // finalAlertAt 121
+    expect(apply(rr, { type: 'mark-paid' }, 'buyer', at(136, -1)).state).toBe('paid');
+    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(136)))).toBe('too-late');
+  });
+
+  test("clears the seller's pending cancel proposal, keeps the buyer's", () => {
+    const sp = apply(secured(), { type: 'propose-cancel' }, 'seller', at(35));
+    expect(apply(sp, { type: 'mark-paid' }, 'buyer', at(40)).cancelProposedBy).toBeNull();
+    const bp = apply(secured(), { type: 'propose-cancel' }, 'buyer', at(35));
+    expect(apply(bp, { type: 'mark-paid' }, 'buyer', at(40)).cancelProposedBy).toBe('buyer');
+  });
 
   test('seller → wrong-party; other states → wrong-state', () => {
     expect(rule(() => apply(secured(), { type: 'mark-paid' }, 'seller', at(31)))).toBe('wrong-party');
@@ -400,9 +450,40 @@ describe('release and settling', () => {
     expect(f.closedAt).toEqual(at(61));
   });
 
-  test('settled must match what is settling', () => {
-    expect(rule(() => apply(settling(), { type: 'settled', kind: 'mutual-cancel', txHash: 'bb'.repeat(32) }, 'system', at(60)))).toBe('wrong-state');
-    expect(rule(() => apply(paid(), { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(60)))).toBe('wrong-state');
+  test('settled is a chain fact: accepted from every open funded state, kind mapped to the end state', () => {
+    const hash = 'bb'.repeat(32);
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured());
+    const lapsed = run([[chain(10n, 10n, 10), 'system', 3], [{ type: 'tick' }, 'system', 32]], funding());
+    const disputed = apply(paid(), { type: 'open-dispute' }, 'seller', at(41));
+    for (const t of [secured(), settling(), disputed, paid(), rr, lapsed]) {
+      expect(apply(t, { type: 'settled', kind: 'release', txHash: hash }, 'system', at(200)).state).toBe('released');
+      for (const kind of ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'] as const) {
+        const r = apply(t, { type: 'settled', kind, txHash: hash }, 'system', at(200));
+        expect(r.state).toBe('refunded');
+        expect(r.settling).toBe(kind);
+        expect(r.closedAt).toEqual(at(200));
+      }
+    }
+    for (const t of [taken(), funding(), securing(), refunded()]) {
+      expect(rule(() => apply(t, { type: 'settled', kind: 'release', txHash: hash }, 'system', at(200)))).toBe('wrong-state');
+    }
+  });
+
+  test('reproduced: a release that lands after settleBy returned the trade to paid is still recorded', () => {
+    const back = apply(settling(), { type: 'tick' }, 'system', at(66));
+    expect(back.state).toBe('paid');
+    expect(apply(back, { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(70)).state).toBe('released');
+  });
+
+  test('reproduced: a buyer-cancel refund that lands after its window lapsed back to refund_requested is recorded', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121], [{ type: 'buyer-cancel' }, 'buyer', 125], [{ type: 'tick' }, 'system', 141]], secured());
+    expect(rr.state).toBe('refund_requested');
+    expect(apply(rr, { type: 'settled', kind: 'buyer-cancel', txHash: 'bb'.repeat(32) }, 'system', at(142)).state).toBe('refunded');
+  });
+
+  test('reproduced: a settlement during a dispute is recorded', () => {
+    const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(31));
+    expect(apply(d, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(40)).state).toBe('refunded');
   });
 
   test('auto-refund settles from refund_requested; lapse-refund from lapsed', () => {
@@ -458,7 +539,7 @@ describe('escalate', () => {
     const lapsedFunds = run([[chain(10n, 10n, 10), 'system', 3], [{ type: 'tick' }, 'system', 32]], funding());
     const lapsedEmpty = run([[{ type: 'tick' }, 'system', 32]], funding());
     const released = apply(settling(), { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(60));
-    const cancelled = apply(taken(), { type: 'buyer-cancel' }, 'buyer', at(1));
+    const cancelled = apply(apply(taken(), { type: 'buyer-cancel' }, 'buyer', at(1)), chain(5n, 0n, 0), 'system', at(100));
     for (const t of [lapsedFunds, released, refunded(), cancelled]) {
       const d = apply(t, { type: 'escalate' }, 'system', at(3000));
       expect(d.state).toBe('disputed');
@@ -466,6 +547,9 @@ describe('escalate', () => {
       expect(d.closedAt).toBeNull(); // a reopened trade is open again (no purge while disputed)
     }
     expect(rule(() => apply(lapsedEmpty, { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
+    expect(rule(() => apply(apply(taken(), { type: 'buyer-cancel' }, 'buyer', at(1)), { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
+    const swept = apply(released, chain(0n, 0n, 0), 'system', at(61));
+    expect(rule(() => apply(swept, { type: 'escalate' }, 'system', at(62)))).toBe('wrong-state');
     expect(rule(() => apply(secured(), { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
   });
 
@@ -511,6 +595,42 @@ describe('pause and resume (P3-I19)', () => {
     expect(r.finalAlertAt!.getTime()).toBeGreaterThan(r.payBy!.getTime());
   });
 
+  test('a deadline that already passed when paused does not move; one exactly at the pause does', () => {
+    const f = funding(); // fundBy 31
+    const r = apply(apply(f, { type: 'pause' }, 'system', at(31)), { type: 'resume' }, 'system', at(41));
+    expect(r.fundBy).toEqual(at(41));
+  });
+
+  test('a deadline set during the pause counts from the resume, not the pause', () => {
+    const p = apply(secured(), { type: 'pause' }, 'system', at(100));
+    const marked = apply(p, { type: 'mark-paid' }, 'buyer', at(110)); // confirm window 120 min
+    expect(marked.paidAt).toEqual(at(110));
+    const r = apply(marked, { type: 'resume' }, 'system', at(160));
+    expect(r.confirmBy).toEqual(at(280));
+    const secP = apply(securing(), { type: 'pause' }, 'system', at(10));
+    const sec = apply(secP, chain(FUNDS, FUNDS, 10), 'system', at(20)); // secured during the pause
+    expect(sec.securedAt).toEqual(at(20));
+    expect(apply(sec, { type: 'resume' }, 'system', at(50)).payBy).toEqual(at(140));
+  });
+
+  test('while paused, client events other than mark-paid and buyer-cancel are refused', () => {
+    const p = apply(secured(), { type: 'pause' }, 'system', at(130)); // payBy 120 passed
+    for (const type of CLIENT_EVENTS) {
+      if (type === 'mark-paid' || type === 'buyer-cancel') continue;
+      for (const by of ['buyer', 'seller'] as const) {
+        const code = rule(() => apply(p, sampleEvent[type], by, at(131)));
+        expect(code === 'wrong-state' || code === 'wrong-party').toBe(true);
+      }
+    }
+    expect(rule(() => apply(p, { type: 'request-refund' }, 'seller', at(131)))).toBe('wrong-state');
+    expect(rule(() => apply(p, { type: 'extend' }, 'seller', at(131)))).toBe('wrong-state');
+    expect(rule(() => apply(p, { type: 'release-started' }, 'seller', at(131)))).toBe('wrong-state');
+    expect(rule(() => apply(p, { type: 'open-dispute' }, 'buyer', at(131)))).toBe('wrong-state');
+    expect(rule(() => apply(p, { type: 'propose-cancel' }, 'buyer', at(131)))).toBe('wrong-state');
+    expect(apply(p, { type: 'mark-paid' }, 'buyer', at(131)).state).toBe('paid');
+    expect(apply(p, { type: 'buyer-cancel' }, 'buyer', at(131)).state).toBe('settling');
+  });
+
   test('pause twice or resume while running → wrong-state', () => {
     const p = apply(secured(), { type: 'pause' }, 'system', at(40));
     expect(rule(() => apply(p, { type: 'pause' }, 'system', at(41)))).toBe('wrong-state');
@@ -519,11 +639,26 @@ describe('pause and resume (P3-I19)', () => {
 });
 
 describe('clock skew (Review Focus 3)', () => {
-  test('a mark-paid 1 ms after a lapsed fundBy is refused', () => {
-    const f = funding();
-    expect(rule(() => apply(f, { type: 'mark-paid' }, 'buyer', at(31, 1)))).toBe('wrong-state');
-    const lapsed = apply(f, { type: 'tick' }, 'system', at(31, 1));
-    expect(rule(() => apply(lapsed, { type: 'mark-paid' }, 'buyer', at(31, 1)))).toBe('wrong-state');
+  test('a mark-paid 1 ms after a lapsed fundBy is refused, even when the rest of the funds then arrive', () => {
+    const part = run([[chain(FUNDS / 2n, FUNDS / 2n, 10), 'system', 10]], funding()); // fundBy 31
+    // 1 ms before the server's deadline: still funding, and the rest arriving secures it.
+    const early = apply(part, { type: 'tick' }, 'system', at(31, -1));
+    expect(early.state).toBe('funding');
+    const ok = apply(apply(early, chain(FUNDS, FUNDS, 10), 'system', at(31, -1)), { type: 'mark-paid' }, 'buyer', at(31, -1));
+    expect(ok.state).toBe('paid');
+    // 1 ms after: lapsed, late funds do not revive it, and I've paid is refused.
+    const lapsed = apply(part, { type: 'tick' }, 'system', at(31, 1));
+    expect(lapsed.state).toBe('lapsed');
+    const late = apply(lapsed, chain(FUNDS, FUNDS, 10), 'system', at(31, 2));
+    expect(late.state).toBe('lapsed');
+    expect(rule(() => apply(late, { type: 'mark-paid' }, 'buyer', at(31, 3)))).toBe('wrong-state');
+  });
+
+  test('a seller whose phone is 10 min fast cannot request a refund before the server payBy', () => {
+    const s = secured(); // payBy 120 on the server clock
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(120, -1)))).toBe('too-early');
+    expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(110)))).toBe('too-early');
+    expect(apply(s, { type: 'request-refund' }, 'seller', at(120, 1)).state).toBe('refund_requested');
   });
 
   test('deadlines are computed from the now passed in, never the device clock', () => {
@@ -589,5 +724,97 @@ describe('states are all reachable', () => {
       apply(secured(), { type: 'open-dispute' }, 'buyer', at(31)).state,
     ]);
     expect(seen.size).toBe(12);
+  });
+});
+
+describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
+  const fundingFor = (poster: 'seller' | 'buyer') => run([[{ type: 'setup-done', escrowAddress: '4Escrow' }, 'system', 1]], taken(poster));
+  const facts = (t: Trade, balanceAtomic: bigint, kind: 'release' | 'buyer-cancel' = 'release') =>
+    payoutsFor({ kind, amountAtomic: t.amountAtomic, feeAtomic: t.feeAtomic, poster: t.poster, sellerFundsAtomic: t.sellerFundsAtomic, balanceAtomic, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' });
+
+  test('seller-poster: before I have paid and within the offer max, the trade grows to what was funded', () => {
+    const received = 1_313_131_313_131n;
+    const t = apply(fundingFor('seller'), chain(received, 0n, 1), 'system', at(5));
+    const grown = amountForFunds(received, 'seller');
+    expect(grown).toBeGreaterThan(AMOUNT);
+    expect(t.amountAtomic).toBe(grown);
+    expect(t.feeAtomic).toBe(feeFor(grown));
+    expect(t.sellerFundsAtomic).toBe(grown + feeFor(grown));
+    expect(t.fiatCents).toBe((grown * 33000n * 2n + 1_000_000_000_000n) / 2_000_000_000_000n);
+    expect(t.lockedRate).toEqual(RATE);
+    expect(t.grown).toEqual({ at: at(5), fromAtomic: AMOUNT, fromFiatCents: 41250n });
+    expect(t.state).toBe('securing');
+    // Any remainder below one more atomic unit of trade is dust for the seller.
+    const ps = facts(t, received);
+    expect(ps[0]).toEqual({ address: 'B', amountAtomic: grown });
+    expect(ps[1]).toEqual({ address: 'F', amountAtomic: feeFor(grown) });
+    const dust = received - grown - feeFor(grown);
+    expect(ps.slice(2)).toEqual(dust > 0n ? [{ address: 'S', amountAtomic: dust }] : []);
+  });
+
+  test('buyer-poster: the trade grows to exactly what was funded', () => {
+    const received = 1_300_000_000_000n;
+    const t = apply(fundingFor('buyer'), chain(received, 0n, 1), 'system', at(5));
+    expect(t.amountAtomic).toBe(received);
+    expect(t.sellerFundsAtomic).toBe(received);
+    expect(t.feeAtomic).toBe(13_000_000_000n);
+    expect(t.fiatCents).toBe(42900n);
+    expect(facts(t, received)).toEqual([
+      { address: 'B', amountAtomic: received - 13_000_000_000n },
+      { address: 'F', amountAtomic: 13_000_000_000n },
+    ]);
+  });
+
+  test('a late surplus while secured (unpaid) also grows the trade, and the fiat total the buyer pays follows', () => {
+    const t = apply(secured(), chain(FUNDS + 10_100_000_000n, FUNDS, 0), 'system', at(50));
+    expect(t.amountAtomic).toBe(AMOUNT + 10_000_000_000n);
+    expect(t.fiatCents).toBe(41580n);
+    expect(t.grown?.at).toEqual(at(50));
+    expect(t.releasable).toBe(false);
+    const again = apply(t, chain(FUNDS + 20_200_000_000n, FUNDS, 0), 'system', at(55));
+    expect(again.amountAtomic).toBe(AMOUNT + 20_000_000_000n);
+    expect(again.grown).toEqual({ at: at(55), fromAtomic: AMOUNT, fromFiatCents: 41250n });
+  });
+
+  test('above the offer maximum the amount stays and the surplus goes to the seller', () => {
+    const received = 2_000_000_000_000n; // 2 XMR = $660 > $500 max
+    const t = apply(fundingFor('buyer'), chain(received, received, 10), 'system', at(5));
+    expect(t.amountAtomic).toBe(AMOUNT);
+    expect(t.fiatCents).toBe(41250n);
+    expect(t.grown).toBeNull();
+    expect(facts(t, received)).toEqual([
+      { address: 'B', amountAtomic: AMOUNT - 12_500_000_000n },
+      { address: 'F', amountAtomic: 12_500_000_000n },
+      { address: 'S', amountAtomic: received - AMOUNT },
+    ]);
+  });
+
+  test('exactly at the offer maximum still grows', () => {
+    const t = newTrade({ ...TAKE, poster: 'buyer', maxFiatCents: 42900n }, T0);
+    const g = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_000_000_000n, 0n, 0), 'system', at(2));
+    expect(g.amountAtomic).toBe(1_300_000_000_000n);
+    const over = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_020_000_000n, 0n, 0), 'system', at(2));
+    expect(over.amountAtomic).toBe(AMOUNT);
+  });
+
+  test('after I have paid the amount never changes; the surplus goes to the seller', () => {
+    const t = apply(paid(), chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(45));
+    expect(t.amountAtomic).toBe(AMOUNT);
+    expect(t.fiatCents).toBe(41250n);
+    expect(t.grown).toBeNull();
+    expect(facts(t, FUNDS + 100_000_000n)[2]).toEqual({ address: 'S', amountAtomic: 100_000_000n });
+  });
+
+  test('no growth once a refund or settlement has started', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured());
+    expect(apply(rr, chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(125)).amountAtomic).toBe(AMOUNT);
+    const st = apply(secured(), { type: 'release-started' }, 'seller', at(40));
+    expect(apply(st, chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(45)).amountAtomic).toBe(AMOUNT);
+  });
+
+  test('every refund of a grown trade pays everything to the seller', () => {
+    const received = 1_300_000_000_000n;
+    const t = apply(fundingFor('buyer'), chain(received, received, 10), 'system', at(5));
+    expect(facts(t, received, 'buyer-cancel')).toEqual([{ address: 'S', amountAtomic: received }]);
   });
 });

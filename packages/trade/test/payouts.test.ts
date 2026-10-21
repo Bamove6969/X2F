@@ -9,7 +9,7 @@ const AMOUNT = 1_250_000_000_000n; // 1.25 XMR
 const FEE_AMOUNT = 12_500_000_000n; // 0.0125 XMR
 
 const KINDS: SettleKind[] = ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
-const AUTOMATIC: SettleKind[] = ['buyer-cancel', 'auto-refund', 'lapse-refund'];
+const REFUNDS: SettleKind[] = ['mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'];
 
 function args(kind: SettleKind, poster: 'seller' | 'buyer', balanceAtomic: bigint, amountAtomic = AMOUNT) {
   const plan = escrowPlan({ amountAtomic, poster });
@@ -54,7 +54,7 @@ describe('payoutsFor: exact funding', () => {
   });
 });
 
-describe('payoutsFor: surplus goes to the poster', () => {
+describe('payoutsFor: a surplus the trade did not grow into goes to the seller (spec 11.1, 2026-10-20)', () => {
   test('release, poster seller, balance 1.2626: surplus is its own output to the seller', () => {
     expect(payoutsFor(args('release', 'seller', 1_262_600_000_000n))).toEqual([
       { address: BUYER, amountAtomic: AMOUNT },
@@ -63,21 +63,16 @@ describe('payoutsFor: surplus goes to the poster', () => {
     ]);
   });
 
-  test('release, poster buyer, balance 1.2501: surplus is added to the buyer payout', () => {
+  test('release, poster buyer, balance 1.2501: surplus is its own output to the seller, not the buyer-poster', () => {
     expect(payoutsFor(args('release', 'buyer', 1_250_100_000_000n))).toEqual([
-      { address: BUYER, amountAtomic: 1_237_600_000_000n },
+      { address: BUYER, amountAtomic: 1_237_500_000_000n },
       { address: FEE, amountAtomic: FEE_AMOUNT },
+      { address: SELLER, amountAtomic: 100_000_000n },
     ]);
   });
 
-  test('mutual cancel, poster buyer, balance 1.2501: the buyer gets the surplus', () => {
-    expect(payoutsFor(args('mutual-cancel', 'buyer', 1_250_100_000_000n))).toEqual([
-      { address: SELLER, amountAtomic: AMOUNT },
-      { address: BUYER, amountAtomic: 100_000_000n },
-    ]);
-  });
-
-  test('mutual cancel, poster seller, with surplus: one output of the whole balance', () => {
+  test('mutual cancel on either ad: everything to the seller', () => {
+    expect(payoutsFor(args('mutual-cancel', 'buyer', 1_250_100_000_000n))).toEqual([{ address: SELLER, amountAtomic: 1_250_100_000_000n }]);
     expect(payoutsFor(args('mutual-cancel', 'seller', 1_262_600_000_000n))).toEqual([{ address: SELLER, amountAtomic: 1_262_600_000_000n }]);
   });
 
@@ -90,17 +85,16 @@ describe('payoutsFor: surplus goes to the poster', () => {
         expect(sum(rel)).toBe(balance);
         expect(rel.filter((p) => p.address === FEE)).toEqual([{ address: FEE, amountAtomic: feeFor(AMOUNT) }]);
         expect(rel[0]?.address).toBe(BUYER);
+        expect(rel.find((p) => p.address === BUYER)?.amountAtomic).toBe(poster === 'seller' ? AMOUNT : AMOUNT - FEE_AMOUNT);
         const mc = payoutsFor(args('mutual-cancel', poster, balance));
-        expect(sum(mc)).toBe(balance);
-        expect(mc.some((p) => p.address === FEE)).toBe(false);
-        expect(mc[0]?.address).toBe(SELLER);
+        expect(mc).toEqual([{ address: SELLER, amountAtomic: balance }]);
       }
     }
   });
 });
 
-describe('payoutsFor: automatic refunds pay only the seller refund address', () => {
-  for (const kind of AUTOMATIC) {
+describe('payoutsFor: every refund pays only the seller refund address', () => {
+  for (const kind of REFUNDS) {
     for (const poster of ['seller', 'buyer'] as const) {
       test(`${kind}, poster ${poster}: one payout of the whole balance, surplus included`, () => {
         const { sellerFundsAtomic } = escrowPlan({ amountAtomic: AMOUNT, poster });
@@ -152,6 +146,12 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
 
   test('an unknown kind', () => {
     expect(() => payoutsFor({ ...args('release', 'buyer', AMOUNT), kind: 'steal' as SettleKind })).toThrow(RangeError);
+  });
+
+  test('duplicate addresses', () => {
+    expect(() => payoutsFor({ ...args('release', 'buyer', AMOUNT), feeWallet: BUYER })).toThrow(RangeError);
+    expect(() => payoutsFor({ ...args('release', 'seller', AMOUNT + FEE_AMOUNT), sellerRefund: BUYER })).toThrow(RangeError);
+    expect(() => payoutsFor({ ...args('auto-refund', 'seller', AMOUNT), sellerRefund: FEE })).toThrow(RangeError);
   });
 
   test('an empty address', () => {

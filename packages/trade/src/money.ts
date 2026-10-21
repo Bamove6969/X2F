@@ -8,6 +8,8 @@ import { feeFor } from '@x2f/core';
 export const ATOMIC_PER_XMR = 1_000_000_000_000n;
 const XMR_DECIMALS = 12;
 const BPS = 10_000n;
+/** The largest margin either way: ±50%. */
+export const MAX_MARGIN_BPS = 5_000;
 
 /** What the ad poster does with XMR: a sell ad is posted by a seller, a buy ad by a buyer. */
 export type Side = 'sell' | 'buy';
@@ -35,11 +37,13 @@ function checkPrice(p: Price): void {
   if (p.centsPerXmr <= 0n) throw new RangeError('price must be positive');
 }
 
-/** The market price moved by `marginBps` basis points (+40 = 0.40% above), rounded half up. */
+/** The market price moved by `marginBps` basis points (+40 = 0.40% above, at most ±50%), rounded half up. */
 export function rateFor(market: Price, marginBps: number): Price {
   checkPrice(market);
-  if (!Number.isSafeInteger(marginBps) || marginBps <= -10_000) throw new RangeError('bad margin');
-  return { currency: market.currency, centsPerXmr: divHalfUp(market.centsPerXmr * (BPS + BigInt(marginBps)), BPS) };
+  if (!Number.isSafeInteger(marginBps) || Math.abs(marginBps) > MAX_MARGIN_BPS) throw new RangeError('bad margin');
+  const rate = { currency: market.currency, centsPerXmr: divHalfUp(market.centsPerXmr * (BPS + BigInt(marginBps)), BPS) };
+  checkPrice(rate);
+  return rate;
 }
 
 /** Fiat value of `atomic` at `rate`, in cents, rounded half up. */
@@ -106,4 +110,22 @@ export function escrowPlan(a: { amountAtomic: bigint; poster: 'seller' | 'buyer'
   if (a.poster !== 'seller' && a.poster !== 'buyer') throw new RangeError('unknown poster');
   const feeAtomic = feeFor(a.amountAtomic);
   return { sellerFundsAtomic: a.amountAtomic + (a.poster === 'seller' ? feeAtomic : 0n), feeAtomic };
+}
+
+/**
+ * The trade amount that `fundsAtomic` in the escrow covers (spec 11.1, owner
+ * 2026-10-20: a trade funded above its amount grows to what was funded). On a
+ * buyer's ad that is the funds; on a seller's ad it is the largest A with
+ * A + feeFor(A) <= funds, and anything left over is dust for the seller.
+ */
+export function amountForFunds(fundsAtomic: bigint, poster: 'seller' | 'buyer'): bigint {
+  if (fundsAtomic <= 0n) throw new RangeError('funds must be positive');
+  if (poster === 'buyer') return fundsAtomic;
+  if (poster !== 'seller') throw new RangeError('unknown poster');
+  const funds = (a: bigint): bigint => a + feeFor(a);
+  // A + A/100 >= funds(A) > A + A/100 - 1, so the answer is within 2 of funds * 100 / 101.
+  let a = (fundsAtomic * BPS) / (BPS + 100n);
+  while (a > 0n && funds(a) > fundsAtomic) a -= 1n;
+  while (funds(a + 1n) <= fundsAtomic) a += 1n;
+  return a;
 }

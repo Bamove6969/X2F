@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, offerRate, posterRole, rateFor } from '../src/index.js';
+import { amountForFunds, atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, offerRate, posterRole, rateFor } from '../src/index.js';
 
 const XMR = 1_000_000_000_000n;
 
@@ -28,10 +28,18 @@ describe('rateFor', () => {
     expect(rateFor({ currency: 'USD', centsPerXmr: 32990n }, 0).centsPerXmr).toBe(32990n);
   });
 
-  test('rejects a non-integer margin or one at or below -100%', () => {
+  test('rejects a non-integer margin or one beyond ±50%', () => {
     expect(() => rateFor({ currency: 'USD', centsPerXmr: 1n }, 1.5)).toThrow(RangeError);
     expect(() => rateFor({ currency: 'USD', centsPerXmr: 1n }, -10_000)).toThrow(RangeError);
+    expect(() => rateFor({ currency: 'USD', centsPerXmr: 1n }, -5_001)).toThrow(RangeError);
+    expect(() => rateFor({ currency: 'USD', centsPerXmr: 1n }, 5_001)).toThrow(RangeError);
+    expect(rateFor({ currency: 'USD', centsPerXmr: 10_000n }, 5_000).centsPerXmr).toBe(15_000n);
+    expect(rateFor({ currency: 'USD', centsPerXmr: 10_000n }, -5_000).centsPerXmr).toBe(5_000n);
     expect(() => rateFor({ currency: 'USD', centsPerXmr: 1n }, Number.NaN)).toThrow(RangeError);
+  });
+
+  test('the rate is always positive', () => {
+    expect(rateFor({ currency: 'USD', centsPerXmr: 1n }, -5_000).centsPerXmr).toBe(1n);
   });
 
   test('rejects a non-positive market price', () => {
@@ -134,5 +142,24 @@ describe('escrowPlan', () => {
 
   test('rejects a non-positive amount', () => {
     expect(() => escrowPlan({ amountAtomic: 0n, poster: 'seller' })).toThrow(RangeError);
+  });
+});
+
+describe('amountForFunds', () => {
+  test('a buyer-poster trade grows to exactly what was funded', () => {
+    expect(amountForFunds(1_300_000_000_000n, 'buyer')).toBe(1_300_000_000_000n);
+  });
+
+  test('a seller-poster trade grows to the largest A with A + feeFor(A) <= funds', () => {
+    for (const funds of [1n, 100n, 101n, 102n, 1_262_500_000_000n, 1_262_600_000_000n, 1_313_131_313_131n, 7_777_777_777_777n]) {
+      const a = amountForFunds(funds, 'seller');
+      expect(escrowPlan({ amountAtomic: a, poster: 'seller' }).sellerFundsAtomic <= funds).toBe(true);
+      expect(escrowPlan({ amountAtomic: a + 1n, poster: 'seller' }).sellerFundsAtomic > funds).toBe(true);
+    }
+    expect(amountForFunds(1_262_500_000_000n, 'seller')).toBe(1_250_000_000_000n);
+  });
+
+  test('refuses non-positive funds', () => {
+    expect(() => amountForFunds(0n, 'seller')).toThrow(RangeError);
   });
 });
