@@ -4,8 +4,9 @@
  * - Recovery codes come only from `newRecoveryCode()` (80 bits from `getRandomValues`, bias-free)
  *   and are stored only as SHA-256 of the normalized code.
  * - A backup login opens a `recovery` session, never a full one. A TOTP-only backup login is held
- *   for 24 hours before it may add a primary method (`assertHoldPassed`); a recovery code skips the
- *   hold. Any full session of the account can end a recovery session.
+ *   for 24 hours: `requireSession` refuses it with 403 `recovery-hold` on every route that does not
+ *   set `allowHeld`, so it cannot add a primary method early; a recovery code skips the hold.
+ *   Any full session of the account can end a recovery session.
  * - Staff and the owner have no backup login (R2): their usernames take the unknown-username path.
  */
 import { createHash } from 'node:crypto';
@@ -28,23 +29,11 @@ export const RECOVERY_CODE_COUNT = 10;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const codeHash = (normalized: string): Buffer => createHash('sha256').update(normalized, 'utf8').digest();
 
-/**
- * The hold rule for the add-method routes (PGP here; Task 8's WebAuthn and Task 10's
- * `PUT /v1/account/password` too). A recovery session may add a primary method only when it has no
- * hold or `now ≥ hold_until`; otherwise 403 `recovery-hold` `{ holdUntil }`. Full sessions pass.
- * Place it right after `requireSession({ allowRecovery: true })`.
- */
-// TODO(Task 8 merge): add `assertHoldPassed` to the `POST /v1/account/webauthn/start` preHandlers,
-// right after `requireSession({ allowRecovery: true })`, and test it as the PGP route is tested.
-export async function assertHoldPassed(req: FastifyRequest): Promise<void> {
-  if (!req.auth) throw new ApiError(401, 'not-authenticated');
-  if (req.auth.level !== 'recovery') return;
-  const { db, clock } = req.server.deps;
-  const { rows } = await db.query<{ hold_until: Date | null }>('select hold_until from sessions where id = $1', [req.auth.sessionId]);
-  const hold = rows[0]?.hold_until ?? null;
-  if (hold !== null && clock().getTime() < hold.getTime()) {
-    throw new ApiError(403, 'recovery-hold', { holdUntil: hold.toISOString() });
-  }
+/** The form login compares; generation hashes the same form, so the two can never drift apart. */
+function normalized(code: string): string {
+  const n = normalizeRecoveryCode(code);
+  if (n === null) throw new Error('newRecoveryCode produced a code that does not normalize');
+  return n;
 }
 
 function strings<K extends string>(body: unknown, keys: readonly K[]): Record<K, string> {
@@ -73,7 +62,7 @@ async function newCodes(req: FastifyRequest) {
       await client.query('delete from recovery_codes where account_id = $1', [req.auth.accountId]);
       await client.query(
         'insert into recovery_codes (account_id, code_hash) select $1, unnest($2::bytea[])',
-        [req.auth.accountId, list.map((c) => codeHash(c))],
+        [req.auth.accountId, list.map((c) => codeHash(normalized(c)))],
       );
       await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'recovery-codes' }, now);
       await client.query('commit');

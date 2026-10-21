@@ -62,8 +62,9 @@ type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promis
  *   (only the creating session has one, for 30 minutes); a function adds the route's own
  *   predicate on top (Task 12: first wallet only).
  * - `recovery: true` lets a recovery session through without a token (add-method routes only;
- *   Task 9 adds the hold check there). Otherwise a recovery session gets 403 `recovery-session`:
- *   recovery sessions cannot confirm.
+ *   a held TOTP backup session never gets here: `requireSession` enforces the hold and fails
+ *   closed). Otherwise a recovery session gets 403 `recovery-session`: recovery sessions cannot
+ *   confirm.
  */
 export function requireConfirm(
   action: ActionOf,
