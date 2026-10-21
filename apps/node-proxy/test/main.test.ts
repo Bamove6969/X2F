@@ -3,6 +3,7 @@ import { createServer, request, type Server } from 'node:http';
 import { createServer as createNetServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it } from 'vitest';
+import { DEFAULT_PORT } from '../src/server.js';
 
 const MAIN = fileURLToPath(new URL('../src/main.ts', import.meta.url));
 const APP_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -109,4 +110,28 @@ describe('node proxy main', () => {
     expect(run.stdout).toBe('{"reason":"listening"}\n');
     expect(run.stderr).toBe('');
   }, 30_000);
+
+  it('refuses to start unless the node reports restricted RPC', async () => {
+    const cases: [{ restricted?: unknown; status?: number }, string][] = [
+      [{ restricted: false }, 'node-not-restricted'],
+      [{}, 'node-not-restricted'],
+      [{ restricted: 'true' }, 'node-not-restricted'],
+      [{ restricted: true, status: 500 }, 'node-unavailable'],
+    ];
+    for (const [o, reason] of cases) {
+      const run = await runMain(await fakeNode(o));
+      expect(run.listened, JSON.stringify(o)).toBe(false);
+      expect(run.code, JSON.stringify(o)).toBe(1);
+      expect(run.stdout).toBe('');
+      expect(run.stderr, JSON.stringify(o)).toBe(`${JSON.stringify({ reason })}\n`);
+    }
+    const unreachable = await runMain('http://127.0.0.1:1');
+    expect(unreachable.listened).toBe(false);
+    expect(unreachable.code).toBe(1);
+    expect(unreachable.stderr).toBe('{"reason":"node-unavailable"}\n');
+  }, 60_000);
+
+  it('defaults to port 8789, clear of the relay admin listener on 8788', () => {
+    expect(DEFAULT_PORT).toBe(8789);
+  });
 });

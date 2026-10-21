@@ -1,4 +1,4 @@
-import { buildNodeProxy } from './server.js';
+import { buildNodeProxy, DEFAULT_PORT, NodeCheckError, requireRestrictedNode } from './server.js';
 
 /** A required setting. */
 function str(name: string): string {
@@ -25,7 +25,16 @@ const optional = Object.fromEntries(
   }).filter(([, v]) => v !== undefined),
 );
 
-const app = buildNodeProxy({ upstream: str('NODE_PROXY_UPSTREAM'), webOrigin: str('NODE_PROXY_WEB_ORIGIN'), ...optional });
-await app.listen({ host: process.env.NODE_PROXY_HOST ?? '127.0.0.1', port: int('NODE_PROXY_PORT') ?? 8788 });
-// Only this line is ever logged: no requests, callers, addresses or node URL.
+const upstream = str('NODE_PROXY_UPSTREAM');
+try {
+  await requireRestrictedNode(upstream, optional.timeoutMs);
+} catch (e) {
+  if (!(e instanceof NodeCheckError)) throw e;
+  // Only the reason: never the node's URL.
+  console.error(JSON.stringify({ reason: e.reason }));
+  process.exit(1);
+}
+const app = buildNodeProxy({ upstream, webOrigin: str('NODE_PROXY_WEB_ORIGIN'), ...optional });
+await app.listen({ host: process.env.NODE_PROXY_HOST ?? '127.0.0.1', port: int('NODE_PROXY_PORT') ?? DEFAULT_PORT });
+// Only these lines are ever logged: no requests, callers, addresses or node URL.
 console.log(JSON.stringify({ reason: 'listening' }));

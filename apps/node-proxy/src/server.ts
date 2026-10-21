@@ -31,6 +31,9 @@ export interface NodeProxyOptions {
   maxUpstream?: number;
 }
 
+/** Default listening port; the relay's admin listener has 8788. */
+export const DEFAULT_PORT = 8789;
+
 export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFlight: 256, maxUpstream: 20 } as const;
 
 /**
@@ -289,4 +292,35 @@ export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
   }
 
   return app;
+}
+
+/** Why the proxy will not start in front of a node. */
+export class NodeCheckError extends Error {
+  constructor(readonly reason: 'node-unavailable' | 'node-not-restricted') {
+    super(reason);
+  }
+}
+
+/**
+ * Refuses a node not running with `--restricted-rpc`: the allowlist is the first line of defence and
+ * the node's own restricted mode the second, so the proxy never starts without both. main.ts always
+ * calls this; tests that build the proxy directly with buildNodeProxy skip it.
+ */
+export async function requireRestrictedNode(upstream: string, timeoutMs: number = DEFAULTS.timeoutMs): Promise<void> {
+  let info: unknown;
+  try {
+    const res = await fetch(`${upstreamBase(upstream)}/json_rpc`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', connection: 'close' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: '0', method: 'get_info' }),
+      redirect: 'error',
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!res.ok) throw new Error('status');
+    info = await res.json();
+  } catch {
+    throw new NodeCheckError('node-unavailable');
+  }
+  const result = isPlainObject(info) ? info.result : undefined;
+  if (!isPlainObject(result) || result.restricted !== true) throw new NodeCheckError('node-not-restricted');
 }
