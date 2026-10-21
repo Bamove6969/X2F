@@ -406,7 +406,8 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       if (by !== 'buyer') return fail('wrong-party');
       if (s !== 'securing' && s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
       // Once the auto-refund may run (autoRefundDecision: now >= finalAlertAt + 15 min) it is too late.
-      if (s === 'refund_requested' && t.finalAlertAt !== null && now.getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {
+      // The window is frozen during maintenance, so a paused trade counts from the pause.
+      if (s === 'refund_requested' && t.finalAlertAt !== null && base(t, now).getTime() >= addMin(t.finalAlertAt, TIMERS.finalAlertMin).getTime()) {
         return fail('too-late');
       }
       return {

@@ -486,6 +486,35 @@ describe('release and settling', () => {
     expect(apply(d, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(40)).state).toBe('refunded');
   });
 
+  test('reproduced: a buyer-cancel that timed out back to secured, then its refund lands', () => {
+    const bc = apply(secured(), { type: 'buyer-cancel' }, 'buyer', at(40)); // settleBy 55
+    expect(bc.settleFrom).toBe('secured');
+    const back = apply(bc, { type: 'tick' }, 'system', at(56));
+    expect(back.state).toBe('secured');
+    const r = apply(back, { type: 'settled', kind: 'buyer-cancel', txHash: 'bb'.repeat(32) }, 'system', at(60));
+    expect(r.state).toBe('refunded');
+    expect(r.settling).toBe('buyer-cancel');
+    expect(r.closedAt).toEqual(at(60));
+  });
+
+  test('reproduced: a release that lands while the trade is disputed is recorded', () => {
+    const d = apply(paid(), { type: 'open-dispute' }, 'seller', at(41));
+    const r = apply(d, { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(90));
+    expect(r.state).toBe('released');
+    expect(r.closedAt).toEqual(at(90));
+  });
+
+  test('reproduced: the buyer taps I have paid at minute 200, after the auto-refund window opened; the auto-refund lands', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136
+    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(200)))).toBe('too-late');
+    const r = apply(rr, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(201));
+    expect(r.state).toBe('refunded');
+    expect(r.settling).toBe('auto-refund');
+    // Had a mark-paid slipped in first, the refund seen on chain is still recorded.
+    const slipped = apply(rr, { type: 'mark-paid' }, 'buyer', at(135));
+    expect(apply(slipped, { type: 'settled', kind: 'auto-refund', txHash: 'bb'.repeat(32) }, 'system', at(201)).state).toBe('refunded');
+  });
+
   test('auto-refund settles from refund_requested; lapse-refund from lapsed', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured());
     expect(apply(rr, { type: 'settled', kind: 'auto-refund', txHash: 'cc'.repeat(32) }, 'system', at(140)).state).toBe('refunded');
@@ -631,6 +660,14 @@ describe('pause and resume (P3-I19)', () => {
     expect(apply(p, { type: 'buyer-cancel' }, 'buyer', at(131)).state).toBe('settling');
   });
 
+  test('the auto-refund window does not run out during a pause: mark-paid counts from the pause', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136
+    const p = apply(rr, { type: 'pause' }, 'system', at(130));
+    expect(apply(p, { type: 'mark-paid' }, 'buyer', at(200)).state).toBe('paid');
+    const late = apply(rr, { type: 'pause' }, 'system', at(140));
+    expect(rule(() => apply(late, { type: 'mark-paid' }, 'buyer', at(200)))).toBe('too-late');
+  });
+
   test('pause twice or resume while running → wrong-state', () => {
     const p = apply(secured(), { type: 'pause' }, 'system', at(40));
     expect(rule(() => apply(p, { type: 'pause' }, 'system', at(41)))).toBe('wrong-state');
@@ -659,6 +696,14 @@ describe('clock skew (Review Focus 3)', () => {
     expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(120, -1)))).toBe('too-early');
     expect(rule(() => apply(s, { type: 'request-refund' }, 'seller', at(110)))).toBe('too-early');
     expect(apply(s, { type: 'request-refund' }, 'seller', at(120, 1)).state).toBe('refund_requested');
+  });
+
+  test('a buyer whose phone is 10 min slow cannot tap I have paid once the server opened the auto-refund window', () => {
+    const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured()); // window opens at 136 server time
+    expect(nextDeadline(rr)).toEqual(at(136));
+    // The phone still shows minute 126, but the server's now is 136.
+    expect(rule(() => apply(rr, { type: 'mark-paid' }, 'buyer', at(136)))).toBe('too-late');
+    expect(apply(rr, { type: 'mark-paid' }, 'buyer', at(136, -1)).state).toBe('paid');
   });
 
   test('deadlines are computed from the now passed in, never the device clock', () => {
