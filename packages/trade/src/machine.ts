@@ -271,22 +271,34 @@ function onChain(t: Trade, e: Extract<TradeEvent, { type: 'chain' }>, now: Date)
  * locked rate, stays within the offer's maximum, the amount, fee and fiat total
  * grow to what was funded. Otherwise nothing changes and the surplus goes to
  * the seller at settlement (payoutsFor).
+ *
+ * Only releasable coins (every coin unlocked, 10 confirmations) grow the trade,
+ * and the size is worked out again from the amount at take on every chain
+ * event, so an extra that is dropped or double-spent shrinks the trade back and
+ * it never needs more than the escrow holds. While some coins are still locked
+ * the trade keeps at most its current size.
  */
 function grow(t: Trade, now: Date): Trade {
   if (!GROW_STATES.includes(t.state) || t.paidAt !== null) return t;
-  if (t.receivedAtomic <= t.sellerFundsAtomic) return t;
-  const amountAtomic = amountForFunds(t.receivedAtomic, t.poster);
-  if (amountAtomic <= t.amountAtomic) return t;
-  const fiatCents = fiatFor(amountAtomic, t.lockedRate);
-  if (fiatCents > t.maxFiatCents) return t;
+  const fromAtomic = t.grown?.fromAtomic ?? t.amountAtomic;
+  const fromFiatCents = t.grown?.fromFiatCents ?? t.fiatCents;
+  const basis = t.releasable ? t.receivedAtomic : t.receivedAtomic < t.sellerFundsAtomic ? t.receivedAtomic : t.sellerFundsAtomic;
+  let amountAtomic = fromAtomic;
+  if (basis > escrowPlan({ amountAtomic: fromAtomic, poster: t.poster }).sellerFundsAtomic) {
+    const candidate = amountForFunds(basis, t.poster);
+    // Above the offer maximum the trade keeps the size it already has; that size is covered by basis.
+    if (candidate > fromAtomic) amountAtomic = fiatFor(candidate, t.lockedRate) <= t.maxFiatCents ? candidate : t.amountAtomic;
+  }
+  if (amountAtomic === t.amountAtomic) return t;
   const plan = escrowPlan({ amountAtomic, poster: t.poster });
+  const back = amountAtomic === fromAtomic;
   return {
     ...t,
     amountAtomic,
     feeAtomic: plan.feeAtomic,
     sellerFundsAtomic: plan.sellerFundsAtomic,
-    fiatCents,
-    grown: { at: now, fromAtomic: t.grown?.fromAtomic ?? t.amountAtomic, fromFiatCents: t.grown?.fromFiatCents ?? t.fiatCents },
+    fiatCents: back ? fromFiatCents : fiatFor(amountAtomic, t.lockedRate),
+    grown: back ? null : { at: now, fromAtomic, fromFiatCents },
   };
 }
 

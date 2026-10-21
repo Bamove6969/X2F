@@ -808,7 +808,7 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
 
   test('seller-poster: before I have paid and within the offer max, the trade grows to what was funded', () => {
     const received = 1_313_131_313_131n;
-    const t = apply(fundingFor('seller'), chain(received, 0n, 1), 'system', at(5));
+    const t = apply(fundingFor('seller'), chain(received, received, 10), 'system', at(5));
     const grown = amountForFunds(received, 'seller');
     expect(grown).toBeGreaterThan(AMOUNT);
     expect(t.amountAtomic).toBe(grown);
@@ -817,7 +817,7 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     expect(t.fiatCents).toBe((grown * 33000n * 2n + 1_000_000_000_000n) / 2_000_000_000_000n);
     expect(t.lockedRate).toEqual(RATE);
     expect(t.grown).toEqual({ at: at(5), fromAtomic: AMOUNT, fromFiatCents: 41250n });
-    expect(t.state).toBe('securing');
+    expect(t.state).toBe('secured');
     // Any remainder below one more atomic unit of trade is dust for the seller.
     const ps = facts(t, received);
     expect(ps[0]).toEqual({ address: 'B', amountAtomic: grown });
@@ -828,7 +828,7 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
 
   test('buyer-poster: the trade grows to exactly what was funded', () => {
     const received = 1_300_000_000_000n;
-    const t = apply(fundingFor('buyer'), chain(received, 0n, 1), 'system', at(5));
+    const t = apply(fundingFor('buyer'), chain(received, received, 10), 'system', at(5));
     expect(t.amountAtomic).toBe(received);
     expect(t.sellerFundsAtomic).toBe(received);
     expect(t.feeAtomic).toBe(13_000_000_000n);
@@ -839,15 +839,91 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
     ]);
   });
 
-  test('a late surplus while secured (unpaid) also grows the trade, and the fiat total the buyer pays follows', () => {
-    const t = apply(secured(), chain(FUNDS + 10_100_000_000n, FUNDS, 0), 'system', at(50));
+  test('a late surplus while secured (unpaid) also grows the trade once it unlocks, and the fiat total the buyer pays follows', () => {
+    const t = apply(secured(), chain(FUNDS + 10_100_000_000n, FUNDS + 10_100_000_000n, 10), 'system', at(50));
     expect(t.amountAtomic).toBe(AMOUNT + 10_000_000_000n);
     expect(t.fiatCents).toBe(41580n);
     expect(t.grown?.at).toEqual(at(50));
-    expect(t.releasable).toBe(false);
-    const again = apply(t, chain(FUNDS + 20_200_000_000n, FUNDS, 0), 'system', at(55));
+    expect(t.releasable).toBe(true);
+    const again = apply(t, chain(FUNDS + 20_200_000_000n, FUNDS + 20_200_000_000n, 10), 'system', at(55));
     expect(again.amountAtomic).toBe(AMOUNT + 20_000_000_000n);
     expect(again.grown).toEqual({ at: at(55), fromAtomic: AMOUNT, fromFiatCents: 41250n });
+  });
+
+  test('extra XMR that is not yet releasable never grows the trade (I-A)', () => {
+    const extra = FUNDS + 10_100_000_000n;
+    for (const [received, unlocked, conf] of [[extra, 0n, 0], [extra, FUNDS, 9], [extra, extra - 1n, 9]] as const) {
+      const t = apply(secured(), chain(received, unlocked, conf), 'system', at(50));
+      expect(t.amountAtomic).toBe(AMOUNT);
+      expect(t.sellerFundsAtomic).toBe(FUNDS);
+      expect(t.fiatCents).toBe(41250n);
+      expect(t.grown).toBeNull();
+    }
+    const early = apply(fundingFor('buyer'), chain(1_300_000_000_000n, 0n, 1), 'system', at(5));
+    expect(early.amountAtomic).toBe(AMOUNT);
+    expect(early.state).toBe('securing');
+  });
+
+  test('reproduced: a dropped extra after growth shrinks the trade back, so it stays releasable (I-A)', () => {
+    const extra = FUNDS + 10_100_000_000n;
+    const grown = apply(secured(), chain(extra, extra, 10), 'system', at(50));
+    expect(grown.amountAtomic).toBe(AMOUNT + 10_000_000_000n);
+    // The extra is double-spent away (a reorg): the escrow is back to the original funding.
+    const dropped = apply(grown, chain(FUNDS, FUNDS, 10), 'system', at(55));
+    expect(dropped.amountAtomic).toBe(AMOUNT);
+    expect(dropped.feeAtomic).toBe(feeFor(AMOUNT));
+    expect(dropped.sellerFundsAtomic).toBe(FUNDS);
+    expect(dropped.fiatCents).toBe(41250n);
+    expect(dropped.grown).toBeNull();
+    expect(dropped.releasable).toBe(true);
+    expect(dropped.state).toBe('secured');
+    const marked = apply(dropped, { type: 'mark-paid' }, 'buyer', at(56));
+    const st = apply(marked, { type: 'release-started' }, 'seller', at(57));
+    expect(st.state).toBe('settling');
+    expect(payoutsFor({ kind: 'release', amountAtomic: st.amountAtomic, feeAtomic: st.feeAtomic, poster: st.poster, sellerFundsAtomic: st.sellerFundsAtomic, balanceAtomic: FUNDS, buyerPayout: 'B', sellerRefund: 'S', feeWallet: 'F' })).toEqual([
+      { address: 'B', amountAtomic: AMOUNT },
+      { address: 'F', amountAtomic: feeFor(AMOUNT) },
+    ]);
+  });
+
+  test('a dropped extra shrinks the trade at once, even before the rest is releasable again (I-A)', () => {
+    const two = FUNDS + 20_200_000_000n;
+    const grown = apply(secured(), chain(two, two, 10), 'system', at(50));
+    expect(grown.amountAtomic).toBe(AMOUNT + 20_000_000_000n);
+    // One of the two extras vanishes and the reorg leaves the rest below 10 confirmations.
+    const one = FUNDS + 10_100_000_000n;
+    const partly = apply(grown, chain(one, 0n, 3), 'system', at(55));
+    expect(partly.amountAtomic).toBe(AMOUNT + 10_000_000_000n);
+    expect(partly.sellerFundsAtomic).toBeLessThanOrEqual(one);
+    expect(partly.grown).toEqual({ at: at(55), fromAtomic: AMOUNT, fromFiatCents: 41250n });
+    const gone = apply(partly, chain(FUNDS, 0n, 3), 'system', at(56));
+    expect(gone.amountAtomic).toBe(AMOUNT);
+    expect(gone.grown).toBeNull();
+    expect(apply(gone, chain(FUNDS, FUNDS, 10), 'system', at(80)).releasable).toBe(true);
+  });
+
+  test('a grown trade keeps its size while a newer extra is still locked, and grows again once it unlocks (I-A)', () => {
+    const one = FUNDS + 10_100_000_000n;
+    const two = FUNDS + 20_200_000_000n;
+    const grown = apply(secured(), chain(one, one, 10), 'system', at(50));
+    const waiting = apply(grown, chain(two, one, 0), 'system', at(52));
+    expect(waiting).toEqual({ ...grown, receivedAtomic: two, unlockedAtomic: one, confirmations: 0, releasable: false });
+    // A reorg that only re-buries the extra keeps the growth: the coins are still there.
+    const reburied = apply(grown, chain(one, FUNDS, 2), 'system', at(53));
+    expect(reburied.amountAtomic).toBe(AMOUNT + 10_000_000_000n);
+    const again = apply(waiting, chain(two, two, 10), 'system', at(70));
+    expect(again.amountAtomic).toBe(AMOUNT + 20_000_000_000n);
+    expect(again.grown).toEqual({ at: at(70), fromAtomic: AMOUNT, fromFiatCents: 41250n });
+  });
+
+  test('a grown trade whose next extra would pass the offer maximum keeps its growth (I-A recompute)', () => {
+    const t = newTrade({ ...TAKE, poster: 'buyer', maxFiatCents: 42900n }, T0);
+    const f = apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1));
+    const g = apply(f, chain(1_300_000_000_000n, 1_300_000_000_000n, 10), 'system', at(2));
+    expect(g.amountAtomic).toBe(1_300_000_000_000n);
+    const over = apply(g, chain(1_400_000_000_000n, 1_400_000_000_000n, 10), 'system', at(3));
+    expect(over.amountAtomic).toBe(1_300_000_000_000n);
+    expect(over.grown?.at).toEqual(at(2));
   });
 
   test('above the offer maximum the amount stays and the surplus goes to the seller', () => {
@@ -865,14 +941,14 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
 
   test('exactly at the offer maximum still grows', () => {
     const t = newTrade({ ...TAKE, poster: 'buyer', maxFiatCents: 42900n }, T0);
-    const g = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_000_000_000n, 0n, 0), 'system', at(2));
+    const g = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_000_000_000n, 1_300_000_000_000n, 10), 'system', at(2));
     expect(g.amountAtomic).toBe(1_300_000_000_000n);
-    const over = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_020_000_000n, 0n, 0), 'system', at(2));
+    const over = apply(apply(t, { type: 'setup-done', escrowAddress: '4E' }, 'system', at(1)), chain(1_300_020_000_000n, 1_300_020_000_000n, 10), 'system', at(2));
     expect(over.amountAtomic).toBe(AMOUNT);
   });
 
   test('after I have paid the amount never changes; the surplus goes to the seller', () => {
-    const t = apply(paid(), chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(45));
+    const t = apply(paid(), chain(FUNDS + 100_000_000n, FUNDS + 100_000_000n, 10), 'system', at(45));
     expect(t.amountAtomic).toBe(AMOUNT);
     expect(t.fiatCents).toBe(41250n);
     expect(t.grown).toBeNull();
@@ -881,9 +957,9 @@ describe('extra XMR (spec 11.1, owner 2026-10-20)', () => {
 
   test('no growth once a refund or settlement has started', () => {
     const rr = run([[{ type: 'request-refund' }, 'seller', 121]], secured());
-    expect(apply(rr, chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(125)).amountAtomic).toBe(AMOUNT);
+    expect(apply(rr, chain(FUNDS + 100_000_000n, FUNDS + 100_000_000n, 10), 'system', at(125)).amountAtomic).toBe(AMOUNT);
     const st = apply(secured(), { type: 'release-started' }, 'seller', at(40));
-    expect(apply(st, chain(FUNDS + 100_000_000n, FUNDS, 0), 'system', at(45)).amountAtomic).toBe(AMOUNT);
+    expect(apply(st, chain(FUNDS + 100_000_000n, FUNDS + 100_000_000n, 10), 'system', at(45)).amountAtomic).toBe(AMOUNT);
   });
 
   test('every refund of a grown trade pays everything to the seller', () => {
