@@ -2,7 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { fileAttestationPolicy } from '../src/auth/attestation.js';
 import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
@@ -104,8 +104,22 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
+/** Owners seeded by the current test; afterEach deletes them even when the test fails (one owner per database). */
+let seededOwners: string[] = [];
+
+afterEach(async () => {
+  if (seededOwners.length > 0) await deps.db.query('delete from accounts where id = any($1::uuid[])', [seededOwners]);
+  seededOwners = [];
+});
+
 let nameSeq = 0;
 const uniqueName = (prefix: string) => `${prefix}${++nameSeq}x`;
+
+async function seedOwner(): Promise<string> {
+  const id = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+  seededOwners.push(id);
+  return id;
+}
 
 /** Signs up a trader with a passkey or security key; returns the browser (logged in) and authenticator. */
 async function signUp(kind: 'passkey' | 'security-key', username = uniqueName('user')) {
@@ -432,16 +446,15 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   });
 
   it('refuses an owner passkey before any confirm token is spent', async () => {
-    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const ownerId = await seedOwner();
     const b = await loggedIn(ownerId, true);
     const res = await b.post('/v1/account/webauthn/start', { kind: 'passkey' });
     expect(errorOf(res)).toBe('method-not-allowed');
     expect(() => registrationOptionsFor('passkey', 'owner')).toThrow(ApiError);
-    await deps.db.query('delete from accounts where id = $1', [ownerId]); // one owner per database
   });
 
   it('refuses an owner login with an unattested passkey', async () => {
-    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const ownerId = await seedOwner();
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(ownerId, key, 'security-key', true);
@@ -452,7 +465,6 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('method-not-allowed');
     expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
-    await deps.db.query('delete from accounts where id = $1', [ownerId]);
   });
 
   it('assertCredentialAllowed follows R1', () => {
@@ -604,7 +616,7 @@ async function usernameOf(accountId: string): Promise<string> {
 
 describe('review fixes', () => {
   it('I1: runs afterAuthenticate only for credentials the account kind may use', async () => {
-    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const ownerId = await seedOwner();
     const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
     const ownerKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const ownerPasskey = createSoftAuthenticator({ backedUp: true, userVerified: true });
@@ -639,7 +651,6 @@ describe('review fixes', () => {
     const fin = await b.post('/v1/confirm/webauthn/finish', { challengeId, response: ownerPasskey.authenticate(options, ORIGIN) });
     expect(fin.statusCode).toBe(403);
     expect(errorOf(fin)).toBe('method-not-allowed');
-    await deps.db.query('delete from accounts where id = $1', [ownerId]);
   });
 
   it('M1: of two parallel assertions with the same counter, exactly one succeeds', async () => {
@@ -694,6 +705,25 @@ describe('review fixes', () => {
     expect(new Set(counts).size).toBe(1);
   });
 
+  it('M3: with a pendingId, staff, trader and unknown usernames cost the same queries', async () => {
+    const trader = await signUp('security-key');
+    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    await insertCredential(crewId, createSoftAuthenticator({ backedUp: false, userVerified: true }), 'security-key', true);
+    const crew = await usernameOf(crewId);
+    const b = new Browser();
+    await b.post('/v1/login/webauthn/start', {}); // the device cookie
+    const pendingId = '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90';
+
+    const spy = vi.spyOn(deps.db, 'query');
+    const count = async (username: string) => {
+      spy.mockClear();
+      expect((await b.post('/v1/login/webauthn/start', { username, pendingId })).statusCode).toBe(200);
+      return spy.mock.calls.length;
+    };
+    const counts = [await count(crew), await count(trader.username), await count('Ghost.User77'), await count('bad name!')];
+    expect(new Set(counts).size).toBe(1);
+  });
+
   it('M4: an add-key challenge cannot be spent at login', async () => {
     const t = await signUp('passkey');
     const start = (await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' })).json();
@@ -705,7 +735,7 @@ describe('review fixes', () => {
   });
 
   it('M4: an owner passkey is refused before a real confirm token is spent', async () => {
-    const ownerId = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+    const ownerId = await seedOwner();
     const b = await loggedIn(ownerId); // not the creating session: no onboarding window
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [ownerId]);
     const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' } });
@@ -714,7 +744,6 @@ describe('review fixes', () => {
     expect(errorOf(res)).toBe('method-not-allowed');
     const { rows } = await deps.db.query('select used_at from confirm_tokens where session_id = $1', [s[0]!.id]);
     expect(rows).toEqual([{ used_at: null }]);
-    await deps.db.query('delete from accounts where id = $1', [ownerId]);
   });
 
   it('M5: stores only known transports', async () => {

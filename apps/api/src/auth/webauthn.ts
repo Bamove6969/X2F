@@ -485,7 +485,10 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       name.ok ? name.key : '',
     ]);
     const found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
-    const withPasskeys = found !== null && found.kind === 'staff' && (await pendingAfterPgp(deps, req, found.id, pendingId));
+    // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
+    // query count does not reveal a staff username (second review).
+    const afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+    const withPasskeys = afterPgp && found?.kind === 'staff';
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
     );
