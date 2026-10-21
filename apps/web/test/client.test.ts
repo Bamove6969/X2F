@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiCallError, api, safeReturnTo, serverClock, setNavigator } from '../src/api/client.js';
+import { ApiCallError, api, returnToFrom, safeReturnTo, serverClock, setNavigator } from '../src/api/client.js';
 
 function respond(status: number, body: unknown): typeof fetch {
   return vi.fn(async () => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } }));
@@ -126,5 +126,17 @@ describe('safeReturnTo', () => {
     vi.stubGlobal('fetch', respond(409, { error: 'no-wallet' }));
     await expect(api('/v1/offers')).rejects.toMatchObject({ code: 'no-wallet' });
     expect(go).toHaveBeenCalledExactlyOnceWith('/wallets?add=1&returnTo=%2Fsell');
+  });
+
+  it.each([
+    ['?returnTo=%2Fsell%2Fzelle%3Fsort%3Drate', '/sell/zelle?sort=rate'],
+    ['?returnTo=%2F%2Fevil.com', '/sell'],
+    ['?returnTo=%2F%5Cevil.com', '/sell'],
+    ['?returnTo=https%3A%2F%2Fevil.com', '/sell'],
+    ['?returnTo=javascript%3Aalert(1)', '/sell'],
+    ['?add=1', '/sell'],
+    ['', '/sell'],
+  ])('reading returnTo from %j gives %j', (search, expected) => {
+    expect(returnToFrom(search)).toBe(expected);
   });
 });

@@ -65,6 +65,11 @@ export function safeReturnTo(raw: string | null | undefined): string {
   return raw;
 }
 
+/** The `returnTo` to follow from a query string such as `location.search`, always through safeReturnTo. */
+export function returnToFrom(search: string): string {
+  return safeReturnTo(new URLSearchParams(search).get('returnTo'));
+}
+
 /** Sends the page to `pathname` (with `returnTo` = here), unless it is already there. */
 function redirect(pathname: string, query: string): void {
   const here = where();
