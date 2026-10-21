@@ -10,7 +10,8 @@ import { openSecret, verifyTotp } from '../src/auth/totp.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
-import { Browser, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/totp.js';
+import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
+import { Browser, ORIGIN, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/totp.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z'); // a step boundary
 const HOUR = 3600_000;
@@ -314,7 +315,7 @@ describe('password login with TOTP (second factor)', () => {
     expect(later.statusCode).toBe(200);
     expect(later.json()).toEqual({ status: 'ok' });
 
-    // PGP is never throttled by the totp key. TODO(Task 8 merge): also log in with a passkey here.
+    // PGP is never throttled by the totp key.
     const owner = new Browser(app);
     const start = await owner.post('/v1/login/pgp/start', { username });
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
@@ -322,6 +323,40 @@ describe('password login with TOTP (second factor)', () => {
     const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });
     expect(fin.statusCode).toBe(200);
     expect(fin.json()).toEqual({ status: 'ok' });
+  });
+
+  it('a correct passkey login still succeeds while TOTP is throttled', async () => {
+    const { id, username, b } = await trader();
+    const secret = await enrol(b);
+    setNow(at(STEP_MS));
+    const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    await deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
+       values ($1, $2, $3, 0, 'passkey', true, 'multiDevice', false, 'Phone', $4)`,
+      [id, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, now],
+    );
+
+    const attacker = new Browser(app);
+    for (let i = 1; i <= 4; i++) {
+      const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
+      expect((await attacker.post('/v1/login/second-factor', { pendingId, code: wrongCodeAt(secret, now) })).statusCode).toBe(401);
+    }
+    const { pendingId } = (await passwordLogin(attacker, username)).json() as { pendingId: string };
+    const slowed = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
+    expect(slowed.statusCode).toBe(429);
+    expect(slowed.json()).toMatchObject({ error: 'slow-down' });
+
+    // Passkeys (discoverable login) are never throttled by the totp key.
+    const { rows } = await deps.db.query<{ h: Buffer }>('select webauthn_user_id as h from accounts where id = $1', [id]);
+    const owner = new Browser(app);
+    const start = await owner.post('/v1/login/webauthn/start', {});
+    expect(start.statusCode).toBe(200);
+    const { challengeId, options } = start.json() as { challengeId: string; options: Parameters<typeof auth.authenticate>[0] };
+    const response = auth.authenticate(options, ORIGIN, { userHandle: rows[0]!.h.toString('base64url') });
+    const fin = await owner.post('/v1/login/webauthn/finish', { challengeId, response, deviceLabel: 'Phone' });
+    expect(fin.statusCode).toBe(200);
+    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(owner.cookies[SESSION_COOKIE]).toBeDefined();
   });
 
   it('logs in without a second factor when no TOTP is enrolled', async () => {

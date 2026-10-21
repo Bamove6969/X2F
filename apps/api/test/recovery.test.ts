@@ -290,6 +290,28 @@ describe('backup login with TOTP (P2-I1)', () => {
     expect(later.json()).toMatchObject({ challengeId: expect.any(String) });
   });
 
+  it('the hold covers adding a passkey or security key too', async () => {
+    const { id, username } = await account();
+    const secret = await withTotp(id);
+    const b = new Browser(app);
+    const start = now;
+    expect((await backup(b, username, 'totp', codeAt(secret, now))).statusCode).toBe(200);
+    const holdUntil = new Date(start.getTime() + RECOVERY_HOLD_MS);
+
+    setNow(new Date(holdUntil.getTime() - 1000)); // +23:59:59
+    for (const kind of ['passkey', 'security-key'] as const) {
+      const early = await b.post('/v1/account/webauthn/start', { kind });
+      expect(early.statusCode).toBe(403);
+      expect(early.json()).toEqual({ error: 'recovery-hold', holdUntil: holdUntil.toISOString() });
+    }
+    setNow(holdUntil); // +24:00:00
+    for (const kind of ['passkey', 'security-key'] as const) {
+      const later = await b.post('/v1/account/webauthn/start', { kind });
+      expect(later.statusCode).toBe(200);
+      expect(later.json()).toMatchObject({ challengeId: expect.any(String), options: expect.any(Object) });
+    }
+  });
+
   it('a recovery-code session has no hold', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
