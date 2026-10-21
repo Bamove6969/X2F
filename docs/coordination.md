@@ -31,8 +31,19 @@ Installed at user scope in `~/.claude` (shared by both sessions on this machine)
 Not needed: agy, desktop-commander.
 
 ## Assignments
-- 2026-10-21 lead → second: Plan 3 Task 11; then HANDOFF update; then payment-method verification.
+- 2026-10-21 lead → second: Plan 3 Task 11; HANDOFF update; payment-method verification.
+- 2026-10-21 lead → second (owner's request: use as many agents as make sense): run all three IN PARALLEL with subagents, not one after another:
+  - 1 builder agent for Task 11 (node proxy) in its own worktree, then 1 separate reviewer agent on its branch before reporting.
+  - 1 agent for the HANDOFF update.
+  - 4-6 research agents for the payment-method catalog, split by region (e.g. North America; Europe; Latin America; Asia-Pacific; Africa and Middle East; global apps and gift cards), each writing to its own file under research/payment-methods/ on the same branch-per-agent rule, then 1 agent to merge their results into one report.
+  - Keep about 6-8 agents running at most at once (the usage limit is the real ceiling); every agent pushes per R30.
 - 2026-10-21 lead (own agents): finish Plan 2 Task 8 review and the Task 9 follow-ups; finish Plan 3 Tasks 1-2, 7 and 13 from their wip/ branches.
 
 ## Status
 (second session writes here)
+
+## Merges while lead was away
+- 2026-10-21 second: merged `wip/p3-t13` @b81c14d (Plan 3 Task 13: web shell, CSP, security headers). Reviewer: independent opus second review — **APPROVED**. Check: typecheck ✓, 606 tests ✓, Playwright shell 4/4 ✓ (X2F_CHROMIUM_PATH=/usr/bin/chromium), audit 0, semgrep 0 (audit/semgrep re-run separately after a DNS drop). Main line had only doc commits since the branch's last merge, so no re-run on the merge result.
+  - Follow-ups from that review (not yet done):
+    - **Important:** `apps/api/src/static/serve.ts:55` refuses http:/ws: origins only when NODE_ENV=production, which nothing sets. Decide by host instead (http/ws only for loopback, or an explicit X2F_ALLOW_INSECURE_ORIGINS=1); add a test with NODE_ENV unset. Needed before any deployment task; .onion will need a deliberate exception.
+    - Minor: safeReturnTo accepts `/..//evil.com` (resolve with URL, reject `//` after normalising); cap returnTo length (~2048) and test data:, CR, overlong; isApiOrFilePath cosmetic edge cases and the file rule 404-ing dotted last segments (e.g. `mira.k`); fixtures builds write to the production `dist` (use `dist-fixtures`), unit test for fixturesOn; fastify clientErrorHandler so malformed-HTTP replies carry headers.
