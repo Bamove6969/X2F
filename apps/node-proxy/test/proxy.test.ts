@@ -277,6 +277,19 @@ describe('node proxy: refusals (fail closed)', () => {
     expect(up.seen).toHaveLength(0);
   });
 
+  it('answers 400, not 500, to JSON nested too deeply to re-serialise', async () => {
+    const { app, up } = await proxy();
+    const deep = (n: number): string => `${'['.repeat(n)}${']'.repeat(n)}`;
+    const n = 400_000; // 800 kB: under the body limit, past JSON.stringify's stack
+    const rpcBody = `{"jsonrpc":"2.0","id":"0","method":"get_info","params":{"a":${deep(n)}}}`;
+    const r1 = await app.inject({ method: 'POST', url: '/json_rpc', headers: json, payload: rpcBody });
+    expect(r1.statusCode).toBe(400);
+    expect(r1.json()).toEqual({ error: 'bad-request' });
+    const r2 = await app.inject({ method: 'POST', url: '/get_transactions', headers: json, payload: `{"a":${deep(n)}}` });
+    expect(r2.statusCode).toBe(400);
+    expect(up.seen).toHaveLength(0);
+  });
+
   it('refuses a JSON path body that is not one JSON object', async () => {
     const { app, up } = await proxy();
     for (const b of ['[1]', 'nope', '"x"', '1']) {

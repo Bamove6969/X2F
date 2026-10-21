@@ -120,6 +120,15 @@ function parseJson(body: Buffer): unknown {
   }
 }
 
+/** Re-serialises a checked value; JSON nested past the stack limit is the caller's error, not ours. */
+function serialise(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    throw new Refusal(400, 'bad-request');
+  }
+}
+
 /** The JSON the node receives: rebuilt from what was checked, so no parser differences reach it. */
 function rpcBody(body: Buffer): string {
   const req = parseJson(body);
@@ -130,18 +139,14 @@ function rpcBody(body: Buffer): string {
   if (params !== undefined && !isPlainObject(params)) throw new Refusal(400, 'bad-request');
   if (typeof method !== 'string') throw new Refusal(400, 'bad-request');
   if (!RPC_METHODS.has(method)) throw new Refusal(403, 'method-not-allowed');
-  return JSON.stringify({ jsonrpc: '2.0', id: id ?? '0', method, ...(params === undefined ? {} : { params }) });
+  return serialise({ jsonrpc: '2.0', id: id ?? '0', method, ...(params === undefined ? {} : { params }) });
 }
 
 function jsonBody(body: Buffer): string | undefined {
   if (body.length === 0) return undefined;
   const req = parseJson(body);
   if (!isPlainObject(req)) throw new Refusal(400, 'bad-request');
-  try {
-    return JSON.stringify(req);
-  } catch {
-    throw new Refusal(400, 'bad-request');
-  }
+  return serialise(req);
 }
 
 export function buildNodeProxy(o: NodeProxyOptions): FastifyInstance {
