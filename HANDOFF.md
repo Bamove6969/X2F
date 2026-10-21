@@ -135,7 +135,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 3. **Moderators:** who they are, how they're paid, deadlines and thresholds.
 4. **Buyer deposits: decided 2026-10-17, none.** Plan 3 must drop the deposit (P3-C3/P3-I7 parts, Task 22's DepositFund, `depositFor`, subaddress 1). Done in the Plan 3 text (bf8ce0f, 2026-10-18).
 5. **Sanctioned rails** (SBP, Mir, YooMoney). They need a lawyer's sign-off.
-6. **Gift cards:** allowed or not.
+6. **Gift cards: decided 2026-10-21, allowed** (Amazon, Uber, Visa/Mastercard prepaid and the most popular others, ~15, research pending). Cash in person and by mail stay; cover what LocalMonero had, minus removals still to be decided.
 7. **Price feed sources.**
 8. Post an offer: badge requirements are **shown openly** on the form (owner, 2026-10-17). Pricing: market ± % (default) or a fixed price per XMR, with a stale-price warning (owner, 2026-10-17).
 9. A seller bond for disputes after refunds? (Deferred.)
