@@ -46,12 +46,12 @@ export const DEFAULTS = { timeoutMs: 20_000, maxBodyBytes: 1024 * 1024, maxInFli
  *   - `/get_outs.bin`: wallet2 fetches decoy outputs here (monerod's other name for `/getouts.bin`).
  *   - `/get_output_distribution.bin`: wallet2 reads the output distribution in binary for decoy
  *     selection. Both seen in the wallet test.
- *   - json_rpc `getblockheaderbyheight` and `/gettransactions`: wallet2's names for the plan's
- *     `get_block_header_by_height` and `/get_transactions`, on its fallback paths. Low stakes
- *     (read-only, same handler as an allowed call), kept so a fallback does not fail closed.
  * Removed after review: `get_block_count`/`getblockcount` (only MoneroDaemonRpc.getHeight; txSeen's
  * getTx does not use it), `getlastblockheader` (monero-ts 0.11.16 never calls it) and
- * `get_output_histogram` (expensive on the node, only a fallback).
+ * `get_output_histogram` (expensive on the node, only a fallback). Dropped by the lead (2026-10-21,
+ * least privilege): json_rpc `getblockheaderbyheight` and `/gettransactions`, wallet2's names for the
+ * plan's `get_block_header_by_height` and `/get_transactions` on fallback paths the wallet test never
+ * reaches.
  */
 
 /** json_rpc methods a wallet may call. */
@@ -59,7 +59,6 @@ export const RPC_METHODS: ReadonlySet<string> = new Set([
   'get_info',
   'get_last_block_header',
   'get_block_header_by_height',
-  'getblockheaderbyheight',
   'get_block_headers_range',
   'getblockheadersrange',
   'get_fee_estimate',
@@ -84,7 +83,6 @@ export const BIN_PATHS: readonly string[] = [
 /** JSON paths, re-serialised after parsing. */
 export const JSON_PATHS: readonly string[] = [
   '/get_transactions',
-  '/gettransactions',
   '/sendrawtransaction',
   '/get_height',
   '/get_info',

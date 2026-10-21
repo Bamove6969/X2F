@@ -109,7 +109,7 @@ describe('node proxy: forwarding', () => {
   it('accepts every allowlisted json_rpc method, including the names wallet2 uses', async () => {
     const { app, up } = await proxy();
     const methods = [
-      'get_info', 'get_last_block_header', 'get_block_header_by_height', 'getblockheaderbyheight', 'get_block_headers_range',
+      'get_info', 'get_last_block_header', 'get_block_header_by_height', 'get_block_headers_range',
       'getblockheadersrange', 'get_fee_estimate', 'get_version', 'get_output_distribution', 'hard_fork_info', 'get_txpool_backlog',
     ];
     expect([...RPC_METHODS].sort()).toEqual([...methods].sort());
@@ -126,7 +126,7 @@ describe('node proxy: forwarding', () => {
       '/getblocks.bin', '/getblocks_by_height.bin', '/gethashes.bin', '/get_o_indexes.bin', '/getouts.bin', '/get_outs.bin',
       '/get_transaction_pool_hashes.bin', '/get_output_distribution.bin',
     ];
-    const plain = ['/get_transactions', '/gettransactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool'];
+    const plain = ['/get_transactions', '/sendrawtransaction', '/get_height', '/get_info', '/is_key_image_spent', '/get_transaction_pool'];
     for (const p of bin) {
       const r = await app.inject({ method: 'POST', url: p, headers: { 'content-type': 'application/octet-stream' }, payload: Buffer.from([1, 2]) });
       expect(r.statusCode, p).toBe(200);
@@ -290,7 +290,7 @@ describe('node proxy: over a real socket', () => {
 describe('node proxy: refusals (fail closed)', () => {
   it('refuses stop_daemon and other json_rpc methods off the list without calling the node', async () => {
     const { app, up } = await proxy();
-    const unneeded = ['get_block_count', 'getblockcount', 'getlastblockheader', 'get_output_histogram']; // no wallet call needs these
+    const unneeded = ['get_block_count', 'getblockcount', 'getlastblockheader', 'get_output_histogram', 'getblockheaderbyheight']; // no wallet call needs these (getblockheaderbyheight dropped by the lead, 2026-10-21: least privilege)
     for (const m of [...unneeded, 'stop_daemon', 'generateblocks', 'submit_block', 'get_block_template', 'set_bans', 'flush_txpool', 'relay_tx', 'GET_INFO', '']) {
       const r = await app.inject({ method: 'POST', url: '/json_rpc', headers: json, payload: rpc(m) });
       expect(r.statusCode, m).toBe(403);
@@ -348,6 +348,7 @@ describe('node proxy: refusals (fail closed)', () => {
       '/daemon/json_rpc', '/json_rpc/', '/JSON_RPC', '/stop_daemon', '/start_mining', '/stop_mining', '/mining_status',
       '/set_log_level', '/get_peer_list', '/out_peers', '/update', '/send_raw_transaction', '/get_blocks_by_height.bin',
       '/', '/%2fjson_rpc', '//json_rpc',
+      '/gettransactions', // dropped by the lead, 2026-10-21: no wallet evidence, least privilege
     ];
     // (Dot segments are resolved by the test client before routing; the forwarded path is a constant anyway.)
     for (const p of paths) {
