@@ -1,4 +1,5 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { fileAttestationPolicy } from './auth/attestation.js';
 import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
 import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
@@ -34,15 +35,19 @@ const pgpSigner = await loadPgpSigner(config.pgpSigningKeyPath, config.pgpSignin
 // R18: the decoy key pool (includes an RSA-4096 key) is made before the first request.
 await decoyPrivateKeys();
 
+// Task 8: the FIDO metadata snapshot, loaded before listening (no network fetch).
+const attestation = fileAttestationPolicy(config.attestationDir);
+await attestation.init();
+
 const db = createPool(config.databaseUrl);
 const deps: Deps = {
   config,
   db,
   clock: () => new Date(),
-  // TODO(Tasks 12, 8): moneroAddressValidator, fileAttestationPolicy.
+  // TODO(Task 12): moneroAddressValidator.
   leaked: await openLeakedList(config.leakedListPath),
   addresses: notBuilt('address validator (Task 12)'),
-  attestation: notBuilt('attestation policy (Task 8)'),
+  attestation,
   pgpSigner,
 };
 
