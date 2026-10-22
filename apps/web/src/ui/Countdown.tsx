@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import './ui.css';
 
 export type CountdownFormat = 'clock' | 'minutes';
@@ -38,13 +38,21 @@ export function Countdown({
 }) {
   const end = (deadline instanceof Date ? deadline : new Date(deadline)).getTime();
   const [ms, setMs] = useState(() => end - serverClock().getTime());
+  // The clock is read through a ref so a new function identity on re-render does not restart the
+  // interval.
+  const clock = useRef(serverClock);
+  clock.current = serverClock;
 
   useEffect(() => {
-    const tick = () => setMs(end - serverClock().getTime());
+    if (!Number.isFinite(end)) return;
+    const tick = () => setMs(end - clock.current().getTime());
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, [end, serverClock]);
+  }, [end]);
+
+  // An unreadable deadline shows nothing rather than "NaN:NaN".
+  if (!Number.isFinite(ms)) return null;
 
   return (
     <span className="x2f-countdown" role="timer" data-mask="clock">

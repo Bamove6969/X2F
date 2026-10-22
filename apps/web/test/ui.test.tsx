@@ -94,6 +94,37 @@ describe('Countdown', () => {
     expect(el.textContent).toBe('28:41');
   });
 
+  it('renders nothing for a deadline it cannot read', () => {
+    const now = () => new Date();
+    const { host } = render(<Countdown deadline="not a date" serverClock={now} />);
+    expect(host.textContent).toBe('');
+    expect(vi.getTimerCount()).toBe(0);
+    advance(2000, vi);
+    expect(host.textContent).toBe('');
+    expect(host.textContent).not.toContain('NaN');
+  });
+
+  it('keeps one interval when re-rendered with a new clock function', () => {
+    const deadline = new Date(Date.now() + 60_000);
+    const { host, rerender } = render(<Countdown deadline={deadline} serverClock={() => new Date()} />);
+    expect(vi.getTimerCount()).toBe(1);
+    advance(400, vi);
+    rerender(<Countdown deadline={deadline} serverClock={() => new Date()} />);
+    rerender(<Countdown deadline={deadline} serverClock={() => new Date()} />);
+    expect(vi.getTimerCount()).toBe(1);
+    // The first tick still lands on its original 1 s schedule (600 ms later), not 1 s after the re-render.
+    advance(600, vi);
+    expect(host.textContent).toBe('0:59');
+  });
+
+  it('reads the latest clock function on each tick', () => {
+    const deadline = new Date(Date.now() + 60_000);
+    const { host, rerender } = render(<Countdown deadline={deadline} serverClock={() => new Date()} />);
+    rerender(<Countdown deadline={deadline} serverClock={() => new Date(Date.now() + 30_000)} />);
+    advance(1000, vi);
+    expect(host.textContent).toBe('0:29');
+  });
+
   it('stops at zero', () => {
     const now = () => new Date();
     const { host } = render(<Countdown deadline={new Date(Date.now() + 2000)} serverClock={now} />);
@@ -298,8 +329,13 @@ describe('ExternalLink', () => {
     expect(el).toBeTruthy();
   });
 
-  it('refuses links that are not https', () => {
-    expect(() => render(<ExternalLink href="javascript:alert(1)">x</ExternalLink>)).toThrow();
+  it('renders a link that is not https as plain text, without throwing', () => {
+    for (const href of ['javascript:alert(1)', 'http://example.org', 'monero:4abc', '//example.org']) {
+      const { host } = render(<ExternalLink href={href}>View on explorer</ExternalLink>);
+      expect(host.querySelector('a')).toBeNull();
+      expect(host.querySelector('[href]')).toBeNull();
+      expect(host.textContent).toBe('View on explorer');
+    }
   });
 });
 
