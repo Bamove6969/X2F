@@ -16,10 +16,11 @@ import { addAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
+import { allowedMethods, methodAllowed } from './methods.js';
 import { nameKeyOf } from './password.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import { dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
-import { dummyTotpCheck, tradersOnly, verifyTotp } from './totp.js';
+import { dummyTotpCheck, verifyTotp } from './totp.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
 /** Backup TOTP attempts per account (or unknown name) per UTC day, right or wrong. */
@@ -95,8 +96,9 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   const found = name.ok
     ? (await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [name.key])).rows[0]
     : undefined;
-  // R2: no backup login for staff or the owner. TODO(Task 10): `allowedMethods(kind)` decides this.
-  const accountId = found?.kind === 'trader' ? found.id : null;
+  // R2: an account whose kind may not hold this method (staff and the owner hold neither) takes the
+  // unknown-username path.
+  const accountId = found && allowedMethods(found.kind).includes(kind === 'totp' ? 'totp' : 'recovery-codes') ? found.id : null;
   const who: Who = accountId !== null ? { id: accountId } : { usernameKey: nameKey };
   const refuse = async (key: string): Promise<never> => {
     await throttleFail(deps, key, accountId);
@@ -155,7 +157,7 @@ async function cancelRecovery(req: FastifyRequest) {
 export function recoveryRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/recovery-codes',
-    { preHandler: [requireSession(), tradersOnly, requireConfirm({ kind: 'new-recovery-codes' }, { onboarding: true })] },
+    { preHandler: [requireSession(), methodAllowed('recovery-codes'), requireConfirm({ kind: 'new-recovery-codes' }, { onboarding: true })] },
     newCodes,
   );
   app.post('/v1/login/backup', backupLogin);

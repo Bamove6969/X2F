@@ -212,7 +212,7 @@ describe('TOTP enrolment', () => {
     expect(res.json()).toEqual({ error: 'confirm-required', action: 'add-method' });
   });
 
-  it('is for traders only until Task 10 (staff → method-not-allowed)', async () => {
+  it('is refused for staff by assertMethodAllowed (R2, staff → method-not-allowed)', async () => {
     const { b } = await trader({ kind: 'staff' });
     const res = await b.post('/v1/account/totp/start', {});
     expect(res.statusCode).toBe(403);

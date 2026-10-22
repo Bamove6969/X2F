@@ -2,6 +2,7 @@ import fastifyCookie from '@fastify/cookie';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
+import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
@@ -160,6 +161,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
+  methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
