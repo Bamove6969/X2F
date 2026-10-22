@@ -13,6 +13,7 @@ case "$NODE_V" in
 esac
 [ -x "$SEMGREP" ] || { echo "check: missing $SEMGREP (see docs/dev-setup.md)" >&2; exit 1; }
 npm run typecheck
+npm run copy-lint
 npm test
 npm run audit
 npm run semgrep
