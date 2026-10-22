@@ -86,6 +86,40 @@ describe('security headers', () => {
   });
 });
 
+describe('the file rule in the web catch-all', () => {
+  it.each(['/u/mira.k', '/trade/ABCD.EFGH', '/u/a.b.c', '/sell/zelle.us', '/u/mira.k?tab=trades', '/v1x.k'])(
+    'the app route %s (a dot in its last segment) is the app page',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('<div id="root">');
+      expect(res.headers['content-security-policy']).toBe(CSP);
+    },
+  );
+
+  it.each([
+    '/assets/missing.css',
+    '/assets/missing.mjs',
+    '/assets/font.woff2',
+    '/assets/font.woff',
+    '/assets/app.js.map',
+    '/assets/escrow.wasm',
+    '/ASSETS/MISSING.JS',
+    '/assets/missing.js?v=1',
+    '/favicon.ico',
+    '/icon.svg',
+    '/icon.png',
+    '/manifest.webmanifest',
+    '/robots.txt',
+    '/data.json',
+  ])('the missing file %s is a 404, not the app page', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
 describe('requests fastify refuses before routing', () => {
   it.each(['/%zz', '/v1/%zz', '/sell/%E0%A4%A'])('a malformed URL %s gets 400 bad-request with the headers, without echoing the path', async (url) => {
     const res = await app.inject({ method: 'GET', url });
@@ -181,6 +215,16 @@ describe('the /v1 check in the web catch-all', () => {
     expect(res.json()).toEqual({ error: 'not-found' });
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
+
+  it.each(['//v1/x', '///v1', '/v1.', '/v1./x', '/v1%2e/x', '/v1%20', '//V1//x', '/v1..'])(
+    '%s behaves like /v1/x: a JSON 404, never the app page',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'not-found' });
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    },
+  );
 
   it('a path that only starts with the letters v1 is still the app page', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1x' });

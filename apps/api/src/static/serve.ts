@@ -134,6 +134,17 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   return o;
 }
 
+/**
+ * File extensions the web build emits or a browser asks for on its own (fonts, source maps,
+ * icons, manifest, wasm). Only these make a path "a file": an app route whose last segment merely
+ * contains a dot (/u/mira.k, /trade/ABCD.EFGH) is still the app page.
+ */
+const FILE_EXTENSIONS = new Set([
+  'js', 'mjs', 'css', 'html', 'map', 'json', 'txt', 'xml', 'wasm',
+  'woff', 'woff2', 'ttf', 'otf',
+  'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'webmanifest',
+]);
+
 function isApiOrFilePath(url: string): boolean {
   const raw = url.split('?', 1)[0] ?? '';
   let path: string;
@@ -142,7 +153,14 @@ function isApiOrFilePath(url: string): boolean {
   } catch {
     return true; // undecodable: never the app page
   }
-  return path === '/v1' || path.startsWith('/v1/') || /\.[a-z0-9]+$/.test(path);
+  // Repeated slashes collapse and trailing dots or spaces on a segment drop, so //v1/x, /v1./x
+  // and /v1%20 are judged like /v1/x.
+  const segments = path.split('/').filter((seg) => seg !== '');
+  const first = (segments[0] ?? '').replace(/[.\s]+$/, '');
+  if (first === 'v1') return true;
+  const last = segments.at(-1) ?? '';
+  const dot = last.lastIndexOf('.');
+  return dot > 0 && FILE_EXTENSIONS.has(last.slice(dot + 1));
 }
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
