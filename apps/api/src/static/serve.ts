@@ -35,13 +35,22 @@ export interface WebOptions {
   relayOrigin: string;
   /** The node proxy's exact origin, e.g. https://node.example.org. */
   nodeProxyOrigin: string;
+  /**
+   * Allows an http: or ws: origin on a host other than loopback (X2F_ALLOW_INSECURE_ORIGINS=1).
+   * Off by default: only a loopback host may be reached in clear text.
+   */
+  allowInsecureOrigins?: boolean;
 }
+
+type ConnectOrigins = Pick<WebOptions, 'relayOrigin' | 'nodeProxyOrigin' | 'allowInsecureOrigins'>;
 
 const CONNECT_SCHEMES = new Set(['https:', 'wss:', 'http:', 'ws:']);
 const SECURE_SCHEMES = new Set(['https:', 'wss:']);
+/** Hosts that never leave this machine, as `URL.hostname` spells them. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 /** An exact origin, so nothing else can ride into the policy. */
-function origin(value: string, name: string): string {
+function origin(value: string, name: string, allowInsecure: boolean): string {
   let url: URL;
   try {
     url = new URL(value);
@@ -51,17 +60,21 @@ function origin(value: string, name: string): string {
   if (!CONNECT_SCHEMES.has(url.protocol) || url.origin !== value) {
     throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
   }
-  // Read at call time: a production process never lets the browser connect in clear text.
-  if (process.env.NODE_ENV === 'production' && !SECURE_SCHEMES.has(url.protocol)) {
-    throw new Error(`web: ${name} must use https or wss in production`);
+  // Decided by host, not by NODE_ENV (which nothing sets): the browser may connect in clear text
+  // only to this machine, unless the operator opts in with X2F_ALLOW_INSECURE_ORIGINS=1.
+  // A future .onion relay or node proxy (http:/ws: over Tor) will need its own deliberate
+  // exception here; it is not allowed yet.
+  if (!SECURE_SCHEMES.has(url.protocol) && !LOOPBACK_HOSTS.has(url.hostname) && !allowInsecure) {
+    throw new Error(`web: ${name} must use https or wss (http and ws only for 127.0.0.1, [::1] or localhost)`);
   }
   return value;
 }
 
 /** The Content-Security-Policy for HTML responses (Global Constraints). */
-export function cspFor(o: Pick<WebOptions, 'relayOrigin' | 'nodeProxyOrigin'>): string {
-  const relay = origin(o.relayOrigin, 'relay origin');
-  const node = origin(o.nodeProxyOrigin, 'node proxy origin');
+export function cspFor(o: ConnectOrigins): string {
+  const insecure = o.allowInsecureOrigins === true;
+  const relay = origin(o.relayOrigin, 'relay origin', insecure);
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
@@ -88,8 +101,10 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   };
   const relayOrigin = need('X2F_RELAY_ORIGIN');
   const nodeProxyOrigin = need('X2F_NODE_PROXY_ORIGIN');
-  cspFor({ relayOrigin, nodeProxyOrigin });
-  return { root, relayOrigin, nodeProxyOrigin };
+  const allowInsecureOrigins = env.X2F_ALLOW_INSECURE_ORIGINS === '1';
+  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
+  cspFor(o);
+  return o;
 }
 
 function isApiOrFilePath(url: string): boolean {

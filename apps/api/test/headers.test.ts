@@ -157,6 +157,69 @@ describe('cspFor in production', () => {
   });
 });
 
+describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE };
+
+  it.each([
+    ['X2F_RELAY_ORIGIN', 'ws://relay.x2f.test'],
+    ['X2F_RELAY_ORIGIN', 'http://relay.x2f.test'],
+    ['X2F_NODE_PROXY_ORIGIN', 'http://node.x2f.test'],
+    ['X2F_NODE_PROXY_ORIGIN', 'ws://10.0.0.5:8091'],
+    ['X2F_RELAY_ORIGIN', 'ws://127.0.0.2:8090'],
+    ['X2F_RELAY_ORIGIN', 'ws://localhost.evil.test'],
+  ])('with NODE_ENV unset, %s=%s (not loopback) is refused', (name, value) => {
+    vi.stubEnv('NODE_ENV', undefined);
+    expect(process.env.NODE_ENV).toBeUndefined();
+    expect(() => webOptionsFromEnv({ ...base, [name]: value })).toThrow(/https or wss/);
+  });
+
+  it.each(['ws://127.0.0.1:8090', 'ws://[::1]:8090', 'ws://localhost:8090', 'http://127.0.0.1', 'http://localhost'])(
+    'with NODE_ENV unset, the loopback origin %s is allowed',
+    (value) => {
+      vi.stubEnv('NODE_ENV', undefined);
+      expect(webOptionsFromEnv({ ...base, X2F_RELAY_ORIGIN: value, X2F_NODE_PROXY_ORIGIN: value })).toEqual({
+        root: '/srv/web',
+        relayOrigin: value,
+        nodeProxyOrigin: value,
+      });
+    },
+  );
+
+  it('X2F_ALLOW_INSECURE_ORIGINS=1 allows a remote clear-text origin, deliberately', () => {
+    vi.stubEnv('NODE_ENV', undefined);
+    const env = { ...base, X2F_RELAY_ORIGIN: 'ws://relay.x2f.test', X2F_NODE_PROXY_ORIGIN: 'http://node.x2f.test' };
+    expect(() => webOptionsFromEnv(env)).toThrow(/https or wss/);
+    expect(() => webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: 'true' })).toThrow(/https or wss/);
+    expect(webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: '1' })).toEqual({
+      root: '/srv/web',
+      relayOrigin: 'ws://relay.x2f.test',
+      nodeProxyOrigin: 'http://node.x2f.test',
+      allowInsecureOrigins: true,
+    });
+  });
+
+  it('cspFor refuses a remote clear-text origin outside production too, unless allowed', () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    expect(() => cspFor({ relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).toThrow(/https or wss/);
+    expect(cspFor({ relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE, allowInsecureOrigins: true })).toContain(
+      "connect-src 'self' ws://relay.x2f.test https://node.x2f.test;",
+    );
+  });
+
+  it('serveWeb refuses a remote clear-text origin', async () => {
+    const { app: other } = await testApp();
+    try {
+      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).rejects.toThrow(/https or wss/);
+    } finally {
+      await other.close();
+    }
+  });
+});
+
 describe('webOptionsFromEnv', () => {
   it('is null without X2F_WEB_ROOT', () => {
     expect(webOptionsFromEnv({})).toBeNull();
