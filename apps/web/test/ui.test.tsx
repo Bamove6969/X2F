@@ -203,6 +203,53 @@ describe('Sheet', () => {
     fire(backdrop, new MouseEvent('click', { bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it('moves focus to the dialog when it opens', () => {
+    render(
+      <Sheet open title="T" onClose={() => undefined}>
+        B
+      </Sheet>,
+    );
+    const dialog = document.querySelector('[role="dialog"]')!;
+    expect(document.activeElement).toBe(dialog);
+  });
+
+  it('keeps Tab inside: last wraps to first, Shift+Tab from the dialog or the first wraps to last', () => {
+    render(
+      <Sheet open title="T" onClose={() => undefined}>
+        <button type="button">A</button>
+        <button type="button">B</button>
+      </Sheet>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const close = dialog.querySelector<HTMLElement>('button[aria-label="Close"]')!;
+    const last = [...dialog.querySelectorAll<HTMLElement>('button')].find((b) => b.textContent === 'B')!;
+    const tab = (shift: boolean) =>
+      fire(document.activeElement!, new KeyboardEvent('keydown', { bubbles: true, cancelable: true, key: 'Tab', shiftKey: shift }));
+
+    expect(document.activeElement).toBe(dialog);
+    tab(true);
+    expect(document.activeElement).toBe(last);
+    tab(false);
+    expect(document.activeElement).toBe(close);
+    tab(true);
+    expect(document.activeElement).toBe(last);
+  });
+
+  it('returns focus to the opener when it closes', () => {
+    const { host } = render(
+      <MemoryRouter>
+        <TradeHeader title="Selling to mira.k" code="K7M2-9QXA-4FTR-8WPN" method={ZELLE} backTo="/sell" />
+      </MemoryRouter>,
+    );
+    const methodButton = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Zelle')!;
+    methodButton.focus();
+    fire(methodButton, new MouseEvent('click', { bubbles: true }));
+    expect(document.activeElement).toBe(document.querySelector('[role="dialog"]'));
+    fire(document.querySelector('button[aria-label="Close"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(document.activeElement).toBe(methodButton);
+  });
 });
 
 describe('BadgePill', () => {
