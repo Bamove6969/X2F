@@ -1,17 +1,22 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { HoldButton } from '../src/ui/HoldButton.js';
-import { advance, key, pointer, render, setReducedMotion } from './render.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { advance, fire, key, pointer, render, setReducedMotion } from './render.js';
+
+const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/ui/ui.css'), 'utf8');
 
 const LABEL = 'Hold to release 1.25 XMR to mira.k';
 const HOLDING = 'Keep holding…';
 
 function setup(props: Partial<Parameters<typeof HoldButton>[0]> = {}) {
   const onComplete = vi.fn();
-  const { host, rerender } = render(<HoldButton label={LABEL} holdingLabel={HOLDING} onComplete={onComplete} {...props} />);
+  const { host, rerender, unmount } = render(<HoldButton label={LABEL} holdingLabel={HOLDING} onComplete={onComplete} {...props} />);
   const button = host.querySelector('button');
   if (!button) throw new Error('no button');
-  return { button, onComplete, host, rerender };
+  return { button, onComplete, host, rerender, unmount };
 }
 
 describe('HoldButton', () => {
@@ -159,5 +164,65 @@ describe('HoldButton', () => {
     expect(button.textContent).toContain('Keep holding… 1.0 s');
     advance(1000, vi);
     expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('losing focus mid-hold stops the hold', () => {
+    const { button, onComplete } = setup();
+    key(button, 'keydown', ' ');
+    advance(1000, vi);
+    // React's onBlur listens for focusout.
+    fire(button, new FocusEvent('focusout', { bubbles: true }));
+    expect(button.dataset.holding).toBe('false');
+    advance(1500, vi);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('unmounting mid-hold never completes', () => {
+    const { button, onComplete, unmount } = setup();
+    pointer(button, 'pointerdown');
+    advance(1000, vi);
+    unmount();
+    advance(1500, vi);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('done shows the completed look and ignores holds', () => {
+    const { button, onComplete } = setup({ done: true, label: 'Done label', caption: 'Done caption' });
+    expect(button.dataset.done).toBe('true');
+    // The board locks the button once done (disabled, like `locked`).
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toContain('Done label');
+    expect(button.textContent).toContain('Done caption');
+    expect(button.querySelector('[data-fill]')).toBeNull();
+    pointer(button, 'pointerdown');
+    key(button, 'keydown', ' ');
+    advance(1500, vi);
+    expect(button.dataset.holding).toBe('false');
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('is not done unless told', () => {
+    const { button } = setup();
+    expect(button.dataset.done).toBe('false');
+  });
+
+  it('becoming done mid-hold stops the hold', () => {
+    const { button, onComplete, rerender } = setup();
+    pointer(button, 'pointerdown');
+    advance(1000, vi);
+    rerender(<HoldButton label={LABEL} holdingLabel={HOLDING} onComplete={onComplete} done />);
+    advance(1000, vi);
+    expect(onComplete).not.toHaveBeenCalled();
+  });
+
+  it('the stylesheet gives done the escrow fill on ground text, with no lift or glow', () => {
+    const rule = css.match(/\.x2f-hold\[data-done='true'\][^{]*\{([^}]*)\}/);
+    expect(rule).not.toBeNull();
+    const body = rule![1]!.replace(/\s+/g, ' ');
+    expect(body).toContain('background: var(--x2f-escrow);');
+    expect(body).toContain('color: var(--x2f-ground);');
+    expect(body).toContain('cursor: default;');
+    expect(body).toContain('box-shadow: none;');
+    expect(body).toContain('transform: none;');
   });
 });

@@ -14,13 +14,26 @@ afterEach(() => {
   }
 });
 
-export function render(ui: ReactNode): { host: HTMLElement; rerender: (next: ReactNode) => void } {
+export function render(ui: ReactNode): {
+  host: HTMLElement;
+  rerender: (next: ReactNode) => void;
+  unmount: () => void;
+} {
   const host = document.createElement('div');
   document.body.append(host);
   const root = createRoot(host);
-  mounted.push({ root, host });
+  const entry = { root, host };
+  mounted.push(entry);
   act(() => root.render(ui));
-  return { host, rerender: (next) => act(() => root.render(next)) };
+  return {
+    host,
+    rerender: (next) => act(() => root.render(next)),
+    unmount: () => {
+      mounted.splice(mounted.indexOf(entry), 1);
+      act(() => root.unmount());
+      host.remove();
+    },
+  };
 }
 
 export function fire(el: Element, event: Event): void {

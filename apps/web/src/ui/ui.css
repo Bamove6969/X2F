@@ -332,6 +332,17 @@
   cursor: not-allowed;
 }
 
+/* Done (SellerConfirm board, after the release). */
+.x2f-hold[data-done='true'],
+.x2f-hold[data-done='true']:disabled {
+  border: 0;
+  background: var(--x2f-escrow);
+  color: var(--x2f-ground);
+  cursor: default;
+  box-shadow: none;
+  transform: none;
+}
+
 .x2f-hold__fill {
   position: absolute;
   inset: 0;

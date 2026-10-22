@@ -12,10 +12,14 @@ function prefersReducedMotion(): boolean {
  * Space/Enter hold fills the button over `holdMs`; letting go early resets it; `onComplete` fires
  * once. Under reduced motion there is no fill: the top line counts down in text instead
  * ("Keep holding… 1.0 s"). It is the screen's primary action, so it carries `data-primary`.
+ * `done` (set by the screen once the action has happened) shows the board's completed look,
+ * escrow fill with ground text, and ignores holds; the screen supplies the done wording through
+ * `label` and `caption`.
  */
 export function HoldButton({
   holdMs = 1500,
   disabled = false,
+  done: isDone = false,
   onComplete,
   label,
   holdingLabel,
@@ -24,6 +28,8 @@ export function HoldButton({
 }: {
   holdMs?: number;
   disabled?: boolean;
+  /** The action has happened: show the completed look and ignore holds. */
+  done?: boolean;
   onComplete: () => void;
   /** The main line, e.g. "Hold to release 1.25 XMR to mira.k". */
   label: string;
@@ -56,7 +62,7 @@ export function HoldButton({
   };
 
   const start = () => {
-    if (disabled || done.current || timer.current !== null) return;
+    if (disabled || isDone || done.current || timer.current !== null) return;
     const reduce = prefersReducedMotion();
     const t0 = Date.now();
     setReduced(reduce);
@@ -72,8 +78,8 @@ export function HoldButton({
   };
 
   useEffect(() => {
-    if (disabled) stop();
-  }, [disabled]);
+    if (disabled || isDone) stop();
+  }, [disabled, isDone]);
 
   useEffect(() => clear, []);
 
@@ -103,7 +109,8 @@ export function HoldButton({
       data-primary=""
       data-holding={holding ? 'true' : 'false'}
       data-reduced={reduced ? 'true' : 'false'}
-      disabled={disabled}
+      data-done={isDone ? 'true' : 'false'}
+      disabled={disabled || isDone}
       aria-label={accessibleLabel}
       onPointerDown={onPointerDown}
       onPointerUp={stop}
@@ -114,7 +121,9 @@ export function HoldButton({
       onBlur={stop}
       onContextMenu={(e) => e.preventDefault()}
     >
-      <span className="x2f-hold__fill" data-fill="" aria-hidden="true" style={{ '--x2f-hold-ms': `${holdMs}ms` } as CSSProperties} />
+      {isDone ? null : (
+        <span className="x2f-hold__fill" data-fill="" aria-hidden="true" style={{ '--x2f-hold-ms': `${holdMs}ms` } as CSSProperties} />
+      )}
       {top === undefined ? null : <span className="x2f-hold__top">{top}</span>}
       <span className="x2f-hold__main">{label}</span>
     </button>
