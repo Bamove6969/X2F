@@ -47,3 +47,8 @@ export {
   verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
   webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
 } from './auth/webauthn.js';
+export { moneroAddressValidator } from './wallets/address.js';
+export {
+  LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
+  usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
+} from './wallets/routes.js';
