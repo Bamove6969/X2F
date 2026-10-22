@@ -11,6 +11,11 @@ const MONEROD = join(REGTEST_DIR, 'bin', 'monero-x86_64-linux-gnu-v0.18.5.3', 'm
 
 export interface Regtest {
   rpcUri: string;
+  /**
+   * With `restrictedRpc`, a second RPC port in monerod's restricted mode (what `--restricted-rpc` gives
+   * the main port). The main port stays unrestricted so tests can still mine with generateblocks.
+   */
+  restrictedRpcUri: string | undefined;
   pid: number;
   dataDir: string;
   stop(): Promise<void>;
@@ -83,13 +88,15 @@ function exited(child: ChildProcess): Promise<void> {
   });
 }
 
-export async function startRegtest(): Promise<Regtest> {
+export async function startRegtest(o: { restrictedRpc?: boolean } = {}): Promise<Regtest> {
   if (!existsSync(MONEROD)) throw new Error(`monerod missing at ${MONEROD}; run tools/regtest/fetch-monerod.sh`);
   mkdirSync(REGTEST_DIR, { recursive: true });
   const dataDir = mkdtempSync(join(REGTEST_DIR, 'node-'));
   const rpcPort = await freePort();
   const p2pPort = await freePort();
+  const restrictedPort = o.restrictedRpc ? await freePort() : undefined;
   const rpcUri = `http://127.0.0.1:${rpcPort}`;
+  const restrictedRpcUri = restrictedPort === undefined ? undefined : `http://127.0.0.1:${restrictedPort}`;
   const child = spawn(
     MONEROD,
     [
@@ -104,6 +111,7 @@ export async function startRegtest(): Promise<Regtest> {
       '--data-dir', dataDir,
       '--non-interactive',
       '--disable-rpc-ban',
+      ...(restrictedPort === undefined ? [] : ['--rpc-restricted-bind-ip', '127.0.0.1', '--rpc-restricted-bind-port', String(restrictedPort)]),
     ],
     { stdio: 'ignore' },
   );
@@ -121,16 +129,18 @@ export async function startRegtest(): Promise<Regtest> {
     children.delete(child);
     reserved.delete(rpcPort);
     reserved.delete(p2pPort);
+    if (restrictedPort !== undefined) reserved.delete(restrictedPort);
     rmSync(dataDir, { recursive: true, force: true });
   };
 
   try {
     await Promise.race([waitForInfo(rpcUri, child), failed]);
+    if (restrictedRpcUri !== undefined) await Promise.race([waitForInfo(restrictedRpcUri, child), failed]);
   } catch (e) {
     await stop();
     throw e;
   }
-  return { rpcUri, pid: child.pid ?? -1, dataDir, stop };
+  return { rpcUri, restrictedRpcUri, pid: child.pid ?? -1, dataDir, stop };
 }
 
 export async function mine(rpcUri: string, blocks: number, address: string): Promise<void> {
