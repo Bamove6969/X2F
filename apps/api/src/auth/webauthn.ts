@@ -23,6 +23,7 @@ import { consumeChallenge, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
+import { assertMethodAllowed } from './methods.js';
 import { requireSession, startSession } from './sessions.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
@@ -492,12 +493,16 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
     );
     let account: { id: string; kind: AccountKind } | null = null;
-    if (found !== null && creds.some((c) => c.kind === 'security-key')) account = found;
+    // Passkeys are in `creds` only after a staff member's PGP first factor (they may then be the only
+    // credential listed: PGP + passkey is a staff pair).
+    if (found !== null && creds.length > 0) account = found;
     else creds = decoyCredentialIds(deps, nameKey).map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }));
     const options = await buildAssertionOptions(deps, creds);
     const challengeId = await storeChallenge(deps, req, {
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
-      payload: { mode: 'username', listed: creds.map((c) => b64url(c.credential_id)) },
+      // The pendingId this start was given (any, even one that matched nothing): `finish` uses it and
+      // refuses a different one, so a second step is bound to the pending login it was started for.
+      payload: { mode: 'username', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}) },
     });
     return { challengeId, options };
   });
@@ -514,6 +519,9 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     if (!ch || ch.purpose !== 'login' || (ch.method !== 'passkey' && ch.method !== 'security-key') || ch.webauthn_challenge === null) {
       throw expired();
     }
+    // The second step of a staff or owner login is bound to the pendingId its start was given.
+    const boundPending = typeof ch.payload.pendingId === 'string' ? ch.payload.pendingId : undefined;
+    if (pendingId !== undefined && pendingId !== boundPending) throw expired();
     let row: CredentialRow;
     if (ch.payload.mode === 'discoverable') {
       if (!opts.discoverable) throw expired();
@@ -532,7 +540,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     return completeLogin(deps, req, reply, {
       account: { id: row.account_id, kind: row.account_kind },
       factor: { method: row.kind, credentialId: b64url(row.credential_id), attested: row.attested },
-      ...(pendingId !== undefined ? { pendingId } : {}),
+      ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       deviceLabel,
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
     });
@@ -654,10 +662,13 @@ async function confirmFinish(req: FastifyRequest) {
   return { confirmToken };
 }
 
-/** The add-method action of `/v1/account/webauthn/start`; an owner passkey is refused before any token is spent. */
+/**
+ * The add-method action of `/v1/account/webauthn/start`; a kind the account may not hold (an owner
+ * passkey) is refused by `assertMethodAllowed` before any token is spent.
+ */
 function addKeyAction(req: FastifyRequest): ConfirmAction {
   const kind = credentialKind(record(req.body).kind);
-  if (req.auth.kind === 'owner' && kind === 'passkey') throw new ApiError(403, 'method-not-allowed');
+  assertMethodAllowed(req.auth.kind, kind);
   return { kind: 'add-method', method: kind };
 }
 
@@ -682,6 +693,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const ch = await consumeChallenge(deps.db, str(body, 'challengeId'), deps.clock());
   if (!ch || !sameSession(ch, req, 'add-key')) throw expired();
   const kind = credentialKind(ch.method);
+  assertMethodAllowed(req.auth.kind, kind);
   const cred = await verifyRegistration(deps, { accountKind: req.auth.kind, kind, response: body.response, expectedChallenge: ch.webauthn_challenge! });
   const now = deps.clock();
   const client = await deps.db.connect();

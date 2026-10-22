@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { normalizeRecoveryCode, type MethodType } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
@@ -83,11 +83,14 @@ beforeEach(() => {
   vi.restoreAllMocks();
 });
 
-/** Owners seeded by the current test; deleted afterwards (one owner per database). */
-let owners: string[] = [];
+/**
+ * Accounts seeded by the current test; deleted afterwards (one owner per database, and the shared
+ * PGP keys and fixed recovery codes are unique across accounts).
+ */
+let seeded: string[] = [];
 afterEach(async () => {
-  if (owners.length > 0) await deps.db.query('delete from accounts where id = any($1::uuid[])', [owners]);
-  owners = [];
+  if (seeded.length > 0) await deps.db.query('delete from accounts where id = any($1::uuid[])', [seeded]);
+  seeded = [];
 });
 
 let seq = 0;
@@ -131,7 +134,7 @@ class Browser {
 async function account(kind: 'trader' | 'staff' | 'owner' = 'trader') {
   const username = uniqueName(kind === 'trader' ? 'user' : kind === 'staff' ? 'crew' : 'boss');
   const id = await seedAccount(deps, { username, kind });
-  if (kind === 'owner') owners.push(id);
+  seeded.push(id);
   return { id, username };
 }
 
@@ -765,6 +768,44 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(errorOf(res)).toBe('challenge-expired');
     const ok = await keyStep(b, username, auth, pendingId);
     expect(ok.res.json()).toEqual({ status: 'ok' });
+  });
+
+  it('a request from another device or account leaves the pending login usable by its own browser', async () => {
+    const { id, username } = await account('owner');
+    const { auth } = await addCredential(id, 'security-key', true);
+    await addPgp(id, keys[0]!);
+    const crew = await account('staff');
+    await addPgp(crew.id, keys[1]!);
+    const a = new Browser();
+    const pendingId = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
+    expect(errorOf((await keyStep(new Browser(), username, auth, pendingId)).res)).toBe('challenge-expired');
+    const cross = await a.post('/t/complete', {
+      accountId: crew.id, factor: { method: 'security-key', credentialId: 'k', attested: true }, pendingId,
+    });
+    expect(errorOf(cross)).toBe('challenge-expired');
+    const { rows } = await deps.db.query('select used_at from challenges where id = $1', [pendingId]);
+    expect(rows[0].used_at).toBeNull();
+    const ok = await keyStep(a, username, auth, pendingId);
+    expect(ok.res.json()).toEqual({ status: 'ok' });
+    expect(await sessionCount(crew.id)).toBe(0);
+  });
+
+  it('a first factor that is in no pair gets no pending login; a trader never has one', async () => {
+    const owner = await account('owner');
+    const res = await new Browser().post('/t/complete', {
+      accountId: owner.id, factor: { method: 'security-key', credentialId: 'k', attested: false },
+    });
+    expect(res.statusCode).toBe(403);
+    expect(errorOf(res)).toBe('method-not-allowed');
+    const { rows } = await deps.db.query(`select 1 from challenges where account_id = $1 and purpose = 'second-factor'`, [owner.id]);
+    expect(rows).toHaveLength(0);
+
+    const trader = await account();
+    const t = await new Browser().post('/t/complete', {
+      accountId: trader.id, factor: { method: 'passkey', credentialId: 'p', attested: false }, pendingId: randomUUID(),
+    });
+    expect(errorOf(t)).toBe('challenge-expired');
+    expect(await sessionCount(trader.id)).toBe(0);
   });
 
   it('traders still log in with one factor', async () => {
