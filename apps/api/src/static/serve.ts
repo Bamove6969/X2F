@@ -1,3 +1,4 @@
+import type { Socket } from 'node:net';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -26,6 +27,32 @@ export function addSecurityHeaders(_req: FastifyRequest, reply: FastifyReply, do
  */
 export function frameworkErrors(_err: unknown, _req: FastifyRequest, reply: FastifyReply): void {
   void reply.code(400).headers(SECURITY_HEADERS).send({ error: 'bad-request' });
+}
+
+const CLIENT_ERRORS: Readonly<Record<string, readonly [number, string, string]>> = {
+  HPE_HEADER_OVERFLOW: [431, 'Request Header Fields Too Large', 'headers-too-large'],
+  ERR_HTTP_REQUEST_TIMEOUT: [408, 'Request Timeout', 'timeout'],
+};
+const BAD_REQUEST = [400, 'Bad Request', 'bad-request'] as const;
+
+/**
+ * Fastify's `clientErrorHandler` option: HTTP that Node cannot parse (a bad request line, headers
+ * over the size limit) never becomes a request, so no hook runs and fastify's default reply has no
+ * SECURITY_HEADERS. This writes the reply by hand, with them, a fixed body and nothing from the
+ * request, then closes the connection. Nothing is logged.
+ */
+export function clientErrorHandler(err: NodeJS.ErrnoException, socket: Socket): void {
+  if (err.code === 'ECONNRESET' || socket.destroyed) return;
+  if (socket.writable) {
+    const [status, reason, code] = (err.code !== undefined ? CLIENT_ERRORS[err.code] : undefined) ?? BAD_REQUEST;
+    const body = JSON.stringify({ error: code });
+    const headers = Object.entries(SECURITY_HEADERS).map(([k, v]) => `${k}: ${v}\r\n`).join('');
+    socket.write(
+      `HTTP/1.1 ${status} ${reason}\r\n${headers}content-type: application/json\r\n` +
+        `content-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`,
+    );
+  }
+  socket.destroy();
 }
 
 export interface WebOptions {

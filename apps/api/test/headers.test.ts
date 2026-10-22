@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { connect, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -101,6 +102,75 @@ describe('requests fastify refuses before routing', () => {
     expect(res.json()).toEqual({ error: 'not-found' });
     expectBaseHeaders(res.headers);
     expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
+/** Sends raw bytes and returns everything the server writes before it closes the socket. */
+function rawExchange(port: number, request: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: '127.0.0.1', port });
+    const chunks: Buffer[] = [];
+    socket.on('data', (c: Buffer) => chunks.push(c));
+    socket.on('error', (e: NodeJS.ErrnoException) => (e.code === 'ECONNRESET' || e.code === 'EPIPE' ? undefined : reject(e)));
+    socket.on('close', () => resolve(Buffer.concat(chunks).toString('latin1')));
+    socket.setTimeout(10_000, () => socket.destroy(new Error('no reply')));
+    socket.end(request);
+  });
+}
+
+function parseRaw(raw: string): { status: number; headers: Record<string, string>; body: string } {
+  const [head = '', body = ''] = raw.split('\r\n\r\n', 2);
+  const [statusLine = '', ...lines] = head.split('\r\n');
+  const headers: Record<string, string> = {};
+  for (const line of lines) {
+    const i = line.indexOf(':');
+    headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+  return { status: Number(statusLine.split(' ')[1]), headers, body };
+}
+
+describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)', () => {
+  let live: FastifyInstance;
+  let port: number;
+
+  beforeAll(async () => {
+    ({ app: live } = await testApp());
+    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    await live.listen({ host: '127.0.0.1', port: 0 });
+    port = (live.server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it('a well-formed raw request is answered normally (the harness works)', async () => {
+    const res = parseRaw(await rawExchange(port, 'GET /healthz HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n'));
+    expect(res.status).toBe(200);
+    expectBaseHeaders(res.headers);
+  });
+
+  it.each([
+    ['a bad request line', 'NOT AN HTTP REQUEST\r\n\r\n'],
+    ['a bad header line', 'GET /sell HTTP/1.1\r\nHost: x2f.test\r\nno colon here\r\n\r\n'],
+    ['a bad HTTP version', 'GET /sell HTTP/9.9.9\r\nHost: x2f.test\r\n\r\n'],
+  ])('%s gets 400 bad-request with the security headers', async (_name, request) => {
+    const res = parseRaw(await rawExchange(port, request));
+    expect(res.status).toBe(400);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(res.headers['content-type']).toBe('application/json');
+    expect(res.headers.connection).toBe('close');
+    expect(JSON.parse(res.body)).toEqual({ error: 'bad-request' });
+  });
+
+  it('oversized headers get 431 headers-too-large with the security headers', async () => {
+    const big = 'x'.repeat(64 * 1024);
+    const res = parseRaw(await rawExchange(port, `GET /sell HTTP/1.1\r\nHost: x2f.test\r\nX-Big: ${big}\r\n\r\n`));
+    expect(res.status).toBe(431);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(JSON.parse(res.body)).toEqual({ error: 'headers-too-large' });
   });
 });
 

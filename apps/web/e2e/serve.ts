@@ -2,9 +2,9 @@
 // per test with page.route; any other /v1 request gets the API's JSON 404.
 import { fileURLToPath } from 'node:url';
 import Fastify from 'fastify';
-import { frameworkErrors, serveWeb } from '../../api/src/static/serve.js';
+import { clientErrorHandler, frameworkErrors, serveWeb } from '../../api/src/static/serve.js';
 
-const app = Fastify({ logger: false, frameworkErrors });
+const app = Fastify({ logger: false, frameworkErrors, clientErrorHandler });
 await serveWeb(app, {
   root: fileURLToPath(new URL('../dist', import.meta.url)),
   relayOrigin: 'wss://relay.x2f.invalid',
