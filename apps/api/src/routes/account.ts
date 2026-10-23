@@ -4,6 +4,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { endSession, requireSession, type SessionLevel } from '../auth/sessions.js';
+import { payoutWaitState } from '../wallets/routes.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -120,7 +121,8 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     methods: methodTypes(counts),
     hasBackup: hasBackup(counts),
     suggestions: suggestionsFor(counts),
-    payoutWait: { enabled: row.payout_wait, offAt: row.payout_wait_off_at?.toISOString() ?? null },
+    // The wait as the wallet routes apply it: a switch-off that has taken effect reads as off.
+    payoutWait: payoutWaitState(row, now),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
   };

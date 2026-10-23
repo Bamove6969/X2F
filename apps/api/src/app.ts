@@ -139,6 +139,13 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Referrer-Policy, COOP, HSTS and nosniff on every response, errors and 404s included (P3-I15).
   app.addHook('onRequest', addSecurityHeaders);
 
+  // API answers carry secrets (confirm tokens, recovery codes, TOTP secrets, login challenges) and
+  // private account data: never stored by a browser cache or a proxy.
+  app.addHook('onRequest', (req, reply, done) => {
+    if (req.url.startsWith('/v1/')) void reply.header('cache-control', 'no-store');
+    done();
+  });
+
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
 
