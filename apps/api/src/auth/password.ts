@@ -177,11 +177,19 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
   const action = parseConfirmAction((req.body as Record<string, unknown>).action);
   const totp = (req.body as Record<string, unknown>).totp;
   if (totp !== undefined && typeof totp !== 'string') throw new ApiError(400, 'bad-request');
+  const enrolled = await hasTotp(deps.db, req.auth.accountId);
+  if (enrolled && totp === undefined) {
+    // Refused before any Argon2 work and counted as a password failure, so neither the answer nor
+    // the throttle tells whether the password was right.
+    const key = await throttleKey(deps, req, 'password', { id: req.auth.accountId });
+    await throttleCheck(deps, key);
+    await throttleFail(deps, key, req.auth.accountId);
+    throw new ApiError(401, 'credentials-invalid');
+  }
   const found = await passwordFor(deps, { accountId: req.auth.accountId });
   await checkCredentials(deps, req, found, '', password);
   // Once TOTP is enrolled, a confirm needs the current code too; a wrong one counts on the `totp` key.
-  if (await hasTotp(deps.db, req.auth.accountId)) {
-    if (totp === undefined) throw new ApiError(401, 'credentials-invalid');
+  if (enrolled && totp !== undefined) {
     const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
     await throttleCheck(deps, key);
     if (!(await verifyTotp(deps, req.auth.accountId, totp))) {

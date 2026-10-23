@@ -36,8 +36,14 @@ export {
 } from './auth/pgp.js';
 export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
 export {
-  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
+  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
   verifyTotp,
 } from './auth/totp.js';
-export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, assertHoldPassed, recoveryRoutes } from './auth/recovery.js';
+export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryRoutes } from './auth/recovery.js';
 export { SECURITY_HEADERS, addSecurityHeaders, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
+export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
+export {
+  WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
+  verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
+  webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
+} from './auth/webauthn.js';

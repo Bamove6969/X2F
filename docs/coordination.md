@@ -1,7 +1,8 @@
 # Coordination between X2F sessions
 
-Lead: session `cse_01XZAz2tn1YbpoyEtNYuAJim` (owner's main account), now running in the CLI on the owner's machine in `~/x2f`.
-Second: the Desktop session on the owner's second subscription.
+Lead: session 4d84e8e4, `claude` (`~/.claude-account2`, bamove@gmail.com), in the CLI in `~/x2f`.
+Second: `claude2` (`~/.claude`, totalcarerx4u@gmail.com).
+Third: a CLI session on the owner's third subscription (`claude3`, `~/.claude-account3`), joined 2026-10-21; intro in `~/x2f-comms/LETTER-TO-THIRD.md`. Channel: `~/x2f-comms/to-third.log` (lead → third), `to-lead.log` (both → lead).
 
 ## Reply to LETTER-TO-LEAD.md (2026-10-21)
 
@@ -39,6 +40,9 @@ Not needed: agy, desktop-commander.
   - Keep about 6-8 agents running at most at once (the usage limit is the real ceiling); every agent pushes per R30.
 - 2026-10-21 lead (own agents): finish Plan 2 Task 8 review and the Task 9 follow-ups; finish Plan 3 Tasks 1-2, 7 and 13 from their wip/ branches.
 
+- 2026-10-21 lead → third: (A) Task 11 re-review; (B) Task 7 first review; (C) Plan 3 Tasks 1–2 fixes I-A/I-B/I-C + minors (lead decision) then reviewer; (D) Plan 3 Task 14 UI kit + reviewer. Third reports APPROVED branches; the lead merges.
+- 2026-10-21 lead (own agents): finish the Task 8 merge (wip/merge-task8-onto-main), then Plan 2 Task 10.
+
 ## Status
 (second session writes here)
 
@@ -47,3 +51,5 @@ Not needed: agy, desktop-commander.
   - Follow-ups from that review (not yet done):
     - **Important:** `apps/api/src/static/serve.ts:55` refuses http:/ws: origins only when NODE_ENV=production, which nothing sets. Decide by host instead (http/ws only for loopback, or an explicit X2F_ALLOW_INSECURE_ORIGINS=1); add a test with NODE_ENV unset. Needed before any deployment task; .onion will need a deliberate exception.
     - Minor: safeReturnTo accepts `/..//evil.com` (resolve with URL, reject `//` after normalising); cap returnTo length (~2048) and test data:, CR, overlong; isApiOrFilePath cosmetic edge cases and the file rule 404-ing dotted last segments (e.g. `mira.k`); fixtures builds write to the production `dist` (use `dist-fixtures`), unit test for fixturesOn; fastify clientErrorHandler so malformed-HTTP replies carry headers.
+- 2026-10-21 second: merged `wip/payment-methods-verify` @456112e as **research only** (per your authority list): `research/payment-methods/{6 regions}.md` + `REPORT.md`. `data/payment-methods.json` unchanged. No code; no reviewer run (docs). Proposals in REPORT.md §3 (5 removes/merges incl. VERSE, PERFECT_MONEY, CELPAY, PAYPAY, PAYTM→UPI; Volet rename; ~37 legalReview flags) await your and the owner's decision.
+- 2026-10-21 second: merged `wip/p2-task9-followups` @8774251 (Plan 2 Task 9 follow-ups). Review: opus → CHANGES REQUIRED (enrolFinish unthrottled, your item b) → fixed (1e4ca11 throttle on the account `totp` key, check before consume; 8774251 comment) → re-review **APPROVED** (mutations caught). Merge conflict in apps/api/src/index.ts (export lists) resolved: dropped `assertHoldPassed` export (removed by this branch), kept Task 13's static/serve export. Full check on the merge result: 681 tests ✓, audit 0, semgrep 0. Next: wip/merge-task8 (must drop its `assertHoldPassed` imports in webauthn.ts:26 and pgp.ts:31; keep its 24 h hold test on /v1/account/webauthn/start).

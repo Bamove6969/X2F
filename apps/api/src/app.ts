@@ -8,6 +8,7 @@ import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
+import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, frameworkErrors } from './static/serve.js';
@@ -158,6 +159,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
+  // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
+  webauthnRoutes(app);
+  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
 
   return app;
 }
