@@ -1,4 +1,5 @@
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
+import { connect, type AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -85,6 +86,40 @@ describe('security headers', () => {
   });
 });
 
+describe('the file rule in the web catch-all', () => {
+  it.each(['/u/mira.k', '/trade/ABCD.EFGH', '/u/a.b.c', '/sell/zelle.us', '/u/mira.k?tab=trades', '/v1x.k'])(
+    'the app route %s (a dot in its last segment) is the app page',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(200);
+      expect(res.body).toContain('<div id="root">');
+      expect(res.headers['content-security-policy']).toBe(CSP);
+    },
+  );
+
+  it.each([
+    '/assets/missing.css',
+    '/assets/missing.mjs',
+    '/assets/font.woff2',
+    '/assets/font.woff',
+    '/assets/app.js.map',
+    '/assets/escrow.wasm',
+    '/ASSETS/MISSING.JS',
+    '/assets/missing.js?v=1',
+    '/favicon.ico',
+    '/icon.svg',
+    '/icon.png',
+    '/manifest.webmanifest',
+    '/robots.txt',
+    '/data.json',
+  ])('the missing file %s is a 404, not the app page', async (url) => {
+    const res = await app.inject({ method: 'GET', url });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+    expect(res.headers['content-security-policy']).toBeUndefined();
+  });
+});
+
 describe('requests fastify refuses before routing', () => {
   it.each(['/%zz', '/v1/%zz', '/sell/%E0%A4%A'])('a malformed URL %s gets 400 bad-request with the headers, without echoing the path', async (url) => {
     const res = await app.inject({ method: 'GET', url });
@@ -104,6 +139,75 @@ describe('requests fastify refuses before routing', () => {
   });
 });
 
+/** Sends raw bytes and returns everything the server writes before it closes the socket. */
+function rawExchange(port: number, request: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: '127.0.0.1', port });
+    const chunks: Buffer[] = [];
+    socket.on('data', (c: Buffer) => chunks.push(c));
+    socket.on('error', (e: NodeJS.ErrnoException) => (e.code === 'ECONNRESET' || e.code === 'EPIPE' ? undefined : reject(e)));
+    socket.on('close', () => resolve(Buffer.concat(chunks).toString('latin1')));
+    socket.setTimeout(10_000, () => socket.destroy(new Error('no reply')));
+    socket.end(request);
+  });
+}
+
+function parseRaw(raw: string): { status: number; headers: Record<string, string>; body: string } {
+  const [head = '', body = ''] = raw.split('\r\n\r\n', 2);
+  const [statusLine = '', ...lines] = head.split('\r\n');
+  const headers: Record<string, string> = {};
+  for (const line of lines) {
+    const i = line.indexOf(':');
+    headers[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+  }
+  return { status: Number(statusLine.split(' ')[1]), headers, body };
+}
+
+describe('malformed HTTP that never reaches fastify routing (clientErrorHandler)', () => {
+  let live: FastifyInstance;
+  let port: number;
+
+  beforeAll(async () => {
+    ({ app: live } = await testApp());
+    await serveWeb(live, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
+    await live.listen({ host: '127.0.0.1', port: 0 });
+    port = (live.server.address() as AddressInfo).port;
+  });
+
+  afterAll(async () => {
+    await live.close();
+  });
+
+  it('a well-formed raw request is answered normally (the harness works)', async () => {
+    const res = parseRaw(await rawExchange(port, 'GET /healthz HTTP/1.1\r\nHost: x2f.test\r\nConnection: close\r\n\r\n'));
+    expect(res.status).toBe(200);
+    expectBaseHeaders(res.headers);
+  });
+
+  it.each([
+    ['a bad request line', 'NOT AN HTTP REQUEST\r\n\r\n'],
+    ['a bad header line', 'GET /sell HTTP/1.1\r\nHost: x2f.test\r\nno colon here\r\n\r\n'],
+    ['a bad HTTP version', 'GET /sell HTTP/9.9.9\r\nHost: x2f.test\r\n\r\n'],
+  ])('%s gets 400 bad-request with the security headers', async (_name, request) => {
+    const res = parseRaw(await rawExchange(port, request));
+    expect(res.status).toBe(400);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(res.headers['content-type']).toBe('application/json');
+    expect(res.headers.connection).toBe('close');
+    expect(JSON.parse(res.body)).toEqual({ error: 'bad-request' });
+  });
+
+  it('oversized headers get 431 headers-too-large with the security headers', async () => {
+    const big = 'x'.repeat(64 * 1024);
+    const res = parseRaw(await rawExchange(port, `GET /sell HTTP/1.1\r\nHost: x2f.test\r\nX-Big: ${big}\r\n\r\n`));
+    expect(res.status).toBe(431);
+    expectBaseHeaders(res.headers);
+    expect(res.headers['content-security-policy']).toBeUndefined();
+    expect(JSON.parse(res.body)).toEqual({ error: 'headers-too-large' });
+  });
+});
+
 describe('the /v1 check in the web catch-all', () => {
   it.each(['/V1/x', '/v1%2fx', '/%761/x', '/V1'])('%s is a JSON 404, never the app page', async (url) => {
     const res = await app.inject({ method: 'GET', url });
@@ -111,6 +215,16 @@ describe('the /v1 check in the web catch-all', () => {
     expect(res.json()).toEqual({ error: 'not-found' });
     expect(res.headers['content-security-policy']).toBeUndefined();
   });
+
+  it.each(['//v1/x', '///v1', '/v1.', '/v1./x', '/v1%2e/x', '/v1%20', '//V1//x', '/v1..'])(
+    '%s behaves like /v1/x: a JSON 404, never the app page',
+    async (url) => {
+      const res = await app.inject({ method: 'GET', url });
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'not-found' });
+      expect(res.headers['content-security-policy']).toBeUndefined();
+    },
+  );
 
   it('a path that only starts with the letters v1 is still the app page', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1x' });
@@ -154,6 +268,69 @@ describe('cspFor in production', () => {
     expect(cspFor({ relayOrigin: 'ws://127.0.0.1:8090', nodeProxyOrigin: 'http://127.0.0.1:8091' })).toContain(
       "connect-src 'self' ws://127.0.0.1:8090 http://127.0.0.1:8091;",
     );
+  });
+});
+
+describe('clear-text connect origins are decided by host, not NODE_ENV', () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  const base = { X2F_WEB_ROOT: '/srv/web', X2F_RELAY_ORIGIN: RELAY, X2F_NODE_PROXY_ORIGIN: NODE };
+
+  it.each([
+    ['X2F_RELAY_ORIGIN', 'ws://relay.x2f.test'],
+    ['X2F_RELAY_ORIGIN', 'http://relay.x2f.test'],
+    ['X2F_NODE_PROXY_ORIGIN', 'http://node.x2f.test'],
+    ['X2F_NODE_PROXY_ORIGIN', 'ws://10.0.0.5:8091'],
+    ['X2F_RELAY_ORIGIN', 'ws://127.0.0.2:8090'],
+    ['X2F_RELAY_ORIGIN', 'ws://localhost.evil.test'],
+  ])('with NODE_ENV unset, %s=%s (not loopback) is refused', (name, value) => {
+    vi.stubEnv('NODE_ENV', undefined);
+    expect(process.env.NODE_ENV).toBeUndefined();
+    expect(() => webOptionsFromEnv({ ...base, [name]: value })).toThrow(/https or wss/);
+  });
+
+  it.each(['ws://127.0.0.1:8090', 'ws://[::1]:8090', 'ws://localhost:8090', 'http://127.0.0.1', 'http://localhost'])(
+    'with NODE_ENV unset, the loopback origin %s is allowed',
+    (value) => {
+      vi.stubEnv('NODE_ENV', undefined);
+      expect(webOptionsFromEnv({ ...base, X2F_RELAY_ORIGIN: value, X2F_NODE_PROXY_ORIGIN: value })).toEqual({
+        root: '/srv/web',
+        relayOrigin: value,
+        nodeProxyOrigin: value,
+      });
+    },
+  );
+
+  it('X2F_ALLOW_INSECURE_ORIGINS=1 allows a remote clear-text origin, deliberately', () => {
+    vi.stubEnv('NODE_ENV', undefined);
+    const env = { ...base, X2F_RELAY_ORIGIN: 'ws://relay.x2f.test', X2F_NODE_PROXY_ORIGIN: 'http://node.x2f.test' };
+    expect(() => webOptionsFromEnv(env)).toThrow(/https or wss/);
+    expect(() => webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: 'true' })).toThrow(/https or wss/);
+    expect(webOptionsFromEnv({ ...env, X2F_ALLOW_INSECURE_ORIGINS: '1' })).toEqual({
+      root: '/srv/web',
+      relayOrigin: 'ws://relay.x2f.test',
+      nodeProxyOrigin: 'http://node.x2f.test',
+      allowInsecureOrigins: true,
+    });
+  });
+
+  it('cspFor refuses a remote clear-text origin outside production too, unless allowed', () => {
+    vi.stubEnv('NODE_ENV', 'test');
+    expect(() => cspFor({ relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).toThrow(/https or wss/);
+    expect(cspFor({ relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE, allowInsecureOrigins: true })).toContain(
+      "connect-src 'self' ws://relay.x2f.test https://node.x2f.test;",
+    );
+  });
+
+  it('serveWeb refuses a remote clear-text origin', async () => {
+    const { app: other } = await testApp();
+    try {
+      await expect(serveWeb(other, { root, relayOrigin: 'ws://relay.x2f.test', nodeProxyOrigin: NODE })).rejects.toThrow(/https or wss/);
+    } finally {
+      await other.close();
+    }
   });
 });
 

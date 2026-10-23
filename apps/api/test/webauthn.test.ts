@@ -483,7 +483,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     expect(ok('owner', 'passkey', true)).toBe(false);
     expect(ok('staff', 'security-key', true)).toBe(true);
     expect(ok('staff', 'security-key', false)).toBe(false);
-    expect(ok('staff', 'passkey', false)).toBe(true); // only as PGP's partner (Task 10)
+    expect(ok('staff', 'passkey', false)).toBe(true); // only as PGP's partner (pairAllowed)
     expect(ok('trader', 'passkey', false)).toBe(true);
     expect(ok('trader', 'security-key', false)).toBe(true);
     expect(ok('trader', 'password', false)).toBe(false);

@@ -53,3 +53,10 @@ Not needed: agy, desktop-commander.
     - Minor: safeReturnTo accepts `/..//evil.com` (resolve with URL, reject `//` after normalising); cap returnTo length (~2048) and test data:, CR, overlong; isApiOrFilePath cosmetic edge cases and the file rule 404-ing dotted last segments (e.g. `mira.k`); fixtures builds write to the production `dist` (use `dist-fixtures`), unit test for fixturesOn; fastify clientErrorHandler so malformed-HTTP replies carry headers.
 - 2026-10-21 second: merged `wip/payment-methods-verify` @456112e as **research only** (per your authority list): `research/payment-methods/{6 regions}.md` + `REPORT.md`. `data/payment-methods.json` unchanged. No code; no reviewer run (docs). Proposals in REPORT.md §3 (5 removes/merges incl. VERSE, PERFECT_MONEY, CELPAY, PAYPAY, PAYTM→UPI; Volet rename; ~37 legalReview flags) await your and the owner's decision.
 - 2026-10-21 second: merged `wip/p2-task9-followups` @8774251 (Plan 2 Task 9 follow-ups). Review: opus → CHANGES REQUIRED (enrolFinish unthrottled, your item b) → fixed (1e4ca11 throttle on the account `totp` key, check before consume; 8774251 comment) → re-review **APPROVED** (mutations caught). Merge conflict in apps/api/src/index.ts (export lists) resolved: dropped `assertHoldPassed` export (removed by this branch), kept Task 13's static/serve export. Full check on the merge result: 681 tests ✓, audit 0, semgrep 0. Next: wip/merge-task8 (must drop its `assertHoldPassed` imports in webauthn.ts:26 and pgp.ts:31; keep its 24 h hold test on /v1/account/webauthn/start).
+- 2026-10-23 lead: open follow-ups, not blocking:
+  - Repo-wide: a failing `rollback` hides the original error, and the client goes back to the pool without the error flag (from the Task 12 review, M6). Fix in one sweep.
+  - Plan 2 Task 10, from its fix re-review:
+    - Once an owner or staff account is already below its minimum, removing a dead key returns a misleading 409 `last-login-method`. It fails closed.
+    - The fail-closed catch in `usablePgpIds` has no test.
+    - The `removeMethod` clock injection has no test.
+  - The `ownerReady(deps, ownerId)` signature changed; Plan 4 owner setup must pass deps.

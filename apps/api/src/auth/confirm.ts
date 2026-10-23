@@ -2,6 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { actionHash, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
+import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
 /** A confirm token lives 5 minutes; at exactly 5:00 it is refused. */
@@ -45,9 +46,10 @@ export async function issueConfirmToken(
  * token → 403 `confirm-required` `{ action: kind }`; a token that is malformed, unknown, used,
  * expired, from another session or for another action → 403 `confirm-invalid`. A mismatch does not
  * use the token up; the single `update ... returning` makes parallel redemptions succeed once.
+ * `deps.db` may be a transaction's client (Task 10's removal redeems inside its transaction).
  */
 export async function redeemConfirm(
-  deps: Pick<Deps, 'db' | 'clock'>,
+  deps: { db: Queryable; clock: () => Date },
   req: FastifyRequest,
   action: ConfirmAction,
   token: string | undefined,
