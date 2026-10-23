@@ -331,14 +331,29 @@ describe('alerts', () => {
     expect(((await b.get('/v1/account/alerts')).json() as Array<{ seenAt: string | null }>)[0]!.seenAt).toBe(at(-HOUR).toISOString());
   });
 
-  it('a held recovery session can read its alerts and mark them seen', async () => {
+  it('a held recovery session can read its alerts but cannot mark them seen', async () => {
     const { id } = await account();
     await addPgp(id);
     await addTotp(id);
     const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
     const list = (await held.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
     expect(list.map((a) => a.kind)).toContain('recovery-login');
-    expect((await held.post(`/v1/account/alerts/${list[0]!.id}/seen`)).statusCode).toBe(204);
+    const alert = list.find((a) => a.kind === 'recovery-login')!;
+    const res = await held.post(`/v1/account/alerts/${alert.id}/seen`);
+    expect(res.statusCode).toBe(403);
+    expect((res.json() as { error: string }).error).toBe('recovery-session');
+    const { rows } = await deps.db.query<{ seen_at: Date | null }>('select seen_at from alerts where id = $1', [alert.id]);
+    expect(rows[0]!.seen_at).toBeNull();
+  });
+
+  it('a recovery session without a hold cannot mark its alerts seen either', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    await addTotp(id);
+    const rec = await loggedIn(id, { level: 'recovery' });
+    const list = (await rec.get('/v1/account/alerts')).json() as Array<{ id: string; kind: string }>;
+    const alert = list.find((a) => a.kind === 'recovery-login')!;
+    expect((await rec.post(`/v1/account/alerts/${alert.id}/seen`)).statusCode).toBe(403);
   });
 });
 

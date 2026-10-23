@@ -209,7 +209,8 @@ export function accountRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/account/alerts/:id/seen',
-    { preHandler: requireSession(readAny) },
+    // Marking seen is a change: a recovery session must not hide its own recovery-login alert from the owner.
+    { preHandler: requireSession() },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
