@@ -11,13 +11,14 @@
  */
 import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Secret, TOTP } from 'otpauth';
-import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from './challenges.js';
+import { methodAllowed } from './methods.js';
 import { requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
@@ -160,16 +161,6 @@ function str(b: Record<string, unknown>, key: string): string {
   return v;
 }
 
-/**
- * Until Task 10's `assertMethodAllowed`, TOTP and recovery codes are for traders only: staff and the
- * owner have no backup login and no reset (R2). Runs before `requireConfirm`, so a refusal never
- * uses up a confirm token.
- */
-// TODO(Task 10): replace with `assertMethodAllowed(req.auth.kind, method)`.
-export const tradersOnly: preHandlerAsyncHookHandler = async function (req) {
-  if (req.auth.kind !== 'trader') throw new ApiError(403, 'method-not-allowed');
-};
-
 async function enrolStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const now = deps.clock();
@@ -309,14 +300,15 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
 
 /**
  * `POST /v1/account/totp/start|finish` (full session; a confirm token for `add-method:totp`
- * outside onboarding) and `POST /v1/login/second-factor`.
+ * outside onboarding; `assertMethodAllowed` first, so staff and the owner are refused before any
+ * token is spent, R2) and `POST /v1/login/second-factor`.
  */
 export function totpRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/totp/start',
-    { preHandler: [requireSession(), tradersOnly, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: true })] },
+    { preHandler: [requireSession(), methodAllowed('totp'), requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: true })] },
     enrolStart,
   );
-  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), tradersOnly] }, enrolFinish);
+  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp')] }, enrolFinish);
   app.post('/v1/login/second-factor', secondFactor);
 }

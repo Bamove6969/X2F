@@ -701,7 +701,7 @@ describe('user IDs (R16)', () => {
 });
 
 describe('staff, owner and other mounts', () => {
-  it('until Task 10: a staff account’s correct code → method-not-allowed and no session', async () => {
+  it('a staff account’s correct code alone → second-factor and no session (R1, Task 10)', async () => {
     const n = uniqueName('crew');
     const k = await genKey();
     const id = await seedAccount(deps, { username: n, kind: 'staff' });
@@ -709,8 +709,8 @@ describe('staff, owner and other mounts', () => {
     const b = new Browser();
     const s = await loginStart(b, n);
     const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, k.privateKey)));
-    expect(res.statusCode).toBe(403);
-    expect(res.json()).toEqual({ error: 'method-not-allowed' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['pgp', 'security-key', 'passkey'] });
     expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
     const { rows } = await deps.db.query('select 1 from sessions where account_id = $1', [id]);
     expect(rows).toHaveLength(0);

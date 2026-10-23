@@ -107,6 +107,14 @@ describe('safeReturnTo', () => {
     ' /sell',
     '/\t/evil.com',
     '/\n/evil.com',
+    '/\r/evil.com',
+    '/sell\r\n',
+    '/..//evil.com',
+    '/.//evil.com',
+    '/./..//evil.com/sell',
+    '/%2e%2e//evil.com',
+    '/sell/..//evil.com',
+    'data:text/html,<script>alert(1)</script>',
   ])('refuses %j and falls back to /sell', (raw) => {
     expect(safeReturnTo(raw)).toBe('/sell');
   });
@@ -118,6 +126,28 @@ describe('safeReturnTo', () => {
 
   it.each(['/sell', '/sell/zelle?sort=rate', '/trade/ABCD-EFGH-JKMN-PQRS', '/wallets?add=1#x'])('keeps the in-app path %j', (raw) => {
     expect(safeReturnTo(raw)).toBe(raw);
+  });
+
+  it('keeps a path of exactly 2048 characters and refuses a longer one', () => {
+    const raw = '/' + 'a'.repeat(2047);
+    expect(safeReturnTo(raw)).toBe(raw);
+    expect(safeReturnTo(raw + 'a')).toBe('/sell');
+    expect(returnToFrom(`?returnTo=${encodeURIComponent(raw)}`)).toBe(raw);
+    expect(returnToFrom(`?returnTo=${encodeURIComponent(raw + 'a')}`)).toBe('/sell');
+  });
+
+  it('refuses a path that only grows past 2048 characters once normalised', () => {
+    // 683 × "{" (684 characters) become 683 × "%7B": 2,050 characters after normalising.
+    expect(safeReturnTo('/' + '{'.repeat(683))).toBe('/sell');
+    expect(safeReturnTo('/' + '{'.repeat(682))).toBe('/' + '%7B'.repeat(682));
+  });
+
+  it.each([
+    ['/sell/../buy', '/buy'],
+    ['/./sell', '/sell'],
+    ['/sell/zelle/..?sort=rate', '/sell/?sort=rate'],
+  ])('returns the normalised in-app path: %j gives %j', (raw, expected) => {
+    expect(safeReturnTo(raw)).toBe(expected);
   });
 
   it('a redirect never carries an unsafe returnTo', async () => {
@@ -134,6 +164,11 @@ describe('safeReturnTo', () => {
     ['?returnTo=%2F%5Cevil.com', '/sell'],
     ['?returnTo=https%3A%2F%2Fevil.com', '/sell'],
     ['?returnTo=javascript%3Aalert(1)', '/sell'],
+    ['?returnTo=%2F..%2F%2Fevil.com', '/sell'],
+    ['?returnTo=%2F.%2F%2Fevil.com', '/sell'],
+    ['?returnTo=data%3Atext%2Fhtml%2Cx', '/sell'],
+    ['?returnTo=%2Fsell%0D', '/sell'],
+    ['?returnTo=%2Fsell%2F..%2Fbuy', '/buy'],
     ['?add=1', '/sell'],
     ['', '/sell'],
   ])('reading returnTo from %j gives %j', (search, expected) => {

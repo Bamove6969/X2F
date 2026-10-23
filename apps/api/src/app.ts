@@ -2,6 +2,7 @@ import fastifyCookie from '@fastify/cookie';
 import Fastify, { LogController, type FastifyError, type FastifyInstance, type FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Config } from './config.js';
+import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
@@ -11,7 +12,7 @@ import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
-import { addSecurityHeaders, frameworkErrors } from './static/serve.js';
+import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -106,6 +107,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     bodyLimit: BODY_LIMIT,
     // Malformed URLs are refused before onRequest runs; this keeps the headers and hides the path (P3-I15).
     frameworkErrors,
+    // HTTP that cannot be parsed at all (bad request line, oversized headers) gets the headers too.
+    clientErrorHandler,
     logger: {
       level: 'info',
       base: null, // drops pino's default pid and machine hostname
@@ -159,6 +162,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
+  methodRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
