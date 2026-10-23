@@ -1,0 +1,169 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AuthApiError, createAuthApi } from '../src/index.js';
+
+interface Sent {
+  url: string;
+  init: RequestInit;
+}
+
+/** A fetch that records each request and answers with `reply`. */
+function recorder(reply: () => Response = () => Response.json({ ok: true })) {
+  const sent: Sent[] = [];
+  const fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    sent.push({ url: String(input), init: init ?? {} });
+    return reply();
+  });
+  return { sent, fetch: fetch as unknown as typeof globalThis.fetch };
+}
+
+const headersOf = (s: Sent) => new Headers(s.init.headers);
+const bodyOf = (s: Sent): unknown => (typeof s.init.body === 'string' ? JSON.parse(s.init.body) : s.init.body);
+
+async function refusal(res: Response): Promise<AuthApiError> {
+  const { fetch } = recorder(() => res);
+  const e = await createAuthApi({ fetch }).loginPassword({ username: 'alice', password: 'x', deviceLabel: 'Browser' }).catch((x: unknown) => x);
+  expect(e).toBeInstanceOf(AuthApiError);
+  return e as AuthApiError;
+}
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
+describe('createAuthApi requests', () => {
+  it('posts JSON to the route on the same origin by default, with same-origin credentials', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ fetch }).loginPgpStart({ username: 'alice' });
+    expect(sent).toHaveLength(1);
+    const s = sent[0]!;
+    expect(s.url).toBe('/v1/login/pgp/start');
+    expect(s.init.method).toBe('POST');
+    expect(s.init.credentials).toBe('same-origin');
+    expect(headersOf(s).get('content-type')).toBe('application/json');
+    expect(bodyOf(s)).toEqual({ username: 'alice' });
+  });
+
+  it('puts baseUrl in front of the path', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ username: 'alice' });
+    expect(sent[0]!.url).toBe('http://127.0.0.1:4000/v1/login/pgp/start');
+  });
+
+  it('sends a GET with no body and no content type', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ fetch }).me();
+    const s = sent[0]!;
+    expect(s.url).toBe('/v1/account/me');
+    expect(s.init.method).toBe('GET');
+    expect(s.init.body).toBeUndefined();
+    expect(headersOf(s).has('content-type')).toBe(false);
+    expect(s.init.credentials).toBe('same-origin');
+  });
+
+  it('sends a DELETE without a body when the route takes none, and encodes path ids', async () => {
+    const { sent, fetch } = recorder(() => new Response(null, { status: 204 }));
+    await expect(createAuthApi({ fetch }).removeWallet('a/b?c')).resolves.toBeUndefined();
+    const s = sent[0]!;
+    expect(s.url).toBe('/v1/wallets/a%2Fb%3Fc');
+    expect(s.init.method).toBe('DELETE');
+    expect(s.init.body).toBeUndefined();
+    expect(headersOf(s).has('content-type')).toBe(false);
+  });
+
+  it('sends removeMethod as a DELETE with the confirm token in a JSON body (R17)', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ fetch }).removeMethod('pgp', 'id/1', { confirmToken: 'tok' });
+    const s = sent[0]!;
+    expect(s.url).toBe('/v1/account/methods/pgp/id%2F1');
+    expect(s.init.method).toBe('DELETE');
+    expect(headersOf(s).get('content-type')).toBe('application/json');
+    expect(bodyOf(s)).toEqual({ confirmToken: 'tok' });
+  });
+
+  it('leaves out fields that are undefined (no confirm token yet)', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ id: 'w' }, { status: 201 }));
+    await createAuthApi({ fetch }).addWallet({ app: 'cake', label: 'Main', address: 'addr', confirmToken: undefined });
+    expect(bodyOf(sent[0]!)).toEqual({ app: 'cake', label: 'Main', address: 'addr' });
+  });
+
+  it('posts an empty JSON object to routes that take no input', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ fetch }).logout();
+    expect(sent[0]!.url).toBe('/v1/logout');
+    expect(bodyOf(sent[0]!)).toEqual({});
+    expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
+  });
+
+  it('uses PUT for setting the password and the payout wait', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ enabled: true, offAt: null }));
+    const api = createAuthApi({ fetch });
+    await api.setPassword({ password: 'x' });
+    await api.setPayoutWait({ enabled: true });
+    expect(sent.map((s) => [s.init.method, s.url])).toEqual([
+      ['PUT', '/v1/account/password'],
+      ['PUT', '/v1/account/security/payout-wait'],
+    ]);
+  });
+
+  it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
+    const { fetch } = recorder(() => Response.json({ status: 'second-factor', pendingId: 'p', needs: ['totp'] }));
+    await expect(createAuthApi({ fetch }).loginPassword({ username: 'a', password: 'b', deviceLabel: 'c' })).resolves.toEqual({
+      status: 'second-factor', pendingId: 'p', needs: ['totp'],
+    });
+    const empty = recorder(() => new Response(null, { status: 204 }));
+    await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
+  });
+
+  it('uses the global fetch at call time when none is given', async () => {
+    const { sent, fetch } = recorder();
+    const api = createAuthApi();
+    vi.stubGlobal('fetch', fetch);
+    await api.getPgpSigningKey();
+    expect(sent[0]!.url).toBe('/v1/pgp/signing-key');
+  });
+});
+
+describe('AuthApiError', () => {
+  it('carries the status and code, and the fields the API sent', async () => {
+    const e = await refusal(Response.json({ error: 'password-weak', missing: ['upper', 'symbol'] }, { status: 400 }));
+    expect(e.status).toBe(400);
+    expect(e.code).toBe('password-weak');
+    expect(e.missing).toEqual(['upper', 'symbol']);
+    expect(e.name).toBe('AuthApiError');
+    expect(e.message).toBe('password-weak');
+  });
+
+  it('reads retryAfterSeconds from the body, else from the Retry-After header', async () => {
+    expect((await refusal(Response.json({ error: 'slow-down', retryAfterSeconds: 12 }, { status: 429 }))).retryAfterSeconds).toBe(12);
+    const headerOnly = await refusal(Response.json({ error: 'locked' }, { status: 429, headers: { 'retry-after': '30' } }));
+    expect(headerOnly.code).toBe('locked');
+    expect(headerOnly.retryAfterSeconds).toBe(30);
+    const garbage = await refusal(Response.json({ error: 'locked' }, { status: 429, headers: { 'retry-after': 'soon' } }));
+    expect(garbage.retryAfterSeconds).toBeUndefined();
+  });
+
+  it('carries detail, holdUntil, version and action', async () => {
+    expect((await refusal(Response.json({ error: 'key-expired', detail: 'This key expired.' }, { status: 400 }))).detail).toBe('This key expired.');
+    const hold = await refusal(Response.json({ error: 'recovery-hold', holdUntil: '2026-10-18T12:00:00.000Z' }, { status: 403 }));
+    expect(hold.holdUntil).toBe('2026-10-18T12:00:00.000Z');
+    expect((await refusal(Response.json({ error: 'terms-required', version: '2026-10-17' }, { status: 403 }))).version).toBe('2026-10-17');
+    expect((await refusal(Response.json({ error: 'confirm-required', action: 'add-wallet' }, { status: 403 }))).action).toBe('add-wallet');
+  });
+
+  it('drops fields of the wrong type', async () => {
+    const e = await refusal(Response.json({ error: 'password-weak', missing: 'upper', retryAfterSeconds: '5', detail: 7 }, { status: 400 }));
+    expect(e.missing).toBeUndefined();
+    expect(e.retryAfterSeconds).toBeUndefined();
+    expect(e.detail).toBeUndefined();
+    const mixed = await refusal(Response.json({ error: 'password-weak', missing: ['upper', 3] }, { status: 400 }));
+    expect(mixed.missing).toEqual(['upper']);
+  });
+
+  it('answers internal for a reply that is not an API error (a proxy page, no error code)', async () => {
+    const html = await refusal(new Response('<html>Bad gateway</html>', { status: 502, headers: { 'content-type': 'text/html' } }));
+    expect(html.status).toBe(502);
+    expect(html.code).toBe('internal');
+    const noCode = await refusal(Response.json({ error: 42 }, { status: 500 }));
+    expect(noCode.code).toBe('internal');
+  });
+});
