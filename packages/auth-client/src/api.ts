@@ -24,7 +24,7 @@ export class AuthApiError extends Error {
   readonly code: ApiErrorCode;
   /** A plain sentence about a refused PGP key (only ever about the key the person pasted). */
   readonly detail?: string;
-  /** How long to wait before trying again (429 `slow-down` / `locked`, 503 `busy`), kept within 1 to 30 seconds. */
+  /** How long to wait before trying again (429 `slow-down` / `locked`, 503 `busy`), kept within 1 second to one day. */
   readonly retryAfterSeconds?: number;
   /** The password rules not met (400 `password-weak`). */
   readonly missing?: string[];
