@@ -483,8 +483,15 @@ export function runParty(a: PartyArgs): PartyHandle {
       const done = theirs(doneKey(rel));
       if (rel.phase === 'built' && done) {
         // Never take the co-signer's word: done only once this wallet sees the escrow emptied by
-        // the reported tx, and the daemon has that tx in a block. Until then keep waiting (and
-        // resending).
+        // the reported tx and confirmed. `spentBy` already requires the tx to be confirmed (it is
+        // the wallet's own view: an outgoing, in-block tx with that hash); the `txSeen` call is a
+        // deliberate belt-and-braces cross-check against the daemon's view of the same hash, so a
+        // wallet that has not yet caught up cannot declare done on a tx the daemon has not blocked.
+        // Until all three hold, keep waiting (and resending).
+        // NOTE (liveness only, not safety): if a *different* tx empties the escrow, or coins arrive
+        // after release, the builder's `balance === 0n` may never line up with this reported hash
+        // and it waits here indefinitely. Task 9's watcher owns that: it reports `settled` (escrow
+        // emptied by an in-block tx) or `late-funds`, which resolves the trade outside this loop.
         const txHash = String(done.payload.txHash);
         if ((await session.sync()).balance === 0n && (await session.spentBy(txHash)) && (await session.txSeen(txHash))) {
           rel.phase = 'done';

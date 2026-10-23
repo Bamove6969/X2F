@@ -6,7 +6,7 @@ import type { MoneroWalletFull } from 'monero-ts';
 import sodium from 'libsodium-wrappers';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { DAEMON_TIMEOUT_MS, EscrowError, MoneroMultisigEngine, MoneroMultisigSession, type EscrowSession, type Outcome } from '../src/index.js';
-import { blackHole, holdableProxy, minedWhile, partyKit, spyEngine, type Trade } from './harness.js';
+import { blackHole, faultyEngine, holdableProxy, minedWhile, partyKit, spyEngine, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 const XMR = 1_000_000_000_000n;
@@ -180,6 +180,27 @@ describe('Plan 1 follow-ups on regtest', () => {
     }
   });
 
+  it('a co-signer whose submit fails while the escrow is still full keeps its signed tx and resubmits until it lands', async () => {
+    // The daemon refuses the first submit (e.g. momentarily busy). The tx was never broadcast, so
+    // txStatus reports 'none', but the escrow still holds the full balance: the balance guard at
+    // party.ts must NOT treat this as "settled elsewhere" and must keep the signed tx to resubmit.
+    const faulty = faultyEngine(engine, { submit: (n) => n === 1 });
+    const t = await kit.newTrade({ buyer: { engine: faulty } });
+    await readyAndFund(t);
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
+      const [b, s] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
+      // The co-signer resubmitted and the release landed: it never dropped the valid signed tx.
+      expect(b).toMatch(/^[0-9a-f]{64}$/);
+      expect(s).toBeNull();
+      expect(faulty.calls.submit).toBeGreaterThanOrEqual(2); // failed once, then resubmitted
+      expect(t.stores.buyer.current()!.release!.phase).toBe('done');
+    } finally {
+      await dest.close();
+    }
+  });
+
   it('a frame whose raw `from` differs from the signed one is attributed to the signed sender', async () => {
     const t = await kit.newTrade();
     await Promise.all(ROLES.map((r) => t.parties[r].ready()));
@@ -220,7 +241,7 @@ describe('Plan 1 follow-ups on regtest', () => {
     }
   });
 
-  it(`every daemon call gives up after ${DAEMON_TIMEOUT_MS / 1000} s with a retryable error`, async () => {
+  it(`sync and txStatus give up after ${DAEMON_TIMEOUT_MS / 1000} s with a retryable error`, async () => {
     expect(DAEMON_TIMEOUT_MS).toBe(15_000);
     const hole = await blackHole();
     // A wallet created against the real node (creating one needs the daemon), then pointed at the hole.
@@ -239,6 +260,37 @@ describe('Plan 1 follow-ups on regtest', () => {
       }
     } finally {
       await hole.close(); // the dropped calls now fail fast, so the wallet can close
+    }
+  });
+
+  it(`submit and build also give up after ${DAEMON_TIMEOUT_MS / 1000} s with a retryable error`, async () => {
+    // The black-hole wallet above runs in a worker, so a daemon that never answers is cut off by
+    // the timeout rather than freezing the event loop. `submit` and `createTxs` (inside
+    // `buildRelease`) need a funded multisig wallet to reach the daemon at all, and a resumed
+    // regtest wallet runs in-process (it would freeze, not time out), so instead a stub wallet whose
+    // daemon-facing calls never resolve isolates the `timed` wrapper on each: `submit` gives up as a
+    // retryable `daemon-unavailable`, and a build that cannot reach the daemon as `not-ready`.
+    const never = <T>(): Promise<T> => new Promise<T>(() => undefined);
+    const stub = {
+      getBalance: async () => XMR,
+      getUnlockedBalance: async () => XMR,
+      submitMultisigTxHex: () => never<string[]>(),
+      createTxs: () => never<unknown>(),
+    } as unknown as MoneroWalletFull;
+    const s = new MoneroMultisigSession(stub, 'http://127.0.0.1:1', 'pw');
+    const payouts = [{ address: 'escrow-stub-address', amountAtomic: XMR }];
+    const calls: [() => Promise<unknown>, 'daemon-unavailable' | 'not-ready'][] = [
+      [() => s.submit('deadbeef'), 'daemon-unavailable'],
+      [() => s.buildRelease(payouts), 'not-ready'],
+    ];
+    for (const [call, code] of calls) {
+      const started = Date.now();
+      const err = await call().then(() => null, (e: unknown) => e);
+      const took = Date.now() - started;
+      expect(err).toBeInstanceOf(EscrowError);
+      expect((err as EscrowError).code).toBe(code);
+      expect(took).toBeGreaterThanOrEqual(DAEMON_TIMEOUT_MS - 100);
+      expect(took).toBeLessThan(DAEMON_TIMEOUT_MS + 5000);
     }
   });
 });

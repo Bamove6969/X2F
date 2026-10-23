@@ -5,6 +5,7 @@ import { mine } from '@x2f/regtest';
 import type { Relay } from '@x2f/relay';
 import { createServer, connect as tcpConnect, type Server, type Socket } from 'node:net';
 import {
+  EscrowError,
   runParty,
   wsTransport,
   type EscrowEngine,
@@ -193,6 +194,36 @@ export function spyEngine(inner: EscrowEngine): EscrowEngine & { calls: Record<s
     resume: async (saved: Parameters<EscrowEngine['resume']>[0], a: { daemonUri: string; password: string }) => spy.wrap(await inner.resume(saved, a)),
   };
   return spy;
+}
+
+/**
+ * Wraps an engine so chosen session methods throw a retryable error for the calls a predicate
+ * picks, then delegate to the real method. `calls` counts every call (fault or not). Lets a test
+ * make, say, the first `submit` fail while every other call behaves, without touching the daemon.
+ */
+export function faultyEngine(
+  inner: EscrowEngine,
+  faults: Partial<Record<string, (nthCall: number) => boolean>>,
+  err: () => Error = () => new EscrowError('daemon-unavailable', 'injected fault'),
+): EscrowEngine & { calls: Record<string, number> } {
+  const calls: Record<string, number> = {};
+  const wrap = (s: EscrowSession): EscrowSession =>
+    new Proxy(s, {
+      get(target, key, receiver) {
+        const v = Reflect.get(target, key, receiver) as unknown;
+        if (typeof v !== 'function' || typeof key !== 'string') return v;
+        return async (...args: unknown[]) => {
+          calls[key] = (calls[key] ?? 0) + 1;
+          if (faults[key]?.(calls[key])) throw err();
+          return await (v as (...a: unknown[]) => Promise<unknown>).apply(target, args);
+        };
+      },
+    });
+  return {
+    calls,
+    create: async (a: { daemonUri: string; password: string }) => wrap(await inner.create(a)),
+    resume: async (saved: Parameters<EscrowEngine['resume']>[0], a: { daemonUri: string; password: string }) => wrap(await inner.resume(saved, a)),
+  };
 }
 
 /**
