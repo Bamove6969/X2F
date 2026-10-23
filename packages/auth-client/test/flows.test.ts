@@ -16,7 +16,7 @@ import {
   withConfirm,
   type AuthApi,
 } from '../src/index.js';
-import { NEEDS_TASKS_11_12, ROUTES, callSample, methodNames } from './helpers/routes.js';
+import { ROUTES, callSample, methodNames } from './helpers/routes.js';
 import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
@@ -80,7 +80,7 @@ describe('the client covers the API', () => {
   });
 
   it('every method reaches exactly its own route, by its own HTTP method', async () => {
-    for (const name of methodNames().filter((n) => !NEEDS_TASKS_11_12.has(n))) {
+    for (const name of methodNames()) {
       const before = srv.routes.length;
       await callSample(jar().api, name);
       expect(srv.routes.slice(before), name).toEqual([ROUTES[name]]);
@@ -88,16 +88,8 @@ describe('the client covers the API', () => {
   });
 
   it('every route of the API (but /healthz) has its client method', () => {
-    const expected = methodNames().filter((n) => !NEEDS_TASKS_11_12.has(n)).map((n) => ROUTES[n]);
+    const expected = methodNames().map((n) => ROUTES[n]);
     expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
-  });
-
-  it('the methods waiting for Tasks 11 and 12 still reach no route', async () => {
-    for (const name of NEEDS_TASKS_11_12) {
-      const before = srv.routes.length;
-      await callSample(jar().api, name);
-      expect(srv.routes.slice(before), `${name}: Tasks 11/12 landed: delete the exclusion and the set`).toEqual([undefined]);
-    }
   });
 
   it('serves the official PGP signing key that signs every challenge', async () => {
