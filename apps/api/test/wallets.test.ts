@@ -507,7 +507,7 @@ describe('the opt-in 24-hour wait', () => {
       const deadline = Date.now() + 10_000;
       for (;;) {
         const { rows } = await deps.db.query(
-          `select 1 from pg_stat_activity where wait_event_type = 'Lock' and pid <> $1 and query like '%for update%'`,
+          `select 1 from pg_stat_activity where wait_event_type = 'Lock' and pid <> $1 and datname = current_database() and query like '%for update%'`,
           [me!.pid],
         );
         if (rows.length > 0) break;
