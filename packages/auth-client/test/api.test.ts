@@ -161,18 +161,20 @@ describe('AuthApiError', () => {
     expect(garbage.retryAfterSeconds).toBeUndefined();
   });
 
-  it('keeps retryAfterSeconds within 1 to 30 seconds, from the body or the header', async () => {
+  it('keeps retryAfterSeconds between 1 second and 1 day, from the body or the header', async () => {
     const body = async (n: number) => (await refusal(Response.json({ error: 'slow-down', retryAfterSeconds: n }, { status: 429 }))).retryAfterSeconds;
     const header = async (v: string) => (await refusal(Response.json({ error: 'locked' }, { status: 429, headers: { 'retry-after': v } }))).retryAfterSeconds;
     expect(await body(0)).toBe(1);
     expect(await body(-5)).toBe(1);
     expect(await body(0.2)).toBe(1);
-    expect(await body(31)).toBe(30);
-    expect(await body(86_400)).toBe(30);
+    expect(await body(45)).toBe(45);
+    expect(await body(86_400)).toBe(86_400);
+    expect(await body(90_000)).toBe(86_400);
     expect(await body(7)).toBe(7);
     expect(await header('0')).toBe(1);
-    expect(await header('3600')).toBe(30);
-    expect(await header('999999999')).toBe(30);
+    expect(await header('120')).toBe(120);
+    expect(await header('3600')).toBe(3600);
+    expect(await header('999999999')).toBe(86_400);
     expect(await header('9')).toBe(9);
   });
 

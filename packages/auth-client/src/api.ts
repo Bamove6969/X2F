@@ -42,7 +42,8 @@ export class AuthApiError extends Error {
     this.code = code;
     if (typeof extra.detail === 'string') this.detail = extra.detail;
     if (typeof extra.retryAfterSeconds === 'number' && Number.isFinite(extra.retryAfterSeconds)) {
-      this.retryAfterSeconds = Math.min(30, Math.max(1, extra.retryAfterSeconds));
+      // At least 1 s; capped only at one day (the TOTP-backup daily cap waits until UTC midnight).
+      this.retryAfterSeconds = Math.min(86_400, Math.max(1, Math.ceil(extra.retryAfterSeconds)));
     }
     if (Array.isArray(extra.missing)) this.missing = extra.missing.filter((m): m is string => typeof m === 'string');
     if (typeof extra.holdUntil === 'string') this.holdUntil = extra.holdUntil;
