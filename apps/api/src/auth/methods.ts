@@ -7,16 +7,19 @@
  * - Staff and the owner always log in with two factors (R1): `pairAllowed` says which two make a
  *   login, `needsAfter` what a first factor still needs; `completeLogin` (login.ts) applies both.
  * - Removing a method never leaves an account unable to log in: at least one primary method, and
- *   for the owner two attested security keys and a PGP key, for staff a valid pair (`removeMethod`).
+ *   for the owner two attested security keys and a PGP key, for staff a valid pair (`removeMethod`);
+ *   for staff and the owner only PGP keys usable now count (a revoked or expired key logs in no one).
  */
-import type { AccountKind, MethodType } from '@x2f/accounts';
+import { inspectPublicKey, type AccountKind, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import type { Config } from '../config.js';
 import { redeemConfirm } from './confirm.js';
 import type { LoginFactor } from './login.js';
+import { openKey } from './pgp.js';
 import { requireSession } from './sessions.js';
 
 /** Methods that log in on their own (TOTP and recovery codes never do). */
@@ -124,17 +127,45 @@ export function parseFactor(raw: unknown): LoginFactor | null {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Usable PGP keys
+
+/**
+ * Ids of the account's PGP keys that `inspectPublicKey` accepts at `now` (not revoked, not expired,
+ * still strong): the only ones a login challenge goes to. A stored key that cannot be opened counts
+ * as unusable.
+ */
+async function usablePgpIds(db: Queryable, config: Config, accountId: string, now: Date): Promise<Set<string>> {
+  const { rows } = await db.query<{ id: string; fingerprint: string; armored_enc: Buffer }>(
+    'select id, fingerprint, armored_enc from pgp_keys where account_id = $1',
+    [accountId],
+  );
+  const ok = await Promise.all(
+    rows.map(async (r) => {
+      try {
+        return (await inspectPublicKey(openKey(config, r.armored_enc, r.fingerprint), now)).ok;
+      } catch {
+        return false;
+      }
+    }),
+  );
+  return new Set(rows.filter((_, i) => ok[i]).map((r) => r.id));
+}
+
+// ---------------------------------------------------------------------------------------------
 // Owner readiness
 
-/** True when the owner has at least 2 attested security keys and at least 1 PGP key (R1). Plan 4 calls it. */
-export async function ownerReady(db: Queryable, ownerId: string): Promise<boolean> {
-  const { rows } = await db.query<{ keys: number; pgp: number }>(
-    `select (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested) as keys,
-            (select count(*)::int from pgp_keys where account_id = $1) as pgp`,
+/**
+ * True when the owner has at least 2 attested security keys and at least 1 PGP key usable now
+ * (`inspectPublicKey` accepts it; a revoked or expired key cannot log in) (R1). Plan 4 calls it.
+ */
+export async function ownerReady(deps: Pick<Deps, 'db' | 'config' | 'clock'>, ownerId: string): Promise<boolean> {
+  const { rows } = await deps.db.query<{ keys: number }>(
+    `select count(*)::int as keys from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested`,
     [ownerId],
   );
   const r = rows[0];
-  return r !== undefined && r.keys >= 2 && r.pgp >= 1;
+  if (r === undefined || r.keys < 2) return false;
+  return (await usablePgpIds(deps.db, deps.config, ownerId, deps.clock())).size >= 1;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -217,14 +248,16 @@ const EXISTS = {
 
 interface Counts {
   pgp: number;
+  /** PGP keys usable now (`usablePgpIds`); the staff and owner minimums count only these. */
+  usablePgp: number;
   attestedKeys: number;
   keys: number;
   passkeys: number;
   password: number;
 }
 
-async function countsOf(db: Queryable, accountId: string): Promise<Counts> {
-  const { rows } = await db.query<Counts>(
+async function countsOf(db: Queryable, accountId: string): Promise<Omit<Counts, 'usablePgp'>> {
+  const { rows } = await db.query<Omit<Counts, 'usablePgp'>>(
     `select (select count(*)::int from pgp_keys where account_id = $1) as pgp,
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key' and attested) as "attestedKeys",
             (select count(*)::int from webauthn_credentials where account_id = $1 and kind = 'security-key') as keys,
@@ -239,8 +272,8 @@ async function countsOf(db: Queryable, accountId: string): Promise<Counts> {
 function leavesLogin(kind: AccountKind, c: Counts): boolean {
   const primary = c.pgp + c.keys + c.passkeys + (passwordAllowed(kind) ? c.password : 0);
   if (primary === 0) return false;
-  if (kind === 'owner') return c.attestedKeys >= 2 && c.pgp >= 1;
-  if (kind === 'staff') return c.pgp >= 1 && (c.pgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
+  if (kind === 'owner') return c.attestedKeys >= 2 && c.usablePgp >= 1;
+  if (kind === 'staff') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
   return true;
 }
 
@@ -297,7 +330,7 @@ async function deleteMethod(db: Queryable, accountId: string, type: MethodType, 
  * Then the method is deleted, alert `login-method-removed` `{ method, label }`, every other session
  * of the account ends, and alert `sessions-ended` `{ count, reason }` when any did.
  */
-export async function removeMethod(deps: Pick<Deps, 'db' | 'clock'>, req: FastifyRequest, type: string, id: string): Promise<void> {
+export async function removeMethod(deps: Pick<Deps, 'db' | 'config' | 'clock'>, req: FastifyRequest, type: string, id: string): Promise<void> {
   const accountId = req.auth.accountId;
   const body = req.body;
   const raw = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).confirmToken : undefined;
@@ -311,9 +344,12 @@ export async function removeMethod(deps: Pick<Deps, 'db' | 'clock'>, req: Fastif
       if (kind === undefined) throw new ApiError(401, 'not-authenticated');
       const found = await findMethod(client, accountId, type, id);
       if (found === null) throw new ApiError(404, 'not-found');
-      const before = await countsOf(client, accountId);
-      const after: Counts = { ...before };
+      // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
+      const usable = kind === 'trader' ? null : await usablePgpIds(client, deps.config, accountId, deps.clock());
+      const counts = await countsOf(client, accountId);
+      const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
       for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
+      if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
       if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
       await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'remove-method', method: found.type, id }, token);
       const now = deps.clock();

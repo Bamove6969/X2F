@@ -26,7 +26,8 @@ function port(raw: string | undefined): number {
 }
 
 const config = loadConfig(process.env);
-// Serves apps/web/dist on this origin when X2F_WEB_ROOT is set (with X2F_RELAY_ORIGIN and X2F_NODE_PROXY_ORIGIN for the CSP).
+// Serves apps/web/dist on this origin when X2F_WEB_ROOT is set (with X2F_RELAY_ORIGIN and X2F_NODE_PROXY_ORIGIN for the CSP;
+// http/ws origins only on loopback unless X2F_ALLOW_INSECURE_ORIGINS=1).
 const web = webOptionsFromEnv(process.env);
 await assertSigningKeyFile(config.pgpSigningKeyPath);
 // R7: refuses a public-only or passphrase-protected key and a fingerprint other than

@@ -53,16 +53,32 @@ export function setNavigator(navigate: Go | null, current?: () => Where): void {
 
 export const DEFAULT_RETURN = '/sell';
 
+/** The longest `returnTo` followed, before and after normalising. */
+export const MAX_RETURN_TO = 2048;
+const RETURN_BASE = 'https://x.invalid';
+
 /**
  * A `returnTo` value that can only lead back into this app: a path starting with exactly one '/',
  * with no '\\' and no control characters (browsers drop tabs and newlines, so "/\\t/evil.com"
- * would become "//evil.com"). Anything else, including another origin or a `javascript:` URL,
- * becomes DEFAULT_RETURN. Use it both when building and when following a `returnTo`.
+ * would become "//evil.com"), at most MAX_RETURN_TO characters. It is resolved as a URL and must
+ * stay on this origin with a normalised path that does not start with '//' ("/..//evil.com"
+ * normalises to "//evil.com"); the normalised path, query and fragment are returned. Anything
+ * else, including another origin or a `javascript:` or `data:` URL, becomes DEFAULT_RETURN. Use it
+ * both when building and when following a `returnTo`.
  */
 export function safeReturnTo(raw: string | null | undefined): string {
-  if (typeof raw !== 'string' || !raw.startsWith('/') || raw.startsWith('//')) return DEFAULT_RETURN;
+  if (typeof raw !== 'string' || raw.length > MAX_RETURN_TO) return DEFAULT_RETURN;
+  if (!raw.startsWith('/') || raw.startsWith('//')) return DEFAULT_RETURN;
   if (raw.includes('\\') || /[\u0000-\u001f\u007f]/.test(raw)) return DEFAULT_RETURN;
-  return raw;
+  let url: URL;
+  try {
+    url = new URL(raw, RETURN_BASE);
+  } catch {
+    return DEFAULT_RETURN;
+  }
+  if (url.origin !== RETURN_BASE || url.pathname.startsWith('//')) return DEFAULT_RETURN;
+  const path = url.pathname + url.search + url.hash;
+  return path.length > MAX_RETURN_TO ? DEFAULT_RETURN : path;
 }
 
 /** The `returnTo` to follow from a query string such as `location.search`, always through safeReturnTo. */

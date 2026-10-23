@@ -440,7 +440,7 @@ async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: strin
   if (pendingId === undefined || !UUID.test(pendingId) || device === null) return false;
   const { rows } = await deps.db.query(
     `select 1 from challenges
-      where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor'
+      where id = $1 and account_id = $2 and device_hash = $3 and purpose = 'second-factor' and method = 'pair'
         and used_at is null and expires_at > $4 and payload->'first'->>'method' = 'pgp'`,
     [pendingId, accountId, device, deps.clock()],
   );

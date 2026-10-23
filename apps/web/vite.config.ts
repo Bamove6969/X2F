@@ -6,6 +6,8 @@ const empty = fileURLToPath(new URL('./src/empty.ts', import.meta.url));
 
 /** The only build mode that may carry fixture mode (Playwright's board fixtures); see `fixturesOn`. */
 export const FIXTURES_BUILD_MODE = 'fixtures';
+/** Where a fixtures-mode build goes, so it can never overwrite (or be deployed as) the production `dist`. */
+export const FIXTURES_OUT_DIR = 'dist-fixtures';
 
 /**
  * Fixture mode needs VITE_FIXTURES=1 and either the dev server (`vite`, not in production mode) or
@@ -27,6 +29,7 @@ export default defineConfig(({ command, mode }) => {
     },
     define: { __X2F_FIXTURES__: JSON.stringify(fixtures) },
     build: {
+      outDir: mode === FIXTURES_BUILD_MODE ? FIXTURES_OUT_DIR : 'dist',
       // font-src and img-src allow 'self' only for fonts: never inline assets as data: URIs.
       assetsInlineLimit: 0,
       sourcemap: false,
