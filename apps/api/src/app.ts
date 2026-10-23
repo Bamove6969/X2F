@@ -11,7 +11,7 @@ import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { ApiError } from './errors.js';
 import { newBudgets, type Budgets } from './limits.js';
-import { addSecurityHeaders, frameworkErrors } from './static/serve.js';
+import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -106,6 +106,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     bodyLimit: BODY_LIMIT,
     // Malformed URLs are refused before onRequest runs; this keeps the headers and hides the path (P3-I15).
     frameworkErrors,
+    // HTTP that cannot be parsed at all (bad request line, oversized headers) gets the headers too.
+    clientErrorHandler,
     logger: {
       level: 'info',
       base: null, // drops pino's default pid and machine hostname

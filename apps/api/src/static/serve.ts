@@ -1,3 +1,4 @@
+import type { Socket } from 'node:net';
 import fastifyStatic from '@fastify/static';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
@@ -28,6 +29,32 @@ export function frameworkErrors(_err: unknown, _req: FastifyRequest, reply: Fast
   void reply.code(400).headers(SECURITY_HEADERS).send({ error: 'bad-request' });
 }
 
+const CLIENT_ERRORS: Readonly<Record<string, readonly [number, string, string]>> = {
+  HPE_HEADER_OVERFLOW: [431, 'Request Header Fields Too Large', 'headers-too-large'],
+  ERR_HTTP_REQUEST_TIMEOUT: [408, 'Request Timeout', 'timeout'],
+};
+const BAD_REQUEST = [400, 'Bad Request', 'bad-request'] as const;
+
+/**
+ * Fastify's `clientErrorHandler` option: HTTP that Node cannot parse (a bad request line, headers
+ * over the size limit) never becomes a request, so no hook runs and fastify's default reply has no
+ * SECURITY_HEADERS. This writes the reply by hand, with them, a fixed body and nothing from the
+ * request, then closes the connection. Nothing is logged.
+ */
+export function clientErrorHandler(err: NodeJS.ErrnoException, socket: Socket): void {
+  if (err.code === 'ECONNRESET' || socket.destroyed) return;
+  if (socket.writable) {
+    const [status, reason, code] = (err.code !== undefined ? CLIENT_ERRORS[err.code] : undefined) ?? BAD_REQUEST;
+    const body = JSON.stringify({ error: code });
+    const headers = Object.entries(SECURITY_HEADERS).map(([k, v]) => `${k}: ${v}\r\n`).join('');
+    socket.write(
+      `HTTP/1.1 ${status} ${reason}\r\n${headers}content-type: application/json\r\n` +
+        `content-length: ${Buffer.byteLength(body)}\r\nconnection: close\r\n\r\n${body}`,
+    );
+  }
+  socket.destroy();
+}
+
 export interface WebOptions {
   /** The built web app (apps/web/dist). */
   root: string;
@@ -35,13 +62,22 @@ export interface WebOptions {
   relayOrigin: string;
   /** The node proxy's exact origin, e.g. https://node.example.org. */
   nodeProxyOrigin: string;
+  /**
+   * Allows an http: or ws: origin on a host other than loopback (X2F_ALLOW_INSECURE_ORIGINS=1).
+   * Off by default: only a loopback host may be reached in clear text.
+   */
+  allowInsecureOrigins?: boolean;
 }
+
+type ConnectOrigins = Pick<WebOptions, 'relayOrigin' | 'nodeProxyOrigin' | 'allowInsecureOrigins'>;
 
 const CONNECT_SCHEMES = new Set(['https:', 'wss:', 'http:', 'ws:']);
 const SECURE_SCHEMES = new Set(['https:', 'wss:']);
+/** Hosts that never leave this machine, as `URL.hostname` spells them. */
+const LOOPBACK_HOSTS = new Set(['127.0.0.1', '[::1]', 'localhost']);
 
 /** An exact origin, so nothing else can ride into the policy. */
-function origin(value: string, name: string): string {
+function origin(value: string, name: string, allowInsecure: boolean): string {
   let url: URL;
   try {
     url = new URL(value);
@@ -51,17 +87,21 @@ function origin(value: string, name: string): string {
   if (!CONNECT_SCHEMES.has(url.protocol) || url.origin !== value) {
     throw new Error(`web: ${name} must be an exact origin such as wss://relay.example.org`);
   }
-  // Read at call time: a production process never lets the browser connect in clear text.
-  if (process.env.NODE_ENV === 'production' && !SECURE_SCHEMES.has(url.protocol)) {
-    throw new Error(`web: ${name} must use https or wss in production`);
+  // Decided by host, not by NODE_ENV (which nothing sets): the browser may connect in clear text
+  // only to this machine, unless the operator opts in with X2F_ALLOW_INSECURE_ORIGINS=1.
+  // A future .onion relay or node proxy (http:/ws: over Tor) will need its own deliberate
+  // exception here; it is not allowed yet.
+  if (!SECURE_SCHEMES.has(url.protocol) && !LOOPBACK_HOSTS.has(url.hostname) && !allowInsecure) {
+    throw new Error(`web: ${name} must use https or wss (http and ws only for 127.0.0.1, [::1] or localhost)`);
   }
   return value;
 }
 
 /** The Content-Security-Policy for HTML responses (Global Constraints). */
-export function cspFor(o: Pick<WebOptions, 'relayOrigin' | 'nodeProxyOrigin'>): string {
-  const relay = origin(o.relayOrigin, 'relay origin');
-  const node = origin(o.nodeProxyOrigin, 'node proxy origin');
+export function cspFor(o: ConnectOrigins): string {
+  const insecure = o.allowInsecureOrigins === true;
+  const relay = origin(o.relayOrigin, 'relay origin', insecure);
+  const node = origin(o.nodeProxyOrigin, 'node proxy origin', insecure);
   return [
     "default-src 'none'",
     "script-src 'self' 'wasm-unsafe-eval'",
@@ -88,9 +128,22 @@ export function webOptionsFromEnv(env: Record<string, string | undefined>): WebO
   };
   const relayOrigin = need('X2F_RELAY_ORIGIN');
   const nodeProxyOrigin = need('X2F_NODE_PROXY_ORIGIN');
-  cspFor({ relayOrigin, nodeProxyOrigin });
-  return { root, relayOrigin, nodeProxyOrigin };
+  const allowInsecureOrigins = env.X2F_ALLOW_INSECURE_ORIGINS === '1';
+  const o: WebOptions = { root, relayOrigin, nodeProxyOrigin, ...(allowInsecureOrigins ? { allowInsecureOrigins } : {}) };
+  cspFor(o);
+  return o;
 }
+
+/**
+ * File extensions the web build emits or a browser asks for on its own (fonts, source maps,
+ * icons, manifest, wasm). Only these make a path "a file": an app route whose last segment merely
+ * contains a dot (/u/mira.k, /trade/ABCD.EFGH) is still the app page.
+ */
+const FILE_EXTENSIONS = new Set([
+  'js', 'mjs', 'css', 'html', 'map', 'json', 'txt', 'xml', 'wasm',
+  'woff', 'woff2', 'ttf', 'otf',
+  'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'webmanifest',
+]);
 
 function isApiOrFilePath(url: string): boolean {
   const raw = url.split('?', 1)[0] ?? '';
@@ -100,7 +153,14 @@ function isApiOrFilePath(url: string): boolean {
   } catch {
     return true; // undecodable: never the app page
   }
-  return path === '/v1' || path.startsWith('/v1/') || /\.[a-z0-9]+$/.test(path);
+  // Repeated slashes collapse and trailing dots or spaces on a segment drop, so //v1/x, /v1./x
+  // and /v1%20 are judged like /v1/x.
+  const segments = path.split('/').filter((seg) => seg !== '');
+  const first = (segments[0] ?? '').replace(/[.\s]+$/, '');
+  if (first === 'v1') return true;
+  const last = segments.at(-1) ?? '';
+  const dot = last.lastIndexOf('.');
+  return dot > 0 && FILE_EXTENSIONS.has(last.slice(dot + 1));
 }
 
 const IMMUTABLE = 'public, max-age=31536000, immutable';
