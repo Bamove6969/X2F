@@ -25,8 +25,10 @@ export interface Server {
   setNow(d: Date): void;
   /** Moves the server clock on by `ms`. */
   advance(ms: number): void;
-  /** The route pattern each request matched, in order (undefined: no route, the 404 handler). */
+  /** `METHOD /pattern` of the route each request matched, in order (undefined: no route, the 404 handler). */
   routes: Array<string | undefined>;
+  /** Every route the server has, as `METHOD /pattern` (HEAD, which fastify adds for each GET, left out). */
+  serverRoutes(): string[];
   close(): Promise<void>;
 }
 
@@ -41,7 +43,7 @@ export async function startServer(o: { addresses?: AddressValidator } = {}): Pro
   setNow(T0);
   const routes: Array<string | undefined> = [];
   t.app.addHook('onRequest', async (req) => {
-    routes.push(req.is404 ? undefined : req.routeOptions.url);
+    routes.push(req.is404 ? undefined : `${req.method} ${req.routeOptions.url}`);
   });
   await t.app.listen({ port: 0, host: '127.0.0.1', ...LISTEN_OPTIONS });
   const address = t.app.server.address();
@@ -54,11 +56,33 @@ export async function startServer(o: { addresses?: AddressValidator } = {}): Pro
     setNow,
     advance: (ms) => setNow(new Date(now.getTime() + ms)),
     routes,
+    serverRoutes: () => listRoutes(t.app),
     close: async () => {
       await t.app.close();
       await leaked.cleanup();
     },
   };
+}
+
+/**
+ * Reads the route table from `printRoutes({ commonPrefix: false })`: one line per node, each
+ * indented 4 characters per level below its parent, as `├── /path (GET, HEAD, POST)`; a node's
+ * full path is its ancestors' paths joined.
+ */
+function listRoutes(app: FastifyInstance): string[] {
+  const out: string[] = [];
+  const stack: string[] = [];
+  for (const line of app.printRoutes({ commonPrefix: false }).split('\n')) {
+    if (line.trim() === '') continue;
+    const m = /^((?:│ {3}| {4})*)[├└]── (\S+)(?: \(([^)]*)\))?$/u.exec(line);
+    if (m === null) throw new Error(`unexpected printRoutes line: ${line}`);
+    const depth = m[1]!.length / 4;
+    stack.length = depth;
+    stack.push(m[2]!);
+    const path = stack.join('');
+    for (const method of (m[3] ?? '').split(', ').filter((x) => x !== '' && x !== 'HEAD')) out.push(`${method} ${path}`);
+  }
+  return out.sort();
 }
 
 /**

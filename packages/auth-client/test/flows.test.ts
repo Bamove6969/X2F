@@ -1,6 +1,6 @@
 /**
  * End-to-end flows of the browser auth client against a real API (Plan 2 Task 14). The flows that
- * need Tasks 10-12 (me(), wallets, the Terms route, staff two-factor) are in flows-t10-t12.test.ts.
+ * need Tasks 11 and 12 (me(), wallets, the Terms route) are in flows-t11-t12.test.ts.
  */
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { codeOf, decrypt, genKey, type Pair } from '../../../apps/api/test/helpers/pgpKeys.js';
@@ -11,12 +11,14 @@ import {
   confirmWithWebAuthn,
   createAuthApi,
   loginWithPasskey,
+  loginWithSecurityKey,
   registerWithWebAuthn,
   withConfirm,
   type AuthApi,
 } from '../src/index.js';
-import { NEEDS_TASKS_10_TO_12, callSample, methodNames } from './helpers/routes.js';
+import { NEEDS_TASKS_11_12, ROUTES, callSample, methodNames } from './helpers/routes.js';
 import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
+import { staffWithKeyAndPgp } from './helpers/staff.js';
 
 const GOOD = 'Correct-Horse-9';
 const WRONG = 'Wrong-Horse-99';
@@ -32,7 +34,7 @@ afterAll(async () => {
   await srv.close();
 });
 
-/** The Terms version the person accepted. `GET /v1/terms` comes with Task 11 (see flows-t10-t12). */
+/** The Terms version the person accepted. `GET /v1/terms` comes with Task 11 (see flows-t11-t12). */
 const terms = () => srv.deps.config.termsVersion;
 const jar = (keepCookies = true) => new Jar(srv.baseUrl, keepCookies);
 
@@ -77,12 +79,24 @@ describe('the client covers the API', () => {
     expect(Object.keys(createAuthApi()).sort()).toEqual(methodNames().sort());
   });
 
-  it('every method reaches a route of the API', async () => {
-    for (const name of methodNames().filter((n) => !NEEDS_TASKS_10_TO_12.has(n))) {
+  it('every method reaches exactly its own route, by its own HTTP method', async () => {
+    for (const name of methodNames().filter((n) => !NEEDS_TASKS_11_12.has(n))) {
       const before = srv.routes.length;
       await callSample(jar().api, name);
-      expect(srv.routes.length, name).toBe(before + 1);
-      expect(srv.routes.at(-1), name).toBeDefined();
+      expect(srv.routes.slice(before), name).toEqual([ROUTES[name]]);
+    }
+  });
+
+  it('every route of the API (but /healthz) has its client method', () => {
+    const expected = methodNames().filter((n) => !NEEDS_TASKS_11_12.has(n)).map((n) => ROUTES[n]);
+    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
+  });
+
+  it('the methods waiting for Tasks 11 and 12 still reach no route', async () => {
+    for (const name of NEEDS_TASKS_11_12) {
+      const before = srv.routes.length;
+      await callSample(jar().api, name);
+      expect(srv.routes.slice(before), `${name}: Tasks 11/12 landed: delete the exclusion and the set`).toEqual([undefined]);
     }
   });
 
@@ -218,8 +232,45 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
     await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array) });
+    // So does a confirm by password from the trusted browser, still with no time passing.
+    const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
+    expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    await expect(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken })).resolves.toMatchObject({ codes: expect.any(Array) });
 
     // The flood is still in force for the stranger.
     expect(apiError(await failure(stranger.api.loginPassword({ username, password: GOOD, deviceLabel: LABEL }))).code).toBe('locked');
+  });
+});
+
+describe('a flood of bad passwords against a staff username (Review Focus 2)', () => {
+  it('security key then PGP: second-factor, then a session, at once after 12 anonymous wrong passwords', async () => {
+    const { username, soft, key } = await staffWithKeyAndPgp(srv);
+    const stranger = jar(false);
+    let tries = 0;
+    while (tries < 12) {
+      const e = apiError(await failure(stranger.api.loginPassword({ username, password: WRONG, deviceLabel: LABEL })));
+      if (e.status === 429) {
+        expect(e.retryAfterSeconds).toBeLessThanOrEqual(30);
+        srv.advance(e.retryAfterSeconds! * 1000);
+        continue;
+      }
+      expect(e.code).toBe('credentials-invalid');
+      tries++;
+    }
+    expect(apiError(await failure(stranger.api.loginPassword({ username, password: WRONG, deviceLabel: LABEL }))).code).toBe('locked');
+
+    const browser: AuthApi = jar().api;
+    const first = await loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft));
+    expect(first).toMatchObject({ status: 'second-factor', needs: ['pgp'] });
+    if (first.status !== 'second-factor') throw new Error('expected a second factor');
+    const start = await browser.loginPgpStart({ username, pendingId: first.pendingId });
+    await expect(
+      browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId }),
+    ).resolves.toEqual({ status: 'ok' });
+    // me() (Task 11) is checked in flows-t11-t12; the session's login methods are this staff account's.
+    await expect(browser.listMethods()).resolves.toEqual([
+      expect.objectContaining({ type: 'pgp' }),
+      expect.objectContaining({ type: 'security-key', label: 'YubiKey' }),
+    ]);
   });
 });

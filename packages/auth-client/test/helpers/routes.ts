@@ -51,10 +51,60 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   setPayoutWait: [{ enabled: true }],
 };
 
-/** Methods whose routes come with Plan 2 Tasks 10-12, which are not on the main line yet. */
-export const NEEDS_TASKS_10_TO_12: ReadonlySet<keyof AuthApi> = new Set<keyof AuthApi>([
-  // Task 10: login-method policy, listing and removal (`PUT /v1/account/password` lives there too).
-  'listMethods', 'removeMethod', 'setPassword',
+/**
+ * The route each method must reach: its HTTP method and the server's route pattern. A method sent
+ * to the wrong route (even one that exists) fails the coverage test in flows.test.ts.
+ */
+export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'DELETE'} /v1/${string}` } = {
+  getTerms: 'GET /v1/terms',
+  getPgpSigningKey: 'GET /v1/pgp/signing-key',
+  registerPassword: 'POST /v1/register/password',
+  loginPassword: 'POST /v1/login/password',
+  loginSecondFactor: 'POST /v1/login/second-factor',
+  loginBackup: 'POST /v1/login/backup',
+  registerPgpStart: 'POST /v1/register/pgp/start',
+  registerPgpFinish: 'POST /v1/register/pgp/finish',
+  loginPgpStart: 'POST /v1/login/pgp/start',
+  loginPgpFinish: 'POST /v1/login/pgp/finish',
+  registerWebAuthnStart: 'POST /v1/register/webauthn/start',
+  registerWebAuthnFinish: 'POST /v1/register/webauthn/finish',
+  loginWebAuthnStart: 'POST /v1/login/webauthn/start',
+  loginWebAuthnFinish: 'POST /v1/login/webauthn/finish',
+  logout: 'POST /v1/logout',
+  confirmPassword: 'POST /v1/confirm/password',
+  confirmPgpStart: 'POST /v1/confirm/pgp/start',
+  confirmPgpFinish: 'POST /v1/confirm/pgp/finish',
+  confirmWebAuthnStart: 'POST /v1/confirm/webauthn/start',
+  confirmWebAuthnFinish: 'POST /v1/confirm/webauthn/finish',
+  setPassword: 'PUT /v1/account/password',
+  addPgpKeyStart: 'POST /v1/account/pgp/start',
+  addPgpKeyFinish: 'POST /v1/account/pgp/finish',
+  addWebAuthnStart: 'POST /v1/account/webauthn/start',
+  addWebAuthnFinish: 'POST /v1/account/webauthn/finish',
+  addTotpStart: 'POST /v1/account/totp/start',
+  addTotpFinish: 'POST /v1/account/totp/finish',
+  newRecoveryCodes: 'POST /v1/account/recovery-codes',
+  cancelRecoverySession: 'DELETE /v1/account/recovery-sessions/:id',
+  listMethods: 'GET /v1/account/methods',
+  removeMethod: 'DELETE /v1/account/methods/:type/:id',
+  me: 'GET /v1/account/me',
+  acceptTerms: 'POST /v1/account/terms',
+  listSessions: 'GET /v1/account/sessions',
+  endSession: 'DELETE /v1/account/sessions/:id',
+  listAlerts: 'GET /v1/account/alerts',
+  markAlertSeen: 'POST /v1/account/alerts/:id/seen',
+  listWallets: 'GET /v1/wallets',
+  addWallet: 'POST /v1/wallets',
+  removeWallet: 'DELETE /v1/wallets/:id',
+  setPayoutWait: 'PUT /v1/account/security/payout-wait',
+};
+
+/**
+ * Methods whose routes come with Plan 2 Tasks 11 and 12, which are not on the main line yet. A
+ * tripwire in flows.test.ts fails once any of them reaches a route: then delete this set and the
+ * exclusion in vitest.config.ts.
+ */
+export const NEEDS_TASKS_11_12: ReadonlySet<keyof AuthApi> = new Set<keyof AuthApi>([
   // Task 11: account overview, devices, alerts and the Terms of Service.
   'getTerms', 'me', 'acceptTerms', 'listSessions', 'endSession', 'listAlerts', 'markAlertSeen',
   // Task 12: wallets and the 24-hour wait.
