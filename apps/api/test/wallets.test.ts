@@ -8,7 +8,7 @@ import { hashPassword } from '../src/auth/password.js';
 import { PAYOUT_WAIT_MS, purgeRemovedWalletAddresses, usableWallets, WALLET_APPS } from '../src/wallets/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
-import { Browser, addTestLogin } from './helpers/totp.js';
+import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const HOUR = 3600_000;
@@ -224,9 +224,10 @@ describe('adding a wallet later (P2-C2, R17)', () => {
   });
 
   it('refuses an invalid or wrong-network address with 400 address-invalid without using up the token', async () => {
-    const { b } = await trader();
+    const { id, b, sessionId } = await trader();
     for (const address of ['4' + fakeAddress().slice(1), 'not an address', '', fakeAddress(96), 'x'.repeat(2000)]) {
-      const token = await confirmToken(b, walletAction(address === '' ? 'x' : address));
+      // Issued directly so even '' gets a token for exactly its own action (the confirm route refuses an empty addressEnd).
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address) });
       const res = await addWallet(b, { address, confirmToken: token });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'address-invalid' });
@@ -240,6 +241,7 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     const token = await confirmToken(b, walletAction(address));
     const bad: Record<string, unknown>[] = [
       { app: 'metamask' }, { app: 1 }, { label: '' }, { label: '   ' }, { label: 'x'.repeat(41) }, { label: 7 }, { label: 'a\u0000b' },
+      { label: 'evil\u202Etxt.exe' }, { label: 'a\u200Bb' },
     ];
     for (const extra of bad) {
       const res = await addWallet(b, { address, confirmToken: token, ...extra });
@@ -251,6 +253,36 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     const ok = await addWallet(b, { address, confirmToken: token, app: 'monero-gui-cli', label: 'x'.repeat(40) });
     expect(ok.statusCode).toBe(201);
     expect(await tokenUsed(token)).toBe(true);
+  });
+
+  it('refuses a body that is not a JSON object with 400 bad-request (M7)', async () => {
+    const { b } = await trader();
+    for (const [method, url] of [['POST', '/v1/wallets'], ['PUT', '/v1/account/security/payout-wait']] as const) {
+      for (const payload of ['[]', '"x"', '7', 'null']) {
+        const res = await app.inject({
+          method, url, headers: { origin: ORIGIN, 'content-type': 'application/json' }, cookies: b.cookies, payload,
+        });
+        expect(res.statusCode, `${method} ${payload}`).toBe(400);
+        expect(res.json()).toEqual({ error: 'bad-request' });
+      }
+    }
+  });
+
+  it('trims the label in the list and the alert, and counts it in code points: 40 emoji fit, 41 do not (M4)', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b, fakeAddress(), { label: '  Main  ' });
+    expect((await list(b)).map((w) => w.label)).toEqual(['Main']);
+    const { rows } = await deps.db.query<{ detail: { label: string } }>(
+      `select detail from alerts where account_id = $1 and kind = 'wallet-added'`,
+      [id],
+    );
+    expect(rows.map((r) => r.detail.label)).toEqual(['Main']);
+    await addConfirmed(b, fakeAddress(), { label: '\u{1F4B0}'.repeat(40) });
+    const address = fakeAddress();
+    const token = await confirmToken(b, walletAction(address));
+    const long = await addWallet(b, { address, confirmToken: token, label: '\u{1F4B0}'.repeat(41) });
+    expect(long.json()).toEqual({ error: 'bad-request' });
+    expect(await tokenUsed(token)).toBe(false);
   });
 
   it('accepts every wallet app from the list', async () => {
@@ -271,6 +303,32 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     expect((await b.delete(`/v1/wallets/${wallet.id}`)).statusCode).toBe(204);
     const readd = await addWallet(b, { address, confirmToken: token });
     expect(readd.statusCode).toBe(201);
+  });
+
+  it('lets only one of two parallel adds of the same address through, and the loser keeps its token (M1)', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b); // not the first wallet: both requests need a token
+    const address = fakeAddress();
+    const tokens = [await confirmToken(b, walletAction(address)), await confirmToken(b, walletAction(address))];
+    // Both pass the "already listed" check together; the unique index decides.
+    gate = { need: 2, waiting: [] };
+    let results;
+    try {
+      results = await Promise.all(tokens.map((t) => addWallet(b, { address, confirmToken: t })));
+    } finally {
+      gate = null;
+    }
+    expect(results.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    const loser = results.findIndex((r) => r.statusCode === 409);
+    expect(results[loser]!.json()).toEqual({ error: 'wallet-exists' });
+    expect(await tokenUsed(tokens[loser]!)).toBe(false);
+    expect(await tokenUsed(tokens[1 - loser]!)).toBe(true);
+    const { rows } = await deps.db.query('select 1 from wallets where account_id = $1 and address = $2', [id, address]);
+    expect(rows).toHaveLength(1);
+    const alerts = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'wallet-added' and detail->>'addressEnd' = $2`, [
+      id, address.slice(-6),
+    ]);
+    expect(alerts.rows).toHaveLength(1);
   });
 
   it('lets two accounts list the same address', async () => {
@@ -343,6 +401,11 @@ describe('the opt-in 24-hour wait', () => {
     const { wallet } = await addConfirmed(b);
     expect(wallet.usable).toBe(false);
     expect(new Date(wallet.usableFrom).getTime()).toBe(added.getTime() + PAYOUT_WAIT_MS);
+    const { rows: alerts } = await deps.db.query<{ detail: { addressEnd: string; usableFrom: string } }>(
+      `select detail from alerts where account_id = $1 and kind = 'wallet-added' and detail->>'addressEnd' = $2`,
+      [id, wallet.addressEnd],
+    );
+    expect(alerts.map((r) => r.detail.usableFrom)).toEqual([new Date(added.getTime() + PAYOUT_WAIT_MS).toISOString()]);
 
     setNow(new Date(added.getTime() + PAYOUT_WAIT_MS - 1000));
     expect((await list(b)).find((w) => w.id === wallet.id)!.usable).toBe(false);
@@ -428,6 +491,43 @@ describe('the opt-in 24-hour wait', () => {
     const { wallet: immediate } = await addConfirmed(b);
     expect(immediate.usable).toBe(true);
     expect((await b.put('/v1/account/security/payout-wait', { enabled: false })).json()).toEqual({ enabled: false, offAt: null });
+  });
+
+  it('re-checks under the row lock: a tokenless switch-off that races a switch-on needs a token (I1)', async () => {
+    const { id, b } = await trader();
+    // The wait is off, so the preHandler lets a tokenless "off" through as a no-op.
+    const other = await deps.db.connect();
+    try {
+      await other.query('begin');
+      await other.query('select 1 from accounts where id = $1 for update', [id]);
+      await other.query('update accounts set payout_wait = true where id = $1', [id]);
+      const { rows: [me] } = await other.query<{ pid: number }>('select pg_backend_pid() as pid');
+      const pending = b.put('/v1/account/security/payout-wait', { enabled: false });
+      // Wait until the handler's `select ... for update` is blocked behind this transaction.
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where wait_event_type = 'Lock' and pid <> $1 and query like '%for update%'`,
+          [me!.pid],
+        );
+        if (rows.length > 0) break;
+        if (Date.now() > deadline) throw new Error('the handler never waited on the row lock');
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await other.query('commit');
+      const res = await pending;
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'confirm-required', action: 'payout-wait-off' });
+    } finally {
+      other.release();
+    }
+    const { rows } = await deps.db.query<{ payout_wait: boolean; payout_wait_off_at: Date | null }>(
+      'select payout_wait, payout_wait_off_at from accounts where id = $1',
+      [id],
+    );
+    expect(rows[0]).toEqual({ payout_wait: true, payout_wait_off_at: null });
+    const alerts = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'payout-wait-off-scheduled'`, [id]);
+    expect(alerts.rows).toHaveLength(0);
   });
 
   it('cancels a scheduled switch-off when turned back on', async () => {

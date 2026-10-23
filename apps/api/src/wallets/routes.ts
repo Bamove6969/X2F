@@ -2,7 +2,7 @@ import { addressEnd, addressHash, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
-import { requireConfirm } from '../auth/confirm.js';
+import { redeemConfirm, requireConfirm } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -119,12 +119,13 @@ function bodyOf(req: FastifyRequest): Record<string, unknown> {
   return body as Record<string, unknown>;
 }
 
-// C0 and C1 control characters (and DEL): never part of a label shown back in lists and alerts.
-const CONTROL = /\p{Cc}/u;
+// Control characters (C0, C1, DEL) and format characters (bidi overrides such as U+202E, zero-width
+// characters): never part of a label shown back in lists and alerts.
+const CONTROL = /[\p{Cc}\p{Cf}]/u;
 
 /**
- * preHandler between `requireSession` and `requireConfirm` (R17): every check that can refuse the
- * request runs here, before a confirm token is looked at, so a refused request never uses one up.
+ * preHandler after `requireSession` (R17): every check that can refuse the request runs here,
+ * before a confirm token is looked at, so a refused request never uses one up.
  * `app` from the list, `label` 1-40 characters once trimmed, `address` trimmed and checked by the
  * validator (`invalid` or wrong network → 400 `address-invalid`, `integrated` → 400
  * `address-integrated`), and not already listed (409 `wallet-exists`; the unique index decides races).
@@ -169,16 +170,28 @@ async function firstWalletOnly(req: FastifyRequest): Promise<boolean> {
   return rows[0]?.had_wallet === false;
 }
 
+/**
+ * preHandler after `checkWalletInput`: decides whether this add is the first-wallet exemption (no
+ * token, the creating session's onboarding window, `had_wallet = false`) or needs a token; a
+ * missing token outside the exemption → 403 `confirm-required`. A token is NOT used up here:
+ * `addHandler` redeems it inside its transaction, so a lost race (409), a database error or a
+ * failed alert rolls the redemption back with the wallet (M1).
+ */
+const walletConfirm: preHandlerAsyncHookHandler = async function (req) {
+  if (req.auth.level === 'recovery') throw new ApiError(403, 'recovery-session');
+  if (bodyOf(req).confirmToken !== undefined) return;
+  const until = req.auth.onboardingUntil;
+  const inWindow = until !== null && until.getTime() > req.server.deps.clock().getTime();
+  if (inWindow && (await firstWalletOnly(req))) return;
+  throw new ApiError(403, 'confirm-required', { action: 'add-wallet' });
+};
+
 async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const input = walletInput(req);
-  // R17: store exactly the address whose action was confirmed (or exempted); the hash is not recomputed.
-  const confirmed = req.confirmedAction;
-  if (confirmed?.kind !== 'add-wallet' || confirmed.addressHash !== input.action.addressHash) {
-    throw new Error('confirmed action does not match the wallet');
-  }
-  // `requireConfirm` let a request without a token through only under the first-wallet exemption.
-  const exempted = bodyOf(req).confirmToken === undefined;
+  const raw = bodyOf(req).confirmToken;
+  // `walletConfirm` let a request without a token through only under the first-wallet exemption.
+  const exempted = raw === undefined;
   const now = deps.clock();
   const client = await deps.db.connect();
   let wallet: Wallet;
@@ -193,6 +206,13 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       // Two tokenless first wallets in parallel: the row lock lets the first through; the second
       // finds `had_wallet` set and needs a token like any later wallet.
       if (exempted && account.had_wallet) throw new ApiError(403, 'confirm-required', { action: 'add-wallet' });
+      // R17: the token must be for exactly the checked, trimmed address (hash computed once, in
+      // checkWalletInput). Redeemed in this transaction: a rollback below leaves it unused (M1).
+      // A present but non-string token (number, null, object) is invalid, never "missing".
+      if (!exempted) {
+        await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
+      }
+      req.confirmedAction = input.action;
       const waits = account.had_wallet && payoutWaitActive(account, now);
       const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
       let inserted: WalletRow;
@@ -320,7 +340,7 @@ export function walletRoutes(app: FastifyInstance): void {
       preHandler: [
         session,
         checkWalletInput,
-        requireConfirm((req) => walletInput(req).action, { onboarding: firstWalletOnly }),
+        walletConfirm,
       ],
     },
     addHandler,

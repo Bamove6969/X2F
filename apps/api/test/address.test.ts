@@ -1,5 +1,5 @@
 import { MoneroNetworkType, MoneroUtils, createWalletKeys } from 'monero-ts';
-import { beforeAll, describe, expect, it } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator } from '../src/app.js';
 import { moneroAddressValidator } from '../src/wallets/address.js';
 
@@ -9,6 +9,10 @@ let sub: string;
 let integrated: string;
 let stagenet: AddressValidator;
 let mainnet: AddressValidator;
+let testnet: AddressValidator;
+/** One fresh primary address per network (I2). */
+const fresh: Record<'mainnet' | 'testnet' | 'stagenet', string> = { mainnet: '', testnet: '', stagenet: '' };
+const NETWORK_TYPES = { mainnet: MoneroNetworkType.MAINNET, testnet: MoneroNetworkType.TESTNET, stagenet: MoneroNetworkType.STAGENET } as const;
 
 const BASE58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
 
@@ -28,6 +32,16 @@ beforeAll(async () => {
   await w.close();
   stagenet = await moneroAddressValidator('stagenet');
   mainnet = await moneroAddressValidator('mainnet');
+  testnet = await moneroAddressValidator('testnet');
+  for (const n of Object.keys(fresh) as Array<keyof typeof fresh>) {
+    const k = await createWalletKeys({ networkType: NETWORK_TYPES[n] });
+    fresh[n] = await k.getPrimaryAddress();
+    await k.close();
+  }
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 describe('moneroAddressValidator', () => {
@@ -59,6 +73,23 @@ describe('moneroAddressValidator', () => {
   it('refuses anything that is not a base58 address without throwing', async () => {
     for (const bad of ['', ' ', 'hello', '0'.repeat(95), `${primary} `, `${primary}x`, primary.slice(0, 94), 'x'.repeat(5000)]) {
       expect(await stagenet.check(bad)).toBe('invalid');
+    }
+  });
+
+  it('accepts each network’s address only on that network (I2)', async () => {
+    const validators = { mainnet, testnet, stagenet };
+    for (const [own, address] of Object.entries(fresh)) {
+      expect(address).toHaveLength(95);
+      for (const [network, v] of Object.entries(validators)) {
+        expect(await v.check(address), `${own} address on ${network}`).toBe(network === own ? 'ok' : 'invalid');
+      }
+    }
+  });
+
+  it('fails at construction when its own known-good address does not check out (M2)', async () => {
+    vi.spyOn(MoneroUtils, 'isValidAddress').mockResolvedValue(false);
+    for (const n of ['mainnet', 'testnet', 'stagenet'] as const) {
+      await expect(moneroAddressValidator(n)).rejects.toThrow(/self-check/);
     }
   });
 });
