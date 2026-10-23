@@ -24,7 +24,7 @@ export class AuthApiError extends Error {
   readonly code: ApiErrorCode;
   /** A plain sentence about a refused PGP key (only ever about the key the person pasted). */
   readonly detail?: string;
-  /** How long to wait before trying again (429 `slow-down` / `locked`, 503 `busy`). */
+  /** How long to wait before trying again (429 `slow-down` / `locked`, 503 `busy`), kept within 1 to 30 seconds. */
   readonly retryAfterSeconds?: number;
   /** The password rules not met (400 `password-weak`). */
   readonly missing?: string[];
@@ -42,7 +42,7 @@ export class AuthApiError extends Error {
     this.code = code;
     if (typeof extra.detail === 'string') this.detail = extra.detail;
     if (typeof extra.retryAfterSeconds === 'number' && Number.isFinite(extra.retryAfterSeconds)) {
-      this.retryAfterSeconds = extra.retryAfterSeconds;
+      this.retryAfterSeconds = Math.min(30, Math.max(1, extra.retryAfterSeconds));
     }
     if (Array.isArray(extra.missing)) this.missing = extra.missing.filter((m): m is string => typeof m === 'string');
     if (typeof extra.holdUntil === 'string') this.holdUntil = extra.holdUntil;
@@ -242,14 +242,30 @@ async function readJson(res: Response): Promise<unknown> {
 
 const seg = (s: string): string => encodeURIComponent(s);
 
+/** `''` (the same origin) or exactly an http(s) origin such as `https://x2f.example:8443`; anything else throws. */
+function checkBaseUrl(baseUrl: string): string {
+  if (baseUrl === '') return baseUrl;
+  let url: URL | undefined;
+  try {
+    url = new URL(baseUrl);
+  } catch {
+    url = undefined;
+  }
+  if (url === undefined || (url.protocol !== 'http:' && url.protocol !== 'https:') || url.origin !== baseUrl) {
+    throw new TypeError('createAuthApi: baseUrl must be empty or an http(s) origin with no path or trailing slash');
+  }
+  return baseUrl;
+}
+
 export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}): AuthApi {
-  const baseUrl = o.baseUrl ?? '';
+  const baseUrl = checkBaseUrl(o.baseUrl ?? '');
   // Looked up at call time, so a page (or a test) that replaces `fetch` later is honoured.
   const send: typeof fetch = o.fetch ?? ((input, init) => globalThis.fetch(input, init));
 
   async function call<T>(method: Method, path: string, body?: object): Promise<T> {
     const headers: Record<string, string> = { accept: 'application/json' };
-    const init: RequestInit = { method, credentials: 'same-origin', headers };
+    // A redirect is never an auth API answer: refuse it rather than follow it somewhere else.
+    const init: RequestInit = { method, credentials: 'same-origin', redirect: 'error', headers };
     if (body !== undefined) {
       headers['content-type'] = 'application/json';
       init.body = JSON.stringify(body);

@@ -114,6 +114,25 @@ describe('createAuthApi requests', () => {
     await expect(createAuthApi({ fetch: empty.fetch }).acceptTerms({ version: 'v' })).resolves.toBeUndefined();
   });
 
+  it('refuses redirects instead of following them', async () => {
+    const { sent, fetch } = recorder();
+    await createAuthApi({ fetch }).loginPgpStart({ username: 'alice' });
+    await createAuthApi({ fetch }).me();
+    expect(sent.map((s) => s.init.redirect)).toEqual(['error', 'error']);
+  });
+
+  it('takes as baseUrl only an http(s) origin with no path, or the empty string', () => {
+    for (const ok of ['', 'http://127.0.0.1:4000', 'https://x2f.example', 'https://x2f.example:8443']) {
+      expect(() => createAuthApi({ baseUrl: ok }), ok).not.toThrow();
+    }
+    for (const bad of [
+      '/', '/api', 'https://x2f.example/', 'https://x2f.example/api', 'https://x2f.example?x=1', 'https://x2f.example#x',
+      'https://user:pw@x2f.example', 'ftp://x2f.example', 'javascript:alert(1)', 'x2f.example', '//x2f.example', ' https://x2f.example',
+    ]) {
+      expect(() => createAuthApi({ baseUrl: bad }), bad).toThrow(/baseUrl/);
+    }
+  });
+
   it('uses the global fetch at call time when none is given', async () => {
     const { sent, fetch } = recorder();
     const api = createAuthApi();
@@ -140,6 +159,21 @@ describe('AuthApiError', () => {
     expect(headerOnly.retryAfterSeconds).toBe(30);
     const garbage = await refusal(Response.json({ error: 'locked' }, { status: 429, headers: { 'retry-after': 'soon' } }));
     expect(garbage.retryAfterSeconds).toBeUndefined();
+  });
+
+  it('keeps retryAfterSeconds within 1 to 30 seconds, from the body or the header', async () => {
+    const body = async (n: number) => (await refusal(Response.json({ error: 'slow-down', retryAfterSeconds: n }, { status: 429 }))).retryAfterSeconds;
+    const header = async (v: string) => (await refusal(Response.json({ error: 'locked' }, { status: 429, headers: { 'retry-after': v } }))).retryAfterSeconds;
+    expect(await body(0)).toBe(1);
+    expect(await body(-5)).toBe(1);
+    expect(await body(0.2)).toBe(1);
+    expect(await body(31)).toBe(30);
+    expect(await body(86_400)).toBe(30);
+    expect(await body(7)).toBe(7);
+    expect(await header('0')).toBe(1);
+    expect(await header('3600')).toBe(30);
+    expect(await header('999999999')).toBe(30);
+    expect(await header('9')).toBe(9);
   });
 
   it('carries detail, holdUntil, version and action', async () => {

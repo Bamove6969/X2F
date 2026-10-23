@@ -5,7 +5,8 @@ import { AuthApiError } from './api.js';
  * Runs a change that may need confirm-it's-you (P2-C2): calls `run()`; when the API answers
  * `confirm-required`, calls `prove(action)` once (Plan 3's confirm sheet: PGP, passkey, security
  * key or password) and retries `run(token)` once. Any other error, a failed proof, or a second
- * refusal propagates; it never loops.
+ * refusal propagates; it never loops. A `confirm-required` for an action other than `action.kind`
+ * throws before any proof.
  */
 export async function withConfirm<T>(
   action: ConfirmAction,
@@ -16,6 +17,10 @@ export async function withConfirm<T>(
     return await run();
   } catch (e) {
     if (!(e instanceof AuthApiError) || e.code !== 'confirm-required') throw e;
+    // Never prove one action for a change the API says is another.
+    if (e.action !== action.kind) {
+      throw new Error(`withConfirm: the API asks to confirm ${e.action ?? 'an unnamed action'}, not ${action.kind}`, { cause: e });
+    }
   }
   const token = await prove(action);
   return run(token);

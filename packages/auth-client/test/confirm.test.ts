@@ -56,6 +56,29 @@ describe('withConfirm', () => {
     expect(prove).not.toHaveBeenCalled();
   });
 
+  it('refuses before any proof when the API asks to confirm a different action', async () => {
+    const other = new AuthApiError(403, 'confirm-required', { action: 'set-password' });
+    const run = vi.fn(async (_t?: string): Promise<string> => {
+      throw other;
+    });
+    const prove = vi.fn(async () => 'tok');
+    const e = await withConfirm(ACTION, run, prove).catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(Error);
+    expect((e as Error).message).toMatch(/set-password.*new-recovery-codes|new-recovery-codes.*set-password/);
+    expect((e as Error).cause).toBe(other);
+    expect(prove).not.toHaveBeenCalled();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses before any proof when the API does not name the action', async () => {
+    const run = vi.fn(async (_t?: string): Promise<string> => {
+      throw new AuthApiError(403, 'confirm-required');
+    });
+    const prove = vi.fn(async () => 'tok');
+    await expect(withConfirm(ACTION, run, prove)).rejects.toThrow(/new-recovery-codes/);
+    expect(prove).not.toHaveBeenCalled();
+  });
+
   it('propagates a failed proof (the person cancelled) without retrying', async () => {
     const run = vi.fn(async (_t?: string): Promise<string> => {
       throw required();
