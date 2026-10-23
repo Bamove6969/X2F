@@ -2,6 +2,7 @@ import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { normalizeRecoveryCode, type MethodType } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
+import * as openpgp from 'openpgp';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
@@ -154,6 +155,14 @@ async function addPgp(accountId: string, key: Pair, at = now): Promise<string> {
   return rows[0]!.id;
 }
 
+/** Replaces the server's copy of `key` with a revoked one, as a refresh of a key its owner revoked would. */
+async function revokeStored(accountId: string, key: Pair): Promise<string> {
+  const priv = await openpgp.readPrivateKey({ armoredKey: key.privateKey });
+  const r = await openpgp.revokeKey({ key: priv, date: new Date(now.getTime() - MIN), format: 'armored' });
+  await deps.db.query('delete from pgp_keys where account_id = $1 and fingerprint = $2', [accountId, key.fingerprint]);
+  return addPgp(accountId, { ...key, publicKey: r.publicKey });
+}
+
 async function addCredential(accountId: string, kind: 'passkey' | 'security-key', attested: boolean, auth = createSoftAuthenticator({ backedUp: false, userVerified: true })) {
   const { rows } = await deps.db.query<{ id: string }>(
     `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
@@ -266,13 +275,29 @@ describe('ownerReady (R1)', () => {
   it('needs two attested security keys and a PGP key', async () => {
     const { id } = await account('owner');
     await addCredential(id, 'security-key', true);
-    expect(await ownerReady(deps.db, id)).toBe(false); // one attested key
+    expect(await ownerReady(deps, id)).toBe(false); // one attested key
     const second = await addCredential(id, 'security-key', false);
-    expect(await ownerReady(deps.db, id)).toBe(false); // two, one unattested
+    expect(await ownerReady(deps, id)).toBe(false); // two, one unattested
     await deps.db.query('update webauthn_credentials set attested = true where id = $1', [second.id]);
-    expect(await ownerReady(deps.db, id)).toBe(false); // two attested, no PGP key
+    expect(await ownerReady(deps, id)).toBe(false); // two attested, no PGP key
     await addPgp(id, await genKey());
-    expect(await ownerReady(deps.db, id)).toBe(true);
+    expect(await ownerReady(deps, id)).toBe(true);
+  });
+
+  it('counts only PGP keys usable now: a revoked or expired one is no PGP key', async () => {
+    const { id } = await account('owner');
+    await addCredential(id, 'security-key', true);
+    await addCredential(id, 'security-key', true);
+    const revoked = await genKey();
+    await addPgp(id, revoked);
+    expect(await ownerReady(deps, id)).toBe(true);
+    await revokeStored(id, revoked);
+    expect(await ownerReady(deps, id)).toBe(false);
+    await deps.db.query('delete from pgp_keys where account_id = $1', [id]);
+    await addPgp(id, await genKey({ date: new Date(now.getTime() - HOUR), keyExpirationTime: 2 * 3600 }));
+    expect(await ownerReady(deps, id)).toBe(true);
+    setNow(new Date(now.getTime() + 2 * HOUR));
+    expect(await ownerReady(deps, id)).toBe(false);
   });
 });
 
@@ -419,6 +444,78 @@ describe('removing a login method', () => {
     await addCredential(id, 'security-key', true);
     const t = await token(b, id, { kind: 'remove-method', method: 'security-key', id: k1.id });
     expect((await b.del(`/v1/account/methods/security-key/${k1.id}`, { confirmToken: t })).statusCode).toBe(200);
+  });
+
+  it('owner minimums count attested keys only: an unattested key may go, an attested one may not', async () => {
+    const { id } = await account('owner');
+    const k1 = await addCredential(id, 'security-key', true);
+    await addCredential(id, 'security-key', true);
+    const loose = await addCredential(id, 'security-key', false);
+    await addPgp(id, await genKey());
+    const b = await loggedIn(id);
+    const t1 = await token(b, id, { kind: 'remove-method', method: 'security-key', id: k1.id });
+    const res = await b.del(`/v1/account/methods/security-key/${k1.id}`, { confirmToken: t1 });
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('last-login-method');
+    const t2 = await token(b, id, { kind: 'remove-method', method: 'security-key', id: loose.id });
+    expect((await b.del(`/v1/account/methods/security-key/${loose.id}`, { confirmToken: t2 })).statusCode).toBe(200);
+  });
+
+  it('owner minimums count usable PGP keys only: the last good key stays beside a revoked one; the revoked one may go', async () => {
+    const { id } = await account('owner');
+    await addCredential(id, 'security-key', true);
+    await addCredential(id, 'security-key', true);
+    const dead = await genKey();
+    await addPgp(id, dead);
+    const deadId = await revokeStored(id, dead);
+    const good = await addPgp(id, await genKey());
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'pgp', id: good });
+    const res = await b.del(`/v1/account/methods/pgp/${good}`, { confirmToken: t });
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('last-login-method');
+    const td = await token(b, id, { kind: 'remove-method', method: 'pgp', id: deadId });
+    expect((await b.del(`/v1/account/methods/pgp/${deadId}`, { confirmToken: td })).statusCode).toBe(200);
+  });
+
+  it('owner minimums: an expired PGP key does not count either', async () => {
+    const { id } = await account('owner');
+    await addCredential(id, 'security-key', true);
+    await addCredential(id, 'security-key', true);
+    await addPgp(id, await genKey({ date: new Date(now.getTime() - HOUR), keyExpirationTime: 2 * 3600 }));
+    const good = await addPgp(id, await genKey());
+    setNow(new Date(now.getTime() + 2 * HOUR));
+    const b = await loggedIn(id);
+    const t = await token(b, id, { kind: 'remove-method', method: 'pgp', id: good });
+    const res = await b.del(`/v1/account/methods/pgp/${good}`, { confirmToken: t });
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('last-login-method');
+  });
+
+  it('staff minimums count usable PGP keys only', async () => {
+    // Two-PGP pair: a revoked key is no second PGP key.
+    const crew = await account('staff');
+    const dead = await genKey();
+    await addPgp(crew.id, dead);
+    await revokeStored(crew.id, dead);
+    const a = await addPgp(crew.id, await genKey());
+    await addPgp(crew.id, await genKey());
+    const b = await loggedIn(crew.id);
+    const t = await token(b, crew.id, { kind: 'remove-method', method: 'pgp', id: a });
+    const res = await b.del(`/v1/account/methods/pgp/${a}`, { confirmToken: t });
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('last-login-method');
+
+    // PGP + passkey: the good PGP key stays beside a revoked one.
+    const other = await account('staff');
+    const dead2 = await genKey();
+    await addPgp(other.id, dead2);
+    await revokeStored(other.id, dead2);
+    const good = await addPgp(other.id, await genKey());
+    await addCredential(other.id, 'passkey', false);
+    const b2 = await loggedIn(other.id);
+    const t2 = await token(b2, other.id, { kind: 'remove-method', method: 'pgp', id: good });
+    expect(errorOf(await b2.del(`/v1/account/methods/pgp/${good}`, { confirmToken: t2 }))).toBe('last-login-method');
   });
 
   it('staff minimums: a valid pair always stays', async () => {
