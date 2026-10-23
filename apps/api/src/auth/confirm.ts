@@ -10,6 +10,17 @@ export const CONFIRM_TTL_MS = 5 * 60_000;
 /** 32 random bytes, base64url without padding. */
 const TOKEN = /^[A-Za-z0-9_-]{43}$/;
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /**
+     * R17: the action `requireConfirm` resolved for this request, set once it has been redeemed with
+     * a token or exempted (onboarding); null otherwise (and on a recovery session let through by
+     * `recovery: true`). A handler acts on exactly this action rather than re-deriving it.
+     */
+    confirmedAction: ConfirmAction | null;
+  }
+}
+
 const tokenHash = (token: string): Buffer => createHash('sha256').update(token).digest();
 
 /**
@@ -85,9 +96,13 @@ export function requireConfirm(
     if (raw === undefined && opts.onboarding) {
       const until = req.auth.onboardingUntil;
       const inWindow = until !== null && until.getTime() > deps.clock().getTime();
-      if (inWindow && (opts.onboarding === true || (await opts.onboarding(req)))) return;
+      if (inWindow && (opts.onboarding === true || (await opts.onboarding(req)))) {
+        req.confirmedAction = resolved;
+        return;
+      }
     }
     // A present but non-string token (number, null, object) is invalid, never "missing".
     await redeemConfirm(deps, req, resolved, raw === undefined ? undefined : typeof raw === 'string' ? raw : '');
+    req.confirmedAction = resolved;
   };
 }

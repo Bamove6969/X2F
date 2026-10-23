@@ -7,16 +7,8 @@ import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
-
-/** A dependency whose task has not landed yet: any use fails loudly instead of misbehaving. */
-function notBuilt<T extends object>(what: string): T {
-  return new Proxy({} as T, {
-    get(_t, prop) {
-      if (prop === 'then') return undefined;
-      throw new Error(`${what} is not built yet`);
-    },
-  });
-}
+import { moneroAddressValidator } from './wallets/address.js';
+import { purgeRemovedWalletAddresses } from './wallets/routes.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -45,15 +37,15 @@ const deps: Deps = {
   config,
   db,
   clock: () => new Date(),
-  // TODO(Task 12): moneroAddressValidator.
   leaked: await openLeakedList(config.leakedListPath),
-  addresses: notBuilt('address validator (Task 12)'),
+  // Task 12: loads monero-ts's WebAssembly keys module before listening.
+  addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
 };
 
 // Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.
-const jobs: RetentionJob[] = [purgeExpired];
+const jobs: RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);

@@ -39,6 +39,17 @@ beforeAll(async () => {
   });
   const walletFromBody = (req: { body: unknown }) => walletAction((req.body as { address: string }).address);
   app.post('/t/add-wallet', { preHandler: [requireSession(), requireConfirm(walletFromBody)] }, async () => ({ ok: true }));
+  // R17: the action requireConfirm resolved (and redeemed or exempted) is on the request.
+  app.post(
+    '/t/confirmed-action',
+    {
+      preHandler: [
+        requireSession(),
+        requireConfirm(walletFromBody, { onboarding: async (req) => (req.body as { first?: boolean }).first === true }),
+      ],
+    },
+    async (req) => ({ confirmed: req.confirmedAction }),
+  );
   app.post(
     '/t/first-wallet',
     {
@@ -129,6 +140,16 @@ describe('confirm tokens', () => {
     expect((await post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken: t1 })).json()).toEqual({ error: 'confirm-invalid' });
     setNow(new Date(T0.getTime() + 5 * MIN - 1000));
     expect((await post('/t/add-wallet', s.token, { address: ADDR_A, confirmToken: t2 })).statusCode).toBe(200);
+  });
+
+  it('attaches the resolved action to req.confirmedAction, after a token and after an onboarding exemption (R17)', async () => {
+    const s = await session();
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s.sessionId, accountId: s.accountId, action: walletAction(ADDR_A) });
+    const res = await post('/t/confirmed-action', s.token, { address: ADDR_A, confirmToken });
+    expect(res.json()).toEqual({ confirmed: walletAction(ADDR_A) });
+    const o = await session({ firstSession: true });
+    const exempt = await post('/t/confirmed-action', o.token, { address: ADDR_B, first: true });
+    expect(exempt.json()).toEqual({ confirmed: walletAction(ADDR_B) });
   });
 
   it('refuses a token for another action', async () => {
