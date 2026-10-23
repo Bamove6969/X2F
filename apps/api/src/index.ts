@@ -34,7 +34,11 @@ export {
   PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
-export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export {
+  PRIMARY, allowedMethods, assertMethodAllowed, listMethods, methodAllowed, methodRoutes, needsAfter, ownerReady, pairAllowed,
+  parseFactor, passwordAllowed, removeMethod, type MethodEntry,
+} from './auth/methods.js';
 export {
   SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
   verifyTotp,

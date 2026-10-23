@@ -1,14 +1,16 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { checkPassword, checkUsername, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
+import { addAlert } from '../alerts.js';
 import { assertTermsAccepted, assertUsername, createAccount } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
-import { issueConfirmToken } from './confirm.js';
+import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
+import { methodAllowed, passwordAllowed } from './methods.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 import { hasTotp, issueSecondFactor, verifyTotp } from './totp.js';
@@ -35,11 +37,6 @@ export function verifyPassword(hash: string, pw: string): Promise<boolean> {
  * login takes reveals none of these.
  */
 export const DUMMY_HASH: string = await argon2.hash(randomBytes(32).toString('base64url'), ARGON2_OPTIONS);
-
-/** Until Task 10's `passwordAllowed(kind)`, only traders use passwords. */
-function passwordAllowed(kind: AccountKind): boolean {
-  return kind === 'trader';
-}
 
 /** 400 `password-weak` `{ missing }`, then 400 `password-leaked` (list on X2F's own server). */
 export async function assertNewPassword(deps: Pick<Deps, 'leaked'>, pw: string): Promise<void> {
@@ -202,14 +199,78 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
   return { confirmToken };
 }
 
+/** The new password of `PUT /v1/account/password`, checked before `requireConfirm` so a refusal never uses up a token. */
+const checkedPassword = new WeakMap<FastifyRequest, string>();
+
+const checkNewPassword: preHandlerAsyncHookHandler = async function (req) {
+  const { password } = strings(req.body, ['password'] as const);
+  await assertNewPassword(req.server.deps, password);
+  checkedPassword.set(req, password);
+};
+
 /**
- * `POST /v1/register/password`, `POST /v1/login/password` and `POST /v1/confirm/password`. All set
- * the device cookie and refuse bodies over 4 KiB with 413 before hashing; register draws on the
- * register budget, login on the start budget.
+ * `PUT /v1/account/password { password, confirmToken? }`: sets or replaces the account's password.
+ * Behind `requireSession({ allowRecovery: true })` (a held TOTP backup session is refused by
+ * `requireSession` until its hold ends), `assertMethodAllowed` (staff and the owner never get one,
+ * R2), the password checks, then `requireConfirm({ kind: 'set-password' })` with the onboarding and
+ * recovery exemptions. In one transaction: the new hash, alert `login-method-added`, every other
+ * session of the account ended and alert `sessions-ended` when any were; the calling session goes on.
+ */
+async function setPasswordHandler(req: FastifyRequest) {
+  const deps = req.server.deps;
+  const password = checkedPassword.get(req);
+  if (password === undefined) throw new ApiError(400, 'bad-request');
+  const hash = await hashPassword(password);
+  const now = deps.clock();
+  const { accountId, sessionId } = req.auth;
+  const client = await deps.db.connect();
+  try {
+    await client.query('begin');
+    try {
+      await client.query(
+        `insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)
+         on conflict (account_id) do update set hash = excluded.hash, updated_at = excluded.updated_at`,
+        [accountId, hash, now],
+      );
+      await addAlert(client, accountId, 'login-method-added', { method: 'password' }, now);
+      const ended = await client.query(
+        'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
+        [accountId, sessionId, now],
+      );
+      const count = ended.rowCount ?? 0;
+      if (count > 0) await addAlert(client, accountId, 'sessions-ended', { count, reason: 'password-set' }, now);
+      await client.query('commit');
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    }
+  } finally {
+    client.release();
+  }
+  return { ok: true };
+}
+
+/**
+ * `POST /v1/register/password`, `POST /v1/login/password`, `POST /v1/confirm/password` and
+ * `PUT /v1/account/password`. All refuse bodies over 4 KiB with 413 before hashing; the public
+ * routes set the device cookie; register draws on the register budget, login on the start budget.
  */
 export function passwordRoutes(app: FastifyInstance): void {
   const opts = { bodyLimit: PASSWORD_BODY_LIMIT };
   app.post('/v1/register/password', opts, registerHandler);
   app.post('/v1/login/password', opts, loginHandler);
   app.post('/v1/confirm/password', { ...opts, preHandler: requireSession() }, confirmHandler);
+  app.put(
+    '/v1/account/password',
+    {
+      ...opts,
+      preHandler: [
+        requireSession({ allowRecovery: true }),
+        methodAllowed('password'),
+        checkNewPassword,
+        requireConfirm({ kind: 'set-password' }, { onboarding: true, recovery: true }),
+      ],
+    },
+    setPasswordHandler,
+  );
 }

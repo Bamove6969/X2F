@@ -27,6 +27,7 @@ import { consumeChallenge, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
+import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
 import { requireSession, startSession } from './sessions.js';
 
@@ -212,16 +213,28 @@ const codeHash = (normalized: string): Buffer => createHash('sha256').update(nor
 
 /**
  * Encrypts to every key it can (R15): when `encryptChallenge` throws for the set, each key is tried
- * alone and the ones that fail are left out (never falling back to a weaker subkey). No key left →
- * 400 `key-expired`, the same wording as an expired key.
+ * alone and the ones that fail are left out (never falling back to a weaker subkey). With `single`,
+ * to the first key (in the given order) it can encrypt to, and only that one. No key left → 400
+ * `key-expired`, the same wording as an expired key.
  */
 async function encryptToUsable(
   deps: Deps,
   text: string,
   keys: StoredKey[],
   now: Date,
+  single = false,
 ): Promise<{ message: string; fingerprints: string[] }> {
   const signer = deps.pgpSigner.key;
+  if (single) {
+    for (const k of keys) {
+      try {
+        return { message: await encryptChallenge(text, [k.armored], signer, now), fingerprints: [k.fingerprint] };
+      } catch {
+        // Not usable now; try the next one.
+      }
+    }
+    throw new ApiError(400, 'key-expired');
+  }
   try {
     return { message: await encryptChallenge(text, keys.map((k) => k.armored), signer, now), fingerprints: keys.map((k) => k.fingerprint) };
   } catch {
@@ -287,6 +300,8 @@ export async function issuePgpChallenge(
     purposeText: string;
     armoredKeys: string[];
     payload: object;
+    /** Encrypt to one key only: the first of `armoredKeys` that can be encrypted to (a staff member's first PGP step). */
+    single?: boolean;
   },
 ): Promise<IssuedChallenge> {
   const now = deps.clock();
@@ -294,7 +309,7 @@ export async function issuePgpChallenge(
   const keys = await Promise.all(
     a.armoredKeys.map(async (armored) => ({ armored, fingerprint: (await openpgp.readKey({ armoredKey: armored })).getFingerprint() })),
   );
-  const { message, fingerprints } = await encryptToUsable(deps, messageText(deps, req, code, a.purposeText, now), keys, now);
+  const { message, fingerprints } = await encryptToUsable(deps, messageText(deps, req, code, a.purposeText, now), keys, now, a.single === true);
 
   const row = { accountId: a.accountId, sessionId: a.sessionId, purpose: a.purpose, code, payload: { ...a.payload, fingerprints }, now };
   let id: string;
@@ -490,15 +505,15 @@ async function assertStartAllowed(deps: Deps, tag: string, group: string, now: D
 }
 
 /**
- * The open `second-factor` challenge a staff or owner login's second step names (Task 10 creates
- * them in `completeLogin`): same account, same device, unused, unexpired. Read, not consumed;
+ * The open `second-factor` challenge a staff or owner login's second step names (`completeLogin`
+ * creates them): same account, same device, unused, unexpired. Read, not consumed;
  * `completeLogin` consumes it at `finish`. Null for anything else.
  */
 async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: string, device: Buffer | null, now: Date) {
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingId) || device === null) return null;
   const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
     `select payload from challenges
-      where id = $1 and purpose = 'second-factor' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
+      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
     [pendingId, accountId, device, now],
   );
   return rows[0]?.payload ?? null;
@@ -636,6 +651,10 @@ async function loginStart(deps: Deps, req: FastifyRequest, opts: PgpLoginOptions
   return issuePgpChallenge(deps, req, {
     accountId: account.id, sessionId: null, purpose: 'login', purposeText: PGP_PURPOSE.login,
     armoredKeys: keys.map((k) => k.armored), payload,
+    // A staff member's first PGP step goes to one key only (the oldest usable), so that a second PGP
+    // step to a different key can make a pair: a code from a challenge sent to several keys proves
+    // only "one of them" and would leave no key for the second step.
+    single: account.kind === 'staff' && pendingId === undefined,
   });
 }
 
@@ -744,7 +763,6 @@ async function addKeyStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const key = inspected.get(req);
   if (!key) throw new ApiError(400, 'bad-request');
-  // TODO(Task 10): `assertMethodAllowed(kind, 'pgp')`.
   const { storable, pending } = await pendingKey(deps.config, key.armored, key.fingerprint, deps.clock());
   return issuePgpChallenge(deps, req, {
     accountId: req.auth.accountId, sessionId: req.auth.sessionId, purpose: 'add-key', purposeText: PGP_PURPOSE['add-key'],
@@ -802,11 +820,12 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
       bodyLimit: PGP_BODY_LIMIT,
       preHandler: [
         requireSession({ allowRecovery: true }),
+        methodAllowed('pgp'),
         inspectNewKey,
         requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/pgp/finish', { preHandler: requireSession({ allowRecovery: true }) }, addKeyFinish);
+  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp')] }, addKeyFinish);
 }
