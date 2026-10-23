@@ -142,7 +142,17 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // API answers carry secrets (confirm tokens, recovery codes, TOTP secrets, login challenges) and
   // private account data: never stored by a browser cache or a proxy.
   app.addHook('onRequest', (req, reply, done) => {
-    if (req.url.startsWith('/v1/')) void reply.header('cache-control', 'no-store');
+    // The raw URL can spell /v1 with percent-escapes (/%761/...); the router decodes them, so the
+    // matched route pattern and the decoded path count too.
+    let decoded = req.url;
+    try {
+      decoded = decodeURIComponent(req.url);
+    } catch {
+      // Undecodable: the framework error path answers it.
+    }
+    if (req.url.startsWith('/v1/') || decoded.startsWith('/v1/') || req.routeOptions.url?.startsWith('/v1/')) {
+      void reply.header('cache-control', 'no-store');
+    }
     done();
   });
 

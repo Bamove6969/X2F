@@ -29,11 +29,11 @@ async function loggedIn(accountId: string): Promise<Browser> {
   return b;
 }
 
-describe('F1: the request budgets are global (Important; residual, needs a per-source limit in front)', () => {
-  it('one anonymous client spending the start budget makes every other login answer 503 busy', async () => {
-    // The budget is per process, not per source: the API stores no IPs (R5), so it cannot tell
-    // the flooder from anyone else. This test pins today's behaviour; when a per-source limit
-    // exists, a legitimate login must survive the flood and this test is to be inverted.
+describe('F1: the request budgets are global (Important; open until the Plan 6 per-source limit in the proxy)', () => {
+  it('KNOWN DoS, not intended (F1, open until the Plan 6 per-source proxy limit): one anonymous client spending the start budget makes every other login answer 503 busy', async () => {
+    // Records the in-process behaviour only: the budget is per process, not per source, and the API
+    // stores no IPs (R5), so it cannot tell the flooder from anyone else. The proof that F1 is fixed
+    // belongs in a test that goes through the proxy; it cannot be written against this app alone.
     for (let i = 0; i < START_BUCKET.capacity; i++) {
       const res = await app.inject({
         method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { username: `nobody${i}xx` },
@@ -74,8 +74,30 @@ describe('F3: API answers are never cached', () => {
     expect(unauth.headers['cache-control']).toBe('no-store');
     expect((await b.get('/v1/account/me')).headers['cache-control']).toBe('no-store');
     expect((await b.get('/v1/wallets')).headers['cache-control']).toBe('no-store');
-    expect((await b.post('/v1/logout')).headers['cache-control']).toBe('no-store');
     expect((await app.inject({ method: 'GET', url: '/v1/nothing-here' })).headers['cache-control']).toBe('no-store');
+    // Percent-escaped spelling of /v1: the router decodes it.
+    const escaped = await b.get('/%761/account/me');
+    expect(escaped.statusCode).toBe(200);
+    expect(escaped.headers['cache-control']).toBe('no-store');
+    expect((await app.inject({ method: 'GET', url: '/%761/nothing-here' })).headers['cache-control']).toBe('no-store');
+    // Early replies, before any preHandler: wrong Origin (403), malformed JSON (400).
+    const crossOrigin = await app.inject({ method: 'POST', url: '/v1/logout', headers: { origin: 'https://evil.test' } });
+    expect(crossOrigin.statusCode).toBe(403);
+    expect(crossOrigin.headers['cache-control']).toBe('no-store');
+    const badJson = await app.inject({
+      method: 'POST', url: '/v1/login/password', headers: { origin: ORIGIN, 'content-type': 'application/json' }, payload: '{"a":',
+    });
+    expect(badJson.statusCode).toBe(400);
+    expect(badJson.headers['cache-control']).toBe('no-store');
+    // A 204 route: ending a session.
+    const other = await loggedIn(id);
+    const sessions = (await b.get('/v1/account/sessions')).json() as Array<{ id: string; current: boolean }>;
+    const target = sessions.find((s) => !s.current)!;
+    const del = await b.delete(`/v1/account/sessions/${target.id}`);
+    expect(del.statusCode).toBe(204);
+    expect(del.headers['cache-control']).toBe('no-store');
+    void other;
+    expect((await b.post('/v1/logout')).headers['cache-control']).toBe('no-store');
   });
 });
 
