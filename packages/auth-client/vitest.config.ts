@@ -1,4 +1,4 @@
-import { defineConfig } from 'vitest/config';
+import { configDefaults, defineConfig } from 'vitest/config';
 
 /**
  * Flows that need Plan 2 Tasks 10-12 (login-method policy and listing, account overview and
@@ -11,7 +11,7 @@ export default defineConfig({
   test: {
     name: '@x2f/auth-client',
     include: ['test/**/*.test.ts'],
-    exclude: NEEDS_TASKS_10_TO_12,
+    exclude: [...configDefaults.exclude, ...NEEDS_TASKS_10_TO_12],
     // The end-to-end flows run a real `buildApi` on Postgres, from the API's own harness.
     globalSetup: ['../../apps/api/test/setup/postgres.ts'],
     testTimeout: 60_000,
