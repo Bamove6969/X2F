@@ -513,7 +513,7 @@ async function pendingFirstFactor(deps: Deps, pendingId: string, accountId: stri
   if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(pendingId) || device === null) return null;
   const { rows } = await deps.db.query<{ payload: Record<string, unknown> }>(
     `select payload from challenges
-      where id = $1 and purpose = 'second-factor' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
+      where id = $1 and purpose = 'second-factor' and method = 'pair' and account_id = $2 and device_hash = $3 and used_at is null and expires_at > $4`,
     [pendingId, accountId, device, now],
   );
   return rows[0]?.payload ?? null;

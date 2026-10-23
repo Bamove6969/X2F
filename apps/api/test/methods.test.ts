@@ -905,6 +905,24 @@ describe('two factors for staff and the owner (R1)', () => {
     expect(await sessionCount(trader.id)).toBe(0);
   });
 
+  it('a pending row of another method (a trader password login’s TOTP step) is never a pending pair', async () => {
+    const { id, username } = await account('staff');
+    await addPgp(id, keys[0]!, new Date(now.getTime() - 2 * MIN));
+    await addPgp(id, keys[1]!, new Date(now.getTime() - MIN));
+    const passkey = await addCredential(id, 'passkey', false);
+    const b = new Browser();
+    const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
+    await deps.db.query(`update challenges set method = 'totp' where id = $1`, [pendingId]);
+    // WebAuthn: no PGP first factor is seen, so the passkey is not listed (decoy options).
+    const w = await b.post('/v1/login/webauthn/start', { username, pendingId });
+    const listed = (w.json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
+    expect(listed).not.toContain(passkey.auth.credentialId);
+    // PGP: a decoy, not a challenge to the other key.
+    const s = await b.post('/v1/login/pgp/start', { username, pendingId });
+    expect(s.statusCode).toBe(200);
+    await expect(decrypt(s.json().encryptedMessage, keys[1]!.privateKey)).rejects.toThrow();
+  });
+
   it('traders still log in with one factor', async () => {
     const { id, username } = await account();
     await addPgp(id, keys[2]!);
