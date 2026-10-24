@@ -46,6 +46,12 @@ function fakeAddress(length = 95): string {
   return s;
 }
 
+const walletsActionOf = async (addresses: string[]): Promise<ConfirmAction> => ({
+  kind: 'add-wallets',
+  addressesHash: createHash('sha256').update(addresses.map((a) => a.trim()).join('\n')).digest('hex'),
+  addressEnds: addresses.map((a) => addressEnd(a)).join(','),
+});
+
 const walletAction = (address: string): ConfirmAction => ({
   kind: 'add-wallet',
   addressHash: createHash('sha256').update(address.trim()).digest('hex'),
@@ -198,8 +204,8 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     const right = await confirmToken(b, walletAction(address));
     const ok = await addWallet(b, { address, confirmToken: right });
     expect(ok.statusCode).toBe(201);
-    // Confirmed with a password: it waits 24 hours (owner, 2026-10-23).
-    expect(ok.json()).toMatchObject({ address, addressEnd: address.slice(-6), usable: false });
+    // The account's first wallet: usable at once even confirmed with a password (owner, 2026-10-24).
+    expect(ok.json()).toMatchObject({ address, addressEnd: address.slice(-6), usable: true });
   });
 
   it('stores the trimmed address that was confirmed', async () => {
@@ -356,6 +362,7 @@ describe('staff and owner accounts hold no payout wallets (R3)', () => {
         await b.get('/v1/wallets'),
         await addWallet(b, { address, confirmToken: token }),
         await b.delete(`/v1/wallets/${crypto.randomUUID()}`),
+        await b.get('/v1/wallets/rule'),
       ];
       for (const res of responses) {
         expect(res.statusCode).toBe(403);
@@ -399,8 +406,9 @@ describe('alerts and logs', () => {
 });
 
 describe('the wait by confirm method (owner, 2026-10-23)', () => {
-  it('makes a wallet confirmed with a password unusable until exactly 24 hours after it was added', async () => {
+  it('makes a later wallet confirmed with a password unusable until exactly 24 hours after it was added', async () => {
     const { id, b } = await trader();
+    await addConfirmed(b); // the account's first wallet: no wait
     const added = now;
     const { wallet } = await addConfirmed(b);
     expect(wallet.usable).toBe(false);
@@ -423,10 +431,31 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
     expect((await usableWallets(deps.db, id, now)).map((w) => w.id)).toContain(wallet.id);
   });
 
-  it('also makes the account’s first wallet wait when it is confirmed with a password outside onboarding', async () => {
+  it('never makes the account’s first wallet wait, even added later and confirmed with a password (owner, 2026-10-24)', async () => {
+    const { id, b } = await trader();
+    setNow(at(10 * DAY));
+    const later = await relogin(id);
+    const { wallet } = await addConfirmed(later);
+    expect(wallet.usable).toBe(true);
+    expect(new Date(wallet.usableFrom).getTime()).toBe(now.getTime());
+    const { wallet: second } = await addConfirmed(later);
+    expect(second.usable).toBe(false);
+    void b;
+  });
+
+  it('decides "first" under the account lock: of two parallel first adds confirmed with a password, one waits', async () => {
     const { b } = await trader();
-    const { wallet } = await addConfirmed(b);
-    expect(wallet.usable).toBe(false);
+    const addresses = [fakeAddress(), fakeAddress()];
+    const tokens = [await confirmToken(b, walletAction(addresses[0]!)), await confirmToken(b, walletAction(addresses[1]!))];
+    gate = { need: 2, waiting: [] };
+    let results;
+    try {
+      results = await Promise.all(addresses.map((address, i) => addWallet(b, { address, confirmToken: tokens[i] })));
+    } finally {
+      gate = null;
+    }
+    expect(results.map((r) => r.statusCode)).toEqual([201, 201]);
+    expect(results.map((r) => (r.json() as WalletOut).usable).sort()).toEqual([false, true]);
   });
 
   it('records the password method for a password confirm', async () => {
@@ -436,8 +465,9 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
   });
 
   for (const method of ['pgp', 'passkey', 'security-key'] as const) {
-    it(`makes a wallet confirmed with ${method} usable at once`, async () => {
+    it(`makes a later wallet confirmed with ${method} usable at once`, async () => {
       const { id, b, sessionId } = await trader();
+      await addConfirmed(b);
       const address = fakeAddress();
       const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method });
       const res = await addWallet(b, { address, confirmToken: token });
@@ -446,8 +476,8 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
       expect(wallet.usable).toBe(true);
       expect(new Date(wallet.usableFrom).getTime()).toBe(now.getTime());
       const { rows } = await deps.db.query<{ detail: { usableFrom: string; confirmedWith: string } }>(
-        `select detail from alerts where account_id = $1 and kind = 'wallet-added'`,
-        [id],
+        `select detail from alerts where account_id = $1 and kind = 'wallet-added' and detail->>'addressEnd' = $2`,
+        [id, address.slice(-6)],
       );
       expect(rows.map((r) => [r.detail.usableFrom, r.detail.confirmedWith])).toEqual([[now.toISOString(), method]]);
     });
@@ -455,6 +485,7 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
 
   it('takes the method from the redeemed token only: a method named in the body changes nothing', async () => {
     const { b } = await trader();
+    await addConfirmed(b);
     const address = fakeAddress();
     const token = await confirmToken(b, walletAction(address));
     const res = await addWallet(b, { address, confirmToken: token, method: 'pgp', confirmedWith: 'pgp', usableFrom: now.toISOString() });
@@ -492,6 +523,149 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
     const res = await b.post('/v1/confirm/password', { password: GOOD, action: { kind: 'payout-wait-off' } });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
+  });
+});
+
+describe('adding several wallets at once (owner, 2026-10-24)', () => {
+  const addBatch = (b: Browser, wallets: Array<Record<string, unknown>>, extra: Record<string, unknown> = {}) =>
+    b.post('/v1/wallets', { wallets, ...extra });
+  const drafts = (addresses: string[]) => addresses.map((address, i) => ({ app: 'cake', label: `W${i + 1}`, address }));
+
+  it('adds a batch under one add-wallets token; later wallets share one 24-hour clock, earlier ones stay usable', async () => {
+    const { id, b } = await trader();
+    const { wallet: old } = await addConfirmed(b);
+    setNow(at(1000));
+    const addresses = [fakeAddress(), fakeAddress(), fakeAddress(), fakeAddress()];
+    const token = await confirmToken(b, await walletsActionOf(addresses));
+    const res = await addBatch(b, drafts(addresses), { confirmToken: token });
+    expect(res.statusCode).toBe(201);
+    const got = res.json() as WalletOut[];
+    expect(got.map((w) => w.address)).toEqual(addresses);
+    expect(new Set(got.map((w) => w.usableFrom))).toEqual(new Set([at(PAYOUT_WAIT_MS).toISOString()]));
+    expect(got.every((w) => !w.usable)).toBe(true);
+    expect((await list(b)).find((w) => w.id === old.id)!.usable).toBe(true);
+    const { rows } = await deps.db.query(`select 1 from alerts where account_id = $1 and kind = 'wallet-added'`, [id]);
+    expect(rows).toHaveLength(5);
+    expect(await tokenUsed(token)).toBe(true);
+  });
+
+  it('makes a batch usable at once when confirmed with a strong method, or when the account never had a wallet', async () => {
+    const strong = await trader();
+    await addConfirmed(strong.b);
+    const a1 = [fakeAddress(), fakeAddress()];
+    const t1 = await issueConfirmToken(deps, { sessionId: strong.sessionId, accountId: strong.id, action: await walletsActionOf(a1), method: 'passkey' });
+    const r1 = await addBatch(strong.b, drafts(a1), { confirmToken: t1 });
+    expect((r1.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true]);
+
+    const fresh = await trader();
+    const a2 = [fakeAddress(), fakeAddress(), fakeAddress()];
+    const r2 = await addBatch(fresh.b, drafts(a2), { confirmToken: await confirmToken(fresh.b, await walletsActionOf(a2)) });
+    expect((r2.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true, true]);
+  });
+
+  it('lets the creating session add its first batch without a token during onboarding', async () => {
+    const { b } = await trader({ firstSession: true });
+    const res = await addBatch(b, drafts([fakeAddress(), fakeAddress()]));
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true]);
+    const again = await addBatch(b, drafts([fakeAddress()]));
+    expect(again.json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+  });
+
+  it('binds the token to the exact list in order: another list, another order or a single-wallet token is refused and kept', async () => {
+    const { b } = await trader();
+    await addConfirmed(b);
+    const addresses = [fakeAddress(), fakeAddress()];
+    expect((await addBatch(b, drafts(addresses))).json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
+    const token = await confirmToken(b, await walletsActionOf(addresses));
+    for (const wrong of [[addresses[1]!, addresses[0]!], [addresses[0]!], [...addresses, fakeAddress()]]) {
+      expect((await addBatch(b, drafts(wrong), { confirmToken: token })).json()).toEqual({ error: 'confirm-invalid' });
+    }
+    const single = await confirmToken(b, walletAction(addresses[0]!));
+    expect((await addBatch(b, drafts([addresses[0]!]), { confirmToken: single })).json()).toEqual({ error: 'confirm-invalid' });
+    expect(await tokenUsed(token)).toBe(false);
+    expect((await addBatch(b, drafts(addresses), { confirmToken: token })).statusCode).toBe(201);
+  });
+
+  it('refuses a bad batch with 400 before the token is used, and adds nothing', async () => {
+    const { id, b } = await trader();
+    const good = [fakeAddress(), fakeAddress()];
+    const token = await confirmToken(b, await walletsActionOf(good));
+    const dup = fakeAddress();
+    const bad: Array<[unknown, string]> = [
+      [[], 'bad-request'],
+      [drafts(Array.from({ length: 11 }, () => fakeAddress())), 'bad-request'],
+      [drafts([dup, ` ${dup}`]), 'bad-request'],
+      [[...drafts([good[0]!]), { app: 'cake', label: '', address: good[1] }], 'bad-request'],
+      [[...drafts([good[0]!]), 'x'], 'bad-request'],
+      ['not a list', 'bad-request'],
+      [drafts([good[0]!, fakeAddress(106)]), 'address-integrated'],
+      [drafts([good[0]!, 'nope']), 'address-invalid'],
+    ];
+    for (const [wallets, error] of bad) {
+      const res = await b.post('/v1/wallets', { wallets, confirmToken: token });
+      expect(res.statusCode, JSON.stringify(wallets).slice(0, 40)).toBe(400);
+      expect(res.json()).toEqual({ error });
+    }
+    // A batch and single-wallet fields together.
+    expect((await b.post('/v1/wallets', { wallets: drafts(good), app: 'cake', confirmToken: token })).json()).toEqual({ error: 'bad-request' });
+    expect(await tokenUsed(token)).toBe(false);
+    expect((await deps.db.query('select 1 from wallets where account_id = $1', [id])).rows).toHaveLength(0);
+  });
+
+  it('answers 409 wallet-exists when any address is already listed, adding none of the batch', async () => {
+    const { id, b } = await trader();
+    const { address } = await addConfirmed(b);
+    const addresses = [fakeAddress(), address];
+    const token = await confirmToken(b, await walletsActionOf(addresses));
+    const res = await addBatch(b, drafts(addresses), { confirmToken: token });
+    expect(res.statusCode).toBe(409);
+    expect(await tokenUsed(token)).toBe(false);
+    expect((await deps.db.query('select 1 from wallets where account_id = $1', [id])).rows).toHaveLength(1);
+  });
+});
+
+describe('GET /v1/wallets/rule (owner, 2026-10-24)', () => {
+  const rule = async (b: Browser) => {
+    const res = await b.get('/v1/wallets/rule');
+    expect(res.statusCode).toBe(200);
+    return res.json();
+  };
+
+  it('a password-only account: its first wallet works at once, later ones would wait', async () => {
+    const { b } = await trader();
+    expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
+    await addConfirmed(b);
+    expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 });
+  });
+
+  it('lists the strong methods the account holds; an account without a password says none', async () => {
+    const { id, b } = await trader();
+    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
+      id, randomBytes(20).toString('hex'), randomBytes(64), now,
+    ]);
+    await deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+       values ($1, $2, $3, 0, 'security-key', false, 'singleDevice', 'key', $4)`,
+      [id, randomBytes(32), randomBytes(77), now],
+    );
+    await addConfirmed(b);
+    expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: ['pgp', 'security-key'], password: 'waits', waitHours: 24 });
+    await deps.db.query('delete from passwords where account_id = $1', [id]);
+    expect((await rule(b)).password).toBe('none');
+  });
+
+  it('counts a removed wallet: the account has had one', async () => {
+    const { b } = await trader();
+    const { wallet } = await addConfirmed(b);
+    expect((await b.delete(`/v1/wallets/${wallet.id}`)).statusCode).toBe(204);
+    expect((await rule(b)).firstWallet).toBe(false);
+  });
+
+  it('refuses a recovery session and needs a session', async () => {
+    const { b } = await trader({ level: 'recovery' });
+    expect((await b.get('/v1/wallets/rule')).json()).toEqual({ error: 'recovery-session' });
+    expect((await new Browser(app).get('/v1/wallets/rule')).json()).toEqual({ error: 'not-authenticated' });
   });
 });
 

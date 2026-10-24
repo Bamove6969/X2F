@@ -56,5 +56,5 @@ export {
 export { moneroAddressValidator } from './wallets/address.js';
 export {
   LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, purgeRemovedWalletAddresses,
-  usableWallets, walletRoutes, type Wallet, type WalletApp,
+  usableWallets, walletRoutes, walletRule, type Wallet, type WalletApp, type WalletRule,
 } from './wallets/routes.js';

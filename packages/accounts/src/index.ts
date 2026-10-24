@@ -21,9 +21,12 @@ export {
 export {
   type ConfirmAction,
   type MethodType,
+  MAX_WALLET_BATCH,
   actionHash,
   addressEnd,
+  addressEnds,
   addressHash,
+  addressesHash,
   describeAction,
 } from './confirmAction.js';
 export { DEFAULT_IDLE_HOURS, IDLE_HOURS, type IdleHours, isIdleHours } from './logoutTimer.js';

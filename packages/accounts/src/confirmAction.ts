@@ -6,6 +6,11 @@ export type MethodType = 'pgp' | 'passkey' | 'security-key' | 'password' | 'totp
 
 export type ConfirmAction =
   | { kind: 'add-wallet'; addressHash: string; addressEnd: string }
+  /**
+   * Several payout wallets under one confirm (owner, 2026-10-24): `addressesHash` binds the exact
+   * list in order, `addressEnds` is their ends joined by commas, for display.
+   */
+  | { kind: 'add-wallets'; addressesHash: string; addressEnds: string }
   | { kind: 'add-method'; method: MethodType }
   | { kind: 'remove-method'; method: MethodType; id: string }
   | { kind: 'set-password' }
@@ -35,6 +40,10 @@ export function describeAction(a: ConfirmAction): string {
   switch (a.kind) {
     case 'add-wallet':
       return `add payout wallet ending …${a.addressEnd}`;
+    case 'add-wallets': {
+      const ends = a.addressEnds.split(',');
+      return `add ${ends.length} payout wallets ending ${ends.map((e) => `…${e}`).join(', ')}`;
+    }
     case 'add-method':
       return `add a login method (${a.method})`;
     case 'remove-method':
@@ -51,6 +60,19 @@ export function describeAction(a: ConfirmAction): string {
 /** SHA-256 hex (WebCrypto) of the trimmed address. */
 export function addressHash(address: string): Promise<string> {
   return sha256Hex(address.trim());
+}
+
+/** The most wallets one batch may add (owner, 2026-10-24: several at once under one confirm). */
+export const MAX_WALLET_BATCH = 10;
+
+/** SHA-256 hex (WebCrypto) of the trimmed addresses joined by newlines, in the order given. */
+export function addressesHash(addresses: readonly string[]): Promise<string> {
+  return sha256Hex(addresses.map((a) => a.trim()).join('\n'));
+}
+
+/** The ends of the trimmed addresses, in order, joined by commas. */
+export function addressEnds(addresses: readonly string[]): string {
+  return addresses.map(addressEnd).join(',');
 }
 
 /** Last 6 characters of the trimmed address. */

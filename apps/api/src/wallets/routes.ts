@@ -1,4 +1,4 @@
-import { addressEnd, addressHash, type ConfirmAction } from '@x2f/accounts';
+import { MAX_WALLET_BATCH, addressEnd, addressEnds, addressHash, addressesHash, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
@@ -81,13 +81,23 @@ export const purgeRemovedWalletAddresses: RetentionJob = {
   },
 };
 
-/** What the add-wallet body was checked to be; the address hash is computed here, once (R17). */
-interface WalletInput {
+/** One wallet of an add request, checked. */
+interface WalletItem {
   app: WalletApp;
   label: string;
   /** Trimmed: exactly the address that is confirmed and stored. */
   address: string;
-  action: Extract<ConfirmAction, { kind: 'add-wallet' }>;
+}
+
+/**
+ * What the add-wallet body was checked to be; the action is computed here, once (R17). `batch`
+ * when the body sent a `wallets` list (owner, 2026-10-24: several at once under one confirm,
+ * `add-wallets`); otherwise one wallet (`add-wallet`).
+ */
+interface WalletInput {
+  items: WalletItem[];
+  batch: boolean;
+  action: Extract<ConfirmAction, { kind: 'add-wallet' | 'add-wallets' }>;
 }
 
 const walletInputs = new WeakMap<FastifyRequest, WalletInput>();
@@ -102,9 +112,23 @@ function bodyOf(req: FastifyRequest): Record<string, unknown> {
 // characters): never part of a label shown back in lists and alerts.
 const CONTROL = /[\p{Cc}\p{Cf}]/u;
 
+/** `app` from the list, `label` 1-40 characters once trimmed, `address` a string (checked later). */
+function checkItemShape(raw: unknown): { app: WalletApp; label: string; address: string } {
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) throw new ApiError(400, 'bad-request');
+  const { app, label, address } = raw as Record<string, unknown>;
+  if (typeof app !== 'string' || !(WALLET_APPS as readonly string[]).includes(app)) throw new ApiError(400, 'bad-request');
+  if (typeof label !== 'string' || typeof address !== 'string') throw new ApiError(400, 'bad-request');
+  const cleanLabel = label.trim();
+  const labelLength = [...cleanLabel].length;
+  if (labelLength < 1 || labelLength > LABEL_MAX || CONTROL.test(cleanLabel)) throw new ApiError(400, 'bad-request');
+  return { app: app as WalletApp, label: cleanLabel, address: address.trim() };
+}
+
 /**
  * preHandler after `requireSession` (R17): every check that can refuse the request runs here,
  * before a confirm token is looked at, so a refused request never uses one up.
+ * The body is either one wallet `{ app, label, address }` or a batch `{ wallets: [...] }` of 1 to
+ * MAX_WALLET_BATCH (not both; an address twice in one batch → 400 `bad-request`). For each wallet:
  * `app` from the list, `label` 1-40 characters once trimmed, `address` trimmed and checked by the
  * validator (`invalid` or wrong network → 400 `address-invalid`, `integrated` → 400
  * `address-integrated`), and not already listed (409 `wallet-exists`; the unique index decides races).
@@ -112,27 +136,32 @@ const CONTROL = /[\p{Cc}\p{Cf}]/u;
 const checkWalletInput: preHandlerAsyncHookHandler = async function (req) {
   const deps = req.server.deps;
   const body = bodyOf(req);
-  const { app, label, address } = body;
-  if (typeof app !== 'string' || !(WALLET_APPS as readonly string[]).includes(app)) throw new ApiError(400, 'bad-request');
-  if (typeof label !== 'string' || typeof address !== 'string') throw new ApiError(400, 'bad-request');
-  const cleanLabel = label.trim();
-  const labelLength = [...cleanLabel].length;
-  if (labelLength < 1 || labelLength > LABEL_MAX || CONTROL.test(cleanLabel)) throw new ApiError(400, 'bad-request');
-  const clean = address.trim();
-  const verdict = await deps.addresses.check(clean);
-  if (verdict === 'integrated') throw new ApiError(400, 'address-integrated');
-  if (verdict !== 'ok') throw new ApiError(400, 'address-invalid');
+  const batch = Object.hasOwn(body, 'wallets');
+  let shapes: Array<{ app: WalletApp; label: string; address: string }>;
+  if (batch) {
+    const list = body.wallets;
+    if (['app', 'label', 'address'].some((k) => Object.hasOwn(body, k))) throw new ApiError(400, 'bad-request');
+    if (!Array.isArray(list) || list.length < 1 || list.length > MAX_WALLET_BATCH) throw new ApiError(400, 'bad-request');
+    shapes = list.map(checkItemShape);
+    if (new Set(shapes.map((s) => s.address)).size !== shapes.length) throw new ApiError(400, 'bad-request');
+  } else {
+    shapes = [checkItemShape(body)];
+  }
+  for (const s of shapes) {
+    const verdict = await deps.addresses.check(s.address);
+    if (verdict === 'integrated') throw new ApiError(400, 'address-integrated');
+    if (verdict !== 'ok') throw new ApiError(400, 'address-invalid');
+  }
+  const addresses = shapes.map((s) => s.address);
   const listed = await deps.db.query(
-    'select 1 from wallets where account_id = $1 and address = $2 and removed_at is null',
-    [req.auth.accountId, clean],
+    'select 1 from wallets where account_id = $1 and address = any($2::text[]) and removed_at is null',
+    [req.auth.accountId, addresses],
   );
   if (listed.rows.length > 0) throw new ApiError(409, 'wallet-exists');
-  walletInputs.set(req, {
-    app: app as WalletApp,
-    label: cleanLabel,
-    address: clean,
-    action: { kind: 'add-wallet', addressHash: await addressHash(clean), addressEnd: addressEnd(clean) },
-  });
+  const action: WalletInput['action'] = batch
+    ? { kind: 'add-wallets', addressesHash: await addressesHash(addresses), addressEnds: addressEnds(addresses) }
+    : { kind: 'add-wallet', addressHash: await addressHash(addresses[0]!), addressEnd: addressEnd(addresses[0]!) };
+  walletInputs.set(req, { items: shapes, batch, action });
 };
 
 function walletInput(req: FastifyRequest): WalletInput {
@@ -141,8 +170,8 @@ function walletInput(req: FastifyRequest): WalletInput {
   return input;
 }
 
-/** The onboarding exemption covers the account's first wallet only (on top of the session's window). */
-async function firstWalletOnly(req: FastifyRequest): Promise<boolean> {
+/** The onboarding exemption covers the account's first wallets only (on top of the session's window). */
+async function noWalletYet(req: FastifyRequest): Promise<boolean> {
   const { rows } = await req.server.deps.db.query<{ had_wallet: boolean }>('select had_wallet from accounts where id = $1', [
     req.auth.accountId,
   ]);
@@ -150,76 +179,84 @@ async function firstWalletOnly(req: FastifyRequest): Promise<boolean> {
 }
 
 /**
- * preHandler after `checkWalletInput`: decides whether this add is the first-wallet exemption (no
+ * preHandler after `checkWalletInput`: decides whether this add is the onboarding exemption (no
  * token, the creating session's onboarding window, `had_wallet = false`) or needs a token; a
- * missing token outside the exemption → 403 `confirm-required`. A token is NOT used up here:
- * `addHandler` redeems it inside its transaction, so a lost race (409), a database error or a
- * failed alert rolls the redemption back with the wallet (M1).
+ * missing token outside the exemption → 403 `confirm-required` naming the action (`add-wallet`,
+ * or `add-wallets` for a batch). A token is NOT used up here: `addHandler` redeems it inside its
+ * transaction, so a lost race (409), a database error or a failed alert rolls the redemption back
+ * with the wallets (M1).
  */
 const walletConfirm: preHandlerAsyncHookHandler = async function (req) {
   if (req.auth.level === 'recovery') throw new ApiError(403, 'recovery-session');
   if (bodyOf(req).confirmToken !== undefined) return;
   const until = req.auth.onboardingUntil;
   const inWindow = until !== null && until.getTime() > req.server.deps.clock().getTime();
-  if (inWindow && (await firstWalletOnly(req))) return;
-  throw new ApiError(403, 'confirm-required', { action: 'add-wallet' });
+  if (inWindow && (await noWalletYet(req))) return;
+  throw new ApiError(403, 'confirm-required', { action: walletInput(req).action.kind });
 };
 
 async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const input = walletInput(req);
   const raw = bodyOf(req).confirmToken;
-  // `walletConfirm` let a request without a token through only under the first-wallet exemption.
+  // `walletConfirm` let a request without a token through only under the onboarding exemption.
   const exempted = raw === undefined;
   const now = deps.clock();
   const client = await deps.db.connect();
-  let wallet: Wallet;
+  const wallets: Wallet[] = [];
   try {
     await client.query('begin');
     try {
+      // The row lock orders every add of this account: `had_wallet` read here is the truth.
       const { rows } = await client.query<{ had_wallet: boolean }>(
         'select had_wallet from accounts where id = $1 for update',
         [req.auth.accountId],
       );
       const account = rows[0]!;
-      // Two tokenless first wallets in parallel: the row lock lets the first through; the second
-      // finds `had_wallet` set and needs a token like any later wallet.
-      if (exempted && account.had_wallet) throw new ApiError(403, 'confirm-required', { action: 'add-wallet' });
-      // R17: the token must be for exactly the checked, trimmed address (hash computed once, in
-      // checkWalletInput). Redeemed in this transaction: a rollback below leaves it unused (M1).
-      // A present but non-string token (number, null, object) is invalid, never "missing".
+      // Two tokenless first adds in parallel: the row lock lets the first through; the second
+      // finds `had_wallet` set and needs a token like any later add.
+      if (exempted && account.had_wallet) throw new ApiError(403, 'confirm-required', { action: input.action.kind });
+      // R17: the token must be for exactly the checked, trimmed address list (action computed
+      // once, in checkWalletInput). Redeemed in this transaction: a rollback below leaves it
+      // unused (M1). A present but non-string token (number, null, object) is invalid, never "missing".
       let method: ConfirmMethod | null = null;
       if (!exempted) {
         method = await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
       }
       req.confirmedAction = input.action;
-      // Owner, 2026-10-23: the first wallet during onboarding and a wallet confirmed with PGP, a
-      // passkey or a security key are usable at once; one confirmed with a password waits 24 hours.
-      // `method` is what the redeemed token recorded, never anything in this request.
-      const waits = method !== null && !STRONG_CONFIRM_METHODS.includes(method);
+      // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
+      // usable at once, whenever they are added and however they were confirmed. Later wallets are
+      // usable at once when confirmed with PGP, a passkey or a security key, and wait 24 hours when
+      // confirmed with a password. `method` is what the redeemed token recorded, never anything in
+      // this request. A batch shares one clock: every wallet in it gets the same `usable_from`.
+      const strong = method !== null && STRONG_CONFIRM_METHODS.includes(method);
+      const waits = account.had_wallet && !strong;
       const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
-      let inserted: WalletRow;
-      try {
-        const res = await client.query<WalletRow>(
-          `insert into wallets (account_id, app, label, address, created_at, usable_from)
-           values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
-          [req.auth.accountId, input.app, input.label, input.address, now, usableFrom],
+      for (const item of input.items) {
+        let inserted: WalletRow;
+        try {
+          const res = await client.query<WalletRow>(
+            `insert into wallets (account_id, app, label, address, created_at, usable_from)
+             values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
+            [req.auth.accountId, item.app, item.label, item.address, now, usableFrom],
+          );
+          inserted = res.rows[0]!;
+        } catch (e) {
+          if ((e as { code?: string }).code === '23505') throw new ApiError(409, 'wallet-exists');
+          throw e;
+        }
+        const wallet = toWallet(inserted, now);
+        wallets.push(wallet);
+        await addAlert(
+          client, req.auth.accountId, 'wallet-added',
+          {
+            app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString(),
+            confirmedWith: method ?? 'onboarding',
+          },
+          now,
         );
-        inserted = res.rows[0]!;
-      } catch (e) {
-        if ((e as { code?: string }).code === '23505') throw new ApiError(409, 'wallet-exists');
-        throw e;
       }
       await client.query('update accounts set had_wallet = true where id = $1', [req.auth.accountId]);
-      wallet = toWallet(inserted, now);
-      await addAlert(
-        client, req.auth.accountId, 'wallet-added',
-        {
-          app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString(),
-          confirmedWith: method ?? 'onboarding',
-        },
-        now,
-      );
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -228,7 +265,49 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   } finally {
     client.release();
   }
-  return reply.code(201).send(toJson(wallet));
+  return reply.code(201).send(input.batch ? wallets.map(toJson) : toJson(wallets[0]!));
+}
+
+/**
+ * `GET /v1/wallets/rule`: what adding wallets will do for this account, so the Add a wallet screen
+ * can explain it before anything is entered (owner, 2026-10-24). Read from the account's own
+ * methods; it changes nothing.
+ * - `firstWallet`: the account has never had a wallet, so the next add is usable at once whatever
+ *   the method.
+ * - `strongMethods`: the PGP, passkey and security-key methods it holds; confirming with one of
+ *   them makes new wallets usable at once.
+ * - `password`: `none` (no password to confirm with), `immediate` (a password confirm would not
+ *   wait, because this is the first wallet) or `waits` (it would wait `waitHours`).
+ */
+export interface WalletRule {
+  firstWallet: boolean;
+  strongMethods: ConfirmMethod[];
+  password: 'none' | 'immediate' | 'waits';
+  waitHours: number;
+}
+
+export async function walletRule(db: Queryable, accountId: string): Promise<WalletRule> {
+  const { rows } = await db.query<{ had_wallet: boolean; pgp: boolean; passkey: boolean; security_key: boolean; password: boolean }>(
+    `select a.had_wallet,
+            exists (select 1 from pgp_keys where account_id = a.id) as pgp,
+            exists (select 1 from webauthn_credentials where account_id = a.id and kind = 'passkey') as passkey,
+            exists (select 1 from webauthn_credentials where account_id = a.id and kind = 'security-key') as security_key,
+            exists (select 1 from passwords where account_id = a.id) as password
+       from accounts a where a.id = $1`,
+    [accountId],
+  );
+  const r = rows[0]!;
+  const strongMethods: ConfirmMethod[] = [];
+  if (r.pgp) strongMethods.push('pgp');
+  if (r.passkey) strongMethods.push('passkey');
+  if (r.security_key) strongMethods.push('security-key');
+  const firstWallet = !r.had_wallet;
+  return {
+    firstWallet,
+    strongMethods,
+    password: !r.password ? 'none' : firstWallet ? 'immediate' : 'waits',
+    waitHours: PAYOUT_WAIT_MS / 3_600_000,
+  };
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -270,12 +349,13 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
 }
 
 /**
- * `GET /v1/wallets`, `POST /v1/wallets` and `DELETE /v1/wallets/:id`. (The opt-in
- * `PUT /v1/account/security/payout-wait` was retired 2026-10-23.) Full trader sessions only (R3: staff and owner accounts
- * never hold payout wallets).
+ * `GET /v1/wallets`, `GET /v1/wallets/rule`, `POST /v1/wallets` (one wallet or a batch) and
+ * `DELETE /v1/wallets/:id`. (The opt-in `PUT /v1/account/security/payout-wait` was retired
+ * 2026-10-23.) Full trader sessions only (R3: staff and owner accounts never hold payout wallets).
  */
 export function walletRoutes(app: FastifyInstance): void {
   const session = requireSession({ kinds: ['trader'] });
+  app.get('/v1/wallets/rule', { preHandler: session }, async (req) => walletRule(req.server.deps.db, req.auth.accountId));
   app.get('/v1/wallets', { preHandler: session }, async (req) => {
     const deps = req.server.deps;
     return (await openWallets(deps.db, req.auth.accountId, deps.clock())).map(toJson);

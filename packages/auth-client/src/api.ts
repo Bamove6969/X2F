@@ -138,6 +138,27 @@ export interface Wallet {
   usable: boolean;
 }
 
+/** One wallet of an add (the fields the person fills in). */
+export interface WalletDraft {
+  app: WalletApp;
+  label: string;
+  address: string;
+}
+
+/**
+ * `GET /v1/wallets/rule` (owner, 2026-10-24): what adding wallets will do for this account, for the
+ * Add a wallet screen to explain before anything is entered. `firstWallet`: the account never had
+ * one, so the next add works at once whatever the method. `strongMethods`: the methods it holds
+ * that make new wallets work at once. `password`: whether a password confirm is possible and would
+ * wait (`none`, `immediate`, `waits`).
+ */
+export interface WalletRule {
+  firstWallet: boolean;
+  strongMethods: Array<'pgp' | 'passkey' | 'security-key'>;
+  password: 'none' | 'immediate' | 'waits';
+  waitHours: number;
+}
+
 /**
  * The logout timer (owner, 2026-10-23): idle hours before a session ends. Traders choose one of
  * `IDLE_HOURS` (2-12, default 12; `adjustable`); staff and owner are fixed at 2.
@@ -223,7 +244,13 @@ export interface AuthApi {
    * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
    * TOTP code) `usableFrom` is 24 hours later.
    */
-  addWallet(b: { app: WalletApp; label: string; address: string } & Token): Promise<Wallet>;
+  addWallet(b: WalletDraft & Token): Promise<Wallet>;
+  /**
+   * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
+   * one `usableFrom`: one wait for the batch, not one each.
+   */
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[]>;
+  getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;
   // Logout timer (owner, 2026-10-23)
@@ -344,6 +371,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
 
     listWallets: () => get('/v1/wallets'),
     addWallet: (b) => post('/v1/wallets', b),
+    addWallets: (b) => post('/v1/wallets', b),
+    getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
     getLogoutTimer: () => get('/v1/account/security/logout-timer'),
     setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),

@@ -1,12 +1,13 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
-import { type ConfirmAction, actionHash, addressEnd, addressHash, describeAction } from '@x2f/accounts';
+import { type ConfirmAction, actionHash, addressEnd, addressEnds, addressHash, addressesHash, describeAction } from '@x2f/accounts';
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
 describe('describeAction', () => {
   test.each<[ConfirmAction, string]>([
     [{ kind: 'add-wallet', addressHash: 'ab12', addressEnd: 'q2k3Fz' }, 'add payout wallet ending …q2k3Fz'],
+    [{ kind: 'add-wallets', addressesHash: 'ab12', addressEnds: 'q2k3Fz,abcdef' }, 'add 2 payout wallets ending …q2k3Fz, …abcdef'],
     [{ kind: 'add-method', method: 'passkey' }, 'add a login method (passkey)'],
     [{ kind: 'remove-method', method: 'pgp', id: 'm1' }, 'remove a login method (pgp)'],
     [{ kind: 'set-password' }, 'set a new password'],
@@ -62,5 +63,12 @@ describe('address helpers', () => {
   test('addressEnd is the last 6 characters', () => {
     expect(addressEnd(addr)).toBe('684Rge');
     expect(addressEnd(`${addr}  `)).toBe('684Rge');
+  });
+
+  test('addressesHash binds the trimmed list in order; addressEnds joins the ends', async () => {
+    const other = '4' + 'B'.repeat(94);
+    expect(await addressesHash([` ${addr}`, `${other}\n`])).toBe(sha256(`${addr}\n${other}`));
+    expect(await addressesHash([addr, other])).not.toBe(await addressesHash([other, addr]));
+    expect(addressEnds([addr, other])).toBe('684Rge,BBBBBB');
   });
 });
