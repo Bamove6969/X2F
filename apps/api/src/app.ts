@@ -15,6 +15,10 @@ import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
+import { EventBus, type EventBusOptions } from './events/bus.js';
+import { eventRoutes, type EventStreamOptions } from './events/routes.js';
+import { pushRoutes } from './push/routes.js';
+import { sendPush, webPushTransport, type PushKind, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -52,12 +56,20 @@ declare module 'fastify' {
     budgets: Budgets;
     /** The app's dependencies, for hooks that receive only the request (`requireSession`, the origin check). */
     deps: Deps;
+    /** Task 19: live events to each account's own open streams (`publish`, `delivered`). */
+    events: EventBus;
+    /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
+    push: { send(accountId: string, kind: PushKind): Promise<boolean> };
   }
 }
 
 export interface BuildOptions {
   /** Where log lines go (default stdout); tests capture them. */
   logStream?: { write(line: string): void };
+  /** Task 19: stream caps, heartbeat and stream lifetime (defaults in events/). */
+  events?: EventBusOptions & EventStreamOptions;
+  /** Task 19: where pushes go (default web-push); tests pass a fake push service. */
+  pushTransport?: PushTransport;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -132,6 +144,12 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   app.decorate('budgets', newBudgets(deps.clock));
   app.decorate('deps', deps);
+  const events = new EventBus(options.events);
+  app.decorate('events', events);
+  const transport = options.pushTransport ?? webPushTransport;
+  app.decorate('push', {
+    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, config: deps.config, transport, log: app.log }, accountId, kind),
+  });
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
   await app.register(fastifyCookie);
@@ -193,6 +211,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
+  eventRoutes(app, events, options.events);
+  pushRoutes(app);
 
   return app;
 }

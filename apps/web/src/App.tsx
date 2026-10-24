@@ -1,6 +1,8 @@
-import { useEffect, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { AcceptedSheet } from './screens/AcceptedSheet.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -53,11 +55,45 @@ function RouterBridge() {
   return null;
 }
 
+/**
+ * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
+ * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade.
+ */
+function LiveAccepted() {
+  const navigate = useNavigate();
+  const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
+  useLiveEvents((e) => {
+    if (e.type === 'accepted') setAccepted(e);
+  });
+  if (!accepted) return null;
+  return (
+    <AcceptedSheet
+      key={accepted.code}
+      event={accepted}
+      onDone={(code) => {
+        setAccepted(null);
+        void navigate(`/trade/${encodeURIComponent(code)}`);
+      }}
+      onClose={() => setAccepted(null)}
+    />
+  );
+}
+
+/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
+function isTrader(session: ReturnType<typeof useSession>): boolean {
+  if (session.status !== 'signed-in') return false;
+  const me = session.me;
+  if (me === null || typeof me !== 'object') return false;
+  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown };
+  return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
+}
+
 export function App() {
-  useSession();
+  const session = useSession();
   return (
     <>
       <RouterBridge />
+      {isTrader(session) ? <LiveAccepted /> : null}
       <Routes>
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<Screen name="sell" />} />
