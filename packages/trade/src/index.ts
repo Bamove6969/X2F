@@ -34,3 +34,16 @@ export {
   type TradeState,
 } from './machine.js';
 export { TIMER_LOOP_MS, timerEvents, type TimerEvent } from './timerLoop.js';
+export {
+  WATCH_CLOSED_DAYS,
+  WATCH_INTERVAL_MS,
+  newWatchState,
+  settleKindFor,
+  watchStep,
+  type ChainFacts,
+  type EscrowFunds,
+  type SpendEvidence,
+  type WatchReport,
+  type WatchState,
+  type WatchStepResult,
+} from './watch.js';
