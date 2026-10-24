@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { Wallets } from './screens/Wallets.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -69,7 +70,7 @@ export function App() {
           <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
+          <Route path="/wallets" element={<Wallets />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
           <Route path="/terms" element={<Screen name="terms" />} />
           <Route path="/login" element={<Screen name="login" />} />
