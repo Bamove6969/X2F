@@ -61,7 +61,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const { version } = await j.api.getTerms();
   const key = await genKey();
   const username = uniqueName('pgp');
-  const start = await j.api.registerPgpStart({ username, publicKey: key.publicKey });
+  const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({
     challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version,
   });
@@ -97,7 +97,7 @@ describe('onboarding', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('pass');
-    await own.api.registerPassword({ username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
@@ -163,8 +163,8 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     const browser: AuthApi = jar().api;
     const first = await loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft));
     if (first.status !== 'second-factor') throw new Error('expected a second factor');
-    const start = await browser.loginPgpStart({ username, pendingId: first.pendingId });
+    const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
-    await expect(browser.me()).resolves.toMatchObject({ username, kind: 'staff' });
+    await expect(browser.me()).resolves.toMatchObject({ displayName: `D${username}`, loginNameSet: true, kind: 'staff' });
   });
 });

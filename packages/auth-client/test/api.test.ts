@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthApiError, createAuthApi } from '../src/index.js';
+import { AuthApiError, MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH, createAuthApi, shouldSendAway } from '../src/index.js';
 
 interface Sent {
   url: string;
@@ -21,7 +21,7 @@ const bodyOf = (s: Sent): unknown => (typeof s.init.body === 'string' ? JSON.par
 
 async function refusal(res: Response): Promise<AuthApiError> {
   const { fetch } = recorder(() => res);
-  const e = await createAuthApi({ fetch }).loginPassword({ username: 'alice', password: 'x', deviceLabel: 'Browser' }).catch((x: unknown) => x);
+  const e = await createAuthApi({ fetch }).loginPassword({ loginName: 'alice', password: 'x', deviceLabel: 'Browser' }).catch((x: unknown) => x);
   expect(e).toBeInstanceOf(AuthApiError);
   return e as AuthApiError;
 }
@@ -33,19 +33,19 @@ afterEach(() => {
 describe('createAuthApi requests', () => {
   it('posts JSON to the route on the same origin by default, with same-origin credentials', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ username: 'alice' });
+    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
     expect(sent).toHaveLength(1);
     const s = sent[0]!;
     expect(s.url).toBe('/v1/login/pgp/start');
     expect(s.init.method).toBe('POST');
     expect(s.init.credentials).toBe('same-origin');
     expect(headersOf(s).get('content-type')).toBe('application/json');
-    expect(bodyOf(s)).toEqual({ username: 'alice' });
+    expect(bodyOf(s)).toEqual({ key: 'KEY' });
   });
 
   it('puts baseUrl in front of the path', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ username: 'alice' });
+    await createAuthApi({ baseUrl: 'http://127.0.0.1:4000', fetch }).loginPgpStart({ key: 'KEY' });
     expect(sent[0]!.url).toBe('http://127.0.0.1:4000/v1/login/pgp/start');
   });
 
@@ -107,7 +107,7 @@ describe('createAuthApi requests', () => {
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
     const { fetch } = recorder(() => Response.json({ status: 'second-factor', pendingId: 'p', needs: ['totp'] }));
-    await expect(createAuthApi({ fetch }).loginPassword({ username: 'a', password: 'b', deviceLabel: 'c' })).resolves.toEqual({
+    await expect(createAuthApi({ fetch }).loginPassword({ loginName: 'a', password: 'b', deviceLabel: 'c' })).resolves.toEqual({
       status: 'second-factor', pendingId: 'p', needs: ['totp'],
     });
     const empty = recorder(() => new Response(null, { status: 204 }));
@@ -116,7 +116,7 @@ describe('createAuthApi requests', () => {
 
   it('refuses redirects instead of following them', async () => {
     const { sent, fetch } = recorder();
-    await createAuthApi({ fetch }).loginPgpStart({ username: 'alice' });
+    await createAuthApi({ fetch }).loginPgpStart({ key: 'KEY' });
     await createAuthApi({ fetch }).me();
     expect(sent.map((s) => s.init.redirect)).toEqual(['error', 'error']);
   });
@@ -201,5 +201,21 @@ describe('AuthApiError', () => {
     expect(html.code).toBe('internal');
     const noCode = await refusal(Response.json({ error: 42 }, { status: 500 }));
     expect(noCode.code).toBe('internal');
+  });
+});
+
+describe('password-login misses (owner, 2026-10-23)', () => {
+  it('reads the server’s per-browser miss count and says when to send the visitor away', async () => {
+    const at = async (misses: unknown) => refusal(Response.json({ error: 'credentials-invalid', misses }, { status: 401 }));
+    expect((await at(3)).misses).toBe(3);
+    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY - 1))).toBe(false);
+    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY))).toBe(true);
+    expect(shouldSendAway(await at(MISSES_BEFORE_SENDING_AWAY + 5))).toBe(true);
+    for (const junk of ['10', -1, 2.5, null]) expect((await at(junk)).misses).toBeUndefined();
+    expect(shouldSendAway(await refusal(Response.json({ error: 'busy', misses: 50 }, { status: 503 })))).toBe(false);
+    expect(shouldSendAway(new Error('x'))).toBe(false);
+    expect(shouldSendAway(undefined)).toBe(false);
+    expect(MISSES_BEFORE_SENDING_AWAY).toBe(10);
+    expect(PASSWORD_LOGIN_MISMATCH).toBe("That login name and password don't match");
   });
 });
