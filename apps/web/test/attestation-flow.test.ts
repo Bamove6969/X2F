@@ -333,7 +333,8 @@ describe('settling', () => {
       await t.seller.runtime.act(CODE, { type: 'release' });
       await Promise.all([t.parties.ticks('seller'), t.parties.ticks('buyer')]);
       expect(t.parties.settles).toEqual([]);
-      if ('amountAtomic' in lie) expect(t.seller.last()?.refusal).toBe('amount-out-of-range');
+      // No signed paid amount: the seller has nothing it may release (amount-unknown).
+      if ('amountAtomic' in lie) expect(t.seller.last()?.refusal).toBe('amount-unknown');
       await t.buyer.runtime.stopAll();
       await t.seller.runtime.stopAll();
     }
@@ -508,6 +509,13 @@ describe('settling', () => {
       expect(t.parties.settles.filter((x) => x.role === 'buyer').every((x) => x.o.to[0]!.amountAtomic === AMOUNT)).toBe(true);
       await expect(pay(t.buyer, grown)).rejects.toThrow();
       expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      // The binding survives a reload.
+      await t.buyer.runtime.stopAll();
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      await again.runtime.resumeAll();
+      expect(await again.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      await expect(again.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(grown) })).rejects.toThrow();
+      t.buyer = again;
       // A refund is not bound: the buyer can still cancel, paying the whole balance to the seller.
       await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
@@ -592,7 +600,8 @@ describe('settling', () => {
       const t = await grownTrade();
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: apiAmount.toString() });
       await expect(t.seller.runtime.act(CODE, { type: 'release' })).resolves.toBeUndefined();
-      expect(await t.seller.status((x) => x.refusal === 'amount-out-of-range')).toMatchObject({ phase: 'ready', error: null });
+      // The seller has no signed paid amount (the buyer could not confirm one): amount-unknown.
+      expect(await t.seller.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ phase: 'ready', error: null });
       // The buyer cannot confirm paying an amount out of range, and without its own tap it signs no release.
       await expect(pay(t.buyer, apiAmount)).rejects.toThrow();
       expect(await t.buyer.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ error: null });
@@ -600,8 +609,8 @@ describe('settling', () => {
       expect(t.parties.settles).toEqual([]);
       // Back in range: the refusal clears, the buyer confirms, and the trade settles.
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: grown.toString() });
-      expect(await t.seller.status((x) => x.refusal === null && x.phase === 'signing')).toBeTruthy();
       await pay(t.buyer, grown);
+      expect(await t.seller.status((x) => x.refusal === null && x.phase === 'signing')).toBeTruthy();
       await until(() => t.parties.settles.length === 2);
     });
   });
@@ -666,6 +675,23 @@ describe('settling', () => {
     await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
   });
 
+  it('buyerCancel saves its intent before trade.cancel leaves: if the save fails, nothing is sent', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'secured' });
+    const signals = await channelFor(CODE, 'signals');
+    const sentBefore = t.hub.sent.filter((x) => x.channel === signals && x.from === 'buyer').length;
+    // Only a record holding the buyer-cancel intent fails to save (other saves, e.g. a new signals seq, work).
+    const save = t.buyer.store.save.bind(t.buyer.store);
+    t.buyer.store.save = async (r) => {
+      if (r.intent?.kind === 'buyer-cancel') throw new Error('disk full');
+      return save(r);
+    };
+    await expect(t.buyer.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
+    await t.parties.ticks('buyer', 2);
+    expect(t.hub.sent.filter((x) => x.channel === signals && x.from === 'buyer').length).toBe(sentBefore);
+  });
+
   it('lapsed with funds: the seller builds the lapse refund automatically and the buyer co-signs it', async () => {
     const t = await ready();
     const part = 400_000_000_000n;
@@ -722,6 +748,8 @@ describe('guards in front of settle', () => {
     await until(async () => (await t.seller.store.load(CODE))?.theirDeal != null && (await t.buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(t.buyer);
+    await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === AMOUNT);
     await t.seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.settles.some((s) => s.role === 'seller'));
     await t.seller.runtime.stopAll();
@@ -785,6 +813,7 @@ describe('resume on load (Review Focus 1)', () => {
     await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
     await seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.settles.filter((s) => s.role === 'seller').length === 1);
     const first = t.parties.settles.find((s) => s.role === 'seller')!.o;
@@ -815,6 +844,7 @@ describe('resume on load (Review Focus 1)', () => {
     await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
     await seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.pending.some((p) => p.role === 'seller'));
     t.parties.pending.find((p) => p.role === 'seller')!.resolve(null);

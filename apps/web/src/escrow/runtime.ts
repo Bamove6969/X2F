@@ -534,10 +534,48 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       };
     }
 
+    // ── The trade amount: invariants (each has a test in test/attestation-flow.test.ts) ──
+    //
+    // I1 Release binding. A release is signed for one amount only: the amount its outcome was
+    //    derived from when it was first handed to the party (intent.handedAtomic, saved before the
+    //    hand-over). While that release intent stands, a release for another amount is refused
+    //    ('amount-changed') and so is an "I've paid" tap for another amount.
+    //    Tests: "a release handed over before paid binds its amount" (incl. reload).
+    // I2 Paid fixes the amount (acceptedAtomic). Buyer: only at its own tap, to the API amount if
+    //    it lies in [take, this device's size], its fiat at the locked rate equals the total the
+    //    buyer confirmed, and it equals any bound release; saved before trade.paid leaves. Seller:
+    //    only from the buyer's signed trade.paid amount, under the same range and total checks,
+    //    folded into the same save as the signal's replay guard; never from the API; otherwise
+    //    'paid-amount-refused'. Tests: "fixed by the tap itself", "a fiat total other than",
+    //    "the seller fixes the amount from the buyer's signed trade.paid", "a seller that sees paid
+    //    in its API view first", "a signed trade.paid outside the seller's range".
+    // I3 Once fixed, a release needs the view's amount to equal it ('amount-changed' otherwise),
+    //    across reloads. Tests: "the API lowers / raises the amount after paid", "survives a reload".
+    // I4 Without a fixed amount: the seller releases nothing ('amount-unknown'); a buyer that knows
+    //    of paid releases nothing ('amount-unknown'); only a buyer before paid co-signs a release,
+    //    within [take, its size] ('amount-out-of-range' outside). Tests: "the seller signs no
+    //    release without the buyer's signed amount", "a buyer that knows of paid only from the
+    //    API", "growth and starter caps".
+    // I5 Refunds never depend on the amount: a refund-shaped outcome (the whole balance to the
+    //    seller's signed refund address) uses this device's own size, never the API amount, is
+    //    never bound and never refused for an amount. Tests: "an API amount lie never blocks a
+    //    refund", "a hand-over before paid fixes nothing", the refund part of the I1 test.
+    // I6 Growth only from this device's own funds(), only before it knows of paid.
+    //    Tests: "no growth once this device knows of I've paid", "growth and starter caps".
+    // I7 Missing or unknown fields fail closed: no acceptedAtomic means I4's refusals; a record
+    //    without fundedSeen is unknown, never never-funded. Tests: I4's, "fail closed: a record
+    //    without fundedSeen".
+    // I8 Crash or reload at any step: every fixed or bound value is in the AES-GCM record (AAD
+    //    bound to store and trade) before the action it guards (the tap's fix before trade.paid,
+    //    handedAtomic before settle(), the seller's fix with the signal guard, the buyer-cancel
+    //    intent before trade.cancel). Tests: the reload checks above, "buyerCancel saves its
+    //    intent before trade.cancel leaves", "AAD binding" (escrow-store.test.ts).
+
     /**
-     * The trade's size to settle: the API's amount, accepted only from the amount at take up to
-     * the size this device worked out from its own escrow (growth may stop lower, at the offer
-     * maximum or a starter cap the device does not know), never above it. Otherwise null.
+     * The trade's size for a release (I1-I4): the fixed amount if there is one (the view must
+     * equal it); otherwise, only for a buyer before paid, the API's amount within [take, this
+     * device's size] (growth may stop lower, at the offer maximum or a starter cap the device does
+     * not know), never above it. Otherwise null.
      */
     private acceptedAmount(v: EscrowTradeView): bigint | null {
       const r = this.rec;
