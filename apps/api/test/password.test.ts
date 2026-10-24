@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { loginNameLookup } from '../src/accounts.js';
 import { requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { DUMMY_HASH, hashPassword } from '../src/auth/password.js';
@@ -60,16 +60,26 @@ function post(url: string, payload: unknown, cookies: Record<string, string> = {
   return app.inject({ method: 'POST', url, headers: { origin: ORIGIN }, cookies, payload: payload as Record<string, unknown> });
 }
 
-const register = (username: string, password = GOOD, extra: Record<string, unknown> = { acceptedTerms: TERMS }) =>
-  post('/v1/register/password', { username, password, deviceLabel: 'Test browser', ...extra });
+/** Registers login name `loginName` with display name `P` + it (or `o.displayName`). */
+const register = (
+  loginName: string,
+  password = GOOD,
+  extra: Record<string, unknown> = { acceptedTerms: TERMS },
+  o: { displayName?: string; cookies?: Record<string, string> } = {},
+) =>
+  post(
+    '/v1/register/password',
+    { displayName: o.displayName ?? `P${loginName}`, loginName, password, deviceLabel: 'Test browser', ...extra },
+    o.cookies,
+  );
 
-const login = (username: string, password: string, cookies: Record<string, string> = {}) =>
-  post('/v1/login/password', { username, password, deviceLabel: 'Test browser' }, cookies);
+const login = (loginName: string, password: string, cookies: Record<string, string> = {}) =>
+  post('/v1/login/password', { loginName, password, deviceLabel: 'Test browser' }, cookies);
 
-async function accountRow(username: string) {
+async function accountRow(loginName: string) {
   const { rows } = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null }>(
-    'select id, terms_version, terms_accepted_at from accounts where username_key = $1',
-    [username.toLowerCase()],
+    'select id, terms_version, terms_accepted_at from accounts where login_key = $1',
+    [loginName.toLowerCase()],
   );
   return rows[0];
 }
@@ -104,7 +114,9 @@ describe('POST /v1/register/password', () => {
   it('creates the account, its Argon2id hash and a first session without a new-login alert', async () => {
     const res = await register('Satoshi.N');
     expect(res.statusCode).toBe(201);
-    expect(res.json()).toEqual({ username: 'Satoshi.N' });
+    // Only the public display name comes back, never the login name.
+    expect(res.json()).toEqual({ displayName: 'PSatoshi.N' });
+    expect(res.body).not.toContain('"Satoshi.N"');
     expect(cookie(res, SESSION_COOKIE)).toBeTruthy();
     expect(cookie(res, DEVICE_COOKIE)).toBeTruthy();
     const id = (await accountRow('Satoshi.N'))!.id;
@@ -119,18 +131,52 @@ describe('POST /v1/register/password', () => {
     expect(sessions[0]!.onboarding_until).not.toBeNull();
   });
 
-  it('refuses a taken name case-insensitively and reserved names, without false positives', async () => {
+  it('refuses taken names case-insensitively and reserved display names, without false positives', async () => {
     expect((await register('Satoshi.Q')).statusCode).toBe(201);
-    const taken = await register('satoshi.q');
-    expect(taken.statusCode).toBe(409);
-    expect(taken.json()).toEqual({ error: 'username-taken' });
-    const reserved = await register('X2F.Support');
+    const loginTaken = await register('satoshi.q', GOOD, { acceptedTerms: TERMS }, { displayName: 'Fresh.Name1' });
+    expect(loginTaken.statusCode).toBe(409);
+    expect(loginTaken.json()).toEqual({ error: 'login-name-taken' });
+    const displayTaken = await register('other.login1', GOOD, { acceptedTerms: TERMS }, { displayName: 'psatoshi.q' });
+    expect(displayTaken.statusCode).toBe(409);
+    expect(displayTaken.json()).toEqual({ error: 'display-name-taken' });
+    const reserved = await register('quiet.one1', GOOD, { acceptedTerms: TERMS }, { displayName: 'X2F.Support' });
     expect(reserved.statusCode).toBe(400);
-    expect(reserved.json()).toEqual({ error: 'username-reserved' });
-    expect((await register('badminton')).statusCode).toBe(201);
-    const invalid = await register('аlice'); // Cyrillic а
+    expect(reserved.json()).toEqual({ error: 'display-name-reserved' });
+    // F4: look-alikes of reserved words are reserved for display names.
+    const lookAlike = await register('quiet.one2', GOOD, { acceptedTerms: TERMS }, { displayName: 'adm1n.team' });
+    expect(lookAlike.json()).toEqual({ error: 'display-name-reserved' });
+    expect((await register('quiet.one3', GOOD, { acceptedTerms: TERMS }, { displayName: 'badminton' })).statusCode).toBe(201);
+    const invalid = await register('quiet.one4', GOOD, { acceptedTerms: TERMS }, { displayName: 'аlice' }); // Cyrillic а
     expect(invalid.statusCode).toBe(400);
-    expect(invalid.json()).toEqual({ error: 'username-invalid' });
+    expect(invalid.json()).toEqual({ error: 'display-name-invalid' });
+    const badLogin = await register('bad login', GOOD, { acceptedTerms: TERMS }, { displayName: 'Fine.Name5' });
+    expect(badLogin.json()).toEqual({ error: 'login-name-invalid' });
+    // A private login name may hold a reserved word: nobody ever sees it.
+    expect((await register('my.admin.pw', GOOD, { acceptedTerms: TERMS }, { displayName: 'Plain.Pat' })).statusCode).toBe(201);
+  });
+
+  it('refuses a login name equal to the display name in any case', async () => {
+    const res = await register('Same.Name1', GOOD, { acceptedTerms: TERMS }, { displayName: 'same.NAME1' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'names-same' });
+  });
+
+  it('keeps the two namespaces apart: a display name may equal another account’s login name', async () => {
+    expect((await register('shared.word')).statusCode).toBe(201);
+    const res = await register('someone.el', GOOD, { acceptedTerms: TERMS }, { displayName: 'shared.word' });
+    expect(res.statusCode).toBe(201);
+  });
+
+  it('F4: refuses a display name that looks like a staff or owner display name', async () => {
+    await seedAccount(deps, { loginName: 'staff.login9', displayName: 'Kim.Lorn', kind: 'staff' });
+    for (const displayName of ['kim.lom', 'Klm.L0rn', 'KIM.LORN']) {
+      const res = await register(`kimfan.${displayName.length}${displayName[1]}`, GOOD, { acceptedTerms: TERMS }, { displayName });
+      expect(res.statusCode, displayName).toBe(400);
+      expect(res.json()).toEqual({ error: 'display-name-reserved' });
+    }
+    // Two traders whose names only look alike are both fine.
+    expect((await register('trader.aa1', GOOD, { acceptedTerms: TERMS }, { displayName: 'Alice.bb' })).statusCode).toBe(201);
+    expect((await register('trader.aa2', GOOD, { acceptedTerms: TERMS }, { displayName: 'A1ice.bb' })).statusCode).toBe(201);
   });
 
   it('refuses leaked and weak passwords', async () => {
@@ -152,9 +198,11 @@ describe('POST /v1/register/password', () => {
   });
 
   it('strips control characters from the device label', async () => {
-    const res = await post('/v1/register/password', { username: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS });
+    const res = await post('/v1/register/password', {
+      displayName: 'Plabelnul1', loginName: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS,
+    });
     expect(res.statusCode).toBe(201);
-    const ok = await post('/v1/login/password', { username: 'labelnul1', password: GOOD, deviceLabel: 'c\u0000d' });
+    const ok = await post('/v1/login/password', { loginName: 'labelnul1', password: GOOD, deviceLabel: 'c\u0000d' });
     expect(ok.statusCode).toBe(200);
     const id = (await accountRow('labelnul1'))!.id;
     const { rows } = await deps.db.query<{ device_label: string }>(
@@ -164,7 +212,7 @@ describe('POST /v1/register/password', () => {
   });
 
   it('refuses a body with missing or non-string fields', async () => {
-    const res = await post('/v1/register/password', { username: 'shapeless', password: 12, deviceLabel: 'x', acceptedTerms: TERMS });
+    const res = await post('/v1/register/password', { displayName: 'Pshapeless', loginName: 'shapeless', password: 12, deviceLabel: 'x', acceptedTerms: TERMS });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
   });
@@ -181,23 +229,73 @@ describe('POST /v1/login/password', () => {
     expect(await alerts(id, 'new-login')).toEqual([{ detail: { method: 'password', deviceLabel: 'Test browser' } }]);
     const bad = await login('loginok01', 'Wrong-Horse-9');
     expect(bad.statusCode).toBe(401);
-    expect(bad.json()).toEqual({ error: 'credentials-invalid' });
+    expect(bad.json()).toEqual({ error: 'credentials-invalid', misses: 1 });
   });
 
-  it('slows down after the 4th wrong attempt within 2 s', async () => {
-    await register('slowpoke1');
-    for (let i = 0; i < 4; i++) expect((await login('slowpoke1', 'Wrong-Horse-9')).statusCode).toBe(401);
-    const slow = await login('slowpoke1', GOOD);
-    expect(slow.statusCode).toBe(429);
-    expect(slow.json()).toEqual({ error: 'slow-down', retryAfterSeconds: 2 });
-    setNow(new Date(now.getTime() + 2000));
-    expect((await login('slowpoke1', GOOD)).statusCode).toBe(200);
+  it('logs in by the login name only, never by the public display name', async () => {
+    await register('private.lg1', GOOD, { acceptedTerms: TERMS }, { displayName: 'Public.Face1' });
+    expect((await login('Public.Face1', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
+    expect((await login('private.lg1', GOOD)).statusCode).toBe(200);
+  });
+
+  it('an account from before login names (none set) cannot be reached by any name', async () => {
+    const id = await seedAccount(deps, { loginName: null, displayName: 'Legacy.Acct' });
+    await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [id, await hashPassword(GOOD), now]);
+    expect((await login('Legacy.Acct', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
+  });
+
+  it('never shows a wait: after 10 misses the name is quietly not checked for 15 minutes, with the same answer', async () => {
+    await register('quietlock1');
+    const id = (await accountRow('quietlock1'))!.id;
+    // One unknown browser (its device cookie kept), as a person retrying would be.
+    const jar = { [DEVICE_COOKIE]: cookie(await login('nobody.qq1', GOOD), DEVICE_COOKIE)! };
+    await deps.db.query("delete from login_throttle where key like 'password-visitor:%'");
+    for (let i = 1; i <= 10; i++) {
+      const res = await login('quietlock1', 'Wrong-Horse-9', jar);
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'credentials-invalid', misses: i });
+    }
+    expect(await alerts(id, 'login-locked')).toEqual([{ detail: { method: 'password' } }]);
+    // The right password now gets the same answer, after one (dummy) Argon2 verify.
+    const verify = vi.spyOn(argon2, 'verify');
+    const locked = await login('quietlock1', GOOD, jar);
+    expect(locked.statusCode).toBe(401);
+    expect(locked.json()).toEqual({ error: 'credentials-invalid', misses: 11 });
+    expect(locked.headers['retry-after']).toBeUndefined();
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, GOOD);
+    verify.mockRestore();
+    setNow(new Date(now.getTime() + 14 * 60_000));
+    expect((await login('quietlock1', GOOD)).statusCode).toBe(401);
+    setNow(new Date(now.getTime() + 60_000));
+    expect((await login('quietlock1', GOOD)).statusCode).toBe(200);
+  });
+
+  it('the quiet lock on an unknown browser leaves a trusted browser of the account alone', async () => {
+    const reg = await register('quietlock2');
+    const device = cookie(reg, DEVICE_COOKIE)!;
+    for (let i = 0; i < 12; i++) await login('quietlock2', 'Wrong-Horse-9');
+    expect((await login('quietlock2', GOOD, { [DEVICE_COOKIE]: device })).statusCode).toBe(200);
+  });
+
+  it('counts misses per browser (any names) and clears them on a success from that browser', async () => {
+    await register('countme01');
+    const first = await login('nobody.at.all', GOOD);
+    const device = cookie(first, DEVICE_COOKIE)!;
+    const jar = { [DEVICE_COOKIE]: device };
+    expect(first.json()).toEqual({ error: 'credentials-invalid', misses: 1 });
+    expect((await login('countme01', 'Wrong-Horse-9', jar)).json()).toEqual({ error: 'credentials-invalid', misses: 2 });
+    expect((await login('someone.else', GOOD, jar)).json()).toEqual({ error: 'credentials-invalid', misses: 3 });
+    // Another browser has its own count.
+    expect((await login('countme01', 'Wrong-Horse-9')).json()).toEqual({ error: 'credentials-invalid', misses: 1 });
+    expect((await login('countme01', GOOD, jar)).statusCode).toBe(200);
+    expect((await login('countme01', 'Wrong-Horse-9', jar)).json()).toEqual({ error: 'credentials-invalid', misses: 1 });
   });
 
   it('gives the same shape and one Argon2 verify for an unknown name, a PGP-only account, a staff account and a wrong password', async () => {
     await register('shape0001');
-    await seedAccount(deps, { username: 'pgponly01' });
-    const staffId = await seedAccount(deps, { username: 'staffer01', kind: 'staff' });
+    await seedAccount(deps, { loginName: 'pgponly01' });
+    const staffId = await seedAccount(deps, { loginName: 'staffer01', kind: 'staff' });
     await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [
       staffId, await hashPassword(GOOD), now,
     ]);
@@ -209,19 +307,22 @@ describe('POST /v1/login/password', () => {
       ['аlice', GOOD],
       ['bad\u0000name', GOOD],
     ];
-    for (const [username, password] of cases) {
+    for (const [loginName, password] of cases) {
       const verify = vi.spyOn(argon2, 'verify');
-      const res = await login(username, password);
-      expect(res.statusCode, username).toBe(401);
-      expect(Object.keys(res.json())).toEqual(['error']);
-      expect(res.json()).toEqual({ error: 'credentials-invalid' });
-      expect(verify, username).toHaveBeenCalledTimes(1);
+      // A fresh browser each time, so `misses` is 1 for every case.
+      const res = await login(loginName, password);
+      expect(res.statusCode, loginName).toBe(401);
+      expect(res.json()).toEqual({ error: 'credentials-invalid', misses: 1 });
+      expect(verify, loginName).toHaveBeenCalledTimes(1);
       verify.mockRestore();
     }
-    // A malformed name is throttled under a hash of it, never the raw input (a NUL would break Postgres).
-    const nulKey = `password:name:~${createHash('sha256').update('bad\u0000name').digest('hex')}:anon`;
+    // An unknown or malformed name is throttled under an HMAC tag, never the typed name (a NUL would
+    // also break Postgres).
+    const nulKey = `password-login:name:${loginNameLookup(deps.config, 'bad\u0000name').tag}:anon`;
     const { rows } = await deps.db.query<{ failures: number }>('select failures from login_throttle where key = $1', [nulKey]);
     expect(rows).toEqual([{ failures: 1 }]);
+    const { rows: named } = await deps.db.query("select key from login_throttle where key like '%nobody0001%'");
+    expect(named).toEqual([]);
   });
 
   it('verifies the dummy hash when the account is unknown', async () => {
@@ -239,8 +340,8 @@ describe('POST /v1/login/password', () => {
 
   it('refuses a disabled account after the password checks out', async () => {
     await register('disabled1');
-    await deps.db.query('update accounts set disabled_at = $2 where username_key = $1', ['disabled1', now]);
-    expect((await login('disabled1', 'Wrong-Horse-9')).json()).toEqual({ error: 'credentials-invalid' });
+    await deps.db.query('update accounts set disabled_at = $2 where login_key = $1', ['disabled1', now]);
+    expect((await login('disabled1', 'Wrong-Horse-9')).json()).toMatchObject({ error: 'credentials-invalid' });
     const res = await login('disabled1', GOOD);
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'account-disabled' });
@@ -248,7 +349,7 @@ describe('POST /v1/login/password', () => {
 });
 
 describe('POST /v1/confirm/password', () => {
-  it('issues a token that redeems for that action only; a wrong password counts on the login key', async () => {
+  it('issues a token that redeems for that action only; wrong confirms are throttled apart from login misses', async () => {
     const reg = await register('confirm01');
     const session = cookie(reg, SESSION_COOKIE)!;
     const device = cookie(reg, DEVICE_COOKIE)!;
@@ -260,13 +361,18 @@ describe('POST /v1/confirm/password', () => {
     expect((await post('/t/set-password', { confirmToken }, cookies)).statusCode).toBe(200);
     expect((await post('/t/set-password', { confirmToken }, cookies)).json()).toEqual({ error: 'confirm-invalid' });
 
-    // Two wrong confirms and two wrong logins from this browser make four failures on one key.
-    for (let i = 0; i < 2; i++) {
+    const wrongConfirm = async () => {
       const bad = await post('/v1/confirm/password', { password: 'Wrong-Horse-9', action: { kind: 'set-password' } }, cookies);
       expect(bad.statusCode).toBe(401);
       expect(bad.json()).toEqual({ error: 'credentials-invalid' });
-    }
-    for (let i = 0; i < 2; i++) expect((await login('confirm01', 'Wrong-Horse-9', { [DEVICE_COOKIE]: device })).statusCode).toBe(401);
+    };
+    // Login misses (the `password-login` key) do not count against the signed-in person's confirms.
+    await wrongConfirm();
+    await wrongConfirm();
+    for (let i = 0; i < 5; i++) expect((await login('confirm01', 'Wrong-Horse-9', { [DEVICE_COOKIE]: device })).statusCode).toBe(401);
+    expect((await post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } }, cookies)).statusCode).toBe(200);
+    // Four wrong confirms in a row: the confirm path keeps its own short waits.
+    for (let i = 0; i < 4; i++) await wrongConfirm();
     const slow = await post('/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } }, cookies);
     expect(slow.statusCode).toBe(429);
     expect(slow.json()).toMatchObject({ error: 'slow-down' });
@@ -313,14 +419,14 @@ describe('budgets (P2-I8)', () => {
 
   it('a busy refusal never uses up a throttle try', async () => {
     await register('busyslot1');
-    for (let i = 0; i < 4; i++) expect((await login('busyslot1', 'Wrong-Horse-9')).statusCode).toBe(401);
-    setNow(new Date(now.getTime() + 2000)); // the wait after the 4th failure is over
+    for (let i = 0; i < 9; i++) expect((await login('busyslot1', 'Wrong-Horse-9')).statusCode).toBe(401);
     const full = new Semaphore(0, 0);
     const run = vi.spyOn(ARGON2_SLOTS, 'run').mockImplementation((fn) => full.run(fn));
     const busy = await login('busyslot1', GOOD);
     expect(busy.statusCode).toBe(503);
     expect(busy.json()).toEqual({ error: 'busy' });
     run.mockRestore();
+    // Still the 10th try of the streak, so it is checked.
     expect((await login('busyslot1', GOOD)).statusCode).toBe(200);
   });
 
@@ -333,11 +439,12 @@ describe('budgets (P2-I8)', () => {
 });
 
 describe('logs', () => {
-  it('never contain the password, the cookie value or the username', async () => {
+  it('never contain the password, the cookie value, the login name or the display name', async () => {
     const before = logs.length;
     const reg = await register('Logged.User', 'Very-Secret-Pw-42');
     const ok = await login('Logged.User', 'Very-Secret-Pw-42');
     await login('Logged.User', 'Other-Secret-Pw-42');
+    for (let i = 0; i < 11; i++) await login('Logged.User', 'Other-Secret-Pw-42');
     const text = logs.slice(before).join('\n');
     for (const secret of [
       'Very-Secret-Pw-42', 'Other-Secret-Pw-42', 'Logged.User', 'logged.user',

@@ -87,7 +87,7 @@ const name = (p = 'wal') => `${p}${String(++n).padStart(4, '0')}`;
 /** An account with the test password and a logged-in browser. `firstSession` makes it the creating session (onboarding). */
 async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' | 'owner'; level?: 'full' | 'recovery' } = {}) {
   const username = name();
-  const id = await seedAccount(deps, { username, ...(o.kind ? { kind: o.kind } : {}) });
+  const id = await seedAccount(deps, { loginName: username, ...(o.kind ? { kind: o.kind } : {}) });
   await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [id, goodHash, now]);
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id, firstSession: o.firstSession ?? false, level: o.level ?? 'full' });

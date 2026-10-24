@@ -388,7 +388,7 @@ describe('login', () => {
 
   it('same shape for unknown, password-only and real usernames; the decoy code never works', async () => {
     const pwOnly = uniqueName();
-    await seedAccount(deps, { username: pwOnly });
+    await seedAccount(deps, { loginName: pwOnly });
     const shapes: string[][] = [];
     let decoy: LightMyRequestResponse | undefined;
     for (const u of ['nobody-here', pwOnly, name]) {
@@ -704,7 +704,7 @@ describe('staff, owner and other mounts', () => {
   it('a staff account’s correct code alone → second-factor and no session (R1, Task 10)', async () => {
     const n = uniqueName('crew');
     const k = await genKey();
-    const id = await seedAccount(deps, { username: n, kind: 'staff' });
+    const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now });
     const b = new Browser();
     const s = await loginStart(b, n);
@@ -737,7 +737,7 @@ describe('staff, owner and other mounts', () => {
     // A staff account is not in this mount's kinds: it gets a decoy.
     const sn = uniqueName('crew');
     const sk = await genKey();
-    const sid = await seedAccount(deps, { username: sn, kind: 'staff' });
+    const sid = await seedAccount(deps, { loginName: sn, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: sid, fingerprint: sk.fingerprint, armored: sk.publicKey, now });
     const ds = await b.post('/t/pgp/start', { username: sn });
     expect(ds.statusCode).toBe(200);
@@ -747,7 +747,7 @@ describe('staff, owner and other mounts', () => {
   it('with a pendingId the second step leaves out the key the first factor used; a bad pendingId gets a decoy', async () => {
     const n = uniqueName('crew');
     const [ka, kb] = await Promise.all([genKey(), genKey()]);
-    const id = await seedAccount(deps, { username: n, kind: 'staff' });
+    const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: ka.fingerprint, armored: ka.publicKey, now });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: kb.fingerprint, armored: kb.publicKey, now });
     const b = new Browser();

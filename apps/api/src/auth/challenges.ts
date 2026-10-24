@@ -1,3 +1,4 @@
+import type { FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import type { RetentionJob } from '../retention.js';
@@ -32,6 +33,25 @@ export async function consumeChallenge(db: Queryable, id: string, now: Date): Pr
     [id, now],
   );
   return rows[0] ?? null;
+}
+
+/**
+ * F1 (owner, 2026-10-23, "busy logins"): someone who has already started a login can always finish
+ * it. A login `finish` (or second step) whose challenge is open (exists, unused, unexpired, with
+ * this `purpose`) never takes from the global start budget; one naming no open challenge takes a
+ * token as before, so a flood of made-up finishes is still counted. Read only: the route consumes
+ * the challenge afterwards as usual.
+ */
+export async function takeStartBudgetUnlessOpen(req: FastifyRequest, challengeId: unknown, purpose: string): Promise<void> {
+  const deps = req.server.deps;
+  if (typeof challengeId === 'string' && UUID.test(challengeId)) {
+    const { rows } = await deps.db.query(
+      'select 1 from challenges where id = $1 and purpose = $2 and used_at is null and expires_at > $3',
+      [challengeId, purpose, deps.clock()],
+    );
+    if (rows.length > 0) return;
+  }
+  req.server.budgets.start.take();
 }
 
 const HOUR = 3600_000;

@@ -9,7 +9,10 @@ import { payoutWaitState } from '../wallets/routes.js';
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
 export interface AccountOverview {
-  username: string;
+  /** The public display name. The private login name is never sent, not even to its owner. */
+  displayName: string;
+  /** False for an account made before login names existed (migration 009): it has none yet. */
+  loginNameSet: boolean;
   kind: AccountKind;
   /** The calling session's level. */
   level: SessionLevel;
@@ -95,7 +98,8 @@ function idParam(req: FastifyRequest): string {
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
   const { accountId, sessionId } = req.auth;
   const { rows } = await deps.db.query<{
-    username: string;
+    display_name: string;
+    login_set: boolean;
     kind: AccountKind;
     payout_wait: boolean;
     payout_wait_off_at: Date | null;
@@ -103,7 +107,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     level: SessionLevel;
     hold_until: Date | null;
   }>(
-    `select a.username, a.kind, a.payout_wait, a.payout_wait_off_at, a.terms_version, s.level, s.hold_until
+    `select a.display_name, a.login_key is not null as login_set, a.kind, a.payout_wait, a.payout_wait_off_at, a.terms_version, s.level, s.hold_until
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -114,7 +118,8 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   const now = deps.clock();
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
-    username: row.username,
+    displayName: row.display_name,
+    loginNameSet: row.login_set,
     kind: row.kind,
     level: row.level,
     holdUntil: held ? row.hold_until!.toISOString() : null,

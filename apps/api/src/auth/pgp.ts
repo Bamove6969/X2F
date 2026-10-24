@@ -2,7 +2,9 @@
  * PGP sign-up, login, confirm and adding a key (Task 7).
  *
  * - Every challenge is encrypted with wildcard recipients (zero key IDs) and signed with the
- *   official X2F key (R7); unknown usernames get a decoy of the same shape (P2-C3).
+ *   official X2F key (R7); unknown keys get a decoy of the same shape (P2-C3).
+ * - Login needs no name (owner, 2026-10-23): `start` takes the person's public key or its
+ *   fingerprint and the challenge goes to that one key.
  * - Keys are stored only as `armored_enc` (AES-256-GCM under `subkey('pgp-key')`), with user IDs
  *   stripped where the key survives it (R16). No route returns, and no log line holds, a user ID.
  * - No endpoint generates, accepts or returns a private PGP key of a user (R8).
@@ -11,19 +13,19 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import {
-  PGP_PURPOSE, actionHash, challengeText, checkUsername, describeAction, encryptChallenge, inspectPublicKey,
+  PGP_PURPOSE, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
   newLoginCode, normalizeLoginCode, type AccountKind, type ConfirmAction, type KeyInspection,
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertTermsAccepted, assertUsername, createAccount } from '../accounts.js';
+import { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, type NewNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
-import { consumeChallenge, type ChallengeRow } from './challenges.js';
+import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
@@ -196,7 +198,7 @@ async function usableKeys(keys: StoredKey[], now: Date): Promise<StoredKey[]> {
 export const PGP_CHALLENGE_TTL_MS = 5 * 60_000;
 /** Routes that carry a public key take bodies up to 64 KiB, so a 32 KiB+ key reaches `key-too-large`. */
 export const PGP_BODY_LIMIT = 64 * 1024;
-/** Login `start` (P2-I3): at most 5 per account (username) and device in 5 minutes; at most 3 open per account. */
+/** Login `start` (P2-I3): at most 5 per key fingerprint and group in 5 minutes; at most 3 open per account. */
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_WINDOW = 5;
 const OPEN_LOGIN_CHALLENGES = 3;
@@ -213,28 +215,16 @@ const codeHash = (normalized: string): Buffer => createHash('sha256').update(nor
 
 /**
  * Encrypts to every key it can (R15): when `encryptChallenge` throws for the set, each key is tried
- * alone and the ones that fail are left out (never falling back to a weaker subkey). With `single`,
- * to the first key (in the given order) it can encrypt to, and only that one. No key left → 400
- * `key-expired`, the same wording as an expired key.
+ * alone and the ones that fail are left out (never falling back to a weaker subkey). No key left →
+ * 400 `key-expired`, the same wording as an expired key.
  */
 async function encryptToUsable(
   deps: Deps,
   text: string,
   keys: StoredKey[],
   now: Date,
-  single = false,
 ): Promise<{ message: string; fingerprints: string[] }> {
   const signer = deps.pgpSigner.key;
-  if (single) {
-    for (const k of keys) {
-      try {
-        return { message: await encryptChallenge(text, [k.armored], signer, now), fingerprints: [k.fingerprint] };
-      } catch {
-        // Not usable now; try the next one.
-      }
-    }
-    throw new ApiError(400, 'key-expired');
-  }
   try {
     return { message: await encryptChallenge(text, keys.map((k) => k.armored), signer, now), fingerprints: keys.map((k) => k.fingerprint) };
   } catch {
@@ -300,8 +290,6 @@ export async function issuePgpChallenge(
     purposeText: string;
     armoredKeys: string[];
     payload: object;
-    /** Encrypt to one key only: the first of `armoredKeys` that can be encrypted to (a staff member's first PGP step). */
-    single?: boolean;
   },
 ): Promise<IssuedChallenge> {
   const now = deps.clock();
@@ -309,7 +297,7 @@ export async function issuePgpChallenge(
   const keys = await Promise.all(
     a.armoredKeys.map(async (armored) => ({ armored, fingerprint: (await openpgp.readKey({ armoredKey: armored })).getFingerprint() })),
   );
-  const { message, fingerprints } = await encryptToUsable(deps, messageText(deps, req, code, a.purposeText, now), keys, now, a.single === true);
+  const { message, fingerprints } = await encryptToUsable(deps, messageText(deps, req, code, a.purposeText, now), keys, now);
 
   const row = { accountId: a.accountId, sessionId: a.sessionId, purpose: a.purpose, code, payload: { ...a.payload, fingerprints }, now };
   let id: string;
@@ -373,31 +361,34 @@ export function decoyPrivateKeys(): Promise<openpgp.PrivateKey[]> {
   return decoyPool;
 }
 
-/** Recipient sets a decoy may show: one or two keys of the kinds people use (indexes into the pool). */
-const DECOY_PROFILES: readonly number[][] = [[0], [2], [4], [0, 1], [2, 3], [4, 0]];
-
-/** The decoy profile of a username: fixed per name (HMAC under `subkey('decoy')`), so repeated starts look alike. */
-function decoyProfile(config: Config, nameKey: string): number[] {
-  const h = createHmac('sha256', subkey(config, 'decoy')).update(`pgp-decoy/${nameKey}`).digest();
-  return DECOY_PROFILES[h.readUInt32BE(0) % DECOY_PROFILES.length]!;
+/**
+ * The decoy key for a fingerprint X2F does not know (indexes into the pool): of the same version
+ * as the fingerprint says (40 hex digits: a v4 key, Ed25519 or RSA-4096; 64: a v6 key), one key as
+ * a real login always is, and fixed per fingerprint (HMAC under `subkey('decoy')`), so repeated
+ * starts look alike.
+ */
+function decoyProfile(config: Config, fingerprint: string): number {
+  const h = createHmac('sha256', subkey(config, 'decoy')).update(`pgp-decoy/${fingerprint}`).digest();
+  const choices = fingerprint.length === 64 ? [2, 3] : [0, 1, 4];
+  return choices[h.readUInt32BE(0) % choices.length]!;
 }
 
 /**
- * A challenge of the same shape for an unknown username (or one that cannot get a real one): a real
+ * A challenge of the same shape for an unknown key (or one that cannot get a real one): a real
  * code, encrypted (wildcard, signed) and stored with `account_id = null`, so `finish` fails exactly
- * like a wrong code. The recipients are `toKey` when the request sent a `refreshedKey` (so a
+ * like a wrong code. The recipient is `toKey` when the person pasted a whole public key (so a
  * keyserver key tells the sender nothing: they get a message to that key either way), otherwise
- * the name's fixed decoy profile (R18). `payload` joins the stored payload (start-limit tags).
+ * the fingerprint's fixed decoy key (R18). `payload` joins the stored payload (start-limit tags).
  */
 export async function decoyPgpChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { nameKey: string; toKey?: string; payload?: object },
+  a: { fingerprint: string; toKey?: string; payload?: object },
 ): Promise<IssuedChallenge> {
   const now = deps.clock();
   const code = newLoginCode();
   const pool = await decoyPrivateKeys();
-  const recipients = a.toKey !== undefined ? [a.toKey] : decoyProfile(deps.config, a.nameKey).map((i) => pool[i]!.toPublic().armor());
+  const recipients = a.toKey !== undefined ? [a.toKey] : [pool[decoyProfile(deps.config, a.fingerprint)]!.toPublic().armor()];
   let message: string;
   try {
     message = await encryptChallenge(messageText(deps, req, code, PGP_PURPOSE.login, now), recipients, deps.pgpSigner.key, now);
@@ -479,16 +470,18 @@ const fingerprintsOf = (row: ChallengeRow): string[] => {
 // ---------------------------------------------------------------------------------------------
 // Login (`pgpLoginRoutes`)
 
-/** A tag for the start limit, so it applies to every username (real or not) alike. */
-function startTag(config: Config, nameKey: string): string {
-  return createHmac('sha256', subkey(config, 'pgp-start')).update(`pgp-login-start/${nameKey}`).digest('hex');
+/** A tag for the start limit, so it applies to every key fingerprint (known or not) alike. */
+function startTag(config: Config, fingerprint: string): string {
+  return createHmac('sha256', subkey(config, 'pgp-start')).update(`pgp-login-key/${fingerprint}`).digest('hex');
 }
 
 /**
- * P2-I3: more than 5 login starts for one username from one group in 5 minutes → 429 `slow-down`
- * (never `locked`). A group is one device trusted for the account, or `anon`: every browser that is
- * not trusted for it (no cookie, a new cookie, or a made-up one), as Task 4's throttle keys do (I1).
- * Counted the same for unknown names (always `anon`), so it does not tell them apart.
+ * P2-I3 (per key since 2026-10-23): more than 5 login starts for one key fingerprint from one group
+ * in 5 minutes → 429 `slow-down` (never `locked`). A group is one device trusted for the key's
+ * account, or `anon`: every browser that is not trusted for it (no cookie, a new cookie, or a
+ * made-up one), as Task 4's throttle keys do (I1). Real and decoy challenges count alike (unknown
+ * keys are always `anon`), so the limit does not tell them apart. Nobody can be locked out by a
+ * stranger who does not know their key's fingerprint, which X2F never shows.
  */
 async function assertStartAllowed(deps: Deps, tag: string, group: string, now: Date): Promise<void> {
   const since = new Date(now.getTime() - START_WINDOW_MS);
@@ -535,8 +528,9 @@ export interface PgpLoginOptions {
 
 /**
  * Registers `POST start` and `POST finish` for PGP login under the plugin's prefix. `buildApi`
- * mounts it at `/v1/login/pgp` for every kind; Plan 4 mounts it on the staff app. An account whose
- * kind is not in `kinds` is treated as an unknown username (decoy). Both finish through
+ * mounts it at `/v1/login/pgp` for every kind; Plan 4 mounts it on the staff app. `start` takes
+ * `{ key, pendingId? }`: `key` is the person's armored public key or its fingerprint. A key whose
+ * account's kind is not in `kinds` is treated as an unknown key (decoy). Both finish through
  * `completeLogin`.
  */
 export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): void {
@@ -554,8 +548,9 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
   app.post('/finish', async (req, reply) => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
-    req.server.budgets.start.take();
     const b = body(req);
+    // F1: a login that has started can always finish, whatever the start budget says.
+    await takeStartBudgetUnlessOpen(req, b.challengeId, 'login');
     const challengeId = str(b, 'challengeId');
     const code = str(b, 'code');
     const deviceLabel = str(b, 'deviceLabel');
@@ -592,69 +587,78 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
   });
 }
 
+const FINGERPRINT = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
+
+/**
+ * What the person pasted to log in: a whole armored public key (checked by `inspectPublicKey`
+ * before any account lookup, so a refusal says nothing about accounts) or a fingerprint (spaces,
+ * colons, a `0x` prefix and case are ignored). Anything else → 400 `key-unreadable`.
+ */
+async function loginKeyInput(raw: string, now: Date): Promise<{ fingerprint: string; armored: string | null }> {
+  if (raw.includes('-----BEGIN PGP')) {
+    const r = await inspectOrRefuse(raw, now);
+    return { fingerprint: r.fingerprint, armored: raw };
+  }
+  const compact = raw.slice(0, 200).replace(/[\s:]/g, '').toLowerCase().replace(/^0x/, '');
+  if (!FINGERPRINT.test(compact)) {
+    throw new ApiError(400, 'key-unreadable', { detail: 'Paste your whole public key, or its 40- or 64-character fingerprint.' });
+  }
+  return { fingerprint: compact, armored: null };
+}
+
 async function loginStart(deps: Deps, req: FastifyRequest, opts: PgpLoginOptions): Promise<IssuedChallenge> {
   const now = deps.clock();
   const b = body(req);
-  const rawName = str(b, 'username');
-  const refreshedRaw = optStr(b, 'refreshedKey');
+  const input = await loginKeyInput(str(b, 'key'), now);
   const pendingId = optStr(b, 'pendingId');
-  // The pasted key is checked before any account lookup, so its refusal says nothing about the name.
-  const refreshed = refreshedRaw === undefined ? null : { armored: refreshedRaw, inspection: await inspectOrRefuse(refreshedRaw, now) };
 
-  const name = checkUsername(rawName.slice(0, 64));
-  const nameKey = name.ok ? name.key : rawName.slice(0, 64).toLowerCase();
   const device = deviceHash(req); // before the route sets a cookie: null for a browser that sent none
-  const found = name.ok
-    ? (await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [name.key])).rows[0]
-    : undefined;
+  const { rows } = await deps.db.query<{ id: string; kind: AccountKind; armored_enc: Buffer }>(
+    'select a.id, a.kind, k.armored_enc from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1',
+    [input.fingerprint],
+  );
+  const found = rows[0];
   const account = found && opts.kinds.includes(found.kind) ? found : undefined;
-  // I1: only a device trusted for this account gets its own group; every other browser is `anon`.
+  // I1: only a device trusted for the key's account gets its own group; every other browser is `anon`.
   const trusted = account !== undefined && device !== null && (await isTrusted(deps, account.id, device));
   const group = trusted ? `dev:${device!.toString('hex')}` : 'anon';
-  const tag = startTag(deps.config, nameKey);
+  const tag = startTag(deps.config, input.fingerprint);
   await assertStartAllowed(deps, tag, group, now);
   const startPayload = { startTag: tag, startGroup: group };
-  // I3: with a refreshedKey the decoy goes to that key, so a keyserver copy cannot test the name.
+  // I3: a pasted whole key gets its decoy encrypted to itself, so a keyserver copy cannot test it.
   const decoy = () =>
-    decoyPgpChallenge(deps, req, { nameKey, payload: startPayload, ...(refreshed ? { toKey: refreshed.armored } : {}) });
+    decoyPgpChallenge(deps, req, { fingerprint: input.fingerprint, payload: startPayload, ...(input.armored !== null ? { toKey: input.armored } : {}) });
 
   if (!account) return decoy();
 
-  let excluded: string[] = [];
   if (pendingId !== undefined) {
+    // The second step of a staff or owner login: this key's account's own pending login, from this
+    // device, with a key other than the first step's.
     const pending = await pendingFirstFactor(deps, pendingId, account.id, device, now);
-    if (pending === null) return decoy();
-    excluded = usedFingerprints(pending);
+    if (pending === null || usedFingerprints(pending).includes(input.fingerprint)) return decoy();
   }
 
-  const stored = (await storedKeys(deps, account.id)).filter((k) => !excluded.includes(k.fingerprint));
-  if (stored.length === 0) return decoy();
-
+  const stored: StoredKey = { fingerprint: input.fingerprint, armored: openKey(deps.config, account.armored_enc, input.fingerprint) };
   const payload: Record<string, unknown> = { ...startPayload };
   if (pendingId !== undefined) payload.pendingId = pendingId;
   let keys: StoredKey[];
-  if (refreshed) {
-    const fingerprint = refreshed.inspection.fingerprint;
-    const match = stored.find((k) => k.fingerprint === fingerprint);
-    if (!match) return decoy();
+  if (input.armored !== null) {
     // I2: merge into the stored copy (openpgp `Key.update`), never replace it, so an old public copy
     // cannot drop a revocation or a newer self-signature the server already has.
-    const merged = await mergeKeys(match.armored, refreshed.armored, now);
+    const merged = await mergeKeys(stored.armored, input.armored, now);
     const check = await inspectPublicKey(merged, now);
     if (!check.ok) throw new ApiError(400, check.reason === 'key-revoked' ? 'key-revoked' : 'key-expired');
-    const { storable, pending } = await pendingKey(deps.config, merged, fingerprint, now);
+    const { storable, pending } = await pendingKey(deps.config, merged, input.fingerprint, now);
     payload.refreshed = pending;
-    keys = [{ fingerprint, armored: storable }];
+    keys = [{ fingerprint: input.fingerprint, armored: storable }];
   } else {
-    keys = await usableKeys(stored, now);
+    keys = await usableKeys([stored], now);
   }
+  // Always to exactly the one key the person named, so a code proves that key (staff pairs compare
+  // key sets, and the second step's key must differ from the first's).
   return issuePgpChallenge(deps, req, {
     accountId: account.id, sessionId: null, purpose: 'login', purposeText: PGP_PURPOSE.login,
     armoredKeys: keys.map((k) => k.armored), payload,
-    // A staff member's first PGP step goes to one key only (the oldest usable), so that a second PGP
-    // step to a different key can make a pair: a code from a challenge sent to several keys proves
-    // only "one of them" and would leave no key for the second step.
-    single: account.kind === 'staff' && pendingId === undefined,
   });
 }
 
@@ -675,16 +679,15 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   req.server.budgets.start.take();
   const now = deps.clock();
   const b = body(req);
-  const { username, key } = assertUsername(str(b, 'username'));
+  const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now);
-  const taken = await deps.db.query('select 1 from accounts where username_key = $1', [key]);
-  if (taken.rows.length > 0) throw new ApiError(409, 'username-taken');
+  await assertNamesFree(deps.db, names);
   // Fingerprint clashes are not checked here: only `finish`, after the code proves the key, says key-in-use.
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', purposeText: PGP_PURPOSE.register,
-    armoredKeys: [storable], payload: { username, usernameKey: key, key: pending },
+    armoredKeys: [storable], payload: { names, key: pending },
   });
   return { ...issued, fingerprint: inspection.fingerprint };
 }
@@ -699,7 +702,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   const code = str(b, 'code');
   const deviceLabel = str(b, 'deviceLabel');
   const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'register' });
-  const { username, usernameKey } = row.payload as { username: string; usernameKey: string };
+  const { names } = row.payload as { names: NewNames };
   const pending = readPendingKey(row.payload, 'key');
   const armored = openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint);
 
@@ -709,7 +712,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { username, key: usernameKey, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
       await insertPgpKey(client, deps.config, { accountId, fingerprint: pending.fingerprint, armored, now });
       await client.query('commit');
     } catch (e) {
@@ -720,7 +723,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true });
-  return reply.code(201).send({ username });
+  return reply.code(201).send({ displayName: names.displayName });
 }
 
 async function confirmStart(req: FastifyRequest) {

@@ -116,7 +116,7 @@ let nameSeq = 0;
 const uniqueName = (prefix: string) => `${prefix}${++nameSeq}x`;
 
 async function seedOwner(): Promise<string> {
-  const id = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+  const id = await seedAccount(deps, { loginName: uniqueName('boss'), kind: 'owner' });
   seededOwners.push(id);
   return id;
 }
@@ -329,7 +329,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
       'webauthn-failed',
     );
     // Discoverable login is for traders: a staff passkey is refused there.
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const crewKey = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(crewId, crewKey, 'passkey', false);
     const { rows } = await deps.db.query<{ webauthn_user_id: Buffer }>('select webauthn_user_id from accounts where id = $1', [crewId]);
@@ -408,7 +408,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   }
 
   it('stores attested keys only from the allowlist, and staff passkeys unattested', async () => {
-    const staffId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const b = await loggedIn(staffId, true);
 
     const none = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: 'none' });
@@ -491,7 +491,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 
   it('lists a staff passkey at login only after a PGP first factor from the same device', async () => {
     const name = uniqueName('crewlogin');
-    const staffId = await seedAccount(deps, { username: name, kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(staffId, key, 'security-key', true);
@@ -525,7 +525,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 
 describe('Plan 4 helpers', () => {
   it('registers and verifies with caller-held challenges', async () => {
-    const staffId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: uniqueName('helper'), kind: 'staff' });
     const challenge = new Uint8Array(32).fill(7);
     const options = await webauthnRegistrationOptions(deps, staffId, { challenge });
     expect(options.attestation).toBe('direct');
@@ -541,7 +541,7 @@ describe('Plan 4 helpers', () => {
     const ok = await verifyWebAuthnAssertion(deps, staffId, good.authenticate(aOpts, ORIGIN), assertChallenge);
     expect(ok).toEqual({ credentialId: good.credentialId, kind: 'security-key', attested: true });
 
-    const otherId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
+    const otherId = await seedAccount(deps, { loginName: uniqueName('helper'), kind: 'staff' });
     await expect(verifyWebAuthnAssertion(deps, otherId, good.authenticate(aOpts, ORIGIN), assertChallenge)).rejects.toMatchObject({
       code: 'webauthn-failed',
     });
@@ -617,7 +617,7 @@ async function usernameOf(accountId: string): Promise<string> {
 describe('review fixes', () => {
   it('I1: runs afterAuthenticate only for credentials the account kind may use', async () => {
     const ownerId = await seedOwner();
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const ownerKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const ownerPasskey = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const ownerPlainKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
@@ -674,7 +674,7 @@ describe('review fixes', () => {
   });
 
   it('M2: refuses a credential the challenge did not list', async () => {
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(crewId, key, 'security-key', true);
@@ -707,7 +707,7 @@ describe('review fixes', () => {
 
   it('M3: with a pendingId, staff, trader and unknown usernames cost the same queries', async () => {
     const trader = await signUp('security-key');
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     await insertCredential(crewId, createSoftAuthenticator({ backedUp: false, userVerified: true }), 'security-key', true);
     const crew = await usernameOf(crewId);
     const b = new Browser();

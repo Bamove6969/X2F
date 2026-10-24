@@ -52,7 +52,7 @@ const sha = (s: string) => createHash('sha256').update(s).digest();
 
 async function account(o: { kind?: 'trader' | 'staff' | 'owner'; disabled?: boolean } = {}) {
   const username = name();
-  const id = await seedAccount(deps, { username, ...o });
+  const id = await seedAccount(deps, { loginName: username, ...o });
   return { id, username };
 }
 

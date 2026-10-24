@@ -134,7 +134,7 @@ class Browser {
 
 async function account(kind: 'trader' | 'staff' | 'owner' = 'trader') {
   const username = uniqueName(kind === 'trader' ? 'user' : kind === 'staff' ? 'crew' : 'boss');
-  const id = await seedAccount(deps, { username, kind });
+  const id = await seedAccount(deps, { loginName: username, kind });
   seeded.push(id);
   return { id, username };
 }

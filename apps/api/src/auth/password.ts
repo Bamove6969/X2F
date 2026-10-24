@@ -1,18 +1,20 @@
-import { createHash, randomBytes } from 'node:crypto';
-import { checkPassword, checkUsername, normalizePassword, type AccountKind } from '@x2f/accounts';
+import { randomBytes } from 'node:crypto';
+import { checkPassword, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertTermsAccepted, assertUsername, createAccount } from '../accounts.js';
+import { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
-import { ensureDeviceCookie } from './device.js';
+import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
-import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import {
+  claimPasswordTry, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss, visitorReset,
+} from './throttle.js';
 import { hasTotp, issueSecondFactor, verifyTotp } from './totp.js';
 
 /** Global Constraints: Argon2id, 64 MiB, 3 passes, 1 lane. */
@@ -63,13 +65,13 @@ function strings<K extends string>(body: unknown, keys: readonly K[]): Record<K,
  * and its kind may use one; otherwise `DUMMY_HASH`, so every path runs exactly one Argon2 verify.
  */
 const PASSWORD_BY_NAME =
-  'select a.id, a.kind, p.hash from accounts a left join passwords p on p.account_id = a.id where a.username_key = $1';
+  'select a.id, a.kind, p.hash from accounts a left join passwords p on p.account_id = a.id where a.login_key = $1';
 const PASSWORD_BY_ID = 'select a.id, a.kind, p.hash from accounts a left join passwords p on p.account_id = a.id where a.id = $1';
 
-async function passwordFor(deps: Pick<Deps, 'db'>, where: { usernameKey: string } | { accountId: string }) {
+async function passwordFor(deps: Pick<Deps, 'db'>, where: { loginKey: string } | { accountId: string }) {
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind; hash: string | null }>(
-    'usernameKey' in where ? PASSWORD_BY_NAME : PASSWORD_BY_ID,
-    ['usernameKey' in where ? where.usernameKey : where.accountId],
+    'loginKey' in where ? PASSWORD_BY_NAME : PASSWORD_BY_ID,
+    ['loginKey' in where ? where.loginKey : where.accountId],
   );
   const row = rows[0];
   const real = row !== undefined && row.hash !== null && passwordAllowed(row.kind);
@@ -77,38 +79,41 @@ async function passwordFor(deps: Pick<Deps, 'db'>, where: { usernameKey: string 
 }
 
 /**
- * Throttled password check on one account's (or unknown name's) `password` key: one Argon2 verify,
- * a failure counted and answered 401 `credentials-invalid`. The throttle check runs only once an
- * Argon2 slot is held, so a 503 `busy` refusal never claims (and so never wastes) a throttle try;
- * a 429 refusal releases the slot without verifying.
+ * The confirm path's throttled password check on the signed-in account's `password` key: one
+ * Argon2 verify, a failure counted and answered 401 `credentials-invalid`. The throttle check runs
+ * only once an Argon2 slot is held, so a 503 `busy` refusal never claims (and so never wastes) a
+ * throttle try; a 429 refusal releases the slot without verifying.
  */
 async function checkCredentials(
   deps: Deps,
   req: FastifyRequest,
   found: { accountId: string | null; hash: string; real: boolean },
-  nameKey: string,
+  accountId: string,
   password: string,
 ): Promise<string> {
-  const key = await throttleKey(deps, req, 'password', found.accountId ? { id: found.accountId } : { usernameKey: nameKey });
+  const key = await throttleKey(deps, req, 'password', { id: accountId });
   const verified = await ARGON2_SLOTS.run(async () => {
     await throttleCheck(deps, key);
     return argon2.verify(found.hash, normalizePassword(password));
   });
-  if (!verified || !found.real || found.accountId === null) {
-    await throttleFail(deps, key, found.accountId);
+  if (!verified || !found.real || found.accountId !== accountId) {
+    await throttleFail(deps, key, accountId);
     throw new ApiError(401, 'credentials-invalid');
   }
   await throttleReset(deps, key);
-  return found.accountId;
+  return accountId;
 }
 
 /**
- * The name a malformed username is throttled under: `~` + SHA-256 hex of its first 64 code units.
- * Never the raw input (a NUL would make Postgres refuse the key), and `~` cannot start a valid
- * username key, so it never shares a key with a real name.
+ * The one answer to every failed password login (owner, 2026-10-23): an unknown login name, a
+ * wrong password, a name that may not use a password and a quietly locked name all get 401
+ * `credentials-invalid` ("That login name and password don't match") with `misses`, this
+ * browser's misses in a row, so the page can send the visitor away after about 10. No wait, lock
+ * or retry time is ever shown.
  */
-export function nameKeyOf(username: string): string {
-  return `~${createHash('sha256').update(username.slice(0, 64)).digest('hex')}`;
+async function loginMiss(deps: Deps, req: FastifyRequest): Promise<never> {
+  const misses = await visitorMiss(deps, deviceHash(req));
+  throw new ApiError(401, 'credentials-invalid', { misses });
 }
 
 async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
@@ -117,12 +122,13 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   req.server.budgets.register.take();
   const body = req.body as Record<string, unknown> | null;
   const terms = assertTermsAccepted(deps, body !== null && typeof body === 'object' ? body.acceptedTerms : undefined);
-  const { username: rawName, password, deviceLabel } = strings(body, ['username', 'password', 'deviceLabel'] as const);
-  const { username, key } = assertUsername(rawName);
+  const { displayName: rawDisplay, loginName: rawLogin, password, deviceLabel } = strings(
+    body, ['displayName', 'loginName', 'password', 'deviceLabel'] as const,
+  );
+  const names = await assertNewNames(deps.db, rawDisplay, rawLogin);
   await assertNewPassword(deps, password);
-  // Taken names answer before the expensive hash; the unique index still decides races.
-  const taken = await deps.db.query('select 1 from accounts where username_key = $1', [key]);
-  if (taken.rows.length > 0) throw new ApiError(409, 'username-taken');
+  // Taken names answer before the expensive hash; the unique indexes still decide races.
+  await assertNamesFree(deps.db, names);
   const hash = await hashPassword(password);
 
   const now = deps.clock();
@@ -131,7 +137,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { username, key, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
       await client.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [accountId, hash, now]);
       await client.query('commit');
     } catch (e) {
@@ -143,19 +149,36 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   }
 
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: 'password', firstSession: true });
-  return reply.code(201).send({ username });
+  return reply.code(201).send({ displayName: names.displayName });
 }
 
+/**
+ * `POST /v1/login/password { loginName, password, deviceLabel }`. Every path runs exactly one Argon2
+ * verify: the account's own hash when the login name exists, may use a password, has one and is not
+ * quietly locked (`claimPasswordTry`); otherwise `DUMMY_HASH`. Every failure is `loginMiss`.
+ */
 async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
-  const { username: rawName, password, deviceLabel } = strings(req.body, ['username', 'password', 'deviceLabel'] as const);
-  const name = checkUsername(rawName);
+  const { loginName, password, deviceLabel } = strings(req.body, ['loginName', 'password', 'deviceLabel'] as const);
+  const name = loginNameLookup(deps.config, loginName);
   // A malformed name cannot match an account: it takes the unknown-account path (dummy verify).
-  const nameKey = name.ok ? name.key : nameKeyOf(rawName);
-  const found = name.ok ? await passwordFor(deps, { usernameKey: name.key }) : { accountId: null, hash: DUMMY_HASH, real: false };
-  const accountId = await checkCredentials(deps, req, found, nameKey, password);
+  const found = name.key !== null ? await passwordFor(deps, { loginKey: name.key }) : { accountId: null, hash: DUMMY_HASH, real: false };
+  const key = await throttleKey(deps, req, 'password-login', found.accountId !== null ? { id: found.accountId } : { nameTag: name.tag });
+  // The try is claimed only once an Argon2 slot is held, so a 503 `busy` never uses one up.
+  const outcome = await ARGON2_SLOTS.run(async () => {
+    const tryNumber = await claimPasswordTry(deps, key);
+    const verified = await argon2.verify(tryNumber !== null ? found.hash : DUMMY_HASH, normalizePassword(password));
+    return { tryNumber, ok: verified && tryNumber !== null && found.real };
+  });
+  if (!outcome.ok || found.accountId === null) {
+    if (outcome.tryNumber !== null) await passwordMiss(deps, key, outcome.tryNumber, found.accountId);
+    return loginMiss(deps, req);
+  }
+  const accountId = found.accountId;
+  await throttleReset(deps, key);
+  await visitorReset(deps, deviceHash(req));
   // Only after the password checks out, so a disabled account is not revealed to anyone else.
   await assertNotDisabled(deps.db, accountId);
   // With TOTP enrolled, no session until `POST /v1/login/second-factor` accepts the code.
@@ -184,7 +207,7 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
     throw new ApiError(401, 'credentials-invalid');
   }
   const found = await passwordFor(deps, { accountId: req.auth.accountId });
-  await checkCredentials(deps, req, found, '', password);
+  await checkCredentials(deps, req, found, req.auth.accountId, password);
   // Once TOTP is enrolled, a confirm needs the current code too; a wrong one counts on the `totp` key.
   if (enrolled && totp !== undefined) {
     const key = await throttleKey(deps, req, 'totp', { id: req.auth.accountId });
@@ -254,6 +277,8 @@ async function setPasswordHandler(req: FastifyRequest) {
  * `POST /v1/register/password`, `POST /v1/login/password`, `POST /v1/confirm/password` and
  * `PUT /v1/account/password`. All refuse bodies over 4 KiB with 413 before hashing; the public
  * routes set the device cookie; register draws on the register budget, login on the start budget.
+ * Register takes `{ displayName, loginName, password, deviceLabel, acceptedTerms }` and answers
+ * `{ displayName }` only: the login name is never sent back.
  */
 export function passwordRoutes(app: FastifyInstance): void {
   const opts = { bodyLimit: PASSWORD_BODY_LIMIT };

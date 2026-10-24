@@ -1,6 +1,9 @@
 export {
   AuthApiError,
+  MISSES_BEFORE_SENDING_AWAY,
+  PASSWORD_LOGIN_MISMATCH,
   createAuthApi,
+  shouldSendAway,
   type AccountOverview,
   type AlertEntry,
   type ApiErrorCode,
@@ -29,5 +32,5 @@ export {
   type RegistrationCeremony,
 } from './webauthn.js';
 export { defaultDeviceLabel, walletAction, withConfirm } from './confirm.js';
-export { checkPassword, checkUsername, describeAction, inspectPublicKey, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
+export { checkDisplayName, checkLoginName, checkNames, checkPassword, describeAction, inspectPublicKey, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
 export type { ConfirmAction, MethodType } from '@x2f/accounts';

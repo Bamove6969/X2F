@@ -17,7 +17,7 @@ import { addAlert } from '../alerts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { consumeChallenge } from './challenges.js';
+import { consumeChallenge, takeStartBudgetUnlessOpen } from './challenges.js';
 import { methodAllowed } from './methods.js';
 import { requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
@@ -67,8 +67,9 @@ export function openSecret(deps: Pick<Deps, 'config'>, accountId: string, sealed
 /** otpauth wants an ArrayBuffer of exactly the secret's bytes (a Buffer may sit in a shared pool). */
 const secretOf = (bytes: Uint8Array) => new Secret({ buffer: new Uint8Array(bytes).buffer });
 
-function totpOf(bytes: Uint8Array, username: string): TOTP {
-  return new TOTP({ issuer: 'X2F', label: username, algorithm: 'SHA1', digits: DIGITS, period: PERIOD_S, secret: secretOf(bytes) });
+/** `label` is the public display name, never the login name. */
+function totpOf(bytes: Uint8Array, label: string): TOTP {
+  return new TOTP({ issuer: 'X2F', label, algorithm: 'SHA1', digits: DIGITS, period: PERIOD_S, secret: secretOf(bytes) });
 }
 
 /**
@@ -164,9 +165,9 @@ function str(b: Record<string, unknown>, key: string): string {
 async function enrolStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const now = deps.clock();
-  const { rows } = await deps.db.query<{ username: string }>('select username from accounts where id = $1', [req.auth.accountId]);
-  const username = rows[0]?.username;
-  if (username === undefined) throw new ApiError(401, 'not-authenticated');
+  const { rows } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [req.auth.accountId]);
+  const displayName = rows[0]?.display_name;
+  if (displayName === undefined) throw new ApiError(401, 'not-authenticated');
   // A fresh secret per enrolment, from the OS CSPRNG only (R9).
   const bytes = new Uint8Array(randomBytes(TOTP_SECRET_BYTES));
   const { rows: ch } = await deps.db.query<{ id: string }>(
@@ -190,7 +191,7 @@ async function enrolStart(req: FastifyRequest) {
          order by (payload->>'n')::bigint desc offset $2)`,
     [req.auth.sessionId, TOTP_OPEN_ENROLMENTS, now],
   );
-  const totp = totpOf(bytes, username);
+  const totp = totpOf(bytes, displayName);
   return { challengeId: ch[0]!.id, otpauthUri: totp.toString(), secret: totp.secret.base32 };
 }
 
@@ -264,8 +265,9 @@ async function enrolFinish(req: FastifyRequest) {
 async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
-  req.server.budgets.start.take();
   const b = body(req);
+  // F1: a started password login can always finish its second factor.
+  await takeStartBudgetUnlessOpen(req, b.pendingId, 'second-factor');
   const pendingId = str(b, 'pendingId');
   const code = str(b, 'code');
   const now = deps.clock();

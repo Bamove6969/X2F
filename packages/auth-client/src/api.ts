@@ -34,6 +34,8 @@ export class AuthApiError extends Error {
   readonly version?: string;
   /** The kind of action that needs a confirm token (403 `confirm-required`). */
   readonly action?: string;
+  /** This browser's password-login misses in a row (401 `credentials-invalid` from `loginPassword`); see `shouldSendAway`. */
+  readonly misses?: number;
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -49,7 +51,27 @@ export class AuthApiError extends Error {
     if (typeof extra.holdUntil === 'string') this.holdUntil = extra.holdUntil;
     if (typeof extra.version === 'string') this.version = extra.version;
     if (typeof extra.action === 'string') this.action = extra.action;
+    if (typeof extra.misses === 'number' && Number.isInteger(extra.misses) && extra.misses > 0) this.misses = extra.misses;
   }
+}
+
+/**
+ * The one sentence for every failed password login (owner, 2026-10-23): an unknown login name, a
+ * wrong password and a name the server is quietly not checking all read the same. Show no wait.
+ */
+export const PASSWORD_LOGIN_MISMATCH = "That login name and password don't match";
+
+/** After about this many password-login misses in a row, the page sends the visitor away from the site. */
+export const MISSES_BEFORE_SENDING_AWAY = 10;
+
+/**
+ * True when a refused `loginPassword` call says this browser has missed `MISSES_BEFORE_SENDING_AWAY`
+ * times in a row: the login page should then send the visitor away (the redirect itself is Plan 3's
+ * screen). The count comes from the server (per browser, never per name), so a reload does not
+ * reset it. Any other error, or none, is false.
+ */
+export function shouldSendAway(e: unknown): boolean {
+  return e instanceof AuthApiError && e.code === 'credentials-invalid' && (e.misses ?? 0) >= MISSES_BEFORE_SENDING_AWAY;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -94,7 +116,10 @@ export type Suggestion = 'add-authenticator' | 'add-backup';
 
 /** Task 11: `GET /v1/account/me`. */
 export interface AccountOverview {
-  username: string;
+  /** The public display name; the private login name is never sent. */
+  displayName: string;
+  /** False for an account made before login names existed: it has none yet. */
+  loginNameSet: boolean;
   kind: AccountKind;
   level: 'full' | 'recovery';
   holdUntil: string | null;
@@ -153,31 +178,39 @@ export interface AuthApi {
   getTerms(): Promise<{ version: string }>;
   /** `GET /v1/pgp/signing-key`: X2F's official PGP key, which signs every challenge (R7). */
   getPgpSigningKey(): Promise<{ fingerprint: string; publicKey: string }>;
-  registerPassword(b: { username: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{ username: string }>;
-  loginPassword(b: { username: string; password: string; deviceLabel: string }): Promise<PasswordLoginResult>;
+  /** Both names are picked at sign-up (spec 6.1): the public `displayName` and the private `loginName`; they must differ. */
+  registerPassword(b: { displayName: string; loginName: string; password: string; deviceLabel: string; acceptedTerms: string }): Promise<{
+    displayName: string;
+  }>;
+  /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
+  loginPassword(b: { loginName: string; password: string; deviceLabel: string }): Promise<PasswordLoginResult>;
   /** `POST /v1/login/second-factor`: the TOTP code for a password login's `pendingId`. */
   loginSecondFactor(b: { pendingId: string; code: string }): Promise<{ status: 'ok' }>;
   /** `POST /v1/login/backup`: opens a recovery session (TOTP: held 24 hours). */
-  loginBackup(b: { username: string; kind: 'totp' | 'recovery-code'; code: string; deviceLabel: string }): Promise<{
+  loginBackup(b: { loginName: string; kind: 'totp' | 'recovery-code'; code: string; deviceLabel: string }): Promise<{
     status: 'ok';
     level: 'recovery';
     holdUntil: string | null;
   }>;
-  registerPgpStart(b: { username: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
-  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ username: string }>;
-  /** `pendingId`: the second step of a staff or owner login. */
-  loginPgpStart(b: { username: string; refreshedKey?: string; pendingId?: string }): Promise<PgpChallenge>;
+  registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
+  registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
+  /**
+   * PGP login needs no name: `key` is the person's armored public key (preferred: an unknown key's
+   * decoy then goes to that key too) or its fingerprint. `pendingId`: the second step of a staff or
+   * owner login.
+   */
+  loginPgpStart(b: { key: string; pendingId?: string }): Promise<PgpChallenge>;
   loginPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
-  registerWebAuthnStart(b: { username: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
+  registerWebAuthnStart(b: { displayName: string; loginName: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
   registerWebAuthnFinish(b: {
     challengeId: string;
     response: RegistrationResponseJSON;
     deviceLabel: string;
     acceptedTerms: string;
     label?: string;
-  }): Promise<{ username: string }>;
-  /** Without `username`: a discoverable passkey login (traders). */
-  loginWebAuthnStart(b: { username?: string; pendingId?: string }): Promise<AuthenticationChallenge>;
+  }): Promise<{ displayName: string }>;
+  /** Without `loginName`: a discoverable passkey login (traders). */
+  loginWebAuthnStart(b: { loginName?: string; pendingId?: string }): Promise<AuthenticationChallenge>;
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
 

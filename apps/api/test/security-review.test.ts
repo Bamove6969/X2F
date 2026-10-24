@@ -53,7 +53,7 @@ describe('F2: GET /v1/account/me shows the 24-hour wait the way the wallet route
   it('after a scheduled switch-off has taken effect, the wait is reported as off', async () => {
     const t0 = new Date('2026-10-17T12:00:00Z');
     setNow(t0);
-    const id = await seedAccount(deps, { username: 'waitoff01' });
+    const id = await seedAccount(deps, { loginName: 'waitoff01' });
     const offAt = new Date(t0.getTime() + 24 * HOUR);
     await deps.db.query('update accounts set payout_wait = true, payout_wait_off_at = $2 where id = $1', [id, offAt]);
     const b = await loggedIn(id);
@@ -67,7 +67,7 @@ describe('F2: GET /v1/account/me shows the 24-hour wait the way the wallet route
 describe('F3: API answers are never cached', () => {
   it('every /v1 answer, errors and secrets included, carries cache-control: no-store', async () => {
     setNow(new Date('2026-10-17T12:00:00Z'));
-    const id = await seedAccount(deps, { username: 'nostore01' });
+    const id = await seedAccount(deps, { loginName: 'nostore01' });
     const b = await loggedIn(id);
     const unauth = await app.inject({ method: 'GET', url: '/v1/account/me' });
     expect(unauth.statusCode).toBe(401);

@@ -52,7 +52,7 @@ const at = (ms: number) => new Date(now.getTime() + ms);
 /** A trader with the test password and a logged-in browser (the creating session, so onboarding applies). */
 async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' } = {}) {
   const username = name();
-  const id = await seedAccount(deps, { username, ...(o.kind ? { kind: o.kind } : {}) });
+  const id = await seedAccount(deps, { loginName: username, ...(o.kind ? { kind: o.kind } : {}) });
   await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [id, goodHash, now]);
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id, firstSession: o.firstSession ?? true });
@@ -246,7 +246,7 @@ describe('verifyTotp replay order (P2-I2)', () => {
   });
 
   it('is false for an account without TOTP', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     expect(await verifyTotp(deps, id, '123456')).toBe(false);
   });
 });
@@ -411,13 +411,13 @@ describe('no patterns in TOTP secrets (R9)', () => {
 
   it('the same username at different times never gets the same secret', async () => {
     const username = name('same');
-    const first = await seedAccount(deps, { username });
+    const first = await seedAccount(deps, { loginName: username });
     const b1 = new Browser(app);
     await b1.post('/t/login', { accountId: first, firstSession: true });
     const s1 = await enrol(b1);
     await deps.db.query('delete from accounts where id = $1', [first]);
     setNow(at(HOUR / 2));
-    const second = await seedAccount(deps, { username });
+    const second = await seedAccount(deps, { loginName: username });
     const b2 = new Browser(app);
     await b2.post('/t/login', { accountId: second, firstSession: true });
     const s2 = await enrol(b2);

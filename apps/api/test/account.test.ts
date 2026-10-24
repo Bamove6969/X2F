@@ -50,7 +50,7 @@ const at = (ms: number) => new Date(now.getTime() + ms);
 
 async function account(kind: 'trader' | 'staff' = 'trader') {
   const username = `acct${String(++n).padStart(4, '0')}x`;
-  return { id: await seedAccount(deps, { username, kind }), username };
+  return { id: await seedAccount(deps, { loginName: username, kind }), username };
 }
 
 async function loggedIn(
