@@ -125,11 +125,51 @@ describe('trade store', () => {
     }
   });
 
-  it('eventRecord replaces any address-named field with its last 6 and writes bigints as strings', () => {
+  it('eventRecord keeps only the listed fields of each event type, an address as its last 6, bigints as strings', () => {
     expect(eventRecord({ type: 'chain', receivedAtomic: 5n, unlockedAtomic: 2n, confirmations: 3 })).toEqual({
       type: 'chain', receivedAtomic: '5', unlockedAtomic: '2', confirmations: 3,
     });
-    const future = { type: 'setup-done', escrowAddress: '5'.repeat(90) + 'abcdef', refundAddress: '4xyz123456' } as never;
-    expect(eventRecord(future)).toEqual({ type: 'setup-done', escrowAddressEnd: 'abcdef', refundAddressEnd: '123456' });
+    expect(eventRecord({ type: 'setup-done', escrowAddress: '5'.repeat(90) + 'abcdef' })).toEqual({ type: 'setup-done', escrowAddressEnd: 'abcdef' });
+    expect(eventRecord({ type: 'settled', kind: 'release', txHash: 'ab'.repeat(32) })).toEqual({ type: 'settled', kind: 'release', txHash: 'ab'.repeat(32) });
+    expect(eventRecord({ type: 'mark-paid', fiatCents: 41250n })).toEqual({ type: 'mark-paid', fiatCents: '41250' });
+  });
+
+  it('eventRecord never stores a field it does not list, whatever its name or shape', () => {
+    const addr = fakeAddress();
+    // Fields a later event might add: an address under any name, nested payouts, a refund target.
+    const future = {
+      type: 'settled', kind: 'release', txHash: 'cd'.repeat(32),
+      to: addr, refundTo: addr, payouts: [{ address: addr, amountAtomic: 1n }], extra: { deep: { address: addr } },
+    } as never;
+    const rec = eventRecord(future);
+    expect(rec).toEqual({ type: 'settled', kind: 'release', txHash: 'cd'.repeat(32) });
+    expect(JSON.stringify(rec)).not.toContain(addr.slice(0, 12));
+    expect(eventRecord({ type: 'extend', by: 'seller', note: addr } as never)).toEqual({ type: 'extend' });
+  });
+
+  it('eventRecord refuses a listed field that is not a plain value (an object or array is never stored whole)', () => {
+    expect(() => eventRecord({ type: 'settled', kind: { to: fakeAddress() }, txHash: 'ab'.repeat(32) } as never)).toThrow(TypeError);
+    expect(() => eventRecord({ type: 'setup-done', escrowAddress: [fakeAddress()] } as never)).toThrow(TypeError);
+    expect(() => eventRecord({ type: 'nonsense' } as never)).toThrow(TypeError);
+  });
+
+  it('writes nothing, appends no event and publishes nothing for an event that changes nothing', async () => {
+    const p = await pair();
+    const { trade } = await seedTrade(deps, { sellerId: p.seller, buyerId: p.buyer, poster: 'seller' });
+    const securing = await driveTo(deps, trade, 'securing');
+    const before = await eventsOf(trade.code);
+    const published: string[] = [];
+    const publish: TradePublisher = (t, e) => void published.push(`${t.state}:${e.type}`);
+    // The same chain numbers again, and a tick with no deadline due: no change at all.
+    const same = { type: 'chain', receivedAtomic: securing.receivedAtomic, unlockedAtomic: securing.unlockedAtomic, confirmations: securing.confirmations } as const;
+    expect(await applyEvent({ ...deps, publish }, trade.code, same, 'system')).toEqual(securing);
+    expect(await applyEvent({ ...deps, publish }, trade.code, { type: 'tick' }, 'system')).toEqual(securing);
+    expect(await eventsOf(trade.code)).toEqual(before);
+    expect(published).toEqual([]);
+    expect(await loadTrade(deps.db, trade.code)).toEqual(securing);
+    // A real change still writes, appends and publishes.
+    await applyEvent({ ...deps, publish }, trade.code, { ...same, confirmations: securing.confirmations + 1 }, 'system');
+    expect(await eventsOf(trade.code)).toHaveLength(before.length + 1);
+    expect(published).toEqual(['securing:chain']);
   });
 });

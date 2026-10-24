@@ -205,30 +205,78 @@ export async function loadTrade(q: Queryable, code: string): Promise<Trade | nul
   return row ? rowToTrade(row) : null;
 }
 
+/** How a stored event field is written: as is (a bigint as a decimal string), or an address cut to its last 6. */
+type Kept = 'value' | 'addressEnd';
+type FieldsOf<T extends TradeEvent['type']> = Exclude<keyof Extract<TradeEvent, { type: T }>, 'type'>;
+
 /**
- * The event as it is stored in `trade_events.event`: bigints as decimal strings, and every field
- * whose name says it is an address replaced by `<name>End` holding its last 6 characters
- * (P3-I12). Today only `setup-done.escrowAddress` is one; the name rule also covers any address a
- * later event adds.
+ * Every field of every event type and how it is stored (P3-I12). The type makes this exhaustive:
+ * a new event type, or a new field on one (a `to`, `payouts` or `refundTo`), does not compile
+ * until it is listed here, and a field missing from this list is never stored.
+ */
+const STORED = {
+  'setup-done': { escrowAddress: 'addressEnd' },
+  chain: { receivedAtomic: 'value', unlockedAtomic: 'value', confirmations: 'value' },
+  'mark-paid': { fiatCents: 'value' },
+  extend: {},
+  'request-refund': {},
+  'buyer-cancel': {},
+  'propose-cancel': {},
+  'accept-cancel': {},
+  'withdraw-cancel': {},
+  'release-started': {},
+  settled: { kind: 'value', txHash: 'value' },
+  'open-dispute': {},
+  escalate: {},
+  pause: {},
+  resume: {},
+  tick: {},
+} as const satisfies { [T in TradeEvent['type']]: Record<FieldsOf<T>, Kept> };
+
+/**
+ * The event as it is stored in `trade_events.event`: only the fields STORED lists for its type,
+ * bigints as decimal strings, and each address replaced by `<name>End` holding its last 6
+ * characters (P3-I12). Any other field is dropped. Throws TypeError for an unknown type or a
+ * listed field that is not a plain string, number, boolean or bigint, so nothing nested is ever
+ * stored whole.
  */
 export function eventRecord(e: TradeEvent): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(e)) {
-    if (/address/i.test(k)) {
-      out[`${k}End`] = typeof v === 'string' ? addressEnd(v) : null;
+  if (!Object.hasOwn(STORED, e.type)) throw new TypeError('unknown event type');
+  const fields: Readonly<Record<string, Kept>> = STORED[e.type];
+  const src = e as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = { type: e.type };
+  for (const [k, how] of Object.entries(fields)) {
+    if (!Object.hasOwn(src, k)) continue;
+    const v = src[k];
+    if (how === 'addressEnd') {
+      if (typeof v !== 'string') throw new TypeError(`event field ${k} is not an address`);
+      out[`${k}End`] = addressEnd(v);
     } else if (typeof v === 'bigint') {
       out[k] = v.toString();
-    } else {
+    } else if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') {
       out[k] = v;
+    } else {
+      throw new TypeError(`event field ${k} is not a plain value`);
     }
   }
   return out;
 }
 
+/** A column value in a comparable form (dates by their instant). */
+const comparable = (v: unknown): unknown => (v instanceof Date ? v.getTime() : v);
+
+/** True when `next` would write exactly the columns `prev` already has. */
+function unchanged(prev: Trade, next: Trade): boolean {
+  const a = stateColumns(prev);
+  const b = stateColumns(next);
+  return a.every(([, v], i) => comparable(v) === comparable(b[i]![1]));
+}
+
 /**
  * Applies one event to one trade: locks the row, runs the pure state machine on the server's
  * clock, writes the new state and appends the (address-free) event, all in one transaction; then
- * publishes. Throws ApiError 404 `not-found` for an unknown code and the machine's TradeRuleError
+ * publishes. An event that leaves every column as it was is a no-op: nothing is written,
+ * appended or published. Throws ApiError 404 `not-found` for an unknown code and the machine's TradeRuleError
  * unchanged (callers map it); on any throw nothing is written.
  */
 export async function applyEvent(deps: TradeDeps, code: string, e: TradeEvent, by: By): Promise<Trade> {
@@ -240,7 +288,14 @@ export async function applyEvent(deps: TradeDeps, code: string, e: TradeEvent, b
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
-      next = apply(rowToTrade(row), e, by, now);
+      const prev = rowToTrade(row);
+      next = apply(prev, e, by, now);
+      // An event that changes nothing (the same chain numbers again, a tick with nothing due)
+      // writes no row, appends no event and publishes nothing.
+      if (unchanged(prev, next)) {
+        await client.query('rollback');
+        return next;
+      }
       // Task 5 (Revision 2026-10-24, starter limits): the cap check on growth goes here, inside
       // this transaction and before the write. When `e.type === 'chain'` and `next.grown` differs
       // from the stored one, a growth above either side's cap must keep the trade at its current
