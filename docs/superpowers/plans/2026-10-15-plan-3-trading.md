@@ -927,7 +927,7 @@ Rules the tests pin (one test each):
 **Boards:** `SetupLogin` and `SetupBackup` (reused); everything else from design-system parts.
 
 **Files:**
-- Create: `apps/web/src/screens/auth/{Login,BackupLogin,ConfirmSheet}.tsx`, `apps/web/src/screens/settings/{Security,Methods,Totp,RecoveryCodes,PayoutWait,Devices,Alerts}.tsx`
+- Create: `apps/web/src/screens/auth/{Login,BackupLogin,ConfirmSheet}.tsx`, `apps/web/src/screens/settings/{Security,Methods,Totp,RecoveryCodes,LogoutTimer,Devices,Alerts}.tsx` (LogoutTimer replaces the retired PayoutWait screen, owner 2026-10-23: `GET`/`PUT /v1/account/security/logout-timer` `{ idleHours }`, choices 2-12 hours, read-only for staff and owner)
 - Test: `apps/web/e2e/login.spec.ts`, `apps/web/e2e/security.spec.ts`
 
 **Interfaces:**

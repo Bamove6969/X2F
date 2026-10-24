@@ -60,6 +60,9 @@ Not needed: agy, desktop-commander.
     - The fail-closed catch in `usablePgpIds` has no test.
     - The `removeMethod` clock injection has no test.
   - The `ownerReady(deps, ownerId)` signature changed; Plan 4 owner setup must pass deps.
+- 2026-10-24 lead: follow-ups from the owner's questions on stored login data:
+  - **FU-D, login name stored only as a keyed tag.** After FU-A merges, replace the plaintext `accounts.login_name` / `login_key` with `login_tag = HMAC(login-name key ring, lower-cased NFC name)`, which has a key id and can be rotated like the FU-C rings. The names-differ check moves to the app, comparing the display-name tag with the login-name tag. A stolen database then holds no login names. Unknown-name lookups already use HMAC tags.
+  - **Revoke or remove a PGP key in Security settings.** The user pastes a revocation certificate, which is merged (never replaced), or removes the key. X2F never polls keyservers, because that would tell them which keys X2F users hold. (Plan 3 Task 30 for the UI, plus a small API route.)
 
 ## Plan 3 Task 12 (browser escrow runtime): cross-task notes (2026-10-24, wip/second-p3-t12)
 
