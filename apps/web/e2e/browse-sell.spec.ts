@@ -105,14 +105,14 @@ test.describe('/sell (Main board)', () => {
   test('a search with no match shows the board copy, and "Suggest it" posts a suggestion', async ({ page }) => {
     const seen = await stubApi(page, { signedIn: true });
     await page.goto('/sell');
-    await page.getByRole('searchbox', { name: 'Search payment methods' }).fill('Paysend');
-    await expect(page.getByText('No method called "Paysend" yet. You can post an offer with a custom payment method.')).toBeVisible();
+    await page.getByRole('searchbox', { name: 'Search payment methods' }).fill('Kuda Pay');
+    await expect(page.getByText('No method called "Kuda Pay" yet. You can post an offer with a custom payment method.')).toBeVisible();
     await page.getByRole('button', { name: 'Suggest it' }).click();
     const sheet = page.getByRole('dialog', { name: 'Suggest a payment method' });
-    await expect(sheet.getByRole('textbox', { name: 'Payment method name' })).toHaveValue('Paysend');
+    await expect(sheet.getByRole('textbox', { name: 'Payment method name' })).toHaveValue('Kuda Pay');
     await sheet.getByRole('button', { name: 'Send suggestion' }).click();
-    await expect(sheet.getByText('Thanks. We will look at adding Paysend. Until then, you can post an offer with a custom payment method.')).toBeVisible();
-    expect(seen.suggestions).toEqual([{ name: 'Paysend' }]);
+    await expect(sheet.getByText('Thanks. We will look at adding Kuda Pay. Until then, you can post an offer with a custom payment method.')).toBeVisible();
+    expect(seen.suggestions).toEqual([{ name: 'Kuda Pay' }]);
   });
 
   test('a search with matches shows "N matches"', async ({ page }) => {
@@ -139,9 +139,11 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
 
   test('EUR shows only EUR offers', async ({ page }) => {
     const seen = await stubApi(page);
-    await page.goto('/sell?currency=EUR');
+    await page.goto('/sell');
+    await page.getByRole('radiogroup', { name: 'Currency' }).getByRole('radio', { name: 'EUR' }).click();
+    await expect(page).toHaveURL(/\/sell\?currency=EUR$/);
     await expect(page.locator('main h2').first()).toHaveText('Buyers paying in EUR');
-    await page.getByRole('link', { name: /SEPA/ }).click();
+    await page.getByRole('link', { name: /^SEPA 3 buyers/ }).click();
     await expect(page).toHaveURL(/\/sell\/SEPA\?currency=EUR$/);
     await expect(page.locator('article')).toHaveCount(1);
     await expect(page.locator('article [data-username]')).toHaveText(['euro_buyer']);

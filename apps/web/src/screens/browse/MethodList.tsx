@@ -99,20 +99,24 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
           </div>
         </div>
         <h1 className="x2f-browse__title">{copy.heading}</h1>
-        <div className="x2f-browse__filters">
-          <label htmlFor="browse-currency" className="x2f-visually-hidden">
+        <div role="radiogroup" aria-labelledby="browse-currency" className="x2f-browse__sorts">
+          <span id="browse-currency" className="x2f-visually-hidden">
             Currency
-          </label>
-          <select
-            id="browse-currency"
-            className="x2f-select"
-            value={currency}
-            onChange={(e) => void navigate(`?currency=${e.target.value}`, { replace: true })}
-          >
-            {CURRENCIES.map((c) => (
-              <option key={c}>{c}</option>
-            ))}
-          </select>
+          </span>
+          {CURRENCIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              role="radio"
+              aria-checked={currency === c}
+              className="x2f-chip-button"
+              onClick={() => void navigate(`?currency=${c}`, { replace: true })}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="x2f-browse__filters">
           <label htmlFor="browse-search" className="x2f-visually-hidden">
             Search payment methods
           </label>
