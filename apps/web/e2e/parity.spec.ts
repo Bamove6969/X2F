@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
-import { KNOWN_EXCEPTIONS, boardTexts, expectParity, missingTexts, withoutBoardMarkers } from './parity.js';
+import { KNOWN_EXCEPTIONS, boardTexts, expectParity, missingTexts, reportPixels, withoutBoardMarkers } from './parity.js';
 
 const run = promisify(execFile);
 const REPO = fileURLToPath(new URL('../../../', import.meta.url));
@@ -26,7 +26,22 @@ test.describe('expectParity: blocking checks', () => {
     await expectParity(page, 'Review');
     const pixels = test.info().annotations.filter((a) => a.type === 'parity-pixels');
     expect(pixels).toHaveLength(1);
-    expect(pixels[0]!.description).toMatch(/^Review 390x844: /);
+    // No reference is committed yet, so the pixel diff reports a missing reference and does not block.
+    expect(pixels[0]!.description).toMatch(/^Review 390x844: reported, not blocking: no reference refs\/Review\.png/);
+  });
+
+  test('a hidden extra [data-primary] does not count', async ({ page }) => {
+    await pageWithBoardTexts(page, 'Review', '<button data-primary>Go</button><button data-primary style="display:none">Hidden</button>');
+    await expectParity(page, 'Review');
+  });
+
+  test('fails a username given text-transform by a class, not only an inline style', async ({ page }) => {
+    await pageWithBoardTexts(
+      page,
+      'Review',
+      '<style>.caps{text-transform:uppercase}</style><button data-primary>Go</button><span class="caps"><span data-username>mira.k</span></span>',
+    );
+    await expect(expectParity(page, 'Review')).rejects.toThrow(/text-transform uppercase on \[data-username\] "mira.k"/);
   });
 
   test('fails a page with two [data-primary]', async ({ page }) => {
@@ -76,6 +91,35 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['28:42', '10:00'], m)).toEqual(['10:00']);
     expect(await missingTexts(page, ['Released'], m)).toEqual(['Released']);
   });
+
+  test('a masked region only stands in for a value-shaped text, not real copy', async ({ page }) => {
+    await page.setContent('<p><span class="m">28:12</span></p>');
+    const m = [page.locator('.m')];
+    // Real copy that happens to contain a digit cannot hide behind a mask.
+    expect(await missingTexts(page, ['1.237500 XMR is yours'], m)).toEqual(['1.237500 XMR is yours']);
+    expect(await missingTexts(page, ['Trade K7M2-9QXA-4FTR-8WPN · Zelle'], m)).toEqual(['Trade K7M2-9QXA-4FTR-8WPN · Zelle']);
+    // A value-shaped amount or timer is still covered.
+    expect(await missingTexts(page, ['$412.50'], m)).toEqual([]);
+  });
+
+  test('one masked pattern cannot stand in for two different board texts', async ({ page }) => {
+    await page.setContent('<p>You pay · <span data-mask>1 h 2 min</span> left</p>');
+    expect(await missingTexts(page, ['You pay · 1 h left', 'You pay · 2 h left'])).toEqual(['You pay · 2 h left']);
+  });
+
+  test('a board placeholder checks the fixed copy around it', async ({ page }) => {
+    // boardTexts turns "{{roleName}}" into a wildcard; the fixed sentence must still be present.
+    await page.setContent('<p>Invite link for a new moderator. It works once and expires in 24 hours.</p>');
+    const t = 'Invite link for a new \u0000. It works once and expires in 24 hours.';
+    expect(await missingTexts(page, [t])).toEqual([]);
+    await page.setContent('<p>Invite link for a new moderator. It works twice.</p>');
+    expect(await missingTexts(page, [t])).toEqual([t]);
+  });
+
+  test('text in a hidden element does not count as shown', async ({ page }) => {
+    await page.setContent('<p style="display:none">Escrow funded</p><p style="visibility:hidden">Released</p>');
+    expect(await missingTexts(page, ['Escrow funded', 'Released'])).toEqual(['Escrow funded', 'Released']);
+  });
 });
 
 test.describe('board texts', () => {
@@ -124,6 +168,50 @@ test('the 1280×800 header text matches the Desktop board', async ({ page }) => 
   expect(await missingTexts(page, header)).toEqual([]);
 });
 
+test('expectParity at 1280x800 sets the viewport and compares the Desktop board', async ({ page }) => {
+  await pageWithBoardTexts(page, 'Desktop');
+  await expectParity(page, 'Desktop', { viewport: '1280x800' });
+  expect(page.viewportSize()).toEqual({ width: 1280, height: 800 });
+  const pixels = test.info().annotations.filter((a) => a.type === 'parity-pixels');
+  expect(pixels.at(-1)!.description).toMatch(/^Desktop 1280x800: /);
+});
+
+test.describe('reported pixel diff', () => {
+  let dir = '';
+  test.beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'x2f-refs-'));
+  });
+  test.afterEach(async () => {
+    await rm(dir, { recursive: true, force: true });
+  });
+  const canvas = '<body style="margin:0;background:#0e1116;width:200px;height:120px">';
+
+  test('reports a missing reference without blocking', async ({ page }) => {
+    await page.setViewportSize({ width: 200, height: 120 });
+    await page.setContent(canvas);
+    expect(await reportPixels(page, 'Nope', '390x844', [], dir)).toMatch(/reported, not blocking: no reference/);
+  });
+
+  test('is within the ratio when the page matches, and a mask covers a changed region', async ({ page }) => {
+    await page.setViewportSize({ width: 200, height: 120 });
+    await page.setContent(`${canvas}<div style="color:#fff">Escrow funded</div><span data-mask style="color:#fff">28:12</span>`);
+    await writeFile(join(dir, 'Self.png'), await page.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css' }));
+    // Only the masked region changes: it is blacked out in both, so the diff stays within the ratio.
+    await page.locator('[data-mask]').evaluate((e) => {
+      e.textContent = '00:01';
+    });
+    expect(await reportPixels(page, 'Self', '390x844', [], dir)).toMatch(/within 3% of refs\/Self\.png/);
+  });
+
+  test('reports a large difference without blocking', async ({ page }) => {
+    await page.setViewportSize({ width: 200, height: 120 });
+    await page.setContent(canvas);
+    await writeFile(join(dir, 'Self.png'), await page.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css' }));
+    await page.setContent('<body style="margin:0;background:#ffffff;width:200px;height:120px">');
+    expect(await reportPixels(page, 'Self', '390x844', [], dir)).toMatch(/reported, not blocking: \d.*% of pixels differ/);
+  });
+});
+
 test.describe('capture-refs', () => {
   // Run as the command a person runs (tsx), with the boards and output pointed at a temp folder.
   async function capture(...args: string[]): Promise<{ code: number; out: string }> {
@@ -157,6 +245,7 @@ test.describe('capture-refs', () => {
   });
 
   test('screenshots each chosen board at its canvas.json size', async () => {
+    // The stub boards carry no placeholders, so a do-nothing runtime still renders them cleanly.
     await writeFile(join(dir, 'support.js'), '');
     const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
     expect(r.out).toContain('capture-refs: wrote 1 reference');
@@ -164,5 +253,29 @@ test.describe('capture-refs', () => {
     // PNG IHDR: width and height are big-endian at bytes 16 and 20.
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([200, 120]);
     await expect(readFile(join(dir, 'refs', 'Other.png'))).rejects.toThrow();
+  });
+
+  test('fails when the runtime leaves a {{…}} placeholder in the body, writing no references', async () => {
+    await writeFile(join(dir, 'support.js'), '');
+    await writeFile(join(dir, 'Tiny.dc.html'), '<!doctype html><html><head><script src="./support.js"></script></head><body style="margin:0"><x-dc><p>You pay {{amount}}</p></x-dc></body></html>');
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/\{\{…\}\} is still in the rendered body/);
+    await expect(readFile(join(dir, 'refs', 'Tiny.png'))).rejects.toThrow();
+  });
+
+  test('fails on a page error thrown by the runtime', async () => {
+    await writeFile(join(dir, 'support.js'), 'throw new Error("runtime broke");');
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/page error: .*runtime broke/);
+  });
+
+  test('fails when the board reaches outside the local server', async () => {
+    await writeFile(join(dir, 'support.js'), '');
+    await writeFile(join(dir, 'Tiny.dc.html'), '<!doctype html><html><head><script src="./support.js"></script></head><body style="margin:0"><x-dc><img src="https://dc-keyframes-base.invalid/x.png"></x-dc></body></html>');
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/request failed: https:\/\/dc-keyframes-base\.invalid/);
   });
 });

@@ -1,3 +1,5 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { boardSizes } from '../../../tools/parity/capture-refs.js';
 import { BOARDS_DIR, boardHtml, serveBoards, type BoardServer } from '../../../tools/parity/serve-boards.js';
@@ -55,6 +57,13 @@ describe('capture-refs', () => {
     const sizes = boardSizes(BOARDS_DIR);
     expect(sizes.get('Main')).toEqual({ width: 390, height: 844 });
     expect(sizes.get('Desktop')).toEqual({ width: 1280, height: 800 });
-    expect(sizes.size).toBe(34);
+    // One size per board file on disk and per board in canvas.json (not a hard-coded count).
+    const onDisk = readdirSync(BOARDS_DIR).filter((f) => f.endsWith('.dc.html')).length;
+    const inCanvas = Object.keys(
+      (JSON.parse(readFileSync(join(BOARDS_DIR, 'canvas.json'), 'utf8')) as { boards: Record<string, unknown> }).boards,
+    ).filter((f) => f.endsWith('.dc.html')).length;
+    expect(onDisk).toBeGreaterThan(0);
+    expect(sizes.size).toBe(onDisk);
+    expect(sizes.size).toBe(inCanvas);
   });
 });

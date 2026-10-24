@@ -9,7 +9,8 @@
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts            # every board
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts Main Desktop
 //   (--boards-dir=<dir> and --out-dir=<dir> point it elsewhere; the tests use them.)
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from '@playwright/test';
@@ -48,28 +49,52 @@ export async function captureRefs(o: {
   const names = o.boards ?? [...sizes.keys()];
   for (const n of names) if (!sizes.has(n)) throw new Error(`capture-refs: no board "${n}" in canvas.json`);
 
-  mkdirSync(outDir, { recursive: true });
+  // Capture into a temp folder and move the images into place only when every board succeeds, so a
+  // failed run never leaves a half-written or stale set of references behind.
+  const staging = mkdtempSync(join(tmpdir(), 'x2f-refs-'));
   const server = await serveBoards({ boardsDir });
   const executablePath = o.executablePath ?? process.env.X2F_CHROMIUM_PATH;
   const browser = await chromium.launch(executablePath ? { executablePath } : {});
-  const written: string[] = [];
+  const staged: { name: string; file: string }[] = [];
   try {
     for (const name of names) {
       const size = sizes.get(name)!;
       const context = await browser.newContext({ viewport: size, deviceScaleFactor: 1, colorScheme: 'dark', reducedMotion: 'reduce' });
+      const problems: string[] = [];
+      // The board must be self-contained from the local server: any request that leaves it is
+      // aborted, and an abort (or any other failed request) is a failure, not a silently blank image.
       await context.route('**/*', (r) => (r.request().url().startsWith(`${server.origin}/`) ? r.continue() : r.abort()));
       const page = await context.newPage();
-      await page.goto(`${server.origin}/${name}.dc.html`, { waitUntil: 'networkidle' });
+      page.on('pageerror', (e) => problems.push(`page error: ${e.message}`));
+      page.on('requestfailed', (r) => problems.push(`request failed: ${r.url()} (${r.failure()?.errorText ?? 'aborted'})`));
+      const response = await page.goto(`${server.origin}/${name}.dc.html`, { waitUntil: 'networkidle' });
+      const status = response?.status() ?? 0;
+      if (status < 200 || status >= 300) problems.push(`${name}.dc.html returned HTTP ${status}`);
       await page.evaluate(() => document.fonts.ready.then(() => undefined));
-      const file = join(outDir, `${name}.png`);
+      if (await page.evaluate(() => document.body.innerHTML.includes('{{'))) {
+        problems.push('{{…}} is still in the rendered body — the canvas runtime did not fill the template');
+      }
+      if (problems.length > 0) {
+        await context.close();
+        throw new Error(`capture-refs: board "${name}" did not render cleanly:\n  - ${problems.join('\n  - ')}`);
+      }
+      const file = join(staging, `${name}.png`);
       await page.screenshot({ path: file, clip: { x: 0, y: 0, ...size }, animations: 'disabled', caret: 'hide' });
-      written.push(file);
+      staged.push({ name, file });
       await context.close();
     }
   } finally {
     await browser.close();
     await server.close();
   }
+  mkdirSync(outDir, { recursive: true });
+  const written: string[] = [];
+  for (const { name, file } of staged) {
+    const dest = join(outDir, `${name}.png`);
+    copyFileSync(file, dest); // copy (not rename): the staging temp may be on another filesystem
+    written.push(dest);
+  }
+  rmSync(staging, { recursive: true, force: true });
   return written;
 }
 
