@@ -82,8 +82,10 @@ export interface EscrowRecord {
   acceptedAtomic?: bigint | null;
   /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
   closedSeenAt?: number | null;
-  /** Device clock (ms) when this device saw its settle done and the escrow empty with nothing in the pool. */
+  /** Device clock (ms) when this device saw its OWN settle done and the escrow empty with nothing in the pool. */
   settleSeenAt?: number | null;
+  /** This device has seen coins in the escrow (a balance or any incoming tx). */
+  fundedSeen?: boolean;
 }
 
 export interface EscrowStore {

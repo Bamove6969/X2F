@@ -720,6 +720,40 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect(await t.seller.store.load(CODE)).not.toBeNull();
   });
 
+  it('a funded escrow swept while this device has no settle of its own: escrow-failed, never done, the store is kept', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const seller = await t.mk('seller', { now: () => clock });
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null);
+    // Funded and secured: the seller has nothing to settle on its own here.
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('seller', 2);
+    expect((await seller.store.load(CODE))?.intent).toBeNull();
+    // Someone else's tx empties it and the API says refunded.
+    t.state.view = tradeView({ state: 'refunded' });
+    t.parties.funds = empty();
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed' });
+    await t.parties.ticks('seller', 2); // that tick's save has landed
+    expect(seller.statuses.some((s) => s.phase === 'done')).toBe(false);
+    expect((await seller.store.load(CODE))?.settleSeenAt ?? null).toBeNull();
+    clock += 60 * DAY;
+    await t.parties.ticks('seller', 3);
+    expect(await seller.store.load(CODE)).not.toBeNull();
+  });
+
+  it('done only from this device’s own settle: settleSeenAt is set once its settle resolved and the escrow is empty in a block', async () => {
+    const t = await released();
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = empty();
+    await until(async () => (await t.seller.store.load(CODE))?.settleSeenAt != null);
+    expect((await t.seller.store.load(CODE))?.intent?.done).toBe(true);
+    expect(t.seller.last()?.phase).toBe('done');
+  });
+
   it('the party reports settled-elsewhere: escrow-failed, never a quiet close', async () => {
     const t = await released({ settle: false });
     const p = t.parties.pending.find((x) => x.role === 'seller')!;

@@ -538,7 +538,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.error) return this.emit();
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
-      if (i?.done || (this.rec.settleSeenAt != null && this.view !== null && CLOSED.includes(this.view.state))) return this.set('done');
+      if (i?.done) return this.set('done'); // only from this device's own settle
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
     }
@@ -566,6 +566,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       }
       const r = this.rec;
       let changed = false;
+      if (!r.fundedSeen && (f.balance > 0n || f.incoming.length > 0)) {
+        r.fundedSeen = true;
+        changed = true;
+      }
 
       if (CLOSED.includes(v.state)) {
         if (await this.afterClose(f)) return;
@@ -622,10 +626,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
 
     /**
      * The keep rules once the API says closed (lead 2026-10-24): the store stays for 30 days from
-     * when this device first saw the trade closed, or until this device saw its own settle done
-     * and the escrow empty with nothing in the pool, whichever is later; never on the API's word
-     * alone. A closed escrow emptied while this device's own settle is still open, for longer
-     * than the party needs to catch up, was settled elsewhere: escrow-failed, and the store stays.
+     * when this device first saw the trade closed, or until this device saw ITS OWN settle done
+     * with the escrow empty and nothing in the pool, whichever is later; never on the API's word
+     * alone. A funded escrow that empties without this device's own settle done was settled
+     * elsewhere: escrow-failed (visible), never 'done', and the store stays. While this device's
+     * own settle is still open, the party gets `settledElsewhereMs` to catch up first. An escrow
+     * that never held coins has nothing to settle and goes after the 30 days.
      * Returns true once the trade is forgotten.
      */
     private async afterClose(f: { balance: bigint; unlocked: bigint; incoming: { confirmations: number }[] }): Promise<boolean> {
@@ -637,17 +643,21 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         changed = true;
       }
       const emptyInBlock = f.balance === 0n && f.unlocked === 0n && f.incoming.every((x) => x.confirmations > 0);
-      const open = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
-      if (emptyInBlock && open) {
-        this.emptiedWhileSettling ??= t;
-        if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed');
-      } else this.emptiedWhileSettling = null;
-      if (emptyInBlock && !open && r.settleSeenAt == null) {
+      const ownDone = r.intent?.done === true;
+      const ownOpen = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
+      const funded = r.fundedSeen === true;
+      if (emptyInBlock && ownDone && r.settleSeenAt == null) {
         r.settleSeenAt = t;
         changed = true;
       }
+      if (emptyInBlock && funded && !ownDone) {
+        if (!ownOpen) this.emptiedWhileSettling ??= t - settledElsewhereMs; // nothing of ours could still land
+        else this.emptiedWhileSettling ??= t;
+        if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed');
+      } else this.emptiedWhileSettling = null;
       if (changed) await this.persist();
-      if (!this.error && emptyInBlock && r.settleSeenAt != null && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
+      const settled = r.settleSeenAt != null || !funded;
+      if (!this.error && emptyInBlock && settled && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
         await this.close();
         return true;
       }
