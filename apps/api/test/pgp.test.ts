@@ -546,6 +546,13 @@ describe('binding', () => {
     home = await registerPgp(name, key);
   });
 
+  // Each test starts a day later, past the 12-hour logout timer: log home in afresh.
+  beforeEach(async () => {
+    home = new Browser();
+    const s = await loginStart(home, name);
+    await loginFinish(home, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
+  });
+
   it('a login code is refused by the confirm and register finishes', async () => {
     setNow(new Date(now.getTime() + HOUR));
     const s = await loginStart(home, name);

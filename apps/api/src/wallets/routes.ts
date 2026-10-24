@@ -2,7 +2,7 @@ import { addressEnd, addressHash, type ConfirmAction } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import { addAlert } from '../alerts.js';
-import { redeemConfirm, requireConfirm } from '../auth/confirm.js';
+import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -12,7 +12,7 @@ import type { RetentionJob } from '../retention.js';
 export const WALLET_APPS = ['cake', 'edge', 'feather', 'monerujo', 'stack', 'monero-gui-cli', 'ledger-trezor', 'other'] as const;
 export type WalletApp = (typeof WALLET_APPS)[number];
 
-/** The opt-in wait before a newly added wallet can receive payouts, and before switching the wait off takes effect. */
+/** How long a wallet confirmed with a password (or password and TOTP) waits before it can receive payouts. */
 export const PAYOUT_WAIT_MS = 24 * 3_600_000;
 /** A removed wallet's address is kept this long (then nulled by `purgeRemovedWalletAddresses`). */
 export const REMOVED_ADDRESS_RETENTION_MS = 90 * 24 * 3_600_000;
@@ -26,28 +26,8 @@ export interface Wallet {
   address: string;
   addressEnd: string;
   usableFrom: Date;
-  /** `usableFrom <= now`: false while the 24-hour wait runs. */
+  /** `usableFrom <= now`: false while the 24-hour wait of a password-confirmed wallet runs. */
   usable: boolean;
-}
-
-/** The account columns that hold the 24-hour wait. */
-export interface PayoutWaitRow {
-  payout_wait: boolean;
-  payout_wait_off_at: Date | null;
-}
-
-/** The wait applies while it is on and any scheduled switch-off has not yet arrived. */
-export function payoutWaitActive(row: PayoutWaitRow, now: Date): boolean {
-  return row.payout_wait && (row.payout_wait_off_at === null || now.getTime() < row.payout_wait_off_at.getTime());
-}
-
-/**
- * The wait as the person sees it: `enabled` while it applies, and `offAt` when a switch-off is
- * scheduled but not yet in effect. (For Task 11's `me.payoutWait`; same shape.)
- */
-export function payoutWaitState(row: PayoutWaitRow, now: Date): { enabled: boolean; offAt: string | null } {
-  const enabled = payoutWaitActive(row, now);
-  return { enabled, offAt: enabled && row.payout_wait_off_at !== null ? row.payout_wait_off_at.toISOString() : null };
 }
 
 interface WalletRow {
@@ -111,7 +91,6 @@ interface WalletInput {
 }
 
 const walletInputs = new WeakMap<FastifyRequest, WalletInput>();
-const waitInputs = new WeakMap<FastifyRequest, { enabled: boolean }>();
 
 function bodyOf(req: FastifyRequest): Record<string, unknown> {
   const body = req.body;
@@ -198,8 +177,8 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      const { rows } = await client.query<PayoutWaitRow & { had_wallet: boolean }>(
-        'select payout_wait, payout_wait_off_at, had_wallet from accounts where id = $1 for update',
+      const { rows } = await client.query<{ had_wallet: boolean }>(
+        'select had_wallet from accounts where id = $1 for update',
         [req.auth.accountId],
       );
       const account = rows[0]!;
@@ -209,11 +188,15 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       // R17: the token must be for exactly the checked, trimmed address (hash computed once, in
       // checkWalletInput). Redeemed in this transaction: a rollback below leaves it unused (M1).
       // A present but non-string token (number, null, object) is invalid, never "missing".
+      let method: ConfirmMethod | null = null;
       if (!exempted) {
-        await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
+        method = await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
       }
       req.confirmedAction = input.action;
-      const waits = account.had_wallet && payoutWaitActive(account, now);
+      // Owner, 2026-10-23: the first wallet during onboarding and a wallet confirmed with PGP, a
+      // passkey or a security key are usable at once; one confirmed with a password waits 24 hours.
+      // `method` is what the redeemed token recorded, never anything in this request.
+      const waits = method !== null && !STRONG_CONFIRM_METHODS.includes(method);
       const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
       let inserted: WalletRow;
       try {
@@ -231,7 +214,11 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       wallet = toWallet(inserted, now);
       await addAlert(
         client, req.auth.accountId, 'wallet-added',
-        { app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString() }, now,
+        {
+          app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString(),
+          confirmedWith: method ?? 'onboarding',
+        },
+        now,
       );
       await client.query('commit');
     } catch (e) {
@@ -246,74 +233,32 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** Removal cannot redirect money, so it needs no confirm; it also cancels a wallet still waiting. */
+/**
+ * Removal cannot redirect money, so it needs no confirm; it also cancels a wallet still waiting.
+ * It always writes a `wallet-removed` alert (owner, 2026-10-23), in the same transaction, carrying
+ * display details only: the app, the label and the end of the address, never all of it.
+ */
 async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { id } = req.params as { id: string };
   if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-  const { rows } = await deps.db.query(
-    'update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null returning id',
-    [id, req.auth.accountId, deps.clock()],
-  );
-  if (rows.length === 0) throw new ApiError(404, 'not-found');
-  return reply.code(204).send();
-}
-
-const checkWaitInput: preHandlerAsyncHookHandler = async function (req) {
-  const { enabled } = bodyOf(req);
-  if (typeof enabled !== 'boolean') throw new ApiError(400, 'bad-request');
-  waitInputs.set(req, { enabled });
-};
-
-const waitOffConfirm = requireConfirm({ kind: 'payout-wait-off' });
-
-async function waitRow(db: Queryable, accountId: string, lock = false): Promise<PayoutWaitRow> {
-  const { rows } = await db.query<PayoutWaitRow>(
-    `select payout_wait, payout_wait_off_at from accounts where id = $1${lock ? ' for update' : ''}`,
-    [accountId],
-  );
-  return rows[0]!;
-}
-
-/** Switching off changes something only while the wait applies and no switch-off is scheduled. */
-const switchOffPending = (row: PayoutWaitRow, now: Date) => payoutWaitActive(row, now) && row.payout_wait_off_at === null;
-
-/**
- * Turning the wait off needs a `payout-wait-off` token (no onboarding exemption), but only when it
- * would change something: asking while the wait is already off or already scheduled to end is a no-op.
- */
-const confirmIfSwitchingOff: preHandlerAsyncHookHandler = async function (req, reply) {
-  const { enabled } = waitInputs.get(req)!;
-  if (enabled) return;
-  const deps = req.server.deps;
-  if (!switchOffPending(await waitRow(deps.db, req.auth.accountId), deps.clock())) return;
-  await waitOffConfirm.call(req.server, req, reply);
-};
-
-async function waitHandler(req: FastifyRequest) {
-  const deps = req.server.deps;
-  const { enabled } = waitInputs.get(req)!;
   const now = deps.clock();
   const client = await deps.db.connect();
   try {
     await client.query('begin');
     try {
-      const row = await waitRow(client, req.auth.accountId, true);
-      let next: PayoutWaitRow = row;
-      if (enabled) {
-        // On at once; a scheduled switch-off is cancelled.
-        next = { payout_wait: true, payout_wait_off_at: null };
-        await client.query('update accounts set payout_wait = true, payout_wait_off_at = null where id = $1', [req.auth.accountId]);
-      } else if (switchOffPending(row, now)) {
-        // The state changed since the check (it was switched on in parallel): a token is still needed.
-        if (req.confirmedAction?.kind !== 'payout-wait-off') throw new ApiError(403, 'confirm-required', { action: 'payout-wait-off' });
-        const offAt = new Date(now.getTime() + PAYOUT_WAIT_MS);
-        next = { payout_wait: true, payout_wait_off_at: offAt };
-        await client.query('update accounts set payout_wait_off_at = $2 where id = $1', [req.auth.accountId, offAt]);
-        await addAlert(client, req.auth.accountId, 'payout-wait-off-scheduled', { offAt: offAt.toISOString() }, now);
-      }
+      const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
+        `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
+         returning app, label, address`,
+        [id, req.auth.accountId, now],
+      );
+      const removed = rows[0];
+      if (!removed) throw new ApiError(404, 'not-found');
+      await addAlert(
+        client, req.auth.accountId, 'wallet-removed',
+        { app: removed.app, label: removed.label, addressEnd: addressEnd(removed.address) }, now,
+      );
       await client.query('commit');
-      return payoutWaitState(next, now);
     } catch (e) {
       await client.query('rollback');
       throw e;
@@ -321,11 +266,12 @@ async function waitHandler(req: FastifyRequest) {
   } finally {
     client.release();
   }
+  return reply.code(204).send();
 }
 
 /**
- * `GET /v1/wallets`, `POST /v1/wallets`, `DELETE /v1/wallets/:id` and
- * `PUT /v1/account/security/payout-wait`. Full trader sessions only (R3: staff and owner accounts
+ * `GET /v1/wallets`, `POST /v1/wallets` and `DELETE /v1/wallets/:id`. (The opt-in
+ * `PUT /v1/account/security/payout-wait` was retired 2026-10-23.) Full trader sessions only (R3: staff and owner accounts
  * never hold payout wallets).
  */
 export function walletRoutes(app: FastifyInstance): void {
@@ -346,5 +292,4 @@ export function walletRoutes(app: FastifyInstance): void {
     addHandler,
   );
   app.delete('/v1/wallets/:id', { preHandler: session }, removeHandler);
-  app.put('/v1/account/security/payout-wait', { preHandler: [session, checkWaitInput, confirmIfSwitchingOff] }, waitHandler);
 }

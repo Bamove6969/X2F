@@ -95,6 +95,13 @@ async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' | '
   return { id, b, sessionId: (res.json() as { sessionId: string }).sessionId };
 }
 
+/** A fresh session for the account: after a jump past the 12-hour logout timer the old one has ended. */
+async function relogin(id: string): Promise<Browser> {
+  const b = new Browser(app);
+  expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
+  return b;
+}
+
 async function confirmToken(b: Browser, action: ConfirmAction): Promise<string> {
   const res = await b.post('/v1/confirm/password', { password: GOOD, action });
   expect(res.statusCode).toBe(200);
@@ -227,7 +234,7 @@ describe('adding a wallet later (P2-C2, R17)', () => {
     const { id, b, sessionId } = await trader();
     for (const address of ['4' + fakeAddress().slice(1), 'not an address', '', fakeAddress(96), 'x'.repeat(2000)]) {
       // Issued directly so even '' gets a token for exactly its own action (the confirm route refuses an empty addressEnd).
-      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address) });
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'password' });
       const res = await addWallet(b, { address, confirmToken: token });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'address-invalid' });
@@ -344,7 +351,7 @@ describe('staff and owner accounts hold no payout wallets (R3)', () => {
     it(`answers 403 wrong-account-kind to a ${kind} session on every wallet route`, async () => {
       const { id, b, sessionId } = await trader({ kind });
       const address = fakeAddress();
-      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address) });
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletAction(address), method: 'password' });
       const responses = [
         await b.get('/v1/wallets'),
         await addWallet(b, { address, confirmToken: token }),
@@ -407,11 +414,12 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
     ]);
 
     setNow(new Date(added.getTime() + PAYOUT_WAIT_MS - 1000));
-    expect((await list(b)).find((w) => w.id === wallet.id)!.usable).toBe(false);
+    const later = await relogin(id);
+    expect((await list(later)).find((w) => w.id === wallet.id)!.usable).toBe(false);
     expect((await usableWallets(deps.db, id, now)).map((w) => w.id)).not.toContain(wallet.id);
 
     setNow(new Date(added.getTime() + PAYOUT_WAIT_MS));
-    expect((await list(b)).find((w) => w.id === wallet.id)!.usable).toBe(true);
+    expect((await list(later)).find((w) => w.id === wallet.id)!.usable).toBe(true);
     expect((await usableWallets(deps.db, id, now)).map((w) => w.id)).toContain(wallet.id);
   });
 
@@ -463,7 +471,7 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
     expect((await list(b)).map((w) => w.id)).not.toContain(wallet.id);
     setNow(at(PAYOUT_WAIT_MS));
     expect((await usableWallets(deps.db, id, now)).map((w) => w.id)).not.toContain(wallet.id);
-    expect((await b.delete(`/v1/wallets/${wallet.id}`)).statusCode).toBe(404);
+    expect((await (await relogin(id)).delete(`/v1/wallets/${wallet.id}`)).statusCode).toBe(404);
   });
 
   it('keeps the first-wallet exemption to once per account: after removing every wallet, a new one needs a token and waits', async () => {

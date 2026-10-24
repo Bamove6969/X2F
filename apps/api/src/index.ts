@@ -15,7 +15,9 @@ export { consumeChallenge, purgeExpired, type ChallengeRow } from './auth/challe
 export {
   COOKIE_ATTRS, DEVICE_COOKIE, TRUSTED_DEVICE_TTL_MS, deviceHash, ensureDeviceCookie, isTrusted, trustDevice,
 } from './auth/device.js';
-export { CONFIRM_TTL_MS, issueConfirmToken, redeemConfirm, requireConfirm } from './auth/confirm.js';
+export {
+  CONFIRM_TTL_MS, STRONG_CONFIRM_METHODS, issueConfirmToken, redeemConfirm, requireConfirm, type ConfirmMethod,
+} from './auth/confirm.js';
 export { originHook, requestOrigin } from './auth/origin.js';
 export {
   ONBOARDING_MS, SESSION_COOKIE, assertNotDisabled, endAllSessions, endOtherSessions, endSession, logoutRoute,
@@ -53,6 +55,6 @@ export {
 } from './auth/webauthn.js';
 export { moneroAddressValidator } from './wallets/address.js';
 export {
-  LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
-  usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
+  LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, purgeRemovedWalletAddresses,
+  usableWallets, walletRoutes, type Wallet, type WalletApp,
 } from './wallets/routes.js';

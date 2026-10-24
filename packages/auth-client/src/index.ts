@@ -8,9 +8,9 @@ export {
   type AuthenticationChallenge,
   type ConfirmTokenResult,
   type LoginResult,
+  type LogoutTimer,
   type MethodEntry,
   type PasswordLoginResult,
-  type PayoutWait,
   type PgpChallenge,
   type RegistrationChallenge,
   type SessionEntry,
@@ -30,4 +30,5 @@ export {
 } from './webauthn.js';
 export { defaultDeviceLabel, walletAction, withConfirm } from './confirm.js';
 export { checkPassword, checkUsername, describeAction, inspectPublicKey, normalizeLoginCode, normalizeRecoveryCode } from '@x2f/accounts';
-export type { ConfirmAction, MethodType } from '@x2f/accounts';
+export type { ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
+export { DEFAULT_IDLE_HOURS, IDLE_HOURS } from '@x2f/accounts';
