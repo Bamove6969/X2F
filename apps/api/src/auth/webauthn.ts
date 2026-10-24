@@ -13,7 +13,7 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from '../accounts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -507,7 +507,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     const body = record(req.body);
-    await takeStartBudgetUnlessOpen(req, body.challengeId, 'login');
+    await takeStartBudgetUnlessOpen(req, body.challengeId, { purpose: 'login', methods: ['passkey', 'security-key'] });
     const challengeId = str(body, 'challengeId');
     const deviceLabel = str(body, 'deviceLabel');
     const pendingId = optStr(body, 'pendingId');
@@ -582,7 +582,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const body = record(req.body);
   const names = await assertNewNames(deps.db, body.displayName, body.loginName);
   const kind = credentialKind(body.kind);
-  await assertNamesFree(deps.db, names);
+  await assertDisplayNameFree(deps.db, names);
   // The account does not exist yet: its WebAuthn user handle is chosen now and kept with the challenge.
   const userID = randomBytes(32);
   const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });

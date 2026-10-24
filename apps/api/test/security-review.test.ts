@@ -1,4 +1,4 @@
-import { checkUsername } from '@x2f/accounts';
+import { checkDisplayName } from '@x2f/accounts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -6,6 +6,7 @@ import { START_BUCKET } from '../src/limits.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
+import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 
 // Plan 2 Task 15 (docs/security/plan-2-review.md): proofs for the findings of the security review.
 
@@ -36,16 +37,84 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     // belongs in a test that goes through the proxy; it cannot be written against this app alone.
     for (let i = 0; i < START_BUCKET.capacity; i++) {
       const res = await app.inject({
-        method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { username: `nobody${i}xx` },
+        method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `nobody${i}xx` },
       });
       expect(res.statusCode).toBe(200);
     }
-    const victim = await new Browser(app).post('/v1/login/password', { username: 'realuser1', password: 'x', deviceLabel: 'b' });
+    const victim = await new Browser(app).post('/v1/login/password', { loginName: 'realuser1', password: 'x', deviceLabel: 'b' });
     expect(victim.statusCode).toBe(503);
     expect(victim.json()).toMatchObject({ error: 'busy' });
     // The owner's security-key login start is refused the same way.
-    const owner = await new Browser(app).post('/v1/login/webauthn/start', { username: 'theowner1' });
+    const owner = await new Browser(app).post('/v1/login/webauthn/start', { loginName: 'theowner1' });
     expect(owner.statusCode).toBe(503);
+  });
+
+  it('busy logins (owner, 2026-10-23): a login already started finishes even when the start budget is empty', async () => {
+    setNow(new Date('2026-10-17T15:00:00Z')); // the budget has refilled
+    const k = await genKey();
+    const reg = new Browser(app);
+    const rs = await reg.post('/v1/register/pgp/start', { displayName: 'Busy.Finisher', loginName: 'busy.fin.login', publicKey: k.publicKey });
+    const rcode = codeOf(await decrypt(rs.json().encryptedMessage, k.privateKey));
+    expect((await reg.post('/v1/register/pgp/finish', {
+      challengeId: rs.json().challengeId, code: rcode, deviceLabel: 'b', acceptedTerms: deps.config.termsVersion,
+    })).statusCode).toBe(201);
+
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey });
+    expect(start.statusCode).toBe(200);
+    // Someone else empties the start budget.
+    for (let i = 0; ; i++) {
+      const r = await app.inject({ method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `flood${i}xx` } });
+      if (r.statusCode === 503) break;
+    }
+    const code = codeOf(await decrypt(start.json().encryptedMessage, k.privateKey));
+    const fin = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'b' });
+    expect(fin.statusCode).toBe(200);
+    expect(fin.json()).toEqual({ status: 'ok' });
+  });
+
+  it('the exemption is bound to the device that started the login, and is used once per challenge', async () => {
+    setNow(new Date('2026-10-17T16:00:00Z'));
+    const k = await genKey();
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey }); // a decoy: still an open challenge of this device
+    expect(start.statusCode).toBe(200);
+    for (let i = 0; ; i++) {
+      const r = await app.inject({ method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `flood${i}yy` } });
+      if (r.statusCode === 503) break;
+    }
+    // Another browser naming the same challenge takes from the (empty) budget: busy.
+    const other = await new Browser(app).post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code: 'x', deviceLabel: 'b' });
+    expect(other.statusCode).toBe(503);
+    // A made-up challenge id: busy.
+    const junk = await b.post('/v1/login/pgp/finish', { challengeId: '00000000-0000-4000-8000-000000000000', code: 'x', deviceLabel: 'b' });
+    expect(junk.statusCode).toBe(503);
+    // The starting browser gets through once (its wrong code is code-invalid, not busy)...
+    const mine = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code: 'AAAA-AAAA-AAAA', deviceLabel: 'b' });
+    expect(mine.statusCode).toBe(401);
+    // ...and naming that challenge again does not get a second free pass.
+    const again = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code: 'AAAA-AAAA-AAAA', deviceLabel: 'b' });
+    expect(again.statusCode).toBe(503);
+  });
+
+  it('parallel finishes of one challenge get one exemption between them', async () => {
+    setNow(new Date('2026-10-17T17:00:00Z'));
+    const k = await genKey();
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey });
+    for (let i = 0; ; i++) {
+      const r = await app.inject({ method: 'POST', url: '/v1/login/webauthn/start', headers: { origin: ORIGIN }, payload: { loginName: `flood${i}zz` } });
+      if (r.statusCode === 503) break;
+    }
+    const res = await Promise.all(
+      Array.from({ length: 4 }, () =>
+        app.inject({
+          method: 'POST', url: '/v1/login/pgp/finish', headers: { origin: ORIGIN }, cookies: b.cookies,
+          payload: { challengeId: start.json().challengeId, code: 'AAAA-AAAA-AAAA', deviceLabel: 'b' },
+        }),
+      ),
+    );
+    expect(res.filter((r) => r.statusCode === 503)).toHaveLength(3);
   });
 });
 
@@ -101,14 +170,21 @@ describe('F3: API answers are never cached', () => {
   });
 });
 
-describe('F4: look-alike usernames beyond case and non-ASCII (Minor; owner decision, plan-2-review.md "For the owner")', () => {
-  it('digit and capital-I look-alikes of staff words and of each other are accepted today', () => {
-    // Pins today's rule (Task 1: case-insensitive uniqueness, ASCII only, reserved tokens/prefixes).
-    // Whether to fold 0/o, 1/l/i, rn/m before the uniqueness and reserved checks trades scams
-    // against false refusals of real names, so it is the owner's call; invert these when decided.
-    for (const name of ['adm1n.team', 'Moderat0r', 'supp0rt', 'llya.k', 'Ilya.k']) {
-      expect(checkUsername(name).ok, name).toBe(true);
+describe('F4: look-alike display names (owner decision 2026-10-23)', () => {
+  it('0/o, 1/l/i and rn/m fold only against reserved names; traders that merely look alike are both allowed', () => {
+    for (const name of ['adm1n.team', 'Moderat0r', 'supp0rt', 'Adrnin.k']) {
+      expect(checkDisplayName(name), name).toEqual({ ok: false, reason: 'reserved' });
     }
-    expect(checkUsername('Alice.b').ok && checkUsername('A1ice.b').ok).toBe(true);
+    for (const name of ['llya.k', 'Ilya.k', 'Alice.b', 'A1ice.b', 'm0nero.fan']) {
+      expect(checkDisplayName(name).ok, name).toBe(true);
+    }
+  });
+
+  it('a display name folding to a staff or owner display name is refused (the API check)', async () => {
+    setNow(new Date('2026-10-17T18:00:00Z'));
+    await seedAccount(deps, { loginName: 'owner.secret1', displayName: 'Marlin.0', kind: 'owner' });
+    const res = await new Browser(app).post('/v1/register/webauthn/start', { displayName: 'Mar1in.o', loginName: 'fan.login1', kind: 'passkey' });
+    expect(res.statusCode).toBe(400);
+    expect(res.json()).toEqual({ error: 'display-name-reserved' });
   });
 });

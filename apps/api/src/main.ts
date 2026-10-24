@@ -2,7 +2,7 @@ import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
-import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
+import { loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { startRetention, type RetentionJob } from './retention.js';
@@ -25,8 +25,6 @@ await assertSigningKeyFile(config.pgpSigningKeyPath);
 // R7: refuses a public-only or passphrase-protected key and a fingerprint other than
 // X2F_PGP_SIGNING_FINGERPRINT; the process exits before listening.
 const pgpSigner = await loadPgpSigner(config.pgpSigningKeyPath, config.pgpSigningFingerprint);
-// R18: the decoy key pool (includes an RSA-4096 key) is made before the first request.
-await decoyPrivateKeys();
 
 // Task 8: the FIDO metadata snapshot, loaded before listening (no network fetch).
 const attestation = fileAttestationPolicy(config.attestationDir);

@@ -17,8 +17,8 @@ export interface NewNames {
  * Checks the two names of a new account (spec 6.1, owner 2026-10-23): their shapes, reserved
  * display names (with look-alikes), that they differ, and that the display name is not a look-alike
  * of a staff or owner display name (F4: 0/o, 1/l/i, rn/m). 400 `display-name-invalid`,
- * `display-name-reserved`, `login-name-invalid` or `names-same`. Taken names are checked by
- * `assertNamesFree` (and, for races, by the unique indexes in `createAccount`).
+ * `display-name-reserved`, `login-name-invalid` or `names-same`. A taken display name is checked by
+ * `assertDisplayNameFree`; a taken login name only by `createAccount`.
  */
 export async function assertNewNames(db: Queryable, displayName: unknown, loginName: unknown): Promise<NewNames> {
   const r = checkNames(typeof displayName === 'string' ? displayName : '', typeof loginName === 'string' ? loginName : '');
@@ -33,18 +33,15 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
 }
 
 /**
- * 409 `display-name-taken` or `login-name-taken`, before any expensive work. The two are separate
- * namespaces: a display name may equal someone else's login name, so registering a display name
- * never tells whether a login name exists.
+ * 409 `display-name-taken`, before any expensive work. Display names are public, so saying one is
+ * taken tells nobody anything new. Login names are never checked here: a taken login name is only
+ * found by `createAccount`, at the very end of a sign-up (after the password is hashed, or after
+ * the PGP code or the authenticator has proved the key), and is answered with the generic
+ * `names-unavailable`, so there is no cheap way to test whether a private login name exists.
  */
-export async function assertNamesFree(db: Queryable, n: NewNames): Promise<void> {
-  const { rows } = await db.query<{ display: boolean; login: boolean }>(
-    `select exists (select 1 from accounts where display_key = $1) as display,
-            exists (select 1 from accounts where login_key = $2) as login`,
-    [n.displayKey, n.loginKey],
-  );
-  if (rows[0]!.display) throw new ApiError(409, 'display-name-taken');
-  if (rows[0]!.login) throw new ApiError(409, 'login-name-taken');
+export async function assertDisplayNameFree(db: Queryable, n: NewNames): Promise<void> {
+  const { rows } = await db.query('select 1 from accounts where display_key = $1', [n.displayKey]);
+  if (rows.length > 0) throw new ApiError(409, 'display-name-taken');
 }
 
 /**
@@ -72,8 +69,9 @@ export function assertTermsAccepted(deps: Pick<Deps, 'config'>, acceptedTerms: u
 }
 
 /**
- * Inserts an account (inside the caller's transaction). A taken display or login key → 409
- * `display-name-taken` / `login-name-taken`. `webauthn_user_id` is 32 random bytes. Terms version
+ * Inserts an account (inside the caller's transaction): the final, credential-bound step of every
+ * sign-up. A taken display or login key → 409 `names-unavailable`, one answer for both, so it
+ * never says which one (or that a login name exists). `webauthn_user_id` is 32 random bytes. Terms version
  * and acceptance time are both null when `termsVersion` is null (staff and owner, Plan 4).
  */
 export async function createAccount(
@@ -92,8 +90,9 @@ export async function createAccount(
     return rows[0]!.id;
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
-    if (err.code === '23505' && err.constraint === 'accounts_display_key_key') throw new ApiError(409, 'display-name-taken');
-    if (err.code === '23505' && err.constraint === 'accounts_login_key_key') throw new ApiError(409, 'login-name-taken');
+    if (err.code === '23505' && (err.constraint === 'accounts_display_key_key' || err.constraint === 'accounts_login_key_key')) {
+      throw new ApiError(409, 'names-unavailable');
+    }
     throw e;
   }
 }

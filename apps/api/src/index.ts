@@ -25,14 +25,14 @@ export {
   QUIET_LOCK_AT, QUIET_LOCK_MS, VISITOR_MISSES_BEFORE_LEAVING, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey,
   throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
-export { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
+export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {
   DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, verifyPassword,
 } from './auth/password.js';
 export {
-  PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,
+  PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, insertPgpKey, issuePgpChallenge, loadPgpSigner,
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
 export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';

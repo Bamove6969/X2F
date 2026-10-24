@@ -11,7 +11,7 @@ export type ApiErrorCode =
   | 'display-name-reserved'
   | 'display-name-taken'
   | 'login-name-invalid'
-  | 'login-name-taken'
+  | 'names-unavailable'
   | 'names-same'
   | 'password-weak'
   | 'password-leaked'

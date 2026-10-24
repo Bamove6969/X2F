@@ -1,6 +1,7 @@
 import type { FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
+import { deviceHash } from './device.js';
 import type { RetentionJob } from '../retention.js';
 
 /** A row of `challenges`: a login code, WebAuthn challenge or pending second factor. */
@@ -37,17 +38,29 @@ export async function consumeChallenge(db: Queryable, id: string, now: Date): Pr
 
 /**
  * F1 (owner, 2026-10-23, "busy logins"): someone who has already started a login can always finish
- * it. A login `finish` (or second step) whose challenge is open (exists, unused, unexpired, with
- * this `purpose`) never takes from the global start budget; one naming no open challenge takes a
- * token as before, so a flood of made-up finishes is still counted. Read only: the route consumes
- * the challenge afterwards as usual.
+ * it. A login `finish` (or second step) skips the global start budget only when it names an open
+ * challenge (unused, unexpired) of this `purpose` and one of `methods`, started from this very
+ * device (the browser's device-cookie hash, which every login start records), and only once per
+ * challenge: the exemption is claimed atomically (`payload.budgetFree`), so parallel or repeated
+ * finishes of one challenge, and any retry after a refusal, take a token as before. Every other
+ * finish (unknown, used, expired, another device, no device cookie, another method) takes a
+ * token, so a flood of made-up finishes is still counted. The route consumes the challenge
+ * afterwards as usual.
  */
-export async function takeStartBudgetUnlessOpen(req: FastifyRequest, challengeId: unknown, purpose: string): Promise<void> {
+export async function takeStartBudgetUnlessOpen(
+  req: FastifyRequest,
+  challengeId: unknown,
+  c: { purpose: string; methods: readonly string[] },
+): Promise<void> {
   const deps = req.server.deps;
-  if (typeof challengeId === 'string' && UUID.test(challengeId)) {
+  const device = deviceHash(req);
+  if (typeof challengeId === 'string' && UUID.test(challengeId) && device !== null) {
     const { rows } = await deps.db.query(
-      'select 1 from challenges where id = $1 and purpose = $2 and used_at is null and expires_at > $3',
-      [challengeId, purpose, deps.clock()],
+      `update challenges set payload = payload || '{"budgetFree": true}'::jsonb
+        where id = $1 and purpose = $2 and method = any($3::text[]) and device_hash = $4
+          and used_at is null and expires_at > $5 and not (payload ? 'budgetFree')
+        returning 1`,
+      [challengeId, c.purpose, c.methods, device, deps.clock()],
     );
     if (rows.length > 0) return;
   }

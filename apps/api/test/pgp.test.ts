@@ -7,7 +7,7 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
-import { decoyPrivateKeys, insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
+import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -83,13 +83,14 @@ class Browser {
 let counter = 0;
 const uniqueName = (p = 'user') => `${p}${(++counter).toString().padStart(3, '0')}x`;
 
-async function registerStart(b: Browser, username: string, key: Pair) {
-  return b.post('/v1/register/pgp/start', { username, publicKey: key.publicKey });
+/** Signs up with display name `displayName` and login name `<displayName>.l`. */
+async function registerStart(b: Browser, displayName: string, key: Pair) {
+  return b.post('/v1/register/pgp/start', { displayName, loginName: `${displayName}.l`, publicKey: key.publicKey });
 }
 
-/** Registers `username` with `key` in browser `b` (or a new one); returns the browser. */
-async function registerPgp(username: string, key: Pair, b = new Browser()): Promise<Browser> {
-  const start = await registerStart(b, username, key);
+/** Registers display name `displayName` with `key` in browser `b` (or a new one); returns the browser. */
+async function registerPgp(displayName: string, key: Pair, b = new Browser()): Promise<Browser> {
+  const start = await registerStart(b, displayName, key);
   expect(start.statusCode).toBe(200);
   const code = codeOf(await dec(start.json().encryptedMessage, key.privateKey));
   const fin = await b.post('/v1/register/pgp/finish', {
@@ -99,29 +100,24 @@ async function registerPgp(username: string, key: Pair, b = new Browser()): Prom
   return b;
 }
 
-async function loginStart(b: Browser, username: string, extra: Record<string, unknown> = {}) {
-  return b.post('/v1/login/pgp/start', { username, ...extra });
+/** PGP login needs no name: the person pastes their whole public key (a key pair sends its public half; a string is sent as is). */
+async function loginStart(b: Browser, key: Pair | string, extra: Record<string, unknown> = {}) {
+  return b.post('/v1/login/pgp/start', { key: typeof key === 'string' ? key : key.publicKey, ...extra });
 }
 
 async function loginFinish(b: Browser, challengeId: string, code: string, extra: Record<string, unknown> = {}) {
   return b.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser', ...extra });
 }
 
-async function accountId(username: string): Promise<string> {
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where username_key = $1', [username.toLowerCase()]);
-  return rows[0]!.id;
+/** True when a login start answered with a decoy: a challenge bound to no account (to the outside it looks like any other). */
+async function isDecoy(res: LightMyRequestResponse): Promise<boolean> {
+  const { rows } = await deps.db.query<{ account_id: string | null }>('select account_id from challenges where id = $1', [res.json().challengeId]);
+  return rows.length === 1 && rows[0]!.account_id === null;
 }
 
-/** Decrypts a decoy with whichever pool key it went to. */
-async function decDecoy(message: string, signer?: string): Promise<string> {
-  for (const k of await decoyPrivateKeys()) {
-    try {
-      return await dec(message, k.armor(), signer);
-    } catch {
-      // another pool key
-    }
-  }
-  throw new Error('not a decoy');
+async function accountId(displayName: string): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where display_key = $1', [displayName.toLowerCase()]);
+  return rows[0]!.id;
 }
 
 /** The recipient profile a message shows: public-key algorithm of each PKESK packet. */
@@ -173,9 +169,10 @@ describe('register', () => {
       challengeId: start.json().challengeId, code, deviceLabel: 'Test browser', acceptedTerms: TERMS,
     });
     expect(fin.statusCode).toBe(201);
-    expect(fin.json()).toEqual({ username: name });
+    expect(fin.json()).toEqual({ displayName: name });
+    expect(fin.body).not.toContain(`${name}.l`);
     expect(b.cookies[SESSION_COOKIE]).toBeTruthy();
-    const { rows } = await deps.db.query('select terms_version from accounts where username_key = $1', [name.toLowerCase()]);
+    const { rows } = await deps.db.query('select terms_version from accounts where display_key = $1', [name.toLowerCase()]);
     expect(rows[0].terms_version).toBe(TERMS);
   });
 
@@ -209,7 +206,7 @@ describe('register', () => {
 
   it('refuses a private key and stores nothing of it', async () => {
     const before = await deps.db.query('select count(*)::int as n from challenges');
-    const res = await new Browser().post('/v1/register/pgp/start', { username: uniqueName(), publicKey: ed.privateKey });
+    const res = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'some.login', publicKey: ed.privateKey });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('key-private');
     expect(typeof res.json().detail).toBe('string');
@@ -222,19 +219,33 @@ describe('register', () => {
   });
 
   it('refuses a 40 KiB key as too large', async () => {
-    const res = await new Browser().post('/v1/register/pgp/start', { username: uniqueName(), publicKey: 'x'.repeat(40 * 1024) });
+    const res = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'some.login', publicKey: 'x'.repeat(40 * 1024) });
     expect(res.statusCode).toBe(400);
     expect(res.json().error).toBe('key-too-large');
   });
 
-  it('checks the username at start', async () => {
+  it('checks both names at start', async () => {
     const name = uniqueName();
     await registerPgp(name, await genKey());
     const taken = await registerStart(new Browser(), name.toUpperCase(), ed);
     expect(taken.statusCode).toBe(409);
-    expect(taken.json().error).toBe('username-taken');
+    expect(taken.json().error).toBe('display-name-taken');
+    // A taken login name is not revealed at start; only the finish, after the code proves the key,
+    // says so, and only as the generic names-unavailable.
+    const fresh = await genKey();
+    const lb = new Browser();
+    const loginTaken = await lb.post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: `${name}.L`, publicKey: fresh.publicKey });
+    expect(loginTaken.statusCode).toBe(200);
+    const free = await new Browser().post('/v1/register/pgp/start', { displayName: uniqueName(), loginName: 'never.used.9', publicKey: fresh.publicKey });
+    expect(Object.keys(free.json()).sort()).toEqual(Object.keys(loginTaken.json()).sort());
+    const code = codeOf(await dec(loginTaken.json().encryptedMessage, fresh.privateKey));
+    const fin = await lb.post('/v1/register/pgp/finish', { challengeId: loginTaken.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
+    expect(fin.statusCode).toBe(409);
+    expect(fin.json()).toEqual({ error: 'names-unavailable' });
     const reserved = await registerStart(new Browser(), 'X2F.Support', ed);
-    expect(reserved.json().error).toBe('username-reserved');
+    expect(reserved.json().error).toBe('display-name-reserved');
+    const same = await new Browser().post('/v1/register/pgp/start', { displayName: 'Same.Pgp1', loginName: 'same.pgp1', publicKey: ed.publicKey });
+    expect(same.json().error).toBe('names-same');
   });
 
   it('reveals a reused key only after the code proves it (409 key-in-use)', async () => {
@@ -248,7 +259,7 @@ describe('register', () => {
     const fin = await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'x', acceptedTerms: TERMS });
     expect(fin.statusCode).toBe(409);
     expect(fin.json()).toEqual({ error: 'key-in-use' });
-    const { rows } = await deps.db.query('select 1 from accounts where username_key = $1', [name.toLowerCase()]);
+    const { rows } = await deps.db.query('select 1 from accounts where display_key = $1', [name.toLowerCase()]);
     expect(rows).toHaveLength(0);
   });
 });
@@ -315,7 +326,7 @@ describe('login', () => {
 
   it('a code works once, until exactly 5:00', async () => {
     const b = new Browser();
-    const s1 = await loginStart(b, name);
+    const s1 = await loginStart(b, key);
     expect(s1.statusCode).toBe(200);
     const text = await dec(s1.json().encryptedMessage, key.privateKey, signerPublic);
     expect(text).toContain('Purpose: log in');
@@ -330,7 +341,7 @@ describe('login', () => {
     expect(again.json()).toEqual({ error: 'challenge-expired' });
 
     setNow(new Date(t.getTime() + HOUR));
-    const s2 = await loginStart(home, name);
+    const s2 = await loginStart(home, key);
     const code2 = codeOf(await dec(s2.json().encryptedMessage, key.privateKey));
     setNow(new Date(t.getTime() + HOUR + 5 * MIN));
     const late = await loginFinish(home, s2.json().challengeId, code2);
@@ -342,35 +353,35 @@ describe('login', () => {
     const b = new Browser();
     for (let i = 0; i < 20; i++) {
       setNow(new Date(now.getTime() + 61_000));
-      const s = await loginStart(b, name);
+      const s = await loginStart(b, key);
       expect(s.statusCode).toBe(200);
       const res = await loginFinish(b, s.json().challengeId, 'AAAA-AAAA-AAAA');
       expect(res.statusCode).toBe(401);
       expect(res.json()).toEqual({ error: 'code-invalid' });
     }
     setNow(new Date(now.getTime() + 61_000));
-    const s = await loginStart(b, name);
+    const s = await loginStart(b, key);
     const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
     expect(res.json()).toEqual({ status: 'ok' });
   });
 
   it('challenge DoS: an anonymous browser cannot push out a known browser’s challenge, and is slowed after 5', async () => {
     const a = home;
-    const sa = await loginStart(a, name);
+    const sa = await loginStart(a, key);
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
     for (let i = 0; i < 5; i++) {
-      const res = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { username: name } });
+      const res = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { key: key.publicKey } });
       expect(res.statusCode).toBe(200);
     }
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
-    const sixth = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { username: name } });
+    const sixth = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { key: key.publicKey } });
     expect(sixth.statusCode).toBe(429);
     expect(sixth.json().error).toBe('slow-down');
 
     // A's second start invalidates A's first.
-    const a1 = await loginStart(a, name);
-    const a2 = await loginStart(a, name);
+    const a1 = await loginStart(a, key);
+    const a2 = await loginStart(a, key);
     const c1 = codeOf(await dec(a1.json().encryptedMessage, key.privateKey));
     const c2 = codeOf(await dec(a2.json().encryptedMessage, key.privateKey));
     expect((await loginFinish(a, a1.json().challengeId, c1)).json()).toEqual({ error: 'challenge-expired' });
@@ -379,30 +390,27 @@ describe('login', () => {
 
   it('two parallel finishes with the right code: one session, one challenge-expired', async () => {
     const b = new Browser();
-    const s = await loginStart(b, name);
+    const s = await loginStart(b, key);
     const code = codeOf(await dec(s.json().encryptedMessage, key.privateKey));
     const [r1, r2] = await Promise.all([loginFinish(b, s.json().challengeId, code), loginFinish(b, s.json().challengeId, code)]);
     expect([r1.statusCode, r2.statusCode].sort()).toEqual([200, 400]);
     expect([r1.json(), r2.json()]).toContainEqual({ error: 'challenge-expired' });
   });
 
-  it('same shape for unknown, password-only and real usernames; the decoy code never works', async () => {
-    const pwOnly = uniqueName();
-    await seedAccount(deps, { loginName: pwOnly });
-    const shapes: string[][] = [];
-    let decoy: LightMyRequestResponse | undefined;
-    for (const u of ['nobody-here', pwOnly, name]) {
-      const res = await loginStart(new Browser(), u);
+  it('same shape for unknown and real keys, by fingerprint or whole key; the decoy code never works', async () => {
+    const stranger = await genKey();
+    const decoy = await loginStart(new Browser(), stranger);
+    const real = await loginStart(new Browser(), key);
+    for (const res of [decoy, real]) {
       expect(res.statusCode).toBe(200);
-      shapes.push(Object.keys(res.json()).sort());
-      if (u === 'nobody-here') decoy = res;
+      expect(Object.keys(res.json()).sort()).toEqual(['challengeId', 'encryptedMessage', 'expiresAt']);
+      expect(res.headers['set-cookie'] === undefined).toBe(decoy.headers['set-cookie'] === undefined);
     }
-    expect(shapes[0]).toEqual(['challengeId', 'encryptedMessage', 'expiresAt']);
-    expect(shapes[1]).toEqual(shapes[0]);
-    expect(shapes[2]).toEqual(shapes[0]);
-    const decoyText = await decDecoy(decoy!.json().encryptedMessage, signerPublic);
-    for (const id of await pkeskIDs(decoy!.json().encryptedMessage)) expect(id.isWildcard()).toBe(true);
-    const res = await loginFinish(new Browser(), decoy!.json().challengeId, codeOf(decoyText));
+    // Both go to the pasted key: the same recipient packets, so holding the public key tells nothing.
+    expect(await recipients(decoy.json().encryptedMessage)).toEqual(await recipients(real.json().encryptedMessage));
+    const decoyText = await dec(decoy.json().encryptedMessage, stranger.privateKey, signerPublic);
+    for (const id of await pkeskIDs(decoy.json().encryptedMessage)) expect(id.isWildcard()).toBe(true);
+    const res = await loginFinish(new Browser(), decoy.json().challengeId, codeOf(decoyText));
     expect(res.statusCode).toBe(401);
     expect(res.json()).toEqual({ error: 'code-invalid' });
   });
@@ -411,9 +419,9 @@ describe('login', () => {
     const n = uniqueName();
     const k = await genKey();
     await registerPgp(n, k);
-    await deps.db.query('update accounts set disabled_at = $2 where username_key = $1', [n.toLowerCase(), now]);
+    await deps.db.query('update accounts set disabled_at = $2 where display_key = $1', [n.toLowerCase(), now]);
     const b = new Browser();
-    const s = await loginStart(b, n);
+    const s = await loginStart(b, k);
     const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, k.privateKey)));
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'account-disabled' });
@@ -429,12 +437,16 @@ describe('expired keys and refreshed keys', () => {
     await registerPgp(n, k);
     setNow(new Date(now.getTime() + 2 * DAY));
     const b = new Browser();
-    const expired = await loginStart(b, n);
+    // The pasted key is expired: refused before any lookup, as it would be for anyone's key.
+    const expired = await loginStart(b, k);
     expect(expired.statusCode).toBe(400);
-    expect(expired.json()).toEqual({ error: 'key-expired' });
+    expect(expired.json()).toMatchObject({ error: 'key-expired' });
+    const stranger = await genKey({ date: new Date(now.getTime() - 4 * DAY), keyExpirationTime: 3 * 86_400 });
+    expect((await loginStart(b, stranger)).json()).toMatchObject({ error: 'key-expired' });
 
+    // Pasting the re-signed whole key refreshes the stored copy.
     const refreshed = await resign(k, new Date(now.getTime() - HOUR), 365 * 86_400);
-    const s = await loginStart(b, n, { refreshedKey: refreshed.publicKey });
+    const s = await loginStart(b, refreshed.publicKey);
     expect(s.statusCode).toBe(200);
     const code = codeOf(await dec(s.json().encryptedMessage, refreshed.privateKey));
     const fin = await loginFinish(b, s.json().challengeId, code);
@@ -444,18 +456,18 @@ describe('expired keys and refreshed keys', () => {
     );
     const storedNow = await inspectPublicKey(openKey(deps.config, rows[0]!.armored_enc, rows[0]!.fingerprint), now);
     expect(storedNow.ok).toBe(true);
-    // The next login needs no refresh.
-    expect((await loginStart(b, n)).statusCode).toBe(200);
+    // The stored copy is the refreshed one now.
+    expect((await loginStart(b, refreshed)).statusCode).toBe(200);
   });
 
-  it('a refreshedKey with another fingerprint gets a decoy encrypted to that key, whose code never works', async () => {
+  it('a pasted key X2F does not know gets a decoy encrypted to that key, whose code never works', async () => {
     const n = uniqueName();
     const k = await genKey();
     await registerPgp(n, k);
     const other = await genKey();
-    for (const u of [n, 'nobody-at-all']) {
+    for (let i = 0; i < 2; i++) {
       const b = new Browser();
-      const s = await loginStart(b, u, { refreshedKey: other.publicKey });
+      const s = await loginStart(b, other.publicKey);
       expect(s.statusCode).toBe(200);
       expect(Object.keys(s.json()).sort()).toEqual(['challengeId', 'encryptedMessage', 'expiresAt']);
       await expect(dec(s.json().encryptedMessage, k.privateKey)).rejects.toThrow();
@@ -476,7 +488,7 @@ describe('expired keys and refreshed keys', () => {
     const s2Only = onlyS2.armor();
 
     // Control: before the revocation, a challenge decrypts with S2 alone.
-    const s0 = await loginStart(new Browser(), n);
+    const s0 = await loginStart(new Browser(), k);
     await dec(s0.json().encryptedMessage, s2Only);
 
     // The owner revokes S2 and refreshes the server's copy with the revocation.
@@ -484,18 +496,18 @@ describe('expired keys and refreshed keys', () => {
     const revokedKey = await openpgp.readPrivateKey({ armoredKey: k.privateKey });
     revokedKey.subkeys[1] = revokedS2;
     const b = new Browser();
-    const s1 = await loginStart(b, n, { refreshedKey: revokedKey.toPublic().armor() });
+    const s1 = await loginStart(b, revokedKey.toPublic().armor());
     expect(s1.statusCode).toBe(200);
     await expect(dec(s1.json().encryptedMessage, s2Only)).rejects.toThrow();
     const c1 = codeOf(await dec(s1.json().encryptedMessage, k.privateKey));
     expect((await loginFinish(b, s1.json().challengeId, c1)).json()).toEqual({ status: 'ok' });
 
     // Someone sends the old public copy (no revocation) as a refresh: S2 stays revoked.
-    const s2 = await loginStart(new Browser(), n, { refreshedKey: k.publicKey });
+    const s2 = await loginStart(new Browser(), k.publicKey);
     expect(s2.statusCode).toBe(200);
     await expect(dec(s2.json().encryptedMessage, s2Only)).rejects.toThrow();
     const b2 = new Browser();
-    const s3 = await loginStart(b2, n, { refreshedKey: k.publicKey });
+    const s3 = await loginStart(b2, k.publicKey);
     const c3 = codeOf(await dec(s3.json().encryptedMessage, k.privateKey));
     expect((await loginFinish(b2, s3.json().challengeId, c3)).json()).toEqual({ status: 'ok' });
     const { rows } = await deps.db.query<{ armored_enc: Buffer; fingerprint: string }>(
@@ -504,7 +516,7 @@ describe('expired keys and refreshed keys', () => {
     const stored = await openpgp.readKey({ armoredKey: openKey(deps.config, rows[0]!.armored_enc, rows[0]!.fingerprint) });
     const enc = await stored.getEncryptionKey(undefined, now);
     expect(enc.getKeyID().equals(stored.subkeys[1]!.getKeyID())).toBe(false);
-    const s4 = await loginStart(new Browser(), n);
+    const s4 = await loginStart(new Browser(), k);
     await expect(dec(s4.json().encryptedMessage, s2Only)).rejects.toThrow();
   });
 
@@ -513,12 +525,14 @@ describe('expired keys and refreshed keys', () => {
     const k = await genKey({ date: new Date(now.getTime() - 2 * DAY), subkeys: [{ keyExpirationTime: 3 * 86_400 }] });
     await registerPgp(n, k);
     setNow(new Date(now.getTime() + 2 * DAY));
-    const res = await loginStart(new Browser(), n);
+    const res = await loginStart(new Browser(), k);
     expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'key-expired' });
+    // Refused on the pasted key alone, the same for a key nobody registered.
+    const stranger = await genKey({ date: new Date(now.getTime() - 4 * DAY), subkeys: [{ keyExpirationTime: 3 * 86_400 }] });
+    expect((await loginStart(new Browser(), stranger)).json()).toEqual(res.json());
   });
 
-  it('a revoked key → key-revoked with nothing else', async () => {
+  it('a key revoked on the server gets the same decoy as an unknown key; pasting the revoked key → key-revoked', async () => {
     const n = uniqueName();
     const k = await genKey();
     await registerPgp(n, k);
@@ -529,9 +543,19 @@ describe('expired keys and refreshed keys', () => {
     const id = await accountId(n);
     await deps.db.query('delete from pgp_keys where account_id = $1', [id]);
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: fp, armored: r.publicKey, now });
-    const res = await loginStart(new Browser(), n);
-    expect(res.statusCode).toBe(400);
-    expect(res.json()).toEqual({ error: 'key-revoked' });
+    // An old, unrevoked copy (as on a keyserver): the answer an unknown key gets, and its code never works.
+    const b = new Browser();
+    const res = await loginStart(b, k);
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json()).sort()).toEqual(['challengeId', 'encryptedMessage', 'expiresAt']);
+    const stranger = await loginStart(new Browser(), await genKey());
+    expect(await recipients(res.json().encryptedMessage)).toEqual(await recipients(stranger.json().encryptedMessage));
+    const code = codeOf(await dec(res.json().encryptedMessage, k.privateKey, signerPublic));
+    expect((await loginFinish(b, res.json().challengeId, code)).json()).toEqual({ error: 'code-invalid' });
+    const { rows } = await deps.db.query('select account_id from challenges where id = $1', [res.json().challengeId]);
+    expect(rows).toEqual([{ account_id: null }]);
+    // The revoked key itself is refused by inspection, before any lookup.
+    expect((await loginStart(new Browser(), r.publicKey)).json()).toMatchObject({ error: 'key-revoked' });
   });
 });
 
@@ -548,11 +572,11 @@ describe('binding', () => {
 
   it('a login code is refused by the confirm and register finishes', async () => {
     setNow(new Date(now.getTime() + HOUR));
-    const s = await loginStart(home, name);
+    const s = await loginStart(home, key);
     const code = codeOf(await dec(s.json().encryptedMessage, key.privateKey));
     const c = await home.post('/v1/confirm/pgp/finish', { challengeId: s.json().challengeId, code });
     expect(c.json()).toEqual({ error: 'challenge-expired' });
-    const s2 = await loginStart(home, name);
+    const s2 = await loginStart(home, key);
     const code2 = codeOf(await dec(s2.json().encryptedMessage, key.privateKey));
     const r = await home.post('/v1/register/pgp/finish', { challengeId: s2.json().challengeId, code: code2, deviceLabel: 'x', acceptedTerms: TERMS });
     expect(r.json()).toEqual({ error: 'challenge-expired' });
@@ -562,7 +586,7 @@ describe('binding', () => {
     setNow(new Date(now.getTime() + HOUR));
     const a = home;
     const b = new Browser();
-    const sb = await loginStart(b, name);
+    const sb = await loginStart(b, key);
     await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey)));
 
     const action = { kind: 'set-password' };
@@ -576,7 +600,7 @@ describe('binding', () => {
     const codeA2 = codeOf(await dec(ca2.json().encryptedMessage, key.privateKey));
     expect((await a.post('/v1/logout', {})).statusCode).toBe(200);
     // Log in again in the same browser: a new session, so the old confirm challenge is dead.
-    const s = await loginStart(a, name);
+    const s = await loginStart(a, key);
     await loginFinish(a, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
     const after = await a.post('/v1/confirm/pgp/finish', { challengeId: ca2.json().challengeId, code: codeA2 });
     expect(after.json()).toEqual({ error: 'challenge-expired' });
@@ -626,10 +650,14 @@ describe('confirm and adding a key', () => {
     const { rows } = await deps.db.query(`select detail from alerts where account_id = $1 and kind = 'login-method-added'`, [id]);
     expect(rows).toEqual([{ detail: { method: 'pgp', fingerprint: k2.fingerprint } }]);
 
-    const s = await loginStart(new Browser(), n);
-    const t1 = await dec(s.json().encryptedMessage, k1.privateKey);
-    const t2 = await dec(s.json().encryptedMessage, k2.privateKey);
-    expect(t1).toBe(t2);
+    // Each key logs in on its own, and a challenge goes to the one key named only.
+    for (const [mine, theirs] of [[k1, k2], [k2, k1]] as const) {
+      const b2 = new Browser();
+      const s = await loginStart(b2, mine);
+      await expect(dec(s.json().encryptedMessage, theirs.privateKey)).rejects.toThrow();
+      const fin = await loginFinish(b2, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, mine.privateKey)));
+      expect(fin.json()).toEqual({ status: 'ok' });
+    }
   });
 
   it('a confirm token is issued for exactly the confirmed action', async () => {
@@ -689,7 +717,7 @@ describe('user IDs (R16)', () => {
     expect(ch.rows).toHaveLength(0);
 
     const b = new Browser();
-    const s = await loginStart(b, n6);
+    const s = await loginStart(b, v6);
     const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, v6.privateKey)));
     expect(fin.json()).toEqual({ status: 'ok' });
 
@@ -707,7 +735,7 @@ describe('staff, owner and other mounts', () => {
     const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: k.fingerprint, armored: k.publicKey, now });
     const b = new Browser();
-    const s = await loginStart(b, n);
+    const s = await loginStart(b, k);
     const res = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, k.privateKey)));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ status: 'second-factor', pendingId: expect.any(String), needs: ['pgp', 'security-key', 'passkey'] });
@@ -723,7 +751,7 @@ describe('staff, owner and other mounts', () => {
     const id = await accountId(n);
     const before = (await deps.db.query('select count(*)::int as n from sessions where account_id = $1', [id])).rows[0].n;
     const b = new Browser();
-    const s = await b.post('/t/pgp/start', { username: n });
+    const s = await b.post('/t/pgp/start', { key: k.publicKey });
     const res = await b.post('/t/pgp/finish', {
       challengeId: s.json().challengeId, code: codeOf(await dec(s.json().encryptedMessage, k.privateKey)), deviceLabel: 'x',
     });
@@ -739,19 +767,19 @@ describe('staff, owner and other mounts', () => {
     const sk = await genKey();
     const sid = await seedAccount(deps, { loginName: sn, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: sid, fingerprint: sk.fingerprint, armored: sk.publicKey, now });
-    const ds = await b.post('/t/pgp/start', { username: sn });
+    const ds = await b.post('/t/pgp/start', { key: sk.publicKey });
     expect(ds.statusCode).toBe(200);
-    await expect(dec(ds.json().encryptedMessage, sk.privateKey)).rejects.toThrow();
+    expect(await isDecoy(ds)).toBe(true);
   });
 
-  it('with a pendingId the second step leaves out the key the first factor used; a bad pendingId gets a decoy', async () => {
+  it('with a pendingId the second step refuses the key the first factor used; a bad pendingId gets a decoy', async () => {
     const n = uniqueName('crew');
     const [ka, kb] = await Promise.all([genKey(), genKey()]);
     const id = await seedAccount(deps, { loginName: n, kind: 'staff' });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: ka.fingerprint, armored: ka.publicKey, now });
     await insertPgpKey(deps.db, deps.config, { accountId: id, fingerprint: kb.fingerprint, armored: kb.publicKey, now });
     const b = new Browser();
-    await b.post('/v1/login/pgp/start', { username: 'nobody-here' }); // gets the browser a device cookie
+    await b.post('/v1/login/pgp/start', { key: (await genKey()).publicKey }); // gets the browser a device cookie
     const { createHmac } = await import('node:crypto');
     const { subkey } = await import('../src/config.js');
     const dev = createHmac('sha256', subkey(deps.config, 'device')).update(b.cookies[DEVICE_COOKIE]!).digest();
@@ -761,10 +789,14 @@ describe('staff, owner and other mounts', () => {
       [id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: ka.fingerprint, fingerprints: [ka.fingerprint] } }), now, new Date(now.getTime() + 5 * MIN)],
     );
     const pendingId = rows[0]!.id;
-    const s = await loginStart(b, n, { pendingId });
+    const s = await loginStart(b, kb, { pendingId });
     expect(s.statusCode).toBe(200);
     await dec(s.json().encryptedMessage, kb.privateKey);
-    await expect(dec(s.json().encryptedMessage, ka.privateKey)).rejects.toThrow();
+    // The first factor's key again: a decoy.
+    const sameKey = await loginStart(b, ka, { pendingId });
+    expect(sameKey.statusCode).toBe(200);
+    expect(await isDecoy(sameKey)).toBe(true);
+    expect(await isDecoy(s)).toBe(false);
 
     // M6: finish must name the pendingId the challenge was started with.
     const code = codeOf(await dec(s.json().encryptedMessage, kb.privateKey));
@@ -772,11 +804,11 @@ describe('staff, owner and other mounts', () => {
     expect(swapped.json()).toEqual({ error: 'challenge-expired' });
 
     // From another browser (another device) the same pendingId is a decoy.
-    const other = await loginStart(new Browser(), n, { pendingId });
-    await expect(dec(other.json().encryptedMessage, kb.privateKey)).rejects.toThrow();
+    const other = await loginStart(new Browser(), kb, { pendingId });
+    expect(await isDecoy(other)).toBe(true);
     // An unknown pendingId is a decoy.
-    const unknown = await loginStart(b, n, { pendingId: '00000000-0000-4000-8000-000000000000' });
-    await expect(dec(unknown.json().encryptedMessage, kb.privateKey)).rejects.toThrow();
+    const unknown = await loginStart(b, kb, { pendingId: '00000000-0000-4000-8000-000000000000' });
+    expect(await isDecoy(unknown)).toBe(true);
   });
 });
 
@@ -785,13 +817,13 @@ describe('review fixes', () => {
     const n = uniqueName();
     const k = await genKey();
     const a = await registerPgp(n, k); // A's device is trusted for the account
-    const sa = await loginStart(a, n);
+    const sa = await loginStart(a, k);
     const codeA = codeOf(await dec(sa.json().encryptedMessage, k.privateKey));
     for (let i = 0; i < 5; i++) {
       setNow(new Date(now.getTime() + 1000)); // A's challenge is the oldest, the first a cap would evict
       const res = await app.inject({
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-        cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { username: n },
+        cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
       });
       expect(res.statusCode).toBe(200);
     }
@@ -804,22 +836,23 @@ describe('review fixes', () => {
     expect((await loginFinish(a, sa.json().challengeId, codeA)).json()).toEqual({ status: 'ok' });
     const sixth = await app.inject({
       method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-      cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { username: n },
+      cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
     });
     expect(sixth.statusCode).toBe(429);
     expect(sixth.json().error).toBe('slow-down');
     // The trusted browser is in its own group and still gets challenges.
-    expect((await loginStart(a, n)).statusCode).toBe(200);
+    expect((await loginStart(a, k)).statusCode).toBe(200);
   });
 
   it('M3: concurrent untrusted starts leave at most 3 open challenges', async () => {
     const n = uniqueName();
-    await registerPgp(n, await genKey());
+    const mk = await genKey();
+    await registerPgp(n, mk);
     const res = await Promise.all(
       Array.from({ length: 5 }, () =>
         app.inject({
           method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-          cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { username: n },
+          cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: mk.publicKey },
         }),
       ),
     );
@@ -831,20 +864,55 @@ describe('review fixes', () => {
     expect(rows[0].n).toBeLessThanOrEqual(3);
   });
 
-  it('I3: an unknown username’s decoy profile is stable across calls, and the pool varies across names', async () => {
-    const profiles = new Set<string>();
-    for (let i = 0; i < 24; i++) {
-      const u = `ghost${i.toString().padStart(3, '0')}`;
-      const r1 = await loginStart(new Browser(), u);
-      const r2 = await loginStart(new Browser(), u);
-      const p1 = await recipients(r1.json().encryptedMessage);
-      const p2 = await recipients(r2.json().encryptedMessage);
-      expect(p2).toEqual(p1);
-      expect(p1.length === 1 || p1.length === 2).toBe(true);
-      await decDecoy(r1.json().encryptedMessage, signerPublic);
-      profiles.add(p1.join(','));
+  it('I3: an unknown key’s decoy goes to that key, as a real login would; repeated starts look alike', async () => {
+    for (const v6 of [false, true]) {
+      const stranger = await genKey({ v6 });
+      const known = await genKey({ v6 });
+      await registerPgp(uniqueName(), known);
+      const d1 = await loginStart(new Browser(), stranger);
+      const d2 = await loginStart(new Browser(), stranger);
+      const real = await loginStart(new Browser(), known);
+      expect(await recipients(d1.json().encryptedMessage)).toEqual(await recipients(d2.json().encryptedMessage));
+      expect(await recipients(d1.json().encryptedMessage)).toEqual(await recipients(real.json().encryptedMessage));
+      expect(await recipients(d1.json().encryptedMessage)).toHaveLength(1);
+      await dec(d1.json().encryptedMessage, stranger.privateKey, signerPublic);
     }
-    expect(profiles.size).toBeGreaterThanOrEqual(3);
+  });
+
+  it('refuses a fingerprint (or anything but a whole public key) the same way for known and unknown keys', async () => {
+    const k = await genKey();
+    await registerPgp(uniqueName(), k);
+    const stranger = await genKey();
+    const answers = [];
+    for (const fp of [k.fingerprint, stranger.fingerprint, `0x${k.fingerprint.toUpperCase()}`]) {
+      const res = await loginStart(new Browser(), fp);
+      expect(res.statusCode).toBe(400);
+      answers.push(res.json());
+    }
+    expect(answers[0]).toMatchObject({ error: 'key-unreadable' });
+    expect(answers[1]).toEqual(answers[0]);
+    expect(answers[2]).toEqual(answers[0]);
+    for (const bad of ['', 'not a key', k.privateKey]) {
+      const res = await loginStart(new Browser(), bad);
+      expect(res.statusCode, bad.slice(0, 20)).toBe(400);
+      expect(res.json().error).toMatch(/^key-/);
+    }
+    expect((await new Browser().post('/v1/login/pgp/start', { username: 'someone1' })).json()).toEqual({ error: 'bad-request' });
+  });
+
+  it('the start limit is per key and counts decoys as real starts', async () => {
+    const stranger = await genKey();
+    for (let i = 0; i < 5; i++) expect((await loginStart(new Browser(), stranger)).statusCode).toBe(200);
+    const sixth = await loginStart(new Browser(), stranger);
+    expect(sixth.statusCode).toBe(429);
+    expect(sixth.json().error).toBe('slow-down');
+    // Another key is not affected.
+    expect((await loginStart(new Browser(), await genKey())).statusCode).toBe(200);
+    // A known key from unknown browsers counts the same way.
+    const k = await genKey();
+    await registerPgp(uniqueName(), k);
+    for (let i = 0; i < 5; i++) expect((await loginStart(new Browser(), k)).statusCode).toBe(200);
+    expect((await loginStart(new Browser(), k)).json()).toEqual(sixth.json());
   });
 
   it('M1: a challenge started on one origin cannot be finished from another', async () => {
@@ -861,7 +929,7 @@ describe('review fixes', () => {
     const n = uniqueName();
     const k = await genKey();
     await registerPgp(n, k);
-    const s = await loginStart(b, n);
+    const s = await loginStart(b, k);
     const c = codeOf(await dec(s.json().encryptedMessage, k.privateKey));
     onion.cookies = { ...b.cookies };
     expect((await loginFinish(onion, s.json().challengeId, c)).json()).toEqual({ error: 'challenge-expired' });

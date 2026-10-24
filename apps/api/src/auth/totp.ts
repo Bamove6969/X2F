@@ -267,7 +267,7 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   const b = body(req);
   // F1: a started password login can always finish its second factor.
-  await takeStartBudgetUnlessOpen(req, b.pendingId, 'second-factor');
+  await takeStartBudgetUnlessOpen(req, b.pendingId, { purpose: 'second-factor', methods: ['totp'] });
   const pendingId = str(b, 'pendingId');
   const code = str(b, 'code');
   const now = deps.clock();

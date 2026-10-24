@@ -3,8 +3,8 @@
  *
  * - Every challenge is encrypted with wildcard recipients (zero key IDs) and signed with the
  *   official X2F key (R7); unknown keys get a decoy of the same shape (P2-C3).
- * - Login needs no name (owner, 2026-10-23): `start` takes the person's public key or its
- *   fingerprint and the challenge goes to that one key.
+ * - Login needs no name (owner, 2026-10-23): `start` takes the person's whole public key and the
+ *   challenge goes to that one key; an unknown key's decoy goes to it too.
  * - Keys are stored only as `armored_enc` (AES-256-GCM under `subkey('pgp-key')`), with user IDs
  *   stripped where the key survives it (R16). No route returns, and no log line holds, a user ID.
  * - No endpoint generates, accepts or returns a private PGP key of a user (R8).
@@ -20,7 +20,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, type NewNames } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, type NewNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -335,63 +335,23 @@ export async function issuePgpChallenge(
   return { challengeId: id, encryptedMessage: message, expiresAt: new Date(now.getTime() + PGP_CHALLENGE_TTL_MS).toISOString() };
 }
 
-let decoyPool: Promise<openpgp.PrivateKey[]> | undefined;
-
-/**
- * The throwaway keys decoys are encrypted to (R18), generated once per process (`main.ts` warms
- * them at startup): Ed25519 v4 (×2), v6 Ed25519/X25519 (×2) and RSA-4096. Creation time is fixed
- * in the past so they are valid at any server clock. Exported for tests, which decrypt a decoy to
- * show its code never works.
- */
-export function decoyPrivateKeys(): Promise<openpgp.PrivateKey[]> {
-  decoyPool ??= (async () => {
-    const date = new Date('2020-01-01T00:00:00Z');
-    const userIDs = [{ name: 'decoy' }];
-    const gen = async (o: { type: 'ecc' | 'curve25519' | 'rsa'; v6?: boolean }) =>
-      (
-        await openpgp.generateKey({
-          ...(o.type === 'ecc' ? { type: 'ecc' as const, curve: 'ed25519Legacy' as const } : {}),
-          ...(o.type === 'curve25519' ? { type: 'curve25519' as const, config: { v6Keys: true } } : {}),
-          ...(o.type === 'rsa' ? { type: 'rsa' as const, rsaBits: 4096 } : {}),
-          userIDs, date, format: 'object',
-        })
-      ).privateKey;
-    return Promise.all([gen({ type: 'ecc' }), gen({ type: 'ecc' }), gen({ type: 'curve25519' }), gen({ type: 'curve25519' }), gen({ type: 'rsa' })]);
-  })();
-  return decoyPool;
-}
-
-/**
- * The decoy key for a fingerprint X2F does not know (indexes into the pool): of the same version
- * as the fingerprint says (40 hex digits: a v4 key, Ed25519 or RSA-4096; 64: a v6 key), one key as
- * a real login always is, and fixed per fingerprint (HMAC under `subkey('decoy')`), so repeated
- * starts look alike.
- */
-function decoyProfile(config: Config, fingerprint: string): number {
-  const h = createHmac('sha256', subkey(config, 'decoy')).update(`pgp-decoy/${fingerprint}`).digest();
-  const choices = fingerprint.length === 64 ? [2, 3] : [0, 1, 4];
-  return choices[h.readUInt32BE(0) % choices.length]!;
-}
-
 /**
  * A challenge of the same shape for an unknown key (or one that cannot get a real one): a real
- * code, encrypted (wildcard, signed) and stored with `account_id = null`, so `finish` fails exactly
- * like a wrong code. The recipient is `toKey` when the person pasted a whole public key (so a
- * keyserver key tells the sender nothing: they get a message to that key either way), otherwise
- * the fingerprint's fixed decoy key (R18). `payload` joins the stored payload (start-limit tags).
+ * code, encrypted (wildcard, signed) to the very key the person pasted, and stored with
+ * `account_id = null`, so `finish` fails exactly like a wrong code. Whoever pasted the key gets a
+ * message to that key either way, so even someone holding a keyserver copy learns nothing about
+ * whether it is registered. `payload` joins the stored payload (start-limit tags).
  */
 export async function decoyPgpChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { fingerprint: string; toKey?: string; payload?: object },
+  a: { toKey: string; payload?: object },
 ): Promise<IssuedChallenge> {
   const now = deps.clock();
   const code = newLoginCode();
-  const pool = await decoyPrivateKeys();
-  const recipients = a.toKey !== undefined ? [a.toKey] : [pool[decoyProfile(deps.config, a.fingerprint)]!.toPublic().armor()];
   let message: string;
   try {
-    message = await encryptChallenge(messageText(deps, req, code, PGP_PURPOSE.login, now), recipients, deps.pgpSigner.key, now);
+    message = await encryptChallenge(messageText(deps, req, code, PGP_PURPOSE.login, now), [a.toKey], deps.pgpSigner.key, now);
   } catch {
     throw new ApiError(400, 'key-expired'); // as a real refreshed key that cannot be encrypted to
   }
@@ -529,7 +489,7 @@ export interface PgpLoginOptions {
 /**
  * Registers `POST start` and `POST finish` for PGP login under the plugin's prefix. `buildApi`
  * mounts it at `/v1/login/pgp` for every kind; Plan 4 mounts it on the staff app. `start` takes
- * `{ key, pendingId? }`: `key` is the person's armored public key or its fingerprint. A key whose
+ * `{ key, pendingId? }`: `key` is the person's whole armored public key (`loginStart`). A key whose
  * account's kind is not in `kinds` is treated as an unknown key (decoy). Both finish through
  * `completeLogin`.
  */
@@ -539,7 +499,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     // The start limit groups by the device cookie the browser *sent*; a fresh one is set after.
     try {
       req.server.budgets.start.take();
-      return await loginStart(deps, req, opts);
+      return await loginStart(deps, req, reply, opts);
     } finally {
       ensureDeviceCookie(req, reply);
     }
@@ -550,7 +510,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     ensureDeviceCookie(req, reply);
     const b = body(req);
     // F1: a login that has started can always finish, whatever the start budget says.
-    await takeStartBudgetUnlessOpen(req, b.challengeId, 'login');
+    await takeStartBudgetUnlessOpen(req, b.challengeId, { purpose: 'login', methods: ['pgp'] });
     const challengeId = str(b, 'challengeId');
     const code = str(b, 'code');
     const deviceLabel = str(b, 'deviceLabel');
@@ -587,47 +547,44 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
   });
 }
 
-const FINGERPRINT = /^([0-9a-f]{40}|[0-9a-f]{64})$/;
-
 /**
- * What the person pasted to log in: a whole armored public key (checked by `inspectPublicKey`
- * before any account lookup, so a refusal says nothing about accounts) or a fingerprint (spaces,
- * colons, a `0x` prefix and case are ignored). Anything else → 400 `key-unreadable`.
+ * PGP login (owner, 2026-10-23; security review of FU-A): `start { key, pendingId? }` takes the
+ * person's whole armored public key, never a fingerprint or a name. The pasted key is checked by
+ * `inspectPublicKey` before any account lookup, so its refusals (unreadable, private, weak,
+ * expired, revoked...) depend only on the key itself and say nothing about accounts. From then on
+ * a known key and an unknown key get the same answer: a challenge encrypted to the pasted key (or,
+ * for a known key, to the stored copy merged with it). A known key that cannot get a real
+ * challenge (the stored copy is revoked or no longer usable, the account's kind is not served
+ * here, or a pending second step does not match) gets a decoy to the pasted key, exactly as an
+ * unknown key does.
  */
-async function loginKeyInput(raw: string, now: Date): Promise<{ fingerprint: string; armored: string | null }> {
-  if (raw.includes('-----BEGIN PGP')) {
-    const r = await inspectOrRefuse(raw, now);
-    return { fingerprint: r.fingerprint, armored: raw };
-  }
-  const compact = raw.slice(0, 200).replace(/[\s:]/g, '').toLowerCase().replace(/^0x/, '');
-  if (!FINGERPRINT.test(compact)) {
-    throw new ApiError(400, 'key-unreadable', { detail: 'Paste your whole public key, or its 40- or 64-character fingerprint.' });
-  }
-  return { fingerprint: compact, armored: null };
-}
-
-async function loginStart(deps: Deps, req: FastifyRequest, opts: PgpLoginOptions): Promise<IssuedChallenge> {
+async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, opts: PgpLoginOptions): Promise<IssuedChallenge> {
   const now = deps.clock();
   const b = body(req);
-  const input = await loginKeyInput(str(b, 'key'), now);
+  const pasted = str(b, 'key');
   const pendingId = optStr(b, 'pendingId');
+  if (!pasted.includes('-----BEGIN PGP')) {
+    throw new ApiError(400, 'key-unreadable', { detail: 'Paste your whole public key, from -----BEGIN PGP PUBLIC KEY BLOCK----- to the end.' });
+  }
+  const { fingerprint } = await inspectOrRefuse(pasted, now);
 
-  const device = deviceHash(req); // before the route sets a cookie: null for a browser that sent none
+  const device = deviceHash(req); // the cookie this browser *sent*: null when it sent none
+  // From here on the browser has a device cookie, so the challenge is bound to the device that will
+  // finish it (the start limit still groups by the cookie that was sent).
+  ensureDeviceCookie(req, reply);
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind; armored_enc: Buffer }>(
     'select a.id, a.kind, k.armored_enc from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1',
-    [input.fingerprint],
+    [fingerprint],
   );
   const found = rows[0];
   const account = found && opts.kinds.includes(found.kind) ? found : undefined;
   // I1: only a device trusted for the key's account gets its own group; every other browser is `anon`.
   const trusted = account !== undefined && device !== null && (await isTrusted(deps, account.id, device));
   const group = trusted ? `dev:${device!.toString('hex')}` : 'anon';
-  const tag = startTag(deps.config, input.fingerprint);
+  const tag = startTag(deps.config, fingerprint);
   await assertStartAllowed(deps, tag, group, now);
   const startPayload = { startTag: tag, startGroup: group };
-  // I3: a pasted whole key gets its decoy encrypted to itself, so a keyserver copy cannot test it.
-  const decoy = () =>
-    decoyPgpChallenge(deps, req, { fingerprint: input.fingerprint, payload: startPayload, ...(input.armored !== null ? { toKey: input.armored } : {}) });
+  const decoy = () => decoyPgpChallenge(deps, req, { toKey: pasted, payload: startPayload });
 
   if (!account) return decoy();
 
@@ -635,31 +592,27 @@ async function loginStart(deps: Deps, req: FastifyRequest, opts: PgpLoginOptions
     // The second step of a staff or owner login: this key's account's own pending login, from this
     // device, with a key other than the first step's.
     const pending = await pendingFirstFactor(deps, pendingId, account.id, device, now);
-    if (pending === null || usedFingerprints(pending).includes(input.fingerprint)) return decoy();
+    if (pending === null || usedFingerprints(pending).includes(fingerprint)) return decoy();
   }
 
-  const stored: StoredKey = { fingerprint: input.fingerprint, armored: openKey(deps.config, account.armored_enc, input.fingerprint) };
-  const payload: Record<string, unknown> = { ...startPayload };
+  const stored = openKey(deps.config, account.armored_enc, fingerprint);
+  // I2: merge into the stored copy (openpgp `Key.update`), never replace it, so an old public copy
+  // cannot drop a revocation or a newer self-signature the server already has.
+  const merged = await mergeKeys(stored, pasted, now);
+  if (!(await inspectPublicKey(merged, now)).ok) return decoy();
+  const { storable, pending } = await pendingKey(deps.config, merged, fingerprint, now);
+  const payload: Record<string, unknown> = { ...startPayload, refreshed: pending };
   if (pendingId !== undefined) payload.pendingId = pendingId;
-  let keys: StoredKey[];
-  if (input.armored !== null) {
-    // I2: merge into the stored copy (openpgp `Key.update`), never replace it, so an old public copy
-    // cannot drop a revocation or a newer self-signature the server already has.
-    const merged = await mergeKeys(stored.armored, input.armored, now);
-    const check = await inspectPublicKey(merged, now);
-    if (!check.ok) throw new ApiError(400, check.reason === 'key-revoked' ? 'key-revoked' : 'key-expired');
-    const { storable, pending } = await pendingKey(deps.config, merged, input.fingerprint, now);
-    payload.refreshed = pending;
-    keys = [{ fingerprint: input.fingerprint, armored: storable }];
-  } else {
-    keys = await usableKeys([stored], now);
-  }
-  // Always to exactly the one key the person named, so a code proves that key (staff pairs compare
+  // Always to exactly the one key the person pasted, so a code proves that key (staff pairs compare
   // key sets, and the second step's key must differ from the first's).
-  return issuePgpChallenge(deps, req, {
-    accountId: account.id, sessionId: null, purpose: 'login', purposeText: PGP_PURPOSE.login,
-    armoredKeys: keys.map((k) => k.armored), payload,
-  });
+  try {
+    return await issuePgpChallenge(deps, req, {
+      accountId: account.id, sessionId: null, purpose: 'login', purposeText: PGP_PURPOSE.login, armoredKeys: [storable], payload,
+    });
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'key-expired') return decoy();
+    throw e;
+  }
 }
 
 /** The stored key updated with the packets of a newer copy of the same key (same fingerprint). */
@@ -682,7 +635,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now);
-  await assertNamesFree(deps.db, names);
+  await assertDisplayNameFree(deps.db, names);
   // Fingerprint clashes are not checked here: only `finish`, after the code proves the key, says key-in-use.
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {

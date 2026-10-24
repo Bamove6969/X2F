@@ -4,7 +4,7 @@ import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
@@ -127,8 +127,8 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   );
   const names = await assertNewNames(deps.db, rawDisplay, rawLogin);
   await assertNewPassword(deps, password);
-  // Taken names answer before the expensive hash; the unique indexes still decide races.
-  await assertNamesFree(deps.db, names);
+  // A taken display name answers before the expensive hash; a taken login name only at create.
+  await assertDisplayNameFree(deps.db, names);
   const hash = await hashPassword(password);
 
   const now = deps.clock();

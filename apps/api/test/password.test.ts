@@ -133,9 +133,17 @@ describe('POST /v1/register/password', () => {
 
   it('refuses taken names case-insensitively and reserved display names, without false positives', async () => {
     expect((await register('Satoshi.Q')).statusCode).toBe(201);
+    // A taken login name is found only by the final create, after the Argon2 hash, and answered
+    // with the generic names-unavailable (never "login name taken").
+    const hash = vi.spyOn(argon2, 'hash');
     const loginTaken = await register('satoshi.q', GOOD, { acceptedTerms: TERMS }, { displayName: 'Fresh.Name1' });
     expect(loginTaken.statusCode).toBe(409);
-    expect(loginTaken.json()).toEqual({ error: 'login-name-taken' });
+    expect(loginTaken.json()).toEqual({ error: 'names-unavailable' });
+    expect(hash).toHaveBeenCalledTimes(1);
+    hash.mockRestore();
+    expect(await accountRow('satoshi.q')).toBeDefined();
+    const { rows: fresh } = await deps.db.query("select 1 from accounts where display_key = 'fresh.name1'");
+    expect(fresh).toEqual([]);
     const displayTaken = await register('other.login1', GOOD, { acceptedTerms: TERMS }, { displayName: 'psatoshi.q' });
     expect(displayTaken.statusCode).toBe(409);
     expect(displayTaken.json()).toEqual({ error: 'display-name-taken' });
