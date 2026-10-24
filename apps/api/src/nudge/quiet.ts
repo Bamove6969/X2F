@@ -10,26 +10,45 @@ export interface QuietHours {
 
 export const TZ_MAX = 64;
 
-const formatters = new Map<string, Intl.DateTimeFormat>();
+/**
+ * The zones accepted and stored: the runtime's canonical IANA list plus "UTC" (which ICU resolves
+ * "utc", "Etc/UTC" and "GMT" to but leaves out of the list).
+ */
+const SUPPORTED: ReadonlySet<string> = new Set([...Intl.supportedValuesOf('timeZone'), 'UTC']);
 
-function formatter(tz: string): Intl.DateTimeFormat {
-  let f = formatters.get(tz);
-  if (!f) {
-    f = new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-    formatters.set(tz, f);
+/**
+ * The canonical name for a time zone, or null when it is not one this runtime supports. Case and
+ * alias variants collapse ("asia/tokyo" → "Asia/Tokyo", "US/Eastern" → "America/New_York").
+ */
+export function canonicalTimeZone(tz: unknown): string | null {
+  if (typeof tz !== 'string' || tz.length < 1 || tz.length > TZ_MAX) return null;
+  let canonical: string;
+  try {
+    canonical = new Intl.DateTimeFormat('en-US', { timeZone: tz }).resolvedOptions().timeZone;
+  } catch {
+    return null;
   }
-  return f;
+  return SUPPORTED.has(canonical) ? canonical : null;
 }
 
-/** True for a time zone this runtime knows (only these are stored). */
-export function isTimeZone(tz: unknown): tz is string {
-  if (typeof tz !== 'string' || tz.length < 1 || tz.length > TZ_MAX) return false;
-  try {
-    formatter(tz);
-    return true;
-  } catch {
-    return false;
+/** Keyed by canonical name only, so it can never hold more entries than there are zones. */
+const formatters = new Map<string, Intl.DateTimeFormat>();
+export const FORMATTER_CAP = SUPPORTED.size;
+
+/** For tests: how many formatters are cached. */
+export const formatterCacheSize = (): number => formatters.size;
+
+function formatter(tz: string): Intl.DateTimeFormat {
+  const hit = formatters.get(tz);
+  if (hit) return hit;
+  const canonical = canonicalTimeZone(tz);
+  if (canonical === null) throw new RangeError('unsupported time zone');
+  let f = formatters.get(canonical);
+  if (!f) {
+    f = new Intl.DateTimeFormat('en-GB', { timeZone: canonical, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    if (formatters.size < FORMATTER_CAP) formatters.set(canonical, f);
   }
+  return f;
 }
 
 /** Minutes after midnight at `at` on the wall clock in `tz`. */

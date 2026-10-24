@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { findByPublicName, PUBLIC_NAME, PUBLIC_NAME_KEY } from '../src/nudge/names.js';
-import { inQuietHours, localMinutes } from '../src/nudge/quiet.js';
+import { canonicalTimeZone, FORMATTER_CAP, formatterCacheSize, inQuietHours, localMinutes } from '../src/nudge/quiet.js';
 import {
   NUDGE_GAP_MS, NUDGE_RETENTION_MS, RECIPIENT_LIMIT_PER_HOUR, purgeNudges, type NudgeEvent, type NudgeWiring,
 } from '../src/nudge/routes.js';
@@ -459,6 +459,39 @@ describe('quiet hours in the recipient\'s time zone', () => {
     const q = { quietFrom: 60, quietTo: 7 * 60, tz: 'Europe/Berlin' };
     expect(inQuietHours(q, new Date('2026-10-24T05:30:00Z'))).toBe(false);
     expect(inQuietHours(q, new Date('2026-10-26T05:30:00Z'))).toBe(true);
+  });
+});
+
+describe('time zones: only supported zones, stored and cached by canonical name', () => {
+  it('case and alias variants map to one canonical name', () => {
+    expect(canonicalTimeZone('asia/tokyo')).toBe('Asia/Tokyo');
+    expect(canonicalTimeZone('ASIA/TOKYO')).toBe('Asia/Tokyo');
+    expect(canonicalTimeZone('US/Eastern')).toBe('America/New_York');
+    for (const z of ['utc', 'UTC', 'Etc/UTC', 'GMT']) expect(canonicalTimeZone(z), z).toBe('UTC');
+    for (const z of ['Not/AZone', 'Mars/Olympus', '', 'x'.repeat(65), 5, null]) expect(canonicalTimeZone(z), String(z)).toBeNull();
+  });
+
+  it('alias and case variants share one formatter cache entry; the cache is capped at the zone count', () => {
+    const t = new Date('2026-10-20T12:00:00Z');
+    localMinutes(t, 'Pacific/Auckland');
+    const size = formatterCacheSize();
+    for (const z of ['pacific/auckland', 'PACIFIC/AUCKLAND', 'Pacific/AUCKLAND', 'NZ', 'nz']) localMinutes(t, z);
+    expect(formatterCacheSize()).toBe(size);
+    expect(FORMATTER_CAP).toBeLessThan(1000);
+    expect(() => localMinutes(t, 'Not/AZone')).toThrow(RangeError);
+    expect(formatterCacheSize()).toBe(size);
+  });
+
+  it('PUT stores the canonical name, and refuses an unknown zone with 400', async () => {
+    const t = await trader();
+    const res = await t.b.put('/v1/account/nudges', { enabled: true, quietFrom: '01:00', quietTo: '07:00', tz: 'us/eastern' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ tz: 'America/New_York' });
+    const { rows } = await deps.db.query<{ tz: string }>('select tz from nudge_settings where account_id = $1', [t.id]);
+    expect(rows[0]!.tz).toBe('America/New_York');
+    const bad = await t.b.put('/v1/account/nudges', { enabled: true, quietFrom: '01:00', quietTo: '07:00', tz: 'Not/AZone' });
+    expect(bad.statusCode).toBe(400);
+    expect(bad.json()).toEqual({ error: 'bad-request' });
   });
 });
 

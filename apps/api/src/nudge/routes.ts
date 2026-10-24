@@ -4,7 +4,7 @@ import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
 import { findByPublicName, PUBLIC_NAME } from './names.js';
-import { formatClock, inQuietHours, isTimeZone, parseClock } from './quiet.js';
+import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
 /** One nudge per sender every 10 minutes (spec 2.4): the sender's own limit, refused with `too-soon`. */
 export const NUDGE_GAP_MS = 10 * 60_000;
@@ -162,13 +162,16 @@ async function getSettings(req: FastifyRequest) {
 
 /**
  * `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }`: all four fields every time.
- * Quiet hours are "HH:MM" pairs (both or neither, not equal) and need an IANA time zone; a start
+ * Quiet hours are "HH:MM" pairs (both or neither, not equal) and need a supported IANA time zone,
+ * stored and returned by its canonical name; a start
  * later than the end crosses midnight.
  */
 async function putSettings(req: FastifyRequest) {
-  const { enabled, quietFrom, quietTo, tz } = bodyOf(req);
+  const { enabled, quietFrom, quietTo, tz: rawTz } = bodyOf(req);
   if (typeof enabled !== 'boolean') throw new ApiError(400, 'bad-request');
-  if (tz !== null && !isTimeZone(tz)) throw new ApiError(400, 'bad-request');
+  // Only a supported zone, stored by its canonical name (case and alias variants collapse).
+  const tz = rawTz === null ? null : canonicalTimeZone(rawTz);
+  if (rawTz !== null && tz === null) throw new ApiError(400, 'bad-request');
   let from: number | null = null;
   let until: number | null = null;
   if (quietFrom !== null || quietTo !== null) {
