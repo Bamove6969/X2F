@@ -15,17 +15,56 @@
  * Mod-built (Plan 4 rulings, only while disputed): co-signed only when it pays this side its
  * whole side of the trade at its own address (release for the buyer, full refund for the
  * seller), so no split can move this side's share to the counterparty.
+ *
+ * The trade's size is never taken from the API: `deal` is what this device stored at trade
+ * start and both sides signed in trade.terms (amount at take, poster, locked rate, offer
+ * maximum), with growth worked out on this device from its own funds() (`deviceAmount`). A
+ * TradeView whose amount or poster disagrees refuses every outcome.
  */
 import type { Outcome, Payout } from '@x2f/escrow';
-import { escrowPlan, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';
+import { amountForFunds, escrowPlan, fiatCents, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';
 
-/** The trade facts the policy needs. Fee and seller funds are derived here, never read from the API. */
+/** What the API's TradeView says (untrusted: only cross-checked), plus the fee wallet from config. */
 export interface PolicyTrade {
   state: TradeState;
   poster: 'seller' | 'buyer';
   amountAtomic: bigint;
   /** X2F's fee wallet, from the app's build config (VITE_FEE_WALLET), never from the API. */
   feeWallet: string;
+}
+
+/** The trade as this device holds it: signed by both sides at setup, size worked out on the device. */
+export interface PolicyDeal {
+  poster: 'seller' | 'buyer';
+  /** The trade's current size: the amount at take, or the grown amount from `deviceAmount`. */
+  amountAtomic: bigint;
+}
+
+/** The deal both sides sign in trade.terms (fixed at take, OD-5). */
+export interface Deal {
+  poster: 'seller' | 'buyer';
+  takeAmountAtomic: bigint;
+  currency: string;
+  centsPerXmr: bigint;
+  maxFiatCents: bigint;
+}
+
+/**
+ * The trade's size from this device's own escrow reading, by the @x2f/trade growth rule
+ * (Revision 2026-10-20, 2026-10-21): worked out again from the amount at take; only releasable
+ * coins grow it; while some are locked it keeps at most its current size; a grown fiat total
+ * above the offer maximum keeps the current size. Call it only while the trade may still grow
+ * (funding, securing, secured, and before this device knows of "I've paid"); afterwards keep
+ * the last value.
+ */
+export function deviceAmount(d: Deal, currentAtomic: bigint, balance: bigint, unlocked: bigint): bigint {
+  const releasable = balance > 0n && balance === unlocked;
+  const currentFunds = escrowPlan({ amountAtomic: currentAtomic, poster: d.poster }).sellerFundsAtomic;
+  const basis = releasable ? balance : balance < currentFunds ? balance : currentFunds;
+  if (basis <= escrowPlan({ amountAtomic: d.takeAmountAtomic, poster: d.poster }).sellerFundsAtomic) return d.takeAmountAtomic;
+  const candidate = amountForFunds(basis, d.poster);
+  if (candidate <= d.takeAmountAtomic) return d.takeAmountAtomic;
+  return fiatCents(candidate, { currency: d.currency, centsPerXmr: d.centsPerXmr }) <= d.maxFiatCents ? candidate : currentAtomic;
 }
 
 export interface PolicyContext {
@@ -35,6 +74,7 @@ export interface PolicyContext {
   /** From this device's own funds(), only when balance == unlocked. */
   balance: bigint;
   trade: PolicyTrade;
+  deal: PolicyDeal;
   /** The addresses each side signed in its trade.terms signal. */
   signedTerms: { payout: string; refund: string };
 }
@@ -66,12 +106,12 @@ function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
 }
 
 function expected(kind: SettleKind, c: PolicyContext): Payout[] {
-  const plan = escrowPlan({ amountAtomic: c.trade.amountAtomic, poster: c.trade.poster });
+  const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
   return payoutsFor({
     kind,
-    amountAtomic: c.trade.amountAtomic,
+    amountAtomic: c.deal.amountAtomic,
     feeAtomic: plan.feeAtomic,
-    poster: c.trade.poster,
+    poster: c.deal.poster,
     sellerFundsAtomic: plan.sellerFundsAtomic,
     balanceAtomic: c.balance,
     buyerPayout: c.signedTerms.payout,
@@ -83,13 +123,15 @@ function expected(kind: SettleKind, c: PolicyContext): Payout[] {
 function check(c: PolicyContext, o: Outcome): boolean {
   if (o.kind !== 'release' || (c.role !== 'buyer' && c.role !== 'seller')) return false;
   if (typeof c.balance !== 'bigint' || c.balance <= 0n) return false;
+  // The API's view must agree with the deal this device holds, or nothing is settled.
+  if (c.trade.poster !== c.deal.poster || c.trade.amountAtomic !== c.deal.amountAtomic) return false;
   if (o.builder === o.cosigner || (o.builder !== c.role && o.cosigner !== c.role)) return false;
   const mine = c.role === 'buyer' ? c.own.payout : c.own.refund;
   const signedMine = c.role === 'buyer' ? c.signedTerms.payout : c.signedTerms.refund;
   if (typeof mine !== 'string' || mine === '' || mine !== signedMine) return false;
 
   const state = c.trade.state;
-  const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.trade.amountAtomic, poster: c.trade.poster });
+  const { sellerFundsAtomic } = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
   const is = (kind: SettleKind, builder: Party, cosigner: Party): boolean => {
     if (o.builder !== builder || o.cosigner !== cosigner) return false;
     let want: Payout[];

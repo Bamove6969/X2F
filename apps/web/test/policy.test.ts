@@ -1,7 +1,7 @@
 import type { Outcome, Payout } from '@x2f/escrow';
 import { escrowPlan, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';
 import { describe, expect, it } from 'vitest';
-import { cosignPolicy, outcomeFor, type PolicyContext } from '../src/escrow/policy.js';
+import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from '../src/escrow/policy.js';
 
 const BUYER = '4BuyerPayoutAddress';
 const SELLER = '4SellerRefundAddress';
@@ -17,17 +17,18 @@ function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance
     own: role === 'buyer' ? { payout: BUYER } : { refund: SELLER },
     balance: o.balance ?? sellerFundsAtomic,
     trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE },
+    deal: { poster, amountAtomic: AMOUNT },
     signedTerms: { payout: BUYER, refund: SELLER },
   };
 }
 
 function expected(kind: SettleKind, c: PolicyContext): Payout[] {
-  const plan = escrowPlan({ amountAtomic: c.trade.amountAtomic, poster: c.trade.poster });
+  const plan = escrowPlan({ amountAtomic: c.deal.amountAtomic, poster: c.deal.poster });
   return payoutsFor({
     kind,
-    amountAtomic: c.trade.amountAtomic,
+    amountAtomic: c.deal.amountAtomic,
     feeAtomic: plan.feeAtomic,
-    poster: c.trade.poster,
+    poster: c.deal.poster,
     sellerFundsAtomic: plan.sellerFundsAtomic,
     balanceAtomic: c.balance,
     buyerPayout: BUYER,
@@ -184,6 +185,62 @@ describe('cosignPolicy refuses', () => {
     const c = ctx('buyer');
     const rel = expected('release', c);
     expect(cosignPolicy(c, out([...rel].reverse(), 'seller', 'buyer'))).toBe(false);
+  });
+});
+
+describe('the trade size comes from this device, never the API', () => {
+  it('a TradeView with the amount one atomic unit off, or the poster swapped, refuses every outcome', () => {
+    const states: TradeState[] = ['secured', 'paid', 'lapsed', 'refund_requested', 'disputed'];
+    for (const role of ['buyer', 'seller'] as const) {
+      for (const state of states) {
+        const c = ctx(role, { state });
+        const cases: PolicyContext[] = [
+          { ...c, trade: { ...c.trade, amountAtomic: AMOUNT + 1n } },
+          { ...c, trade: { ...c.trade, amountAtomic: AMOUNT - 1n } },
+          { ...c, trade: { ...c.trade, poster: 'buyer' } },
+        ];
+        for (const kind of ['release', 'mutual-cancel', 'buyer-cancel', 'auto-refund', 'lapse-refund'] as const) {
+          for (const lied of cases) {
+            // Even an outcome derived from the lied-about view (the API and the counterparty agreeing).
+            const fromLie = { ...lied, deal: { poster: lied.trade.poster, amountAtomic: lied.trade.amountAtomic } };
+            for (const builder of ['buyer', 'seller', 'mod'] as const) {
+              for (const cosigner of ['buyer', 'seller', 'mod'] as const) {
+                let to: Payout[];
+                try {
+                  to = expected(kind, fromLie);
+                } catch {
+                  continue;
+                }
+                expect(cosignPolicy(lied, out(to, builder, cosigner)), `${role} ${state} ${kind} ${builder}/${cosigner}`).toBe(false);
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  const deal: Deal = { poster: 'seller', takeAmountAtomic: AMOUNT, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 50_000n };
+  const funds = (a: bigint) => escrowPlan({ amountAtomic: a, poster: 'seller' }).sellerFundsAtomic;
+
+  it('deviceAmount: exact funding keeps the take amount; releasable extra within the maximum grows it', () => {
+    expect(deviceAmount(deal, AMOUNT, funds(AMOUNT), funds(AMOUNT))).toBe(AMOUNT);
+    const grown = 1_300_000_000_000n;
+    expect(deviceAmount(deal, AMOUNT, funds(grown), funds(grown))).toBe(grown);
+    // The largest A' with A' + fee(A') <= balance; any dust left over stays the seller's.
+    const b = funds(grown) + 7n;
+    const a = deviceAmount(deal, AMOUNT, b, b);
+    expect(funds(a) <= b && funds(a + 1n) > b).toBe(true);
+  });
+
+  it('deviceAmount: locked extra never grows it; a dropped extra shrinks it back; above the maximum it keeps its size', () => {
+    const grown = 1_300_000_000_000n;
+    expect(deviceAmount(deal, AMOUNT, funds(grown), funds(AMOUNT))).toBe(AMOUNT);
+    expect(deviceAmount(deal, grown, funds(AMOUNT), funds(AMOUNT))).toBe(AMOUNT);
+    expect(deviceAmount(deal, grown, funds(grown) + 5n, funds(grown))).toBe(grown);
+    const huge = 2_000_000_000_000n; // $660 > $500 maximum
+    expect(deviceAmount(deal, AMOUNT, funds(huge), funds(huge))).toBe(AMOUNT);
+    expect(deviceAmount({ ...deal, poster: 'buyer' }, AMOUNT, grown, grown)).toBe(grown);
   });
 });
 
