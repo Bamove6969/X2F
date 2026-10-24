@@ -54,19 +54,47 @@ describe('attestationBytes', () => {
   });
 });
 
+type Built = Awaited<ReturnType<typeof buildTrade>>;
+
+/** What the verifying app knows about itself: its trade, its role and both of its public keys. */
+function meOf(t: Built, role: 'buyer' | 'seller' = 'buyer', over: Partial<{ trade: string; signPublic: string; boxPublic: string; context: 'trade' | 'chat' }> = {}) {
+  const id = role === 'buyer' ? t.buyer : t.seller;
+  return { trade: TRADE, role, signPublic: id.signPublic, boxPublic: id.boxPublic, ...over };
+}
+
+/** Re-sign a modified attestation with the real moderation key (a validly signed but wrong statement). */
+function resign(t: Built, a: Attestation): string {
+  return sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), t.modSign.secret));
+}
+
 describe('verifyAttestation', () => {
   it('accepts a correctly signed attestation for each party', async () => {
     const t = await buildTrade();
-    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, { role: 'buyer', signPublic: t.buyer.signPublic })).resolves.toBeUndefined();
-    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, { role: 'seller', signPublic: t.seller.signPublic })).resolves.toBeUndefined();
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer'))).resolves.toBeUndefined();
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'seller'))).resolves.toBeUndefined();
+  });
+
+  it('accepts the trade code in any accepted spelling', async () => {
+    const t = await buildTrade();
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { trade: TRADE.toLowerCase() }))).resolves.toBeUndefined();
   });
 
   it('throws not-me when the buyer slot holds another key', async () => {
     const t = await buildTrade();
     const impostor = await generateIdentity();
     await expect(
-      verifyAttestation(t.attestation, t.sig, t.modSign.public, { role: 'buyer', signPublic: impostor.signPublic }),
+      verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { signPublic: impostor.signPublic, boxPublic: impostor.boxPublic })),
     ).rejects.toMatchObject({ name: 'AttestationError', code: 'not-me' });
+  });
+
+  it('throws not-me when signPublic matches but boxPublic does not', async () => {
+    const t = await buildTrade();
+    const other = await generateIdentity();
+    const swappedBox: Attestation = {
+      ...t.attestation,
+      participants: { ...t.attestation.participants, buyer: { signPublic: t.buyer.signPublic, boxPublic: other.boxPublic } },
+    };
+    await expect(verifyAttestation(swappedBox, resign(t, swappedBox), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'not-me' });
   });
 
   it('throws bad-signature for a copy re-signed by another key', async () => {
@@ -74,36 +102,63 @@ describe('verifyAttestation', () => {
     const forger = sodium.crypto_sign_keypair();
     const forged = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(t.attestation), forger.privateKey));
     // Verified against the PINNED moderation key, so a key the forger controls does not help.
-    await expect(
-      verifyAttestation(t.attestation, forged, t.modSign.public, { role: 'buyer', signPublic: t.buyer.signPublic }),
-    ).rejects.toMatchObject({ code: 'bad-signature' });
+    await expect(verifyAttestation(t.attestation, forged, t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'bad-signature' });
+  });
+
+  it('throws wrong-trade for a validly signed attestation of ANOTHER trade', async () => {
+    const t = await buildTrade();
+    const OTHER = 'ZZ12-CD34-EF56-GH78';
+    const other: Attestation = {
+      ...t.attestation,
+      trade: OTHER,
+      channels: { escrow: await channelFor(OTHER, 'escrow'), signals: await channelFor(OTHER, 'signals') },
+    };
+    await expect(verifyAttestation(other, resign(t, other), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-trade' });
+  });
+
+  it('throws wrong-trade for a malformed trade code', async () => {
+    const t = await buildTrade();
+    const bad: Attestation = { ...t.attestation, trade: 'not a trade code', channels: {} };
+    await expect(verifyAttestation(bad, resign(t, bad), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-trade' });
   });
 
   it('throws wrong-channel when a channel value is not channelFor(trade, kind)', async () => {
     const t = await buildTrade();
     const tampered: Attestation = { ...t.attestation, channels: { ...t.attestation.channels, escrow: await channelFor(TRADE, 'chat') } };
-    const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(tampered), t.modSign.secret));
-    await expect(
-      verifyAttestation(tampered, sig, t.modSign.public, { role: 'buyer', signPublic: t.buyer.signPublic }),
-    ).rejects.toMatchObject({ code: 'wrong-channel' });
+    await expect(verifyAttestation(tampered, resign(t, tampered), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
   });
 
-  it('throws wrong-trade for a malformed trade code', async () => {
+  it('throws wrong-channel for an empty channel set', async () => {
     const t = await buildTrade();
-    // A malformed code cannot derive channels, so give it none and re-sign the statement.
-    const bad: Attestation = { ...t.attestation, trade: 'not a trade code', channels: {} };
-    const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(bad), t.modSign.secret));
-    await expect(
-      verifyAttestation(bad, sig, t.modSign.public, { role: 'buyer', signPublic: t.buyer.signPublic }),
-    ).rejects.toMatchObject({ code: 'wrong-trade' });
+    const none: Attestation = { ...t.attestation, channels: {} };
+    await expect(verifyAttestation(none, resign(t, none), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
+  });
+
+  it('throws wrong-channel when signals is missing', async () => {
+    const t = await buildTrade();
+    const partial: Attestation = { ...t.attestation, channels: { escrow: await channelFor(TRADE, 'escrow') } };
+    await expect(verifyAttestation(partial, resign(t, partial), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
+  });
+
+  it('throws wrong-channel for an extra channel on a trade attestation', async () => {
+    const t = await buildTrade();
+    const extra: Attestation = { ...t.attestation, channels: { ...t.attestation.channels, chat: await channelFor(TRADE, 'chat') } };
+    await expect(verifyAttestation(extra, resign(t, extra), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
+  });
+
+  it('a chat attestation must carry exactly the chat channel', async () => {
+    const t = await buildTrade();
+    const chat: Attestation = { ...t.attestation, channels: { chat: await channelFor(TRADE, 'chat') } };
+    await expect(verifyAttestation(chat, resign(t, chat), t.modSign.public, meOf(t, 'buyer', { context: 'chat' }))).resolves.toBeUndefined();
+    // A trade attestation is not a chat attestation, and vice versa.
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { context: 'chat' }))).rejects.toMatchObject({ code: 'wrong-channel' });
+    await expect(verifyAttestation(chat, resign(t, chat), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
   });
 
   it('throws bad-signature for a malformed attestation', async () => {
     const t = await buildTrade();
     const broken = { ...t.attestation, v: 2 } as unknown as Attestation;
-    await expect(
-      verifyAttestation(broken, t.sig, t.modSign.public, { role: 'buyer', signPublic: t.buyer.signPublic }),
-    ).rejects.toBeInstanceOf(AttestationError);
+    await expect(verifyAttestation(broken, t.sig, t.modSign.public, meOf(t))).rejects.toBeInstanceOf(AttestationError);
   });
 });
 

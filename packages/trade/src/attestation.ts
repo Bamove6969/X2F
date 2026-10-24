@@ -21,7 +21,38 @@ export interface Attestation {
 }
 
 const DOMAIN = 'x2f/attestation/v1\0';
+const IDENTITY_DOMAIN = 'x2f/trade-identity/v1\0';
 const HEX_KEY = /^[0-9a-f]{64}$/;
+
+/**
+ * The bytes a trader signs with its trade identity when registering it (proof of possession):
+ * `x2f/trade-identity/v1\0` + code + `\0` + role + `\0` + signPublic + boxPublic (hex strings).
+ * The code and role bind the proof to one slot of one trade. The API checks it on registration and
+ * the moderation service checks it again before attesting.
+ */
+export function identityProofBytes(code: string, role: 'buyer' | 'seller', signPublic: string, boxPublic: string): Uint8Array {
+  return new TextEncoder().encode(`${IDENTITY_DOMAIN}${code}\0${role}\0${signPublic}${boxPublic}`);
+}
+
+/**
+ * True when `proof` (hex Ed25519 signature) verifies under `signPublic` over `identityProofBytes`
+ * and `boxPublic` is the X25519 conversion of `signPublic`. Never throws.
+ */
+export async function identityProofValid(
+  code: string,
+  role: 'buyer' | 'seller',
+  keys: { signPublic: string; boxPublic: string; proof: string },
+): Promise<boolean> {
+  await sodium.ready;
+  try {
+    if (!HEX_KEY.test(keys.signPublic) || !HEX_KEY.test(keys.boxPublic) || !/^[0-9a-f]{128}$/.test(keys.proof)) return false;
+    const pk = sodium.from_hex(keys.signPublic);
+    if (sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(pk)) !== keys.boxPublic) return false;
+    return sodium.crypto_sign_verify_detached(sodium.from_hex(keys.proof), identityProofBytes(code, role, keys.signPublic, keys.boxPublic), pk);
+  } catch {
+    return false;
+  }
+}
 
 /** The bytes the moderation key signs: the domain, then canonical JSON of the whole attestation. */
 export function attestationBytes(a: Attestation): Uint8Array {
@@ -66,18 +97,37 @@ function wellFormed(a: unknown): a is Attestation {
   return true;
 }
 
+/** The exact channel set an attestation must carry: a trade gets escrow + signals, a chat gets chat. */
+const CHANNELS_FOR: Record<'trade' | 'chat', readonly ChannelKind[]> = { trade: ['escrow', 'signals'], chat: ['chat'] };
+
+/** What the verifying app knows about itself, from its own state (never from the attestation). */
+export interface AttestationSelf {
+  /** The trade this app is in; the attestation must be for exactly this trade. */
+  trade: string;
+  role: 'buyer' | 'seller';
+  signPublic: string;
+  boxPublic: string;
+  /** Which kind of attestation is expected (default 'trade'). */
+  context?: 'trade' | 'chat';
+}
+
 /**
  * Verify an attestation a trader received: throws nothing on success, an `AttestationError`
  * otherwise. Checks, in order: the moderation signature over `attestationBytes` with the pinned
- * key (`bad-signature`, also for any malformed input); that `me` occupies its own slot
- * (`not-me`); that the trade code is valid (`wrong-trade`); and that every channel value equals
+ * key (`bad-signature`, also for any malformed input); that `me`'s slot holds BOTH of its keys
+ * (`not-me`); that the attestation is for `me.trade` (`wrong-trade`); and that the channels are
+ * EXACTLY the set for the context (trade: escrow + signals; chat: chat), each equal to
  * `channelFor(trade, kind)` (`wrong-channel`).
+ *
+ * Deviation from the plan's signature (review of Task 8): `me` also carries `trade`, `boxPublic`
+ * and an optional `context`, so a validly signed attestation for another trade, a partial channel
+ * set, or a slot with my signing key but someone else's box key is refused.
  */
 export async function verifyAttestation(
   a: Attestation,
   sig: string,
   modSigningPublic: string,
-  me: { role: 'buyer' | 'seller'; signPublic: string },
+  me: AttestationSelf,
 ): Promise<void> {
   await sodium.ready;
   if (!wellFormed(a) || typeof sig !== 'string' || typeof modSigningPublic !== 'string' || !HEX_KEY.test(modSigningPublic)) {
@@ -95,11 +145,24 @@ export async function verifyAttestation(
   if (!ok) throw new AttestationError('bad-signature');
 
   const slot = a.participants[me.role as Role];
-  if (slot === undefined || slot.signPublic.toLowerCase() !== me.signPublic.toLowerCase()) {
+  if (
+    slot === undefined ||
+    typeof me.signPublic !== 'string' || typeof me.boxPublic !== 'string' ||
+    slot.signPublic !== me.signPublic.toLowerCase() ||
+    slot.boxPublic !== me.boxPublic.toLowerCase()
+  ) {
     throw new AttestationError('not-me');
   }
-  if (normalizeTradeCode(a.trade) === null) throw new AttestationError('wrong-trade');
-  for (const kind of Object.keys(a.channels) as ChannelKind[]) {
-    if (a.channels[kind] !== (await channelFor(a.trade, kind))) throw new AttestationError('wrong-channel');
+
+  const trade = normalizeTradeCode(a.trade);
+  const expected = typeof me.trade === 'string' ? normalizeTradeCode(me.trade) : null;
+  if (trade === null || expected === null || trade !== expected) throw new AttestationError('wrong-trade');
+
+  const want = CHANNELS_FOR[me.context ?? 'trade'];
+  if (want === undefined) throw new AttestationError('wrong-channel');
+  const have = Object.keys(a.channels);
+  if (have.length !== want.length || !want.every((k) => have.includes(k))) throw new AttestationError('wrong-channel');
+  for (const kind of want) {
+    if (a.channels[kind] !== (await channelFor(trade, kind))) throw new AttestationError('wrong-channel');
   }
 }

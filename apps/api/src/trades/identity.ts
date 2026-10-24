@@ -1,6 +1,6 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
+import { identityProofValid } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import sodium from 'libsodium-wrappers';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -12,17 +12,7 @@ const requireTrader = requireSession({ kinds: ['trader'] });
 export type TraderRole = Extract<Role, 'buyer' | 'seller'>;
 
 const HEX_KEY = /^[0-9a-f]{64}$/;
-const IDENTITY_DOMAIN = 'x2f/trade-identity/v1\0';
 const IDENTITY_KEYS = ['signPublic', 'boxPublic', 'proof'] as const;
-
-/**
- * The bytes a trader signs with its trade identity to prove it holds the secret key for the public
- * keys it registers. The role and the trade code bind the proof to one slot of one trade, so a
- * proof for another trade or role cannot be replayed.
- */
-function identityProofBytes(code: string, role: TraderRole, signPublic: string, boxPublic: string): Uint8Array {
-  return new TextEncoder().encode(`${IDENTITY_DOMAIN}${code}\0${role}\0${signPublic}${boxPublic}`);
-}
 
 /** The exact request body for registering an identity: nothing more (so a stray `signSecret` is a 400). */
 function identityBody(req: FastifyRequest): { signPublic: string; boxPublic: string; proof: string } {
@@ -61,28 +51,14 @@ async function roleInTrade(db: Queryable, rawCode: string, accountId: string): P
 
 export function tradeRoutes(app: FastifyInstance): void {
   app.post('/v1/trades/:code/identity', { preHandler: requireTrader }, async (req, reply) => {
-    await sodium.ready;
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
     const { code: normalized, role } = await roleInTrade(deps.db, code, req.auth.accountId);
     const { signPublic, boxPublic, proof } = identityBody(req);
 
-    // boxPublic must be the X25519 conversion of signPublic, and the proof must verify under
-    // signPublic; either failing is `bad-proof` (never says which, so it leaks nothing).
-    let good = false;
-    try {
-      const derived = sodium.crypto_sign_ed25519_pk_to_curve25519(sodium.from_hex(signPublic));
-      good =
-        sodium.to_hex(derived) === boxPublic &&
-        sodium.crypto_sign_verify_detached(
-          sodium.from_hex(proof),
-          identityProofBytes(normalized, role, signPublic, boxPublic),
-          sodium.from_hex(signPublic),
-        );
-    } catch {
-      good = false;
-    }
-    if (!good) throw new ApiError(400, 'bad-proof');
+    // The proof is over THIS trade and THIS (session-derived) role, and boxPublic must be the X25519
+    // conversion of signPublic; any failure is `bad-proof` (never says which).
+    if (!(await identityProofValid(normalized, role, { signPublic, boxPublic, proof }))) throw new ApiError(400, 'bad-proof');
 
     const { rowCount } = await deps.db.query(
       `insert into trade_identities (code, role, sign_public, box_public, proof, created_at)

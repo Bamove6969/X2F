@@ -204,7 +204,9 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     expect(payload.attestation).toEqual(attestation);
     // The real buyer's verification passes against the pinned moderation signing key.
     await expect(
-      verifyAttestation(payload.attestation, payload.sig, modSign.public, { role: 'buyer', signPublic: buyerId.id.signPublic }),
+      verifyAttestation(payload.attestation, payload.sig, modSign.public, {
+        trade: code, role: 'buyer', signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic,
+      }),
     ).resolves.toBeUndefined();
   });
 

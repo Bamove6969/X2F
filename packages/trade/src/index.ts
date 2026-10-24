@@ -2,9 +2,12 @@ export { CHANNEL_KINDS, channelFor, type ChannelKind } from './channels.js';
 export {
   AttestationError,
   attestationBytes,
+  identityProofBytes,
+  identityProofValid,
   verifyAttestation,
   type Attestation,
   type AttestationErrorCode,
+  type AttestationSelf,
 } from './attestation.js';
 export { escrowCheckWords } from './checkWords.js';
 export { WORDLIST } from './wordlist.js';

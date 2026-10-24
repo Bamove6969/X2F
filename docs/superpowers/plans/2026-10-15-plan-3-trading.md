@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-24 (Task 8 as built)
+
+Deviations in the built Task 8, pending its review. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
+
+- **`verifyAttestation` binds the trade, the exact channel set and both keys** (lead security finding on the first push): the signature is `verifyAttestation(a, sig, modSigningPublic, me: { trade: string; role: 'buyer'|'seller'; signPublic: string; boxPublic: string; context?: 'trade'|'chat' })`. It throws `wrong-trade` unless `normalizeTradeCode(a.trade) === normalizeTradeCode(me.trade)` (a validly signed attestation for another trade is refused); `wrong-channel` unless the channel keys are EXACTLY `escrow`+`signals` for a trade (`context` default) or exactly `chat` for a chat, each equal to `channelFor(trade, kind)` (so `{}`, a missing or an extra channel is refused); and `not-me` unless my slot holds BOTH my `signPublic` and my `boxPublic`. Every caller passes the trade it is in from its own state, never from the attestation.
+- **`escrowCheckWords` is async** (`Promise<[string, string, string, string]>`), like `channelFor`: SHA-256 comes from WebCrypto so the same code runs in the browser. Words: the high 44 bits of SHA-256(`x2f/escrow-check/v1\0` + canonical JSON of the participants + `\0` + address) as four 11-bit indices into the bundled BIP-39 English list (`packages/trade/src/wordlist.ts`, pinned by its canonical sha256).
+- **The API's trade tables come with Task 8** (`apps/api/migrations/101_trades.sql`: `trades(code, buyer_account, seller_account)`, `trade_identities`, `trade_attestations`), because Tasks 3–6 are not on the main line yet; the role is the session account's slot in `trades`. A trade the caller is not in is 404 `not-found`. Tasks 5–6 extend `trades` rather than create it.
+- **Shared formats in `@x2f/trade`**: `identityProofBytes`/`identityProofValid` (the registration proof, checked by the API and again by moderation) and `internalSignedBytes` (moderation-signed internal requests: `x2f/api-internal/v1\0` + method + `\0` + path + `\0` + at + `\0` + hex SHA-256 of the body, in headers `x2f-mod-at`/`x2f-mod-sig`; ±60 s and a replay cache, else 401). Moderation rebuilds the relay register message itself (it may not import `@x2f/relay`, which loads fastify).
+
 ## Revision 2026-10-23 (Task 7 as built)
 
 Four deviations in the built Task 7, all accepted in its first review. The interface text below (Task 7 Interfaces, Global Constraints) is corrected to match. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
