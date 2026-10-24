@@ -1,8 +1,7 @@
-import { generateIdentity } from '@x2f/protocol';
 import { channelFor } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, device, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, device, testIdentity, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
 afterEach(async () => {
@@ -25,7 +24,7 @@ async function setup(over: Partial<ApiState> = {}) {
 
 describe('attestation check before any escrow work (P3-C1)', () => {
   it('an attestation without this device’s key: phase error, participants-mismatch, runParty never called', async () => {
-    const intruder = await generateIdentity();
+    const intruder = await testIdentity();
     const t = await setup({
       tamper: (a) => ({ ...a, participants: { ...a.participants, buyer: { signPublic: intruder.signPublic, boxPublic: intruder.boxPublic } } }),
     });
@@ -61,25 +60,53 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     }
   });
 
-  it('a re-signed attestation stored earlier is checked again on resume', async () => {
+  it('a tampered attestation stored earlier is checked again on resume', async () => {
     const t = await setup();
     const seller = await t.mk('seller');
     const buyer = await t.mk('buyer');
     await seller.runtime.start(CODE);
     await buyer.runtime.start(CODE);
-    await until(() => buyer.last()?.phase === 'ready');
+    await buyer.status((s) => s.phase === 'ready');
     await buyer.runtime.stopAll();
-    // The stored attestation is swapped for one listing someone else as buyer.
+    // The stored attestation is swapped for one listing someone else as buyer (its old signature no longer fits).
     const rec = (await buyer.store.load(CODE))!;
-    const intruder = await generateIdentity();
+    const intruder = await testIdentity();
     const a = rec.attestation!.attestation as { participants: Record<string, unknown> };
     await buyer.store.save({ ...rec, attestation: { ...rec.attestation!, attestation: { ...a, participants: { ...a.participants, buyer: { signPublic: intruder.signPublic, boxPublic: intruder.boxPublic } } } } });
     const calls = t.parties.calls.length;
     const again = await t.mk('buyer', { idb: buyer.idb });
     await again.runtime.resumeAll();
-    await until(() => again.last()?.phase === 'error');
-    expect(again.last()?.error).toBe('participants-mismatch');
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'participants-mismatch' });
     expect(t.parties.calls.length).toBe(calls);
+  });
+
+  it('a stopped run never writes its record again (stop resolves only once the run has ended)', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await buyer.status((s) => s.phase === 'ready');
+    // A save is in flight (slow storage) when the page stops the runtime.
+    const save = buyer.store.save.bind(buyer.store);
+    let entered!: () => void;
+    const inSave = new Promise<void>((r) => (entered = r));
+    let stopped = false;
+    let late = 0;
+    buyer.store.save = async (r) => {
+      entered();
+      await new Promise((x) => setTimeout(x, 30));
+      await save(r);
+      if (stopped) late++;
+    };
+    const acting = buyer.runtime.act(CODE, { type: 'signal', signal: 'trade.paid' }).catch(() => undefined);
+    await inSave;
+    await buyer.runtime.stopAll();
+    stopped = true;
+    await acting;
+    // Anything the old run still had queued gets its chance to (wrongly) write now.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(late).toBe(0);
   });
 });
 
@@ -171,7 +198,7 @@ describe('a verified trade', () => {
 
   it('check words differ when one key differs', async () => {
     const { escrowCheckWords } = await import('../src/escrow/adapters.js');
-    const [a, b, c] = await Promise.all([generateIdentity(), generateIdentity(), generateIdentity()]);
+    const [a, b, c] = await Promise.all([testIdentity(), testIdentity(), testIdentity()]);
     const p = { buyer: a, seller: b, mod: c };
     const w1 = await escrowCheckWords(p, ESCROW_ADDRESS);
     expect(await escrowCheckWords(p, ESCROW_ADDRESS)).toEqual(w1);

@@ -1,7 +1,7 @@
 // Stubs for the escrow runtime tests: an in-memory API and relay, a spy party, and a test mod key.
 import type { Role } from '@x2f/core';
 import type { EscrowEngine, Incoming, Outcome, PartyArgs, PartyHandle, Transport } from '@x2f/escrow';
-import { canonicalJson, generateIdentity, type Envelope, type Participants } from '@x2f/protocol';
+import { canonicalJson, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
 import sodium from 'libsodium-wrappers';
@@ -14,6 +14,22 @@ export const AMOUNT = 1_250_000_000_000n;
 export const FEE_WALLET = '4FeeWalletAddress';
 export const ADDR = { buyer: '4BuyerPayout', seller: '4SellerRefund' } as const;
 export const ESCROW_ADDRESS = '5EscrowMultisigAddress';
+
+/**
+ * A fresh trade identity for the stubs, made here with libsodium. apps/web may name the
+ * protocol's identity maker only in the escrow worker (separation check, Task 8), so the
+ * tests build theirs the same way the protocol does.
+ */
+export async function testIdentity(): Promise<Identity> {
+  await sodium.ready;
+  const kp = sodium.crypto_sign_keypair();
+  return {
+    signPublic: sodium.to_hex(kp.publicKey),
+    boxPublic: sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(kp.publicKey)),
+    signSecret: kp.privateKey,
+    boxSecret: sodium.crypto_sign_ed25519_sk_to_curve25519(kp.privateKey),
+  };
+}
 
 export async function modKey(): Promise<{ publicHex: string; secret: Uint8Array }> {
   await sodium.ready;
@@ -134,7 +150,7 @@ export function tradeView(over: Record<string, unknown> = {}): Record<string, un
 
 /** The participants the API would attest, with a mod identity of its own. */
 export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, state: ApiState) {
-  const modId = await generateIdentity();
+  const modId = await testIdentity();
   const attest = async (): Promise<{ attestation: Attestation; sig: string } | null> => {
     const { buyer, seller } = state.identities;
     if (!buyer || !seller) return null;
@@ -177,6 +193,8 @@ export interface Device {
   runtime: EscrowRuntime;
   statuses: EscrowStatus[];
   last(): EscrowStatus | undefined;
+  /** Resolves with the first status (the latest one, or a later one) that matches; event-driven, no polling. */
+  status(pred: (s: EscrowStatus) => boolean): Promise<EscrowStatus>;
 }
 
 export async function device(
@@ -186,21 +204,34 @@ export async function device(
   const idb = o.idb ?? new IDBFactory();
   const store = await openEscrowStore({ indexedDB: idb });
   const statuses: EscrowStatus[] = [];
+  const waiters: { pred: (s: EscrowStatus) => boolean; resolve: (s: EscrowStatus) => void }[] = [];
+  const onStatus = (s: EscrowStatus): void => {
+    statuses.push(s);
+    for (const w of waiters.splice(0)) {
+      if (w.pred(s)) w.resolve(s);
+      else waiters.push(w);
+    }
+  };
+  const status = (pred: (s: EscrowStatus) => boolean): Promise<EscrowStatus> => {
+    const now = statuses.at(-1);
+    if (now && pred(now)) return Promise.resolve(now);
+    return new Promise((resolve) => waiters.push({ pred, resolve }));
+  };
   const runtime = createEscrowRuntime({
     api: o.api,
     store,
     config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
     engine,
-    generateIdentity,
+    generateIdentity: testIdentity,
     runParty: o.parties.runParty,
     transport: o.hub.transport,
     lock: o.lock ?? ((_n, fn) => fn()),
     pollMs: 5,
-    onStatus: (_c, s) => statuses.push(s),
+    onStatus: (_c, s) => onStatus(s),
   });
   const rawStart = runtime.start.bind(runtime);
   runtime.start = (code, confirmed) => rawStart(code, confirmed ?? confirmedFor(role));
-  return { role, rawStart, store, idb, runtime, statuses, last: () => statuses.at(-1) };
+  return { role, rawStart, store, idb, runtime, statuses, last: () => statuses.at(-1), status };
 }
 
 export async function until(cond: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {

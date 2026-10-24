@@ -164,12 +164,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     readonly finished: Promise<void>;
     private finish!: () => void;
     acquired!: Promise<void>;
+    /** The lock callback entered: the run is (or was) running and `ended` will resolve. */
+    entered = false;
+    /** Resolves once the run has returned and every save it started is stored. */
+    readonly ended: Promise<void>;
+    markEnded!: () => void;
 
     constructor(
       readonly code: string,
       private readonly confirmed: ConfirmedTrade | undefined,
     ) {
       this.finished = new Promise((r) => (this.finish = r));
+      this.ended = new Promise((r) => (this.markEnded = r));
     }
 
     emit(): void {
@@ -197,8 +203,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.emit();
     }
 
-    /** Stores a snapshot of the record; resolves once it is stored. Saves never reorder. */
+    /**
+     * Stores a snapshot of the record; resolves once it is stored. Saves never reorder. A stopped
+     * run never writes again: another tab may hold the lock by now, and a late write would
+     * replace its newer state (R26). Its callers stop instead of acting on an unsaved state.
+     */
     persist(): Promise<void> {
+      if (this.stopped) return Promise.reject(new Error('escrow run stopped'));
       const snap = structuredClone(this.rec);
       const p = this.saving.then(() => deps.store.save(snap));
       this.saving = p.catch(() => undefined);
@@ -335,7 +346,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         onSignal: (type, from) => {
           if (type === 'trade.paid' && from === 'buyer' && !this.rec.paidSeen) {
             this.rec.paidSeen = true;
-            void this.persist();
+            this.persist().catch(() => undefined);
           }
           this.poke();
         },
@@ -422,7 +433,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         async () => {
           if (this.rec.intent) {
             this.rec.intent = { ...this.rec.intent, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: true };
-            await this.persist();
+            // Stopped meanwhile: the next run's party resolves the same outcome again.
+            if (!(await this.persist().then(() => true, () => false))) return;
           }
           if (this.inflight === k) this.inflight = null;
           this.refresh();
@@ -560,19 +572,29 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     private async close(): Promise<void> {
-      await this.halt();
+      await this.halt(false);
       await this.saving;
       await deps.store.delete(this.code);
       this.isReady = true;
       this.set('done');
     }
 
-    async halt(): Promise<void> {
+    /**
+     * Stops the run. With `wait` (any caller outside the run) it resolves only once the run has
+     * returned and its last save is stored, so nothing it started can write after this.
+     */
+    async halt(wait = true): Promise<void> {
       this.stopped = true;
       this.poke();
       this.signals?.stop();
       await this.party?.stop().catch(() => undefined);
       this.finish();
+      if (wait && this.entered) await this.ended;
+    }
+
+    /** Waits for the saves already queued; nothing new is queued once stopped. */
+    flushed(): Promise<void> {
+      return this.saving;
     }
   }
 
@@ -588,6 +610,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     lock(`x2f-escrow:${code}`, async () => {
       acquired();
       if (run.stopped) return;
+      run.entered = true;
       try {
         await run.run();
       } catch {
@@ -596,6 +619,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         }
       }
       await run.finished.catch(() => undefined);
+      // The lock is released only after the run's last save: the next holder reads it.
+      await run.flushed();
+      run.markEnded();
     }).catch(() => {
       acquired();
       run.fail('unsupported-browser');
