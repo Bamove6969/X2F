@@ -87,9 +87,11 @@ describe('the client covers the API', () => {
     }
   });
 
-  it('every route of the API (but /healthz) has its client method', () => {
+  it('every route of the API (but /healthz and the Plan 3 trade routes) has its client method', () => {
     const expected = methodNames().map((n) => ROUTES[n]);
-    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
+    // /v1/trades/* (Plan 3 Task 8 on) is served to the web app's trade client, not this auth client.
+    const authRoutes = srv.serverRoutes().filter((r) => r !== 'GET /healthz' && !/^[A-Z]+ \/v1\/trades\//.test(r));
+    expect(authRoutes).toEqual([...expected].sort());
   });
 
   it('serves the official PGP signing key that signs every challenge', async () => {
