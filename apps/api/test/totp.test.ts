@@ -456,6 +456,22 @@ describe('TOTP key store (FU-C, ASVS 2.8.2)', () => {
     expect(await verifyTotp(deps, id, codeAt(base32(raw), now))).toBe(true);
   });
 
+  it('with X2F_LEGACY_SECRETS=off a format-0 secret fails closed and is not rewrapped (review M1)', async () => {
+    const { id } = await trader();
+    const raw = new Uint8Array(randomBytes(20));
+    const sealed = legacySealed(id, raw);
+    await insertTotp(id, sealed);
+    deps.config.legacySecrets = false;
+    try {
+      expect(await verifyTotp(deps, id, codeAt(base32(raw), now))).toBe(false);
+      expect((await rewrapTotpSecrets(deps)).failed).toBeGreaterThanOrEqual(1);
+      expect(await sealedOf(id)).toEqual(sealed);
+    } finally {
+      deps.config.legacySecrets = true;
+    }
+    expect(await verifyTotp(deps, id, codeAt(base32(raw), now))).toBe(true);
+  });
+
   it('rewrapTotpSecrets moves format-0 and older-key secrets to the current key, once, and leaves unopenable ones', async () => {
     const saved = deps.config.totpKeys;
     const rotated = { current: 7, keys: new Map([[7, new Uint8Array(randomBytes(32))], ...saved.keys]) };

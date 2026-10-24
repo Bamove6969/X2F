@@ -42,17 +42,18 @@ export const TOTP_OPEN_ENROLMENTS = 3;
 // Sealing
 
 const context = (accountId: string) => `x2f/totp/${accountId}`;
-const boxes = new WeakMap<Config, { ring: Config['totpKeys']; box: SecretBox }>();
+const boxes = new WeakMap<Config, { ring: Config['totpKeys']; legacy: boolean; box: SecretBox }>();
 
 /**
  * The TOTP key store: `X2F_TOTP_KEYS` (env or file), with `subkey('totp')` only to open format-0
- * blobs. Rebuilt if the config's ring is replaced.
+ * blobs, and not even that with `X2F_LEGACY_SECRETS=off` (they then fail closed). Rebuilt if the
+ * config's ring or that switch changes.
  */
 export function totpBox(config: Config): SecretBox {
   const cached = boxes.get(config);
-  if (cached && cached.ring === config.totpKeys) return cached.box;
-  const box = keyringBox(config.totpKeys, subkey(config, 'totp'));
-  boxes.set(config, { ring: config.totpKeys, box });
+  if (cached && cached.ring === config.totpKeys && cached.legacy === config.legacySecrets) return cached.box;
+  const box = keyringBox(config.totpKeys, config.legacySecrets ? subkey(config, 'totp') : undefined);
+  boxes.set(config, { ring: config.totpKeys, legacy: config.legacySecrets, box });
   return box;
 }
 

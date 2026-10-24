@@ -49,11 +49,12 @@ export async function hashPassword(config: Config, pw: string): Promise<{ hash: 
 /**
  * The Argon2 call that checks `pw` against `stored`, always exactly one verify: a legacy hash
  * (pepper null) gets the NFC password, a peppered one its peppered form; a hash whose pepper the
- * ring no longer holds is checked as `DUMMY_HASH` (always false), so it fails like a wrong password.
+ * ring no longer holds, or a legacy hash with `X2F_LEGACY_SECRETS=off`, is checked as `DUMMY_HASH`
+ * (always false), so it fails like a wrong password.
  */
 function verifyStored(config: Config, stored: StoredPassword, pw: string): Promise<boolean> {
-  if (stored.pepperId === null) return argon2.verify(stored.hash, normalizePassword(pw));
-  if (!config.passwordPeppers.keys.has(stored.pepperId)) {
+  if (stored.pepperId === null && config.legacySecrets) return argon2.verify(stored.hash, normalizePassword(pw));
+  if (stored.pepperId === null || !config.passwordPeppers.keys.has(stored.pepperId)) {
     return argon2.verify(DUMMY_HASH, pepperedPassword(config, config.passwordPeppers.current, pw));
   }
   return argon2.verify(stored.hash, pepperedPassword(config, stored.pepperId, pw));

@@ -20,6 +20,12 @@ export interface Config {
   recoveryCodeKeys: Keyring;
   /** Keys that seal TOTP secrets (the file/env key store, `totpBox`); `X2F_TOTP_KEYS`. */
   totpKeys: Keyring;
+  /**
+   * `X2F_LEGACY_SECRETS` (`on` by default, or `off`): whether values stored before FU-C are still
+   * accepted: unpeppered password hashes, SHA-256 recovery codes and format-0 TOTP blobs. Turned off
+   * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
+   */
+  legacySecrets: boolean;
 }
 
 /**
@@ -90,6 +96,8 @@ function ringSource(env: Env, name: string): string {
     const info = statSync(path);
     if (!info.isFile()) throw refuse('is not a regular file');
     if ((info.mode & 0o077) !== 0) throw refuse('must be readable only by the API user (chmod 600)');
+    // Skipped where the platform has no user ids (Windows).
+    if (typeof process.getuid === 'function' && info.uid !== process.getuid()) throw refuse('must be owned by the API user');
     text = readFileSync(path, 'utf8');
   } catch (e) {
     if (e instanceof Error && e.message.startsWith(`config: ${name}_FILE`)) throw e;
@@ -175,6 +183,9 @@ export function loadConfig(env: Env): Config {
   const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
+  const legacy = env.X2F_LEGACY_SECRETS || 'on';
+  if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
+  const legacySecrets = legacy === 'on';
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
   ]);
@@ -182,6 +193,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
+    legacySecrets,
   };
 }
 

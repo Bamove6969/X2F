@@ -177,6 +177,19 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
     expect(rows).toEqual([]);
   });
 
+  it('with X2F_LEGACY_SECRETS=off a legacy code is refused and stays unused (review M1)', async () => {
+    const { id, username } = await account();
+    await insert(id, sha(normalizeRecoveryCode('GHJK-MNPQ-RSTV-WXYZ')!), null);
+    deps.config.legacySecrets = false;
+    try {
+      expect((await backup(new Browser(app), username, 'recovery-code', 'GHJK-MNPQ-RSTV-WXYZ')).statusCode).toBe(401);
+    } finally {
+      deps.config.legacySecrets = true;
+    }
+    const { rows } = await deps.db.query('select used_at from recovery_codes where account_id = $1', [id]);
+    expect(rows).toEqual([{ used_at: null }]);
+  });
+
   it('a SHA-256 value stored as keyed, or a keyed value stored as legacy, does not match', async () => {
     const { id, username } = await account();
     await insert(id, sha(normalizeRecoveryCode('CDEF-GHJK-MNPQ-RSTV')!), deps.config.recoveryCodeKeys.current);

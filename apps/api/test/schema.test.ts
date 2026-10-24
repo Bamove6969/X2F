@@ -3,7 +3,7 @@ import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
@@ -190,6 +190,33 @@ describe('config', () => {
       await chmod(file, 0o640);
       expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file })).toThrow(/X2F_TOTP_KEYS_FILE.*chmod 600/);
       expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: join(dir, 'missing') })).toThrow(/X2F_TOTP_KEYS_FILE/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('X2F_LEGACY_SECRETS is on by default, accepts on and off, refuses anything else (review M1)', () => {
+    expect(loadConfig(FULL_ENV).legacySecrets).toBe(true);
+    expect(loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: 'on' }).legacySecrets).toBe(true);
+    expect(loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: 'off' }).legacySecrets).toBe(false);
+    for (const bad of ['0', 'false', 'OFF', 'no']) expect(() => loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: bad })).toThrow(/X2F_LEGACY_SECRETS/);
+  });
+
+  it('refuses a key ring file owned by another user (review M4)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-ring-'));
+    try {
+      const file = join(dir, 'totp.keys');
+      await writeFile(file, `5:${k32(11)}`);
+      await chmod(file, 0o600);
+      const { X2F_TOTP_KEYS: _t, ...rest } = FULL_ENV;
+      expect(loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file }).totpKeys.current).toBe(5);
+      const uid = process.getuid!();
+      const spy = vi.spyOn(process, 'getuid').mockReturnValue(uid + 1);
+      try {
+        expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file })).toThrow(/X2F_TOTP_KEYS_FILE.*owned by the API user/);
+      } finally {
+        spy.mockRestore();
+      }
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

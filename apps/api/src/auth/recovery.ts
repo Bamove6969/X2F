@@ -44,10 +44,11 @@ export function recoveryCodeHash(config: Config, keyId: number, accountId: strin
 
 /**
  * Every (key id, hash) a typed code could be stored as: one per key in the ring, plus (0, SHA-256)
- * for a legacy row (its null `key_id` is compared as 0).
+ * for a legacy row (its null `key_id` is compared as 0) unless `X2F_LEGACY_SECRETS=off`.
  */
 function candidates(config: Config, accountId: string, normalized: string): { ids: number[]; hashes: Buffer[] } {
-  const ids = [0, ...config.recoveryCodeKeys.keys.keys()];
+  // With X2F_LEGACY_SECRETS=off a legacy row can never match (its SHA-256 is not even computed).
+  const ids = [...(config.legacySecrets ? [0] : []), ...config.recoveryCodeKeys.keys.keys()];
   return { ids, hashes: ids.map((id) => (id === 0 ? legacyCodeHash(normalized) : recoveryCodeHash(config, id, accountId, normalized))) };
 }
 
