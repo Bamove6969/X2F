@@ -175,12 +175,18 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
       seller: { signPublic: seller.signPublic, boxPublic: seller.boxPublic },
       mod: { signPublic: modId.signPublic, boxPublic: modId.boxPublic },
     };
+    const d = confirmedFor('buyer').deal;
     let a: Attestation = {
       v: 1,
       trade: CODE,
       channels: { escrow: await channelFor(CODE, 'escrow'), signals: await channelFor(CODE, 'signals') },
       participants,
       issuedAt: '2026-10-23T12:00:00.000Z',
+      terms: {
+        deal: { poster: d.poster, takeAmountAtomic: d.takeAmountAtomic.toString(), currency: d.currency, centsPerXmr: d.centsPerXmr.toString(), maxFiatCents: d.maxFiatCents.toString() },
+        buyerPayout: ADDR.buyer,
+        sellerRefund: ADDR.seller,
+      },
     };
     if (state.tamper) a = state.tamper(a);
     return { attestation: a, sig: signAttestation(a, state.resign ?? mod.secret) };

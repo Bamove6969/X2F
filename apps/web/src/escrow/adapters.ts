@@ -15,15 +15,29 @@ import sodium from 'libsodium-wrappers';
 
 // ── Task 8: attestation ──────────────────────────────────────────────────────
 
+/**
+ * What the moderator attests about the deal (lead 2026-10-24, answer 4; Task 8 builds the
+ * moderator side): the deal fixed at take and both sides' addresses. Bigints are decimal strings
+ * (canonical JSON has no bigints). A trade attestation must carry it; a chat attestation does not.
+ */
+export interface AttestedTerms {
+  deal: { poster: 'buyer' | 'seller'; takeAmountAtomic: string; currency: string; centsPerXmr: string; maxFiatCents: string };
+  /** The buyer's payout address and the seller's refund address. */
+  buyerPayout: string;
+  sellerRefund: string;
+}
+
 export interface Attestation {
   v: 1;
   trade: string;
   channels: Partial<Record<ChannelKind, string>>;
   participants: Participants;
   issuedAt: string;
+  terms: AttestedTerms;
 }
 
-export type AttestationErrorCode = 'bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel';
+/** `wrong-terms` is an addition: the attested deal or this device's own address is not what the user confirmed. */
+export type AttestationErrorCode = 'bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel' | 'wrong-terms';
 
 export class AttestationError extends Error {
   constructor(readonly code: AttestationErrorCode) {
@@ -55,7 +69,31 @@ function wellFormed(a: unknown): a is Attestation {
     if (!isRecord(k) || typeof k.signPublic !== 'string' || typeof k.boxPublic !== 'string' || !HEX64.test(k.signPublic) || !HEX64.test(k.boxPublic)) return false;
     signs.add(k.signPublic);
   }
-  return signs.size === 3;
+  if (signs.size !== 3) return false;
+  const t = a.terms;
+  if (!isRecord(t) || !exactKeys(t, ['deal', 'buyerPayout', 'sellerRefund'])) return false;
+  if (typeof t.buyerPayout !== 'string' || typeof t.sellerRefund !== 'string' || t.buyerPayout === '' || t.sellerRefund === '' || t.buyerPayout.length > 256 || t.sellerRefund.length > 256) return false;
+  const d = t.deal;
+  if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents'])) return false;
+  return (d.poster === 'buyer' || d.poster === 'seller') && typeof d.currency === 'string' && [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'string' && DECIMAL.test(x));
+}
+
+const DECIMAL = /^[1-9]\d{0,30}$/;
+
+function exactKeys(o: Record<string, unknown>, keys: readonly string[]): boolean {
+  const own = Object.keys(o);
+  return own.length === keys.length && keys.every((k) => own.includes(k));
+}
+
+/** The attested deal equals this device's confirmed deal, field by field. */
+export function attestedDealIs(t: AttestedTerms, d: { poster: string; takeAmountAtomic: bigint; currency: string; centsPerXmr: bigint; maxFiatCents: bigint }): boolean {
+  return (
+    t.deal.poster === d.poster &&
+    t.deal.currency === d.currency &&
+    t.deal.takeAmountAtomic === d.takeAmountAtomic.toString() &&
+    t.deal.centsPerXmr === d.centsPerXmr.toString() &&
+    t.deal.maxFiatCents === d.maxFiatCents.toString()
+  );
 }
 
 /**
@@ -68,7 +106,14 @@ export async function verifyAttestation(
   a: unknown,
   sig: unknown,
   modSigningPublic: string,
-  me: { role: 'buyer' | 'seller'; signPublic: string; boxPublic?: string },
+  me: {
+    role: 'buyer' | 'seller';
+    signPublic: string;
+    boxPublic?: string;
+    /** What the user confirmed on this device; the attested terms must match it. */
+    deal?: { poster: string; takeAmountAtomic: bigint; currency: string; centsPerXmr: bigint; maxFiatCents: bigint };
+    ownAddress?: string;
+  },
   code: string,
 ): Promise<void> {
   await sodium.ready;
@@ -83,6 +128,8 @@ export async function verifyAttestation(
   }
   const slot = a.participants[me.role];
   if (slot.signPublic !== me.signPublic || (me.boxPublic !== undefined && slot.boxPublic !== me.boxPublic)) throw new AttestationError('not-me');
+  if (me.deal !== undefined && !attestedDealIs(a.terms, me.deal)) throw new AttestationError('wrong-terms');
+  if (me.ownAddress !== undefined && (me.role === 'buyer' ? a.terms.buyerPayout : a.terms.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
 }
 
 /**

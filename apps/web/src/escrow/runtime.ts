@@ -16,7 +16,7 @@ import { PartyError, type EscrowEngine, type Outcome, type PartyArgs, type Party
 import type { Identity, Participants } from '@x2f/protocol';
 import { channelFor, fiatCents, type SettleKind, type TradeState } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
-import { escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type EscrowTradeView } from './adapters.js';
+import { AttestationError, escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type AttestedTerms, type EscrowTradeView } from './adapters.js';
 import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from './policy.js';
 import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
 import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
@@ -208,6 +208,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private party: PartyHandle | null = null;
     private signals: SignalsHandle | null = null;
     private participants: Participants | null = null;
+    /** The moderator-attested terms, from the attestation verified in this run. */
+    private attested: AttestedTerms | null = null;
     private view: EscrowTradeView | null = null;
     private isReady = false;
     private words: string[] | null = null;
@@ -378,21 +380,30 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         else att = { attestation: got.attestation, sig: typeof got.sig === 'string' ? got.sig : '' };
       }
       if (!att || this.stopped) return;
+      // Fail closed: no own address means nothing this device could sign terms for.
+      if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
       try {
-        await verifyAttestation(att.attestation, att.sig, deps.config.modSigningPublic, { role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic }, this.code);
-      } catch {
-        this.fail('participants-mismatch'); // stop: no terms, no party, no funding address
+        await verifyAttestation(
+          att.attestation,
+          att.sig,
+          deps.config.modSigningPublic,
+          { role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress },
+          this.code,
+        );
+      } catch (e) {
+        // stop: no terms, no party, no funding address
+        this.fail(e instanceof AttestationError && e.code === 'wrong-terms' ? 'deal-mismatch' : 'participants-mismatch');
         return;
       }
       const attestation = att.attestation as Attestation;
       this.participants = attestation.participants;
+      this.attested = attestation.terms;
       if (!this.rec.attestation) {
         this.rec.attestation = att;
         await this.persist();
       }
 
-      // Fail closed: no own address means nothing this device could sign terms for.
-      if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
+      const ownAddress = this.rec.ownAddress;
       const [escrowChannel, signalsChannel] = await Promise.all([channelFor(this.code, 'escrow'), channelFor(this.code, 'signals')]);
       const role = this.rec.role;
       this.signals = runSignals({
@@ -408,7 +419,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           theirDeal: this.rec.theirDeal,
           termsAcked: this.rec.termsAcked,
         },
-        ownAddress: this.rec.ownAddress,
+        ownAddress,
         deal: this.rec.deal,
         save: async (s) => {
           this.rec.signalGuard = s.guard;
@@ -486,7 +497,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private context(balance: bigint, refundOnly = false): PolicyContext | null {
       const v = this.view;
       const r = this.rec;
-      if (!v || r.ownAddress === null || r.theirAddress === null || !r.theirDeal || !sameDeal(r.deal, r.theirDeal)) return null;
+      if (!v || r.ownAddress === null || r.theirAddress === null || !r.theirDeal || !sameDeal(r.deal, r.theirDeal) || !this.theirAddressAttested()) return null;
       const size = refundOnly ? (r.acceptedAtomic ?? r.sizeAtomic) : this.acceptedAmount(v);
       if (size === null) return null;
       const payout = r.role === 'buyer' ? r.ownAddress : r.theirAddress;
@@ -612,6 +623,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (view) this.view = view; // a view that disagrees with the deal stops the trade in tick()
     }
 
+    /** The counterparty's signed address is the one the moderator attested for its role (or none yet). */
+    private theirAddressAttested(): boolean {
+      const r = this.rec;
+      if (r.theirAddress === null) return true;
+      if (!this.attested) return false;
+      return r.theirAddress === (r.role === 'buyer' ? this.attested.sellerRefund : this.attested.buyerPayout);
+    }
+
     private async tick(): Promise<void> {
       if (this.stopped || !this.party) return;
       await this.loadView();
@@ -634,7 +653,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (CLOSED.includes(v.state)) {
         if (await this.afterClose(f)) return;
       }
-      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
+      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
         this.fail('deal-mismatch');
         return;
       }
