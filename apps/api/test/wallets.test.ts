@@ -605,6 +605,63 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     expect((await usableWallets(deps.db, id, now)).map((w) => w.id).sort()).toEqual(first.map((w) => w.id).sort());
   });
 
+  it('writes one alert per batch wallet with its end, the shared usableFrom and the method, never a full address (M1)', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b);
+    const list = [fakeAddress(), fakeAddress(), fakeAddress()];
+    const res = await addBatch(b, drafts(list), { confirmToken: await confirmToken(b, walletsActionOf(list)) });
+    expect(res.statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ detail: Record<string, unknown> }>(
+      `select detail from alerts where account_id = $1 and kind = 'wallet-added' and detail->>'addressEnd' = any($2::text[])`,
+      [id, list.map((a) => a.slice(-6))],
+    );
+    const shared = at(PAYOUT_WAIT_MS).toISOString();
+    expect(rows.map((r) => [r.detail.addressEnd, r.detail.usableFrom, r.detail.confirmedWith]).sort()).toEqual(
+      list.map((a) => [a.slice(-6), shared, 'password']).sort(),
+    );
+    const { rows: all } = await deps.db.query<{ detail: unknown }>('select detail from alerts where account_id = $1', [id]);
+    for (const r of all) {
+      const text = JSON.stringify(r.detail);
+      for (const a of list) expect(text).not.toContain(a);
+    }
+  });
+
+  it('takes the method from the token only on a batch too: method pgp in the body with a password token still waits (M2)', async () => {
+    const { b } = await trader();
+    await addConfirmed(b);
+    const list = [fakeAddress(), fakeAddress()];
+    const res = await addBatch(b, drafts(list), {
+      confirmToken: await confirmToken(b, walletsActionOf(list)), method: 'pgp', confirmedWith: 'pgp', usableFrom: now.toISOString(),
+    });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as WalletOut[]).map((w) => w.usable)).toEqual([false, false]);
+  });
+
+  it('decides "first" under the account lock for batches: of two parallel password batches on a new account, one is all usable, the other all waits (M3)', async () => {
+    const { b } = await trader();
+    const lists = [[fakeAddress(), fakeAddress()], [fakeAddress(), fakeAddress()]];
+    const tokens = [await confirmToken(b, walletsActionOf(lists[0]!)), await confirmToken(b, walletsActionOf(lists[1]!))];
+    gate = { need: 2, waiting: [] };
+    let results;
+    try {
+      results = await Promise.all(lists.map((list, i) => addBatch(b, drafts(list), { confirmToken: tokens[i] })));
+    } finally {
+      gate = null;
+    }
+    expect(results.map((r) => r.statusCode)).toEqual([201, 201]);
+    const usable = results.map((r) => (r.json() as WalletOut[]).map((w) => w.usable));
+    expect(usable.map((u) => JSON.stringify(u)).sort()).toEqual([JSON.stringify([false, false]), JSON.stringify([true, true])]);
+  });
+
+  it('adds a batch of exactly MAX_WALLET_BATCH (10) under one token (M4)', async () => {
+    const { id, b } = await trader();
+    const list = Array.from({ length: 10 }, () => fakeAddress());
+    const res = await addBatch(b, drafts(list), { confirmToken: await confirmToken(b, walletsActionOf(list)) });
+    expect(res.statusCode).toBe(201);
+    expect((res.json() as WalletOut[]).map((w) => w.address)).toEqual(list);
+    expect((await deps.db.query('select 1 from wallets where account_id = $1', [id])).rows).toHaveLength(10);
+  });
+
   it('lets the creating session add its first batch without a token during onboarding', async () => {
     const { b } = await trader({ firstSession: true });
     const res = await addBatch(b, drafts([fakeAddress(), fakeAddress()]));
