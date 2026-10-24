@@ -2,7 +2,7 @@ export {
   buildApi, BODY_LIMIT, LISTEN_OPTIONS, WITHHELD_MESSAGE,
   type AddressValidator, type AttestationPolicy, type BuildOptions, type Deps, type LeakedList, type PgpSigner,
 } from './app.js';
-export { assertSigningKeyFile, loadConfig, subkey, type Config } from './config.js';
+export { assertSigningKeyFile, loadConfig, subkey, type Config, type Keyring } from './config.js';
 export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
@@ -28,7 +28,7 @@ export { assertTermsAccepted, assertUsername, createAccount } from './accounts.j
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {
-  DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, verifyPassword,
+  DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, pepperedPassword, verifyPassword, type StoredPassword,
 } from './auth/password.js';
 export {
   PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,

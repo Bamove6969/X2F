@@ -21,7 +21,11 @@ const FULL_ENV = {
   X2F_TERMS_VERSION: '2026-10-17',
   X2F_PGP_SIGNING_KEY_PATH: '/srv/x2f/signing.asc',
   X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
+  X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 1).toString('base64')}`,
+  X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 2).toString('base64')}`,
+  X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 3).toString('base64')}`,
 };
+const k32 = (fill: number) => Buffer.alloc(32, fill).toString('base64');
 
 describe('migrations', () => {
   it('applies every migration once on an empty database, then nothing', async () => {
@@ -29,7 +33,7 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '011_secret_keys.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -117,6 +121,78 @@ describe('config', () => {
     expect(() => loadConfig({ ...FULL_ENV, DATABASE_URL: `mysql://u:${secret}@h/x` })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(secret) }),
     );
+  });
+
+  it('loads the three key rings; the first entry of each is the current key (FU-C)', () => {
+    const c = loadConfig({ ...FULL_ENV, X2F_PASSWORD_PEPPERS: ` 7:${k32(9)} , 3:${k32(8)} ` });
+    expect(c.passwordPeppers.current).toBe(7);
+    expect([...c.passwordPeppers.keys.keys()]).toEqual([7, 3]);
+    expect(Buffer.from(c.passwordPeppers.keys.get(3)!)).toEqual(Buffer.alloc(32, 8));
+    expect(c.recoveryCodeKeys.current).toBe(1);
+    expect(Buffer.from(c.recoveryCodeKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 2));
+    expect(c.totpKeys.current).toBe(1);
+    expect(Buffer.from(c.totpKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 3));
+  });
+
+  it.each(['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS'])('needs %s', (name) => {
+    const env: Record<string, string> = { ...FULL_ENV };
+    delete env[name];
+    expect(() => loadConfig(env)).toThrow(name);
+  });
+
+  it.each([
+    ['X2F_PASSWORD_PEPPERS', ''],
+    ['X2F_PASSWORD_PEPPERS', k32(9)],
+    ['X2F_PASSWORD_PEPPERS', `0:${k32(9)}`],
+    ['X2F_PASSWORD_PEPPERS', `32768:${k32(9)}`],
+    ['X2F_PASSWORD_PEPPERS', `01:${k32(9)}`],
+    ['X2F_PASSWORD_PEPPERS', `1:${Buffer.alloc(16, 9).toString('base64')}`],
+    ['X2F_PASSWORD_PEPPERS', `1:not base64!`],
+    ['X2F_PASSWORD_PEPPERS', `1:${k32(9)},1:${k32(10)}`],
+    ['X2F_PASSWORD_PEPPERS', `1:${k32(9)},`],
+    ['X2F_RECOVERY_CODE_KEYS', `x:${k32(9)}`],
+    ['X2F_TOTP_KEYS', `1:${k32(9)},2:${k32(9)}`],
+  ])('refuses malformed %s %#', (name, value) => {
+    expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
+  });
+
+  it('refuses a key that is X2F_SERVER_KEY or is shared with another ring, naming the variable only', () => {
+    expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS: `1:${FULL_ENV.X2F_SERVER_KEY}` })).toThrow(
+      expect.objectContaining({ message: expect.stringMatching(/X2F_TOTP_KEYS.*separate/) }),
+    );
+    expect(() => loadConfig({ ...FULL_ENV, X2F_RECOVERY_CODE_KEYS: `2:${k32(1)}` })).toThrow(/X2F_RECOVERY_CODE_KEYS/);
+    const secret = k32(7);
+    expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS: `1:${secret}` })).toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining(secret) }),
+    );
+  });
+
+  it('never echoes a key ring in its error', () => {
+    const secret = Buffer.alloc(31, 5).toString('base64');
+    for (const name of ['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS']) {
+      expect(() => loadConfig({ ...FULL_ENV, [name]: `4:${secret}` })).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining(secret) }),
+      );
+    }
+  });
+
+  it('reads a key ring from <NAME>_FILE, readable by the API user only, and refuses both or a shared file', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-ring-'));
+    try {
+      const file = join(dir, 'totp.keys');
+      await writeFile(file, `5:${k32(11)}\n`);
+      await chmod(file, 0o600);
+      const { X2F_TOTP_KEYS: _t, ...rest } = FULL_ENV;
+      const c = loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file });
+      expect(c.totpKeys.current).toBe(5);
+      expect(Buffer.from(c.totpKeys.keys.get(5)!)).toEqual(Buffer.alloc(32, 11));
+      expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS_FILE: file })).toThrow(/X2F_TOTP_KEYS/);
+      await chmod(file, 0o640);
+      expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file })).toThrow(/X2F_TOTP_KEYS_FILE.*chmod 600/);
+      expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: join(dir, 'missing') })).toThrow(/X2F_TOTP_KEYS_FILE/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('derives distinct 32-byte subkeys per label', () => {

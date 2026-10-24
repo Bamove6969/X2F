@@ -22,7 +22,7 @@ let deps: Deps;
 let setNow: (d: Date) => void;
 let now = T0;
 let step = 0;
-let goodHash: string;
+let goodHash: { hash: string; pepperId: number };
 let n = 0;
 
 beforeAll(async () => {
@@ -33,7 +33,7 @@ beforeAll(async () => {
     set(d);
   };
   addTestLogin(app, deps);
-  goodHash = await hashPassword(GOOD);
+  goodHash = await hashPassword(deps.config, GOOD);
 });
 
 afterAll(async () => {
@@ -53,7 +53,9 @@ const at = (ms: number) => new Date(now.getTime() + ms);
 async function trader(o: { firstSession?: boolean; kind?: 'trader' | 'staff' } = {}) {
   const username = name();
   const id = await seedAccount(deps, { username, ...(o.kind ? { kind: o.kind } : {}) });
-  await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [id, goodHash, now]);
+  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
+    id, goodHash.hash, goodHash.pepperId, now,
+  ]);
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id, firstSession: o.firstSession ?? true });
   expect(res.statusCode).toBe(200);
