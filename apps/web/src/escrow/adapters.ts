@@ -111,8 +111,12 @@ export interface EscrowTradeView {
   state: TradeState;
   poster: 'seller' | 'buyer';
   amountAtomic: bigint;
-  /** GUESS: the viewer's own address for this trade (the buyer's payout, the seller's refund). */
-  ownAddress: string;
+  /**
+   * GUESS: the viewer's own address for this trade, if the view carries it. Never used as the
+   * source (the runtime takes the address the user confirmed on this device); a different one
+   * here is a mismatch.
+   */
+  ownAddress: string | null;
   /** The locked rate and the offer maximum, fixed at take (OD-5, Revision 2026-10-20). */
   currency: string;
   centsPerXmr: bigint;
@@ -134,14 +138,14 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
   if (v.poster !== 'buyer' && v.poster !== 'seller') return null;
   if (typeof v.state !== 'string' || !STATES.includes(v.state as TradeState)) return null;
   if (amountAtomic === null || amountAtomic <= 0n || centsPerXmr === null || maxFiatCents === null) return null;
-  if (typeof v.ownAddress !== 'string' || v.ownAddress === '' || typeof lockedRate?.currency !== 'string') return null;
+  if (typeof lockedRate?.currency !== 'string') return null;
   const settling = typeof v.settling === 'string' && (SETTLE_KINDS as readonly string[]).includes(v.settling) ? (v.settling as SettleKind) : null;
   return {
     role: v.role,
     state: v.state as TradeState,
     poster: v.poster,
     amountAtomic,
-    ownAddress: v.ownAddress,
+    ownAddress: typeof v.ownAddress === 'string' && v.ownAddress !== '' ? v.ownAddress : null,
     currency: lockedRate.currency,
     centsPerXmr,
     maxFiatCents,

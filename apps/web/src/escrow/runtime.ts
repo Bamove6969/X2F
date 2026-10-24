@@ -17,7 +17,7 @@ import type { Identity, Participants } from '@x2f/protocol';
 import { channelFor, type SettleKind, type TradeState } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type EscrowTradeView } from './adapters.js';
-import { cosignPolicy, deviceAmount, outcomeFor, type PolicyContext } from './policy.js';
+import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from './policy.js';
 import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
 import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
 
@@ -27,7 +27,19 @@ export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 
  * different deals, the party failed (a peer reported another escrow address, or the store
  * could not save), or the browser has no Web Locks.
  */
-export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'escrow-failed' | 'unsupported-browser';
+export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'not-confirmed' | 'escrow-failed' | 'unsupported-browser';
+
+/**
+ * What the user saw and confirmed on this device when the trade started (the take or accept
+ * screens, Tasks 18/19): their role, their own address (buyer payout / seller refund) and the
+ * deal. It is the only source of what this device signs in trade.terms; the API's TradeView is
+ * only checked against it, and any difference stops the trade before anything is signed.
+ */
+export interface ConfirmedTrade {
+  role: 'buyer' | 'seller';
+  ownAddress: string;
+  deal: Deal;
+}
 
 export interface EscrowStatus {
   phase: EscrowPhase;
@@ -75,7 +87,8 @@ export interface RuntimeDeps {
 }
 
 export interface EscrowRuntime {
-  start(code: string): Promise<void>;
+  /** `confirmed` is required the first time (no stored record); a resume needs none. */
+  start(code: string, confirmed?: ConfirmedTrade): Promise<void>;
   /** Starts every trade in the store (page load). */
   resumeAll(): Promise<void>;
   act(code: string, action: EscrowAction): Promise<void>;
@@ -91,6 +104,32 @@ const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).pad
 const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
 const key = (o: { to: readonly Payout[]; builder: string; cosigner: string } | null): string =>
   o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
+
+function validConfirmed(c: ConfirmedTrade): boolean {
+  const d = c.deal;
+  return (
+    (c.role === 'buyer' || c.role === 'seller') &&
+    typeof c.ownAddress === 'string' &&
+    c.ownAddress.length > 0 &&
+    c.ownAddress.length <= 256 &&
+    (d.poster === 'buyer' || d.poster === 'seller') &&
+    typeof d.currency === 'string' &&
+    /^[A-Z]{3}$/.test(d.currency) &&
+    [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'bigint' && x > 0n)
+  );
+}
+
+/** The fixed parts of the TradeView agree with this device's deal (the amount may grow; the policy checks it). */
+function viewMatches(v: EscrowTradeView, role: 'buyer' | 'seller', d: Deal, ownAddress: string | null): boolean {
+  return (
+    v.role === role &&
+    v.poster === d.poster &&
+    v.currency === d.currency &&
+    v.centsPerXmr === d.centsPerXmr &&
+    v.maxFiatCents === d.maxFiatCents &&
+    (v.ownAddress === null || v.ownAddress === ownAddress)
+  );
+}
 
 function navigatorLock(name: string, fn: () => Promise<void>): Promise<void> {
   const locks = (globalThis.navigator as Navigator | undefined)?.locks;
@@ -126,7 +165,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private finish!: () => void;
     acquired!: Promise<void>;
 
-    constructor(readonly code: string) {
+    constructor(
+      readonly code: string,
+      private readonly confirmed: ConfirmedTrade | undefined,
+    ) {
       this.finished = new Promise((r) => (this.finish = r));
     }
 
@@ -203,22 +245,27 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           return v;
         });
         if (!view) return;
+        const c = this.confirmed;
+        if (!c) return this.fail('not-confirmed');
+        if (!validConfirmed(c)) return this.fail('not-confirmed');
+        // The API must agree with what the user confirmed, or nothing is made, registered or signed.
+        if (!viewMatches(view, c.role, c.deal, c.ownAddress) || view.amountAtomic !== c.deal.takeAmountAtomic) return this.fail('deal-mismatch');
         const id = await deps.generateIdentity();
         this.rec = {
           v: 1,
           code: this.code,
-          role: view.role,
+          role: c.role,
           identity: { signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: id.signSecret, boxSecret: id.boxSecret },
           registered: false,
           attestation: null,
           partyState: null,
           signalGuard: null,
           signalSeq: 0,
-          ownAddress: view.ownAddress,
+          ownAddress: c.ownAddress,
           theirAddress: null,
-          deal: { poster: view.poster, takeAmountAtomic: view.amountAtomic, currency: view.currency, centsPerXmr: view.centsPerXmr, maxFiatCents: view.maxFiatCents },
+          deal: { ...c.deal },
           theirDeal: null,
-          sizeAtomic: view.amountAtomic,
+          sizeAtomic: c.deal.takeAmountAtomic,
           paidSeen: false,
           termsAcked: false,
           intent: null,
@@ -366,7 +413,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
     private settle(o: Outcome): void {
       const k = key(o);
-      if (!this.party || this.inflight === k || this.refused.has(k)) return;
+      if (this.error || !this.party || this.inflight === k || this.refused.has(k)) return;
       // The party pays only when the balance equals the payouts' sum, so that is the balance the policy checks.
       const ctx = this.context(sumOf(o.to));
       if (!ctx || !cosignPolicy(ctx, o)) return;
@@ -408,7 +455,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       } catch {
         view = null;
       }
-      if (view && view.role === this.rec.role) this.view = view;
+      if (view) this.view = view; // a view that disagrees with the deal stops the trade in tick()
     }
 
     private async tick(): Promise<void> {
@@ -430,7 +477,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         await this.close();
         return;
       }
-      if (r.theirDeal && !sameDeal(r.deal, r.theirDeal)) {
+      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
         this.fail('deal-mismatch');
         return;
       }
@@ -529,11 +576,11 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
   }
 
-  const start = async (raw: string): Promise<void> => {
+  const start = async (raw: string, confirmed?: ConfirmedTrade): Promise<void> => {
     const code = normalizeTradeCode(raw);
     if (code === null) throw new TypeError('escrow: invalid trade code');
     if (runs.has(code)) return;
-    const run = new TradeRun(code);
+    const run = new TradeRun(code, confirmed);
     runs.set(code, run);
     run.emit();
     let acquired!: () => void;

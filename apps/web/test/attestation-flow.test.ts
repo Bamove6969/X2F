@@ -83,6 +83,64 @@ describe('attestation check before any escrow work (P3-C1)', () => {
   });
 });
 
+describe('what this device signs comes from what the user confirmed, never the API', () => {
+  const lies: [string, Partial<ApiState>][] = [
+    ['another own address', { roleView: { buyer: { ownAddress: '4AttackerAddress' } } }],
+    ['another amount', { view: tradeView({ amountAtomic: (AMOUNT + 1n).toString() }) }],
+    ['another poster', { view: tradeView({ poster: 'buyer' }) }],
+    ['another rate', { view: tradeView({ lockedRate: { currency: 'USD', centsPerXmr: '33001' } }) }],
+    ['another maximum', { view: tradeView({ maxFiatCents: '90000' }) }],
+    ['another currency', { view: tradeView({ lockedRate: { currency: 'EUR', centsPerXmr: '33000' } }) }],
+    ['another role', { roleView: { buyer: { role: 'seller' } } }],
+  ];
+  it.each(lies)('a TradeView with %s at start: deal-mismatch, no identity registered, nothing signed, runParty never called', async (_n, lie) => {
+    const t = await setup(lie);
+    const buyer = await t.mk('buyer');
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'error');
+    expect(buyer.last()?.error).toBe('deal-mismatch');
+    expect(t.state.identities.buyer).toBeUndefined();
+    expect(t.parties.calls).toEqual([]);
+    expect(t.hub.sent).toEqual([]);
+    expect(await buyer.store.load(CODE)).toBeNull();
+  });
+
+  it('a first start without the user’s confirmation does nothing (not-confirmed)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    await buyer.rawStart(CODE);
+    await until(() => buyer.last()?.phase === 'error');
+    expect(buyer.last()?.error).toBe('not-confirmed');
+    expect(t.state.identities).toEqual({});
+  });
+
+  it('the terms this device signs carry the confirmed address and deal even when the view omits the address', async () => {
+    const t = await setup({ roleView: { seller: { ownAddress: undefined } } });
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => (await buyer.store.load(CODE))?.theirAddress != null);
+    expect((await buyer.store.load(CODE))?.theirAddress).toBe(ADDR.seller);
+    expect((await buyer.store.load(CODE))?.theirDeal).toEqual((await seller.store.load(CODE))?.deal);
+  });
+
+  it('a view that turns into another poster mid-trade: deal-mismatch and nothing is settled', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', poster: 'buyer' });
+    await until(() => buyer.last()?.phase === 'error' && seller.last()?.phase === 'error');
+    expect(buyer.last()?.error).toBe('deal-mismatch');
+    await expect(seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
+    expect(t.parties.settles).toEqual([]);
+  });
+});
+
 describe('a verified trade', () => {
   it('registers with a proof, runs the party with the attested participants, and both devices show the same check words', async () => {
     const t = await setup();

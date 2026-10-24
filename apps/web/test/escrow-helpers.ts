@@ -6,7 +6,7 @@ import { channelFor, escrowPlan } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
 import sodium from 'libsodium-wrappers';
 import { attestationBytes, type Attestation } from '../src/escrow/adapters.js';
-import { createEscrowRuntime, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
+import { createEscrowRuntime, type ConfirmedTrade, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
 import { openEscrowStore, type EscrowStore } from '../src/escrow/store.js';
 
 export const CODE = 'K7Q2-M9XA-3PRT-W8DN';
@@ -114,6 +114,8 @@ export interface ApiState {
   /** Replaces the attestation the API serves (for the mismatch tests). */
   tamper?: (a: Attestation) => Attestation;
   resign?: Uint8Array;
+  /** Per-role fields laid over the view (a lying API telling each side something else). */
+  roleView?: Partial<Record<'buyer' | 'seller', Record<string, unknown>>>;
 }
 
 export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
@@ -152,7 +154,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
     return { attestation: a, sig: signAttestation(a, state.resign ?? mod.secret) };
   };
   const forRole = (role: 'buyer' | 'seller') => ({
-    getTrade: async () => ({ ...state.view, role, ownAddress: ADDR[role] }),
+    getTrade: async () => ({ ownAddress: ADDR[role], ...state.view, role, ...(state.roleView?.[role] ?? {}) }),
     registerIdentity: async (_code: string, body: { signPublic: string; boxPublic: string; proof: string }) => {
       state.identities[role] ??= body;
     },
@@ -161,8 +163,15 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
   return { modId, forRole };
 }
 
+/** What the user confirmed on the take / accept screen in these tests. */
+export function confirmedFor(role: 'buyer' | 'seller', over: Partial<ConfirmedTrade['deal']> = {}): ConfirmedTrade {
+  return { role, ownAddress: ADDR[role], deal: { poster: 'seller', takeAmountAtomic: AMOUNT, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 50_000n, ...over } };
+}
+
 export interface Device {
   role: 'buyer' | 'seller';
+  /** The runtime's own start, without the default confirmation. */
+  rawStart: EscrowRuntime['start'];
   store: EscrowStore;
   idb: IDBFactory;
   runtime: EscrowRuntime;
@@ -189,7 +198,9 @@ export async function device(
     pollMs: 5,
     onStatus: (_c, s) => statuses.push(s),
   });
-  return { role, store, idb, runtime, statuses, last: () => statuses.at(-1) };
+  const rawStart = runtime.start.bind(runtime);
+  runtime.start = (code, confirmed) => rawStart(code, confirmed ?? confirmedFor(role));
+  return { role, rawStart, store, idb, runtime, statuses, last: () => statuses.at(-1) };
 }
 
 export async function until(cond: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {
