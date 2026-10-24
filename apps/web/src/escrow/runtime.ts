@@ -41,9 +41,18 @@ export interface ConfirmedTrade {
   deal: Deal;
 }
 
+/**
+ * Something this device refuses for now without stopping the trade, shown to the user (never
+ * silent). `amount-out-of-range`: the API's trade amount is below the amount at take or above
+ * what this device worked out from its own escrow reading, so nothing is settled until it is
+ * back in range (Plan 3 Revision 2026-10-24, starter caps; lead 2026-10-24).
+ */
+export type EscrowRefusal = 'amount-out-of-range';
+
 export interface EscrowStatus {
   phase: EscrowPhase;
   error: EscrowErrorCode | null;
+  refusal: EscrowRefusal | null;
   checkWords: string[] | null;
   keepOpen: boolean;
   role: 'buyer' | 'seller' | null;
@@ -180,6 +189,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private isReady = false;
     private words: string[] | null = null;
     error: EscrowErrorCode | null = null;
+    private refusal: EscrowRefusal | null = null;
     private phase: EscrowPhase = 'idle';
     private last = '';
     /** The settle() call in flight, by outcome key. */
@@ -208,6 +218,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const s: EscrowStatus = {
         phase: this.error ? 'error' : this.phase,
         error: this.error,
+        refusal: this.error ? null : this.refusal,
         checkWords: this.words,
         keepOpen: ['registering', 'verifying', 'setting-up', 'signing'].includes(this.phase) && !this.error,
         role: this.rec?.role ?? null,
@@ -435,6 +446,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const v = this.view;
       const r = this.rec;
       if (!v || r.ownAddress === null || r.theirAddress === null || !r.theirDeal || !sameDeal(r.deal, r.theirDeal)) return null;
+      const size = this.acceptedAmount(v);
+      if (size === null) return null;
       const payout = r.role === 'buyer' ? r.ownAddress : r.theirAddress;
       const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
       return {
@@ -442,9 +455,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
         balance,
         trade: { state: v.state, poster: v.poster, amountAtomic: v.amountAtomic, feeWallet: deps.config.feeWallet },
-        deal: { poster: r.deal.poster, amountAtomic: r.sizeAtomic },
+        deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: { payout, refund },
       };
+    }
+
+    /**
+     * The trade's size to settle: the API's amount, accepted only from the amount at take up to
+     * the size this device worked out from its own escrow (growth may stop lower, at the offer
+     * maximum or a starter cap the device does not know), never above it. Otherwise null.
+     */
+    private acceptedAmount(v: EscrowTradeView): bigint | null {
+      return v.amountAtomic >= this.rec.deal.takeAmountAtomic && v.amountAtomic <= this.rec.sizeAtomic ? v.amountAtomic : null;
     }
 
     /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
@@ -530,6 +552,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           changed = true;
         }
       }
+      // The API's amount out of range is refused visibly until it is back in range.
+      this.refusal = this.acceptedAmount(v) === null ? 'amount-out-of-range' : null;
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
       // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
       const tapped = r.intent !== null && !r.intent.auto;

@@ -16,10 +16,12 @@
  * whole side of the trade at its own address (release for the buyer, full refund for the
  * seller), so no split can move this side's share to the counterparty.
  *
- * The trade's size is never taken from the API: `deal` is what this device stored at trade
- * start and both sides signed in trade.terms (amount at take, poster, locked rate, offer
- * maximum), with growth worked out on this device from its own funds() (`deviceAmount`). A
- * TradeView whose amount or poster disagrees refuses every outcome.
+ * The trade's size is bounded by this device, never set by the API alone: `deal` is what this
+ * device stored at trade start and both sides signed in trade.terms (amount at take, poster,
+ * locked rate, offer maximum), with growth worked out on this device from its own funds()
+ * (`deviceAmount`). The runtime accepts the API's amount only from the amount at take up to that
+ * device-grown size (growth can stop lower, at a starter cap) and passes it as `deal.amountAtomic`;
+ * a TradeView whose amount or poster disagrees with `deal` refuses every outcome.
  */
 import type { Outcome, Payout } from '@x2f/escrow';
 import { amountForFunds, escrowPlan, fiatCents, payoutsFor, type SettleKind, type TradeState } from '@x2f/trade';

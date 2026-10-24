@@ -245,8 +245,9 @@ describe('settling', () => {
       t.parties.funds = funded();
       t.state.view = tradeView({ state: 'paid', ...lie });
       await t.seller.runtime.act(CODE, { type: 'release' });
-      await new Promise((r) => setTimeout(r, 100));
+      await Promise.all([t.parties.ticks('seller'), t.parties.ticks('buyer')]);
       expect(t.parties.settles).toEqual([]);
+      if ('amountAtomic' in lie) expect(t.seller.last()?.refusal).toBe('amount-out-of-range');
       await t.buyer.runtime.stopAll();
       await t.seller.runtime.stopAll();
     }
@@ -263,21 +264,51 @@ describe('settling', () => {
     for (const s of t.parties.settles.slice(2)) expect(s.o.to.at(-1)).toEqual({ address: ADDR.seller, amountAtomic: 100_000_000n });
   });
 
-  it('extra XMR before "I’ve paid" grows the trade on the device; the grown release matches the grown TradeView only', async () => {
-    const t = await ready();
+  describe('growth and starter caps: the API amount is accepted only between the take amount and the device-grown amount', () => {
     const grown = 1_300_000_000_000n;
     const fundsFor = (a: bigint) => a + a / 100n;
-    t.state.view = tradeView({ state: 'secured' });
-    t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
-    await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown && (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
-    // The API still says the old size: nothing settles.
-    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
-    await t.seller.runtime.act(CODE, { type: 'release' });
-    await new Promise((r) => setTimeout(r, 60));
-    expect(t.parties.settles).toEqual([]);
-    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', amountAtomic: grown.toString() });
-    await until(() => t.parties.settles.length === 2);
-    expect(t.parties.settles[0]!.o.to[0]).toEqual({ address: ADDR.buyer, amountAtomic: grown });
+    async function grownTrade() {
+      const t = await ready();
+      // Grown while securing: no standing co-sign yet, so nothing settles before the view below.
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown && (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      return t;
+    }
+    const paidAt = '2026-10-23T12:30:00.000Z';
+
+    it.each([
+      ['the take amount (growth capped at the start)', AMOUNT],
+      ['an amount in between (a starter cap)', 1_280_000_000_000n],
+      ['the device-grown amount', grown],
+    ])('%s: accepted, release pays the buyer that amount and the rest to the seller', async (_n, apiAmount) => {
+      const t = await grownTrade();
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: apiAmount.toString() });
+      await t.seller.runtime.act(CODE, { type: 'release' });
+      await until(() => t.parties.settles.length === 2);
+      const [s, b] = [t.parties.settles.find((x) => x.role === 'seller')!, t.parties.settles.find((x) => x.role === 'buyer')!];
+      expect(b.o).toEqual(s.o);
+      expect(s.o.to[0]).toEqual({ address: ADDR.buyer, amountAtomic: apiAmount });
+      expect(s.o.to.reduce((x, p) => x + p.amountAtomic, 0n)).toBe(fundsFor(grown));
+      expect(t.seller.last()?.refusal).toBeNull();
+    });
+
+    it.each([
+      ['one atomic unit above the device-grown amount', grown + 1n],
+      ['one atomic unit below the take amount', AMOUNT - 1n],
+    ])('%s: refused visibly (status refusal), nothing settled', async (_n, apiAmount) => {
+      const t = await grownTrade();
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: apiAmount.toString() });
+      await expect(t.seller.runtime.act(CODE, { type: 'release' })).resolves.toBeUndefined();
+      expect(await t.seller.status((x) => x.refusal === 'amount-out-of-range')).toMatchObject({ phase: 'ready', error: null });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-out-of-range')).toMatchObject({ error: null });
+      await Promise.all([t.parties.ticks('seller'), t.parties.ticks('buyer')]);
+      expect(t.parties.settles).toEqual([]);
+      // Back in range: the refusal clears and the trade settles.
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: grown.toString() });
+      expect(await t.seller.status((x) => x.refusal === null && x.phase === 'signing')).toBeTruthy();
+      await until(() => t.parties.settles.length === 2);
+    });
   });
 
   it('buyerCancel sends trade.cancel and settles payoutsFor(buyer-cancel) with builder buyer, cosigner mod', async () => {

@@ -3,7 +3,7 @@
  * The page sees only status (phase, error, check words, keepOpen) and asks for actions.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ConfirmedTrade, EscrowAction, EscrowErrorCode, EscrowPhase, EscrowStatus } from './runtime.js';
+import type { ConfirmedTrade, EscrowAction, EscrowErrorCode, EscrowPhase, EscrowRefusal, EscrowStatus } from './runtime.js';
 import type { UserSignal } from './signals.js';
 import type { FromWorker, ToWorker } from './worker.js';
 
@@ -67,6 +67,8 @@ export function escrowClient(): EscrowClient {
 export interface UseEscrow {
   phase: EscrowPhase;
   error: EscrowErrorCode | null;
+  /** A refusal the trade screen must show (the trade waits; see EscrowRefusal). */
+  refusal: EscrowRefusal | null;
   checkWords: string[] | null;
   keepOpen: boolean;
   release(): Promise<void>;
@@ -76,7 +78,7 @@ export interface UseEscrow {
   signal(type: UserSignal): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, checkWords: null, keepOpen: false, role: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, refusal: null, checkWords: null, keepOpen: false, role: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -96,6 +98,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
   return {
     phase: status.phase,
     error: status.error,
+    refusal: status.refusal,
     checkWords: status.checkWords,
     keepOpen: status.keepOpen,
     release: () => act({ type: 'release' }),
