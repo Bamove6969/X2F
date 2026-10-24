@@ -69,8 +69,12 @@ interface Sample {
   at: Date;
 }
 
-/** Fetches `source` with a timeout; any failure (throw, reject, abort, bad data) is no answer. */
-async function ask(source: PriceSource, timeoutMs: number): Promise<PriceQuote[]> {
+/**
+ * Runs `call` with an abort signal that fires after `timeoutMs`; resolves to its answer, or rejects
+ * on a throw, a rejection or the timeout (whichever comes first). Shared by the price and
+ * exchange-rate feeds.
+ */
+export async function withTimeout<T>(call: (signal: AbortSignal) => Promise<T>, timeoutMs: number): Promise<T> {
   const ctl = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   const expired = new Promise<never>((_r, reject) => {
@@ -80,12 +84,19 @@ async function ask(source: PriceSource, timeoutMs: number): Promise<PriceQuote[]
     }, timeoutMs);
   });
   try {
-    const answer = await Promise.race([Promise.resolve().then(() => source.fetchQuotes(ctl.signal)), expired]);
+    return await Promise.race([Promise.resolve().then(() => call(ctl.signal)), expired]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Fetches `source` with a timeout; any failure (throw, reject, abort, bad data) is no answer. */
+async function ask(source: PriceSource, timeoutMs: number): Promise<PriceQuote[]> {
+  try {
+    const answer = await withTimeout((signal) => source.fetchQuotes(signal), timeoutMs);
     return Array.isArray(answer) ? answer : [];
   } catch {
     return [];
-  } finally {
-    clearTimeout(timer);
   }
 }
 

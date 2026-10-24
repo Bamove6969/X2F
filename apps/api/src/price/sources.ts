@@ -16,10 +16,14 @@ export const DEFAULT_PRICE_SOURCES: readonly PriceSourceName[] = PRICE_SOURCE_NA
 /** A source answer bigger than this is refused (the real ones are under 2 KiB). */
 const MAX_BODY_BYTES = 256 * 1024;
 
-type Fetch = typeof fetch;
+export type Fetch = typeof fetch;
 
-/** GET `url` and parse JSON: 200 only, no redirects, no cookies, size capped. Throws on anything else. */
-async function getJson(f: Fetch, url: string, signal: AbortSignal): Promise<unknown> {
+/**
+ * The one fetch seam for every price and exchange-rate source: GET `url` and parse JSON, 200
+ * only, no redirects, no cookies, size capped. Throws on anything else. No proxy is wired here:
+ * `f` is the global fetch in production (main.ts) and a stub in tests.
+ */
+export async function getJson(f: Fetch, url: string, signal: AbortSignal): Promise<unknown> {
   const res = await f(url, { method: 'GET', redirect: 'error', credentials: 'omit', headers: { accept: 'application/json' }, signal });
   if (res.status !== 200) {
     await res.body?.cancel().catch(() => undefined);
@@ -63,7 +67,7 @@ export async function readCapped(res: Response, max: number): Promise<string> {
   return new TextDecoder('utf-8', { fatal: true }).decode(all);
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
+export const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);
 
 /** A JSON number as a plain decimal string ("582.46"); exponent forms ("1e-7") are rejected later. */
 const numberText = (v: unknown): string | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? String(v) : null);

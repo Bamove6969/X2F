@@ -1,6 +1,7 @@
 import { hkdfSync } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { parseFxSources, type FxSourceName } from './price/fx.js';
 import { parsePriceSources, type PriceSourceName } from './price/sources.js';
 
 export interface Config {
@@ -17,6 +18,8 @@ export interface Config {
   pgpSigningFingerprint: string;
   /** `PRICE_SOURCES` (spec 11.6): the price sources the feed asks, by name; default all of them. */
   priceSources: PriceSourceName[];
+  /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
+  fxSources: FxSourceName[];
 }
 
 type Env = Record<string, string | undefined>;
@@ -91,10 +94,11 @@ export function loadConfig(env: Env): Config {
   }
 
   const priceSources = parsePriceSources(env.PRICE_SOURCES);
+  const fxSources = parseFxSources(env.FX_SOURCES);
 
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
-    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, priceSources,
+    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, priceSources, fxSources,
   };
 }
 

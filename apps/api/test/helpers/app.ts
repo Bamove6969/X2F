@@ -22,6 +22,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     pgpSigningKeyPath: '/nonexistent/signing.asc',
     pgpSigningFingerprint: '0'.repeat(40),
     priceSources: ['kraken', 'bitfinex', 'coingecko'],
+    fxSources: ['coinbase', 'bitpay', 'coingecko'],
     ...over,
   };
 }
