@@ -8,21 +8,29 @@
 // At merge, when Task 30 has landed:
 //   1. delete this file,
 //   2. in Wallets.tsx replace `useConfirmSheet` with the real ConfirmSheet wired through
-//      auth-client's `withConfirm(walletAction(address), run, prove)` (so the confirm token is
-//      bound to the address's hash, spec 6.4 / R17 — this stub does NOT compute that hash),
-//   3. the tripwire test in `apps/web/e2e/wallets.spec.ts` fails until step 1 is done.
+//      auth-client's `withConfirm(walletsAction(addresses), run, prove)` (so the confirm token is
+//      bound to the hash of the exact list, spec 6.4 / R17; this stub does NOT compute that hash),
+//   3. the tripwire in `apps/web/test/wallets-tripwires.test.ts` fails until step 1 is done.
 //
-// This stub is good enough for Task 29's own flow: the first wallet in the no-wallet path needs no
-// confirm at all, so the add succeeds without ever opening this sheet.
+// The stub only carries the batch through and returns a placeholder token, so the add flow (one
+// confirm for the whole batch) is wired end to end and testable before Task 30 lands.
 // =============================================================================================
 import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
 
-/** The slice of Plan 2's `ConfirmAction` this screen needs; Task 30 passes the full action. */
+/**
+ * The slice of FU-B's `add-wallets` ConfirmAction this screen needs: the ends of the batch's
+ * addresses joined by commas. Task 30 / FU-B pass the full action (with `addressesHash`).
+ */
 export interface AddWalletAction {
-  kind: 'add-wallet';
-  addressEnd: string;
+  kind: 'add-wallets';
+  addressEnds: string;
+}
+
+function describeBatch(action: AddWalletAction): string {
+  const ends = action.addressEnds.split(',').map((e) => `…${e}`);
+  return ends.length === 1 ? `Saving a wallet ending ${ends[0]}` : `Saving ${ends.length} wallets ending ${ends.join(', ')}`;
 }
 
 /**
@@ -42,8 +50,7 @@ export function ConfirmSheet({
   return (
     <Sheet open title="Confirm it's you" onClose={onCancel}>
       <p className="x2f-sheet__body">
-        Saving a payout wallet ending {action.addressEnd} asks you to confirm it's you, so a hijacked
-        session cannot change where your coins go.
+        {describeBatch(action)} asks you to confirm it's you, so a hijacked session cannot change where your coins go.
       </p>
       {/* TODO(Task 30): the real sheet proves with a login method; this stub returns a placeholder. */}
       <Button variant="primary" onClick={() => onToken('stub-confirm-token')}>

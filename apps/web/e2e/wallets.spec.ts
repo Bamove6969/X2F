@@ -137,7 +137,7 @@ async function startAdding(page: Page): Promise<void> {
 
 /** Fills one wallet in the Add a wallet form. */
 async function fillWallet(page: Page, addr: string, label?: string): Promise<void> {
-  if (label !== undefined) await page.getByLabel('Name').fill(label);
+  if (label !== undefined) await page.getByLabel('Name', { exact: true }).fill(label);
   await page.getByLabel(/Receive address/).fill(addr);
 }
 
@@ -337,11 +337,11 @@ test('labels: neutral names are suggested and the screen warns against naming wh
   ).toBeVisible();
   // One existing wallet: the next neutral name is "Wallet 2".
   await page.getByRole('button', { name: 'Wallet 2' }).click();
-  await expect(page.getByLabel('Name')).toHaveValue('Wallet 2');
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Wallet 2');
   await page.getByRole('button', { name: 'Spending' }).click();
-  await expect(page.getByLabel('Name')).toHaveValue('Spending');
+  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Spending');
   // Left empty, the name defaults to the next neutral one.
-  await page.getByLabel('Name').fill('');
+  await page.getByLabel('Name', { exact: true }).fill('');
   await fillWallet(page, address('C', 'AAAAA1'));
   await page.getByRole('button', { name: 'Save wallet' }).click();
   await expect(page.getByRole('listitem').filter({ hasText: 'Wallet 2' })).toBeVisible();

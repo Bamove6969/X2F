@@ -1,32 +1,44 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate, useSearchParams } from 'react-router';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
+import { Sheet } from '../ui/Sheet.js';
 import { useConfirmSheet } from './ConfirmSheet.stub.js';
 import {
   APP_LABELS,
+  MAX_WALLET_BATCH,
   WALLET_APPS,
   appPromptName,
+  nameSuggestions,
+  nextWalletName,
+  ruleLines,
+  ruleNote,
   walletStatus,
   type WalletApp,
+  type WalletDraft,
+  type WalletRule,
   type WalletView,
 } from './wallets-model.js';
 import './Wallets.css';
 
-/** The last six characters of an address, as the API's `addressEnd` shows it. */
-function addressTail(address: string): string {
-  return `…${address.slice(-6)}`;
+// The wallet routes are called through api() with FU-B's shapes (GET /v1/wallets/rule, POST
+// /v1/wallets { wallets }). TODO(FU-B merge): switch to @x2f/auth-client `getWalletRule`,
+// `addWallets`, `withConfirm` and `walletsAction` (apps/web/test/wallets-tripwires.test.ts).
+
+const LABEL_MAX = 40;
+
+function when(iso: string): string {
+  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 function addError(e: unknown): string {
   if (e instanceof ApiCallError) {
-    if (e.code === 'address-invalid') return "That doesn't look like a Monero address on this network.";
+    if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
-    if (e.code === 'wallet-exists') return 'That wallet is already linked.';
-    if (e.code === 'trading-hold' || e.code === 'trading-paused') return 'Adding wallets is paused right now. Try again later.';
+    if (e.code === 'wallet-exists') return 'One of those wallets is already linked.';
   }
-  return 'That could not be saved. Check the address and try again.';
+  return 'That could not be saved. Check the addresses and try again.';
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -137,21 +149,42 @@ function WalletRow({ w, onRemove }: { w: WalletView; onRemove: (w: WalletView) =
       <span className="x2f-wallet-row__text">
         <span className="x2f-wallet-row__name">{w.label}</span>
         <span className="x2f-wallet-row__addr">
-          <span>{w.addressEnd}</span>
+          <span>…{w.addressEnd}</span>
         </span>
       </span>
       <span className="x2f-wallet-row__status">
         <span className="x2f-wallet-row__word" data-tone={status.tone}>
           {status.label}
         </span>
-        {!w.usable ? (
-          <span className="x2f-wallet-row__note">Until {new Date(w.usableFrom).toLocaleDateString()}</span>
-        ) : null}
+        {w.usable ? null : <span className="x2f-wallet-row__note">Until {when(w.usableFrom)}</span>}
       </span>
       <button type="button" className="x2f-icon-button" aria-label={`Remove ${w.label}`} onClick={() => onRemove(w)}>
         <Icon name="close" size={20} />
       </button>
     </li>
+  );
+}
+
+/** The popup that explains, for this account, what adding wallets will do (owner, 2026-10-24). */
+function RulePopup({ rule, onContinue, onClose }: { rule: WalletRule | null; onContinue: () => void; onClose: () => void }) {
+  const lines = rule ? ruleLines(rule) : [ruleNote(null)];
+  const passwordOnly = rule !== null && !rule.firstWallet && rule.strongMethods.length === 0 && rule.password === 'waits';
+  return (
+    <Sheet open title="Before you add a wallet" onClose={onClose}>
+      {lines.map((line) => (
+        <p key={line} className="x2f-sheet__body">
+          {line}
+        </p>
+      ))}
+      {passwordOnly ? (
+        <Link className="x2f-link" to="/settings/security">
+          Add a login method
+        </Link>
+      ) : null}
+      <Button variant="primary" onClick={onContinue}>
+        Continue
+      </Button>
+    </Sheet>
   );
 }
 
@@ -162,10 +195,16 @@ export function Wallets() {
   const returnTo = safeReturnTo(params.get('returnTo'));
 
   const [wallets, setWallets] = useState<WalletView[] | null>(null);
+  const [rule, setRule] = useState<WalletRule | null>(null);
+  const [popup, setPopup] = useState(addMode);
+  const [adding, setAdding] = useState(false);
   const [app, setApp] = useState<WalletApp>('cake');
+  const [label, setLabel] = useState('');
   const [address, setAddress] = useState('');
+  const [batch, setBatch] = useState<WalletDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const codes = useOpenEscrowKeys();
   const { prove, element: confirmSheet } = useConfirmSheet();
@@ -176,6 +215,10 @@ export function Wallets() {
       (list) => setWallets(list),
       () => setWallets([]),
     );
+    void api<WalletRule>('/v1/wallets/rule').then(
+      (r) => setRule(r),
+      () => setRule(null),
+    );
   }, []);
 
   useEffect(() => {
@@ -183,35 +226,75 @@ export function Wallets() {
   }, [load]);
 
   useEffect(() => {
-    if (addMode) addressInput.current?.focus();
-  }, [addMode]);
+    if (adding) addressInput.current?.focus();
+  }, [adding]);
 
   const trimmed = address.trim();
+  const known = (wallets?.length ?? 0) + batch.length;
+  const count = batch.length + (trimmed === '' ? 0 : 1);
+
+  /** The wallet in the form, with the next neutral name when the name is left empty. */
+  function current(): WalletDraft {
+    return { app, label: label.trim() || nextWalletName(known), address: trimmed };
+  }
+
+  function duplicate(addr: string): boolean {
+    return batch.some((d) => d.address === addr) || (wallets ?? []).some((w) => w.address === addr);
+  }
+
+  function addAnother() {
+    if (trimmed === '' || batch.length + 1 >= MAX_WALLET_BATCH) return;
+    if (duplicate(trimmed)) {
+      setError('That address is already in your list.');
+      return;
+    }
+    setError(null);
+    setBatch((b) => [...b, current()]);
+    setLabel('');
+    setAddress('');
+    addressInput.current?.focus();
+  }
 
   async function save() {
-    if (trimmed === '' || saving) return;
+    if (count === 0 || saving) return;
+    if (trimmed !== '' && duplicate(trimmed)) {
+      setError('That address is already in your list.');
+      return;
+    }
     setSaving(true);
     setError(null);
-    const body: Record<string, unknown> = { app, label: APP_LABELS[app], address: trimmed };
+    setNotice(null);
+    const drafts = trimmed === '' ? batch : [...batch, current()];
+    const body: Record<string, unknown> = { wallets: drafts };
     try {
-      let saved: WalletView;
+      let saved: WalletView[];
       try {
-        saved = await api<WalletView>('/v1/wallets', { method: 'POST', body });
+        saved = await api<WalletView[]>('/v1/wallets', { method: 'POST', body });
       } catch (e) {
-        // A later wallet needs confirm-it's-you; the first wallet (no-wallet path) does not.
-        if (e instanceof ApiCallError && e.code === 'confirm-required') {
-          const token = await prove({ kind: 'add-wallet', addressEnd: addressTail(trimmed) });
-          saved = await api<WalletView>('/v1/wallets', { method: 'POST', body: { ...body, confirmToken: token } });
-        } else {
-          throw e;
-        }
+        // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
+        if (!(e instanceof ApiCallError && e.code === 'confirm-required')) throw e;
+        const token = await prove({ kind: 'add-wallets', addressEnds: drafts.map((d) => d.address.slice(-6)).join(',') });
+        saved = await api<WalletView[]>('/v1/wallets', { method: 'POST', body: { ...body, confirmToken: token } });
       }
       if (addMode) {
         navigate(returnTo);
         return;
       }
-      setWallets((prev) => [...(prev ?? []), saved]);
+      setWallets((prev) => [...(prev ?? []), ...saved]);
+      setBatch([]);
+      setLabel('');
       setAddress('');
+      setAdding(false);
+      // The whole batch shares one clock (FU-B), so one line covers it.
+      const waiting = saved.find((w) => !w.usable);
+      if (waiting) {
+        setNotice(
+          saved.length === 1
+            ? `Your new wallet can be paid from ${when(waiting.usableFrom)}.`
+            : `Your ${saved.length} new wallets can be paid from ${when(waiting.usableFrom)}: one wait for all of them.`,
+        );
+      }
+      void api<WalletRule>('/v1/wallets/rule').then(setRule, () => setRule(null));
     } catch (e) {
       if (!(e instanceof Error && e.message === 'confirm-cancelled')) setError(addError(e));
     } finally {
@@ -223,10 +306,10 @@ export function Wallets() {
     setError(null);
     try {
       // Removal cannot redirect money, so it needs no confirm; the API always saves an alert.
-      await api(`/v1/wallets/${w.id}`, { method: 'DELETE' });
+      await api(`/v1/wallets/${encodeURIComponent(w.id)}`, { method: 'DELETE' });
       setWallets((prev) => (prev ?? []).filter((x) => x.id !== w.id));
-    } catch (e) {
-      setError(addError(e));
+    } catch {
+      setError('That wallet could not be removed. Try again.');
     }
   }
 
@@ -247,6 +330,12 @@ export function Wallets() {
           from them.
         </p>
 
+        {notice ? (
+          <p className="x2f-wallets__notice" role="status">
+            {notice}
+          </p>
+        ) : null}
+
         {wallets && wallets.length > 0 ? (
           <section className="x2f-wallets__section" aria-label="Linked wallets">
             <h2 className="x2f-wallets__section-label">Linked wallets</h2>
@@ -258,65 +347,117 @@ export function Wallets() {
           </section>
         ) : null}
 
-        <section className="x2f-wallets__add" aria-label="Add a wallet">
-          <div className="x2f-wallets__add-head">
-            <h2 className="x2f-wallets__add-title">Add a wallet</h2>
-            <span className="x2f-wallets__add-hint">Which app is it in?</span>
-          </div>
-          <div role="radiogroup" aria-label="Wallet app" className="x2f-wallets__apps">
-            {WALLET_APPS.map((code) => (
-              <button
-                key={code}
-                type="button"
-                role="radio"
-                aria-checked={app === code}
-                className="x2f-app-chip"
-                onClick={() => setApp(code)}
-              >
-                {APP_LABELS[code]}
-              </button>
-            ))}
-          </div>
-          {app === 'edge' ? (
-            <p className="x2f-wallets__tip">
-              For best privacy, turn on Full Sync in Edge's Monero settings. Otherwise Edge's servers can see payments
-              coming in.
-            </p>
-          ) : null}
-          <label className="x2f-wallets__field" htmlFor="wallet-address">
-            Receive address from {appPromptName(app)}
-            <span className="x2f-wallets__input-row">
+        {adding ? (
+          <section className="x2f-wallets__add" aria-label="Add a wallet">
+            <div className="x2f-wallets__add-head">
+              <h2 className="x2f-wallets__add-title">Add a wallet</h2>
+              <span className="x2f-wallets__add-hint">Which app is it in?</span>
+            </div>
+
+            {batch.length > 0 ? (
+              <ul className="x2f-wallets__batch" aria-label="Wallets to save">
+                {batch.map((d) => (
+                  <li key={d.address} className="x2f-wallets__batch-item">
+                    <span>
+                      {d.label} · {APP_LABELS[d.app]} · <span className="x2f-wallets__mono">…{d.address.slice(-6)}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="x2f-icon-button"
+                      aria-label={`Take ${d.label} out of this batch`}
+                      onClick={() => setBatch((b) => b.filter((x) => x.address !== d.address))}
+                    >
+                      <Icon name="close" size={18} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+
+            <div role="radiogroup" aria-label="Wallet app" className="x2f-wallets__apps">
+              {WALLET_APPS.map((code) => (
+                <button
+                  key={code}
+                  type="button"
+                  role="radio"
+                  aria-checked={app === code}
+                  className="x2f-app-chip"
+                  onClick={() => setApp(code)}
+                >
+                  {APP_LABELS[code]}
+                </button>
+              ))}
+            </div>
+            {app === 'edge' ? (
+              <p className="x2f-wallets__tip">
+                For best privacy, turn on Full Sync in Edge's Monero settings. Otherwise Edge's servers can see payments
+                coming in.
+              </p>
+            ) : null}
+
+            <label className="x2f-wallets__field" htmlFor="wallet-label">
+              Name
               <input
-                id="wallet-address"
-                ref={addressInput}
-                className="x2f-wallets__input"
+                id="wallet-label"
+                className="x2f-wallets__input x2f-wallets__input--text"
                 type="text"
-                inputMode="text"
                 autoComplete="off"
-                spellCheck={false}
-                placeholder="4… or 8…"
-                value={address}
-                onChange={(e) => setAddress(e.target.value)}
+                maxLength={LABEL_MAX}
+                placeholder={nextWalletName(known)}
+                value={label}
+                onChange={(e) => setLabel(e.target.value)}
               />
-              <button type="button" className="x2f-wallets__scan" aria-label="Scan address QR code">
-                <Icon name="plus-circle" size={20} />
-              </button>
+            </label>
+            <div className="x2f-wallets__apps" aria-label="Suggested names">
+              {nameSuggestions(known).map((name) => (
+                <button key={name} type="button" className="x2f-app-chip" onClick={() => setLabel(name)}>
+                  {name}
+                </button>
+              ))}
+            </div>
+            <span className="x2f-wallets__confirm-note">
+              X2F stores this name. Keep it neutral, and never write where the money came from.
             </span>
-          </label>
-          {/* Spec 6.3 "Wallet rules refined" (2026-10-24): the first wallet never waits. "Has had one"
-              is not in GET /v1/wallets, so an account that removed every wallet sees the first-wallet
-              note; TODO(Task 28/30): read that, and the account's own login methods, from me(). */}
-          <span className="x2f-wallets__confirm-note">
-            {wallets !== null && wallets.length === 0
-              ? 'Your first wallet works at once.'
-              : "Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works at once; with a password or authenticator code it waits 24 hours before it can be paid."}
-          </span>
-          {error ? (
-            <p className="x2f-wallets__error" role="alert">
-              {error}
-            </p>
-          ) : null}
-        </section>
+
+            <label className="x2f-wallets__field" htmlFor="wallet-address">
+              Receive address from {appPromptName(app)}
+              <span className="x2f-wallets__input-row">
+                <input
+                  id="wallet-address"
+                  ref={addressInput}
+                  className="x2f-wallets__input"
+                  type="text"
+                  inputMode="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder="4… or 8…"
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                />
+                <button type="button" className="x2f-wallets__scan" aria-label="Scan address QR code">
+                  <Icon name="plus-circle" size={20} />
+                </button>
+              </span>
+            </label>
+            <span className="x2f-wallets__confirm-note">
+              For extra privacy, paste a fresh address from your wallet for each trade.
+            </span>
+
+            <Button
+              variant="secondary"
+              onClick={addAnother}
+              disabled={trimmed === '' || batch.length + 1 >= MAX_WALLET_BATCH}
+            >
+              Add another
+            </Button>
+            <span className="x2f-wallets__confirm-note">{ruleNote(rule)}</span>
+            {error ? (
+              <p className="x2f-wallets__error" role="alert">
+                {error}
+              </p>
+            ) : null}
+          </section>
+        ) : null}
 
         {keyCount > 0 ? (
           <section className="x2f-wallets__escrow" aria-label="Escrow keys">
@@ -332,14 +473,35 @@ export function Wallets() {
             </span>
           </section>
         ) : null}
+        {!adding && error ? (
+          <p className="x2f-wallets__error" role="alert">
+            {error}
+          </p>
+        ) : null}
       </main>
 
       <footer className="x2f-wallets__foot">
-        <Button variant="primary" onClick={save} disabled={trimmed === '' || saving}>
-          Save wallet
-        </Button>
+        {adding ? (
+          <Button variant="primary" onClick={save} disabled={count === 0 || saving}>
+            {count > 1 ? `Save ${count} wallets` : 'Save wallet'}
+          </Button>
+        ) : (
+          <Button variant="primary" onClick={() => setPopup(true)}>
+            Add a wallet
+          </Button>
+        )}
       </footer>
 
+      {popup ? (
+        <RulePopup
+          rule={rule}
+          onClose={() => setPopup(false)}
+          onContinue={() => {
+            setPopup(false);
+            setAdding(true);
+          }}
+        />
+      ) : null}
       {confirmSheet}
     </div>
   );
