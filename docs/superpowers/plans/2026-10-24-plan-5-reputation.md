@@ -35,6 +35,8 @@ Task 13 Step 3 lists the resolved tree (`npm ls --all tesseract.js`) in the comm
 
 **Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md`: 1 (mission: share the bare minimum; principles 2 and 3), 2.2 step 7 (optional proof and its nudge) and step 11 (review), 2.3 (starter limits, New badge until Graduated; trading hold), 4.1 (data rules, retention, no IP logs, no email or phone), 4.2 (proof uploads), 5 (all), 6.2 (PGP key rules, R16), 6.5, 6.6 (unblurred proof request, activity log, training library), 7 screen 3, 9. **Boards:** Claude Design **X2F App**, mirrored in `design/x2f-app/`: `Review`, `Profile`, `BadgeSettings`, `SellOffers` (badges and `+N`), `BuyerPay` (proof slot), `SellerConfirm` (smart proof card), `DisputeOpen` (Add more evidence), `DisputeRoom` (unblurred request), `ModCase` (proof card). **Builds on:** Plans 1–3 (as built and as revised through 2026-10-24) and Plan 4 (interfaces below).
 
+> **Lead note 2026-10-24:** the display-name / login-name split (spec 6.1) is owned by the Plan 2 follow-up FU-A (branch `wip/lead-p2-fua`, migration 009, renaming `username` to `display_name` and adding `login_name`). It merges before Plan 5 starts. Plans 3 and 4 then switch `username` to `display_name`.
+
 ## Global Constraints
 
 - **Share the bare minimum (spec 1).** No route returns a login name, email, phone, IP, payout address, trade amount sum, or anything inside a PGP key other than its fingerprint. Profiles are keyed by the **display name** only (spec 6.1, owner 2026-10-23).
