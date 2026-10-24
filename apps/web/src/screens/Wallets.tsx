@@ -303,9 +303,13 @@ export function Wallets() {
               </button>
             </span>
           </label>
+          {/* Spec 6.3 "Wallet rules refined" (2026-10-24): the first wallet never waits. "Has had one"
+              is not in GET /v1/wallets, so an account that removed every wallet sees the first-wallet
+              note; TODO(Task 28/30): read that, and the account's own login methods, from me(). */}
           <span className="x2f-wallets__confirm-note">
-            Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works
-            at once; with a password or authenticator code it waits 24 hours before it can be paid.
+            {wallets !== null && wallets.length === 0
+              ? 'Your first wallet works at once.'
+              : "Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works at once; with a password or authenticator code it waits 24 hours before it can be paid."}
           </span>
           {error ? (
             <p className="x2f-wallets__error" role="alert">

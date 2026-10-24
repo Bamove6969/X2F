@@ -142,6 +142,8 @@ test('/wallets?add=1&returnTo=… opens Add a wallet and returns to returnTo aft
   });
   await page.goto('/wallets?add=1&returnTo=%2Fbuy');
   await expect(page.getByRole('heading', { name: 'Add a wallet' })).toBeVisible();
+  // Spec 6.3 (2026-10-24): the first wallet never waits, and the screen says so.
+  await expect(page.getByText('Your first wallet works at once.')).toBeVisible();
   await page.getByLabel(/Receive address/).fill(READY.address);
   await page.getByRole('button', { name: 'Save wallet' }).click();
   await expect(page).toHaveURL(/\/buy$/);
