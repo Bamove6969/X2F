@@ -101,8 +101,11 @@ test('the wallets screen never claims a PGP backup of the escrow key (P3-I14)', 
   await expect(page.getByText(CODE)).toBeVisible();
   const body = (await page.locator('body').innerText()).toLowerCase();
   expect(body).not.toContain('backed up');
-  expect(body).not.toContain('pgp key');
+  expect(body).not.toMatch(/backup|to your pgp key/);
   await expect(page.getByText('It stays on this device and is deleted when the trade closes.')).toBeVisible();
+  // Wallet wait by method (spec, decided 2026-10-23): no opt-in 24-hour setting is offered.
+  expect(body).not.toContain('security settings');
+  await expect(page.getByText(/security key and the wallet works\s+at once/)).toBeVisible();
 });
 
 test('the escrow key row appears while a trade is open and disappears after it closes', async ({ page }) => {

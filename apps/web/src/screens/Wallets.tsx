@@ -304,8 +304,8 @@ export function Wallets() {
             </span>
           </label>
           <span className="x2f-wallets__confirm-note">
-            Saving asks you to confirm it's you. Want extra protection? In Security settings, you can make new wallets
-            wait 24 hours before they can be paid.
+            Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works
+            at once; with a password or authenticator code it waits 24 hours before it can be paid.
           </span>
           {error ? (
             <p className="x2f-wallets__error" role="alert">
