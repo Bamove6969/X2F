@@ -7,21 +7,19 @@
  */
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
-import { AuthApiError, loginWithPasskey, loginWithSecurityKey, type LoginResult, type PgpChallenge } from '@x2f/auth-client';
+import { startAuthentication } from '@simplewebauthn/browser';
+import { loginWithPasskey, loginWithSecurityKey, type LoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
-import { afterLogin, authApi, deviceLabel, pgpLoginFinish, pgpLoginStart } from './authApi.js';
+import { afterLogin, authApi, deviceLabel, passwordLogin, pgpLoginFinish, pgpLoginStart } from './authApi.js';
+import { loginFailure, shouldSendAway } from './loginRules.js';
 import '../screens.css';
 
 /**
- * Where a visitor is sent after about ten password misses in a row (spec §6.3, owner 2026-10-23):
- * off the site entirely. A neutral destination, not an X2F page.
+ * Where a visitor is sent once the server says this browser has missed the password about ten
+ * times in a row (spec §6.3, owner 2026-10-23): off the site entirely, to a neutral page.
  */
 export const AWAY_URL = 'https://duckduckgo.com/';
-const MAX_MISSES = 10;
-
-/** The same answer for any password-login mistake, so a guesser never learns which part was wrong. */
-const GENERIC_LOGIN_ERROR = "That login name and password don't match";
 
 type Method = 'choose' | 'pgp' | 'passkey' | 'security-key' | 'password';
 
@@ -72,15 +70,55 @@ export function Login() {
   );
 }
 
-function done(result: LoginResult, onLoggedIn: () => void, onSecondFactor: (pendingId: string) => void) {
-  if (result.status === 'ok') onLoggedIn();
-  else onSecondFactor(result.pendingId);
+function ErrorLine({ error, part }: { error: string | null; part?: string }) {
+  if (error === null) return null;
+  return (
+    <p className="x2f-error" role="alert" {...(part !== undefined ? { 'data-part': part } : {})}>
+      {error}
+    </p>
+  );
+}
+
+/**
+ * The second step of a two-factor login (staff and the owner: PGP, then a security key). The
+ * `pendingId` from the first step names the account, so no login name is asked for.
+ */
+function SecondStepKey({ pendingId, onLoggedIn }: { pendingId: string; onLoggedIn: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const go = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const { challengeId, options } = await authApi.loginWebAuthnStart({ pendingId });
+      const response = await startAuthentication({ optionsJSON: options });
+      const result = await authApi.loginWebAuthnFinish({ challengeId, response, deviceLabel: deviceLabel(), pendingId });
+      if (result.status === 'ok') onLoggedIn();
+      else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
+    } catch {
+      setError('That security key did not work. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="x2f-field" data-part="second-step">
+      <ErrorLine error={error} />
+      <p className="x2f-note">This account also needs its security key.</p>
+      <Button variant="primary" disabled={busy} onClick={() => void go()} data-part="second-step-key">
+        Use your security key
+      </Button>
+    </div>
+  );
 }
 
 function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [publicKey, setPublicKey] = useState('');
   const [challenge, setChallenge] = useState<PgpChallenge | null>(null);
   const [code, setCode] = useState('');
+  const [pendingId, setPendingId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -90,6 +128,8 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setError(null);
     try {
       setChallenge(await pgpLoginStart(publicKey.trim()));
+      setCode('');
+      setCopied(false);
     } catch {
       setError('Could not send a login message for that key. Check the key and try again.');
     } finally {
@@ -101,9 +141,11 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      done(await pgpLoginFinish(challenge!.challengeId, code), onLoggedIn, () => setError('This account needs a second step.'));
+      const result: LoginResult = await pgpLoginFinish(challenge!.challengeId, code.trim());
+      if (result.status === 'ok') onLoggedIn();
+      else setPendingId(result.pendingId);
     } catch {
-      setError('That code did not work. It may have expired — send a new message.');
+      setError('That code did not work. It may have expired: send a new message and try again.');
     } finally {
       setBusy(false);
     }
@@ -116,13 +158,11 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     );
   };
 
+  if (pendingId !== null) return <SecondStepKey pendingId={pendingId} onLoggedIn={onLoggedIn} />;
+
   return (
     <section className="x2f-stack" data-part="pgp">
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <ErrorLine error={error} />
       {challenge === null ? (
         <div className="x2f-field">
           <label className="x2f-label" htmlFor="pgp-key">
@@ -164,6 +204,9 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
           <Button variant="primary" disabled={busy || code.trim() === ''} onClick={() => void finish()} data-part="pgp-login">
             Log in
           </Button>
+          <Button variant="quiet" disabled={busy} onClick={() => void start()} data-part="pgp-new-message">
+            Send a new message
+          </Button>
         </div>
       )}
     </section>
@@ -178,7 +221,9 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      done(await loginWithPasskey(authApi, deviceLabel()), onLoggedIn, () => setError('This account needs a second step.'));
+      const result = await loginWithPasskey(authApi, deviceLabel());
+      if (result.status === 'ok') onLoggedIn();
+      else setError('This account needs a staff login. Use PGP or a security key.');
     } catch {
       setError('That passkey did not work. Try again, or use another way in.');
     } finally {
@@ -188,11 +233,7 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <section className="x2f-stack" data-part="passkey">
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <ErrorLine error={error} />
       <p className="x2f-note">Your device or password manager picks the account.</p>
       <Button variant="primary" disabled={busy} onClick={() => void go()} data-part="passkey-login">
         Use a passkey
@@ -212,7 +253,8 @@ function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setError(null);
     try {
       const result = await loginWithSecurityKey(authApi, loginName.trim(), deviceLabel(), undefined, pendingId !== undefined ? { pendingId } : {});
-      done(result, onLoggedIn, (id) => setPendingId(id));
+      if (result.status === 'ok') onLoggedIn();
+      else setPendingId(result.pendingId);
     } catch {
       setError('That security key did not work. Try again, or use another way in.');
     } finally {
@@ -222,22 +264,12 @@ function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <section className="x2f-stack" data-part="security-key">
-      {error !== null ? (
-        <p className="x2f-error" role="alert">
-          {error}
-        </p>
-      ) : null}
+      <ErrorLine error={error} />
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="sk-login-name">
           Your login name
         </label>
-        <input
-          className="x2f-input"
-          id="sk-login-name"
-          autoComplete="username"
-          value={loginName}
-          onChange={(e) => setLoginName(e.target.value)}
-        />
+        <input className="x2f-input" id="sk-login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
       </div>
       <Button variant="primary" disabled={busy || loginName.trim() === ''} onClick={() => void go()} data-part="security-key-login">
         Use a security key
@@ -253,32 +285,25 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [totp, setTotp] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Misses in a row: after about ten, the page leaves the site (spec §6.3).
-  const [misses, setMisses] = useState(0);
-
-  const miss = (message: string) => {
-    const next = misses + 1;
-    setMisses(next);
-    if (next >= MAX_MISSES) {
-      window.location.assign(AWAY_URL);
-      return;
-    }
-    setError(message);
-  };
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      const result = await authApi.loginPassword({ username: loginName.trim(), password, deviceLabel: deviceLabel() });
+      const result = await passwordLogin(loginName.trim(), password);
       if (result.status === 'ok') {
         onLoggedIn();
         return;
       }
       setPendingId(result.pendingId);
-    } catch {
-      // Any mistake — wrong login name or wrong password — gets the one generic answer.
-      miss(GENERIC_LOGIN_ERROR);
+    } catch (e) {
+      // The server counts misses per browser, so neither a reload nor a method switch resets it.
+      if (shouldSendAway(e)) {
+        window.location.assign(AWAY_URL);
+        return;
+      }
+      // Any mismatch reads the same; an outage or a rate limit is not a miss.
+      setError(loginFailure(e));
     } finally {
       setBusy(false);
     }
@@ -300,23 +325,12 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   if (pendingId !== null) {
     return (
       <section className="x2f-stack" data-part="password-totp">
-        {error !== null ? (
-          <p className="x2f-error" role="alert">
-            {error}
-          </p>
-        ) : null}
+        <ErrorLine error={error} />
         <div className="x2f-field">
           <label className="x2f-label" htmlFor="login-totp">
             Authenticator code
           </label>
-          <input
-            className="x2f-input"
-            id="login-totp"
-            inputMode="numeric"
-            autoComplete="one-time-code"
-            value={totp}
-            onChange={(e) => setTotp(e.target.value)}
-          />
+          <input className="x2f-input" id="login-totp" inputMode="numeric" autoComplete="one-time-code" value={totp} onChange={(e) => setTotp(e.target.value)} />
         </div>
         <Button variant="primary" disabled={busy || totp.trim() === ''} onClick={() => void verify()} data-part="verify-totp">
           Verify
@@ -327,22 +341,12 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
 
   return (
     <section className="x2f-stack" data-part="password">
-      {error !== null ? (
-        <p className="x2f-error" role="alert" data-part="login-error">
-          {error}
-        </p>
-      ) : null}
+      <ErrorLine error={error} part="login-error" />
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="login-name">
           Login name
         </label>
-        <input
-          className="x2f-input"
-          id="login-name"
-          autoComplete="username"
-          value={loginName}
-          onChange={(e) => setLoginName(e.target.value)}
-        />
+        <input className="x2f-input" id="login-name" autoComplete="username" value={loginName} onChange={(e) => setLoginName(e.target.value)} />
       </div>
       <div className="x2f-field">
         <label className="x2f-label" htmlFor="login-password">

@@ -16,6 +16,7 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
@@ -54,7 +55,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove);
       await refresh();
     } catch (e) {
-      if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not add that method. Try again.');
+      if (!isConfirmAbort(e)) setError('Could not add that method. Try again.');
     } finally {
       setBusy(false);
     }
@@ -72,7 +73,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'last-login-method') setError(LAST_METHOD_MESSAGE);
-      else if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not remove that method. Try again.');
+      else if (!isConfirmAbort(e)) setError('Could not remove that method. Try again.');
     } finally {
       setBusy(false);
     }
@@ -134,6 +135,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
 }
 
 function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+  const primary = usePrimaryVariant();
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -147,7 +149,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
-      else if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not set a password. Try again.');
+      else if (!isConfirmAbort(e)) setError('Could not set a password. Try again.');
     } finally {
       setBusy(false);
     }
@@ -165,7 +167,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
       </label>
       <input className="x2f-input" id="new-password" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
       <div className="x2f-row">
-        <Button variant="primary" disabled={busy || password === ''} onClick={() => void save()}>
+        <Button variant={primary} disabled={busy || password === ''} onClick={() => void save()}>
           Save
         </Button>
         <Button variant="quiet" disabled={busy} onClick={onCancel}>
@@ -177,6 +179,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
 }
 
 function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+  const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
   const [code, setCode] = useState('');
@@ -194,7 +197,7 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
       );
       setMessage({ challengeId: challenge.challengeId, encryptedMessage: challenge.encryptedMessage });
     } catch (e) {
-      if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not add that key. Check it and try again.');
+      if (!isConfirmAbort(e)) setError('Could not add that key. Check it and try again.');
     } finally {
       setBusy(false);
     }
@@ -227,7 +230,7 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
           </label>
           <textarea className="x2f-input x2f-textarea" id="add-pgp-key" rows={6} spellCheck={false} value={publicKey} onChange={(e) => setPublicKey(e.target.value)} />
           <div className="x2f-row">
-            <Button variant="primary" disabled={busy || publicKey.trim() === ''} onClick={() => void start()}>
+            <Button variant={primary} disabled={busy || publicKey.trim() === ''} onClick={() => void start()}>
               Add key
             </Button>
             <Button variant="quiet" disabled={busy} onClick={onCancel}>
@@ -244,7 +247,7 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
             {message.encryptedMessage}
           </pre>
           <input className="x2f-input" aria-label="Login code" value={code} onChange={(e) => setCode(e.target.value)} />
-          <Button variant="primary" disabled={busy || code.trim() === ''} onClick={() => void finish()}>
+          <Button variant={primary} disabled={busy || code.trim() === ''} onClick={() => void finish()}>
             Confirm key
           </Button>
         </>

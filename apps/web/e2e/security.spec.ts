@@ -22,11 +22,17 @@ function overview(over: Overview = {}): Overview {
 const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
 
 /** Default stubs so the screen mounts signed-in; a test re-routes the paths it exercises. */
-async function base(page: Page, o: { methods?: unknown[]; sessions?: unknown[]; alerts?: unknown[]; me?: Overview } = {}): Promise<void> {
+async function base(page: Page, o: { methods?: unknown[]; sessions?: unknown[]; alerts?: unknown[]; me?: Overview; timer?: unknown } = {}): Promise<void> {
   await page.route('**/v1/account/me', json(overview(o.me)));
   await page.route('**/v1/account/methods', json(o.methods ?? [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]));
   await page.route('**/v1/account/sessions', json(o.sessions ?? []));
   await page.route('**/v1/account/alerts', json(o.alerts ?? []));
+  await page.route('**/v1/account/security/logout-timer', json(o.timer ?? { idleHours: 12, adjustable: true }));
+}
+
+/** Visible elements carrying data-primary (Task 15: exactly one per state). */
+async function visiblePrimaries(page: Page): Promise<number> {
+  return page.locator('[data-primary]').evaluateAll((els) => els.filter((e) => (e as HTMLElement).checkVisibility()).length);
 }
 
 test('the security screen shows methods, the payout-wait explanation (no 24-hour toggle), devices, alerts and the logout timer', async ({ page }) => {
@@ -42,19 +48,96 @@ test('the security screen shows methods, the payout-wait explanation (no 24-hour
   await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });
 
-test('the logout timer offers 2–12 hours and saves a change', async ({ page }) => {
-  await base(page);
+test('the logout timer shows the saved value, offers 2–12 hours and saves a change as idleHours', async ({ page }) => {
+  await base(page, { timer: { idleHours: 4, adjustable: true } });
   let saved: unknown = null;
   await page.route('**/v1/account/security/logout-timer', async (r) => {
+    if (r.request().method() !== 'PUT') return r.fallback();
     saved = JSON.parse(r.request().postData() ?? '{}');
-    await r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+    await r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ idleHours: 6, adjustable: true }) });
   });
   await page.goto('/settings/security');
 
+  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('4');
   await expect(page.locator('[data-part="logout-timer-select"] option')).toHaveCount(6);
   await page.selectOption('[data-part="logout-timer-select"]', '6');
   await expect(page.locator('[data-part="logout-timer-status"]')).toHaveText('Saved.');
-  expect(saved).toEqual({ hours: 6 });
+  expect(saved).toEqual({ idleHours: 6 });
+});
+
+test('staff and owner see their fixed logout timer without a dropdown', async ({ page }) => {
+  await base(page, { timer: { idleHours: 2, adjustable: false } });
+  await page.goto('/settings/security');
+  await expect(page.locator('[data-part="logout-timer"]')).toContainText('2 hours');
+  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveCount(0);
+});
+
+test('a wrong password in the confirm sheet keeps the sheet and the action; the right one then completes it', async ({ page }) => {
+  await base(page);
+  let tries = 0;
+  await page.route('**/v1/confirm/password', (r) => {
+    tries += 1;
+    return tries === 1
+      ? r.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'credentials-invalid' }) })
+      : r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ confirmToken: 't1' }) });
+  });
+  await page.route('**/v1/account/recovery-codes', async (r) => {
+    const body = JSON.parse(r.request().postData() ?? '{}') as { confirmToken?: string };
+    if (body.confirmToken === undefined) {
+      return r.fulfill({ status: 403, contentType: 'application/json', body: JSON.stringify({ error: 'confirm-required', action: 'new-recovery-codes' }) });
+    }
+    return r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ codes: Array.from({ length: 10 }, (_, i) => `code-${i}`) }) });
+  });
+
+  await page.goto('/settings/security');
+  await page.click('[data-add="recovery-codes"]');
+  await page.click('[data-part="recovery-make"]');
+  await page.fill('#confirm-password', 'wrong-password-1!');
+  await page.click('[data-method="password"] >> text=Confirm');
+
+  await expect(page.locator('[role="dialog"] [role="alert"]')).toBeVisible();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+  await expect(page).toHaveURL(/\/settings\/security$/);
+
+  await page.fill('#confirm-password', 'Correct-Horse-9!');
+  await page.click('[data-method="password"] >> text=Confirm');
+  await expect(page.locator('[data-part="code-list"] li')).toHaveCount(10);
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
+test('a wrong authenticator code keeps the secret on screen and says so', async ({ page }) => {
+  await base(page);
+  await page.route('**/v1/account/totp/start', json({ challengeId: 'tc1', otpauthUri: 'otpauth://totp/X2F:nightowl?secret=JBSWY3DPEHPK3PXP&issuer=X2F', secret: 'JBSWY3DPEHPK3PXP' }));
+  await page.route('**/v1/account/totp/finish', json({ error: 'code-invalid' }, 401));
+
+  await page.goto('/settings/security');
+  await page.click('[data-add="totp"]');
+  await page.click('[data-part="totp-start"]');
+  await expect(page.locator('[data-part="totp-secret"]')).toHaveText('JBSWY3DPEHPK3PXP');
+  await page.fill('#totp-code', '000000');
+  await page.click('[data-part="totp-finish"]');
+
+  await expect(page.locator('[data-part="totp"] [role="alert"]')).toContainText('did not work');
+  await expect(page.locator('[data-part="totp-secret"]')).toHaveText('JBSWY3DPEHPK3PXP');
+  await expect(page).toHaveURL(/\/settings\/security$/);
+});
+
+test('with the confirm sheet open over Set a password, exactly one primary button is visible', async ({ page }) => {
+  await base(page, { me: { methods: ['password', 'pgp'] } });
+  await page.route('**/v1/account/password', json({ error: 'confirm-required', action: 'set-password' }, 403));
+  await page.route('**/v1/confirm/pgp/start', json({ challengeId: 'pc1', encryptedMessage: '-----BEGIN PGP MESSAGE-----\nx\n-----END PGP MESSAGE-----', expiresAt: '2099-01-01T00:00:00.000Z' }));
+
+  await page.goto('/settings/security');
+  await page.click('[data-add="password"]');
+  await page.fill('#new-password', 'Correct-Horse-9!');
+  expect(await visiblePrimaries(page)).toBe(1);
+  await page.click('[data-part="add-password"] >> text=Save');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+  expect(await visiblePrimaries(page)).toBe(1);
+  // A PGP challenge and the password form both inside the sheet: still one primary.
+  await page.click('[role="dialog"] [data-method="pgp"]');
+  await expect(page.locator('[data-part="pgp-message"]')).toBeVisible();
+  expect(await visiblePrimaries(page)).toBe(1);
 });
 
 test('making recovery codes opens the confirm sheet exactly once, then shows the codes', async ({ page }) => {

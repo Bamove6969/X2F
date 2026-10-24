@@ -1,5 +1,5 @@
 /**
- * Security alerts (Task 30, spec §6.4): new logins, a wallet added or removed, and the like. X2F
+ * Security alerts (Task 30, spec §6.4): new logins, login methods and wallets added or removed, devices logged out, and paused logins. X2F
  * never stores an email address, so these are in-app (and, in Plan 3, phone push). Opening the
  * list marks each one seen.
  */
@@ -7,18 +7,25 @@ import { useEffect, useState } from 'react';
 import type { AlertEntry } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
 
-/** Plain words for the alert kinds the account raises (spec §6.3/§6.4). Unknown kinds show as-is. */
+/**
+ * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
+ * A kind this list does not know reads as a generic label, never as raw kebab-case.
+ */
 const KIND_WORDS: Record<string, string> = {
-  'new-login': 'A new login',
+  'new-login': 'New login',
+  'recovery-login': 'Logged in with a backup',
+  'recovery-hold-cancelled': 'A backup login was cancelled',
+  'login-locked': 'Logins paused after too many tries',
+  'login-method-added': 'A login method was added',
+  'login-method-removed': 'A login method was removed',
+  'sessions-ended': 'Other devices were logged out',
   'wallet-added': 'A payout wallet was added',
   'wallet-removed': 'A payout wallet was removed',
-  'method-added': 'A login method was added',
-  'method-removed': 'A login method was removed',
-  'password-changed': 'Your password was changed',
+  'device-key-added': 'A trade signing key was added',
 };
 
-function words(kind: string): string {
-  return KIND_WORDS[kind] ?? kind;
+export function alertWords(kind: string): string {
+  return Object.hasOwn(KIND_WORDS, kind) ? KIND_WORDS[kind]! : 'Security alert';
 }
 
 export function Alerts() {
@@ -56,7 +63,7 @@ export function Alerts() {
       <ul className="x2f-list" data-part="alert-list">
         {(alerts ?? []).map((a) => (
           <li className="x2f-list__row" key={a.id} data-kind={a.kind} data-unseen={a.seenAt === null ? 'true' : 'false'}>
-            <span className="x2f-list__label">{words(a.kind)}</span>
+            <span className="x2f-list__label">{alertWords(a.kind)}</span>
             <time className="x2f-list__time" dateTime={a.createdAt}>
               {new Date(a.createdAt).toLocaleString()}
             </time>

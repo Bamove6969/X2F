@@ -6,9 +6,11 @@
  */
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
+import { AuthApiError } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { afterLogin, authApi, deviceLabel } from './authApi.js';
+import { LOGIN_RETRY_LATER } from './loginRules.js';
 import '../screens.css';
 
 type Kind = 'recovery-code' | 'totp';
@@ -29,8 +31,9 @@ export function BackupLogin() {
     try {
       await authApi.loginBackup({ username: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
       await afterLogin((to) => navigate(to), returnTo);
-    } catch {
-      setError('That login name and backup code don’t match.');
+    } catch (e) {
+      // A wrong name or code reads the same; an outage or a rate limit is not a mismatch.
+      setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? 'That login name and backup code don’t match.' : LOGIN_RETRY_LATER);
     } finally {
       setBusy(false);
     }

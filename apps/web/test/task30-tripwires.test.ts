@@ -1,36 +1,42 @@
 /*
- * Task 30 tripwires. The new login rules (owner, 2026-10-23) are built to the spec, but their API
- * + auth-client changes are not on this branch yet (lead follow-up branches). These assertions
- * hold now and fail LOUDLY the moment the real shapes land, which is the signal to move the shims
- * in `screens/auth/authApi.ts` and `screens/settings/logoutTimer.ts` onto the typed client:
+ * Task 30 tripwires for the lead's FU-A (login names, PGP login by key, server-counted password
+ * misses), which is not on the main line yet. Until it is, `screens/auth/authApi.ts` sends FU-A's
+ * shapes through the raw client and `screens/auth/loginRules.ts` mirrors FU-A's exports. Each
+ * tripwire below holds today and FAILS the moment FU-A's typed client lands, which is the signal to
+ * switch those calls to `authApi` and import the rules from `@x2f/auth-client`:
  *
- *   - `_typeTripwires` (never called) fails `tsc` when the typed client / `AccountOverview` gains
- *     PGP-login-by-key, the inactivity logout timer, or a changed payout-wait shape.
- *   - the runtime checks fail when the client gains a logout-timer method or drops the opt-in
- *     payout-wait method.
+ *   - `_typeTripwires` (never called) fails `tsc` with "unused '@ts-expect-error'" once
+ *     `loginPgpStart` takes `{ key }` and `loginPassword` takes `{ loginName, ... }`. Each one
+ *     names FU-A's exact field, so it cannot be satisfied by a different rename.
+ *   - the runtime checks fail once `@x2f/auth-client` exports FU-A's rules.
+ *
+ * (FU-B's tripwires — logout timer, payout-wait removal — fired when FU-B merged into the main line
+ * on 2026-10-24 and were retired; those screens now use the typed client.)
  */
-import { createAuthApi, type AccountOverview, type AuthApi } from '@x2f/auth-client';
+import * as client from '@x2f/auth-client';
+import type { AuthApi } from '@x2f/auth-client';
 import { describe, expect, it } from 'vitest';
+import { MISSES_BEFORE_SENDING_AWAY, PASSWORD_LOGIN_MISMATCH } from '../src/screens/auth/loginRules.js';
 
 // Compile-time only — never invoked.
-async function _typeTripwires(api: AuthApi, me: AccountOverview): Promise<void> {
-  // @ts-expect-error TRIPWIRE: PGP login needs no login name once the by-key form lands; then switch pgpLoginStart to the typed client.
-  await api.loginPgpStart({ publicKey: 'x' });
-  // @ts-expect-error TRIPWIRE: AccountOverview gains the inactivity logout timer; then read it here instead of defaulting to 12.
-  const _hours: number = me.logoutTimerHours;
-  void _hours;
-  // Not an expect-error: this fails only if the opt-in payout-wait SHAPE changes (the rule drops the toggle).
-  const _pw: { enabled: boolean; offAt: string | null } = me.payoutWait;
+function _typeTripwires(): void {
+  // @ts-expect-error TRIPWIRE (FU-A): PGP login takes `{ key }` and no login name; then call authApi.loginPgpStart.
+  const _pgp: Parameters<AuthApi['loginPgpStart']>[0] = { key: 'x' };
+  // @ts-expect-error TRIPWIRE (FU-A): password login takes `loginName`; then call authApi.loginPassword and read `e.misses`.
+  const _pw: Parameters<AuthApi['loginPassword']>[0] = { loginName: 'x', password: 'x', deviceLabel: 'x' };
+  void _pgp;
   void _pw;
 }
 void _typeTripwires;
 
-describe('Task 30 tripwires: the new-login-rules API is not on main yet', () => {
-  it('the typed client has no logout-timer method yet', () => {
-    expect(Object.keys(createAuthApi())).not.toContain('setLogoutTimer');
+describe('Task 30 tripwires: FU-A is not on the main line yet', () => {
+  it('the typed client does not export the password-login rules yet', () => {
+    expect('shouldSendAway' in client).toBe(false);
+    expect('PASSWORD_LOGIN_MISMATCH' in client).toBe(false);
   });
 
-  it('the opt-in payout-wait method is still present (the wallet-wait-by-method rule will drop it)', () => {
-    expect('setPayoutWait' in createAuthApi()).toBe(true);
+  it('the local mirror matches FU-A exactly (wording and threshold)', () => {
+    expect(PASSWORD_LOGIN_MISMATCH).toBe("That login name and password don't match");
+    expect(MISSES_BEFORE_SENDING_AWAY).toBe(10);
   });
 });

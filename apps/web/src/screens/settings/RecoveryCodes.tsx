@@ -5,9 +5,11 @@
 import { useState } from 'react';
 import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 
 export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void }) {
+  const primary = usePrimaryVariant();
   const [codes, setCodes] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,7 +21,7 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
       const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
       setCodes(result.codes);
     } catch (e) {
-      if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not make recovery codes. Try again.');
+      if (!isConfirmAbort(e)) setError('Could not make recovery codes. Try again.');
     } finally {
       setBusy(false);
     }
@@ -36,7 +38,7 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
             </li>
           ))}
         </ul>
-        <Button variant="primary" onClick={onDone} data-part="recovery-done">
+        <Button variant={primary} onClick={onDone} data-part="recovery-done">
           I have saved them
         </Button>
       </div>
@@ -50,7 +52,7 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
           {error}
         </p>
       ) : null}
-      <Button variant="primary" disabled={busy} onClick={() => void make()} data-part="recovery-make">
+      <Button variant={primary} disabled={busy} onClick={() => void make()} data-part="recovery-make">
         Show my recovery codes
       </Button>
     </div>

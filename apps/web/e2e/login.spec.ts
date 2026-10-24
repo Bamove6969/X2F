@@ -68,7 +68,11 @@ async function virtualAuthenticator(page: Page): Promise<CDPSession> {
 
 test('PGP login (paste key, decrypt message, paste code) lands on returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
-  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
+  let startBody: unknown = null;
+  await page.route('**/v1/login/pgp/start', (r) => {
+    startBody = JSON.parse(r.request().postData() ?? '{}');
+    return json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' })(r);
+  });
   await page.route('**/v1/login/pgp/finish', json({ status: 'ok' }));
 
   await page.goto('/login?returnTo=%2Fbuy');
@@ -79,11 +83,55 @@ test('PGP login (paste key, decrypt message, paste code) lands on returnTo', asy
   await page.fill('[aria-label="Login code"]', '12345678');
   await page.click('[data-part="pgp-login"]');
   await expect(page).toHaveURL(/\/buy$/);
+  // FU-A: PGP login takes the key alone, never a login name.
+  expect(startBody).toEqual({ key: FAKE_KEY.trim() });
+});
+
+test('PGP login: an expired code offers a new message, and a second step goes on to the security key', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview()));
+  let starts = 0;
+  await page.route('**/v1/login/pgp/start', (r) => {
+    starts += 1;
+    return json({ challengeId: `c${starts}`, encryptedMessage: `${PGP_MESSAGE}#${starts}`, expiresAt: '2099-01-01T00:00:00.000Z' })(r);
+  });
+  let finishes = 0;
+  await page.route('**/v1/login/pgp/finish', (r) => {
+    finishes += 1;
+    return finishes === 1
+      ? json({ error: 'challenge-expired' }, 401)(r)
+      : json({ status: 'second-factor', pendingId: 'p9', needs: ['security-key'] })(r);
+  });
+  let webauthnStart: unknown = null;
+  await page.route('**/v1/login/webauthn/start', (r) => {
+    webauthnStart = JSON.parse(r.request().postData() ?? '{}');
+    return json({ challengeId: 'w1', options: AUTH_OPTIONS })(r);
+  });
+  await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
+
+  await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
+  await virtualAuthenticator(page);
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '11111111');
+  await page.click('[data-part="pgp-login"]');
+  await page.click('[data-part="pgp-new-message"]');
+  await expect(page.locator('[data-part="pgp-message"]')).toContainText('#2');
+
+  await page.fill('[aria-label="Login code"]', '22222222');
+  await page.click('[data-part="pgp-login"]');
+  await page.click('[data-part="second-step-key"]');
+  await expect(page).toHaveURL(/\/buy$/);
+  expect(webauthnStart).toEqual({ pendingId: 'p9' });
 });
 
 test('password login with an authenticator step lands on the default screen', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
-  await page.route('**/v1/login/password', json({ status: 'second-factor', pendingId: 'p1', needs: ['totp'] }));
+  let body: unknown = null;
+  await page.route('**/v1/login/password', (r) => {
+    body = JSON.parse(r.request().postData() ?? '{}');
+    return json({ status: 'second-factor', pendingId: 'p1', needs: ['totp'] })(r);
+  });
   await page.route('**/v1/login/second-factor', json({ status: 'ok' }));
 
   await page.goto('/login');
@@ -94,11 +142,13 @@ test('password login with an authenticator step lands on the default screen', as
   await page.fill('#login-totp', '123456');
   await page.click('[data-part="verify-totp"]');
   await expect(page).toHaveURL(/\/sell$/);
+  // FU-A: the private login name goes as `loginName`.
+  expect(body).toMatchObject({ loginName: 'nightowl', password: 'Correct-Horse-9!' });
 });
 
 test('a wrong login name and a wrong password both give the one generic error', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview(), 401));
-  await page.route('**/v1/login/password', json({ error: 'credentials-invalid' }, 401));
+  await page.route('**/v1/login/password', json({ error: 'credentials-invalid', misses: 1 }, 401));
 
   await page.goto('/login');
   await page.click('[data-method="password"]');
@@ -114,25 +164,57 @@ test('a wrong login name and a wrong password both give the one generic error', 
   await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
 });
 
-test('about ten password misses in a row send the visitor off the site', async ({ page }) => {
+test('the server miss count sends the visitor off the site, even across a method switch', async ({ page }) => {
+  // The server counts misses per browser (FU-A), so switching method or reloading never resets it.
+  let misses = 0;
   await page.route('**/v1/account/me', json(overview(), 401));
-  await page.route('**/v1/login/password', json({ error: 'credentials-invalid' }, 401));
-  // Keep the leave-the-site navigation offline.
+  await page.route('**/v1/login/password', (r) => {
+    misses += 1;
+    return json({ error: 'credentials-invalid', misses }, 401)(r);
+  });
   await page.route('https://duckduckgo.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/html', body: '<html></html>' }));
+
+  const tryOnce = async () => {
+    await page.fill('#login-name', 'nightowl');
+    await page.fill('#login-password', 'wrong-1!');
+    await page.click('[data-part="password-login"]');
+  };
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  for (let i = 0; i < 5; i++) {
+    await tryOnce();
+    await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
+  }
+  await page.click('[data-part="back"]');
+  await page.click('[data-method="password"]');
+  await page.reload();
+  await page.click('[data-method="password"]');
+  for (let i = 0; i < 4; i++) {
+    await tryOnce();
+    await expect(page.locator('[data-part="password-login"]')).toBeEnabled();
+  }
+  await expect(page).toHaveURL(/\/login$/);
+  await tryOnce();
+  await expect(page).toHaveURL(/^https:\/\/duckduckgo\.com\//);
+});
+
+test('an outage is not a miss: a neutral retry message, and ten of them keep the visitor here', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  let n = 0;
+  await page.route('**/v1/login/password', (r) => {
+    n += 1;
+    return n % 2 === 0 ? json({ error: 'busy' }, 503)(r) : json({ error: 'slow-down', retryAfterSeconds: 5 }, 429)(r);
+  });
 
   await page.goto('/login');
   await page.click('[data-method="password"]');
   await page.fill('#login-name', 'nightowl');
-  await page.fill('#login-password', 'wrong-1!');
-  for (let i = 0; i < 9; i++) {
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  for (let i = 0; i < 10; i++) {
     await page.click('[data-part="password-login"]');
-    await expect(page.locator('[data-part="password-login"]')).toBeEnabled();
+    await expect(page.locator('[data-part="login-error"]')).toHaveText('X2F could not check that just now. Try again in a moment.');
   }
-  // Nine misses: still here, with the same generic answer.
   await expect(page).toHaveURL(/\/login$/);
-  await expect(page.locator('[data-part="login-error"]')).toHaveText("That login name and password don't match");
-  await page.click('[data-part="password-login"]');
-  await expect(page).toHaveURL(/^https:\/\/duckduckgo\.com\//);
 });
 
 test('passkey login via the virtual authenticator lands on returnTo', async ({ page }) => {
@@ -169,6 +251,18 @@ test('recovery-code backup login lands on the default screen', async ({ page }) 
   await page.fill('#backup-code', 'abcd-efgh-ij');
   await page.click('[data-part="backup-login"]');
   await expect(page).toHaveURL(/\/sell$/);
+});
+
+test('a wrong backup code says so on the backup screen and does not redirect', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  await page.route('**/v1/login/backup', json({ error: 'credentials-invalid' }, 401));
+
+  await page.goto('/login/backup?returnTo=%2Fbuy');
+  await page.fill('#backup-login-name', 'nightowl');
+  await page.fill('#backup-code', 'wrong-code-00');
+  await page.click('[data-part="backup-login"]');
+  await expect(page.locator('[role="alert"]')).toContainText('don\u2019t match');
+  await expect(page).toHaveURL(/\/login\/backup\?returnTo=%2Fbuy$/);
 });
 
 test('an expired session routes to /login and returns to the same screen after login', async ({ page }) => {

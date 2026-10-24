@@ -1,16 +1,29 @@
 /**
  * The web app's single auth client (Plan 2 `@x2f/auth-client`) and the few flows the login and
- * security screens need on top of it. The client talks to the same origin; a 401 from any call
- * means the session has gone, so the page routes to `/login` with a `returnTo` (Task 30) and the
- * call still throws so the caller stops.
+ * security screens need on top of it. The client talks to the same origin.
+ *
+ * Only a 401 `not-authenticated` means the session has gone: then the page routes to `/login` with
+ * a `returnTo` (Task 30) and the call still throws so the caller stops. Every other 401 is the
+ * person's own mistake — a wrong password or code (`credentials-invalid`, `code-invalid`) or a
+ * failed key tap (`webauthn-failed`) — and stays on the screen as an error there.
  */
-import { createAuthApi, defaultDeviceLabel, type LoginResult, type PgpChallenge } from '@x2f/auth-client';
+import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { api, goLogin } from '../../api/client.js';
 
-/** Routes an expired session to `/login` (a no-op while already there), then lets the call throw. */
+/** Reads the error code of a 401 without consuming the body the client still has to read. */
+async function sessionGone(res: Response): Promise<boolean> {
+  if (res.status !== 401) return false;
+  try {
+    const body = (await res.clone().json()) as unknown;
+    return body !== null && typeof body === 'object' && (body as { error?: unknown }).error === 'not-authenticated';
+  } catch {
+    return false;
+  }
+}
+
 const authFetch: typeof fetch = async (input, init) => {
   const res = await globalThis.fetch(input, init);
-  if (res.status === 401) goLogin();
+  if (await sessionGone(res)) goLogin();
   return res;
 };
 
@@ -23,19 +36,23 @@ export function deviceLabel(): string {
   return defaultDeviceLabel(nav);
 }
 
-/**
- * PGP login needs no login name (owner, 2026-10-23, spec §6.2): the person pastes their public key
- * and X2F encrypts a one-time code to it. The typed client's `loginPgpStart` still takes a
- * username (the staff flow); until the by-key endpoint lands in `@x2f/auth-client` these two call
- * the route directly. `task30-tripwires.test.ts` fails once the typed client gains the by-key form,
- * which is the signal to switch these over.
+/*
+ * FU-A shapes (owner, 2026-10-23; the lead's wip/lead-p2-fua, not on the main line yet). PGP login
+ * takes the pasted key alone (`{ key }`, never a login name), and password login takes the private
+ * `loginName`; the server answers every password miss with 401 `credentials-invalid` and this
+ * browser's `misses` count. These go through the raw client, which keeps every field of an error,
+ * until FU-A's typed client lands; `task30-tripwires.test.ts` fails then, the signal to switch.
  */
-export function pgpLoginStart(publicKey: string): Promise<PgpChallenge> {
-  return api<PgpChallenge>('/v1/login/pgp/start', { method: 'POST', body: { publicKey } });
+export function pgpLoginStart(key: string, o: { pendingId?: string } = {}): Promise<PgpChallenge> {
+  return api<PgpChallenge>('/v1/login/pgp/start', { method: 'POST', body: { key, ...o } });
 }
 
 export function pgpLoginFinish(challengeId: string, code: string): Promise<LoginResult> {
   return api<LoginResult>('/v1/login/pgp/finish', { method: 'POST', body: { challengeId, code, deviceLabel: deviceLabel() } });
+}
+
+export function passwordLogin(loginName: string, password: string): Promise<PasswordLoginResult> {
+  return api<PasswordLoginResult>('/v1/login/password', { method: 'POST', body: { loginName, password, deviceLabel: deviceLabel() } });
 }
 
 /**

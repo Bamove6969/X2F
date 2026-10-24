@@ -7,10 +7,12 @@
 import { useState } from 'react';
 import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { Qr } from './Qr.js';
 
 export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+  const primary = usePrimaryVariant();
   const [enrol, setEnrol] = useState<{ challengeId: string; otpauthUri: string; secret: string } | null>(null);
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -22,7 +24,7 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     try {
       setEnrol(await withConfirm({ kind: 'add-method', method: 'totp' }, (t) => authApi.addTotpStart(t !== undefined ? { confirmToken: t } : {}), prove));
     } catch (e) {
-      if (!(e instanceof Error && e.message === 'confirm cancelled')) setError('Could not start enrolment. Try again.');
+      if (!isConfirmAbort(e)) setError('Could not start enrolment. Try again.');
     } finally {
       setBusy(false);
     }
@@ -50,7 +52,7 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
       ) : null}
       {enrol === null ? (
         <div className="x2f-row">
-          <Button variant="primary" disabled={busy} onClick={() => void start()} data-part="totp-start">
+          <Button variant={primary} disabled={busy} onClick={() => void start()} data-part="totp-start">
             Start enrolment
           </Button>
           <Button variant="quiet" disabled={busy} onClick={onCancel}>
@@ -68,7 +70,7 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
             6-digit code
           </label>
           <input className="x2f-input" id="totp-code" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />
-          <Button variant="primary" disabled={busy || code.trim() === ''} onClick={() => void finish()} data-part="totp-finish">
+          <Button variant={primary} disabled={busy || code.trim() === ''} onClick={() => void finish()} data-part="totp-finish">
             Confirm
           </Button>
         </>
