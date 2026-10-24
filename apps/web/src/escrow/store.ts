@@ -75,17 +75,26 @@ export interface EscrowRecord {
   termsAcked: boolean;
   intent: StoredIntent | null;
   /**
-   * The trade amount this device fixed (security fix, 2026-10-24): set when it first knows of
-   * "I've paid" (the buyer's own tap carries the fiat total it confirmed) or first hands an
-   * outcome to the party, whichever comes first. From then on only this amount is accepted.
+   * The trade amount this device fixed (security fix, 2026-10-24): the buyer at its own "I've
+   * paid" tap (with the fiat total it confirmed); the seller from the buyer's signed trade.paid
+   * amount, if it fits. Never from the API, never before paid. From then on only this amount is
+   * accepted for a release (refunds pay the whole balance and do not depend on it).
    */
   acceptedAtomic?: bigint | null;
   /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
   closedSeenAt?: number | null;
   /** Device clock (ms) when this device saw its OWN settle done and the escrow empty with nothing in the pool. */
   settleSeenAt?: number | null;
-  /** This device has seen coins in the escrow (a balance or any incoming tx). */
+  /**
+   * This device has seen coins in the escrow (a balance or any incoming tx). New records start
+   * false; a record without the field (written before it existed) counts as UNKNOWN, never as
+   * never-funded.
+   */
   fundedSeen?: boolean;
+  /** The seller refused the buyer's signed trade.paid amount (out of range, or a total that does not fit). */
+  paidRefused?: boolean;
+  /** A failure that stops this trade on this device; kept so a reload stops it again. */
+  failed?: 'participants-mismatch' | 'deal-mismatch' | 'escrow-failed' | null;
 }
 
 export interface EscrowStore {

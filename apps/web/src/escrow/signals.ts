@@ -7,7 +7,11 @@
  *   and the buyer's `{ payoutAddress, deal }`. The counterparty's first terms win; a different
  *   later copy is ignored. `deal` is a deviation from the plan (which signs the address only):
  *   both sides sign the trade's size and rate so a lying API cannot resize the payouts.
- * - trade.paid, trade.cancel (buyer); trade.extend, trade.refund-request (seller): `{}`.
+ * - trade.paid (buyer): `{ amountAtomic, fiatCents }`, the trade amount the buyer's device fixed
+ *   and the fiat total the buyer confirmed (bigints, signed with the envelope). A deviation from
+ *   the plan's `{}` (security fix 2026-10-24): the seller fixes the amount from this signed value,
+ *   never from the API. Task 10 must accept it.
+ * - trade.cancel (buyer); trade.extend, trade.refund-request (seller): `{}`.
  * - trade.ack (mod → sender): GUESS `{ of: '<type>' }`; an ack of trade.terms stops its resends.
  */
 import type { Role } from '@x2f/core';
@@ -51,14 +55,27 @@ export interface SignalsArgs {
   deal: Deal;
   /** Saves the state; resolves once it is stored. Called before acting on or sending anything. */
   save(s: SignalsState): Promise<void>;
+  /**
+   * A valid signal from a peer, BEFORE its state is saved: fold it into the caller's own record
+   * here (synchronously), so the replay guard and what the signal changed land in one save and a
+   * reload can never have one without the other.
+   */
+  absorb?(type: SignalType, from: Role, payload: Record<string, unknown>): void;
   /** A valid signal from a peer (after it was saved). */
   onSignal?(type: SignalType, from: Role, payload: Record<string, unknown>): void;
   onIgnored?(reason: string): void;
   resendMs?: number;
 }
 
+/** The trade.paid payload: the amount the buyer's device fixed and the fiat total the buyer confirmed. */
+export interface PaidPayload {
+  amountAtomic: bigint;
+  fiatCents: bigint;
+}
+
 export interface SignalsHandle {
-  send(type: UserSignal): Promise<void>;
+  /** `trade.paid` needs its PaidPayload; every other user signal carries `{}`. */
+  send(type: UserSignal, payload?: PaidPayload): Promise<void>;
   stop(): void;
 }
 
@@ -96,6 +113,7 @@ function wellFormed(type: SignalType, from: Role, p: unknown): p is Record<strin
     return exactKeys(p, [k, 'deal']) && typeof addr === 'string' && addr.length > 0 && addr.length <= MAX_ADDRESS && parseDeal(p.deal) !== null;
   }
   if (type === 'trade.ack') return exactKeys(p, ['of']) && typeof p.of === 'string';
+  if (type === 'trade.paid') return exactKeys(p, ['amountAtomic', 'fiatCents']) && typeof p.amountAtomic === 'bigint' && p.amountAtomic > 0n && typeof p.fiatCents === 'bigint' && p.fiatCents > 0n;
   return Object.keys(p).length === 0;
 }
 
@@ -152,7 +170,8 @@ export function runSignals(a: SignalsArgs): SignalsHandle {
       }
     }
     if (type === 'trade.ack' && p.of === 'trade.terms') state = { ...state, termsAcked: true };
-    await persist(); // saved before acting on it
+    a.absorb?.(type, from, p);
+    await persist(); // saved (with what absorb folded in) before acting on it
     a.onSignal?.(type, from, p);
     if (answerTerms) await sendTerms();
   };
@@ -179,11 +198,13 @@ export function runSignals(a: SignalsArgs): SignalsHandle {
   void loop();
 
   return {
-    send(type) {
+    send(type, payload) {
       if (!SIGNAL_SENDERS[type]?.includes(a.role) || type === ('trade.terms' as never) || type === ('trade.ack' as never)) {
         return Promise.reject(new TypeError(`signals: ${a.role} may not send ${String(type)}`));
       }
-      return run(() => sendNow(type, {}));
+      const body: Record<string, unknown> = type === 'trade.paid' && payload ? { amountAtomic: payload.amountAtomic, fiatCents: payload.fiatCents } : {};
+      if (!wellFormed(type, a.role, body)) return Promise.reject(new TypeError(`signals: bad ${type} payload`));
+      return run(() => sendNow(type, body));
     },
     stop() {
       stopped = true;

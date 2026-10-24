@@ -1,4 +1,6 @@
+import { ROLES } from '@x2f/core';
 import { PartyError } from '@x2f/escrow';
+import { seal, type Participants } from '@x2f/protocol';
 import { channelFor, fiatCents } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cosignPolicy } from '../src/escrow/policy.js';
@@ -6,9 +8,20 @@ import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, confirmed
 
 const running: Device[] = [];
 const fiatOf = (a: bigint): bigint => fiatCents(a, { currency: 'USD', centsPerXmr: 33_000n });
+/** The buyer taps "I've paid" on its own device with the total for `amount` (the real flow, Task 23). */
+const pay = (buyer: Device, amount: bigint = AMOUNT): Promise<void> => buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(amount) });
 afterEach(async () => {
   await Promise.all(running.splice(0).map((d) => d.runtime.stopAll()));
 });
+
+/** A trade.paid signed with the buyer's own stored identity, delivered to the seller only. */
+async function injectPaid(t: { hub: Hub; buyer: Device }, payload: { amountAtomic: bigint; fiatCents: bigint }): Promise<void> {
+  const rec = (await t.buyer.store.load(CODE))!;
+  const att = rec.attestation!.attestation as { participants: Participants };
+  const channel = await channelFor(CODE, 'signals');
+  const me = { ...rec.identity };
+  t.hub.inject(channel, 'seller', await seal({ trade: channel, from: 'buyer', seq: 10_000, type: 'trade.paid', payload, to: ROLES, me, participants: att.participants }));
+}
 
 async function setup(over: Partial<ApiState> = {}) {
   const mod = await modKey();
@@ -134,6 +147,26 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(await buyer.store.load(CODE)).toBeNull();
   });
 
+  it('a deal mismatch is kept: after a reload the trade stays stopped even if the API turns honest', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await buyer.status((s) => s.phase === 'ready');
+    t.state.view = tradeView({ state: 'secured', poster: 'buyer' });
+    await buyer.status((s) => s.error === 'deal-mismatch');
+    await buyer.runtime.stopAll();
+    expect((await buyer.store.load(CODE))?.failed).toBe('deal-mismatch');
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    const calls = t.parties.calls.length;
+    const again = await t.mk('buyer', { idb: buyer.idb });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(t.parties.calls.length).toBe(calls); // no party, nothing settled
+  });
+
   it('a first start without the user’s confirmation does nothing (not-confirmed)', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');
@@ -225,6 +258,7 @@ describe('settling', () => {
     const t = await ready();
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(t.buyer);
     await t.seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.settles.length === 2);
     const [s, b] = [t.parties.settles.find((x) => x.role === 'seller')!, t.parties.settles.find((x) => x.role === 'buyer')!];
@@ -259,6 +293,7 @@ describe('settling', () => {
     const t = await ready();
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(t.buyer);
     await t.seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.settles.length === 2);
     t.parties.funds = funded('seller', 100_000_000n);
@@ -266,7 +301,7 @@ describe('settling', () => {
     for (const s of t.parties.settles.slice(2)) expect(s.o.to.at(-1)).toEqual({ address: ADDR.seller, amountAtomic: 100_000_000n });
   });
 
-  describe('security: once paid (or once something was handed to the party) the amount is fixed on the device', () => {
+  describe('security: the amount is fixed at "I’ve paid" (the buyer’s own tap; the seller from the signed trade.paid)', () => {
     const grown = 1_300_000_000_000n;
     const middle = 1_280_000_000_000n;
     const fundsFor = (a: bigint) => a + a / 100n;
@@ -345,12 +380,92 @@ describe('settling', () => {
       expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toBeTruthy();
     });
 
-    it('a release handed to the party before paid fixes the amount too', async () => {
+    it('a hand-over before paid fixes nothing: growth still works and a buyer cancel still settles', async () => {
       const t = await ready();
       t.parties.funds = funded();
       t.state.view = tradeView({ state: 'secured' });
       await until(() => t.parties.settles.some((x) => x.role === 'buyer')); // the standing co-sign
-      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(AMOUNT);
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic ?? null).toBeNull();
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
+      expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
+    });
+
+    it('after paid, an API amount lie never blocks a refund: the buyer cancel still settles', async () => {
+      const t = await paidAtMiddle();
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: AMOUNT.toString() });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toBeTruthy();
+      await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
+      expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
+    });
+
+    it('the seller fixes the amount from the buyer’s signed trade.paid, never from its own API view', async () => {
+      const t = await paidAtMiddle();
+      // The API shows only the seller another amount (in range for the seller).
+      t.state.roleView = { seller: { amountAtomic: grown.toString() } };
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: middle.toString() });
+      expect(await t.seller.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      await t.seller.runtime.act(CODE, { type: 'release' }).catch(() => undefined);
+      await t.parties.ticks('seller', 3);
+      expect(t.parties.settles.filter((x) => x.role === 'seller')).toEqual([]);
+      expect((await t.seller.store.load(CODE))?.acceptedAtomic).toBe(middle);
+    });
+
+    it('a seller that sees paid in its API view first fixes nothing until the buyer’s signed amount arrives', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown && (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      // The API tells the seller "paid" at the grown amount before the buyer has tapped.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: middle.toString() });
+      t.state.roleView = { seller: { state: 'paid', paidAt, amountAtomic: grown.toString() } };
+      await until(async () => (await t.seller.store.load(CODE))?.paidSeen === true);
+      await t.parties.ticks('seller', 2);
+      expect((await t.seller.store.load(CODE))?.acceptedAtomic ?? null).toBeNull();
+      // The buyer confirms `middle`: that signed amount is what the seller fixes.
+      await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(middle) });
+      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === middle);
+      expect((await t.seller.store.load(CODE))?.paidRefused ?? false).toBe(false);
+    });
+
+    it('a buyer that knows of paid only from the API (no tap of its own) co-signs no release: amount-unknown', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'paid', paidAt });
+      await t.seller.runtime.act(CODE, { type: 'release' });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ error: null });
+      await Promise.all([t.parties.ticks('buyer', 3), t.parties.ticks('seller', 2)]);
+      expect(t.parties.settles.filter((x) => x.role === 'buyer')).toEqual([]);
+      // Its own tap fixes the amount and the co-sign follows.
+      await pay(t.buyer);
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    });
+
+    it('a signed trade.paid outside the seller’s range, or with a total that does not fit, is refused visibly and fixes nothing', async () => {
+      for (const bad of [
+        { amountAtomic: grown + 1n, fiatCents: fiatOf(grown + 1n) },
+        { amountAtomic: middle, fiatCents: fiatOf(middle) + 1n },
+      ]) {
+        const t = await ready();
+        t.state.view = tradeView({ state: 'securing' });
+        t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+        await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
+        t.state.view = tradeView({ state: 'secured', amountAtomic: middle.toString() });
+        await injectPaid(t, bad);
+        expect(await t.seller.status((x) => x.refusal === 'paid-amount-refused')).toMatchObject({ error: null });
+        await until(async () => (await t.seller.store.load(CODE))?.paidRefused === true); // that save has landed
+        const rec = (await t.seller.store.load(CODE))!;
+        expect(rec.acceptedAtomic ?? null).toBeNull();
+        expect(rec.paidSeen).toBe(true); // no more growth either
+        await t.seller.runtime.act(CODE, { type: 'release' }).catch(() => undefined);
+        await t.parties.ticks('seller', 3);
+        expect(t.parties.settles.filter((x) => x.role === 'seller')).toEqual([]);
+        await t.buyer.runtime.stopAll();
+        await t.seller.runtime.stopAll();
+      }
     });
   });
 
@@ -374,6 +489,7 @@ describe('settling', () => {
     ])('%s: accepted, release pays the buyer that amount and the rest to the seller', async (_n, apiAmount) => {
       const t = await grownTrade();
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: apiAmount.toString() });
+      await pay(t.buyer, apiAmount);
       await t.seller.runtime.act(CODE, { type: 'release' });
       await until(() => t.parties.settles.length === 2);
       const [s, b] = [t.parties.settles.find((x) => x.role === 'seller')!, t.parties.settles.find((x) => x.role === 'buyer')!];
@@ -391,12 +507,15 @@ describe('settling', () => {
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: apiAmount.toString() });
       await expect(t.seller.runtime.act(CODE, { type: 'release' })).resolves.toBeUndefined();
       expect(await t.seller.status((x) => x.refusal === 'amount-out-of-range')).toMatchObject({ phase: 'ready', error: null });
-      expect(await t.buyer.status((x) => x.refusal === 'amount-out-of-range')).toMatchObject({ error: null });
+      // The buyer cannot confirm paying an amount out of range, and without its own tap it signs no release.
+      await expect(pay(t.buyer, apiAmount)).rejects.toThrow();
+      expect(await t.buyer.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ error: null });
       await Promise.all([t.parties.ticks('seller'), t.parties.ticks('buyer')]);
       expect(t.parties.settles).toEqual([]);
-      // Back in range: the refusal clears and the trade settles.
+      // Back in range: the refusal clears, the buyer confirms, and the trade settles.
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: grown.toString() });
       expect(await t.seller.status((x) => x.refusal === null && x.phase === 'signing')).toBeTruthy();
+      await pay(t.buyer, grown);
       await until(() => t.parties.settles.length === 2);
     });
   });
@@ -424,6 +543,7 @@ describe('settling', () => {
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
     // The buyer pays anyway (its proposal stands, Task 2), then the seller releases.
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'buyer' });
+    await pay(t.buyer);
     await t.seller.runtime.act(CODE, { type: 'release' });
     t.state.view = tradeView({ state: 'settling', settling: 'release', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'buyer' });
     await until(() => t.parties.settles.some((s) => s.role === 'buyer' && s.o.builder === 'seller'));
@@ -437,6 +557,7 @@ describe('settling', () => {
     const t = await ready();
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'seller' });
+    await pay(t.buyer);
     await t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' });
     await until(() => t.parties.settles.some((s) => s.role === 'buyer' && s.o.cosigner === 'seller'));
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
@@ -486,6 +607,7 @@ describe('guards in front of settle', () => {
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
     expect(await t.buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
     expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    await until(async () => (await t.buyer.store.load(CODE))?.theirDeal != null); // that save has landed
     expect((await t.buyer.store.load(CODE))?.theirDeal?.maxFiatCents).toBe(60_000n);
     await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
     expect(t.parties.settles).toEqual([]);
@@ -642,6 +764,7 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await pay(buyer);
     await seller.runtime.act(CODE, { type: 'release' });
     await until(() => t.parties.pending.some((p) => p.role === 'seller') && t.parties.pending.some((p) => p.role === 'buyer'));
     if (o.settle !== false) {
@@ -752,6 +875,61 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     await until(async () => (await t.seller.store.load(CODE))?.settleSeenAt != null);
     expect((await t.seller.store.load(CODE))?.intent?.done).toBe(true);
     expect(t.seller.last()?.phase).toBe('done');
+  });
+
+  it('fail closed: a record without fundedSeen (written before the field) and an empty escrow is kept, whatever the clock says', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const seller = await t.mk('seller', { now: () => clock });
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await seller.status((s) => s.phase === 'ready');
+    await seller.runtime.stopAll();
+    const rec = (await seller.store.load(CODE))! as unknown as Record<string, unknown>;
+    delete rec.fundedSeen;
+    await seller.store.save(rec as never);
+    t.state.view = tradeView({ state: 'cancelled' });
+    const again = await t.mk('seller', { idb: seller.idb, now: () => clock });
+    await again.runtime.resumeAll();
+    await t.parties.ticks('seller', 2);
+    clock += 60 * DAY;
+    await t.parties.ticks('seller', 3);
+    expect(await again.store.load(CODE)).not.toBeNull();
+  });
+
+  it('fundedSeen is saved at once, even when the same tick stops on a deal mismatch, and survives a reload', async () => {
+    const t = await setup();
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await seller.status((s) => s.phase === 'ready');
+    // Coins arrive in the same reading as a view that disagrees with the deal.
+    t.state.view = tradeView({ state: 'secured', poster: 'buyer' });
+    t.parties.funds = funded();
+    expect(await seller.status((s) => s.error === 'deal-mismatch')).toBeTruthy();
+    await seller.runtime.stopAll();
+    expect((await seller.store.load(CODE))?.fundedSeen).toBe(true);
+  });
+
+  it('this device’s own open settle emptied by another tx is escrow-failed even with fundedSeen false', async () => {
+    const t = await released({ settle: false, settledElsewhereMs: 60_000 });
+    await t.seller.runtime.stopAll();
+    const rec = (await t.seller.store.load(CODE))!;
+    expect(rec.intent?.outcome).not.toBeNull();
+    await t.seller.store.save({ ...rec, fundedSeen: false });
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [] };
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const again = await t.mk('seller', { idb: t.seller.idb, now: () => clock, settledElsewhereMs: 60_000 });
+    await again.runtime.resumeAll();
+    await t.parties.ticks('seller', 2);
+    clock += 60_000;
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed' });
+    clock += 60 * DAY;
+    await t.parties.ticks('seller', 3);
+    expect(await again.store.load(CODE)).not.toBeNull();
   });
 
   it('the party reports settled-elsewhere: escrow-failed, never a quiet close', async () => {
