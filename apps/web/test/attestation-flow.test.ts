@@ -1,7 +1,7 @@
 import { channelFor } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cosignPolicy } from '../src/escrow/policy.js';
-import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, device, testIdentity, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
+import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, confirmedFor, device, testIdentity, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
 afterEach(async () => {
@@ -345,6 +345,86 @@ describe('settling', () => {
     t.state.view = tradeView({ state: 'lapsed' });
     await until(() => t.parties.settles.length === 2);
     for (const s of t.parties.settles) expect(s.o).toEqual({ kind: 'release', to: [{ address: ADDR.seller, amountAtomic: part }], builder: 'seller', cosigner: 'buyer' });
+  });
+});
+
+describe('guards in front of settle', () => {
+  async function ready(over: Partial<ApiState> = {}, sellerDeal: Partial<Parameters<typeof confirmedFor>[1]> = {}) {
+    const t = await setup(over);
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE, confirmedFor('seller', sellerDeal));
+    return { ...t, buyer, seller };
+  }
+
+  it('the counterparty signed another deal: deal-mismatch on both sides, nothing settled', async () => {
+    // The API tells the seller a different offer maximum, and the seller signs that.
+    const t = await ready({ roleView: { seller: { maxFiatCents: '60000' } } }, { maxFiatCents: 60_000n });
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    expect(await t.buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect((await t.buyer.store.load(CODE))?.theirDeal?.maxFiatCents).toBe(60_000n);
+    await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
+    expect(t.parties.settles).toEqual([]);
+  });
+
+  async function settlingSeller() {
+    const t = await ready();
+    await until(async () => (await t.seller.store.load(CODE))?.theirDeal != null && (await t.buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await t.seller.runtime.act(CODE, { type: 'release' });
+    await until(() => t.parties.settles.some((s) => s.role === 'seller'));
+    await t.seller.runtime.stopAll();
+    return t;
+  }
+
+  it('on resume, a stored outcome next to a changed counterparty deal is not settled', async () => {
+    const t = await settlingSeller();
+    const rec = (await t.seller.store.load(CODE))!;
+    expect(rec.intent?.outcome).not.toBeNull();
+    await t.seller.store.save({ ...rec, theirDeal: { ...rec.theirDeal!, maxFiatCents: 60_000n } });
+    const sellers = () => t.parties.settles.filter((s) => s.role === 'seller').length;
+    const count = sellers();
+    const again = await t.mk('seller', { idb: t.seller.idb });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(sellers()).toBe(count);
+  });
+
+  it('on resume, a stored outcome is gated by cosignPolicy again: a tampered one is never settled', async () => {
+    const t = await settlingSeller();
+    const rec = (await t.seller.store.load(CODE))!;
+    const o = rec.intent!.outcome!;
+    const evil = { ...o, to: [{ address: '4AttackerAddress', amountAtomic: o.to[0]!.amountAtomic }, ...o.to.slice(1)] };
+    await t.seller.store.save({ ...rec, intent: { ...rec.intent!, outcome: evil } });
+    const count = t.parties.settles.length;
+    const again = await t.mk('seller', { idb: t.seller.idb });
+    await again.runtime.resumeAll();
+    // The tick re-derives the true outcome and settles that; the stored one never reaches the party.
+    await until(() => t.parties.settles.length > count);
+    await t.parties.ticks('seller');
+    expect(t.parties.settles.slice(count).every((s) => s.o.to.every((p) => p.address !== '4AttackerAddress'))).toBe(true);
+    expect(t.parties.settles.slice(count).at(-1)!.o).toEqual({ kind: 'release', ...o });
+  });
+
+  it('no growth once this device knows of "I’ve paid", even while the API still says secured', async () => {
+    const t = await ready();
+    await until(async () => (await t.seller.store.load(CODE))?.theirDeal != null && (await t.buyer.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.buyer.runtime.act(CODE, { type: 'signal', signal: 'trade.paid' });
+    await until(async () => (await t.seller.store.load(CODE))?.paidSeen === true);
+    expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(true);
+    // Extra XMR that would grow the trade (within the offer maximum) arrives after the tap.
+    const grown = 1_300_000_000_000n;
+    const b = grown + grown / 100n;
+    t.parties.funds = { balance: b, unlocked: b, incoming: [] };
+    await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
+    expect((await t.seller.store.load(CODE))?.sizeAtomic).toBe(AMOUNT);
+    expect((await t.buyer.store.load(CODE))?.sizeAtomic).toBe(AMOUNT);
   });
 });
 

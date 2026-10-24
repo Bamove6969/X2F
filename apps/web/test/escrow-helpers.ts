@@ -102,6 +102,14 @@ export class Parties {
   calls: { role: Role; args: PartyArgs }[] = [];
   settles: { role: Role; o: Outcome }[] = [];
   funds: Funds = { balance: 0n, unlocked: 0n, incoming: [] };
+  /** How many times each role's runtime read funds() (one per tick once the party runs). */
+  reads: Partial<Record<Role, number>> = {};
+  /** Resolves once `role` has read funds() `n` more times: that many ticks went by. */
+  ticks(role: Role, n = 2): Promise<void> {
+    const want = (this.reads[role] ?? 0) + n;
+    return new Promise((resolve) => this.tickWaiters.push({ role, want, resolve }));
+  }
+  private tickWaiters: { role: Role; want: number; resolve: () => void }[] = [];
   /** Settles resolve only when released. */
   pending: { role: Role; o: Outcome; resolve: (v: string | null) => void; reject: (e: unknown) => void }[] = [];
   committed = new Map<Role, string>();
@@ -114,7 +122,15 @@ export class Parties {
         this.settles.push({ role: args.role, o });
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
       },
-      funds: async () => structuredClone(this.funds),
+      funds: async () => {
+        const n = (this.reads[args.role] = (this.reads[args.role] ?? 0) + 1);
+        const f = structuredClone(this.funds);
+        for (const w of this.tickWaiters.splice(0)) {
+          if (w.role === args.role && n >= w.want) setTimeout(w.resolve, 0); // after this tick has used the reading
+          else this.tickWaiters.push(w);
+        }
+        return f;
+      },
       stop: async () => {
         for (const p of this.pending.filter((x) => x.role === args.role)) p.reject(Object.assign(new Error('stopped'), { code: 'stopped' }));
       },
