@@ -46,6 +46,11 @@ Not needed: agy, desktop-commander.
 ## Status
 (second session writes here)
 
+- 2026-10-24 second (Plan 3 Task 3, spec 11.6 price health), for later tasks:
+  - **Price health panel UI → Plan 4 staff tools.** The data is ready at owner-only `GET /v1/owner/price-health` (each XMR and exchange-rate source with last good fetch, failures in a row and in-use; refused rates; paused currencies; settings).
+  - **Phone push → the Plan 3 push channel (Task 19).** Price health alerts are in-app owner alerts only for now (`addOwnerAlert`, kinds `price-source-failing`, `price-source-recovered`, `market-prices-paused` (detail `urgent: true`), `market-prices-resumed`). Task 19 hooks the push in where `main.ts` passes `onAlert`; the push payload stays generic.
+  - **Owner settings live in `owner_settings`** (migration `109_owner_settings.sql`; one row per setting: `fx_stale_after_min` 60, `fx_sanity_pct` 10). The starter-limit settings (Revision 2026-10-24) should go in the same table. Plan 4's Settings screen writes the rows and logs each change.
+
 ## Merges while lead was away
 - 2026-10-21 second: merged `wip/p3-t13` @b81c14d (Plan 3 Task 13: web shell, CSP, security headers). Reviewer: independent opus second review — **APPROVED**. Check: typecheck ✓, 606 tests ✓, Playwright shell 4/4 ✓ (X2F_CHROMIUM_PATH=/usr/bin/chromium), audit 0, semgrep 0 (audit/semgrep re-run separately after a DNS drop). Main line had only doc commits since the branch's last merge, so no re-run on the merge result.
   - Follow-ups from that review (not yet done):
