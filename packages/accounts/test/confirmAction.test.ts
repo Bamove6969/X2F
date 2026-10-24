@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
-import { type ConfirmAction, actionHash, addressEnd, addressEnds, addressHash, addressesHash, describeAction } from '@x2f/accounts';
+import { type ConfirmAction, MAX_WALLET_BATCH, actionHash, addressEnd, addressEnds, addressHash, addressesHash, describeAction } from '@x2f/accounts';
 
 const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex');
 
@@ -70,5 +70,50 @@ describe('address helpers', () => {
     expect(await addressesHash([` ${addr}`, `${other}\n`])).toBe(sha256(`${addr}\n${other}`));
     expect(await addressesHash([addr, other])).not.toBe(await addressesHash([other, addr]));
     expect(addressEnds([addr, other])).toBe('684Rge,BBBBBB');
+  });
+});
+
+describe('wallet batches (owner, 2026-10-24)', () => {
+  const addr = (c: string) => `4${c.repeat(94)}`;
+  const batch = async (list: string[]): Promise<ConfirmAction> => ({
+    kind: 'add-wallets', addressesHash: await addressesHash(list), addressEnds: addressEnds(list),
+  });
+
+  test('MAX_WALLET_BATCH is 10', () => {
+    expect(MAX_WALLET_BATCH).toBe(10);
+  });
+
+  test('a full batch of 10 is described with all 10 ends', async () => {
+    const list = Array.from({ length: MAX_WALLET_BATCH }, (_, i) => addr('123456789A'[i]!));
+    const text = describeAction(await batch(list));
+    expect(text).toBe(`add 10 payout wallets ending ${list.map((a) => `…${addressEnd(a)}`).join(', ')}`);
+  });
+
+  test('an empty list hashes the empty string and has no ends (the API refuses it before any token)', async () => {
+    expect(await addressesHash([])).toBe(sha256(''));
+    expect(addressEnds([])).toBe('');
+  });
+
+  test('a duplicate address in one list is kept as given: the hash differs from the list without it', async () => {
+    const a = addr('A');
+    const b = addr('B');
+    expect(await addressesHash([a, a, b])).toBe(sha256(`${a}\n${a}\n${b}`));
+    expect(await addressesHash([a, a, b])).not.toBe(await addressesHash([a, b]));
+    expect(addressEnds([a, a])).toBe('AAAAAA,AAAAAA');
+  });
+
+  test('the action for list A never matches the action for list B, another order or a sublist', async () => {
+    const [a, b, c] = [addr('A'), addr('B'), addr('C')];
+    const forA = await actionHash(await batch([a, b]));
+    for (const other of [[a, c], [b, a], [a], [a, b, c]]) {
+      expect(await actionHash(await batch(other)), other.map(addressEnd).join(',')).not.toBe(forA);
+    }
+    expect(await actionHash(await batch([` ${a}`, `${b}\n`]))).toBe(forA);
+  });
+
+  test('a one-wallet batch never matches the single-wallet action for the same address', async () => {
+    const a = addr('A');
+    const single: ConfirmAction = { kind: 'add-wallet', addressHash: await addressHash(a), addressEnd: addressEnd(a) };
+    expect(await actionHash(await batch([a]))).not.toBe(await actionHash(single));
   });
 });
