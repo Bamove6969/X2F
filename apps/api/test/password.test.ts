@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -331,6 +332,38 @@ describe('POST /v1/login/password', () => {
     expect(rows).toEqual([{ failures: 1 }]);
     const { rows: named } = await deps.db.query("select key from login_throttle where key like '%nobody0001%'");
     expect(named).toEqual([]);
+  });
+
+  it('I-1: a known and an unknown login name cost the same queries, with or without a device cookie, on the 10th miss too', async () => {
+    await register('parity001');
+    const id = (await accountRow('parity001'))!.id;
+    const spy = vi.spyOn(deps.db, 'query');
+    const count = async (loginName: string, cookies: Record<string, string>) => {
+      spy.mockClear();
+      const res = await login(loginName, 'Wrong-Horse-9', cookies);
+      expect(res.statusCode).toBe(401);
+      return spy.mock.calls.length;
+    };
+    try {
+      for (const cookies of [{}, { [DEVICE_COOKIE]: randomBytes(32).toString('base64url') }]) {
+        const counts = [await count('parity001', cookies), await count('ghost.parity1', cookies), await count('bad name!', cookies)];
+        expect(new Set(counts).size, JSON.stringify(cookies)).toBe(1);
+      }
+      // The miss that reaches the quiet lock: the alert for a real account, the same work for none.
+      const tag = loginNameLookup(deps.config, 'ghost.parity2').tag;
+      for (const key of [`password-login:${id}:anon`, `password-login:name:${tag}:anon`]) {
+        await deps.db.query('delete from login_throttle where key = $1', [key]);
+        await deps.db.query('insert into login_throttle (key, failures, last_failure_at) values ($1, 9, $2)', [key, now]);
+      }
+      const tenth = [await count('parity001', {}), await count('ghost.parity2', {})];
+      expect(new Set(tenth).size).toBe(1);
+      expect(await alerts(id, 'login-locked')).toEqual([{ detail: { method: 'password' } }]);
+      // Locked: still the same queries.
+      const locked = [await count('parity001', {}), await count('ghost.parity2', {})];
+      expect(new Set(locked).size).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('verifies the dummy hash when the account is unknown', async () => {

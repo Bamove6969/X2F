@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import * as openpgp from 'openpgp';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
@@ -337,8 +337,10 @@ describe('login', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ status: 'ok' });
     expect(b.cookies[SESSION_COOKIE]).toBeTruthy();
+    // A used login challenge answers exactly like a wrong code (I-2a).
     const again = await loginFinish(b, s1.json().challengeId, code);
-    expect(again.json()).toEqual({ error: 'challenge-expired' });
+    expect(again.statusCode).toBe(401);
+    expect(again.json()).toEqual({ error: 'code-invalid' });
 
     setNow(new Date(t.getTime() + HOUR));
     const s2 = await loginStart(home, key);
@@ -369,32 +371,30 @@ describe('login', () => {
     const a = home;
     const sa = await loginStart(a, key);
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
-    for (let i = 0; i < 5; i++) {
-      const res = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { key: key.publicKey } });
-      expect(res.statusCode).toBe(200);
-    }
+    const attacker = new Browser();
+    for (let i = 0; i < 5; i++) expect((await loginStart(attacker, key)).statusCode).toBe(200);
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
-    const sixth = await app.inject({ method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, payload: { key: key.publicKey } });
+    const sixth = await loginStart(attacker, key);
     expect(sixth.statusCode).toBe(429);
     expect(sixth.json().error).toBe('slow-down');
 
-    // A's second start invalidates A's first.
+    // A's second start invalidates A's first; the first then answers like a wrong code.
     const a1 = await loginStart(a, key);
     const a2 = await loginStart(a, key);
     const c1 = codeOf(await dec(a1.json().encryptedMessage, key.privateKey));
     const c2 = codeOf(await dec(a2.json().encryptedMessage, key.privateKey));
-    expect((await loginFinish(a, a1.json().challengeId, c1)).json()).toEqual({ error: 'challenge-expired' });
+    expect((await loginFinish(a, a1.json().challengeId, c1)).json()).toEqual({ error: 'code-invalid' });
     expect((await loginFinish(a, a2.json().challengeId, c2)).json()).toEqual({ status: 'ok' });
   });
 
-  it('two parallel finishes with the right code: one session, one challenge-expired', async () => {
+  it('two parallel finishes with the right code: one session, one code-invalid', async () => {
     const b = new Browser();
     const s = await loginStart(b, key);
     const code = codeOf(await dec(s.json().encryptedMessage, key.privateKey));
     const [r1, r2] = await Promise.all([loginFinish(b, s.json().challengeId, code), loginFinish(b, s.json().challengeId, code)]);
-    expect([r1.statusCode, r2.statusCode].sort()).toEqual([200, 400]);
-    expect([r1.json(), r2.json()]).toContainEqual({ error: 'challenge-expired' });
+    expect([r1.statusCode, r2.statusCode].sort()).toEqual([200, 401]);
+    expect([r1.json(), r2.json()]).toContainEqual({ error: 'code-invalid' });
   });
 
   it('same shape for unknown and real keys, by fingerprint or whole key; the decoy code never works', async () => {
@@ -502,22 +502,33 @@ describe('expired keys and refreshed keys', () => {
     const c1 = codeOf(await dec(s1.json().encryptedMessage, k.privateKey));
     expect((await loginFinish(b, s1.json().challengeId, c1)).json()).toEqual({ status: 'ok' });
 
-    // Someone sends the old public copy (no revocation) as a refresh: S2 stays revoked.
-    const s2 = await loginStart(new Browser(), k.publicKey);
-    expect(s2.statusCode).toBe(200);
-    await expect(dec(s2.json().encryptedMessage, s2Only)).rejects.toThrow();
+    // Someone sends the old public copy (no revocation) as a refresh: S2 stays revoked on the
+    // server. The pasted copy picks S2, which the stored copy no longer accepts (M-2), so it gets
+    // a decoy, still encrypted to the subkey the pasted key picks: the message depends on the
+    // pasted key alone, and its code never works.
     const b2 = new Browser();
-    const s3 = await loginStart(b2, k.publicKey);
-    const c3 = codeOf(await dec(s3.json().encryptedMessage, k.privateKey));
-    expect((await loginFinish(b2, s3.json().challengeId, c3)).json()).toEqual({ status: 'ok' });
+    const s2 = await loginStart(b2, k.publicKey);
+    expect(s2.statusCode).toBe(200);
+    expect(await isDecoy(s2)).toBe(true);
+    const c2 = codeOf(await dec(s2.json().encryptedMessage, s2Only));
+    expect((await loginFinish(b2, s2.json().challengeId, c2)).json()).toEqual({ error: 'code-invalid' });
+    // An unknown key with the same layout gets a message of the same shape.
+    const lookalike = await genKey({ subkeys: [{}, { date: new Date(KEY_DATE.getTime() + DAY) }] });
+    const unknown = await loginStart(new Browser(), lookalike);
+    expect(await recipients(unknown.json().encryptedMessage)).toEqual(await recipients(s2.json().encryptedMessage));
     const { rows } = await deps.db.query<{ armored_enc: Buffer; fingerprint: string }>(
       'select armored_enc, fingerprint from pgp_keys where account_id = $1', [await accountId(n)],
     );
     const stored = await openpgp.readKey({ armoredKey: openKey(deps.config, rows[0]!.armored_enc, rows[0]!.fingerprint) });
     const enc = await stored.getEncryptionKey(undefined, now);
     expect(enc.getKeyID().equals(stored.subkeys[1]!.getKeyID())).toBe(false);
-    const s4 = await loginStart(new Browser(), k);
-    await expect(dec(s4.json().encryptedMessage, s2Only)).rejects.toThrow();
+    // The current copy (with the revocation) still logs in, through S1.
+    const b3 = new Browser();
+    const s3 = await loginStart(b3, revokedKey.toPublic().armor());
+    expect(await isDecoy(s3)).toBe(false);
+    await expect(dec(s3.json().encryptedMessage, s2Only)).rejects.toThrow();
+    const c3 = codeOf(await dec(s3.json().encryptedMessage, k.privateKey));
+    expect((await loginFinish(b3, s3.json().challengeId, c3)).json()).toEqual({ status: 'ok' });
   });
 
   it('a key whose only encryption subkey expired (primary still valid) → key-expired, no fallback', async () => {
@@ -813,55 +824,48 @@ describe('staff, owner and other mounts', () => {
 });
 
 describe('review fixes', () => {
-  it('I1: made-up cookies neither evict a trusted browser’s challenge nor dodge the start limit', async () => {
+  it('I1: made-up cookies neither evict a trusted browser’s challenge nor get past the per-key ceiling of 30', async () => {
     const n = uniqueName();
     const k = await genKey();
     const a = await registerPgp(n, k); // A's device is trusted for the account
     const sa = await loginStart(a, k);
     const codeA = codeOf(await dec(sa.json().encryptedMessage, k.privateKey));
-    for (let i = 0; i < 5; i++) {
-      setNow(new Date(now.getTime() + 1000)); // A's challenge is the oldest, the first a cap would evict
-      const res = await app.inject({
+    const madeUp = () =>
+      app.inject({
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
         cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
       });
-      expect(res.statusCode).toBe(200);
+    for (let i = 0; i < 30; i++) {
+      setNow(new Date(now.getTime() + 1000)); // A's challenge is the oldest, the first a shared cap would evict
+      expect((await madeUp()).statusCode).toBe(200);
     }
-    const id = await accountId(n);
-    const open = await deps.db.query(
-      `select count(*)::int as n from challenges where account_id = $1 and purpose = 'login' and used_at is null and payload->>'startGroup' = 'anon'`,
-      [id],
-    );
-    expect(open.rows[0].n).toBeLessThanOrEqual(3);
     expect((await loginFinish(a, sa.json().challengeId, codeA)).json()).toEqual({ status: 'ok' });
-    const sixth = await app.inject({
-      method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-      cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
-    });
-    expect(sixth.statusCode).toBe(429);
-    expect(sixth.json().error).toBe('slow-down');
+    const over = await madeUp();
+    expect(over.statusCode).toBe(429);
+    expect(over.json().error).toBe('slow-down');
     // The trusted browser is in its own group and still gets challenges.
     expect((await loginStart(a, k)).statusCode).toBe(200);
   });
 
-  it('M3: concurrent untrusted starts leave at most 3 open challenges', async () => {
+  it('M3: concurrent starts from one device leave one open challenge', async () => {
     const n = uniqueName();
     const mk = await genKey();
     await registerPgp(n, mk);
+    const cookie = madeUpCookie();
     const res = await Promise.all(
       Array.from({ length: 5 }, () =>
         app.inject({
           method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
-          cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: mk.publicKey },
+          cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey },
         }),
       ),
     );
-    for (const r of res) expect(r.statusCode).toBe(200);
+    for (const r of res) expect([200, 429]).toContain(r.statusCode);
     const { rows } = await deps.db.query(
       `select count(*)::int as n from challenges where account_id = $1 and purpose = 'login' and used_at is null`,
       [await accountId(n)],
     );
-    expect(rows[0].n).toBeLessThanOrEqual(3);
+    expect(rows[0].n).toBe(1);
   });
 
   it('I3: an unknown key’s decoy goes to that key, as a real login would; repeated starts look alike', async () => {
@@ -900,19 +904,21 @@ describe('review fixes', () => {
     expect((await new Browser().post('/v1/login/pgp/start', { username: 'someone1' })).json()).toEqual({ error: 'bad-request' });
   });
 
-  it('the start limit is per key and counts decoys as real starts', async () => {
+  it('the start limit is per key and device and counts decoys as real starts', async () => {
     const stranger = await genKey();
-    for (let i = 0; i < 5; i++) expect((await loginStart(new Browser(), stranger)).statusCode).toBe(200);
-    const sixth = await loginStart(new Browser(), stranger);
+    const b = new Browser();
+    for (let i = 0; i < 5; i++) expect((await loginStart(b, stranger)).statusCode).toBe(200);
+    const sixth = await loginStart(b, stranger);
     expect(sixth.statusCode).toBe(429);
     expect(sixth.json().error).toBe('slow-down');
-    // Another key is not affected.
-    expect((await loginStart(new Browser(), await genKey())).statusCode).toBe(200);
-    // A known key from unknown browsers counts the same way.
+    // Another key from the same browser is not affected.
+    expect((await loginStart(b, await genKey())).statusCode).toBe(200);
+    // A known key from an unknown browser counts the same way.
     const k = await genKey();
     await registerPgp(uniqueName(), k);
-    for (let i = 0; i < 5; i++) expect((await loginStart(new Browser(), k)).statusCode).toBe(200);
-    expect((await loginStart(new Browser(), k)).json()).toEqual(sixth.json());
+    const c = new Browser();
+    for (let i = 0; i < 5; i++) expect((await loginStart(c, k)).statusCode).toBe(200);
+    expect((await loginStart(c, k)).json()).toEqual(sixth.json());
   });
 
   it('a second start supersedes the first the same way for a known and an unknown key', async () => {
@@ -925,31 +931,71 @@ describe('review fixes', () => {
       const second = await loginStart(b, k);
       expect(second.statusCode).toBe(200);
       const res = await loginFinish(b, first.json().challengeId, 'AAAA-AAAA-AAAA');
-      return { status: res.statusCode, body: res.json() };
+      return { status: res.statusCode, body: res.json(), raw: res.body };
     };
     const a = await outcome(known);
     const b = await outcome(stranger);
-    expect(a).toEqual({ status: 400, body: { error: 'challenge-expired' } });
+    // Exactly the answer a wrong code on an open challenge gets (I-2a).
+    expect(a).toMatchObject({ status: 401, body: { error: 'code-invalid' } });
     expect(b).toEqual(a);
+    const open = await loginStart(new Browser(), stranger);
+    const wrong = await loginFinish(new Browser(), open.json().challengeId, 'AAAA-AAAA-AAAA');
+    expect({ status: wrong.statusCode, body: wrong.json(), raw: wrong.body }).toEqual(a);
   });
 
-  it('the cap of 3 open anonymous challenges evicts the same way for a known and an unknown key', async () => {
+  it('I-1: PGP start costs the same queries for a known and an unknown key, with or without a device cookie', async () => {
+    const known = await genKey();
+    await registerPgp(uniqueName(), known);
+    const spy = vi.spyOn(deps.db, 'query');
+    const count = async (k: Pair, cookies: Record<string, string>, extra: Record<string, unknown> = {}) => {
+      spy.mockClear();
+      const res = await app.inject({
+        method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies, payload: { key: k.publicKey, ...extra },
+      });
+      expect(res.statusCode).toBe(200);
+      return spy.mock.calls.length;
+    };
+    try {
+      for (const cookies of [{}, { [DEVICE_COOKIE]: madeUpCookie() }]) {
+        for (const extra of [{}, { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' }]) {
+          const counts = [await count(known, cookies, extra), await count(await genKey(), cookies, extra)];
+          expect(counts[0], JSON.stringify({ cookies, extra })).toBeGreaterThan(0);
+          expect(new Set(counts).size, JSON.stringify({ cookies, extra })).toBe(1);
+        }
+      }
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('I-2b: a stranger filling their bucket on device A changes nothing for device B, known key or not', async () => {
     const known = await genKey();
     await registerPgp(uniqueName(), known);
     const stranger = await genKey();
     const outcome = async (k: Pair) => {
-      const starts = [];
-      for (let i = 0; i < 4; i++) {
+      const b = new Browser();
+      const sb = await loginStart(b, k);
+      const a = new Browser();
+      for (let i = 0; i < 5; i++) {
         setNow(new Date(now.getTime() + 1000));
-        starts.push(await loginStart(new Browser(), k));
+        expect((await loginStart(a, k)).statusCode).toBe(200);
       }
-      const oldest = await loginFinish(new Browser(), starts[0]!.json().challengeId, 'AAAA-AAAA-AAAA');
-      const newest = await loginFinish(new Browser(), starts[3]!.json().challengeId, 'AAAA-AAAA-AAAA');
-      return [oldest.json(), newest.json()];
+      const full = await loginStart(a, k);
+      // B's challenge is still open, and B may still start.
+      const { rows } = await deps.db.query('select used_at from challenges where id = $1', [sb.json().challengeId]);
+      const again = await loginStart(b, k);
+      return { full: [full.statusCode, full.json().error], bOpen: rows[0].used_at === null, bAgain: again.statusCode };
     };
     const a = await outcome(known);
-    expect(a).toEqual([{ error: 'challenge-expired' }, { error: 'code-invalid' }]);
+    expect(a).toEqual({ full: [429, 'slow-down'], bOpen: true, bAgain: 200 });
     expect(await outcome(stranger)).toEqual(a);
+    // And for the known key B's challenge still logs in after A's flood.
+    const b = new Browser();
+    const sb = await loginStart(b, known);
+    const flood = new Browser();
+    for (let i = 0; i < 6; i++) await loginStart(flood, known);
+    const code = codeOf(await dec(sb.json().encryptedMessage, known.privateKey));
+    expect((await loginFinish(b, sb.json().challengeId, code)).json()).toEqual({ status: 'ok' });
   });
 
   it('M1: a challenge started on one origin cannot be finished from another', async () => {
@@ -969,7 +1015,8 @@ describe('review fixes', () => {
     const s = await loginStart(b, k);
     const c = codeOf(await dec(s.json().encryptedMessage, k.privateKey));
     onion.cookies = { ...b.cookies };
-    expect((await loginFinish(onion, s.json().challengeId, c)).json()).toEqual({ error: 'challenge-expired' });
+    // A login challenge answers every refusal like a wrong code (I-2a).
+    expect((await loginFinish(onion, s.json().challengeId, c)).json()).toEqual({ error: 'code-invalid' });
   });
 });
 

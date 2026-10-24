@@ -4,6 +4,8 @@ import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { loginNameLookup } from '../src/accounts.js';
+import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY } from '../src/auth/recovery.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { sealSecret } from '../src/auth/totp.js';
@@ -398,6 +400,54 @@ describe('backup login with TOTP (P2-I1)', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'account-disabled' });
   });
+});
+
+describe('I-1: backup login costs the same queries for a known and an unknown login name', () => {
+  const count = async (spy: { mockClear(): void; mock: { calls: unknown[] } }, run: () => Promise<{ statusCode: number }>) => {
+    spy.mockClear();
+    expect((await run()).statusCode).toBe(401);
+    return spy.mock.calls.length;
+  };
+
+  for (const kind of ['recovery-code', 'totp'] as const) {
+    it(`${kind}: with and without a device cookie, and on the miss that reaches the lock`, async () => {
+      const { id, username } = await account();
+      const secret = await withTotp(id);
+      await newCodes(await loggedIn(id));
+      const ghost = name('ghost');
+      const wrong = kind === 'totp' ? wrongCodeAt(secret, now) : 'ABCD-EFGH-JKMN-PQRT';
+      const method = kind;
+      const browser = (withCookie: boolean) => {
+        const b = new Browser(app);
+        if (withCookie) b.cookies[DEVICE_COOKIE] = randomBytes(32).toString('base64url');
+        return b;
+      };
+      const spy = vi.spyOn(deps.db, 'query');
+      try {
+        for (const withCookie of [false, true]) {
+          const counts = [
+            await count(spy, () => backup(browser(withCookie), username, kind, wrong)),
+            await count(spy, () => backup(browser(withCookie), ghost, kind, wrong)),
+          ];
+          expect(new Set(counts).size, `cookie: ${withCookie}`).toBe(1);
+        }
+        // The 10th failure in a streak: the login-locked alert for the account, the same work for none.
+        const keys = [`${method}:${id}:anon`, `${method}:name:${loginNameLookup(deps.config, ghost).tag}:anon`];
+        for (const key of keys) {
+          await deps.db.query('delete from login_throttle where key = $1', [key]);
+          await deps.db.query('insert into login_throttle (key, failures, last_failure_at) values ($1, 9, $2)', [key, at(-60_000)]);
+        }
+        const tenth = [
+          await count(spy, () => backup(browser(false), username, kind, wrong)),
+          await count(spy, () => backup(browser(false), ghost, kind, wrong)),
+        ];
+        expect(new Set(tenth).size).toBe(1);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await alerts(id, 'login-locked')).toEqual([{ method }]);
+    });
+  }
 });
 
 describe('no patterns in recovery codes (R9)', () => {
