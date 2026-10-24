@@ -9,6 +9,8 @@ import { startRetention, type RetentionJob } from './retention.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { purgeRemovedWalletAddresses } from './wallets/routes.js';
+import { purgeNudges } from './nudge/routes.js';
+import { pendingNudgeWiring } from './nudge/wiring.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -42,10 +44,12 @@ const deps: Deps = {
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
+  // Task 26: replaced piece by piece as Tasks 6, 19 and 20 merge (see nudge/wiring.ts).
+  nudges: pendingNudgeWiring,
 };
 
 // Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.
-const jobs: RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses];
+const jobs: RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses, purgeNudges];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);

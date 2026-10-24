@@ -11,6 +11,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { walletRoutes } from './wallets/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -44,6 +45,8 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -193,6 +196,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }

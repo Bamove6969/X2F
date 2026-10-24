@@ -545,7 +545,8 @@ describe('purgeNudges', () => {
     expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
     const count = async () =>
       Number((await deps.db.query<{ n: string }>('select count(*) as n from nudges where from_id = $1', [p.from.id])).rows[0]!.n);
-    expect(await purgeNudges.run(rawDb, at(HOUR - 1))).toBe(0);
+    // Earlier tests' records are days old and go on the first run; this one stays until it is an hour old.
+    await purgeNudges.run(rawDb, at(HOUR - 1));
     expect(await count()).toBe(1);
     expect(await purgeNudges.run(rawDb, at(HOUR + 1))).toBeGreaterThanOrEqual(1);
     expect(await count()).toBe(0);
