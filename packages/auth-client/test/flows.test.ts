@@ -74,6 +74,16 @@ async function pgpUserWithPasskey(): Promise<{ username: string; key: Pair; soft
   return { username, key, soft, own };
 }
 
+/**
+ * Plan 3 web-app routes the auth client deliberately does not cover (the web app's own API
+ * client calls them). Exact "METHOD /path" strings, kept sorted; every entry must exist.
+ * Plan 3 Task 6: the trade view and the events route.
+ */
+const NOT_AUTH_CLIENT = [
+  'GET /v1/trades/:code',
+  'POST /v1/trades/:code/events',
+] as const;
+
 describe('the client covers the API', () => {
   it('has exactly the methods the route table lists', () => {
     expect(Object.keys(createAuthApi()).sort()).toEqual(methodNames().sort());
@@ -87,9 +97,20 @@ describe('the client covers the API', () => {
     }
   });
 
-  it('every route of the API (but /healthz) has its client method', () => {
+  it('every route of the API (but /healthz and the Plan 3 web-app routes) has its client method', () => {
     const expected = methodNames().map((n) => ROUTES[n]);
-    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
+    const notAuth = new Set<string>(NOT_AUTH_CLIENT);
+    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz' && !notAuth.has(r))).toEqual([...expected].sort());
+  });
+
+  it('lists only Plan 3 routes that exist and that no client method covers', () => {
+    const routes = srv.serverRoutes();
+    const covered = new Set<string>(methodNames().map((n) => ROUTES[n]));
+    for (const r of NOT_AUTH_CLIENT) {
+      expect(routes, r).toContain(r);
+      expect(covered.has(r), r).toBe(false);
+    }
+    expect([...NOT_AUTH_CLIENT]).toEqual([...NOT_AUTH_CLIENT].sort());
   });
 
   it('serves the official PGP signing key that signs every challenge', async () => {
