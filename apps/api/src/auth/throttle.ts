@@ -12,7 +12,7 @@ export type ThrottledMethod = 'password' | 'password-login' | 'totp' | 'recovery
 
 /** Match no row: the stand-ins for "no account" and "no device cookie" in lookups that must always run. */
 export const NIL_UUID = '00000000-0000-0000-0000-000000000000';
-const ZERO32 = Buffer.alloc(32);
+export const NO_DEVICE: Buffer = Buffer.alloc(32);
 
 /**
  * The alert for a streak that reached its lock, or the same amount of database work when there is
@@ -48,7 +48,7 @@ export async function throttleKey(
   // The trusted-device lookup always runs, for no account and no cookie too, so the query count
   // never tells a known login name from an unknown one (I-1).
   const hash = deviceHash(req);
-  const found = await isTrusted(deps, 'id' in account ? account.id : NIL_UUID, hash ?? ZERO32);
+  const found = await isTrusted(deps, 'id' in account ? account.id : NIL_UUID, hash ?? NO_DEVICE);
   if (!('id' in account)) return `${method}:name:${account.nameTag}:anon`;
   const trusted = hash !== null && found;
   return `${method}:${account.id}:${trusted ? `dev:${hash.toString('hex')}` : 'anon'}`;

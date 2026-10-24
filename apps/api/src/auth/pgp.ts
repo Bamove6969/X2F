@@ -14,7 +14,7 @@ import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, 
 import { readFile } from 'node:fs/promises';
 import {
   PGP_PURPOSE, actionHash, challengeText, describeAction, encryptChallenge, inspectPublicKey,
-  newLoginCode, normalizeLoginCode, type AccountKind, type ConfirmAction, type KeyInspection,
+  newLoginCode, normalizeLoginCode, pastedRecipientStillValid, type AccountKind, type ConfirmAction, type KeyInspection,
 } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import * as openpgp from 'openpgp';
@@ -32,6 +32,7 @@ import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
 import { requireSession, startSession } from './sessions.js';
+import { NIL_UUID, NO_DEVICE } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
 // The official X2F signing key (R7)
@@ -198,10 +199,13 @@ async function usableKeys(keys: StoredKey[], now: Date): Promise<StoredKey[]> {
 export const PGP_CHALLENGE_TTL_MS = 5 * 60_000;
 /** Routes that carry a public key take bodies up to 64 KiB, so a 32 KiB+ key reaches `key-too-large`. */
 export const PGP_BODY_LIMIT = 64 * 1024;
-/** Login `start` (P2-I3): at most 5 per key fingerprint and group in 5 minutes; at most 3 open per account. */
+/**
+ * Login `start` (P2-I3, per device since the FU-A re-review): at most 5 per key and device in 5
+ * minutes, and at most 30 per key in 5 minutes from browsers not trusted for the key's account.
+ */
 const START_WINDOW_MS = 5 * 60_000;
-const STARTS_PER_WINDOW = 5;
-const OPEN_LOGIN_CHALLENGES = 3;
+const STARTS_PER_DEVICE = 5;
+const ANON_STARTS_PER_KEY = 30;
 
 type Purpose = 'register' | 'login' | 'confirm' | 'add-key';
 
@@ -272,13 +276,11 @@ function messageText(deps: Deps, req: FastifyRequest, code: string, purpose: str
 /**
  * Stores a login challenge, real or decoy, by exactly the same rules, so that what happens to an
  * earlier challenge never tells a known key from an unknown one (security review of FU-A). In one
- * transaction, serialised per key by an advisory lock on `payload.startTag` (the key's start tag):
- * a new start marks the same key's earlier unused login challenges from the same device as used;
- * and at most 3 challenges from untrusted browsers (`payload.startGroup = 'anon'`) stay open per
- * key, the oldest marked used. A challenge from a device trusted for the key's account is never
- * counted or evicted by that cap, so made-up cookies cannot push it out; only that device's next
- * start replaces it (I1). The 5-per-5-minutes start limit is checked by the route
- * (`assertStartAllowed`).
+ * transaction, serialised per key by an advisory lock on `payload.startTag` (the key's start tag),
+ * a new start marks the same key's earlier unused login challenges from the same device as used.
+ * That is the open-challenge cap, per (start tag, device hash): one open challenge per key and
+ * device, so another browser (made-up cookies included) can never push out this device's
+ * challenge. The start limits are checked by the route (`assertStartAllowed`).
  */
 async function storeLoginChallenge(
   deps: Deps,
@@ -298,14 +300,6 @@ async function storeLoginChallenge(
         [tag, deviceHash(req), row.now],
       );
       const id = await insertChallenge(client, req, row);
-      await client.query(
-        `update challenges set used_at = $3 where id in (
-           select id from challenges
-            where purpose = 'login' and payload->>'startTag' = $1 and used_at is null and expires_at > $3
-              and payload->>'startGroup' = 'anon'
-            order by (id = $2) desc, created_at desc, id offset $4)`,
-        [tag, id, row.now, OPEN_LOGIN_CHALLENGES],
-      );
       await client.query('commit');
       return id;
     } catch (e) {
@@ -318,10 +312,10 @@ async function storeLoginChallenge(
 }
 
 /**
- * Issues a signed PGP challenge to `armoredKeys`. `siteHost` is the host of the checked Origin.
- * Stores the SHA-256 of the normalized code, the request's device hash (null when the browser sent
- * no device cookie), and `payload` plus the fingerprints the message went to. Login challenges go
- * through `storeLoginChallenge` (their `payload` carries the start tag and group).
+ * Issues a signed PGP challenge to `armoredKeys` (register, confirm, add-key; login uses
+ * `issueLoginChallenge`). `siteHost` is the host of the checked Origin. Stores the SHA-256 of the
+ * normalized code, the request's device hash (null when the browser sent no device cookie), and
+ * `payload` plus the fingerprints the message went to.
  */
 export async function issuePgpChallenge(
   deps: Deps,
@@ -329,7 +323,7 @@ export async function issuePgpChallenge(
   a: {
     accountId: string | null;
     sessionId: string | null;
-    purpose: Purpose;
+    purpose: Exclude<Purpose, 'login'>;
     purposeText: string;
     armoredKeys: string[];
     payload: object;
@@ -343,26 +337,21 @@ export async function issuePgpChallenge(
   const { message, fingerprints } = await encryptToUsable(deps, messageText(deps, req, code, a.purposeText, now), keys, now);
 
   const row = { accountId: a.accountId, sessionId: a.sessionId, purpose: a.purpose, code, payload: { ...a.payload, fingerprints }, now };
-  let id: string;
-  if (a.purpose === 'login') {
-    id = await storeLoginChallenge(deps, req, row);
-  } else {
-    id = await insertChallenge(deps.db, req, row);
-  }
+  const id = await insertChallenge(deps.db, req, row);
   return { challengeId: id, encryptedMessage: message, expiresAt: new Date(now.getTime() + PGP_CHALLENGE_TTL_MS).toISOString() };
 }
 
 /**
- * A challenge of the same shape for an unknown key (or one that cannot get a real one): a real
- * code, encrypted (wildcard, signed) to the very key the person pasted, and stored with
- * `account_id = null`, so `finish` fails exactly like a wrong code. Whoever pasted the key gets a
- * message to that key either way, so even someone holding a keyserver copy learns nothing about
- * whether it is registered. `payload` joins the stored payload (start-limit tags).
+ * A login challenge, real or decoy, made by one code path (M-1, M-2): a real code, encrypted
+ * (wildcard, signed) to the very key the person pasted, so the message depends on that key alone
+ * and even someone holding a keyserver copy learns nothing about whether it is registered. A decoy
+ * is stored with `account_id = null` and `payload.decoy`, so `finish` fails exactly like a wrong
+ * code. A pasted key that cannot be encrypted to → 400 `key-expired`, on both paths alike.
  */
-export async function decoyPgpChallenge(
+async function issueLoginChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { toKey: string; payload: { startTag: string; startGroup: string } },
+  a: { accountId: string | null; toKey: string; payload: Record<string, unknown> },
 ): Promise<IssuedChallenge> {
   const now = deps.clock();
   const code = newLoginCode();
@@ -370,12 +359,19 @@ export async function decoyPgpChallenge(
   try {
     message = await encryptChallenge(messageText(deps, req, code, PGP_PURPOSE.login, now), [a.toKey], deps.pgpSigner.key, now);
   } catch {
-    throw new ApiError(400, 'key-expired'); // as a real refreshed key that cannot be encrypted to
+    throw new ApiError(400, 'key-expired');
   }
-  const id = await storeLoginChallenge(deps, req, {
-    accountId: null, sessionId: null, purpose: 'login', code, payload: { ...a.payload, decoy: true }, now,
-  });
+  const id = await storeLoginChallenge(deps, req, { accountId: a.accountId, sessionId: null, purpose: 'login', code, payload: a.payload, now });
   return { challengeId: id, encryptedMessage: message, expiresAt: new Date(now.getTime() + PGP_CHALLENGE_TTL_MS).toISOString() };
+}
+
+/** A decoy login challenge (an unknown key, or one that cannot get a real challenge) to `toKey`. */
+export function decoyPgpChallenge(
+  deps: Deps,
+  req: FastifyRequest,
+  a: { toKey: string; payload: { startTag: string; startGroup: string } },
+): Promise<IssuedChallenge> {
+  return issueLoginChallenge(deps, req, { accountId: null, toKey: a.toKey, payload: { ...a.payload, decoy: true } });
 }
 
 /**
@@ -384,6 +380,11 @@ export async function decoyPgpChallenge(
  * for `confirm` and `add-key` the row's session must still be live (else 400 `challenge-expired`);
  * unknown, used or expired → 400 `challenge-expired`; a wrong code (or any decoy) → 401
  * `code-invalid`, and the challenge stays used. Codes are compared in constant time. Not throttled.
+ *
+ * Login (I-2a of the FU-A re-review): every refusal is 401 `code-invalid`, the wrong-code answer,
+ * so a used, superseded or evicted challenge looks exactly like a wrong code; only a challenge that
+ * ran out of time unused says `challenge-expired` (its expiry is a fixed 5 minutes, which tells
+ * nobody anything).
  */
 export async function checkPgpCode(
   deps: Deps,
@@ -394,7 +395,9 @@ export async function checkPgpCode(
 ): Promise<ChallengeRow> {
   const now = deps.clock();
   const row = await consumeChallenge(deps.db, challengeId, now);
-  const expired = () => new ApiError(400, 'challenge-expired');
+  const login = expected.purpose === 'login';
+  const timedOut = login && !row ? await expiredUnused(deps.db, challengeId, now) : false;
+  const expired = () => (login && !timedOut ? new ApiError(401, 'code-invalid') : new ApiError(400, 'challenge-expired'));
   if (!row || row.method !== 'pgp' || row.purpose !== expected.purpose) throw expired();
   if (row.payload.originHost !== requestOrigin(req).host) throw expired();
   if (expected.accountId !== undefined && row.account_id !== expected.accountId) throw expired();
@@ -408,6 +411,16 @@ export async function checkPgpCode(
   const matches = row.secret_hash !== null && row.secret_hash.length === given.length && timingSafeEqual(given, row.secret_hash);
   if (normalized === null || !matches || row.payload.decoy === true) throw new ApiError(401, 'code-invalid');
   return row;
+}
+
+/** True for a login challenge that ran out of time without being used (or superseded, or evicted). */
+async function expiredUnused(db: Queryable, challengeId: string, now: Date): Promise<boolean> {
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(challengeId)) return false;
+  const { rows } = await db.query(
+    `select 1 from challenges where id = $1 and purpose = 'login' and method = 'pgp' and used_at is null and expires_at <= $2`,
+    [challengeId, now],
+  );
+  return rows.length > 0;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -453,25 +466,36 @@ function startTag(config: Config, fingerprint: string): string {
 }
 
 /**
- * P2-I3 (per key since 2026-10-23): more than 5 login starts for one key fingerprint from one group
- * in 5 minutes → 429 `slow-down` (never `locked`). A group is one device trusted for the key's
- * account, or `anon`: every browser that is not trusted for it (no cookie, a new cookie, or a
- * made-up one), as Task 4's throttle keys do (I1). Real and decoy challenges count alike (unknown
- * keys are always `anon`), so the limit does not tell them apart. Nobody can be locked out by a
- * stranger who does not know their key's fingerprint, which X2F never shows.
+ * P2-I3 (per key and device since the FU-A re-review, I-2b). Public keys are often public (on
+ * keyservers, personal sites and elsewhere), so assume a stranger has the key and can start logins
+ * with it. Two limits, each → 429 `slow-down` (never `locked`):
+ * - 5 starts per key and device (`device`, the hash of the device cookie the challenge is bound to)
+ *   in 5 minutes, so a stranger filling their own bucket changes nothing for anyone else's browser;
+ * - 30 starts per key in 5 minutes from browsers not trusted for the key's account (group `anon`:
+ *   no cookie, a new cookie or a made-up one), a ceiling a cookie-dropping script cannot get past.
+ *   A device trusted for the account (group `dev:<hash>`, I1) is never held by it.
+ * Real and decoy challenges count alike (unknown keys are always `anon`), and the one query runs on
+ * every start, so the limits do not tell a known key from an unknown one. Residual: a stranger with
+ * many cookies can fill the ceiling and hold PGP login from untrusted browsers for 5 minutes.
  */
-async function assertStartAllowed(deps: Deps, tag: string, group: string, now: Date): Promise<void> {
+async function assertStartAllowed(deps: Deps, tag: string, device: Buffer, group: string, now: Date): Promise<void> {
   const since = new Date(now.getTime() - START_WINDOW_MS);
-  const { rows } = await deps.db.query<{ n: number; oldest: Date | null }>(
-    `select count(*)::int as n, min(created_at) as oldest from challenges
-      where purpose = 'login' and payload->>'startTag' = $1 and payload->>'startGroup' = $2 and created_at > $3`,
-    [tag, group, since],
+  const { rows } = await deps.db.query<{ mine: number; mine_oldest: Date | null; anon: number; anon_oldest: Date | null }>(
+    `select count(*) filter (where device_hash = $2)::int as mine,
+            min(created_at) filter (where device_hash = $2) as mine_oldest,
+            count(*) filter (where payload->>'startGroup' = 'anon')::int as anon,
+            min(created_at) filter (where payload->>'startGroup' = 'anon') as anon_oldest
+       from challenges
+      where purpose = 'login' and method = 'pgp' and payload->>'startTag' = $1 and created_at > $3`,
+    [tag, device, since],
   );
-  const { n, oldest } = rows[0]!;
-  if (n >= STARTS_PER_WINDOW && oldest) {
+  const r = rows[0]!;
+  const refuse = (oldest: Date) => {
     const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + START_WINDOW_MS - now.getTime()) / 1000));
-    throw new ApiError(429, 'slow-down', { retryAfterSeconds });
-  }
+    return new ApiError(429, 'slow-down', { retryAfterSeconds });
+  };
+  if (r.mine >= STARTS_PER_DEVICE && r.mine_oldest) throw refuse(r.mine_oldest);
+  if (group === 'anon' && r.anon >= ANON_STARTS_PER_KEY && r.anon_oldest) throw refuse(r.anon_oldest);
 }
 
 /**
@@ -564,19 +588,18 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
   });
 }
 
-/** Matches no row: the pending-step lookup for a key with no account. */
-const NIL_UUID = '00000000-0000-0000-0000-000000000000';
-
 /**
- * PGP login (owner, 2026-10-23; security review of FU-A): `start { key, pendingId? }` takes the
- * person's whole armored public key, never a fingerprint or a name. The pasted key is checked by
- * `inspectPublicKey` before any account lookup, so its refusals (unreadable, private, weak,
- * expired, revoked...) depend only on the key itself and say nothing about accounts. From then on
- * a known key and an unknown key get the same answer: a challenge encrypted to the pasted key (or,
- * for a known key, to the stored copy merged with it). A known key that cannot get a real
- * challenge (the stored copy is revoked or no longer usable, the account's kind is not served
- * here, or a pending second step does not match) gets a decoy to the pasted key, exactly as an
- * unknown key does.
+ * PGP login (owner, 2026-10-23; security review of FU-A and its re-review): `start { key, pendingId? }`
+ * takes the person's whole armored public key, never a fingerprint or a name. The pasted key is
+ * checked by `inspectPublicKey` before any account lookup, so its refusals (unreadable, private,
+ * weak, expired, revoked...) depend only on the key itself and say nothing about accounts. From then
+ * on a known key and an unknown key take the same steps, with the same queries (I-1) and the same
+ * PGP work (M-1): the trusted-device lookup, the start limits, sealing and opening a copy, merging
+ * the pasted key into the stored copy (an unknown key merges into itself), inspecting and sealing
+ * the result, checking the recipient subkey, and one challenge encrypted to the pasted key alone
+ * (M-2). A known key that cannot get a real challenge (the stored copy is revoked or no longer
+ * usable, the pasted key's recipient subkey is not valid in the stored copy, the account's kind is
+ * not served here, or a pending second step does not match) gets a decoy, exactly as an unknown key.
  */
 async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, opts: PgpLoginOptions): Promise<IssuedChallenge> {
   const now = deps.clock();
@@ -590,8 +613,9 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
 
   const device = deviceHash(req); // the cookie this browser *sent*: null when it sent none
   // From here on the browser has a device cookie, so the challenge is bound to the device that will
-  // finish it (the start limit still groups by the cookie that was sent).
+  // finish it, and the per-device start limit counts that device.
   ensureDeviceCookie(req, reply);
+  const bound = deviceHash(req)!;
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind; armored_enc: Buffer }>(
     'select a.id, a.kind, k.armored_enc from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1',
     [fingerprint],
@@ -599,49 +623,47 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   const found = rows[0];
   const account = found && opts.kinds.includes(found.kind) ? found : undefined;
   // I1: only a device trusted for the key's account gets its own group; every other browser is `anon`.
-  const trusted = account !== undefined && device !== null && (await isTrusted(deps, account.id, device));
+  // I-1: the lookup always runs, for an unknown key and a browser without a cookie too.
+  const trustedRow = await isTrusted(deps, account?.id ?? NIL_UUID, device ?? NO_DEVICE);
+  const trusted = account !== undefined && device !== null && trustedRow;
   const group = trusted ? `dev:${device!.toString('hex')}` : 'anon';
   const tag = startTag(deps.config, fingerprint);
-  await assertStartAllowed(deps, tag, group, now);
+  await assertStartAllowed(deps, tag, bound, group, now);
   const startPayload = { startTag: tag, startGroup: group };
-  const decoy = () => decoyPgpChallenge(deps, req, { toKey: pasted, payload: startPayload });
 
-  // The same work for a known and an unknown key (timing): open the stored copy (an unknown key
-  // stands in for itself), merge the pasted key into it, inspect the result and seal it.
-  const stored = account ? openKey(deps.config, account.armored_enc, fingerprint) : pasted;
+  // M-1: the same work for a known and an unknown key. Seal the pasted key and open a sealed copy
+  // (the stored one for a known key, the one just sealed for an unknown key), merge the pasted key
+  // into it, inspect the result, check the recipient subkey, and seal the result for `finish`.
+  const sealedPasted = sealKey(deps.config, pasted, fingerprint);
+  const stored = openKey(deps.config, account ? account.armored_enc : sealedPasted, fingerprint);
   // I2: merge into the stored copy (openpgp `Key.update`), never replace it, so an old public copy
   // cannot drop a revocation or a newer self-signature the server already has.
   const merged = await mergeKeys(stored, pasted, now);
-  const mergedOk = (await inspectPublicKey(merged, now)).ok;
-  const { storable, pending } = await pendingKey(deps.config, merged, fingerprint, now);
+  const mergedOk = (await inspectPublicKey(merged.armored, now)).ok;
+  // M-2: the challenge goes to the subkey the *pasted* key picks; it must still be valid in the
+  // merged copy, else the decoy (also to the pasted key, so the message looks the same).
+  const recipientOk = await pastedRecipientStillValid(merged.pasted, merged.key, now);
+  const { pending } = await pendingKey(deps.config, merged.armored, fingerprint, now);
   // The pending-step lookup runs whenever a pendingId is given, known key or not.
   const pendingRow = pendingId !== undefined ? await pendingFirstFactor(deps, pendingId, account?.id ?? NIL_UUID, device, now) : undefined;
-
-  if (!account || !mergedOk) return decoy();
   // The second step of a staff or owner login: this key's account's own pending login, from this
   // device, with a key other than the first step's.
-  if (pendingRow === null || (pendingRow !== undefined && usedFingerprints(pendingRow).includes(fingerprint))) return decoy();
+  const pendingOk = pendingRow === undefined || (pendingRow !== null && !usedFingerprints(pendingRow).includes(fingerprint));
 
-  const payload: Record<string, unknown> = { ...startPayload, refreshed: pending };
+  if (!account || !mergedOk || !recipientOk || !pendingOk) return decoyPgpChallenge(deps, req, { toKey: pasted, payload: startPayload });
+  const payload: Record<string, unknown> = { ...startPayload, refreshed: pending, fingerprints: [fingerprint] };
   if (pendingId !== undefined) payload.pendingId = pendingId;
   // Always to exactly the one key the person pasted, so a code proves that key (staff pairs compare
   // key sets, and the second step's key must differ from the first's).
-  try {
-    return await issuePgpChallenge(deps, req, {
-      accountId: account.id, sessionId: null, purpose: 'login', purposeText: PGP_PURPOSE.login, armoredKeys: [storable], payload,
-    });
-  } catch (e) {
-    if (e instanceof ApiError && e.code === 'key-expired') return decoy();
-    throw e;
-  }
+  return issueLoginChallenge(deps, req, { accountId: account.id, toKey: pasted, payload });
 }
 
 /** The stored key updated with the packets of a newer copy of the same key (same fingerprint). */
-async function mergeKeys(storedArmored: string, refreshedArmored: string, now: Date): Promise<string> {
+async function mergeKeys(storedArmored: string, refreshedArmored: string, now: Date): Promise<{ armored: string; key: openpgp.Key; pasted: openpgp.Key }> {
   const base = await openpgp.readKey({ armoredKey: storedArmored });
   const source = await openpgp.readKey({ armoredKey: refreshedArmored });
   const merged = await base.update(source, now);
-  return merged.armor(ARMOR_CONFIG);
+  return { armored: merged.armor(ARMOR_CONFIG), key: merged, pasted: source };
 }
 
 // ---------------------------------------------------------------------------------------------

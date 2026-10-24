@@ -26,6 +26,7 @@ export {
   challengeText,
   encryptChallenge,
   inspectPublicKey,
+  pastedRecipientStillValid,
 } from './pgp.js';
 export {
   type ConfirmAction,
