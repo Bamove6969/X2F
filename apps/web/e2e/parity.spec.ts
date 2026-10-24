@@ -26,8 +26,8 @@ test.describe('expectParity: blocking checks', () => {
     await expectParity(page, 'Review');
     const pixels = test.info().annotations.filter((a) => a.type === 'parity-pixels');
     expect(pixels).toHaveLength(1);
-    // No reference is committed yet, so the pixel diff reports a missing reference and does not block.
-    expect(pixels[0]!.description).toMatch(/^Review 390x844: reported, not blocking: no reference refs\/Review\.png/);
+    // This bare text page looks nothing like the Review board: the difference is reported, not blocking.
+    expect(pixels[0]!.description).toMatch(/^Review 390x844: reported, not blocking: [\d.]+% of pixels differ from refs\/Review\.png$/);
   });
 
   test('a hidden extra [data-primary] does not count', async ({ page }) => {
