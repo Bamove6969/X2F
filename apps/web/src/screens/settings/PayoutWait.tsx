@@ -5,6 +5,7 @@
  * the wallet can be paid out to at once, while a password or an authenticator code makes it wait 24
  * hours. This panel explains that and nudges toward a strong method when the account has none, so
  * there is no wait to add later. Removing a wallet needs no confirm but always raises an alert.
+ * Refined 2026-10-24: the first wallet never waits, and a batch added together shares one wait.
  */
 import { useEffect, useState } from 'react';
 import type { MethodType } from '@x2f/auth-client';
@@ -31,7 +32,8 @@ export function PayoutWait() {
       </h2>
       <p className="x2f-sheet__body">
         Adding a payout wallet always asks you to confirm it's you. Confirm with your PGP key, passkey or security key and the wallet can be
-        paid out to straight away. Confirm with a password or an authenticator code and it waits 24 hours first.
+        paid out to straight away. Confirm with a password or an authenticator code and it waits 24 hours first, even if you also have a
+        strong method: what counts is the one you use. Your first payout wallet never waits, and wallets you add together share one wait.
       </p>
       {methods !== null && !hasStrong ? (
         <p className="x2f-note" data-part="nudge">

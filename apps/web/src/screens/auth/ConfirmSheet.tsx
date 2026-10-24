@@ -92,7 +92,9 @@ export function ConfirmSheet({
       {action.kind === 'add-wallet' ? (
         <p className="x2f-note" data-part="wallet-wait">
           {strongAvailable
-            ? 'Confirm with your PGP key, passkey or security key and this wallet can be paid out to at once.'
+            ? hasPassword || hasTotp
+              ? 'Confirm with your PGP key, passkey or security key and this wallet works at once. Confirming with your password instead means a 24-hour wait.'
+              : 'Confirm with your PGP key, passkey or security key and this wallet works at once.'
             : 'With a password or an authenticator code, a new payout wallet waits 24 hours. Add a passkey, security key or PGP key to skip the wait.'}
         </p>
       ) : null}
