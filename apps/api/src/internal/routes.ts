@@ -1,0 +1,207 @@
+import { createHash } from 'node:crypto';
+import { normalizeTradeCode } from '@x2f/core';
+import {
+  attestationBytes,
+  channelFor,
+  INTERNAL_AT_HEADER,
+  INTERNAL_SIG_HEADER,
+  internalSignedBytes,
+  type Attestation,
+} from '@x2f/trade';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
+import sodium from 'libsodium-wrappers';
+import type pg from 'pg';
+
+/**
+ * The API's private internal listener: a SEPARATE Fastify instance, bound to a private interface
+ * only, serving only `/internal/v1/*`. The moderation service pulls work and posts reports here,
+ * every request signed with the moderation key; this listener verifies them with
+ * `MOD_SIGNING_PUBLIC` and holds NO other secret. It never reaches the escrow or moderation keys.
+ */
+export interface InternalOptions {
+  db: pg.Pool;
+  /** The moderation service's Ed25519 signing key (hex). The only secret-ish value here, and it is public. */
+  modSigningPublic: string;
+  /** Clock for the freshness check; tests pass a fixed one. */
+  now?: () => number;
+}
+
+/** A signed request is refused when its `at` is further than this from the listener's clock. */
+export const INTERNAL_MAX_AGE_MS = 60_000;
+const MAX_REPLAY_ENTRIES = 10_000;
+const HEX_KEY = /^[0-9a-f]{64}$/;
+const WORK_LIMIT = 100;
+
+const sha256Hex = (s: string): string => createHash('sha256').update(s).digest('hex');
+
+class Refused extends Error {
+  constructor(readonly status: number, readonly reason: string) {
+    super(reason);
+  }
+}
+
+interface RegisteredRow {
+  code: string;
+  buyer_sign: string;
+  buyer_box: string;
+  buyer_proof: string;
+  seller_sign: string;
+  seller_box: string;
+  seller_proof: string;
+}
+
+interface RawBody {
+  rawBodyText?: string;
+}
+
+function isPlainObject(x: unknown): x is Record<string, unknown> {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) return false;
+  const proto = Object.getPrototypeOf(x) as unknown;
+  return proto === Object.prototype || proto === null;
+}
+
+export async function buildInternalListener(o: InternalOptions, log: (e: { reason: string }) => void = () => {}): Promise<FastifyInstance> {
+  await sodium.ready;
+  if (typeof o.modSigningPublic !== 'string' || !HEX_KEY.test(o.modSigningPublic)) {
+    throw new TypeError('internal listener: bad moderation signing key');
+  }
+  const modKey = sodium.from_hex(o.modSigningPublic);
+  const now = o.now ?? Date.now;
+  /** Signed messages seen within the freshness window, so none can be replayed. */
+  const seen = new Map<string, number>();
+
+  /** Verify the moderation signature over method + path + freshness + body hash. 401 on any fault. */
+  const verify = (req: FastifyRequest, path: string): void => {
+    const at = Number(req.headers[INTERNAL_AT_HEADER]);
+    const sigRaw = req.headers[INTERNAL_SIG_HEADER];
+    if (!Number.isSafeInteger(at) || typeof sigRaw !== 'string') throw new Refused(401, 'unsigned');
+    const bodyHash = sha256Hex((req as FastifyRequest & RawBody).rawBodyText ?? '');
+    const msg = internalSignedBytes({ method: req.method, path, at, bodyHash });
+    let sig: Uint8Array;
+    try {
+      sig = sodium.from_base64(sigRaw, sodium.base64_variants.ORIGINAL);
+    } catch {
+      throw new Refused(401, 'bad-signature');
+    }
+    if (sig.length !== sodium.crypto_sign_BYTES || !sodium.crypto_sign_verify_detached(sig, msg, modKey)) {
+      throw new Refused(401, 'bad-signature');
+    }
+    const t = now();
+    if (Math.abs(t - at) > INTERNAL_MAX_AGE_MS) throw new Refused(401, 'stale');
+    for (const [k, until] of seen) if (until < t) seen.delete(k);
+    const id = sodium.to_hex(sodium.crypto_generichash(32, sig, null));
+    if (seen.has(id)) throw new Refused(401, 'replay');
+    if (seen.size >= MAX_REPLAY_ENTRIES) throw new Refused(503, 'busy');
+    seen.set(id, t + 2 * INTERNAL_MAX_AGE_MS);
+  };
+
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+  app.removeAllContentTypeParsers();
+  app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+    (req as FastifyRequest & RawBody).rawBodyText = body as string;
+    try {
+      done(null, JSON.parse(body as string));
+    } catch {
+      done(null, { __invalid: true });
+    }
+  });
+  app.setErrorHandler((_e, _req, reply) => reply.code(400).send({ error: 'bad-body' }));
+  app.setNotFoundHandler((_req, reply) => reply.code(404).send({ error: 'not-found' }));
+
+  const guard = (path: string, handler: (req: FastifyRequest, reply: { code(n: number): { send(b: unknown): unknown }; send(b: unknown): unknown }) => Promise<unknown>) =>
+    async (req: FastifyRequest, reply: { code(n: number): { send(b: unknown): unknown }; send(b: unknown): unknown }) => {
+      try {
+        verify(req, path);
+        return await handler(req, reply);
+      } catch (e) {
+        if (!(e instanceof Refused)) throw e;
+        log({ reason: `internal-${e.reason}` });
+        return reply.code(e.status).send({ error: e.reason });
+      }
+    };
+
+  // The trades that both traders have registered an identity for but have no attestation yet.
+  app.get('/internal/v1/work', guard('/internal/v1/work', async (_req, reply) => {
+    const { rows } = await o.db.query<RegisteredRow>(
+      `select t.code,
+              bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
+              si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+         from trades t
+         join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
+         join trade_identities si on si.code = t.code and si.role = 'seller'
+         left join trade_attestations a on a.code = t.code
+        where a.code is null
+        order by t.created_at
+        limit $1`,
+      [WORK_LIMIT],
+    );
+    const work = rows.map((r) => ({
+      trade: r.code,
+      participants: {
+        buyer: { signPublic: r.buyer_sign, boxPublic: r.buyer_box, proof: r.buyer_proof },
+        seller: { signPublic: r.seller_sign, boxPublic: r.seller_box, proof: r.seller_proof },
+      },
+    }));
+    return reply.send({ work });
+  }));
+
+  // An attestation the moderation service signed. Stored only if it is signed by MOD_SIGNING_PUBLIC,
+  // names a known trade, and lists exactly the buyer and seller keys the two traders registered
+  // (so even a buggy moderation cannot bind a key the real trader never registered), with channels
+  // that equal channelFor(trade, kind).
+  app.post('/internal/v1/reports', guard('/internal/v1/reports', async (req, reply) => {
+    const body = req.body;
+    if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
+    const attestation = body.attestation;
+    const sig = body.sig;
+    if (!isPlainObject(attestation) || typeof sig !== 'string') throw new Refused(400, 'bad-body');
+
+    let sigOk = false;
+    try {
+      const sigBytes = sodium.from_hex(sig);
+      sigOk =
+        sigBytes.length === sodium.crypto_sign_BYTES &&
+        sodium.crypto_sign_verify_detached(sigBytes, attestationBytes(attestation as unknown as Attestation), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk) throw new Refused(400, 'bad-attestation');
+
+    const a = attestation as unknown as Attestation;
+    const code = typeof a.trade === 'string' ? normalizeTradeCode(a.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-attestation');
+    const { rows } = await o.db.query<RegisteredRow>(
+      `select t.code,
+              bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
+              si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+         from trades t
+         join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
+         join trade_identities si on si.code = t.code and si.role = 'seller'
+        where t.code = $1`,
+      [code],
+    );
+    const reg = rows[0];
+    if (!reg) throw new Refused(409, 'not-ready');
+    const p = a.participants;
+    if (
+      typeof p !== 'object' || p === null ||
+      p.buyer?.signPublic !== reg.buyer_sign || p.buyer?.boxPublic !== reg.buyer_box ||
+      p.seller?.signPublic !== reg.seller_sign || p.seller?.boxPublic !== reg.seller_box
+    ) {
+      throw new Refused(409, 'participant-mismatch');
+    }
+    if (a.channels?.escrow !== (await channelFor(code, 'escrow')) || a.channels?.signals !== (await channelFor(code, 'signals'))) {
+      throw new Refused(400, 'bad-channel');
+    }
+
+    await o.db.query(
+      `insert into trade_attestations (code, attestation, sig, created_at)
+       values ($1, $2, $3, now()) on conflict (code) do nothing`,
+      [code, attestation, sig],
+    );
+    log({ reason: 'internal-attested' });
+    return reply.code(201).send({ ok: true });
+  }));
+
+  return app;
+}

@@ -56,3 +56,5 @@ export {
   LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
   usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
 } from './wallets/routes.js';
+export { tradeRoutes, type TraderRole } from './trades/identity.js';
+export { buildInternalListener, INTERNAL_MAX_AGE_MS, type InternalOptions } from './internal/routes.js';

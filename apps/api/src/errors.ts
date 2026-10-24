@@ -34,7 +34,10 @@ export type ApiErrorCode =
   | 'address-integrated'
   | 'wallet-exists'
   | 'terms-not-accepted'
-  | 'terms-required';
+  | 'terms-required'
+  // Plan 3, Task 8: participant identities and the moderation attestation.
+  | 'identity-exists'
+  | 'bad-proof';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

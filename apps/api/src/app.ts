@@ -13,6 +13,7 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { walletRoutes } from './wallets/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { tradeRoutes } from './trades/identity.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 
@@ -193,6 +194,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
+  tradeRoutes(app);
 
   return app;
 }
