@@ -23,6 +23,16 @@
 
 All three pass the 14-day rule (checked 2026-10-24 with `npx -y npm@11.21.0 view <pkg> time --json`). `tesseract.js` has an install script (`opencollective-postinstall`); the repo's `.npmrc` has `ignore-scripts=true`, which stays. Re-check the dates and `npm audit --omit=dev` at Task 13 before installing.
 
+**Transitive packages (review 2026-10-24).** "Three" is the direct count. `tesseract.js` 7.0.0 also pulls in nine packages through caret ranges, and each must pass the 14-day rule at the version the lockfile resolves to. Checked against the registry on 2026-10-24 (cutoff 2026-10-10), all pass:
+- `node-fetch` 2.7.0 (2023-08-23), which brings `whatwg-url` 5.0.0 (2017), `tr46` 0.0.3 (2016) and `webidl-conversions` 3.0.1 (2016);
+- `idb-keyval` 6.3.0 (2026-07-08);
+- `wasm-feature-detect` 1.9.0 (2026-08-11);
+- `regenerator-runtime` 0.13.11 (2022);
+- `is-url` 1.2.4 (2018), `bmp-js` 0.1.0 (2018), `zlibjs` 0.3.1 (2017);
+- `opencollective-postinstall` 2.0.3 (2020), whose script never runs.
+
+Task 13 Step 3 lists the resolved tree (`npm ls --all tesseract.js`) in the commit message. If any resolved version is newer than 14 days, stop and report. `node-fetch` and `bmp-js` are only used by the Node build and never reach the browser bundle; Task 13's bundle check confirms this.
+
 **Spec:** `docs/superpowers/specs/2026-10-14-x2f-design.md`: 1 (mission: share the bare minimum; principles 2 and 3), 2.2 step 7 (optional proof and its nudge) and step 11 (review), 2.3 (starter limits, New badge until Graduated; trading hold), 4.1 (data rules, retention, no IP logs, no email or phone), 4.2 (proof uploads), 5 (all), 6.2 (PGP key rules, R16), 6.5, 6.6 (unblurred proof request, activity log, training library), 7 screen 3, 9. **Boards:** Claude Design **X2F App**, mirrored in `design/x2f-app/`: `Review`, `Profile`, `BadgeSettings`, `SellOffers` (badges and `+N`), `BuyerPay` (proof slot), `SellerConfirm` (smart proof card), `DisputeOpen` (Add more evidence), `DisputeRoom` (unblurred request), `ModCase` (proof card). **Builds on:** Plans 1–3 (as built and as revised through 2026-10-24) and Plan 4 (interfaces below).
 
 ## Global Constraints
@@ -36,7 +46,9 @@ All three pass the 14-day rule (checked 2026-10-24 with `npx -y npm@11.21.0 view
 - **Proof images never leave the device unprocessed (spec 4.2).** Every proof byte the client encrypts has passed `cleanImage` and `assertClean` (only image-data chunks or segments survive) and has been re-encoded from decoded pixels. The original file name and type are never sent. The API stores only ciphertext and cannot decrypt it.
 - **Blur is irreversible.** A blurred region's output pixels depend only on that region's mean colour and a fixed pattern, never on the original glyphs. The upload screen says plainly that automatic blur is best-effort (BuyerPay board copy).
 - **The unblurred copy is sealed to the moderator only** (Plan 1 `seal` with `to: ['mod']`), is uploaded only after a logged moderator request (Plan 4), and its ciphertext is served only to `apps/moderation`, never to a trader.
-- **OCR runs on the device, from this origin.** `tesseract.js` worker, core and model are served from `apps/web` with `workerBlobURL: false`; no request to any other origin; the Plan 3 CSP is unchanged (images render as `data:` URLs, which `img-src 'self' data:` already allows).
+- **OCR runs on the device, from this origin.** `tesseract.js` worker, core and model are served from `apps/web` with `workerBlobURL: false`; no request to any other origin. The Plan 3 page CSP is unchanged: images render as `data:` URLs, which `img-src 'self' data:` already allows.
+  - **The worker's own CSP (review 2026-10-24).** A dedicated worker loaded from a URL takes its CSP from **its own response**, not from the page. `serve.ts` sends the CSP only on HTML, so without a change the OCR worker would run with no CSP at all, and a network fallback (`tesseract.js` has jsdelivr defaults built in) would not be blocked. Task 13 therefore sends `content-security-policy: default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; connect-src 'self'` on every `/ocr/*` response.
+  - **Integrity.** The OCR files are checked against SHA-256 values checked into the repo (Task 13), not only against `node_modules`.
 - **PGP (spec 6.2, R16).** openpgp 6.3.2 with Plan 2's strict config. Anything inside a key other than its fingerprint is never shown, logged, searched or exported. Expired and revoked keys are refused with the reason.
 - **Privacy (spec 4.1).** No IP stored or logged. Logs never contain trade codes, display names, review notes, feedback notes, fingerprints, URLs or proof ids. `disableRequestLogging: true`, `trustProxy` never set. Proofs follow chat retention (90 days after close; disputed: 30 days after the dispute closes, Plan 4 R6). Training copies never include proof images.
 - Every dependency is pinned exactly and was published at least 14 days before it is installed. `npm audit --omit=dev` reports 0 (R31/R33 exceptions apply until their dates). `npm run check` passes at the end of every task (queued through `~/x2f-comms/run-check.sh`, R32). Tests run as `npm test -- --project <workspace>`.
@@ -89,12 +101,45 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - **P5-A29 Keeping the original for an unblurred request.** The buyer's app keeps the metadata-stripped, **unblurred** image in its own IndexedDB until the trade closes with no dispute possible (or 90 days after a refund, P3 `disputeAfterRefundDays`), then deletes it. If it is gone (other device, cleared storage), the buyer picks the screenshot again; it goes through the same stripping.
 - **P5-A30 Dispute evidence.** "Add more evidence" (DisputeOpen) is available to both sides while a dispute is open, through the same pipeline, sealed to buyer, seller and moderator like the proof.
 
+**Added by the plan review (2026-10-24): owner questions. These are not decided; each default below keeps the draft as written.**
+- **P5-A31 Late reviews after the 7-day reveal (revenge reviews).** Under P5-A4/A5, a trader who stays silent sees the other side's review on day 7. The pending-review gate then makes them rate before their next trade, so they rate *after* reading it. That is the revenge review spec 5.3 is meant to stop. Options:
+  - (a) after the reveal, a late reviewer may only submit Neutral, which clears the gate;
+  - (b) the review window closes at reveal and the trade stops blocking;
+  - (c) keep as drafted.
+
+  Default: (c), until the owner picks. Task 3 reads the choice from `LATE_REVIEW = 'any' | 'neutral-only' | 'closed'`.
+- **P5-A32 Weighted % positive can reveal trade sizes.** With weights proportional to USD (P5-A2), the change in a profile's % positive after one reveal reveals that review's weight relative to the others. Anyone who knows one of the trades (the counterparty, or someone watching a trader with few reviews) can then work out the approximate size of other trades. That conflicts with "no volume stats" (spec 5.4). Options:
+  - (a) a few weight steps (for example 1× under $100, 2× to $500, 3× above);
+  - (b) show % positive only from `PCT_MIN_REVIEWS = 5` reviews;
+  - (c) both;
+  - (d) keep as drafted.
+
+  Default: (d), until the owner picks. Each option is a constant in Task 1.
+- **P5-A33 Repeated reviews from one counterparty.** Two colluding accounts (or one person's two accounts) can trade back and forth so that one of them collects many 5-star reviews. Option: only the latest review from each distinct counterparty counts toward % positive and Trusted (`REVIEWS_PER_COUNTERPARTY = 1`). Default: count every review, as spec 5.3 says.
+- **P5-A34 Who sees `online` and `lastSeenAt`.** `GET /v1/traders/:name` needs no session and works for **any** display name, including accounts that have never posted an offer. Anyone can poll it to track when a named person is active. Options:
+  - (a) profiles only for accounts with at least one live offer or one completed trade;
+  - (b) `lastSeenAt` rounded to the hour (or "today" / "this week");
+  - (c) both;
+  - (d) keep as drafted.
+
+  Default: (d), until the owner picks. Per-source rate limits in front of the API are Plan 6.
+- **P5-A35 PGP fingerprints in the portable record.** P5-A18 lists the account's PGP fingerprints. Once the record is public (`portable_public`), anyone can link the X2F name to that key, and from the key to its user IDs and email on keyservers. It also reveals that the fingerprint logs in to X2F, which spec 6.2 deliberately hides. Default: list the fingerprints only when the trader ticks "Include my PGP fingerprint" at export (off by default), and never on the public `/record` copy. **Owner to confirm.**
+- **P5-A36 Proof card on ModCase needs WebAssembly on the staff origin.** Plan 4 gives staff-web Plan 3's CSP minus `'wasm-unsafe-eval'`, and Tesseract cannot run under that. Options:
+  - (a) add `'wasm-unsafe-eval'` and `worker-src 'self'` to the staff-web CSP, and serve `/ocr/*` from staff-web too;
+  - (b) ModCase shows the blurred image with no automatic check.
+
+  Default: (b), until the owner (or lead) picks, because (a) widens the staff app's attack surface.
+
 ## Interfaces assumed from Plans 2–4 (reconcile here only)
 
 **Plan 2 (as built):** `requireSession`, `ApiError`, `Deps { config; db; clock }`, `pgp_keys(account_id, fingerprint, …)`, `webauthn_credentials(kind, attested, …)`, `inspectPublicKey(armored, now)` (Plan 5 adds an optional third argument `{ minRsaBits?: number; requireEncryption?: boolean }`, defaults 4096 and true, so login is unchanged), `storableKey(armored, now)`, `sealKey` / `openKey`, `PgpSigner` from `loadPgpSigner` (X2F's official key), `GET /v1/pgp/signing-key`.
 
 **Plan 3:**
 - `trades` row with `closedAt`, `securedAt`, `paidAt`, `state`, `sellerId`, `buyerId`, `methodId`, `poster`; `trade_events` (`release-started`, `buyer-cancel`, `accept-cancel` with `by`); `usdCentsOf(trade): bigint`.
+  - **Review 2026-10-24:** Plan 3 does not define `usdCentsOf`. Its starter-limit revision computes "the USD equivalent at the locked rate" at take, but does not say it is stored.
+  - If no stored USD value exists when Task 3 starts, Task 3 adds `trades.usd_cents bigint` and fills it in the take transaction, from the same value the cap check used. Trades taken before the migration get `null` and weight `REVIEW_WEIGHT_FLOOR_USD_CENTS`.
+  - Plan 5 never converts using today's rate.
+- `TraderSummary.username` (Plan 3) becomes `displayName` when the spec 6.1 split lands (see "Spec 6.1 display name" below); Plan 5 never adds a login name to it.
 - `tradeCap(deps, accountId, now) → { stage: 'starter'|'building'|'graduated'; capUsd; maxOpen }` (Revision 2026-10-24).
 - `POST /v1/offers/:id/take`, `POST /v1/trades/:code/wallet`, `GET /v1/offers` in `apps/api/src/offers/routes.ts`; `traderSummary` in `apps/api/src/traders/summary.ts`, whose `TraderSummary.badges: string[]` **becomes** `{ featured: BadgeView[]; more: BadgeView[] }` and whose `positivePct`, `typicalMinutes` Plan 5 fills.
 - Chat: `chats`, `chat_envelopes`, `POST /v1/chats/:chat/envelopes` (≤ 16 KiB), the chat for a trade (`chatOf(code)`), `seal`/`open` with `to: Role[]`, `ChatPanel` system cards.
@@ -103,13 +148,31 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Plan 4:**
 - `@x2f/staff` `Perm` / `can` and the privilege-matrix test: Plan 5 adds `reputation.review` (owner, senior, mod) and `feedback.read` (owner).
-- `appendLog(client, { actor, action, tradeCode?, detail })`; Plan 5 adds actions `pastrep.approved`, `pastrep.rejected`, `pastrep.revoked`, `proof.opened`.
+- `appendLog(client, { at, actor, tradeCode: string | null, action, detail })` (Plan 4 Task 3's signature; `at` comes from `clock()`).
+  - `LogAction` is a closed union with a detail schema per action, in `apps/api/src/log/actions.ts`. `assertDetail` refuses unknown keys and any string over 64 characters.
+  - Plan 5 adds `pastrep.approved`, `pastrep.rejected`, `pastrep.revoked` and `proof.opened` to that file, with their detail schemas, in the tasks that first use them (11 and 14).
+  - `proof.unblurred-requested` and `proof.unblurred-opened` already exist in Plan 4.
 - `buildStaffApi`, staff route `Perm` declaration, `apps/staff-web` shell (Task 16), ModCase (Task 18).
 - Dispute records: `disputes.state.status` (closed or not, closed time) and final `rulings` outcomes. Plan 5 consumes `lostDisputeCount(db, accountId): Promise<number>` in `apps/api/src/disputes/lost.ts` (the Plan 3 starter-limit revision needs the same count; whichever lands first owns it).
 - `proof-requested { username }` SSE to the uploader (Task 11); moderation `/internal/proof/read` (Task 11) uses Plan 5's `readProof`.
+  - **Review 2026-10-24: three mismatches.**
+    - Plan 4's moderation internal API listens on a Unix socket with an HMAC header. `/internal/proof/read {code, logEntryId}` takes **no proof id**, accepts only log action `proof.unblurred-opened`, and returns the unblurred image.
+    - Plan 5 Task 14 therefore changes it to `{code, proofId, logEntryId}`. It accepts `proof.opened` for `proof`/`evidence` kinds and `proof.unblurred-opened` for `unblurred`, and the log entry's detail must name that `proofId`.
+    - Plan 4 has **no `proof_requests` table**. Task 14 adds it, and makes Plan 4's `POST /staff/v1/disputes/:code/proof-request` write it.
 - Plan 4 A10: "Add more evidence" hidden until Plan 5; Plan 5 un-hides it.
+- **Plan 4 Task 15 `reencodeImage` and its `proof.unblurred` envelope (review 2026-10-24).**
+  - Plan 4 seals the whole unblurred image inside a chat envelope. Plan 3 caps envelopes at 16 KiB, so that cannot work for a real screenshot.
+  - Plan 5 replaces it: the image goes up as ciphertext (Task 14), the envelope carries only the key (Task 8), and the re-encode is `stripOnly` (Task 13).
+  - Task 15 deletes `apps/web/src/proof/reencode.ts` and its test, or turns it into a re-export of `stripOnly`, whichever Plan 4 as built allows.
+- **Dispute screen paths.** Plan 3 creates `apps/web/src/screens/dispute/{DisputeOpen,DisputeRoom,DisputeRuling}.tsx`; Plan 4 Task 15 names `apps/web/src/screens/{DisputeOpen,DisputeRoom,DisputeRuling}.tsx`. Plan 5 edits whichever exists on main; the paths below follow Plan 3.
+- **Staff-web CSP.** Plan 4 serves staff-web with Plan 3's CSP minus `'wasm-unsafe-eval'`; see P5-A36 for the ModCase proof check.
+- **`NAV` test.** Plan 4's roles test asserts `NAV.mod` deep-equals `['disputes','training','log']`. Task 11 updates that expectation when it adds `'past-reputation'`, and Task 4 adds `'feedback'` to `NAV.owner`.
 
 **Spec 6.1 display name (owner 2026-10-23):** Plan 5 assumes `accounts.display_name` and its normalised `display_name_key` exist. **If the split has not landed when Task 5 starts, stop and report**: profiles must never be keyed by the login name.
+- **Review 2026-10-24: no plan owns the split yet.**
+  - Neither Plan 2 as built (`apps/api/migrations/001_accounts.sql`), Plan 3 nor Plan 4 adds `display_name`.
+  - Plans 3 and 4 still say `username` in `TraderSummary`, SSE payloads (`accepted {by}`, `proof-requested {username}`, `moderator-joined {username}`) and staff views.
+  - **Lead decision needed before Plan 5 starts:** which plan adds the column and renames those fields. This blocks Tasks 3, 5, 6, 11 and 12, not only Task 5.
 
 ## Review Focus
 
@@ -119,7 +182,11 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 4. **The moderator asks for the unblurred copy and the original isn't on this device.** Expected: the buyer is asked to pick the screenshot again; it is stripped (not blurred) and sealed to the moderator only; the seller can neither decrypt nor download it. Tests owned by Tasks 14 and 15.
 5. **A poster with an unrated trade is taken.** Expected: their offers are not listed while a review is pending, and a take that races the listing gets `review-pending`; the taker never waits on a poster who cannot proceed. Tests owned by Task 3.
 
-**Execution order** (tasks are numbered by subsystem; build them in this order because of their Interfaces): 1, 2, 7, 8, 9, 3, 4, 10, 5, 11, 6, 12, 13, 14, 15, 16, 17, 18. Tasks 4, 11, 14 (moderation read), 16 (ModCase) and 17 (moderator context) need Plan 4 Tasks 1, 3, 4, 11, 16 and 18 merged; everything else needs only Plans 2–3.
+**Execution order** (tasks are numbered by subsystem; build them in this order because of their Interfaces): 1, 2, 7, 8, 9, 3, 4, 10, 5, 11, 6, 12, 13, 14, 15, 16, 17, 18. Tasks 4, 11, 14 (moderation read), 16 (ModCase) and 17 (moderator context) need Plan 4 Tasks 1, 3, 4, 11, 16 and 18 merged.
+- **Review 2026-10-24:** Task 3 also needs Plan 4 Task 10 (the dispute store that says when a dispute is closed) for P5-A3/A5.
+- Task 5 also needs `lostDisputeCount`, which Plan 4 does not define. Whoever lands first owns it, as noted under Interfaces, and it in turn needs Plan 4's rulings.
+- Until those land, Tasks 3 and 5 may treat every disputed trade as not yet reviewable and `lostDisputes` as 0, but only behind a failing `it.todo` that blocks Task 18.
+- Everything else needs only Plans 2–3.
 
 ---
 
@@ -196,6 +263,9 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Produces:
   - Table `reviews(trade_code text references trades, reviewer_id uuid, subject_id uuid, reviewer_role text check (in ('buyer','seller')), neutral boolean not null, stars smallint, phrases text[] not null default '{}', note text, usd_cents bigint not null, created_at timestamptz not null, primary key (trade_code, reviewer_id))` with a check that Neutral rows have no stars, phrases or note. UPDATE and DELETE are refused by trigger (reviews are final, P5-A6), except DELETE by role `x2f_purge`.
   - `reviewableSince(db, code): Promise<Date | null>` (P5-A3, P5-A5).
+    - A trade that has **ever** had a dispute is reviewable only once that dispute is closed, whatever its final state.
+    - This includes a `refunded` trade disputed within `disputeAfterRefundDays`: it becomes reviewable when the dispute closes.
+    - `usd_cents` comes from the stored take-time value (Interfaces, `usdCentsOf`).
   - `GET /v1/reviews/pending` (`requireTrader`) → `{ trades: { code; counterparty: string /* display name */; reviewableSince: string }[] }`.
   - `GET /v1/trades/:code/review` (participant) → `{ reviewable: boolean; mine: PublicReview | null; theirs: PublicReview | null /* only once revealed */; revealAt: string | null }`.
   - `POST /v1/trades/:code/review` (participant, `requireTrader`) body `ReviewInput` → 201. Refusals: 409 `not-reviewable`, 409 `review-exists`, 400 with the `ReviewError` code.
@@ -210,6 +280,8 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - **Gate:** a buyer with an unrated released trade → take refused `review-pending`; after a Neutral review the same take succeeds. Two pending reviews need two submissions.
   - **Review Focus 5:** the poster has a pending review → their offer is absent from `GET /v1/offers`; a take of its id anyway → `review-pending`, and no trade row exists; their `POST …/wallet` on an earlier `setup` trade → `review-pending`.
   - `usd_cents` is stored and never appears in any response body (grep the JSON).
+  - A buyer-refunded trade (no-show) is `not-reviewable`; after a dispute-after-refund is opened and closed, it becomes reviewable with `reviewableSince` = the dispute's close.
+  - `LATE_REVIEW` (P5-A31): with `'neutral-only'`, a star review submitted after `revealAt` → 400 `late-review-neutral-only`, and Neutral passes; with `'closed'`, the trade no longer blocks after `revealAt`.
 - [ ] **Step 2:** `npm test -- --project @x2f/api`; expect FAIL.
 - [ ] **Step 3:** Implement. `reviewer_role` and `subject_id` come from the trade row and the session, never the body.
 - [ ] **Step 4:** `npm run check`; expect PASS.
@@ -219,7 +291,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/api/migrations/302_feedback.sql`, `apps/api/src/feedback/routes.ts`, `apps/api/src/staff/feedback.ts`, `apps/staff-web/src/screens/Feedback.tsx`
-- Modify: `packages/staff/src/roles.ts` (perm `feedback.read`, owner only), `apps/api/src/retention/scheduler.ts`
+- Modify: `packages/staff/src/roles.ts` (perm `feedback.read`, owner only; `NAV.owner` gains `'feedback'`), `apps/api/src/retention/scheduler.ts`
 - Test: `apps/api/test/feedback.test.ts`, `packages/staff/test/roles.test.ts` (matrix row)
 
 **Interfaces:**
@@ -272,7 +344,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/web/src/screens/review/{ReviewCard,FeedbackCard,RateFirstSheet,usePendingReviews}.tsx`
-- Modify: `apps/web/src/screens/trade/Released.tsx`, `apps/web/src/screens/dispute/DisputeRuling.tsx` (card after close), `apps/web/src/screens/quote/useTake.ts`, `apps/web/src/screens/AcceptedSheet.tsx`
+- Modify: `apps/web/src/screens/trade/Released.tsx`, `apps/web/src/screens/dispute/DisputeRuling.tsx` (card after close), `apps/web/src/screens/quote/useTake.tsx` (Plan 3 Task 18's name), `apps/web/src/screens/AcceptedSheet.tsx`
 - Test: `apps/web/e2e/review.spec.ts`
 
 **Interfaces:**
@@ -299,7 +371,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Produces:
   - `interface OcrWord { text: string; x0: number; y0: number; x1: number; y1: number; line: number; conf: number }`
   - `type HiddenKind = 'name' | 'account' | 'card' | 'iban' | 'address' | 'phone' | 'email' | 'handle' | 'manual'`; `interface Region { x0; y0; x1; y1; kind: HiddenKind }`
-  - `detectSensitive(words: OcrWord[], keep: { tradeCode: string; fiatCents: bigint; exponent: number }): Region[]`, covering spec 4.2's classes: Luhn-valid 13–19-digit card numbers (spaces or dashes allowed); IBANs (mod-97 valid); account numbers (digit runs ≥ 6, and masked tails like `••••1234` / `****1234`); emails; phone numbers (≥ 7 digits, `+` or separators); `@handles` and `$cashtags`; names (the rest of the line after a label `From`, `To`, `Sender`, `Recipient`, `Name`, `Paid to`, `Sent to`, `Payee`, `Payer`, `Beneficiary`, `Account holder`, or the next line when the label stands alone); addresses (a line with a house number and a street word, or a postcode pattern for US, UK, CA, DE, FR, NL, ES, IT). It **never** returns a region over the trade code (with or without dashes, after `normalizeTradeCode`), the trade's amount or a date, which the smart card needs.
+  - `detectSensitive(words: OcrWord[], keep: { tradeCode: string; fiatCents: bigint; exponent: number }): Region[]`, covering spec 4.2's classes: 13–19-digit card numbers (spaces or dashes allowed; Luhn-valid → `card`, otherwise still masked as `account`); IBAN-shaped strings (mod-97 valid → `iban`, otherwise still masked as `account`); account numbers (digit runs ≥ 6, and masked tails like `••••1234` / `****1234`); emails; phone numbers (≥ 7 digits, `+` or separators); `@handles` and `$cashtags`; names (the rest of the line after a label `From`, `To`, `Sender`, `Recipient`, `Name`, `Paid to`, `Sent to`, `Payee`, `Payer`, `Beneficiary`, `Account holder`, or the next line when the label stands alone); addresses (a line with a house number and a street word, or a postcode pattern for US, UK, CA, DE, FR, NL, ES, IT). It **never** returns a region over the trade code (with or without dashes, after `normalizeTradeCode`), the trade's amount or a date, which the smart card needs.
   - `detectSensitiveText(s: string): HiddenKind[]` (the same classifiers over plain text, used for review notes, Task 1).
   - `padAndMerge(rs: Region[], w: number, h: number, padPx = 4): Region[]` (padding covers anti-aliased glyph edges; overlapping regions merge; clamped to the image).
   - `redact(rgba: Uint8ClampedArray, width: number, height: number, rs: Region[]): void`: each region becomes its mean colour plus a fixed texture that depends only on (x, y) (P5-A26).
@@ -308,7 +380,10 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - `parseAmounts(words: OcrWord[], currency: string, exponent: number): bigint[]` (handles `$412.50`, `412,50 €`, `USD 412.50`, `1,234.56`, `1.234,56`, `1 234,56`).
 
 - [ ] **Step 1: Write the failing tests:**
-  - Each class on synthetic OCR words: card `4111 1111 1111 1111` masked, Luhn-invalid `4111 1111 1111 1112` not; `DE89 3704 0044 0532 0130 00` masked; `jane.doe@example.com`, `+1 (415) 555-0134`, `$janedoe`, `@jane-doe` masked; `From: Jane Doe` masks `Jane Doe` and not `From:`; `Sent to` alone on a line masks the next line; `221B Baker Street` and `SW1A 1AA` masked.
+  - Each class on synthetic OCR words: card `4111 1111 1111 1111` masked as `card`. The Luhn-invalid `4111 1111 1111 1112` (one OCR misread) is **still masked**, as `account`.
+    - **Fail-safe (review 2026-10-24):** the Luhn and mod-97 checks only choose the label, never whether to mask. One misread digit must not leave a real card or IBAN visible.
+    - An IBAN with one wrong character is still masked as `account`. Space- or dash-separated digit groups are joined before the ≥ 6-digit account rule applies.
+  - Beyond the trade code, amount and date, no "keep" rule exists, so a long transaction ID is masked too (harmless: the seller checks the amount and memo). `DE89 3704 0044 0532 0130 00` masked; `jane.doe@example.com`, `+1 (415) 555-0134`, `$janedoe`, `@jane-doe` masked; `From: Jane Doe` masks `Jane Doe` and not `From:`; `Sent to` alone on a line masks the next line; `221B Baker Street` and `SW1A 1AA` masked.
   - Kept: `K7M2-9QXA-4FTR-8WPN` and `K7M29QXA4FTR8WPN` with the trade code `K7M2-9QXA-4FTR-8WPN`; `$412.50` when the trade is 41250 cents; `Oct 16, 2026`.
   - `redact` irreversibility: two images that differ only inside a region and share its mean produce byte-identical output; pixels outside every region are unchanged.
   - `cleanImage` on a PNG carrying `tEXt`, `iTXt`, `zTXt`, `eXIf`, `iCCP`, `tIME`, `pHYs` keeps only the allowed chunks and still decodes (Node `zlib` inflate of `IDAT` succeeds); on a JPEG with `APP1` Exif GPS, `APP13`, `COM` → none survive and the bytes `Exif`, `GPS`, `Photoshop` are absent; `assertClean` rejects the inputs and accepts the outputs. A truncated file and a GIF → `unsupported`.
@@ -360,7 +435,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/api/migrations/304_past_reputation.sql`, `apps/api/src/pastrep/{challenge,verify,routes}.ts`
-- Modify: `packages/accounts/src/pgp.ts` (`inspectPublicKey` third argument `{ minRsaBits?: number; requireEncryption?: boolean }`, defaults 4096 and true, so login is unchanged; a past-reputation key only needs to sign)
+- Modify: `packages/accounts/src/pgp.ts` (`inspectPublicKey` third argument `{ minRsaBits?: number; requireEncryption?: boolean }`, defaults 4096 and true, so login is unchanged; a past-reputation key only needs to sign; export `PAST_REP_VERIFY_CONFIG`), `apps/api/src/auth/pgp.ts` (`storableKey` gets the same optional third argument; `sealKey`/`openKey` take an AAD label, defaulting to today's `x2f/pgp-key/`), new `tools/semgrep/pastrep-no-fetch.yml` added to the root `semgrep` script with `--config tools/semgrep` (the repo has no local rules directory yet)
 - Test: `apps/api/test/pastrep.test.ts`, `packages/accounts/test/pgp.test.ts` (new case)
 
 **Interfaces:**
@@ -380,6 +455,15 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
     ```
   - `POST /v1/account/past-rep/start { site, url, claimedTrades, publicKey }` (`requireTrader`) → `{ challengeId, text, expiresAt }` (60 min). Refusals: 400 `bad-site`, `bad-url` (not https or host not in `PAST_REP_ARCHIVE_HOSTS`, userinfo or a port present, P5-A20), the `KeyRefusal` codes from `inspectPublicKey(key, now, { minRsaBits: 2048, requireEncryption: false })` (P5-A22; DSA and ElGamal-only keys → `key-weak`), 409 `site-claimed`.
   - `POST /v1/account/past-rep/finish { challengeId, signed }` → 201 `{ id, status: 'signed' }`. `verifyPastRepSignature(signed, text, armoredKey, now)` accepts an armored cleartext-signed message or a detached signature; the signed text must equal the issued text after `\r\n`→`\n` and trailing-whitespace trimming; the signature must verify (`expectSigned: true`, `date: now`) by the primary key or one of its signing subkeys; refusals 400 `bad-signature`, `wrong-text`, `wrong-key`, `challenge-expired`; a used challenge → 409 `challenge-used`; a fingerprint already in a `signed` or `approved` claim of another account → 409 `fingerprint-claimed` (checked only here, so `start` never reveals another account's claim). The key is stored only through `storableKey` + `sealKey` (R16); the response and logs carry no key material or user ID.
+  - **Verification rules (review 2026-10-24):**
+    - **Challenge belongs to the caller.** The challenge row stores `account_id`, `site`, `url`, `claimed_trades`, the inspected fingerprint and the exact text. `finish` refuses `challenge-expired` (the same answer as an unknown id) unless the session's account is the one that started it, so a challenge cannot be finished by another account. It is marked used in the same transaction that inserts the claim.
+    - **Compare what was verified.** For a cleartext message, compare the text that `openpgp.verify` returns as `data`, never text parsed from the paste separately. Refuse with `wrong-text` if the paste holds anything outside the one signed block. That blocks the classic cleartext tricks: text before or after the block, or a second block.
+    - **Exactly one signature.** It must be made by the claimed key (its primary key, or a subkey with the sign flag and a valid, unrevoked, unexpired binding at `now`). Signatures from any other key → `wrong-key`. Await `verified` on every signature.
+    - **Its own openpgp config.** `PAST_REP_VERIFY_CONFIG` is `BASE_CONFIG` (Plan 2, `packages/accounts/src/pgp.ts`) with `minRSABits: PAST_REP_MIN_RSA_BITS` and the same rejected algorithms as login. Plan 2's `STRICT_CONFIG` refuses RSA below 4096 during verification too, so it would reject every 2048-bit key that P5-A22 accepts.
+    - **Signature time.** The signature's creation time must lie in `[issuedAt − 5 min, now + 5 min]`.
+    - **No user IDs kept.** `storableKey` gains the same optional third argument as `inspectPublicKey`; Task 10 passes `{ minRsaBits: 2048, requireEncryption: false }`. Without it, a signing-only v6 key fails the default inspection inside `storableKey` and is kept with its user IDs.
+    - **Separate encryption domain.** Past-reputation keys are sealed with their own AAD (`x2f/pastrep-key/<fingerprint>`; `sealKey` takes the AAD label as a parameter) so a sealed past-rep key cannot be swapped into `pgp_keys`.
+    - **No lookups.** `bad-url` validation is purely syntactic: `new URL()`, `https:` only, `hostname` (lower-case, no trailing dot) exactly in the list, no userinfo, no port. There is no DNS lookup and no fetch.
   - `GET /v1/account/past-rep` → own claims `{ id, site, url, claimedTrades, verifiedTrades, status, reason }`; `DELETE /v1/account/past-rep/:id` sets `removed`.
   - Past reputation never feeds Task 5's counts; Task 5 reads only `approved` rows into `BadgeFacts.pastRep` with `trades = verified_trades` and `href = evidence_url`.
 
@@ -388,11 +472,17 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - The text with a different nonce, display name or site → `wrong-text`; a valid signature by another key → `wrong-key`; a signature by a signing subkey of the claimed key passes.
   - RSA 2048 accepted here, RSA 1024 refused `key-weak`; a signing-only Ed25519 key accepted here; RSA 2048 and a signing-only key still refused by login's `inspectPublicKey` defaults.
   - A revoked key → `key-revoked`; an expired key → `key-expired`; the same key re-signed to a later expiry passes.
-  - `http://web.archive.org/…`, `https://evil.example/…`, `https://user@web.archive.org/…` and `https://web.archive.org:8443/…` → `bad-url`.
+  - `http://web.archive.org/…`, `https://evil.example/…`, `https://user@web.archive.org/…`, `https://web.archive.org:8443/…`, `https://web.archive.org./…`, `https://web.archive.org.evil.example/…` and `https://evil.example\@web.archive.org/…` → `bad-url`.
+  - **Replay and binding:** account B finishing account A's `challengeId` with A's valid signature → `challenge-expired`, and no row is created. A second `finish` of a used challenge → `challenge-used`.
+  - **Cleartext tricks:** a valid cleartext block with extra lines outside it → `wrong-text`. A message carrying two signatures, one by the claimed key and one by another key → `wrong-key`. A signature dated 2 h before `issuedAt` → `wrong-text`.
+  - An RSA 2048 signing key verifies under `PAST_REP_VERIFY_CONFIG`. The same signature checked with Plan 2's `STRICT_CONFIG` fails, which proves the test uses the right config.
+  - A v6 signing-only Ed25519 key carrying a user ID is stored with no user ID packet (decrypt `key_enc` in the test and parse it).
   - The same fingerprint claimed by a second account: `start` succeeds, `finish` → 409 `fingerprint-claimed`.
   - A v4 key with `Name <a@b.c>`: no row, response or captured log contains `a@b.c`.
   - **Screenshots alone never count:** no route creates a claim without a verified signature (route table scan: only `finish` inserts).
-  - No server code path fetches `evidence_url` (Semgrep rule or a test that stubs global `fetch` and asserts no call during the whole flow).
+  - No server code path fetches `evidence_url` or resolves its host. **Both** checks are required (review 2026-10-24); a `fetch` stub alone misses `node:http(s)`, `undici`, `node:net` and `node:dns`:
+    - a Semgrep rule that fails on any import of `node:http`, `node:https`, `node:net`, `node:dns`, `undici` or `fetch(` under `apps/api/src/pastrep/**` and `apps/api/src/staff/pastrep.ts`;
+    - a test that stubs global `fetch`, `dns.lookup` and `http(s).request`, then asserts no call during the whole flow.
 - [ ] **Step 2:** `npm test -- --project @x2f/api --project @x2f/accounts`; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
@@ -402,7 +492,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/api/src/staff/pastrep.ts`, `apps/staff-web/src/screens/PastRep.tsx`
-- Modify: `packages/staff/src/roles.ts` (perm `reputation.review`: owner, senior, mod; `NAV` gains `'past-reputation'` for those roles)
+- Modify: `packages/staff/src/roles.ts` (perm `reputation.review`: owner, senior, mod; `NAV` gains `'past-reputation'` for those roles), `packages/staff/test/roles.test.ts` (Plan 4's `NAV.mod` expectation), `apps/api/src/log/actions.ts` (`pastrep.*` actions; detail `{ claimId, site, trades }`, no URL or fingerprint)
 - Test: `apps/api/test/staff/pastrep.test.ts`, `apps/staff-web/e2e/pastrep.spec.ts`
 
 **Interfaces:**
@@ -436,10 +526,14 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - **BadgeMore** (`+N`): the popover lists On-hover badges, each with its one-line meaning (SellOffers board).
   - **PastRepClaim** (`// COPY-UNSIGNED`): pick the site, paste the archive link, claimed trade count and the old public key; copy the challenge text; paste the signed message; status list (signed / approved / rejected with reason / removed). The screen says "Screenshots don't count. Sign with the key shown on your old profile."
   - `GET /v1/account/record` (`requireTrader`, 1 per minute per account in memory) → `{ text }`: P5-A18 contents, cleartext-signed with X2F's official key. `PUT /v1/account/record/public { on }`; `GET /v1/traders/:name/record` → the same text only when public, else 404.
+    - **Review 2026-10-24: keep record signatures apart from other X2F signatures.** The same key signs login challenges (Plan 2), so the record's first line is the fixed header `X2F portable reputation record v1`. VerifyRecord refuses any X2F-signed text that does not start with it; a signed login challenge pasted there gets the "changed or not signed" answer.
+    - The display name is the only trader-chosen field, and it cannot hold a line break (spec 6.1 charset), so a record cannot imitate the header.
+    - An unknown name and a private record give byte-identical 404s.
+    - The public copy never includes PGP fingerprints (P5-A35).
   - **RecordExport** (`// COPY-UNSIGNED`): Download (`x2f-reputation-<date>.txt`, a `data:` link), the "Show on my profile" toggle, and for PGP users the hint to add their own signature with their PGP app.
   - **VerifyRecord**: paste a record; verifies the X2F signature in the browser against the key from `GET /v1/pgp/signing-key` **and** the fingerprint pinned in the bundle at build time (`VITE_X2F_PGP_FINGERPRINT`); shows "Signed by X2F" with the fields, or "This record was changed or not signed by X2F." (`// COPY-UNSIGNED`).
 
-- [ ] **Step 1: Write the failing tests:** parity Profile and BadgeSettings (fixture data, review texts masked); setting a third Featured shows the board notice; New has no controls; a Hidden badge is gone from `/u/:name` and the offer card for a logged-out viewer; the record text verifies with `gpg --verify`-equivalent openpgp verify against the test signing key and contains no amount, method, counterparty or note; one changed character fails VerifyRecord; a record signed by another key with the right-looking text fails (pinned fingerprint); `GET /v1/traders/:name/record` is 404 until public; the past-rep flow from start to "Waiting for a moderator" with a test key.
+- [ ] **Step 1: Write the failing tests:** parity Profile and BadgeSettings (fixture data, review texts masked); setting a third Featured shows the board notice; New has no controls; a Hidden badge is gone from `/u/:name` and the offer card for a logged-out viewer; the record text verifies with `gpg --verify`-equivalent openpgp verify against the test signing key and contains no amount, method, counterparty or note; one changed character fails VerifyRecord; a record signed by another key with the right-looking text fails (pinned fingerprint); a genuine X2F-signed login challenge pasted into VerifyRecord fails (header); `/record` for an unknown name and for a private record return identical bodies; the public record contains no 40- or 64-hex fingerprint; `GET /v1/traders/:name/record` is 404 until public; the past-rep flow from start to "Waiting for a moderator" with a test key.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
@@ -448,16 +542,37 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 ### Task 13: On-device image pipeline and OCR (`apps/web`)
 
 **Files:**
-- Create: `apps/web/src/proof/{pipeline,ocrWorker,ocr,localOriginals}.ts`, `tools/copy-ocr-assets.ts`, `apps/web/src/fixtures/ProofLab.tsx` (`VITE_FIXTURES` only)
-- Modify: `apps/web/package.json` (the three pinned dependencies), root `package.json` (`overrides: { "tesseract.js-core": "7.0.0" }`; `build` runs `copy-ocr-assets`)
+- Create: `apps/web/src/proof/{pipeline,ocrWorker,ocr,localOriginals,imageHeader}.ts`, `tools/copy-ocr-assets.ts`, `tools/ocr-assets.sha256`, `apps/web/src/fixtures/ProofLab.tsx` (`VITE_FIXTURES` only)
+- Modify: `apps/web/package.json` (the three pinned dependencies), root `package.json` (`overrides: { "tesseract.js-core": "7.0.0" }`; `build` runs `copy-ocr-assets`), `apps/api/src/static/serve.ts` (worker CSP on `/ocr/*`), `apps/api/test/headers.test.ts`
 - Test: `apps/web/e2e/proof-pipeline.spec.ts`, `apps/web/e2e/fixtures/proofs/*` (synthetic receipts with ground-truth JSON)
 
 **Interfaces:**
 - Consumes: Task 7 (`detectSensitive`, `padAndMerge`, `redact`, `cleanImage`, `assertClean`), Task 8 `encryptProof`.
 - Produces:
-  - `copy-ocr-assets.ts` copies `tesseract.js/dist/worker.min.js`, the `tesseract.js-core` SIMD and non-SIMD `.wasm.js`/`.wasm` files and `@tesseract.js-data/eng` `eng.traineddata.gz` into `apps/web/public/ocr/` (git-ignored, rebuilt; a test compares sizes and SHA-256 with `node_modules`).
-  - `ocr(bitmap: ImageBitmap): Promise<OcrWord[] | null>`: lazily creates one worker with `{ workerPath: '/ocr/worker.min.js', corePath: '/ocr/', langPath: '/ocr/', workerBlobURL: false, gzip: true, cacheMethod: 'none' }` and `PROOF_OCR_LANGS`; returns `null` (never throws) when loading fails or takes longer than `OCR_TIMEOUT_MS = 30_000` (Review Focus 3).
-  - `decodeProof(file: File): Promise<ImageBitmap>`: size check (P5-A25), sniff magic bytes (PNG, JPEG, WebP, HEIC) instead of trusting `file.type`, `createImageBitmap(file, { imageOrientation: 'from-image' })`, refuse animated images and anything over the pixel cap; errors are `ProofInputError('too-large' | 'unsupported' | 'undecodable')`.
+  - `copy-ocr-assets.ts` copies these files into `apps/web/public/ocr/` (git-ignored, rebuilt):
+    - `tesseract.js/dist/worker.min.js`;
+    - from `tesseract.js-core`: `tesseract-core-lstm.wasm.js`, `tesseract-core-simd-lstm.wasm.js` and `tesseract-core-relaxedsimd-lstm.wasm.js`;
+    - from `@tesseract.js-data/eng`: `4.0.0_best_int/eng.traineddata.gz`, copied as `eng.traineddata.gz`.
+  - **Why this file list (review 2026-10-24, checked against the 7.0.0 tarballs).**
+    - With `corePath` set to a directory, `tesseract.js` 7 picks the core file itself: `relaxedsimd`, then `simd`, then plain, each with an `-lstm` suffix for the default LSTM-only engine.
+    - The `.wasm.js` files have the WASM inlined, so the separate `.wasm` files are not needed.
+    - Copying only the "SIMD and non-SIMD" files would 404 on every Chromium browser, which supports relaxed SIMD, and OCR would silently never work.
+    - The LSTM-only engine uses the `4.0.0_best_int` model (2.9 MB, against 10.9 MB for `4.0.0`). There is no top-level `eng.traineddata.gz` in the package.
+  - **Integrity.** `tools/ocr-assets.sha256` is checked in: one SHA-256 per copied file, computed from the pinned 7.0.0 / 1.0.0 tarballs.
+    - `copy-ocr-assets` fails the build when any copied file differs. The test compares against this manifest, not against `node_modules`, which proves nothing about `node_modules` itself.
+    - Changing a pin means regenerating the manifest in the same commit.
+  - **Serving.** `apps/api/src/static/serve.ts` `setHeaders` adds the worker CSP from Global Constraints to every path under `ocr/`, so the worker cannot reach another origin even if a CDN default is ever used.
+    - `eng.traineddata.gz` is served as `application/gzip` with no `Content-Encoding`. `tesseract.js` checks the gzip magic itself.
+    - Add a `serve.ts` test for both headers.
+  - `ocr(bitmap: ImageBitmap): Promise<OcrWord[] | null>`: lazily creates one worker and returns `null` (never throws) when loading fails or takes longer than `OCR_TIMEOUT_MS = 30_000` (Review Focus 3).
+    - Call: `createWorker(PROOF_OCR_LANGS, OEM.LSTM_ONLY, { workerPath: '/ocr/worker.min.js', corePath: '/ocr/', langPath: '/ocr/', workerBlobURL: false, gzip: true, cacheMethod: 'none', legacyCore: false, legacyLang: false })`.
+    - On timeout it terminates the worker.
+  - `decodeProof(file: File): Promise<ImageBitmap>`: errors are `ProofInputError('too-large' | 'unsupported' | 'undecodable')`.
+    - Check the size (P5-A25).
+    - Sniff the magic bytes (PNG, JPEG, WebP, HEIC) instead of trusting `file.type`.
+    - **Before any decode**, read the width and height from the header (PNG `IHDR`, JPEG `SOFn`, WebP `VP8 `/`VP8L`/`VP8X`, HEIC `ispe`), with bounds-checked walkers like Task 7's. Refuse `too-large` over `PROOF_MAX_DECODED_PIXELS`, and refuse `unsupported` for animation (PNG `acTL`, WebP `ANIM`/`ANMF`, HEIC image sequences).
+    - Then `createImageBitmap(file, { imageOrientation: 'from-image' })`.
+    - A header that cannot be read is `undecodable`. `createImageBitmap` alone would decode a 144-megapixel image before any check could run.
   - `prepareProof(bitmap, keep): Promise<{ rgba; width; height; regions: Region[]; ocrOk: boolean }>`: scale to `PROOF_MAX_SIDE`, flatten transparency onto white, OCR, `detectSensitive`, `padAndMerge`.
   - `finishProof(p, regions: Region[]): Promise<{ bytes: Uint8Array; mime; width; height; hidden: HiddenKind[] }>`: `redact` on a copy, encode with `OffscreenCanvas.convertToBlob` (PNG, JPEG 0.85 fallback over the cap), `cleanImage`, then `assertClean`. A failure here never falls back to the uncleaned bytes.
   - `stripOnly(bitmap)`: the same without redaction (for the unblurred copy). `localOriginals.put(code, proofId, bytes)` / `get` / `purge(now)` in IndexedDB (P5-A29).
@@ -467,8 +582,15 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - An EXIF orientation-6 photo comes out upright (pixel probe on a known corner colour).
   - A 12,000 × 12,000 PNG → `too-large` before decoding; an animated WebP → `unsupported`; a 0-byte file → `undecodable`; a transparent PNG → white background.
   - On the synthetic receipt set, every ground-truth card, IBAN, email and phone box is covered by a region, names after labels are covered in at least 90 % of fixtures (`DETECT_MIN_RECALL_NAMES = 0.9`), and the trade code and amount are never covered.
+    - **Review 2026-10-24:** fixtures built by the same author as the detector prove little about real receipts.
+    - The set must include layouts where the name is **not** after a label: a large recipient name at the top as in Zelle, Cash App, Revolut and Wise, and an avatar caption. The measured recall for those is recorded in `docs/security/plan-5-review.md` as a number, not just pass or fail.
+    - No real person's receipt is ever committed.
   - With `/ocr/eng.traineddata.gz` blocked by `page.route`, `prepareProof` returns `ocrOk: false` and no regions within 31 s, and no error escapes.
-  - The whole run makes zero requests to other origins and logs zero CSP violations (Plan 3's CSP unchanged); no `blob:` worker is created.
+  - The whole run makes zero requests to other origins, page and worker alike (`context.on('request')`, which includes worker requests), and logs zero CSP violations (Plan 3's CSP unchanged); no `blob:` worker is created.
+    - The bundled `worker.min.js` contains two `Function(...)` fallbacks (regenerator-runtime and a `globalThis` shim) inside `try` blocks. If either reports a violation under the worker CSP, record it as expected in the test, by exact `violatedDirective` and source file, rather than loosening the CSP.
+  - With `/ocr/tesseract-core-relaxedsimd-lstm.wasm.js` returning 404, OCR still fails closed (`ocrOk: false`). With it present, Chromium loads exactly that file (request log). This catches a wrong asset list.
+  - Every `/ocr/*` response carries the worker CSP. A tampered `eng.traineddata.gz` (one byte flipped in `public/ocr/`) fails `copy-ocr-assets`' manifest check.
+  - A PNG whose `IHDR` says 12,000 × 12,000 but whose body is tiny → `too-large`, and `createImageBitmap` is never called (spy).
   - `npm audit --omit=dev` is 0 after adding the dependencies (R31/R33 exceptions only). If not, stop and report.
 - [ ] **Step 2:** Run `npx playwright test -c apps/web/e2e/playwright.config.ts proof-pipeline`; expect FAIL.
 - [ ] **Step 3:** Re-check the three publish dates, install with `npx -y npm@11.21.0 install --save-exact --ignore-scripts`, then implement.
@@ -479,13 +601,13 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/api/migrations/305_proofs.sql`, `apps/api/src/proofs/{routes,store,purge}.ts`, `apps/moderation/src/proofs.ts`
-- Modify: `apps/api/src/internal/routes.ts` (internal proof read), `apps/api/src/retention/scheduler.ts`
+- Modify: `apps/api/src/internal/routes.ts` (internal proof read), `apps/api/src/retention/scheduler.ts`, `apps/moderation/src/internal/server.ts` and `apps/api/src/disputes/moderationClient.ts` (Plan 4: `/internal/proof/read {code, proofId, logEntryId}`, accepting `proof.opened` or `proof.unblurred-opened` by kind), `apps/api/src/disputes/staffRoutes.ts` (Plan 4's proof-request route writes `proof_requests`; `POST …/proof` takes `proofId`), `apps/api/src/log/actions.ts` (`proof.opened`; `proof.*` details carry `proofId`)
 - Test: `apps/api/test/proofs.test.ts`, `apps/moderation/test/proofs.test.ts`
 
 **Interfaces:**
 - Consumes: Task 8; Plan 3 internal listener and moderation chat identity; Plan 4 dispute status, `proof-requested` record, `appendLog`.
 - Produces:
-  - Table `trade_proofs(id text pk /* newProofId */, trade_code text references trades, uploader_role text, kind text check (in ('proof','evidence','unblurred')), ciphertext bytea not null, created_at)`; `proof_requests(trade_code, uploader_role, requested_at, fulfilled_at)` written by Plan 4's request route (Plan 5 adds the table if Plan 4 has not).
+  - Table `trade_proofs(id text pk /* newProofId */, trade_code text references trades, uploader_role text, kind text check (in ('proof','evidence','unblurred')), ciphertext bytea not null, created_at)`; `proof_requests(trade_code, uploader_role, requested_at, fulfilled_at)`. Plan 4 defines no such table, so this migration adds it, and Task 14 makes Plan 4's request route insert it in the same transaction as the `proof.unblurred-requested` log entry.
   - `PUT /v1/trades/:code/proofs/:id?kind=` (participant, `requireTrader`, `Content-Type: application/octet-stream`, route `bodyLimit` = `PROOF_MAX_CIPHERTEXT`): `proof` only by the buyer in `securing|secured|paid|refund_requested|disputed`; `evidence` by either side while a dispute is open (P5-A30); `unblurred` only by the side named in an unfulfilled `proof_requests` row (409 `not-requested`). Over `PROOF_MAX_PER_SIDE` → 409 `too-many-proofs`; an existing id → 409 `exists`. The body is stored as is; the server never parses it.
   - `GET /v1/trades/:code/proofs/:id` (participant) → the ciphertext for `proof` and `evidence`; **404 for `unblurred`** whoever asks.
   - `GET /internal/v1/proofs/:id` (signed by the moderation key) → any kind's ciphertext.
@@ -494,6 +616,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 - [ ] **Step 1: Write the failing tests:**
   - The seller uploading `kind=proof` → `wrong-party`; a 4 MiB + 1 byte body → 413; a sixth proof → `too-many-proofs`.
+  - Moderation internal read: a fresh `proof.opened` entry for proof A cannot open proof B, and cannot open an `unblurred` proof; a `proof.unblurred-opened` entry is needed for that.
   - `unblurred` with no request → `not-requested`; after a request, the named side uploads; the seller's and the buyer's `GET` of that id → 404; the internal route (signed) returns it; unsigned → 401.
   - **Review Focus 4:** the seller decrypting an `unblurred` ciphertext with any key from envelopes it can open fails (`readProof` path test in moderation: the seller identity cannot open `proof.unblurred`).
   - A captured logger over the full flow contains no proof id, trade code or byte count.
@@ -509,7 +632,8 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 
 **Files:**
 - Create: `apps/web/src/screens/proof/{AddProof,BlurEditor,ProofThumb,SendUnblurred}.tsx`, `apps/web/src/proof/useProofs.ts`
-- Modify: `apps/web/src/screens/trade/{BuyerPay,PaidConfirmSheet}.tsx`, `apps/web/src/chat/ChatPanel.tsx`, `apps/web/src/screens/dispute/{DisputeOpen,DisputeRoom}.tsx`
+- Modify: `apps/web/src/screens/trade/{BuyerPay,PaidConfirmSheet}.tsx`, `apps/web/src/chat/ChatPanel.tsx`, `apps/web/src/screens/dispute/{DisputeOpen,DisputeRoom}.tsx` (or Plan 4's `apps/web/src/screens/{DisputeOpen,DisputeRoom}.tsx`, whichever exists)
+- Delete or replace: Plan 4's `apps/web/src/proof/reencode.ts` and its whole-image `proof.unblurred` envelope (see Interfaces). `SendUnblurred` replaces Plan 4's file picker, and Plan 4's `reencodeImage` EXIF test moves to Task 13's `stripOnly`.
 - Test: `apps/web/e2e/proof.spec.ts`
 
 **Interfaces:**
@@ -541,7 +665,10 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - Consumes: Task 9 `checkProof`, `proofCardLines`; Task 13 `ocr`; Task 14 `readProof`.
 - Produces:
   - `SmartProofCard({ trade, proofs })`: the **seller's own app** runs `ocr` on the blurred image it decrypted (never trusting values from the buyer) and renders `proofCardLines` under "We checked <buyer>'s screenshot", with the board's "Screenshots can be faked" caution and the closing bank line. With no proof the card is absent and the bank check line from Plan 3 stays.
-  - ModCase "Payment proof": staff-web runs the same check in the moderator's browser on the blurred proof, plus Plan 4's "Request unblurred proof" button, now live.
+  - ModCase "Payment proof": Plan 4's "Request unblurred proof" button is now live. The automatic check follows P5-A36:
+    - **(b), the default:** ModCase shows the blurred image and the amount and code to look for, with no OCR, and no OCR assets are served on the staff origin.
+    - **(a):** staff-web runs the same check in the moderator's browser. This needs `'wasm-unsafe-eval'` and `worker-src 'self'` in the staff-web CSP, `/ocr/*` with the worker CSP served from staff-web, and a staff-web CSP test.
+    - Under Plan 4's CSP as written, Tesseract cannot run on the staff origin.
 
 - [ ] **Step 1: Write the failing tests:** parity SellerConfirm (card unmasked) with the board fixture → the three board lines; a $400 fixture → the mismatch line in caution; an unreadable image → the couldn't-read line; the closing line is present in every variant; the card never enables the release button by itself (release still needs the checkbox and `releasable`); ModCase parity at 1280 with the card; opening the proof writes one `proof.opened` entry before bytes are returned.
 - [ ] **Step 2:** Run; expect FAIL.
@@ -580,7 +707,10 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - **Metadata and blur guarantees:** any path where bytes reach `encryptProof` without `cleanImage` + `assertClean`; any chunk or segment the allowlist lets through; whether `redact` output can leak glyph shape (edges, anti-aliasing outside the padding, JPEG ringing across region borders); a manual "remove blur" that silently drops an automatic region the buyer did not see.
   - **Unblurred copy:** any route, envelope or cache by which a trader (or the API alone) can read it; whether the server can tell from sizes or timing more than "an unblurred copy was sent".
   - **OCR supply chain:** that `tesseract.js`, its core and model load only from this origin, with no `blob:` worker, `eval` or network fallback; the size of what was added; the result of `npm audit`.
-  - **Review manipulation and sybils under starter limits:** wash trades between one person's accounts (cost: the 1 % fee, network fees, the $200 Starter cap, 3 open trades, 5–20 trades and 7–30 days before larger caps; weight floor makes tiny trades count little); reviews from one counterparty repeated many times; blind-reveal leaks through aggregates, sort order, badge changes or response timing; revenge reviews after reveal; aged dormant accounts farming Veteran. Record which are accepted residuals and which need an owner decision (see "Owner questions" below).
+  - **Review manipulation and sybils under starter limits:** wash trades between one person's accounts (cost: the 1 % fee, paid only by the ad poster, plus network fees, the $200 Starter cap, 3 open trades, and 5–20 trades over 7–30 days before larger caps; the weight floor makes tiny trades count little);
+    - **Review bombing:** a fresh account that *takes* a victim's offer pays no X2F fee, only network fees, and as the seller it gets its XMR back on release. A 1-star review costs the attacker one real fiat round trip, and the victim pays the 1 %. Record whether P5-A33 or a per-counterparty rule is needed.
+    - Weight leaks through % positive (P5-A32).
+    - Late reviews after the reveal (P5-A31). reviews from one counterparty repeated many times; blind-reveal leaks through aggregates, sort order, badge changes or response timing; revenge reviews after reveal; aged dormant accounts farming Veteran. Record which are accepted residuals and which need an owner decision (see "Owner questions" below).
   - **Past reputation:** the signed text binds the X2F name, site, URL, fingerprint, nonce and time; subkey handling; expired, revoked and weak keys; the one-fingerprint-one-account rule; that the server never fetches the URL (SSRF and IP leaks); that no user ID or email inside a key is stored readable, logged or shown (R16); key-ID-only archives are refused (P5-A23).
   - **Privacy of profiles and records:** no login name, amount, volume or exact time; hidden badges truly absent; the record contents; the feedback table's unlinkability.
 - [ ] **Step 2:** Fix every confirmed finding in the owning task's files with a test that would have caught it, then re-run `npm run check`.
@@ -603,3 +733,13 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 11. **Review notes:** refuse notes with personal details (emails, phone numbers, account numbers)? Default: yes (P5-A6). Should traders be able to report an abusive review to a moderator? Not in the spec; not built.
 12. **Feedback:** who reads it? Default: the owner only, kept one year (P5-A19).
 13. **Blur editor screen:** please add a "Check your proof" board to the canvas, or approve building it from design-system parts (Task 15).
+
+*Added by the plan review, 2026-10-24:*
+
+14. **Rating after the other review is already visible.** If someone stays silent for 7 days, they see the other person's review, and then have to rate before their next trade. That is a revenge review. Should a late rating be Neutral only, should the window just close, or keep it as is? (P5-A31)
+15. **Big-trade weighting can reveal trade sizes.** When one new review moves a trader's % positive, the size of the jump hints at how big that trade was. Use a few weight steps instead of exact dollars, hide % positive until 5 reviews, or both? (P5-A32)
+16. **The same partner rating someone over and over.** Should only each partner's latest review count? (P5-A33)
+17. **Profiles show "online" and "last seen" to anyone, for any name.** Limit profiles to people with an offer or a completed trade, round "last seen", or both? (P5-A34)
+18. **PGP fingerprint in the exported record.** It links the X2F name to the PGP key, and through it often to an email address. Make it opt-in at export and never in the public copy? (P5-A35)
+19. **Automatic proof check on the moderator's screen.** It needs WebAssembly allowed on the staff site, which widens that site's attack surface. Allow it, or show moderators the blurred image without the check? (P5-A36)
+20. **(For the lead) Who adds display names?** No plan yet adds the display name / login name split (spec 6.1). Plan 5 cannot start its profile and review screens without it.
