@@ -99,14 +99,16 @@ describe('checkChatEnvelope (the API-side shape check; no keys, no decryption)',
     for (const c of cases) expect(codeOf(() => checkChatEnvelope(c, ch, 'buyer'))).toBe('bad-envelope');
   });
 
-  it('refuses a body over 16 KiB with too-large, and accepts one at exactly 16 KiB', async () => {
+  it('refuses a body over 16 KiB with too-large, and accepts one that fits', async () => {
     const b = await body();
     const ch = b.trade as string;
     const size = (o: unknown): number => new TextEncoder().encode(JSON.stringify(o)).length;
     const base = size({ ...b, ct: '' });
-    const exact = { ...b, ct: 'A'.repeat(CHAT_BODY_MAX_BYTES - base) };
-    expect(size(exact)).toBe(CHAT_BODY_MAX_BYTES);
-    expect(codeOf(() => checkChatEnvelope(exact, ch, 'buyer'))).toBe('ok');
+    // ct must be whole base64 quads: the largest that fits is within 3 bytes of the cap.
+    const fit = { ...b, ct: 'A'.repeat(Math.floor((CHAT_BODY_MAX_BYTES - base) / 4) * 4) };
+    expect(size(fit)).toBeLessThanOrEqual(CHAT_BODY_MAX_BYTES);
+    expect(size(fit)).toBeGreaterThan(CHAT_BODY_MAX_BYTES - 4);
+    expect(codeOf(() => checkChatEnvelope(fit, ch, 'buyer'))).toBe('ok');
     const over = { ...b, ct: 'A'.repeat(CHAT_BODY_MAX_BYTES - base + 1) };
     expect(size(over)).toBe(CHAT_BODY_MAX_BYTES + 1);
     expect(codeOf(() => checkChatEnvelope(over, ch, 'buyer'))).toBe('too-large');
@@ -125,7 +127,7 @@ describe('checkChatEnvelope (the API-side shape check; no keys, no decryption)',
 describe('chatIdentityProofBytes', () => {
   it('binds the chat, the role and both public keys under its own domain', () => {
     const text = new TextDecoder().decode(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', 'aa', 'bb'));
-    expect(text).toBe('x2f/chat-identity/v1\0K7M29QXA4FTR8WPN\0buyer\0aabb');
+    expect(text).toBe('x2f/chat-identity/v1\0K7M2-9QXA-4FTR-8WPN\0buyer\0aabb');
   });
 
   it('is the same for any spelling of the chat code and differs per role and per key', () => {

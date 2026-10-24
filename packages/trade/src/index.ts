@@ -33,3 +33,17 @@ export {
   type TradeRuleCode,
   type TradeState,
 } from './machine.js';
+export {
+  CHAT_AFTER_CLOSE_DAYS,
+  CHAT_BODY_MAX_BYTES,
+  CHAT_MSG_TYPE,
+  CHAT_PRETRADE_IDLE_DAYS,
+  CHAT_TEXT_MAX_BYTES,
+  ChatEnvelopeError,
+  chatIdentityProofBytes,
+  chatPurgeDue,
+  checkChatEnvelope,
+  type ChatEnvelope,
+  type ChatEnvelopeErrorCode,
+  type ChatRetentionFacts,
+} from './chat.js';
