@@ -46,7 +46,7 @@ function fakeAddress(length = 95): string {
   return s;
 }
 
-const walletsActionOf = async (addresses: string[]): Promise<ConfirmAction> => ({
+const walletsActionOf = (addresses: string[]): ConfirmAction => ({
   kind: 'add-wallets',
   addressesHash: createHash('sha256').update(addresses.map((a) => a.trim()).join('\n')).digest('hex'),
   addressEnds: addresses.map((a) => addressEnd(a)).join(','),
@@ -432,7 +432,7 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
   });
 
   it('never makes the account’s first wallet wait, even added later and confirmed with a password (owner, 2026-10-24)', async () => {
-    const { id, b } = await trader();
+    const { id } = await trader();
     setNow(at(10 * DAY));
     const later = await relogin(id);
     const { wallet } = await addConfirmed(later);
@@ -440,7 +440,6 @@ describe('the wait by confirm method (owner, 2026-10-23)', () => {
     expect(new Date(wallet.usableFrom).getTime()).toBe(now.getTime());
     const { wallet: second } = await addConfirmed(later);
     expect(second.usable).toBe(false);
-    void b;
   });
 
   it('decides "first" under the account lock: of two parallel first adds confirmed with a password, one waits', async () => {
@@ -536,7 +535,7 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     const { wallet: old } = await addConfirmed(b);
     setNow(at(1000));
     const addresses = [fakeAddress(), fakeAddress(), fakeAddress(), fakeAddress()];
-    const token = await confirmToken(b, await walletsActionOf(addresses));
+    const token = await confirmToken(b, walletsActionOf(addresses));
     const res = await addBatch(b, drafts(addresses), { confirmToken: token });
     expect(res.statusCode).toBe(201);
     const got = res.json() as WalletOut[];
@@ -553,13 +552,13 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     const strong = await trader();
     await addConfirmed(strong.b);
     const a1 = [fakeAddress(), fakeAddress()];
-    const t1 = await issueConfirmToken(deps, { sessionId: strong.sessionId, accountId: strong.id, action: await walletsActionOf(a1), method: 'passkey' });
+    const t1 = await issueConfirmToken(deps, { sessionId: strong.sessionId, accountId: strong.id, action: walletsActionOf(a1), method: 'passkey' });
     const r1 = await addBatch(strong.b, drafts(a1), { confirmToken: t1 });
     expect((r1.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true]);
 
     const fresh = await trader();
     const a2 = [fakeAddress(), fakeAddress(), fakeAddress()];
-    const r2 = await addBatch(fresh.b, drafts(a2), { confirmToken: await confirmToken(fresh.b, await walletsActionOf(a2)) });
+    const r2 = await addBatch(fresh.b, drafts(a2), { confirmToken: await confirmToken(fresh.b, walletsActionOf(a2)) });
     expect((r2.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true, true]);
   });
 
@@ -577,7 +576,7 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     await addConfirmed(b);
     const addresses = [fakeAddress(), fakeAddress()];
     expect((await addBatch(b, drafts(addresses))).json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
-    const token = await confirmToken(b, await walletsActionOf(addresses));
+    const token = await confirmToken(b, walletsActionOf(addresses));
     for (const wrong of [[addresses[1]!, addresses[0]!], [addresses[0]!], [...addresses, fakeAddress()]]) {
       expect((await addBatch(b, drafts(wrong), { confirmToken: token })).json()).toEqual({ error: 'confirm-invalid' });
     }
@@ -590,7 +589,7 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
   it('refuses a bad batch with 400 before the token is used, and adds nothing', async () => {
     const { id, b } = await trader();
     const good = [fakeAddress(), fakeAddress()];
-    const token = await confirmToken(b, await walletsActionOf(good));
+    const token = await confirmToken(b, walletsActionOf(good));
     const dup = fakeAddress();
     const bad: Array<[unknown, string]> = [
       [[], 'bad-request'],
@@ -617,7 +616,7 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     const { id, b } = await trader();
     const { address } = await addConfirmed(b);
     const addresses = [fakeAddress(), address];
-    const token = await confirmToken(b, await walletsActionOf(addresses));
+    const token = await confirmToken(b, walletsActionOf(addresses));
     const res = await addBatch(b, drafts(addresses), { confirmToken: token });
     expect(res.statusCode).toBe(409);
     expect(await tokenUsed(token)).toBe(false);
