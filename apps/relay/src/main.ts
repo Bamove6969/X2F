@@ -18,8 +18,14 @@ const overrides = Object.fromEntries(
   }).filter(([, v]) => v !== undefined),
 );
 
-// Trades are registered in-process by the API in Plan 3; until then this relay serves none.
-const relay = await buildRelay(overrides, (e) => console.log(JSON.stringify(e)));
+// Trades are registered and closed only by the moderation service, through moderator-signed
+// calls on the private admin listener.
+const modSigningPublic = process.env.RELAY_MOD_SIGNING_PUBLIC;
+if (!modSigningPublic) throw new Error('RELAY_MOD_SIGNING_PUBLIC is required (the moderation service signing key, hex)');
+const log = (e: { reason: string }): void => console.log(JSON.stringify(e));
+const relay = await buildRelay(overrides, log, { modSigningPublic });
 const port = num('RELAY_PORT') ?? 8787;
 await relay.app.listen({ host: process.env.RELAY_HOST ?? '127.0.0.1', port });
+// The admin listener must stay on a private interface; it is never published.
+await relay.admin!.listen({ host: process.env.RELAY_ADMIN_HOST ?? '127.0.0.1', port: num('RELAY_ADMIN_PORT') ?? 8788 });
 console.log(JSON.stringify({ reason: 'listening', maxTrades: relay.limits.maxTrades }));

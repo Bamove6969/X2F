@@ -1,3 +1,4 @@
+export { CHANNEL_KINDS, channelFor, type ChannelKind } from './channels.js';
 export {
   ATOMIC_PER_XMR,
   MAX_MARGIN_BPS,

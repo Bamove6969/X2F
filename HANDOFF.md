@@ -185,3 +185,6 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 - `~/agy-repro` (a throwaway folder) still needs deleting by the owner.
 - The cause of the unexplained move of `~/claude-workspace` to `~/Public/claude-workspace` was never found.
 - Claude Code was downgraded from 2.1.300 to 2.1.292 by `/restart`, then the update channel was set to "latest". `/upgrade` showed "Login interrupted".
+
+## Decided 2026-10-23 (owner)
+- Price feed: the lead picks 3 public XMR price sources that need no account and are reachable over Tor, and the server uses their median. Sources are kept in config and can be changed later. Trading on market offers pauses when the price is stale (> 5 min) or the sources disagree (Plan 3 Task 3).

@@ -69,6 +69,8 @@ export interface OpenArgs {
 export interface Opened {
   type: string;
   payload: unknown;
+  /** The verified sender: use this, never the raw frame's `from`. */
+  from: Role;
 }
 
 const SIG_DOMAIN = 'x2f/envelope/v1\0';
@@ -357,13 +359,13 @@ function checkShape(e: unknown): Snapshot {
 }
 
 /** Parse the decrypted plaintext; it must be exactly the canonical text seal would produce. */
-function parsePlaintext(padded: Uint8Array): Opened {
+function parsePlaintext(padded: Uint8Array): Omit<Opened, 'from'> {
   const text = utf8Decoder.decode(unpad(padded));
   const parsed = JSON.parse(text) as unknown;
   if (!isPlainObject(parsed) || !hasExactKeys(parsed, INNER_KEYS) || typeof parsed['type'] !== 'string') {
     throw new Error('bad inner shape');
   }
-  const opened: Opened = { type: parsed['type'], payload: decodePayload(parsed['payload']) };
+  const opened = { type: parsed['type'], payload: decodePayload(parsed['payload']) };
   // Rejects duplicate keys, key order, whitespace, escapes, number forms and a BOM.
   if (canonicalJson({ type: opened.type, payload: encodePayload(opened.payload) }) !== text) {
     throw new Error('non-canonical plaintext');
@@ -438,7 +440,7 @@ export async function open(e: unknown, a: OpenArgs): Promise<Opened> {
     sodium.memzero(key);
   }
 
-  let opened: Opened;
+  let opened: Omit<Opened, 'from'>;
   try {
     opened = parsePlaintext(padded);
   } catch {
@@ -448,5 +450,5 @@ export async function open(e: unknown, a: OpenArgs): Promise<Opened> {
   }
 
   if (!a.guard.accept(from, env.seq)) throw new ProtocolError('replay', 'Sequence number already seen');
-  return opened;
+  return { type: opened.type, payload: opened.payload, from };
 }

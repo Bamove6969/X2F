@@ -34,16 +34,25 @@ export {
   PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
-export { completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
+export {
+  PRIMARY, allowedMethods, assertMethodAllowed, listMethods, methodAllowed, methodRoutes, needsAfter, ownerReady, pairAllowed,
+  parseFactor, passwordAllowed, removeMethod, type MethodEntry,
+} from './auth/methods.js';
 export {
   SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
   verifyTotp,
 } from './auth/totp.js';
 export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryRoutes } from './auth/recovery.js';
-export { SECURITY_HEADERS, addSecurityHeaders, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
+export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
 export {
   WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
   verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
   webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
 } from './auth/webauthn.js';
+export { moneroAddressValidator } from './wallets/address.js';
+export {
+  LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
+  usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
+} from './wallets/routes.js';
