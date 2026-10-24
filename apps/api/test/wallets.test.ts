@@ -562,6 +562,49 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     expect((r2.json() as WalletOut[]).map((w) => w.usable)).toEqual([true, true, true]);
   });
 
+  for (const method of ['pgp', 'security-key'] as const) {
+    it(`makes a later batch confirmed with ${method} usable at once, every wallet in it`, async () => {
+      const { id, b, sessionId } = await trader();
+      await addConfirmed(b);
+      const list = [fakeAddress(), fakeAddress(), fakeAddress()];
+      const token = await issueConfirmToken(deps, { sessionId, accountId: id, action: walletsActionOf(list), method });
+      const res = await addBatch(b, drafts(list), { confirmToken: token });
+      expect(res.statusCode).toBe(201);
+      const got = res.json() as WalletOut[];
+      expect(got.map((w) => [w.usable, w.usableFrom])).toEqual(list.map(() => [true, now.toISOString()]));
+    });
+  }
+
+  it('makes a waiting batch usable all together, at exactly 24 hours, never one by one', async () => {
+    const { id, b } = await trader();
+    await addConfirmed(b);
+    const added = now;
+    const list = [fakeAddress(), fakeAddress(), fakeAddress()];
+    const res = await addBatch(b, drafts(list), { confirmToken: await confirmToken(b, walletsActionOf(list)) });
+    const ids = (res.json() as WalletOut[]).map((w) => w.id);
+    const usableIds = async () => (await usableWallets(deps.db, id, now)).map((w) => w.id).filter((x) => ids.includes(x));
+    setNow(new Date(added.getTime() + PAYOUT_WAIT_MS - 1));
+    expect(await usableIds()).toEqual([]);
+    setNow(new Date(added.getTime() + PAYOUT_WAIT_MS));
+    expect((await usableIds()).sort()).toEqual([...ids].sort());
+  });
+
+  it('keeps existing wallets usable while a batch waits, and a second batch gets its own clock', async () => {
+    const { id, b } = await trader();
+    const firstList = [fakeAddress(), fakeAddress()];
+    const first = (await addBatch(b, drafts(firstList), { confirmToken: await confirmToken(b, walletsActionOf(firstList)) })).json() as WalletOut[];
+    expect(first.map((w) => w.usable)).toEqual([true, true]);
+    const t1 = now;
+    const secondList = [fakeAddress(), fakeAddress()];
+    const second = (await addBatch(b, drafts(secondList), { confirmToken: await confirmToken(b, walletsActionOf(secondList)) })).json() as WalletOut[];
+    expect(second.map((w) => w.usableFrom)).toEqual([0, 1].map(() => new Date(t1.getTime() + PAYOUT_WAIT_MS).toISOString()));
+    setNow(at(HOUR));
+    const thirdList = [fakeAddress()];
+    const third = (await addBatch(b, drafts(thirdList), { confirmToken: await confirmToken(b, walletsActionOf(thirdList)) })).json() as WalletOut[];
+    expect(third[0]!.usableFrom).toBe(at(PAYOUT_WAIT_MS).toISOString());
+    expect((await usableWallets(deps.db, id, now)).map((w) => w.id).sort()).toEqual(first.map((w) => w.id).sort());
+  });
+
   it('lets the creating session add its first batch without a token during onboarding', async () => {
     const { b } = await trader({ firstSession: true });
     const res = await addBatch(b, drafts([fakeAddress(), fakeAddress()]));
@@ -577,7 +620,7 @@ describe('adding several wallets at once (owner, 2026-10-24)', () => {
     const addresses = [fakeAddress(), fakeAddress()];
     expect((await addBatch(b, drafts(addresses))).json()).toEqual({ error: 'confirm-required', action: 'add-wallets' });
     const token = await confirmToken(b, walletsActionOf(addresses));
-    for (const wrong of [[addresses[1]!, addresses[0]!], [addresses[0]!], [...addresses, fakeAddress()]]) {
+    for (const wrong of [[addresses[1]!, addresses[0]!], [addresses[0]!], [...addresses, fakeAddress()], [fakeAddress(), fakeAddress()]]) {
       expect((await addBatch(b, drafts(wrong), { confirmToken: token })).json()).toEqual({ error: 'confirm-invalid' });
     }
     const single = await confirmToken(b, walletAction(addresses[0]!));
@@ -652,6 +695,44 @@ describe('GET /v1/wallets/rule (owner, 2026-10-24)', () => {
     expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: ['pgp', 'security-key'], password: 'waits', waitHours: 24 });
     await deps.db.query('delete from passwords where account_id = $1', [id]);
     expect((await rule(b)).password).toBe('none');
+  });
+
+  const addKey = (id: string, kind: 'passkey' | 'security-key') =>
+    deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, label, created_at)
+       values ($1, $2, $3, 0, $4, false, 'singleDevice', 'key', $5)`,
+      [id, randomBytes(32), randomBytes(77), kind, now],
+    );
+
+  it('a strong-only account (a passkey, no password) before and after its first wallet', async () => {
+    const { id, b } = await trader();
+    await addKey(id, 'passkey');
+    await deps.db.query('delete from passwords where account_id = $1', [id]);
+    expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: ['passkey'], password: 'none', waitHours: 24 });
+    await deps.db.query('update accounts set had_wallet = true where id = $1', [id]);
+    expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: ['passkey'], password: 'none', waitHours: 24 });
+  });
+
+  it('an account with every kind of method and no wallet yet: a password confirm would not wait', async () => {
+    const { id, b } = await trader();
+    await deps.db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
+      id, randomBytes(20).toString('hex'), randomBytes(64), now,
+    ]);
+    await addKey(id, 'passkey');
+    await addKey(id, 'security-key');
+    expect(await rule(b)).toEqual({ firstWallet: true, strongMethods: ['pgp', 'passkey', 'security-key'], password: 'immediate', waitHours: 24 });
+    await addConfirmed(b);
+    expect(await rule(b)).toEqual({ firstWallet: false, strongMethods: ['pgp', 'passkey', 'security-key'], password: 'waits', waitHours: 24 });
+  });
+
+  it('matches what an add then does: password waits exactly when the rule says waits', async () => {
+    const { b } = await trader();
+    expect((await rule(b)).password).toBe('immediate');
+    expect((await addConfirmed(b)).wallet.usable).toBe(true);
+    expect((await rule(b)).password).toBe('waits');
+    const { wallet } = await addConfirmed(b);
+    expect(wallet.usable).toBe(false);
+    expect(new Date(wallet.usableFrom).getTime() - now.getTime()).toBe((await rule(b)).waitHours * HOUR);
   });
 
   it('counts a removed wallet: the account has had one', async () => {
