@@ -95,7 +95,7 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       store: await openEscrowStore(),
       config,
       engine: new MoneroMultisigEngine({ network }),
-      generateIdentity,
+      newIdentity: generateIdentity,
       runParty,
       transport: wsTransport,
       onStatus,

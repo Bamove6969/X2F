@@ -248,7 +248,7 @@ export async function device(
     store,
     config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
     engine,
-    generateIdentity: testIdentity,
+    newIdentity: testIdentity,
     runParty: o.parties.runParty,
     transport: o.hub.transport,
     lock: o.lock ?? ((_n, fn) => fn()),

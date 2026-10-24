@@ -97,7 +97,8 @@ export interface RuntimeDeps {
   store: EscrowStore;
   config: RuntimeConfig;
   engine: EscrowEngine;
-  generateIdentity(): Promise<Identity>;
+  /** Makes a fresh trade identity (the worker passes the protocol's; only the worker may name it). */
+  newIdentity(): Promise<Identity>;
   runParty(a: PartyArgs): PartyHandle;
   transport(a: { url: string; code: string; role: Role; me: Identity }): Transport;
   /** Runs `fn` holding an exclusive lock `name` (navigator.locks by default). */
@@ -332,7 +333,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (!validConfirmed(c)) return this.fail('not-confirmed');
         // The API must agree with what the user confirmed, or nothing is made, registered or signed.
         if (!viewMatches(view, c.role, c.deal, c.ownAddress) || view.amountAtomic !== c.deal.takeAmountAtomic) return this.fail('deal-mismatch');
-        const id = await deps.generateIdentity();
+        const id = await deps.newIdentity();
         this.rec = {
           v: 1,
           code: this.code,
