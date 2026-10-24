@@ -40,10 +40,11 @@ export {
   parseFactor, passwordAllowed, removeMethod, type MethodEntry,
 } from './auth/methods.js';
 export {
-  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, sealSecret, totpRoutes,
+  SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, rewrapTotpSecrets, sealSecret, totpBox, totpRoutes,
   verifyTotp,
 } from './auth/totp.js';
-export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryRoutes } from './auth/recovery.js';
+export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
+export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
 export {

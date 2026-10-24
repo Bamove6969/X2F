@@ -1,3 +1,4 @@
+import { createCipheriv, randomBytes } from 'node:crypto';
 import argon2 from 'argon2';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
@@ -6,7 +7,8 @@ import type { Deps } from '../src/app.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
-import { openSecret, verifyTotp } from '../src/auth/totp.js';
+import { openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
+import { subkey } from '../src/config.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
@@ -105,6 +107,9 @@ describe('TOTP enrolment', () => {
     expect(rows[0]!.secret_enc.indexOf(raw)).toBe(-1);
     for (const f of forms) expect(rows[0]!.secret_enc.toString('latin1')).not.toContain(f);
     expect(Buffer.from(openSecret(deps, id, rows[0]!.secret_enc))).toEqual(raw);
+    // FU-C: the key-store format, under the current X2F_TOTP_KEYS key.
+    const current = deps.config.totpKeys.current;
+    expect([...rows[0]!.secret_enc.subarray(0, 3)]).toEqual([0x01, current >> 8, current & 0xff]);
     const { rows: alerts } = await deps.db.query('select detail from alerts where account_id = $1 and kind = $2', [id, 'login-method-added']);
     expect(alerts.map((r) => r.detail)).toEqual([{ method: 'totp' }]);
   });
@@ -426,5 +431,87 @@ describe('no patterns in TOTP secrets (R9)', () => {
     expect(s2).not.toBe(s1);
     setNow(at(STEP_MS));
     expect(await enrol(b2)).not.toBe(s2);
+  });
+});
+
+describe('TOTP key store (FU-C, ASVS 2.8.2)', () => {
+  /** A secret as Plan 2 sealed it under subkey('totp'), marked format 0 by migration 011. */
+  function legacySealed(accountId: string, raw: Uint8Array): Buffer {
+    const nonce = randomBytes(12);
+    const c = createCipheriv('aes-256-gcm', subkey(deps.config, 'totp'), nonce, { authTagLength: 16 });
+    c.setAAD(Buffer.from(`x2f/totp/${accountId}`, 'utf8'));
+    const body = Buffer.concat([c.update(raw), c.final()]);
+    return Buffer.concat([Buffer.from([0]), nonce, body, c.getAuthTag()]);
+  }
+  const insertTotp = (accountId: string, sealed: Buffer) =>
+    deps.db.query('insert into totp (account_id, secret_enc, created_at) values ($1, $2, $3)', [accountId, sealed, now]);
+  const sealedOf = async (accountId: string) =>
+    (await deps.db.query<{ secret_enc: Buffer }>('select secret_enc from totp where account_id = $1', [accountId])).rows[0]!.secret_enc;
+  const base32 = (raw: Uint8Array) => new Secret({ buffer: new Uint8Array(raw).buffer }).base32;
+
+  it('a format-0 secret (sealed under X2F_SERVER_KEY before FU-C) still verifies until rewrapped', async () => {
+    const { id } = await trader();
+    const raw = new Uint8Array(randomBytes(20));
+    await insertTotp(id, legacySealed(id, raw));
+    expect(await verifyTotp(deps, id, codeAt(base32(raw), now))).toBe(true);
+  });
+
+  it('rewrapTotpSecrets moves format-0 and older-key secrets to the current key, once, and leaves unopenable ones', async () => {
+    const saved = deps.config.totpKeys;
+    const rotated = { current: 7, keys: new Map([[7, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+    const legacy = await trader();
+    const older = await trader();
+    const broken = await trader();
+    const rawLegacy = new Uint8Array(randomBytes(20));
+    const rawOlder = new Uint8Array(randomBytes(20));
+    await insertTotp(legacy.id, legacySealed(legacy.id, rawLegacy));
+    await insertTotp(older.id, sealSecret(deps, older.id, rawOlder)); // under the ring's key before rotation
+    const bad = sealSecret(deps, broken.id, new Uint8Array(randomBytes(20)));
+    bad[bad.length - 1]! ^= 1;
+    await insertTotp(broken.id, bad);
+    try {
+      deps.config.totpKeys = rotated;
+      const first = await rewrapTotpSecrets(deps);
+      expect(first.rewrapped).toBeGreaterThanOrEqual(2);
+      expect(first.failed).toBeGreaterThanOrEqual(1);
+      for (const [id, raw] of [[legacy.id, rawLegacy], [older.id, rawOlder]] as const) {
+        const sealed = await sealedOf(id);
+        expect([...sealed.subarray(0, 3)]).toEqual([0x01, 0x00, 0x07]);
+        expect(Buffer.from(openSecret(deps, id, sealed))).toEqual(Buffer.from(raw));
+      }
+      expect(await sealedOf(broken.id)).toEqual(bad);
+      expect(await rewrapTotpSecrets(deps)).toEqual({ rewrapped: 0, failed: first.failed });
+      // The old key can now leave the ring: the rewrapped secrets open with the new key alone.
+      deps.config.totpKeys = { current: 7, keys: new Map([[7, rotated.keys.get(7)!]]) };
+      setNow(at(STEP_MS));
+      expect(await verifyTotp(deps, older.id, codeAt(base32(rawOlder), now))).toBe(true);
+      expect(await verifyTotp(deps, legacy.id, codeAt(base32(rawLegacy), now))).toBe(true);
+    } finally {
+      deps.config.totpKeys = saved;
+    }
+  });
+
+  it('rewrap never overwrites a secret replaced since it was read', async () => {
+    const saved = deps.config.totpKeys;
+    const { id } = await trader();
+    await insertTotp(id, legacySealed(id, new Uint8Array(randomBytes(20))));
+    const replacement = sealSecret(deps, id, new Uint8Array(randomBytes(20)));
+    const query = deps.db.query.bind(deps.db) as (text: string, values?: unknown[]) => Promise<unknown>;
+    let swapped = false;
+    const spy = vi.spyOn(deps.db, 'query').mockImplementation((async (text: string, values?: unknown[]) => {
+      if (!swapped && text.startsWith('update totp set secret_enc')) {
+        swapped = true;
+        await query('update totp set secret_enc = $2 where account_id = $1', [id, replacement]);
+      }
+      return query(text, values);
+    }) as never);
+    try {
+      deps.config.totpKeys = { current: 8, keys: new Map([[8, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+      await rewrapTotpSecrets(deps);
+    } finally {
+      spy.mockRestore();
+      deps.config.totpKeys = saved;
+    }
+    expect(await sealedOf(id)).toEqual(replacement);
   });
 });

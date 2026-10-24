@@ -4,20 +4,23 @@
  * - No patterns (owner, spec 6.2): each enrolment draws a fresh 20-byte secret from
  *   `crypto.randomBytes`, never derived from the username, account ID, time, a counter,
  *   `serverKey` or any shared seed.
- * - The secret is stored only sealed (AES-256-GCM under `subkey('totp')`), both in `totp.secret_enc`
- *   and in the enrolment challenge's payload; the clear secret exists only in the start response.
+ * - The secret is stored only sealed by the TOTP key store (`totpBox`: AES-256-GCM under the current
+ *   `X2F_TOTP_KEYS` key, FU-C), both in `totp.secret_enc` and in the enrolment challenge's payload;
+ *   the clear secret exists only in the start response. Secrets sealed before FU-C (format 0, under
+ *   `subkey('totp')`) still open until `rewrapTotpSecrets` moves them.
  * - SHA-1, 6 digits, 30-second period, window ±1 step; a code is accepted only for a step later than
  *   the last accepted one, set in the same statement (no replay, even in parallel).
  */
-import { createCipheriv, createDecipheriv, randomBytes, timingSafeEqual } from 'node:crypto';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { Secret, TOTP } from 'otpauth';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { subkey } from '../config.js';
+import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from './challenges.js';
+import { keyringBox, type SecretBox } from './keystore.js';
 import { methodAllowed } from './methods.js';
 import { requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
@@ -38,27 +41,61 @@ export const TOTP_OPEN_ENROLMENTS = 3;
 // ---------------------------------------------------------------------------------------------
 // Sealing
 
-const aad = (accountId: string) => Buffer.from(`x2f/totp/${accountId}`, 'utf8');
+const context = (accountId: string) => `x2f/totp/${accountId}`;
+const boxes = new WeakMap<Config, { ring: Config['totpKeys']; box: SecretBox }>();
 
 /**
- * AES-256-GCM under `subkey('totp')`, bound to the account (its ID is the associated data):
- * nonce (12) ‖ ciphertext ‖ tag (16). A sealed secret copied to another account does not open.
+ * The TOTP key store: `X2F_TOTP_KEYS` (env or file), with `subkey('totp')` only to open format-0
+ * blobs. Rebuilt if the config's ring is replaced.
  */
-export function sealSecret(deps: Pick<Deps, 'config'>, accountId: string, secret: Uint8Array): Buffer {
-  const nonce = randomBytes(12);
-  const cipher = createCipheriv('aes-256-gcm', subkey(deps.config, 'totp'), nonce, { authTagLength: 16 });
-  cipher.setAAD(aad(accountId));
-  const body = Buffer.concat([cipher.update(secret), cipher.final()]);
-  return Buffer.concat([nonce, body, cipher.getAuthTag()]);
+export function totpBox(config: Config): SecretBox {
+  const cached = boxes.get(config);
+  if (cached && cached.ring === config.totpKeys) return cached.box;
+  const box = keyringBox(config.totpKeys, subkey(config, 'totp'));
+  boxes.set(config, { ring: config.totpKeys, box });
+  return box;
 }
 
-/** Throws when the sealed secret is malformed, tampered with or sealed for another account. */
+/**
+ * Sealed by the key store under the current key, bound to the account (its ID is in the associated
+ * data): a sealed secret copied to another account does not open.
+ */
+export function sealSecret(deps: Pick<Deps, 'config'>, accountId: string, secret: Uint8Array): Buffer {
+  return totpBox(deps.config).seal(secret, context(accountId));
+}
+
+/** Throws when the sealed secret is malformed, tampered with, sealed for another account or its key is gone. */
 export function openSecret(deps: Pick<Deps, 'config'>, accountId: string, sealed: Buffer): Uint8Array {
-  if (sealed.length < 12 + 16) throw new Error('sealed TOTP secret is malformed');
-  const decipher = createDecipheriv('aes-256-gcm', subkey(deps.config, 'totp'), sealed.subarray(0, 12), { authTagLength: 16 });
-  decipher.setAAD(aad(accountId));
-  decipher.setAuthTag(sealed.subarray(sealed.length - 16));
-  return new Uint8Array(Buffer.concat([decipher.update(sealed.subarray(12, sealed.length - 16)), decipher.final()]));
+  return totpBox(deps.config).open(sealed, context(accountId));
+}
+
+/**
+ * Reseals every TOTP secret not yet under the current key (format 0, or an older key id) with the
+ * current key: run after migration 011 and after each `X2F_TOTP_KEYS` rotation, before an old key
+ * leaves the ring (`npm run rewrap-totp -w @x2f/api`). Each row is written only if it still holds
+ * the blob that was read, so a new enrolment in between wins. A blob that does not open is left as
+ * it is and counted in `failed` (it never verified anyway). Returns counts only, never secrets.
+ */
+export async function rewrapTotpSecrets(deps: Pick<Deps, 'db' | 'config'>): Promise<{ rewrapped: number; failed: number }> {
+  const box = totpBox(deps.config);
+  const { rows } = await deps.db.query<{ account_id: string; secret_enc: Buffer }>('select account_id, secret_enc from totp');
+  let rewrapped = 0;
+  let failed = 0;
+  for (const row of rows) {
+    if (box.isCurrent(row.secret_enc)) continue;
+    let sealed: Buffer;
+    try {
+      sealed = box.seal(box.open(row.secret_enc, context(row.account_id)), context(row.account_id));
+    } catch {
+      failed++;
+      continue;
+    }
+    const r = await deps.db.query('update totp set secret_enc = $3 where account_id = $1 and secret_enc = $2', [
+      row.account_id, row.secret_enc, sealed,
+    ]);
+    rewrapped += r.rowCount ?? 0;
+  }
+  return { rewrapped, failed };
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -79,18 +79,18 @@ Met = implemented and, where it says so, tested; Partial = implemented with a ga
 | 2.3.3 renewal | N/A | |
 | 2.4.1 – 2.4.2 approved hash, salt ≥ 32 bit | Met | Argon2id, library salt |
 | 2.4.3 – 2.4.4 PBKDF2 / bcrypt parameters | N/A | |
-| 2.4.5 secret-salt extra iteration (pepper) | **Not met** | none; `serverKey` exists, so an HMAC step before Argon2 would add it; owner question 6 |
+| 2.4.5 secret-salt extra iteration (pepper) | Met (FU-C) | Argon2id of HMAC-SHA-256(`X2F_PASSWORD_PEPPERS`, password), versioned; older hashes rehashed at next login |
 | 2.5.1 – 2.5.3 recovery secrets, hints, no password recovery | Met | no hints, no reset, codes shown once |
 | 2.5.4 no default accounts | Met | owner account is Plan 4's one-time setup |
 | 2.5.5 notify on factor change | Partial | alerts, no email |
 | 2.5.6 secure forgotten-credential recovery | Met | recovery codes / held TOTP session; no reset (staff / owner by owner decision R2) |
 | 2.5.7 lost MFA needs identity proofing (L3) | Not met by design | X2F has no identity data; recovery is codes or a 24-hour hold, which the owner chose |
 | 2.6.1 look-up secrets single use | Met | `recovery.ts` atomic update |
-| 2.6.2 look-up secrets ≥ 112 bit or salted hash | Partial | 80-bit codes, unsalted SHA-256, throttled to ≈ 2900 tries a day; not reachable offline or online in practice; owner question 6 |
+| 2.6.2 look-up secrets ≥ 112 bit or salted hash | Met (FU-C) | 80-bit codes stored as HMAC-SHA-256 under `X2F_RECOVERY_CODE_KEYS`, bound to the account; sets made before FU-C stay SHA-256 (flagged `key_id` null) until used up or regenerated |
 | 2.6.3 CSPRNG | Met | `getRandomValues` |
 | 2.7.1 – 2.7.6 out-of-band (PGP) codes | Met | 5 min (limit 10), single use, only to the key owner, stored hashed, 60 bits |
 | 2.8.1, 2.8.3, 2.8.4 TOTP lifetime, algorithms, single use | Met | 30 s ± 1 step, `last_step` compare-and-set |
-| 2.8.2 OTP keys in an HSM / OS key store | Partial | AES-GCM under a key from `X2F_SERVER_KEY` in the environment; owner question 6 |
+| 2.8.2 OTP keys in an HSM / OS key store | Partial (FU-C) | AES-256-GCM under `X2F_TOTP_KEYS`, a separate env/file key store behind a `SecretBox` interface, versioned blobs and a rewrap tool; a real HSM / KMS is Plan 6 |
 | 2.8.5 reused TOTP is logged and the holder notified | Partial | rejected; not logged (by the logging rules) or alerted |
 | 2.8.6 – 2.8.7 | N/A | |
 | 2.9.1 – 2.9.3 crypto verifiers | Met | WebAuthn public keys; 32-byte challenges; approved algorithms only (-8, -7, -257) |

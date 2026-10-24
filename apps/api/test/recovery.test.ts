@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { normalizeRecoveryCode } from '@x2f/accounts';
 import type { FastifyInstance } from 'fastify';
 import { Secret } from 'otpauth';
@@ -49,6 +49,11 @@ beforeEach(() => {
 const name = (p = 'rec') => `${p}${String(++n).padStart(4, '0')}`;
 const at = (ms: number) => new Date(now.getTime() + ms);
 const sha = (s: string) => createHash('sha256').update(s).digest();
+/** FU-C: HMAC-SHA-256 under a recovery-code key, bound to the account. */
+const keyed = (keyBytes: Uint8Array, accountId: string, normalized: string) =>
+  createHmac('sha256', keyBytes).update(`x2f/recovery-code\0${accountId}\0${normalized}`, 'utf8').digest();
+const currentKeyed = (accountId: string, code: string) =>
+  keyed(deps.config.recoveryCodeKeys.keys.get(deps.config.recoveryCodeKeys.current)!, accountId, normalizeRecoveryCode(code)!);
 
 async function account(o: { kind?: 'trader' | 'staff' | 'owner'; disabled?: boolean } = {}) {
   const username = name();
@@ -130,9 +135,13 @@ describe('POST /v1/account/recovery-codes', () => {
     expect(codes).toHaveLength(10);
     expect(new Set(codes).size).toBe(10);
     for (const c of codes) expect(c).toMatch(CODE);
-    const { rows } = await deps.db.query<{ code_hash: Buffer }>('select code_hash from recovery_codes where account_id = $1', [id]);
-    // Hashed in the normalized form that login compares.
-    expect(rows.map((r) => r.code_hash.toString('hex')).sort()).toEqual(codes.map((c) => sha(normalizeRecoveryCode(c)!).toString('hex')).sort());
+    const { rows } = await deps.db.query<{ code_hash: Buffer; key_id: number | null }>(
+      'select code_hash, key_id from recovery_codes where account_id = $1', [id],
+    );
+    // Keyed hash (FU-C) of the normalized form that login compares, under the current key.
+    expect(rows.map((r) => r.code_hash.toString('hex')).sort()).toEqual(codes.map((c) => currentKeyed(id, c).toString('hex')).sort());
+    expect(new Set(rows.map((r) => r.key_id))).toEqual(new Set([deps.config.recoveryCodeKeys.current]));
+    for (const c of codes) expect(rows.some((r) => r.code_hash.equals(sha(normalizeRecoveryCode(c)!)))).toBe(false);
   });
 
   it('needs a confirm token outside onboarding and a full session', async () => {
@@ -148,6 +157,54 @@ describe('POST /v1/account/recovery-codes', () => {
       const res = await (await loggedIn(id)).post('/v1/account/recovery-codes', {});
       expect(res.statusCode).toBe(403);
       expect(res.json()).toEqual({ error: 'method-not-allowed' });
+    }
+  });
+});
+
+describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
+  const insert = (accountId: string, hash: Buffer, keyId: number | null) =>
+    deps.db.query('insert into recovery_codes (account_id, code_hash, key_id) values ($1, $2, $3)', [accountId, hash, keyId]);
+
+  it('a legacy set (plain SHA-256, key_id null) still works once per code until it is regenerated', async () => {
+    const { id, username } = await account();
+    const legacy = ['ABCD-EFGH-JKMN-PQRS', 'BCDE-FGHJ-KMNP-QRST'];
+    for (const c of legacy) await insert(id, sha(normalizeRecoveryCode(c)!), null);
+    expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(200);
+    expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(401);
+    await newCodes(await loggedIn(id));
+    expect((await backup(new Browser(app), username, 'recovery-code', legacy[1]!)).statusCode).toBe(401);
+    const { rows } = await deps.db.query('select 1 from recovery_codes where account_id = $1 and key_id is null', [id]);
+    expect(rows).toEqual([]);
+  });
+
+  it('a SHA-256 value stored as keyed, or a keyed value stored as legacy, does not match', async () => {
+    const { id, username } = await account();
+    await insert(id, sha(normalizeRecoveryCode('CDEF-GHJK-MNPQ-RSTV')!), deps.config.recoveryCodeKeys.current);
+    await insert(id, currentKeyed(id, 'DEFG-HJKM-NPQR-STVW'), null);
+    expect((await backup(new Browser(app), username, 'recovery-code', 'CDEF-GHJK-MNPQ-RSTV')).statusCode).toBe(401);
+    expect((await backup(new Browser(app), username, 'recovery-code', 'DEFG-HJKM-NPQR-STVW')).statusCode).toBe(401);
+  });
+
+  it('is bound to the account: another account\'s keyed value of the same code does not match', async () => {
+    const a = await account();
+    const b = await account();
+    await insert(b.id, currentKeyed(a.id, 'EFGH-JKMN-PQRS-TVWX'), deps.config.recoveryCodeKeys.current);
+    expect((await backup(new Browser(app), b.username, 'recovery-code', 'EFGH-JKMN-PQRS-TVWX')).statusCode).toBe(401);
+  });
+
+  it('accepts a code under an older key still in the ring, and not once that key is removed', async () => {
+    const { id, username } = await account();
+    const old = new Uint8Array(randomBytes(32));
+    const saved = deps.config.recoveryCodeKeys;
+    const code = 'FGHJ-KMNP-QRST-VWXY';
+    await insert(id, keyed(old, id, normalizeRecoveryCode(code)!), 3);
+    try {
+      deps.config.recoveryCodeKeys = { current: saved.current, keys: new Map([[saved.current, saved.keys.get(saved.current)!]]) };
+      expect((await backup(new Browser(app), username, 'recovery-code', code)).statusCode).toBe(401);
+      deps.config.recoveryCodeKeys = { current: saved.current, keys: new Map([...saved.keys, [3, old]]) };
+      expect((await backup(new Browser(app), username, 'recovery-code', code)).statusCode).toBe(200);
+    } finally {
+      deps.config.recoveryCodeKeys = saved;
     }
   });
 });
@@ -204,7 +261,8 @@ describe('backup login with a recovery code', () => {
     const res = await backup(new Browser(app), username, 'recovery-code', codes[0]!);
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'account-disabled' });
-    const { rows } = await deps.db.query('select used_at from recovery_codes where code_hash = $1', [sha(codes[0]!)]);
+    const { rows } = await deps.db.query('select used_at from recovery_codes where code_hash = $1', [currentKeyed(id, codes[0]!)]);
+    expect(rows).toHaveLength(1);
     expect(rows[0]!.used_at).toBeNull();
   });
 
