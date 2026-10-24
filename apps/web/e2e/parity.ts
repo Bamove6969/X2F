@@ -53,6 +53,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  BuyQuote: [
+    {
+      text: 'Paid by satoshi_ghost',
+      why: 'OD-4 (spec 11.1): the release network fee comes off the payout, so the row reads "about 0.0001 XMR, taken from the payout".',
+    },
+    { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
+    { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
+  ],
 };
 
 /**
