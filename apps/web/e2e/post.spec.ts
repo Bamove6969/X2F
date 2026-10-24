@@ -40,8 +40,8 @@ interface Stubs {
 async function stub(page: Page, o: Stubs = {}): Promise<Request[]> {
   const posts: Request[] = [];
   await page.route('**/v1/account/me', json(o.signedIn === false ? { error: 'not-authenticated' } : ME, o.signedIn === false ? 401 : 200));
-  await page.route('**/v1/methods?*', json({ live: [], all: ROWS }));
-  await page.route('**/v1/price?*', (r) => {
+  await page.route(/\/v1\/methods\?/, json({ live: [], all: ROWS }));
+  await page.route(/\/v1\/price\?/, (r) => {
     const currency = new URL(r.request().url()).searchParams.get('currency') ?? '';
     const p = PRICES[currency];
     if (o.price === 'down' || !p) return json({ error: 'price-unavailable' }, 503)(r);
