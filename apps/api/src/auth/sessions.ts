@@ -223,10 +223,25 @@ export function requireSession(
     }
     // expires_at is the idle deadline capped by the absolute one (created_at + absolute), so
     // purgeExpired removes idle sessions too.
-    await deps.db.query(
-      'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
-      [row.id, now, deadline(row.created_at, now, policy)],
-    );
+    if (row.kind === 'trader' && row.level === 'full') {
+      // The logout timer can change while this request runs (PUT /v1/account/security/logout-timer
+      // moves every session's deadline in its transaction). The idle hours are read again here,
+      // under a share lock, so this touch never writes back a deadline from the timer read above:
+      // a share lock waits for a pending change and then sees the committed value.
+      await deps.db.query(
+        `update sessions s
+            set last_seen_at = $2,
+                expires_at = least($3::timestamptz,
+                  $2::timestamptz + (select a.idle_hours from accounts a where a.id = s.account_id for share) * interval '1 hour')
+          where s.id = $1 and s.last_seen_at < $2`,
+        [row.id, now, new Date(row.created_at.getTime() + policy.absoluteMs)],
+      );
+    } else {
+      await deps.db.query(
+        'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
+        [row.id, now, deadline(row.created_at, now, policy)],
+      );
+    }
     req.auth = {
       sessionId: row.id,
       accountId: row.account_id,

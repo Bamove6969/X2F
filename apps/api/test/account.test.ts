@@ -436,6 +436,57 @@ describe('logout timer (owner, 2026-10-23)', () => {
     expect((await b.get(URL)).statusCode).toBe(200);
   });
 
+  it('a request racing a timer change never writes back the old, shorter deadline', async () => {
+    const { id } = await account();
+    const b = await loggedIn(id);
+    expect((await setTimer(b, 2)).statusCode).toBe(200);
+    setNow(at(MIN));
+    // Stand in for a PUT in flight: the timer and this session's deadline change in an open transaction.
+    const other = await deps.db.connect();
+    let pending;
+    try {
+      await other.query('begin');
+      await other.query('update accounts set idle_hours = 12 where id = $1', [id]);
+      await other.query(`update sessions set expires_at = last_seen_at + interval '12 hours' where id = $1`, [b.sessionId]);
+      const { rows: [me] } = await other.query<{ pid: number }>('select pg_backend_pid() as pid');
+      // The request reads the old timer (2 h) before the change commits, then touches the session.
+      pending = b.get(URL);
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where wait_event_type = 'Lock' and pid <> $1 and datname = current_database()`,
+          [me!.pid],
+        );
+        if (rows.length > 0) break;
+        if (Date.now() > deadline) throw new Error('the touch never waited on the change');
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      await other.query('commit');
+    } finally {
+      other.release();
+    }
+    expect((await pending).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [b.sessionId]);
+    expect(rows[0]!.expires_at).toEqual(at(12 * HOUR));
+    setNow(at(3 * HOUR));
+    expect((await b.get(URL)).statusCode).toBe(200);
+  });
+
+  it('leaves recovery sessions alone: they keep 25 hours idle when the timer is set to 2', async () => {
+    const { id } = await account();
+    await addPgp(id);
+    const full = await loggedIn(id);
+    const recovery = await loggedIn(id, { level: 'recovery' });
+    const expires = async (sessionId: string) =>
+      (await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [sessionId])).rows[0]!.expires_at;
+    const before = await expires(recovery.sessionId);
+    expect((await setTimer(full, 2)).statusCode).toBe(200);
+    expect(await expires(recovery.sessionId)).toEqual(before);
+    setNow(at(3 * HOUR));
+    expect((await recovery.get(URL)).statusCode).toBe(200);
+    expect(errorOf(await full.get(URL))).toBe('not-authenticated');
+  });
+
   it('keeps the 30-day absolute cap whatever the timer', async () => {
     const { id } = await account();
     const b = await loggedIn(id);
