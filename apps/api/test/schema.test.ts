@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,12 @@ import { migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
 
+const VAPID = (() => {
+  const ecdh = createECDH('prime256v1');
+  ecdh.setPrivateKey(Buffer.alloc(32, 5));
+  return { X2F_VAPID_PUBLIC: ecdh.getPublicKey().toString('base64url'), X2F_VAPID_PRIVATE: Buffer.alloc(32, 5).toString('base64url') };
+})();
+
 const FULL_ENV = {
   X2F_ORIGINS: 'https://x2f.test,http://x2fexample.onion',
   X2F_RP_ID: 'x2f.test',
@@ -21,9 +27,8 @@ const FULL_ENV = {
   X2F_TERMS_VERSION: '2026-10-17',
   X2F_PGP_SIGNING_KEY_PATH: '/srv/x2f/signing.asc',
   X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
-  // Task 19: a P-256 public point (65 bytes, 0x04 first) and private scalar (32 bytes), base64url.
-  X2F_VAPID_PUBLIC: Buffer.concat([Buffer.from([4]), Buffer.alloc(64, 9)]).toString('base64url'),
-  X2F_VAPID_PRIVATE: Buffer.alloc(32, 5).toString('base64url'),
+  // Task 19: a VAPID pair, base64url: the P-256 public point (65 bytes) and private scalar (32 bytes).
+  ...VAPID,
 };
 
 describe('migrations', () => {
@@ -125,6 +130,7 @@ describe('config', () => {
     ['X2F_VAPID_PUBLIC', Buffer.alloc(33, 4).toString('base64url')],
     ['X2F_VAPID_PRIVATE', Buffer.alloc(31, 5).toString('base64url')],
     ['X2F_VAPID_PRIVATE', 'not base64url!'],
+    ['X2F_VAPID_PUBLIC', (() => { const e = createECDH('prime256v1'); e.generateKeys(); return e.getPublicKey().toString('base64url'); })()],
   ])('refuses malformed %s', (name, value) => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
   });
