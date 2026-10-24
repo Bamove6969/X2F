@@ -1,0 +1,208 @@
+// Stubs for the escrow runtime tests: an in-memory API and relay, a spy party, and a test mod key.
+import type { Role } from '@x2f/core';
+import type { EscrowEngine, Incoming, Outcome, PartyArgs, PartyHandle, Transport } from '@x2f/escrow';
+import { canonicalJson, generateIdentity, type Envelope, type Participants } from '@x2f/protocol';
+import { channelFor, escrowPlan } from '@x2f/trade';
+import { IDBFactory } from 'fake-indexeddb';
+import sodium from 'libsodium-wrappers';
+import { attestationBytes, type Attestation } from '../src/escrow/adapters.js';
+import { createEscrowRuntime, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
+import { openEscrowStore, type EscrowStore } from '../src/escrow/store.js';
+
+export const CODE = 'K7Q2-M9XA-3PRT-W8DN';
+export const AMOUNT = 1_250_000_000_000n;
+export const FEE_WALLET = '4FeeWalletAddress';
+export const ADDR = { buyer: '4BuyerPayout', seller: '4SellerRefund' } as const;
+export const ESCROW_ADDRESS = '5EscrowMultisigAddress';
+
+export async function modKey(): Promise<{ publicHex: string; secret: Uint8Array }> {
+  await sodium.ready;
+  const kp = sodium.crypto_sign_keypair();
+  return { publicHex: sodium.to_hex(kp.publicKey), secret: kp.privateKey };
+}
+
+export function signAttestation(a: Attestation, secret: Uint8Array): string {
+  return sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), secret));
+}
+
+/** A relay that delivers each envelope to the other roles on the same channel. */
+export class Hub {
+  private boxes = new Map<string, { inbox: unknown[]; waiters: ((v: unknown) => void)[] }>();
+  sent: { channel: string; from: Role; e: Envelope }[] = [];
+  opened: { channel: string; role: Role }[] = [];
+  private box(channel: string, role: Role) {
+    const k = `${channel}/${role}`;
+    let b = this.boxes.get(k);
+    if (!b) this.boxes.set(k, (b = { inbox: [], waiters: [] }));
+    return b;
+  }
+  transport = (a: { url: string; code: string; role: Role }): Transport => {
+    this.opened.push({ channel: a.code, role: a.role });
+    let closed = false;
+    const me = this.box(a.code, a.role);
+    return {
+      send: (e) => {
+        if (closed) return;
+        this.sent.push({ channel: a.code, from: a.role, e });
+        for (const r of ['buyer', 'seller', 'mod'] as const) {
+          if (r === a.role) continue;
+          const b = this.box(a.code, r);
+          const copy = JSON.parse(JSON.stringify(e)) as unknown;
+          const w = b.waiters.shift();
+          if (w) w(copy);
+          else b.inbox.push(copy);
+        }
+      },
+      next: () =>
+        new Promise((resolve, reject) => {
+          if (closed) return reject(new Error('closed'));
+          const x = me.inbox.shift();
+          if (x !== undefined) resolve(x);
+          else me.waiters.push(resolve);
+        }),
+      onReconnect: () => {},
+      close: () => {
+        closed = true;
+      },
+    };
+  };
+  /** Delivers a frame as if from a peer (e.g. the mod). */
+  inject(channel: string, role: Role, e: unknown): void {
+    const b = this.box(channel, role);
+    const w = b.waiters.shift();
+    if (w) w(e);
+    else b.inbox.push(e);
+  }
+}
+
+export interface Funds {
+  balance: bigint;
+  unlocked: bigint;
+  incoming: Incoming[];
+}
+
+/** A spy party: setup resolves at once with ESCROW_ADDRESS; settle calls are recorded. */
+export class Parties {
+  calls: { role: Role; args: PartyArgs }[] = [];
+  settles: { role: Role; o: Outcome }[] = [];
+  funds: Funds = { balance: 0n, unlocked: 0n, incoming: [] };
+  /** Settles resolve only when released. */
+  pending: { role: Role; o: Outcome; resolve: (v: string | null) => void; reject: (e: unknown) => void }[] = [];
+  committed = new Map<Role, string>();
+  runParty = (args: PartyArgs): PartyHandle => {
+    this.calls.push({ role: args.role, args });
+    void args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null });
+    return {
+      ready: async () => ESCROW_ADDRESS,
+      settle: (o) => {
+        this.settles.push({ role: args.role, o });
+        return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
+      },
+      funds: async () => structuredClone(this.funds),
+      stop: async () => {
+        for (const p of this.pending.filter((x) => x.role === args.role)) p.reject(Object.assign(new Error('stopped'), { code: 'stopped' }));
+      },
+    };
+  };
+}
+
+export const engine = {} as EscrowEngine;
+
+export interface ApiState {
+  identities: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>>;
+  view: Record<string, unknown>;
+  /** Replaces the attestation the API serves (for the mismatch tests). */
+  tamper?: (a: Attestation) => Attestation;
+  resign?: Uint8Array;
+}
+
+export function tradeView(over: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    code: CODE,
+    state: 'setup',
+    poster: 'seller',
+    amountAtomic: AMOUNT.toString(),
+    lockedRate: { currency: 'USD', centsPerXmr: '33000' },
+    maxFiatCents: '50000',
+    settling: null,
+    paidAt: null,
+    ...over,
+  };
+}
+
+/** The participants the API would attest, with a mod identity of its own. */
+export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, state: ApiState) {
+  const modId = await generateIdentity();
+  const attest = async (): Promise<{ attestation: Attestation; sig: string } | null> => {
+    const { buyer, seller } = state.identities;
+    if (!buyer || !seller) return null;
+    const participants: Participants = {
+      buyer: { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic },
+      seller: { signPublic: seller.signPublic, boxPublic: seller.boxPublic },
+      mod: { signPublic: modId.signPublic, boxPublic: modId.boxPublic },
+    };
+    let a: Attestation = {
+      v: 1,
+      trade: CODE,
+      channels: { escrow: await channelFor(CODE, 'escrow'), signals: await channelFor(CODE, 'signals') },
+      participants,
+      issuedAt: '2026-10-23T12:00:00.000Z',
+    };
+    if (state.tamper) a = state.tamper(a);
+    return { attestation: a, sig: signAttestation(a, state.resign ?? mod.secret) };
+  };
+  const forRole = (role: 'buyer' | 'seller') => ({
+    getTrade: async () => ({ ...state.view, role, ownAddress: ADDR[role] }),
+    registerIdentity: async (_code: string, body: { signPublic: string; boxPublic: string; proof: string }) => {
+      state.identities[role] ??= body;
+    },
+    getAttestation: async () => attest(),
+  });
+  return { modId, forRole };
+}
+
+export interface Device {
+  role: 'buyer' | 'seller';
+  store: EscrowStore;
+  idb: IDBFactory;
+  runtime: EscrowRuntime;
+  statuses: EscrowStatus[];
+  last(): EscrowStatus | undefined;
+}
+
+export async function device(
+  role: 'buyer' | 'seller',
+  o: { api: ReturnType<Awaited<ReturnType<typeof makeApi>>['forRole']>; hub: Hub; parties: Parties; modPublic: string; idb?: IDBFactory; lock?: (n: string, fn: () => Promise<void>) => Promise<void> },
+): Promise<Device> {
+  const idb = o.idb ?? new IDBFactory();
+  const store = await openEscrowStore({ indexedDB: idb });
+  const statuses: EscrowStatus[] = [];
+  const runtime = createEscrowRuntime({
+    api: o.api,
+    store,
+    config: { modSigningPublic: o.modPublic, feeWallet: FEE_WALLET, relayUrl: 'ws://relay.test', daemonUri: 'http://node.test' },
+    engine,
+    generateIdentity,
+    runParty: o.parties.runParty,
+    transport: o.hub.transport,
+    lock: o.lock ?? ((_n, fn) => fn()),
+    pollMs: 5,
+    onStatus: (_c, s) => statuses.push(s),
+  });
+  return { role, store, idb, runtime, statuses, last: () => statuses.at(-1) };
+}
+
+export async function until(cond: () => boolean | Promise<boolean>, ms = 3000): Promise<void> {
+  const end = Date.now() + ms;
+  while (!(await cond())) {
+    if (Date.now() > end) throw new Error('timed out');
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}
+
+export function funded(poster: 'seller' | 'buyer' = 'seller', extra = 0n): Funds {
+  const b = escrowPlan({ amountAtomic: AMOUNT, poster }).sellerFundsAtomic + extra;
+  return { balance: b, unlocked: b, incoming: [{ txHash: 'aa', amountAtomic: b, confirmations: 12, unlocked: true }] };
+}
+
+export const json = (x: unknown): string => canonicalJson(JSON.parse(JSON.stringify(x, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v))));
