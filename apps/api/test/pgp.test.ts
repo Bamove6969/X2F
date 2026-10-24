@@ -10,7 +10,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { decoyPrivateKeys, insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/auth/pgp.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
@@ -614,6 +614,8 @@ describe('confirm and adding a key', () => {
     expect(cf.statusCode).toBe(200);
     const { confirmToken } = cf.json();
     expect(typeof confirmToken).toBe('string');
+    // The token records how it was earned (owner, 2026-10-23: a PGP confirm makes a new wallet usable at once).
+    expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
 
     const as = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey, confirmToken });
     expect(as.statusCode).toBe(200);

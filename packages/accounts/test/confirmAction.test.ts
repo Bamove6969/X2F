@@ -7,7 +7,6 @@ const sha256 = (s: string) => createHash('sha256').update(s, 'utf8').digest('hex
 describe('describeAction', () => {
   test.each<[ConfirmAction, string]>([
     [{ kind: 'add-wallet', addressHash: 'ab12', addressEnd: 'q2k3Fz' }, 'add payout wallet ending …q2k3Fz'],
-    [{ kind: 'payout-wait-off' }, 'turn off the 24-hour wait for new payout wallets'],
     [{ kind: 'add-method', method: 'passkey' }, 'add a login method (passkey)'],
     [{ kind: 'remove-method', method: 'pgp', id: 'm1' }, 'remove a login method (pgp)'],
     [{ kind: 'set-password' }, 'set a new password'],

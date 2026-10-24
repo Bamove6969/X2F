@@ -24,19 +24,30 @@ declare module 'fastify' {
 const tokenHash = (token: string): Buffer => createHash('sha256').update(token).digest();
 
 /**
- * Issues a single-use token bound to this session and this exact action. Called only by the
- * confirm `finish` routes (Tasks 6-8), after the person has proved it's them.
+ * How the person proved it was them, recorded on the token by the confirm route that checked the
+ * proof (owner, 2026-10-23): `pgp` (a fresh PGP code), `passkey` or `security-key` (the kind of the
+ * stored credential whose assertion verified), `password` (with its TOTP code when enrolled).
+ * Never taken from the request body.
+ */
+export type ConfirmMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
+
+/** The methods strong enough that a new payout wallet confirmed with them is usable at once. */
+export const STRONG_CONFIRM_METHODS: readonly ConfirmMethod[] = ['pgp', 'passkey', 'security-key'];
+
+/**
+ * Issues a single-use token bound to this session and this exact action, recording `method`.
+ * Called only by the confirm `finish` routes (Tasks 6-8), after the person has proved it's them.
  */
 export async function issueConfirmToken(
   deps: Pick<Deps, 'db' | 'clock'>,
-  a: { sessionId: string; accountId: string; action: ConfirmAction },
+  a: { sessionId: string; accountId: string; action: ConfirmAction; method: ConfirmMethod },
 ): Promise<string> {
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   await deps.db.query(
-    `insert into confirm_tokens (session_id, account_id, token_hash, action_hash, created_at, expires_at)
-     values ($1, $2, $3, $4, $5, $6)`,
-    [a.sessionId, a.accountId, tokenHash(token), await actionHash(a.action), now, new Date(now.getTime() + CONFIRM_TTL_MS)],
+    `insert into confirm_tokens (session_id, account_id, token_hash, action_hash, method, created_at, expires_at)
+     values ($1, $2, $3, $4, $5, $6, $7)`,
+    [a.sessionId, a.accountId, tokenHash(token), await actionHash(a.action), a.method, now, new Date(now.getTime() + CONFIRM_TTL_MS)],
   );
   return token;
 }
@@ -47,23 +58,26 @@ export async function issueConfirmToken(
  * expired, from another session or for another action → 403 `confirm-invalid`. A mismatch does not
  * use the token up; the single `update ... returning` makes parallel redemptions succeed once.
  * `deps.db` may be a transaction's client (Task 10's removal redeems inside its transaction).
+ * Returns the method the token was earned with.
  */
 export async function redeemConfirm(
   deps: { db: Queryable; clock: () => Date },
   req: FastifyRequest,
   action: ConfirmAction,
   token: string | undefined,
-): Promise<void> {
+): Promise<ConfirmMethod> {
   if (token === undefined) throw new ApiError(403, 'confirm-required', { action: action.kind });
   if (!TOKEN.test(token)) throw new ApiError(403, 'confirm-invalid');
   const { rows } = await deps.db.query(
     `update confirm_tokens set used_at = $5
       where token_hash = $1 and session_id = $2 and account_id = $3 and action_hash = $4
         and used_at is null and expires_at > $5
-      returning id`,
+      returning method`,
     [tokenHash(token), req.auth.sessionId, req.auth.accountId, await actionHash(action), deps.clock()],
   );
-  if (rows.length === 0) throw new ApiError(403, 'confirm-invalid');
+  const row = rows[0] as { method: ConfirmMethod } | undefined;
+  if (!row) throw new ApiError(403, 'confirm-invalid');
+  return row.method;
 }
 
 type ActionOf = ConfirmAction | ((req: FastifyRequest) => ConfirmAction | Promise<ConfirmAction>);

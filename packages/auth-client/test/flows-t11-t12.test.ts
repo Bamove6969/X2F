@@ -101,6 +101,10 @@ describe('onboarding', () => {
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
+    expect(me.logoutTimer).toEqual({ idleHours: 12, adjustable: true });
+    await expect(own.api.setLogoutTimer({ idleHours: 4 })).resolves.toEqual({ idleHours: 4, adjustable: true });
+    await expect(own.api.getLogoutTimer()).resolves.toEqual({ idleHours: 4, adjustable: true });
+    expect((await own.api.me()).logoutTimer).toEqual({ idleHours: 4, adjustable: true });
   });
 
   it('a PGP account that adds a password still has no backup (R11)', async () => {
@@ -135,7 +139,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
       prove,
     );
     expect(prove).toHaveBeenCalledTimes(1);
-    expect(wallet).toMatchObject({ address, label: 'Second' });
+    // Confirmed with a passkey: usable at once (owner, 2026-10-23).
+    expect(wallet).toMatchObject({ address, label: 'Second', usable: true });
 
     const reused = apiError(await failure(fresh.api.addWallet({ app: 'feather', label: 'Third', address: fakeAddress(), confirmToken: token })));
     expect(reused.status).toBe(403);
@@ -165,6 +170,6 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     if (first.status !== 'second-factor') throw new Error('expected a second factor');
     const start = await browser.loginPgpStart({ username, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
-    await expect(browser.me()).resolves.toMatchObject({ username, kind: 'staff' });
+    await expect(browser.me()).resolves.toMatchObject({ username, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false } });
   });
 });

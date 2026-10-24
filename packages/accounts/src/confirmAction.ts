@@ -6,7 +6,6 @@ export type MethodType = 'pgp' | 'passkey' | 'security-key' | 'password' | 'totp
 
 export type ConfirmAction =
   | { kind: 'add-wallet'; addressHash: string; addressEnd: string }
-  | { kind: 'payout-wait-off' }
   | { kind: 'add-method'; method: MethodType }
   | { kind: 'remove-method'; method: MethodType; id: string }
   | { kind: 'set-password' }
@@ -36,8 +35,6 @@ export function describeAction(a: ConfirmAction): string {
   switch (a.kind) {
     case 'add-wallet':
       return `add payout wallet ending …${a.addressEnd}`;
-    case 'payout-wait-off':
-      return 'turn off the 24-hour wait for new payout wallets';
     case 'add-method':
       return `add a login method (${a.method})`;
     case 'remove-method':

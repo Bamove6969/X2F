@@ -48,7 +48,8 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   listWallets: [],
   addWallet: [{ app: 'cake', label: 'Main', address: 'x' }],
   removeWallet: [UUID],
-  setPayoutWait: [{ enabled: true }],
+  getLogoutTimer: [],
+  setLogoutTimer: [{ idleHours: 6 }],
 };
 
 /**
@@ -96,7 +97,8 @@ export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'DELETE
   listWallets: 'GET /v1/wallets',
   addWallet: 'POST /v1/wallets',
   removeWallet: 'DELETE /v1/wallets/:id',
-  setPayoutWait: 'PUT /v1/account/security/payout-wait',
+  getLogoutTimer: 'GET /v1/account/security/logout-timer',
+  setLogoutTimer: 'PUT /v1/account/security/logout-timer',
 };
 
 export const methodNames = (): Array<keyof AuthApi> => Object.keys(SAMPLE_CALLS) as Array<keyof AuthApi>;

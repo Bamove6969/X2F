@@ -94,15 +94,16 @@ describe('createAuthApi requests', () => {
     expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
   });
 
-  it('uses PUT for setting the password and the payout wait', async () => {
-    const { sent, fetch } = recorder(() => Response.json({ enabled: true, offAt: null }));
+  it('uses PUT for setting the password and the logout timer', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ idleHours: 6, adjustable: true }));
     const api = createAuthApi({ fetch });
     await api.setPassword({ password: 'x' });
-    await api.setPayoutWait({ enabled: true });
+    await expect(api.setLogoutTimer({ idleHours: 6 })).resolves.toEqual({ idleHours: 6, adjustable: true });
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
       ['PUT', '/v1/account/password'],
-      ['PUT', '/v1/account/security/payout-wait'],
+      ['PUT', '/v1/account/security/logout-timer'],
     ]);
+    expect(bodyOf(sent[1]!)).toEqual({ idleHours: 6 });
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
