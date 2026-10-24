@@ -2,8 +2,8 @@ import { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from './currenci
 import type { PriceQuote, PriceSource } from './feed.js';
 
 /**
- * The public XMR price sources, picked by name in `PRICE_SOURCES` (spec 11.6). PROPOSED, pending
- * the lead's approval: see ~/x2f-comms/briefs/p3-t3-price-sources.md for the evidence (each still
+ * The public XMR price sources, picked by name in `PRICE_SOURCES` (spec 11.6; approved by the lead
+ * 2026-10-24): see ~/x2f-comms/briefs/p3-t3-price-sources.md for the evidence (each still
  * lists XMR, needs no key, answers plain JSON, and was fetched over Tor on 2026-10-24). Each
  * parser is self-contained: swapping a source is one entry here plus its fixture test.
  */
