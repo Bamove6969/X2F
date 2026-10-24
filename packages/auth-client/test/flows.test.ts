@@ -24,6 +24,13 @@ const GOOD = 'Correct-Horse-9';
 const WRONG = 'Wrong-Horse-99';
 const LABEL = 'Browser on Linux';
 
+/**
+ * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
+ * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
+ * (Task 3: methods, method suggestions, price). Any other new route still needs a client method.
+ */
+const NOT_AUTH_CLIENT = ['GET /v1/methods', 'GET /v1/price', 'POST /v1/method-suggestions'] as const;
+
 let srv: Server;
 
 beforeAll(async () => {
@@ -87,9 +94,16 @@ describe('the client covers the API', () => {
     }
   });
 
-  it('every route of the API (but /healthz) has its client method', () => {
+  it('every route of the API (but /healthz and the Plan 3 app routes) has its client method', () => {
     const expected = methodNames().map((n) => ROUTES[n]);
-    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
+    const notAuth = new Set<string>(NOT_AUTH_CLIENT);
+    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz' && !notAuth.has(r))).toEqual([...expected].sort());
+  });
+
+  it('lists only Plan 3 routes that exist, sorted, once each', () => {
+    const routes = srv.serverRoutes();
+    for (const r of NOT_AUTH_CLIENT) expect(routes, r).toContain(r);
+    expect([...NOT_AUTH_CLIENT]).toEqual([...new Set(NOT_AUTH_CLIENT)].sort());
   });
 
   it('serves the official PGP signing key that signs every challenge', async () => {
