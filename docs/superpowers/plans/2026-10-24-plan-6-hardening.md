@@ -102,6 +102,12 @@ Each is used only through the named setting or task. None is decided by this pla
     - (b) A storage server at the same provider.
     - (c) Both.
   - Rec.: (a). Backups survive the loss of the hosting account, and object lock stops an attacker on the database host from deleting them.
+  - (d) **Cold offline copy, proposed by the owner on 2026-10-24.** A small machine the owner controls stays powered off.
+    - **Twice a day:** it wakes on a timer (RTC alarm or a smart plug), connects OUT to the backup store over WireGuard or Tor, pulls the latest already-encrypted backup, checks its signature and a test-decrypt of the manifest, then shuts itself down. It never holds the backup's private key.
+    - **Why it adds a lot:** the servers can't reach it (it only dials out), so a hacked server or a ransomware attacker can't delete or encrypt it. When it's off, nothing can reach it at all.
+    - **Costs:** about 12 hours of possible data loss, a few watts, and the owner's location must not be revealed (always pull over WireGuard or Tor, never from a home IP in the clear).
+    - **Lead's recommendation:** (a) + (d) together. Object-locked storage at a second provider covers fast restores; the cold box is the last-resort copy.
+    - **Tasks if chosen:** a `tools/coldpull` script (pull, verify, rotate, power-off) and a scripted restore drill from the cold copy.
 - **D6 Backup retention.**
   - Options: 7, 14 or 30 days of daily base backups, with WAL kept back to the oldest one.
   - Rec.: **14 days.** Data deleted under spec 4.1 (chats and proofs at 90 days, disputes at 30 days, training copies at 6 months) is then gone from backups within 14 days of deletion, and the Terms and FAQ say so (spec gap G1).
