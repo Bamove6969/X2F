@@ -1,4 +1,5 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -6,6 +7,9 @@ import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed } from './price/feed.js';
+import { createFxRates, fxSources } from './price/fx.js';
+import { createMarketPrices } from './price/market.js';
+import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention, type RetentionJob } from './retention.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
@@ -35,9 +39,16 @@ const attestation = fileAttestationPolicy(config.attestationDir);
 await attestation.init();
 
 const db = createPool(config.databaseUrl);
-// Plan 3 Task 3: median of the PRICE_SOURCES (spec 11.6), polled every minute.
+// Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
+// from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
+// owner_settings before each poll. Price health alerts go to the owner's in-app alerts. Every
+// source fetches through the global fetch (no proxy wired).
 const clock = () => new Date();
-const prices = createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock });
+const prices = createMarketPrices({
+  xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
+  fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
+  onAlert: (a) => addOwnerAlert(db, a.kind, a.detail, clock()),
+});
 const deps: Deps = {
   config,
   db,

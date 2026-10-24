@@ -3,6 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { buildApi, type Deps } from '../../src/app.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed } from '../../src/price/feed.js';
+import { createFxRates } from '../../src/price/fx.js';
+import { createMarketPrices } from '../../src/price/market.js';
 import { pgpSignerFromArmored, type PgpSigner } from '../../src/auth/pgp.js';
 import type { Config } from '../../src/config.js';
 import { testDb } from './db.js';
@@ -70,7 +72,10 @@ export async function testApp(overrides: Partial<Deps> = {}): Promise<{
     attestation: notYet('attestation policy (Task 8)'),
     pgpSigner,
     // No sources: every price is unavailable unless a test passes its own feed.
-    prices: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
+    prices: createMarketPrices({
+      xmr: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
+      fx: createFxRates([], { clock: () => now }),
+    }),
     ...overrides,
   };
   const { stream, logs } = captureLogs();

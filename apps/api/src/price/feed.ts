@@ -42,10 +42,25 @@ export interface FeedQuote {
   exponent: 0 | 2 | 3;
 }
 
+/** One source's health, for the owner's Price health panel (spec 11.6). */
+export interface PriceSourceHealth {
+  name: string;
+  /** The last poll in which it gave at least one valid, fresh quote. */
+  lastGoodAt: Date | null;
+  /** Polls in a row with no valid, fresh quote (failed, timed out, malformed, or only stale quotes). */
+  consecutiveFailures: number;
+  /** Its quote counted towards a published median in the last poll. */
+  inUse: boolean;
+}
+
 export interface PriceFeed {
   /** The median price, or null when fewer than `minSources` agree or it is older than `maxAgeMs`. */
   current(currency: string): Price | null;
   quote(currency: string): FeedQuote | null;
+  /** Per-source health, in source order. */
+  sources(): PriceSourceHealth[];
+  /** Whether at least one poll has finished. */
+  polled(): boolean;
   /** One poll of every source; never throws. */
   poll(): Promise<void>;
   /** Polls now and then every `pollMs` (never two polls at once); the timer does not keep the process alive. */
@@ -67,6 +82,8 @@ export function median(values: readonly bigint[]): bigint {
 interface Sample {
   cents: bigint;
   at: Date;
+  /** Index of the source that gave it. */
+  from: number;
 }
 
 /**
@@ -114,12 +131,16 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
   let latest = new Map<string, FeedQuote>();
   let inFlight: Promise<void> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
+  let done = false;
+  const health: PriceSourceHealth[] = sources.map((s) => ({ name: s.name, lastGoodAt: null, consecutiveFailures: 0, inUse: false }));
 
   async function pollOnce(): Promise<void> {
     const answers = await Promise.all(sources.map((s) => ask(s, timeoutMs)));
     const now = clock();
     const byCurrency = new Map<string, Sample[]>();
-    for (const quotes of answers) {
+    const good = new Set<number>();
+    const used = new Set<number>();
+    for (const [from, quotes] of answers.entries()) {
       const seen = new Set<string>();
       for (const q of quotes) {
         if (q === null || typeof q !== 'object') continue;
@@ -131,8 +152,9 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
         if (at.getTime() > now.getTime()) at = now;
         if (now.getTime() - at.getTime() > o.maxAgeMs) continue;
         const list = byCurrency.get(currency) ?? [];
-        list.push({ cents: centsPerXmr, at });
+        list.push({ cents: centsPerXmr, at, from });
         byCurrency.set(currency, list);
+        good.add(from);
       }
     }
     const next = new Map<string, FeedQuote>();
@@ -144,10 +166,21 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
         return diff * 10_000n <= mid * maxSpreadBps;
       });
       if (near.length < o.minSources) continue;
+      for (const s of near) used.add(s.from);
       const at = new Date(Math.min(...samples.map((s) => s.at.getTime())));
       next.set(currency, { price: { currency, centsPerXmr: mid }, at, sources: samples.length, exponent: currencyExponent(currency)! });
     }
     latest = next;
+    for (const [i, h] of health.entries()) {
+      if (good.has(i)) {
+        h.lastGoodAt = now;
+        h.consecutiveFailures = 0;
+      } else {
+        h.consecutiveFailures++;
+      }
+      h.inUse = used.has(i);
+    }
+    done = true;
   }
 
   function poll(): Promise<void> {
@@ -169,6 +202,8 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
   return {
     quote,
     current: (currency) => quote(currency)?.price ?? null,
+    sources: () => health.map((h) => ({ ...h })),
+    polled: () => done,
     poll,
     start() {
       if (timer) return;

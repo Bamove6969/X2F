@@ -3,6 +3,8 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { loadConfig } from '../src/config.js';
 import { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from '../src/price/currencies.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed, median, type PriceQuote, type PriceSource } from '../src/price/feed.js';
+import { createFxRates } from '../src/price/fx.js';
+import { createMarketPrices } from '../src/price/market.js';
 import { PRICE_SOURCE_NAMES, parsePriceSources, priceSources, readCapped } from '../src/price/sources.js';
 import { testApp } from './helpers/app.js';
 
@@ -151,6 +153,39 @@ describe('createPriceFeed', () => {
     expect(feed.quote('USD')).toMatchObject({ price: { centsPerXmr: 33000n }, sources: 2 });
     expect(feed.current('EUR')).toBeNull();
     expect(feed.current('XXX')).toBeNull();
+  });
+
+  it('records per source the last good fetch, failures in a row and whether it is in use (price health)', async () => {
+    const c = clockAt(T0);
+    let b: () => PriceQuote[] | Error = () => new Error('down');
+    const feed = createPriceFeed(
+      [
+        stub('a', () => usd(33000n)),
+        stub('b', () => b()),
+        stub('frozen', () => usd(33000n, new Date(c.clock().getTime() - 5 * MIN - 1))), // a stale answer counts as a failure
+        stub('far', () => usd(50000n)), // answered, but too far from the median to count
+        stub('d', () => usd(33010n)),
+      ],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    expect(feed.polled()).toBe(false);
+    expect(feed.sources().map((s) => s.consecutiveFailures)).toEqual([0, 0, 0, 0, 0]);
+    await feed.poll();
+    expect(feed.polled()).toBe(true);
+    expect(feed.sources()).toEqual([
+      { name: 'a', lastGoodAt: T0, consecutiveFailures: 0, inUse: true },
+      { name: 'b', lastGoodAt: null, consecutiveFailures: 1, inUse: false },
+      { name: 'frozen', lastGoodAt: null, consecutiveFailures: 1, inUse: false },
+      { name: 'far', lastGoodAt: T0, consecutiveFailures: 0, inUse: false },
+      { name: 'd', lastGoodAt: T0, consecutiveFailures: 0, inUse: true },
+    ]);
+    c.set(new Date(T0.getTime() + MIN));
+    await feed.poll();
+    expect(feed.sources()[1]).toEqual({ name: 'b', lastGoodAt: null, consecutiveFailures: 2, inUse: false });
+    b = () => usd(33005n);
+    c.set(new Date(T0.getTime() + 2 * MIN));
+    await feed.poll();
+    expect(feed.sources()[1]).toEqual({ name: 'b', lastGoodAt: c.clock(), consecutiveFailures: 0, inUse: true });
   });
 
   it('never throws past the feed and gives a hanging source 5 s (its signal aborts)', async () => {
@@ -406,7 +441,8 @@ describe('GET /v1/price', () => {
 
   beforeAll(async () => {
     const c = clockAt(T0);
-    const prices = createPriceFeed([stub('a', () => answer()), stub('b', () => answer())], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    const xmr = createPriceFeed([stub('a', () => answer()), stub('b', () => answer())], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }) });
     await prices.poll();
     ({ app, setNow } = await testApp({ prices, clock: c.clock }));
     const set = setNow;
@@ -422,7 +458,7 @@ describe('GET /v1/price', () => {
     const res = await app.inject({ method: 'GET', url: '/v1/price?currency=USD' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeUndefined();
-    expect(res.json()).toEqual({ currency: 'USD', centsPerXmr: '33000', exponent: 2, at: T0.toISOString() });
+    expect(res.json()).toEqual({ currency: 'USD', centsPerXmr: '33000', exponent: 2, at: T0.toISOString(), usdCentsPerXmr: '33000' });
   });
 
   it('is 503 price-unavailable once the median is 5 min + 1 ms old (Review Focus 5)', async () => {
