@@ -1,6 +1,9 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { MethodList } from './screens/browse/MethodList.js';
+import { OfferList } from './screens/browse/OfferList.js';
+import { SELL_COPY } from './screens/browse/SellCopy.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -60,11 +63,11 @@ export function App() {
       <RouterBridge />
       <Routes>
         <Route element={<Layout nav />}>
-          <Route path="/sell" element={<Screen name="sell" />} />
+          <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy" element={<Screen name="buy" />} />
         </Route>
         <Route element={<Layout nav={false} />}>
-          <Route path="/sell/:methodId" element={<Screen name="sell-offers" />} />
+          <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
           <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
