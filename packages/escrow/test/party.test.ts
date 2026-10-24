@@ -97,10 +97,12 @@ describe('tapped test transport', () => {
   });
 
   it('keeps a relay frame that arrives while injected frames are handed out', async () => {
-    let deliver!: (f: unknown) => void;
+    // First in, first out like wsTransport: an abandoned read would swallow the next frame.
+    const readers: ((f: unknown) => void)[] = [];
+    const deliver = (f: unknown) => readers.shift()?.(f);
     const relay: Transport = {
       send: () => {},
-      next: () => new Promise((r) => (deliver = r)),
+      next: () => new Promise((r) => readers.push(r)),
       onReconnect: () => {},
       close: () => {},
     };
