@@ -7,7 +7,7 @@ export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
 export {
-  ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
+  ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
 } from './limits.js';
 export { startRetention, type RetentionJob, type RetentionLog } from './retention.js';
 export { addAlert, type AlertKind } from './alerts.js';
@@ -56,3 +56,14 @@ export {
   LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
   usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
 } from './wallets/routes.js';
+export {
+  GIFT_CARD_GROUP, LAUNCH_PROFILE_IDS, PROFILES, catalog, getMethod, getProfile, isAvailable, isGiftCard, loadCatalog, loadProfiles,
+  type CatalogMethod, type FieldKind, type MethodProfile,
+} from './methods/profiles.js';
+export { methodListRoutes, type LiveOfferQuery, type LiveOfferStat, type LiveOfferStats, type MethodRow } from './methods/routes.js';
+export { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from './price/currencies.js';
+export {
+  PRICE_FEED_DEFAULTS, createPriceFeed, median, type FeedQuote, type PriceFeed, type PriceFeedOptions, type PriceQuote, type PriceSource,
+} from './price/feed.js';
+export { DEFAULT_PRICE_SOURCES, PRICE_SOURCE_NAMES, parsePriceSources, priceSources, type PriceSourceName } from './price/sources.js';
+export { priceRoutes } from './price/routes.js';

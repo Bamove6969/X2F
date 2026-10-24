@@ -206,6 +206,22 @@ describe('POST /v1/method-suggestions', () => {
     expect(fks.rows).toEqual([]);
   });
 
+  it('has no sequence-backed column and no time finer than a day (rows cannot be lined up with sessions)', async () => {
+    const cols = await deps.db.query<{ column_name: string; data_type: string; column_default: string | null }>(
+      "select column_name, data_type, column_default from information_schema.columns where table_name = 'method_suggestions'",
+    );
+    for (const c of cols.rows) {
+      expect(c.column_default ?? '', c.column_name).not.toMatch(/nextval/);
+      expect(c.data_type, c.column_name).not.toMatch(/timestamp|time|interval|serial|integer|bigint/);
+    }
+    expect(cols.rows.find((c) => c.column_name === 'id')?.data_type).toBe('uuid');
+    expect(cols.rows.find((c) => c.column_name === 'created_on')?.data_type).toBe('date');
+    const seqs = await deps.db.query(
+      "select 1 from pg_depend d join pg_class s on s.oid = d.objid and s.relkind = 'S' where d.refobjid = 'method_suggestions'::regclass",
+    );
+    expect(seqs.rows).toEqual([]);
+  });
+
   it('takes a name alone', async () => {
     expect((await trader.post('/v1/method-suggestions', { name: 'Paymate' })).statusCode).toBe(202);
     const { rows } = await deps.db.query("select country from method_suggestions where name = 'Paymate'");

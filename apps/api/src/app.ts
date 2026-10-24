@@ -11,6 +11,9 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { walletRoutes } from './wallets/routes.js';
+import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
+import type { PriceFeed } from './price/feed.js';
+import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -44,6 +47,10 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Plan 3 Task 3: the median price feed (`main.ts` starts its polling). */
+  prices: PriceFeed;
+  /** Plan 3 Task 4 supplies this from the `offers` table; without it `/v1/methods` lists nothing live. */
+  liveOffers?: LiveOfferStats;
 }
 
 declare module 'fastify' {
@@ -193,6 +200,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session).
+  methodListRoutes(app);
+  priceRoutes(app);
 
   return app;
 }

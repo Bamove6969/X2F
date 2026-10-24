@@ -1,6 +1,7 @@
 import { hkdfSync } from 'node:crypto';
 import { constants } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { parsePriceSources, type PriceSourceName } from './price/sources.js';
 
 export interface Config {
   siteName: string;
@@ -14,6 +15,8 @@ export interface Config {
   termsVersion: string;
   pgpSigningKeyPath: string;
   pgpSigningFingerprint: string;
+  /** `PRICE_SOURCES` (spec 11.6): the price sources the feed asks, by name; default all of them. */
+  priceSources: PriceSourceName[];
 }
 
 type Env = Record<string, string | undefined>;
@@ -87,9 +90,11 @@ export function loadConfig(env: Env): Config {
     throw malformed('X2F_PGP_SIGNING_FINGERPRINT', 'lower-case hex, 40 or 64 characters');
   }
 
+  const priceSources = parsePriceSources(env.PRICE_SOURCES);
+
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
-    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint,
+    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, priceSources,
   };
 }
 

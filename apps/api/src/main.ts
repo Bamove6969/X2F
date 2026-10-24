@@ -5,6 +5,8 @@ import { openLeakedList } from './auth/leaked.js';
 import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
+import { PRICE_FEED_DEFAULTS, createPriceFeed } from './price/feed.js';
+import { priceSources } from './price/sources.js';
 import { startRetention, type RetentionJob } from './retention.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
@@ -33,15 +35,19 @@ const attestation = fileAttestationPolicy(config.attestationDir);
 await attestation.init();
 
 const db = createPool(config.databaseUrl);
+// Plan 3 Task 3: median of the PRICE_SOURCES (spec 11.6), polled every minute.
+const clock = () => new Date();
+const prices = createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock });
 const deps: Deps = {
   config,
   db,
-  clock: () => new Date(),
+  clock,
   leaked: await openLeakedList(config.leakedListPath),
   // Task 12: loads monero-ts's WebAssembly keys module before listening.
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
+  prices,
 };
 
 // Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.
@@ -49,11 +55,13 @@ const jobs: RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses];
 const stopRetention = startRetention(deps, jobs);
 
 const app = await buildApi(deps);
+prices.start();
 if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
 const shutdown = async () => {
   await stopRetention(); // lets a purge in flight finish before the pool closes
+  await prices.stop();
   await app.close();
   await db.end();
 };

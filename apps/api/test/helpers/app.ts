@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { buildApi, type Deps } from '../../src/app.js';
+import { PRICE_FEED_DEFAULTS, createPriceFeed } from '../../src/price/feed.js';
 import { pgpSignerFromArmored, type PgpSigner } from '../../src/auth/pgp.js';
 import type { Config } from '../../src/config.js';
 import { testDb } from './db.js';
@@ -20,6 +21,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     termsVersion: '2026-10-17',
     pgpSigningKeyPath: '/nonexistent/signing.asc',
     pgpSigningFingerprint: '0'.repeat(40),
+    priceSources: ['kraken', 'bitfinex', 'coingecko'],
     ...over,
   };
 }
@@ -66,6 +68,8 @@ export async function testApp(overrides: Partial<Deps> = {}): Promise<{
     addresses: notYet('address validator (Task 12)'),
     attestation: notYet('attestation policy (Task 8)'),
     pgpSigner,
+    // No sources: every price is unavailable unless a test passes its own feed.
+    prices: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
     ...overrides,
   };
   const { stream, logs } = captureLogs();
