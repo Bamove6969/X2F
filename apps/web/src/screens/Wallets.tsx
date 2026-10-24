@@ -22,9 +22,10 @@ import {
 } from './wallets-model.js';
 import './Wallets.css';
 
-// The wallet routes are called through api() with FU-B's shapes (GET /v1/wallets/rule, POST
-// /v1/wallets { wallets }). TODO(FU-B merge): switch to @x2f/auth-client `getWalletRule`,
-// `addWallets`, `withConfirm` and `walletsAction` (apps/web/test/wallets-tripwires.test.ts).
+// The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
+// api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
+// @x2f/auth-client's. TODO(Task 28/30): when the app moves to `createAuthApi`, use `getWalletRule`,
+// `addWallets` and `withConfirm(walletsAction(addresses), ...)` with the real ConfirmSheet.
 
 const LABEL_MAX = 40;
 

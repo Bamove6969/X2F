@@ -1,22 +1,15 @@
 // The wallets screen's data model, kept free of React and CSS so the trade-take picker
 // (Tasks 17-19) and the Playwright spec can import `takeableWallets` without pulling in a DOM.
 
-/** The wallet apps a person can pick when adding a wallet (spec 6.4); same codes as the API's WALLET_APPS. */
-export const WALLET_APPS = ['cake', 'edge', 'feather', 'monerujo', 'stack', 'monero-gui-cli', 'ledger-trezor', 'other'] as const;
-export type WalletApp = (typeof WALLET_APPS)[number];
+import type { Wallet, WalletApp, WalletDraft, WalletRule } from '@x2f/auth-client';
+
+export type { WalletApp, WalletDraft, WalletRule };
+
+/** The wallet apps a person can pick when adding a wallet (spec 6.4); same codes and order as the API. */
+export const WALLET_APPS = ['cake', 'edge', 'feather', 'monerujo', 'stack', 'monero-gui-cli', 'ledger-trezor', 'other'] as const satisfies readonly WalletApp[];
 
 /** A payout wallet exactly as `GET /v1/wallets` returns it: name, the end of its address, and status, never a balance. */
-export interface WalletView {
-  id: string;
-  app: WalletApp;
-  label: string;
-  /** The full address is sent but the screen only ever shows `addressEnd`, never a balance. */
-  address: string;
-  addressEnd: string;
-  usableFrom: string;
-  /** `usableFrom <= now`: false while the 24-hour wait (spec 6.3) runs. */
-  usable: boolean;
-}
+export type WalletView = Wallet;
 
 /** The app names shown on the picker chips and wallet rows (the board's `names` list). */
 export const APP_LABELS: Record<WalletApp, string> = {
@@ -51,31 +44,7 @@ export function walletStatus(w: WalletView): { label: string; tone: WalletTone }
   return w.usable ? { label: 'Ready', tone: 'ready' } : { label: 'Waiting', tone: 'waiting' };
 }
 
-// TRIPWIRE / TODO(FU-B merge): copied from the lead's FU-B (wip/lead-p2-fub, @x2f/auth-client
-// `WalletDraft` and `WalletRule`); use those once FU-B is on the main line
-// (apps/web/test/wallets-tripwires.test.ts fails until then).
-
-/** One wallet of an add: what the person fills in. */
-export interface WalletDraft {
-  app: WalletApp;
-  label: string;
-  address: string;
-}
-
-/**
- * `GET /v1/wallets/rule`: what adding wallets will do for this account (owner, 2026-10-24).
- * `firstWallet`: it never had one, so the next add works at once whatever the method.
- * `strongMethods`: methods it holds that make new wallets work at once. `password`: whether a
- * password confirm is possible and would wait.
- */
-export interface WalletRule {
-  firstWallet: boolean;
-  strongMethods: Array<'pgp' | 'passkey' | 'security-key'>;
-  password: 'none' | 'immediate' | 'waits';
-  waitHours: number;
-}
-
-/** The most wallets one add may carry (FU-B `MAX_WALLET_BATCH`; owner, 2026-10-24). */
+/** The most wallets one add may carry: `MAX_WALLET_BATCH` in @x2f/accounts (pinned by test/wallets-model.test.ts). */
 export const MAX_WALLET_BATCH = 10;
 
 const METHOD_NAMES: Record<WalletRule['strongMethods'][number], string> = {
