@@ -60,3 +60,23 @@ Not needed: agy, desktop-commander.
     - The fail-closed catch in `usablePgpIds` has no test.
     - The `removeMethod` clock injection has no test.
   - The `ownerReady(deps, ownerId)` signature changed; Plan 4 owner setup must pass deps.
+
+## Plan 3 Task 12 (browser escrow runtime): cross-task notes (2026-10-24, wip/second-p3-t12)
+
+From the lead's answers of 2026-10-24 and the Task 12 fix round. Each line names the task that must act.
+
+- **Task 8, separation check scope (lead answer 3).** `generateIdentity` stays banned in `apps/api` and in all of `apps/web` except `apps/web/src/escrow/worker.ts`, the one place a trader's trade identity is made. Task 8's `tools/separation-check.ts` (on `wip/t3-p3-task8`, not on the main line yet) currently bans it in every `apps/web` file, so it would flag the worker: exempt exactly that one path. Until it lands, `apps/web/test/identity-separation.test.ts` proves the worker is the only `apps/web` file that names it (same file rules as Task 8's script) and that `apps/api` names it nowhere. The runtime takes the function as `newIdentity`, and the web tests make identities with libsodium.
+- **Task 8, attestation terms (lead answer 4).** The moderator-signed `Attestation` gains a required `terms` field, signed with the rest under `x2f/attestation/v1\0` + canonical JSON:
+  ```ts
+  terms: {
+    deal: { poster: 'buyer' | 'seller'; takeAmountAtomic: string; currency: string; centsPerXmr: string; maxFiatCents: string };
+    buyerPayout: string;   // the buyer's payout address
+    sellerRefund: string;  // the seller's refund address
+  }
+  ```
+  Bigints are decimal strings without leading zeros (canonical JSON has no bigints); the key sets are exact. `deal` is the amount at take, the poster, and the locked rate and offer maximum fixed at take (OD-5). Each trader's device refuses an attestation whose deal or own address differs from what its user confirmed (new `AttestationError` code `wrong-terms`, shown as `deal-mismatch`), and refuses a counterparty `trade.terms` address that differs from the attested one. Task 8 fills `terms` from the trade record when it attests. Task 12's guess lives in `apps/web/src/escrow/adapters.ts` until Task 8's `@x2f/trade` attestation lands (tripwire in `apps/web/test/adapters-tripwire.test.ts`).
+- **Plan 6 hardening follow-up (lead answer 4).** The device's own payout address should come from the API wallet list (`GET /v1/wallets`), checked against what the user picked on the take or accept screen, instead of only from that screen's confirmation.
+- **Task 10, signal payloads (lead answer 5, plus the Task 12 security fix).** The moderation service must accept:
+  - `trade.terms` with the `deal` field: the seller's `{ refundAddress, deal }` and the buyer's `{ payoutAddress, deal }`, where `deal = { poster, takeAmountAtomic, currency, centsPerXmr, maxFiatCents }` with bigint values (protocol payload encoding);
+  - `trade.ack` as `{ of: '<signal type>' }`; an ack of `trade.terms` stops the sender's resends;
+  - `trade.paid` as `{ amountAtomic, fiatCents }` (bigints): the trade amount the buyer's device fixed and the fiat total the buyer confirmed. The seller's device fixes its release amount from this signed value only, never from the API. A `trade.paid` without them is malformed and ignored by the trader apps.
