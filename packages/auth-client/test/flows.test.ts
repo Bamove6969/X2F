@@ -27,9 +27,10 @@ const LABEL = 'Browser on Linux';
 /**
  * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
  * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
- * (Task 3: methods, method suggestions, price). Any other new route still needs a client method.
+ * (Task 3: methods, method suggestions, price, the owner's price health). Any other new route
+ * still needs a client method.
  */
-const NOT_AUTH_CLIENT = ['GET /v1/methods', 'GET /v1/price', 'POST /v1/method-suggestions'] as const;
+const NOT_AUTH_CLIENT = ['GET /v1/methods', 'GET /v1/owner/price-health', 'GET /v1/price', 'POST /v1/method-suggestions'] as const;
 
 let srv: Server;
 
