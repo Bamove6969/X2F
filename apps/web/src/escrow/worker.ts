@@ -25,7 +25,7 @@ export interface Port {
   addEventListener(type: 'message', cb: (e: { data: unknown }) => void): void;
 }
 
-const ACTIONS = new Set(['release', 'build-refund', 'buyer-cancel', 'propose-cancel-sign', 'signal']);
+const ACTIONS = new Set(['release', 'build-refund', 'buyer-cancel', 'propose-cancel-sign', 'paid', 'signal']);
 
 function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);

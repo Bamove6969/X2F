@@ -74,6 +74,12 @@ export interface EscrowRecord {
   /** The moderator acknowledged our trade.terms. */
   termsAcked: boolean;
   intent: StoredIntent | null;
+  /**
+   * The trade amount this device fixed (security fix, 2026-10-24): set when it first knows of
+   * "I've paid" (the buyer's own tap carries the fiat total it confirmed) or first hands an
+   * outcome to the party, whichever comes first. From then on only this amount is accepted.
+   */
+  acceptedAtomic?: bigint | null;
   /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
   closedSeenAt?: number | null;
   /** Device clock (ms) when this device saw its settle done and the escrow empty with nothing in the pool. */

@@ -75,7 +75,13 @@ export interface UseEscrow {
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
   proposeCancelSign(): Promise<void>;
-  signal(type: UserSignal): Promise<void>;
+  /**
+   * The buyer's "I've paid", with the fiat total (minor units) the buyer confirmed on screen. The
+   * device refuses it unless that is the trade amount it accepts at the locked rate, and from
+   * then on settles only that amount.
+   */
+  markPaid(fiatCents: bigint): Promise<void>;
+  signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
 const IDLE: EscrowStatus = { phase: 'idle', error: null, refusal: null, checkWords: null, keepOpen: false, role: null };
@@ -105,6 +111,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),
     proposeCancelSign: () => act({ type: 'propose-cancel-sign' }),
+    markPaid: (fiatCents) => act({ type: 'paid', fiatCents }),
     signal: (type) => act({ type: 'signal', signal: type }),
   };
 }

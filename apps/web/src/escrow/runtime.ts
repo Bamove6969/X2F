@@ -14,7 +14,7 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { PartyError, type EscrowEngine, type Outcome, type PartyArgs, type PartyHandle, type Payout, type Transport } from '@x2f/escrow';
 import type { Identity, Participants } from '@x2f/protocol';
-import { channelFor, type SettleKind, type TradeState } from '@x2f/trade';
+import { channelFor, fiatCents, type SettleKind, type TradeState } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import { escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type EscrowTradeView } from './adapters.js';
 import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from './policy.js';
@@ -45,9 +45,11 @@ export interface ConfirmedTrade {
  * Something this device refuses for now without stopping the trade, shown to the user (never
  * silent). `amount-out-of-range`: the API's trade amount is below the amount at take or above
  * what this device worked out from its own escrow reading, so nothing is settled until it is
- * back in range (Plan 3 Revision 2026-10-24, starter caps; lead 2026-10-24).
+ * back in range (Plan 3 Revision 2026-10-24, starter caps; lead 2026-10-24). `amount-changed`:
+ * this device already fixed the amount (paid, or an outcome handed to the party) and the API now
+ * shows another one; nothing is signed until it shows the fixed amount again.
  */
-export type EscrowRefusal = 'amount-out-of-range';
+export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed';
 
 export interface EscrowStatus {
   phase: EscrowPhase;
@@ -63,7 +65,9 @@ export type EscrowAction =
   | { type: 'build-refund' }
   | { type: 'buyer-cancel' }
   | { type: 'propose-cancel-sign' }
-  | { type: 'signal'; signal: UserSignal };
+  /** The buyer's "I've paid", with the fiat total the buyer confirmed (the device checks it). */
+  | { type: 'paid'; fiatCents: bigint }
+  | { type: 'signal'; signal: Exclude<UserSignal, 'trade.paid'> };
 
 /** The API calls the runtime makes (Tasks 6 and 8 routes). */
 export interface EscrowApi {
@@ -479,7 +483,25 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * maximum or a starter cap the device does not know), never above it. Otherwise null.
      */
     private acceptedAmount(v: EscrowTradeView): bigint | null {
+      const fixed = this.rec.acceptedAtomic ?? null;
+      if (fixed !== null) return v.amountAtomic === fixed ? fixed : null;
       return v.amountAtomic >= this.rec.deal.takeAmountAtomic && v.amountAtomic <= this.rec.sizeAtomic ? v.amountAtomic : null;
+    }
+
+    /**
+     * Fixes the trade amount on this device (security fix): after this, a view with any other
+     * amount is refused, so an API that moves the amount after "I've paid" gets no signature.
+     * Returns true when it was fixed now (the caller saves before acting on it).
+     */
+    private fixAmount(amount: bigint | null): boolean {
+      if ((this.rec.acceptedAtomic ?? null) !== null || amount === null) return false;
+      this.rec.acceptedAtomic = amount;
+      return true;
+    }
+
+    private refusalFor(v: EscrowTradeView): EscrowRefusal | null {
+      if (this.acceptedAmount(v) !== null) return null;
+      return (this.rec.acceptedAtomic ?? null) !== null ? 'amount-changed' : 'amount-out-of-range';
     }
 
     /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
@@ -564,7 +586,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         }
       }
       // The API's amount out of range is refused visibly until it is back in range.
-      this.refusal = this.acceptedAmount(v) === null ? 'amount-out-of-range' : null;
+      if (r.paidSeen && this.fixAmount(this.acceptedAmount(v))) changed = true;
+      this.refusal = this.refusalFor(v);
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
       // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
       const tapped = r.intent !== null && !r.intent.auto;
@@ -589,6 +612,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           r.intent = { ...i, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner } };
           changed = true;
         }
+        // Handing an outcome to the party fixes the amount it was derived from (saved first).
+        if (o && ctx && this.fixAmount(ctx.deal.amountAtomic)) changed = true;
         if (changed) await this.persist();
         if (o) this.settle(o);
       } else if (changed) await this.persist();
@@ -677,9 +702,24 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           await fresh('mutual-cancel');
           user('mutual-cancel');
           break;
+        case 'paid': {
+          if (r.role !== 'buyer') throw new Error('only the buyer marks paid');
+          await this.loadView();
+          const v = this.view;
+          const amount = v ? this.acceptedAmount(v) : null;
+          // The total the buyer confirmed must be this amount at the locked rate, or nothing happens.
+          if (!v || amount === null || typeof a.fiatCents !== 'bigint' || a.fiatCents !== fiatCents(amount, { currency: r.deal.currency, centsPerXmr: r.deal.centsPerXmr })) {
+            throw new Error('escrow: the total does not match the trade amount');
+          }
+          this.fixAmount(amount);
+          r.paidSeen = true;
+          await this.persist(); // fixed before the signal leaves
+          await this.signals?.send('trade.paid');
+          break;
+        }
         case 'signal':
+          if ((a.signal as string) === 'trade.paid') throw new Error('escrow: use the paid action with the confirmed total');
           await this.signals?.send(a.signal);
-          if (a.signal === 'trade.paid') r.paidSeen = true;
           break;
       }
       await this.persist();

@@ -44,13 +44,15 @@ describe('useEscrow', () => {
     c.push({ phase: 'ready', checkWords: ['A1B2', 'C3D4', 'E5F6', '0789'] });
     expect(out.v?.checkWords).toEqual(['A1B2', 'C3D4', 'E5F6', '0789']);
     await out.v!.buyerCancel();
-    await out.v!.signal('trade.paid');
+    await out.v!.markPaid(41_250n);
+    await out.v!.signal('trade.extend');
     await out.v!.release();
     await out.v!.buildRefund();
     await out.v!.proposeCancelSign();
     expect(vi.mocked(c.act).mock.calls.map((x) => x[1])).toEqual([
       { type: 'buyer-cancel' },
-      { type: 'signal', signal: 'trade.paid' },
+      { type: 'paid', fiatCents: 41_250n },
+      { type: 'signal', signal: 'trade.extend' },
       { type: 'release' },
       { type: 'build-refund' },
       { type: 'propose-cancel-sign' },

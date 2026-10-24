@@ -1,10 +1,11 @@
 import { PartyError } from '@x2f/escrow';
-import { channelFor } from '@x2f/trade';
+import { channelFor, fiatCents } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cosignPolicy } from '../src/escrow/policy.js';
 import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, confirmedFor, device, testIdentity, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
 const running: Device[] = [];
+const fiatOf = (a: bigint): bigint => fiatCents(a, { currency: 'USD', centsPerXmr: 33_000n });
 afterEach(async () => {
   await Promise.all(running.splice(0).map((d) => d.runtime.stopAll()));
 });
@@ -100,7 +101,7 @@ describe('attestation check before any escrow work (P3-C1)', () => {
       await save(r);
       if (stopped) late++;
     };
-    const acting = buyer.runtime.act(CODE, { type: 'signal', signal: 'trade.paid' }).catch(() => undefined);
+    const acting = buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) }).catch(() => undefined);
     await inSave;
     await buyer.runtime.stopAll();
     stopped = true;
@@ -263,6 +264,94 @@ describe('settling', () => {
     t.parties.funds = funded('seller', 100_000_000n);
     await until(() => t.parties.settles.length === 4);
     for (const s of t.parties.settles.slice(2)) expect(s.o.to.at(-1)).toEqual({ address: ADDR.seller, amountAtomic: 100_000_000n });
+  });
+
+  describe('security: once paid (or once something was handed to the party) the amount is fixed on the device', () => {
+    const grown = 1_300_000_000_000n;
+    const middle = 1_280_000_000_000n;
+    const fundsFor = (a: bigint) => a + a / 100n;
+    const paidAt = '2026-10-23T12:30:00.000Z';
+    async function paidAtMiddle() {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown && (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      // Growth stopped at a starter cap: the API shows `middle`; the buyer confirms and pays that total.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: middle.toString() });
+      await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(middle) });
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(middle);
+      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === middle);
+      return t;
+    }
+
+    it.each([
+      ['lowers the amount (still above the take amount)', AMOUNT],
+      ['raises the amount (still within the device-grown amount)', grown],
+    ])('the API %s after paid: no signature on either side, refusal amount-changed', async (_n, lie) => {
+      const t = await paidAtMiddle();
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: lie.toString() });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      expect(await t.seller.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      await t.seller.runtime.act(CODE, { type: 'release' }).catch(() => undefined);
+      await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
+      // Only the amount the buyer paid for was ever handed to a party (the buyer's standing co-sign).
+      const paysOnly = (amount: bigint) => t.parties.settles.every((x) => x.o.to[0]!.amountAtomic === amount);
+      expect(paysOnly(middle)).toBe(true);
+      expect(t.parties.settles.some((x) => x.role === 'seller')).toBe(false);
+      // The amount the buyer paid for comes back: both settle exactly that.
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: middle.toString() });
+      await until(() => t.parties.settles.some((x) => x.role === 'seller'));
+      expect(paysOnly(middle)).toBe(true);
+    });
+
+    it('the fixed amount survives a reload', async () => {
+      const t = await paidAtMiddle();
+      await t.buyer.runtime.stopAll();
+      const again = await t.mk('buyer', { idb: t.buyer.idb });
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: AMOUNT.toString() });
+      await again.runtime.resumeAll();
+      expect(await again.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.every((x) => x.o.to[0]!.amountAtomic === middle)).toBe(true);
+    });
+
+    it('"I’ve paid" with a fiat total other than the amount the device accepts is refused and fixes nothing', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await expect(t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) + 1n })).rejects.toThrow();
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.acceptedAtomic ?? null).toBeNull();
+      expect(rec.paidSeen).toBe(false);
+      await t.parties.ticks('seller', 3);
+      expect((await t.seller.store.load(CODE))?.paidSeen).toBe(false); // no trade.paid reached the seller
+      // The old way of saying paid, without a total, is refused too.
+      await expect(t.buyer.runtime.act(CODE, { type: 'signal', signal: 'trade.paid' } as never)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+    });
+
+    it('the amount the buyer confirmed is fixed by the tap itself, even if the API moves it right after', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      await until(async () => (await t.buyer.store.load(CODE))?.sizeAtomic === grown);
+      // The tap's own read shows `middle`; every later read shows the grown amount.
+      let reads = 0;
+      const atTap = tradeView({ state: 'secured', amountAtomic: middle.toString() });
+      const later = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      Object.defineProperty(t.state, 'view', { configurable: true, get: () => (reads++ === 0 ? atTap : later) });
+      await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(middle) });
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(middle);
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toBeTruthy();
+    });
+
+    it('a release handed to the party before paid fixes the amount too', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer')); // the standing co-sign
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(AMOUNT);
+    });
   });
 
   describe('growth and starter caps: the API amount is accepted only between the take amount and the device-grown amount', () => {
@@ -447,7 +536,7 @@ describe('guards in front of settle', () => {
     await until(async () => (await t.seller.store.load(CODE))?.theirDeal != null && (await t.buyer.store.load(CODE))?.theirDeal != null);
     t.state.view = tradeView({ state: 'secured' });
     t.parties.funds = funded();
-    await t.buyer.runtime.act(CODE, { type: 'signal', signal: 'trade.paid' });
+    await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) });
     await until(async () => (await t.seller.store.load(CODE))?.paidSeen === true);
     expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(true);
     // Extra XMR that would grow the trade (within the offer maximum) arrives after the tap.
