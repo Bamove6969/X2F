@@ -61,6 +61,12 @@ export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amo
 export interface EscrowStatus {
   phase: EscrowPhase;
   error: EscrowErrorCode | null;
+  /**
+   * The error may be transient (a daemon or relay error, a failed save, a party that stopped
+   * for a reason that is not an integrity failure): `retry()` (or a reload) runs the trade again,
+   * and refunds stay possible. False for integrity failures, which are kept and stay stopped.
+   */
+  retryable: boolean;
   refusal: EscrowRefusal | null;
   checkWords: string[] | null;
   keepOpen: boolean;
@@ -120,6 +126,8 @@ export interface EscrowRuntime {
   /** Starts every trade in the store (page load). */
   resumeAll(): Promise<void>;
   act(code: string, action: EscrowAction): Promise<void>;
+  /** Runs a trade stopped by a retryable error again (from its stored record). */
+  retry(code: string): Promise<void>;
   stop(code: string): Promise<void>;
   stopAll(): Promise<void>;
 }
@@ -187,6 +195,11 @@ function viewMatches(v: EscrowTradeView, role: 'buyer' | 'seller', d: Deal, ownA
   );
 }
 
+/** Party failures that mean someone cheated or the escrow is gone: never retried. */
+function integrityError(e: unknown): boolean {
+  return e instanceof PartyError && (e.code === 'equivocation' || e.code === 'address-mismatch' || e.code === 'settled-elsewhere');
+}
+
 function navigatorLock(name: string, fn: () => Promise<void>): Promise<void> {
   const locks = (globalThis.navigator as Navigator | undefined)?.locks;
   if (!locks) return Promise.reject(new Error('unsupported-browser'));
@@ -214,6 +227,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private isReady = false;
     private words: string[] | null = null;
     error: EscrowErrorCode | null = null;
+    retryable = false;
     private refusal: EscrowRefusal | null = null;
     /** The party gave up on these outcomes (attempts used up); shown, never retried silently. */
     private exhausted = new Set<string>();
@@ -247,6 +261,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const s: EscrowStatus = {
         phase: this.error ? 'error' : this.phase,
         error: this.error,
+        retryable: this.error ? this.retryable : false,
         refusal: this.error ? null : this.refusal,
         checkWords: this.words,
         keepOpen: ['registering', 'verifying', 'setting-up', 'signing'].includes(this.phase) && !this.error,
@@ -264,12 +279,19 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.emit();
     }
 
-    /** Stops the trade on this device; the failures that need a record are kept, so a reload stops again. */
-    fail(e: EscrowErrorCode): void {
+    /**
+     * Stops the trade on this device. Integrity failures (participants or deal mismatch, and an
+     * escrow-failed the caller marks `integrity`) are kept in the record, so a reload stops again
+     * and nothing retries them. Every other escrow-failed is transient: kept in memory only and
+     * shown as retryable.
+     */
+    fail(e: EscrowErrorCode, o: { integrity?: boolean } = {}): void {
+      const integrity = e === 'participants-mismatch' || e === 'deal-mismatch' || (e === 'escrow-failed' && o.integrity === true);
       this.error = e;
+      this.retryable = e === 'escrow-failed' && !integrity;
       this.emit();
-      if (this.rec && !this.stopped && (e === 'participants-mismatch' || e === 'deal-mismatch' || e === 'escrow-failed') && this.rec.failed !== e) {
-        this.rec.failed = e;
+      if (integrity && this.rec && !this.stopped && this.rec.failed !== e) {
+        this.rec.failed = e as NonNullable<EscrowRecord['failed']>;
         this.persist().catch(() => undefined);
       }
     }
@@ -321,7 +343,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const loaded = await deps.store.load(this.code);
       if (loaded) {
         this.rec = loaded;
-        if (loaded.failed) return this.fail(loaded.failed); // stopped before: stays stopped
+        if (loaded.failed) return this.fail(loaded.failed, { integrity: true }); // stopped for good before: stays stopped
       }
       else {
         const view = await this.retry(async () => {
@@ -461,8 +483,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           this.refresh();
           this.poke();
         },
-        () => {
-          if (!this.stopped) this.fail('escrow-failed');
+        (e: unknown) => {
+          if (!this.stopped) this.fail('escrow-failed', { integrity: integrityError(e) });
         },
       );
 
@@ -522,8 +544,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (r.paidRefused === true) return null;
       const fixed = r.acceptedAtomic ?? null;
       if (fixed !== null) return v.amountAtomic === fixed ? fixed : null;
-      // Fail closed: a buyer that knows of "I've paid" settles only an amount it fixed itself.
-      if (r.role === 'buyer' && r.paidSeen) return null;
+      // Fail closed (I1, I7): the seller releases only the amount the buyer's signed trade.paid
+      // fixed; a buyer that knows of "I've paid" settles only an amount it fixed itself.
+      if (r.role === 'seller' || r.paidSeen) return null;
       return v.amountAtomic >= r.deal.takeAmountAtomic && v.amountAtomic <= r.sizeAtomic ? v.amountAtomic : null;
     }
 
@@ -563,7 +586,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const r = this.rec;
       if (r.paidRefused === true) return 'paid-amount-refused';
       if ((r.acceptedAtomic ?? null) !== null) return 'amount-changed';
-      if (r.role === 'buyer' && r.paidSeen) return 'amount-unknown';
+      if (r.role === 'seller') return r.paidSeen || r.intent?.kind === 'release' ? 'amount-unknown' : null; // nothing to release yet
+      if (r.paidSeen) return 'amount-unknown';
       return 'amount-out-of-range';
     }
 
@@ -599,7 +623,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             return;
           }
           if (e instanceof PartyError && e.code === 'stopped') return;
-          if (!this.stopped) this.fail('escrow-failed');
+          if (!this.stopped) this.fail('escrow-failed', { integrity: integrityError(e) });
         },
       );
     }
@@ -688,10 +712,21 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const i = r.intent;
       if (i && !i.done && f.balance > 0n && f.balance === f.unlocked) {
         const ctx = this.context(f.balance, i.kind !== 'release');
-        const o = ctx ? outcomeFor(i.kind, ctx) : null;
+        let o = ctx ? outcomeFor(i.kind, ctx) : null;
+        // I1: a release is bound to the amount of its first hand-over; another amount is refused.
+        if (o && ctx && i.kind === 'release') {
+          const bound = i.handedAtomic ?? null;
+          if (bound !== null && ctx.deal.amountAtomic !== bound) {
+            o = null;
+            this.refusal = 'amount-changed';
+          } else if (bound === null) {
+            r.intent = { ...r.intent!, handedAtomic: ctx.deal.amountAtomic };
+            changed = true;
+          }
+        }
         // A changed balance (late surplus) before this side signed: re-derive and settle again.
         if (o && key(o) !== key(i.outcome)) {
-          r.intent = { ...i, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner } };
+          r.intent = { ...r.intent!, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner } };
           changed = true;
         }
         if (changed) await this.persist();
@@ -731,7 +766,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (emptyInBlock && !ownDone && (ownOpen || coins)) {
         if (!ownOpen) this.emptiedWhileSettling ??= t - settledElsewhereMs; // nothing of ours could still land
         else this.emptiedWhileSettling ??= t;
-        if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed');
+        if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed', { integrity: true }); // confirmed settled elsewhere
       } else this.emptiedWhileSettling = null;
       if (changed) await this.persist();
       const settled = r.settleSeenAt != null || neverFunded;
@@ -803,6 +838,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (!v || amount === null || typeof a.fiatCents !== 'bigint' || a.fiatCents !== fiatCents(amount, { currency: r.deal.currency, centsPerXmr: r.deal.centsPerXmr })) {
             throw new Error('escrow: the total does not match the trade amount');
           }
+          // I1: a release already handed over is bound to its amount; paying for another is refused.
+          const bound = r.intent?.kind === 'release' ? (r.intent.handedAtomic ?? null) : null;
+          if (bound !== null && bound !== amount) throw new Error('escrow: a release for another amount is already under way');
           this.fixAmount(amount);
           r.paidSeen = true;
           await this.persist(); // fixed before the signal leaves
@@ -886,6 +924,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const run = code === null ? undefined : runs.get(code);
       if (!run) throw new Error('escrow not running');
       await run.act(action);
+    },
+    async retry(raw) {
+      const code = normalizeTradeCode(raw);
+      const run = code === null ? undefined : runs.get(code);
+      if (!run || !run.error || !run.retryable) return;
+      runs.delete(run.code);
+      await run.halt();
+      await start(run.code);
     },
     async stop(raw) {
       const code = normalizeTradeCode(raw);

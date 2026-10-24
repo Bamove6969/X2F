@@ -16,6 +16,7 @@ export type ToWorker =
   | { t: 'start'; code: string; confirmed?: ConfirmedTrade }
   | { t: 'resume-all' }
   | { t: 'act'; id: number; code: string; action: EscrowAction }
+  | { t: 'retry'; code: string }
   | { t: 'stop'; code: string };
 
 export type FromWorker = { t: 'status'; code: string; status: EscrowStatus } | { t: 'acted'; id: number; ok: boolean };
@@ -49,6 +50,9 @@ export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s
           return;
         case 'stop':
           if (typeof m.code === 'string') await rt.stop(m.code);
+          return;
+        case 'retry':
+          if (typeof m.code === 'string') await rt.retry(m.code).catch(() => undefined);
           return;
         case 'act': {
           if (typeof m.id !== 'number') return;

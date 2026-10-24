@@ -16,11 +16,12 @@ function stubClient() {
   const c: EscrowClient & { push(s: Partial<EscrowStatus>): void } = {
     start: vi.fn(),
     act: vi.fn(async () => {}),
+    retry: vi.fn(),
     subscribe: (code, cb) => {
       subs.set(code, cb);
       return () => subs.delete(code);
     },
-    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', ...s })),
+    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', ...s })),
   };
   return c;
 }
@@ -89,6 +90,7 @@ describe('worker protocol', () => {
           calls.push(`act ${a.type}`);
           if (a.type === 'release') throw new Error('no');
         },
+        retry: async (code) => void calls.push(`retry ${code}`),
         stop: async () => {},
         stopAll: async () => {},
       };
@@ -99,12 +101,14 @@ describe('worker protocol', () => {
     await vi.waitFor(() => expect(calls).toContain(`start ${CODE} seller`));
     const seen: EscrowStatus[] = [];
     client.subscribe(CODE, (s) => seen.push(s));
-    emit(CODE, { phase: 'ready', error: null, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller' });
+    emit(CODE, { phase: 'ready', error: null, retryable: false, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller' });
     await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe('ready'));
     await expect(client.act(CODE, { type: 'buyer-cancel' })).resolves.toBeUndefined();
     await expect(client.act(CODE, { type: 'release' })).rejects.toThrow();
     await expect(client.act(CODE, { type: 'steal' } as never)).rejects.toThrow();
     expect(calls).not.toContain('act steal');
+    client.retry(CODE);
+    await vi.waitFor(() => expect(calls).toContain(`retry ${CODE}`));
   });
 
   it('the worker config fails closed when a value is missing', () => {

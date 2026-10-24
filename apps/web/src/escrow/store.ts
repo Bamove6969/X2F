@@ -44,6 +44,12 @@ export interface StoredIntent {
   done: boolean;
   /** Chosen by the runtime (standing release co-sign, lapse refund), not by a tap. */
   auto: boolean;
+  /**
+   * For a release: the trade amount its outcome was derived from when it was first handed to the
+   * party (saved before the hand-over). While this intent stands, a release for any other amount,
+   * or an "I've paid" tap for another amount, is refused. Refunds are never bound.
+   */
+  handedAtomic?: bigint | null;
 }
 
 export interface EscrowRecord {
@@ -93,7 +99,11 @@ export interface EscrowRecord {
   fundedSeen?: boolean;
   /** The seller refused the buyer's signed trade.paid amount (out of range, or a total that does not fit). */
   paidRefused?: boolean;
-  /** A failure that stops this trade on this device; kept so a reload stops it again. */
+  /**
+   * An integrity failure that stops this trade on this device for good; kept so a reload stops it
+   * again (participants or deal mismatch, a confirmed settled-elsewhere, party equivocation or
+   * address mismatch). Transient failures are never stored.
+   */
   failed?: 'participants-mismatch' | 'deal-mismatch' | 'escrow-failed' | null;
 }
 

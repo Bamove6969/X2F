@@ -113,11 +113,20 @@ export class Parties {
   /** Settles resolve only when released. */
   pending: { role: Role; o: Outcome; resolve: (v: string | null) => void; reject: (e: unknown) => void }[] = [];
   committed = new Map<Role, string>();
+  /** When set for a role, that role's next ready() rejects with it (once). */
+  readyError: Partial<Record<Role, unknown>> = {};
   runParty = (args: PartyArgs): PartyHandle => {
     this.calls.push({ role: args.role, args });
     void args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null });
     return {
-      ready: async () => ESCROW_ADDRESS,
+      ready: async () => {
+        if (this.readyError[args.role] !== undefined) {
+          const e = this.readyError[args.role];
+          delete this.readyError[args.role];
+          throw e;
+        }
+        return ESCROW_ADDRESS;
+      },
       settle: (o) => {
         this.settles.push({ role: args.role, o });
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));

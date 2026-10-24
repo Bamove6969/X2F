@@ -10,6 +10,8 @@ import type { FromWorker, ToWorker } from './worker.js';
 export interface EscrowClient {
   start(code: string, confirmed?: ConfirmedTrade): void;
   act(code: string, action: EscrowAction): Promise<void>;
+  /** Runs a trade stopped by a retryable error again. */
+  retry(code: string): void;
   /** Calls `cb` with the latest status now (if any) and on every change. */
   subscribe(code: string, cb: (s: EscrowStatus) => void): () => void;
 }
@@ -40,6 +42,7 @@ export function workerClient(w: Pick<Worker, 'postMessage' | 'addEventListener'>
         waiting.set(id, (ok) => (ok ? resolve() : reject(new Error('escrow action refused'))));
         post({ t: 'act', id, code, action });
       }),
+    retry: (code) => post({ t: 'retry', code }),
     subscribe(code, cb) {
       let set = subs.get(code);
       if (!set) subs.set(code, (set = new Set()));
@@ -67,6 +70,8 @@ export function escrowClient(): EscrowClient {
 export interface UseEscrow {
   phase: EscrowPhase;
   error: EscrowErrorCode | null;
+  /** The error may be transient: offer `retry()` (refunds stay possible once it runs again). */
+  retryable: boolean;
   /** A refusal the trade screen must show (the trade waits; see EscrowRefusal). */
   refusal: EscrowRefusal | null;
   checkWords: string[] | null;
@@ -81,10 +86,11 @@ export interface UseEscrow {
    * then on settles only that amount.
    */
   markPaid(fiatCents: bigint): Promise<void>;
+  retry(): void;
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, refusal: null, checkWords: null, keepOpen: false, role: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -104,6 +110,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
   return {
     phase: status.phase,
     error: status.error,
+    retryable: status.retryable,
     refusal: status.refusal,
     checkWords: status.checkWords,
     keepOpen: status.keepOpen,
@@ -112,6 +119,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     buyerCancel: () => act({ type: 'buyer-cancel' }),
     proposeCancelSign: () => act({ type: 'propose-cancel-sign' }),
     markPaid: (fiatCents) => act({ type: 'paid', fiatCents }),
+    retry: () => c.retry(code),
     signal: (type) => act({ type: 'signal', signal: type }),
   };
 }

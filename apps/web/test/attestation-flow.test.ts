@@ -494,6 +494,42 @@ describe('settling', () => {
       await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
     });
 
+    it('a release handed over before paid binds its amount: another amount is refused at the tap and for any release', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer')); // the standing co-sign, at AMOUNT
+      await until(async () => (await t.buyer.store.load(CODE))?.intent?.handedAtomic === AMOUNT);
+      // Extra coins grow the trade and the API follows; the bound release does not move.
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ error: null });
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.filter((x) => x.role === 'buyer').every((x) => x.o.to[0]!.amountAtomic === AMOUNT)).toBe(true);
+      await expect(pay(t.buyer, grown)).rejects.toThrow();
+      expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
+      // A refund is not bound: the buyer can still cancel, paying the whole balance to the seller.
+      await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
+      expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
+    });
+
+    it('the seller signs no release without the buyer’s signed amount, even when its API view says paid: amount-unknown', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      t.state.roleView = { seller: { state: 'paid', paidAt } };
+      await t.seller.runtime.act(CODE, { type: 'release' });
+      expect(await t.seller.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ error: null });
+      await t.parties.ticks('seller', 3);
+      expect(t.parties.settles.filter((x) => x.role === 'seller')).toEqual([]);
+      // The buyer's signed trade.paid fixes it, and the release follows.
+      t.state.roleView = {};
+      t.state.view = tradeView({ state: 'paid', paidAt });
+      await pay(t.buyer);
+      await until(() => t.parties.settles.some((x) => x.role === 'seller'));
+    });
+
     it('a signed trade.paid outside the seller’s range, or with a total that does not fit, is refused visibly and fixes nothing', async () => {
       for (const bad of [
         { amountAtomic: grown + 1n, fiatCents: fiatOf(grown + 1n) },
@@ -1010,12 +1046,54 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect(t.parties.settles.filter((x) => x.role === 'seller').length).toBe(before);
   });
 
+  it('a transient failure is not kept: status says retryable, retry() runs it again, and a reload recovers', async () => {
+    const t = await setup();
+    t.parties.readyError = { seller: new Error('daemon unreachable') };
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+    expect((await seller.store.load(CODE))?.failed ?? null).toBeNull();
+    await seller.runtime.retry(CODE);
+    expect(await seller.status((s) => s.phase === 'ready')).toMatchObject({ error: null });
+    // And the same after a reload instead of a retry.
+    t.parties.readyError = { seller: new Error('relay closed') };
+    await seller.runtime.stopAll();
+    const again = await t.mk('seller', { idb: seller.idb });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ retryable: true });
+    await again.runtime.stopAll();
+    const third = await t.mk('seller', { idb: seller.idb });
+    await third.runtime.resumeAll();
+    expect(await third.status((s) => s.phase === 'ready')).toMatchObject({ error: null });
+  });
+
+  it('an integrity failure from the party (equivocation) is kept and not retryable', async () => {
+    const t = await setup();
+    t.parties.readyError = { seller: new PartyError('equivocation', 'two different copies') };
+    const seller = await t.mk('seller');
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    await until(async () => (await seller.store.load(CODE))?.failed === 'escrow-failed');
+    await seller.runtime.retry(CODE);
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ retryable: false });
+  });
+
   it('the party reports settled-elsewhere: escrow-failed, never a quiet close', async () => {
     const t = await released({ settle: false });
     const p = t.parties.pending.find((x) => x.role === 'seller')!;
     p.reject(new PartyError('settled-elsewhere', 'another transaction emptied the escrow'));
-    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed' });
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
     expect(await t.seller.store.load(CODE)).not.toBeNull();
+    // A confirmed settled-elsewhere is kept: a reload stays stopped.
+    await until(async () => (await t.seller.store.load(CODE))?.failed === 'escrow-failed');
+    await t.seller.runtime.stopAll();
+    const again = await t.mk('seller', { idb: t.seller.idb });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
   });
 
 });
