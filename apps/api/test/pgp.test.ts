@@ -128,6 +128,9 @@ async function recipients(armored: string): Promise<string[]> {
     .map((p) => String((p as unknown as { publicKeyAlgorithm: number }).publicKeyAlgorithm));
 }
 
+/** The SQL a spied `query` ran, in order, whitespace normalised (for query-parity tests). */
+const sqlOf = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' ').trim());
+
 /** A well-formed device cookie the client made up (32 random bytes, base64url). */
 const madeUpCookie = () => randomBytes(32).toString('base64url');
 
@@ -824,7 +827,7 @@ describe('staff, owner and other mounts', () => {
 });
 
 describe('review fixes', () => {
-  it('I1: made-up cookies neither evict a trusted browser’s challenge nor get past the per-key ceiling of 30', async () => {
+  it('I1: made-up cookies neither evict a known browser’s challenge nor hold it; there is no per-key ceiling', async () => {
     const n = uniqueName();
     const k = await genKey();
     const a = await registerPgp(n, k); // A's device is trusted for the account
@@ -835,32 +838,35 @@ describe('review fixes', () => {
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
         cookies: { [DEVICE_COOKIE]: madeUpCookie() }, payload: { key: k.publicKey },
       });
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 12; i++) {
       setNow(new Date(now.getTime() + 1000)); // A's challenge is the oldest, the first a shared cap would evict
       expect((await madeUp()).statusCode).toBe(200);
     }
     expect((await loginFinish(a, sa.json().challengeId, codeA)).json()).toEqual({ status: 'ok' });
-    const over = await madeUp();
-    expect(over.statusCode).toBe(429);
-    expect(over.json().error).toBe('slow-down');
-    // The trusted browser is in its own group and still gets challenges.
+    // No count across devices: a fresh cookie is never refused, and A still gets challenges.
+    expect((await madeUp()).statusCode).toBe(200);
     expect((await loginStart(a, k)).statusCode).toBe(200);
   });
 
-  it('M3: concurrent starts from one device leave one open challenge', async () => {
+  it('M3: a parallel burst from one device gets exactly 5 challenges, then 429; one stays open', async () => {
     const n = uniqueName();
     const mk = await genKey();
     await registerPgp(n, mk);
     const cookie = madeUpCookie();
     const res = await Promise.all(
-      Array.from({ length: 5 }, () =>
+      Array.from({ length: 8 }, () =>
         app.inject({
           method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN },
           cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey },
         }),
       ),
     );
-    for (const r of res) expect([200, 429]).toContain(r.statusCode);
+    expect(res.filter((r) => r.statusCode === 200)).toHaveLength(5);
+    expect(res.filter((r) => r.statusCode === 429)).toHaveLength(3);
+    const after = await app.inject({
+      method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies: { [DEVICE_COOKIE]: cookie }, payload: { key: mk.publicKey },
+    });
+    expect(after.statusCode).toBe(429);
     const { rows } = await deps.db.query(
       `select count(*)::int as n from challenges where account_id = $1 and purpose = 'login' and used_at is null`,
       [await accountId(n)],
@@ -953,14 +959,14 @@ describe('review fixes', () => {
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies, payload: { key: k.publicKey, ...extra },
       });
       expect(res.statusCode).toBe(200);
-      return spy.mock.calls.length;
+      return sqlOf(spy);
     };
     try {
       for (const cookies of [{}, { [DEVICE_COOKIE]: madeUpCookie() }]) {
         for (const extra of [{}, { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' }]) {
-          const counts = [await count(known, cookies, extra), await count(await genKey(), cookies, extra)];
-          expect(counts[0], JSON.stringify({ cookies, extra })).toBeGreaterThan(0);
-          expect(new Set(counts).size, JSON.stringify({ cookies, extra })).toBe(1);
+          const [a, b] = [await count(known, cookies, extra), await count(await genKey(), cookies, extra)];
+          expect(a.length, JSON.stringify({ cookies, extra })).toBeGreaterThan(0);
+          expect(b, JSON.stringify({ cookies, extra })).toEqual(a);
         }
       }
     } finally {

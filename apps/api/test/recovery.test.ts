@@ -403,10 +403,11 @@ describe('backup login with TOTP (P2-I1)', () => {
 });
 
 describe('I-1: backup login costs the same queries for a known and an unknown login name', () => {
-  const count = async (spy: { mockClear(): void; mock: { calls: unknown[] } }, run: () => Promise<{ statusCode: number }>) => {
+  const count = async (spy: { mockClear(): void; mock: { calls: unknown[][] } }, run: () => Promise<{ statusCode: number }>) => {
     spy.mockClear();
     expect((await run()).statusCode).toBe(401);
-    return spy.mock.calls.length;
+    // The SQL run, in order (whitespace normalised), so parity covers the statements, not just their number.
+    return JSON.stringify(spy.mock.calls.map((c) => String((c as unknown[])[0]).replace(/\s+/g, ' ').trim()));
   };
 
   for (const kind of ['recovery-code', 'totp'] as const) {

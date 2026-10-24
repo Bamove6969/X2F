@@ -1,6 +1,5 @@
 import type { FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
-import { addAlert } from '../alerts.js';
 import { ApiError } from '../errors.js';
 import { deviceHash, isTrusted } from './device.js';
 
@@ -15,17 +14,17 @@ export const NIL_UUID = '00000000-0000-0000-0000-000000000000';
 export const NO_DEVICE: Buffer = Buffer.alloc(32);
 
 /**
- * The alert for a streak that reached its lock, or the same amount of database work when there is
- * no account or the streak was already alerted (I-1): one update flips `alerted`, then either the
- * alert insert or an update of the alerts table that matches no row.
+ * The alert for a streak that reached its lock, with the same SQL when there is no account or the
+ * streak was already alerted (I-1): one update flips `alerted`, then one insert into `alerts` that
+ * adds the row only for a real account whose streak this call flipped (else it inserts nothing).
  */
 async function lockAlert(deps: Pick<Deps, 'db' | 'clock'>, key: string, accountId: string | null, method: string): Promise<void> {
   const flipped = await deps.db.query('update login_throttle set alerted = true where key = $1 and alerted = false', [key]);
-  if ((flipped.rowCount ?? 0) > 0 && accountId !== null) {
-    await addAlert(deps.db, accountId, 'login-locked', { method }, deps.clock());
-  } else {
-    await deps.db.query('update alerts set seen_at = seen_at where account_id = $1', [NIL_UUID]);
-  }
+  const add = (flipped.rowCount ?? 0) > 0 && accountId !== null;
+  await deps.db.query(
+    `insert into alerts (account_id, kind, detail, created_at) select $1::uuid, $2::text, $3::jsonb, $4::timestamptz where $5::boolean`,
+    [accountId ?? NIL_UUID, 'login-locked', JSON.stringify({ method }), deps.clock(), add],
+  );
 }
 
 const FREE_FAILURES = 3;

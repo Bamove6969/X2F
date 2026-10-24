@@ -27,12 +27,12 @@ import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
-import { deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
+import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
 import { requireSession, startSession } from './sessions.js';
-import { NIL_UUID, NO_DEVICE } from './throttle.js';
+import { NIL_UUID } from './throttle.js';
 
 // ---------------------------------------------------------------------------------------------
 // The official X2F signing key (R7)
@@ -199,13 +199,9 @@ async function usableKeys(keys: StoredKey[], now: Date): Promise<StoredKey[]> {
 export const PGP_CHALLENGE_TTL_MS = 5 * 60_000;
 /** Routes that carry a public key take bodies up to 64 KiB, so a 32 KiB+ key reaches `key-too-large`. */
 export const PGP_BODY_LIMIT = 64 * 1024;
-/**
- * Login `start` (P2-I3, per device since the FU-A re-review): at most 5 per key and device in 5
- * minutes, and at most 30 per key in 5 minutes from browsers not trusted for the key's account.
- */
+/** Login `start` (P2-I3, per device since the FU-A re-review): at most 5 per key and device in 5 minutes. */
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
-const ANON_STARTS_PER_KEY = 30;
 
 type Purpose = 'register' | 'login' | 'confirm' | 'add-key';
 
@@ -277,10 +273,11 @@ function messageText(deps: Deps, req: FastifyRequest, code: string, purpose: str
  * Stores a login challenge, real or decoy, by exactly the same rules, so that what happens to an
  * earlier challenge never tells a known key from an unknown one (security review of FU-A). In one
  * transaction, serialised per key by an advisory lock on `payload.startTag` (the key's start tag),
- * a new start marks the same key's earlier unused login challenges from the same device as used.
- * That is the open-challenge cap, per (start tag, device hash): one open challenge per key and
- * device, so another browser (made-up cookies included) can never push out this device's
- * challenge. The start limits are checked by the route (`assertStartAllowed`).
+ * the start limit is checked (`assertStartAllowed`; inside the lock, so a parallel burst from one
+ * device gets exactly 5), then a new start marks the same key's earlier unused login challenges
+ * from the same device as used. That is the open-challenge cap, per (start tag, device hash): one
+ * open challenge per key and device, so another browser (made-up cookies included) can never push
+ * out this device's challenge.
  */
 async function storeLoginChallenge(
   deps: Deps,
@@ -294,6 +291,7 @@ async function storeLoginChallenge(
     await client.query('begin');
     try {
       await client.query("select pg_advisory_xact_lock(hashtextextended('x2f-pgp-login/' || $1, 0))", [tag]);
+      await assertStartAllowed(client, tag, deviceHash(req)!, row.now);
       await client.query(
         `update challenges set used_at = $3
           where purpose = 'login' and payload->>'startTag' = $1 and device_hash is not distinct from $2 and used_at is null`,
@@ -369,7 +367,7 @@ async function issueLoginChallenge(
 export function decoyPgpChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { toKey: string; payload: { startTag: string; startGroup: string } },
+  a: { toKey: string; payload: { startTag: string } },
 ): Promise<IssuedChallenge> {
   return issueLoginChallenge(deps, req, { accountId: null, toKey: a.toKey, payload: { ...a.payload, decoy: true } });
 }
@@ -384,7 +382,9 @@ export function decoyPgpChallenge(
  * Login (I-2a of the FU-A re-review): every refusal is 401 `code-invalid`, the wrong-code answer,
  * so a used, superseded or evicted challenge looks exactly like a wrong code; only a challenge that
  * ran out of time unused says `challenge-expired` (its expiry is a fixed 5 minutes, which tells
- * nobody anything).
+ * nobody anything). Telling the two apart costs a used or superseded finish one extra query
+ * (`expiredUnused`). That is no oracle today, because only the same device can supersede its own
+ * challenge; revisit it if cross-device eviction ever returns.
  */
 export async function checkPgpCode(
   deps: Deps,
@@ -468,34 +468,28 @@ function startTag(config: Config, fingerprint: string): string {
 /**
  * P2-I3 (per key and device since the FU-A re-review, I-2b). Public keys are often public (on
  * keyservers, personal sites and elsewhere), so assume a stranger has the key and can start logins
- * with it. Two limits, each → 429 `slow-down` (never `locked`):
- * - 5 starts per key and device (`device`, the hash of the device cookie the challenge is bound to)
- *   in 5 minutes, so a stranger filling their own bucket changes nothing for anyone else's browser;
- * - 30 starts per key in 5 minutes from browsers not trusted for the key's account (group `anon`:
- *   no cookie, a new cookie or a made-up one), a ceiling a cookie-dropping script cannot get past.
- *   A device trusted for the account (group `dev:<hash>`, I1) is never held by it.
- * Real and decoy challenges count alike (unknown keys are always `anon`), and the one query runs on
- * every start, so the limits do not tell a known key from an unknown one. Residual: a stranger with
- * many cookies can fill the ceiling and hold PGP login from untrusted browsers for 5 minutes.
+ * with it. More than 5 starts per key and device (`device`, the hash of the device cookie the
+ * challenge is bound to) in 5 minutes → 429 `slow-down` (never `locked`), so a stranger filling
+ * their own bucket changes nothing for anyone else's browser, and the Retry-After only ever speaks
+ * of this device's own starts. There is no per-key limit across devices: any such count would tell
+ * a stranger that someone else is logging in with the key (and when), and a cookie-dropping script
+ * could use it to lock out Tor and private-window users. Real and decoy challenges count alike, so
+ * the limit does not tell a known key from an unknown one. Residual: a cookie-dropping script can
+ * make unlimited starts per key, bounded only by the global start budget (per-source limits are
+ * Plan 6). Runs inside `storeLoginChallenge`'s per-key lock.
  */
-async function assertStartAllowed(deps: Deps, tag: string, device: Buffer, group: string, now: Date): Promise<void> {
+async function assertStartAllowed(db: Queryable, tag: string, device: Buffer, now: Date): Promise<void> {
   const since = new Date(now.getTime() - START_WINDOW_MS);
-  const { rows } = await deps.db.query<{ mine: number; mine_oldest: Date | null; anon: number; anon_oldest: Date | null }>(
-    `select count(*) filter (where device_hash = $2)::int as mine,
-            min(created_at) filter (where device_hash = $2) as mine_oldest,
-            count(*) filter (where payload->>'startGroup' = 'anon')::int as anon,
-            min(created_at) filter (where payload->>'startGroup' = 'anon') as anon_oldest
-       from challenges
-      where purpose = 'login' and method = 'pgp' and payload->>'startTag' = $1 and created_at > $3`,
+  const { rows } = await db.query<{ n: number; oldest: Date | null }>(
+    `select count(*)::int as n, min(created_at) as oldest from challenges
+      where purpose = 'login' and method = 'pgp' and payload->>'startTag' = $1 and device_hash = $2 and created_at > $3`,
     [tag, device, since],
   );
-  const r = rows[0]!;
-  const refuse = (oldest: Date) => {
+  const { n, oldest } = rows[0]!;
+  if (n >= STARTS_PER_DEVICE && oldest) {
     const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + START_WINDOW_MS - now.getTime()) / 1000));
-    return new ApiError(429, 'slow-down', { retryAfterSeconds });
-  };
-  if (r.mine >= STARTS_PER_DEVICE && r.mine_oldest) throw refuse(r.mine_oldest);
-  if (group === 'anon' && r.anon >= ANON_STARTS_PER_KEY && r.anon_oldest) throw refuse(r.anon_oldest);
+    throw new ApiError(429, 'slow-down', { retryAfterSeconds });
+  }
 }
 
 /**
@@ -537,7 +531,8 @@ export interface PgpLoginOptions {
 export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): void {
   app.post('/start', { bodyLimit: PGP_BODY_LIMIT }, async (req, reply) => {
     const deps = req.server.deps;
-    // The start limit groups by the device cookie the browser *sent*; a fresh one is set after.
+    // Every answer, refusals included, gives the browser a device cookie (`loginStart` sets it before
+    // binding the challenge).
     try {
       req.server.budgets.start.take();
       return await loginStart(deps, req, reply, opts);
@@ -594,7 +589,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
  * checked by `inspectPublicKey` before any account lookup, so its refusals (unreadable, private,
  * weak, expired, revoked...) depend only on the key itself and say nothing about accounts. From then
  * on a known key and an unknown key take the same steps, with the same queries (I-1) and the same
- * PGP work (M-1): the trusted-device lookup, the start limits, sealing and opening a copy, merging
+ * PGP work (M-1): sealing and opening a copy, merging
  * the pasted key into the stored copy (an unknown key merges into itself), inspecting and sealing
  * the result, checking the recipient subkey, and one challenge encrypted to the pasted key alone
  * (M-2). A known key that cannot get a real challenge (the stored copy is revoked or no longer
@@ -615,21 +610,14 @@ async function loginStart(deps: Deps, req: FastifyRequest, reply: FastifyReply, 
   // From here on the browser has a device cookie, so the challenge is bound to the device that will
   // finish it, and the per-device start limit counts that device.
   ensureDeviceCookie(req, reply);
-  const bound = deviceHash(req)!;
   const { rows } = await deps.db.query<{ id: string; kind: AccountKind; armored_enc: Buffer }>(
     'select a.id, a.kind, k.armored_enc from pgp_keys k join accounts a on a.id = k.account_id where k.fingerprint = $1',
     [fingerprint],
   );
   const found = rows[0];
   const account = found && opts.kinds.includes(found.kind) ? found : undefined;
-  // I1: only a device trusted for the key's account gets its own group; every other browser is `anon`.
-  // I-1: the lookup always runs, for an unknown key and a browser without a cookie too.
-  const trustedRow = await isTrusted(deps, account?.id ?? NIL_UUID, device ?? NO_DEVICE);
-  const trusted = account !== undefined && device !== null && trustedRow;
-  const group = trusted ? `dev:${device!.toString('hex')}` : 'anon';
-  const tag = startTag(deps.config, fingerprint);
-  await assertStartAllowed(deps, tag, bound, group, now);
-  const startPayload = { startTag: tag, startGroup: group };
+  // The start limit is per key and device (I-2b), so no trusted-device lookup is needed here (I1).
+  const startPayload = { startTag: startTag(deps.config, fingerprint) };
 
   // M-1: the same work for a known and an unknown key. Seal the pasted key and open a sealed copy
   // (the stored one for a known key, the one just sealed for an unknown key), merge the pasted key

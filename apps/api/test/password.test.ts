@@ -342,7 +342,8 @@ describe('POST /v1/login/password', () => {
       spy.mockClear();
       const res = await login(loginName, 'Wrong-Horse-9', cookies);
       expect(res.statusCode).toBe(401);
-      return spy.mock.calls.length;
+      // The SQL run, in order (whitespace normalised), so parity covers the statements, not just their number.
+      return JSON.stringify(spy.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' ').trim()));
     };
     try {
       for (const cookies of [{}, { [DEVICE_COOKIE]: randomBytes(32).toString('base64url') }]) {
