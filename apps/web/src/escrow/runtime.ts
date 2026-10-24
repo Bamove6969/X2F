@@ -1,0 +1,582 @@
+/**
+ * The escrow runtime for one device: everything `useEscrow` drives, run inside the worker.
+ *
+ * Per trade: make (once) and store the trade identity and the R27 wallet password, register the
+ * identity with its proof, poll the attestation, verify it against the pinned moderation key
+ * (any failure: `participants-mismatch`, stop, the party never runs), exchange signed
+ * trade.terms on the signals channel, then run `runParty` with the attested participants. A
+ * loop reads the trade view and this device's own `funds()`, keeps the trade's size from its
+ * own reading (deviceAmount), and settles only outcomes that pass `cosignPolicy`. Everything is
+ * saved before it is acted on, so a reload resumes from the store and settles the same outcome
+ * (Review Focus 1). One tab at a time runs a trade (a Web Lock per trade), because two
+ * parties signing from the same saved nonces would leak the key share (R26).
+ */
+import { normalizeTradeCode, type Role } from '@x2f/core';
+import { PartyError, type EscrowEngine, type Outcome, type PartyArgs, type PartyHandle, type Payout, type Transport } from '@x2f/escrow';
+import type { Identity, Participants } from '@x2f/protocol';
+import { channelFor, type SettleKind, type TradeState } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
+import { escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type EscrowTradeView } from './adapters.js';
+import { cosignPolicy, deviceAmount, outcomeFor, type PolicyContext } from './policy.js';
+import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
+import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
+
+export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'error';
+/**
+ * `participants-mismatch` is the plan's; the others are additions: the two sides signed
+ * different deals, the party failed (a peer reported another escrow address, or the store
+ * could not save), or the browser has no Web Locks.
+ */
+export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'escrow-failed' | 'unsupported-browser';
+
+export interface EscrowStatus {
+  phase: EscrowPhase;
+  error: EscrowErrorCode | null;
+  checkWords: string[] | null;
+  keepOpen: boolean;
+  role: 'buyer' | 'seller' | null;
+}
+
+export type EscrowAction =
+  | { type: 'release' }
+  | { type: 'build-refund' }
+  | { type: 'buyer-cancel' }
+  | { type: 'propose-cancel-sign' }
+  | { type: 'signal'; signal: UserSignal };
+
+/** The API calls the runtime makes (Tasks 6 and 8 routes). */
+export interface EscrowApi {
+  getTrade(code: string): Promise<unknown>;
+  /** POST /v1/trades/:code/identity; 409 identity-exists counts as registered. */
+  registerIdentity(code: string, body: { signPublic: string; boxPublic: string; proof: string }): Promise<void>;
+  /** GET /v1/trades/:code/attestation; null while it answers 202. */
+  getAttestation(code: string): Promise<{ attestation: unknown; sig: unknown } | null>;
+}
+
+export interface RuntimeConfig {
+  modSigningPublic: string;
+  feeWallet: string;
+  relayUrl: string;
+  daemonUri: string;
+}
+
+export interface RuntimeDeps {
+  api: EscrowApi;
+  store: EscrowStore;
+  config: RuntimeConfig;
+  engine: EscrowEngine;
+  generateIdentity(): Promise<Identity>;
+  runParty(a: PartyArgs): PartyHandle;
+  transport(a: { url: string; code: string; role: Role; me: Identity }): Transport;
+  /** Runs `fn` holding an exclusive lock `name` (navigator.locks by default). */
+  lock?: (name: string, fn: () => Promise<void>) => Promise<void>;
+  pollMs?: number;
+  onStatus(code: string, s: EscrowStatus): void;
+}
+
+export interface EscrowRuntime {
+  start(code: string): Promise<void>;
+  /** Starts every trade in the store (page load). */
+  resumeAll(): Promise<void>;
+  act(code: string, action: EscrowAction): Promise<void>;
+  stop(code: string): Promise<void>;
+  stopAll(): Promise<void>;
+}
+
+const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
+const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
+
+const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
+const key = (o: { to: readonly Payout[]; builder: string; cosigner: string } | null): string =>
+  o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
+
+function navigatorLock(name: string, fn: () => Promise<void>): Promise<void> {
+  const locks = (globalThis.navigator as Navigator | undefined)?.locks;
+  if (!locks) return Promise.reject(new Error('unsupported-browser'));
+  return locks.request(name, { mode: 'exclusive' }, fn);
+}
+
+export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
+  const pollMs = deps.pollMs ?? 5000;
+  const lock = deps.lock ?? navigatorLock;
+  const runs = new Map<string, TradeRun>();
+
+  class TradeRun {
+    stopped = false;
+    private wake: (() => void) | null = null;
+    private rec!: EscrowRecord;
+    private saving: Promise<void> = Promise.resolve();
+    private party: PartyHandle | null = null;
+    private signals: SignalsHandle | null = null;
+    private participants: Participants | null = null;
+    private view: EscrowTradeView | null = null;
+    private isReady = false;
+    private words: string[] | null = null;
+    error: EscrowErrorCode | null = null;
+    private phase: EscrowPhase = 'idle';
+    private last = '';
+    /** The settle() call in flight, by outcome key. */
+    private inflight: string | null = null;
+    /** Outcomes the party refused because another was already committed. */
+    private refused = new Set<string>();
+    private ticking: Promise<void> = Promise.resolve();
+    readonly finished: Promise<void>;
+    private finish!: () => void;
+    acquired!: Promise<void>;
+
+    constructor(readonly code: string) {
+      this.finished = new Promise((r) => (this.finish = r));
+    }
+
+    emit(): void {
+      const s: EscrowStatus = {
+        phase: this.error ? 'error' : this.phase,
+        error: this.error,
+        checkWords: this.words,
+        keepOpen: ['registering', 'verifying', 'setting-up', 'signing'].includes(this.phase) && !this.error,
+        role: this.rec?.role ?? null,
+      };
+      const j = JSON.stringify(s);
+      if (j !== this.last) {
+        this.last = j;
+        deps.onStatus(this.code, s);
+      }
+    }
+
+    private set(p: EscrowPhase): void {
+      this.phase = p;
+      this.emit();
+    }
+
+    fail(e: EscrowErrorCode): void {
+      this.error = e;
+      this.emit();
+    }
+
+    /** Stores a snapshot of the record; resolves once it is stored. Saves never reorder. */
+    persist(): Promise<void> {
+      const snap = structuredClone(this.rec);
+      const p = this.saving.then(() => deps.store.save(snap));
+      this.saving = p.catch(() => undefined);
+      return p;
+    }
+
+    private sleep(ms: number): Promise<void> {
+      return new Promise((r) => {
+        const t = setTimeout(() => {
+          this.wake = null;
+          r();
+        }, ms);
+        this.wake = () => {
+          clearTimeout(t);
+          this.wake = null;
+          r();
+        };
+      });
+    }
+
+    poke(): void {
+      this.wake?.();
+    }
+
+    /** Retries an API call until it answers or the run stops. */
+    private async retry<T>(fn: () => Promise<T>): Promise<T | undefined> {
+      while (!this.stopped) {
+        try {
+          return await fn();
+        } catch {
+          await this.sleep(pollMs);
+        }
+      }
+      return undefined;
+    }
+
+    async run(): Promise<void> {
+      const loaded = await deps.store.load(this.code);
+      if (loaded) this.rec = loaded;
+      else {
+        const view = await this.retry(async () => {
+          const v = parseTradeView(await deps.api.getTrade(this.code));
+          if (!v) throw new Error('unreadable trade view');
+          return v;
+        });
+        if (!view) return;
+        const id = await deps.generateIdentity();
+        this.rec = {
+          v: 1,
+          code: this.code,
+          role: view.role,
+          identity: { signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: id.signSecret, boxSecret: id.boxSecret },
+          registered: false,
+          attestation: null,
+          partyState: null,
+          signalGuard: null,
+          signalSeq: 0,
+          ownAddress: view.ownAddress,
+          theirAddress: null,
+          deal: { poster: view.poster, takeAmountAtomic: view.amountAtomic, currency: view.currency, centsPerXmr: view.centsPerXmr, maxFiatCents: view.maxFiatCents },
+          theirDeal: null,
+          sizeAtomic: view.amountAtomic,
+          paidSeen: false,
+          termsAcked: false,
+          intent: null,
+        };
+        await this.persist(); // the identity is stored before the API ever sees it
+      }
+      const password = await deps.store.createPassword(this.code);
+      const me: Identity = { ...this.rec.identity };
+
+      if (!this.rec.registered) {
+        this.set('registering');
+        await sodium.ready;
+        const proof = toHex(sodium.crypto_sign_detached(identityProofBytes(this.code, this.rec.role, me.signPublic, me.boxPublic), me.signSecret));
+        const ok = await this.retry(() => deps.api.registerIdentity(this.code, { signPublic: me.signPublic, boxPublic: me.boxPublic, proof }).then(() => true));
+        if (!ok) return;
+        this.rec.registered = true;
+        await this.persist();
+      }
+
+      this.set('verifying');
+      let att = this.rec.attestation;
+      while (!att && !this.stopped) {
+        const got = await this.retry(() => deps.api.getAttestation(this.code));
+        if (got === undefined) return;
+        if (got === null) await this.sleep(pollMs);
+        else att = { attestation: got.attestation, sig: typeof got.sig === 'string' ? got.sig : '' };
+      }
+      if (!att || this.stopped) return;
+      try {
+        await verifyAttestation(att.attestation, att.sig, deps.config.modSigningPublic, { role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic }, this.code);
+      } catch {
+        this.fail('participants-mismatch'); // stop: no terms, no party, no funding address
+        return;
+      }
+      const attestation = att.attestation as Attestation;
+      this.participants = attestation.participants;
+      if (!this.rec.attestation) {
+        this.rec.attestation = att;
+        await this.persist();
+      }
+
+      const [escrowChannel, signalsChannel] = await Promise.all([channelFor(this.code, 'escrow'), channelFor(this.code, 'signals')]);
+      const role = this.rec.role;
+      this.signals = runSignals({
+        channel: signalsChannel,
+        role,
+        me,
+        participants: this.participants,
+        transport: deps.transport({ url: deps.config.relayUrl, code: signalsChannel, role, me }),
+        state: {
+          guard: this.rec.signalGuard ?? { trade: signalsChannel, seen: {} },
+          seq: this.rec.signalSeq,
+          theirAddress: this.rec.theirAddress,
+          theirDeal: this.rec.theirDeal,
+          termsAcked: this.rec.termsAcked,
+        },
+        ownAddress: this.rec.ownAddress!,
+        deal: this.rec.deal,
+        save: async (s) => {
+          this.rec.signalGuard = s.guard;
+          this.rec.signalSeq = s.seq;
+          this.rec.theirAddress = s.theirAddress;
+          this.rec.theirDeal = s.theirDeal;
+          this.rec.termsAcked = s.termsAcked;
+          await this.persist();
+        },
+        onSignal: (type, from) => {
+          if (type === 'trade.paid' && from === 'buyer' && !this.rec.paidSeen) {
+            this.rec.paidSeen = true;
+            void this.persist();
+          }
+          this.poke();
+        },
+      });
+
+      this.set('setting-up');
+      this.party = deps.runParty({
+        role,
+        trade: escrowChannel,
+        me,
+        participants: this.participants,
+        transport: deps.transport({ url: deps.config.relayUrl, code: escrowChannel, role, me }),
+        engine: deps.engine,
+        daemonUri: deps.config.daemonUri,
+        password,
+        store: {
+          load: async () => this.rec.partyState,
+          save: async (s) => {
+            this.rec.partyState = s;
+            await this.persist();
+          },
+        },
+      });
+      this.party.ready().then(
+        async (address) => {
+          this.words = await escrowCheckWords(this.participants!, address);
+          this.isReady = true;
+          this.refresh();
+          this.poke();
+        },
+        () => {
+          if (!this.stopped) this.fail('escrow-failed');
+        },
+      );
+
+      // A stored outcome goes back to the party first (through the policy, over its own sum),
+      // so a resumed party carries on with exactly the outcome it was settling.
+      await this.loadView();
+      const intent = this.rec.intent;
+      if (intent?.outcome && !intent.done) this.settle(this.fromStored(intent.outcome));
+
+      while (!this.stopped) {
+        await this.tickOnce();
+        if (this.stopped) break;
+        await this.sleep(pollMs);
+      }
+    }
+
+    private fromStored(o: NonNullable<StoredIntent['outcome']>): Outcome {
+      return { kind: 'release', to: o.to.map((p) => ({ address: p.address, amountAtomic: p.amountAtomic })), builder: o.builder, cosigner: o.cosigner };
+    }
+
+    tickOnce(): Promise<void> {
+      this.ticking = this.ticking.then(() => this.tick()).catch(() => undefined);
+      return this.ticking;
+    }
+
+    /** The policy context for this device right now, or null while the terms are incomplete. */
+    private context(balance: bigint): PolicyContext | null {
+      const v = this.view;
+      const r = this.rec;
+      if (!v || r.ownAddress === null || r.theirAddress === null || !r.theirDeal || !sameDeal(r.deal, r.theirDeal)) return null;
+      const payout = r.role === 'buyer' ? r.ownAddress : r.theirAddress;
+      const refund = r.role === 'seller' ? r.ownAddress : r.theirAddress;
+      return {
+        role: r.role,
+        own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
+        balance,
+        trade: { state: v.state, poster: v.poster, amountAtomic: v.amountAtomic, feeWallet: deps.config.feeWallet },
+        deal: { poster: r.deal.poster, amountAtomic: r.sizeAtomic },
+        signedTerms: { payout, refund },
+      };
+    }
+
+    /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
+    private settle(o: Outcome): void {
+      const k = key(o);
+      if (!this.party || this.inflight === k || this.refused.has(k)) return;
+      // The party pays only when the balance equals the payouts' sum, so that is the balance the policy checks.
+      const ctx = this.context(sumOf(o.to));
+      if (!ctx || !cosignPolicy(ctx, o)) return;
+      this.inflight = k;
+      this.party.settle(o).then(
+        async () => {
+          if (this.rec.intent) {
+            this.rec.intent = { ...this.rec.intent, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner }, done: true };
+            await this.persist();
+          }
+          if (this.inflight === k) this.inflight = null;
+          this.refresh();
+        },
+        (e: unknown) => {
+          if (this.inflight === k) this.inflight = null;
+          if (e instanceof PartyError && e.code === 'bad-outcome') {
+            if (/already signed/.test(e.message)) this.refused.add(k);
+            return;
+          }
+          if (e instanceof PartyError && e.code === 'stopped') return;
+          if (!this.stopped) this.fail('escrow-failed');
+        },
+      );
+    }
+
+    private refresh(): void {
+      if (this.error) return this.emit();
+      const i = this.rec.intent;
+      if (!this.isReady) return this.set('setting-up');
+      if (i?.done) return this.set('done');
+      const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
+      this.set(active ? 'signing' : 'ready');
+    }
+
+    private async loadView(): Promise<void> {
+      let view: EscrowTradeView | null = null;
+      try {
+        view = parseTradeView(await deps.api.getTrade(this.code));
+      } catch {
+        view = null;
+      }
+      if (view && view.role === this.rec.role) this.view = view;
+    }
+
+    private async tick(): Promise<void> {
+      if (this.stopped || !this.party) return;
+      await this.loadView();
+      const v = this.view;
+      if (!v) return;
+      let f: Awaited<ReturnType<PartyHandle['funds']>>;
+      try {
+        f = await this.party.funds();
+      } catch {
+        return this.refresh();
+      }
+      const r = this.rec;
+      let changed = false;
+
+      // Closed, and this device sees the escrow empty with nothing in the pool: forget the trade.
+      if (CLOSED.includes(v.state) && f.balance === 0n && f.unlocked === 0n && f.incoming.every((t) => t.confirmations > 0)) {
+        await this.close();
+        return;
+      }
+      if (r.theirDeal && !sameDeal(r.deal, r.theirDeal)) {
+        this.fail('deal-mismatch');
+        return;
+      }
+      if (!r.paidSeen && (v.paidAt !== null || v.state === 'paid')) {
+        r.paidSeen = true;
+        changed = true;
+      }
+      if (!r.paidSeen && GROW_STATES.includes(v.state) && f.balance > 0n) {
+        const size = deviceAmount(r.deal, r.sizeAtomic, f.balance, f.unlocked);
+        if (size !== r.sizeAtomic) {
+          r.sizeAtomic = size;
+          changed = true;
+        }
+      }
+      // Automatic intents never replace one the user chose.
+      if (!r.intent || (r.intent.auto && !r.intent.done)) {
+        const kind = this.autoKind(v);
+        if (kind && r.intent?.kind !== kind) {
+          r.intent = { kind, outcome: null, done: false, auto: true };
+          changed = true;
+        }
+      }
+      const i = r.intent;
+      if (i && !i.done && f.balance > 0n && f.balance === f.unlocked) {
+        const ctx = this.context(f.balance);
+        const o = ctx ? outcomeFor(i.kind, ctx) : null;
+        // A changed balance (late surplus) before this side signed: re-derive and settle again.
+        if (o && key(o) !== key(i.outcome)) {
+          r.intent = { ...i, outcome: { to: o.to, builder: o.builder, cosigner: o.cosigner } };
+          changed = true;
+        }
+        if (changed) await this.persist();
+        if (o) this.settle(o);
+      } else if (changed) await this.persist();
+      this.refresh();
+    }
+
+    private autoKind(v: EscrowTradeView): SettleKind | null {
+      if (this.rec.role === 'seller') {
+        if (v.state === 'lapsed') return 'lapse-refund';
+        if (v.state === 'refund_requested') return 'auto-refund';
+        if (v.state === 'settling' && v.settling === 'mutual-cancel') return 'mutual-cancel';
+        return null;
+      }
+      if (v.state === 'lapsed') return 'lapse-refund';
+      if (BUYER_RELEASE_STATES.includes(v.state)) return 'release'; // co-signing a release only pays the buyer
+      return null;
+    }
+
+    async act(a: EscrowAction): Promise<void> {
+      const r = this.rec;
+      if (!r || this.error) throw new Error('escrow not running');
+      const user = (kind: SettleKind): void => {
+        r.intent = { kind, outcome: null, done: false, auto: false };
+      };
+      switch (a.type) {
+        case 'release':
+          if (r.role !== 'seller') throw new Error('only the seller releases');
+          user('release');
+          break;
+        case 'build-refund':
+          if (r.role !== 'seller') throw new Error('only the seller builds a refund');
+          user(this.view?.state === 'lapsed' ? 'lapse-refund' : 'auto-refund');
+          break;
+        case 'buyer-cancel':
+          if (r.role !== 'buyer') throw new Error('only the buyer cancels alone');
+          await this.signals?.send('trade.cancel');
+          user('buyer-cancel');
+          break;
+        case 'propose-cancel-sign':
+          user('mutual-cancel');
+          break;
+        case 'signal':
+          await this.signals?.send(a.signal);
+          if (a.signal === 'trade.paid') r.paidSeen = true;
+          break;
+      }
+      await this.persist();
+      await this.tickOnce();
+    }
+
+    private async close(): Promise<void> {
+      await this.halt();
+      await this.saving;
+      await deps.store.delete(this.code);
+      this.isReady = true;
+      this.set('done');
+    }
+
+    async halt(): Promise<void> {
+      this.stopped = true;
+      this.poke();
+      this.signals?.stop();
+      await this.party?.stop().catch(() => undefined);
+      this.finish();
+    }
+  }
+
+  const start = async (raw: string): Promise<void> => {
+    const code = normalizeTradeCode(raw);
+    if (code === null) throw new TypeError('escrow: invalid trade code');
+    if (runs.has(code)) return;
+    const run = new TradeRun(code);
+    runs.set(code, run);
+    run.emit();
+    let acquired!: () => void;
+    run.acquired = new Promise((r) => (acquired = r));
+    lock(`x2f-escrow:${code}`, async () => {
+      acquired();
+      if (run.stopped) return;
+      try {
+        await run.run();
+      } catch {
+        if (!run.stopped) {
+          run.fail('escrow-failed');
+        }
+      }
+      await run.finished.catch(() => undefined);
+    }).catch(() => {
+      acquired();
+      run.fail('unsupported-browser');
+    });
+    // The run waits for the lock; another tab holding it means this one stays 'idle'.
+  };
+
+  return {
+    start,
+    async resumeAll() {
+      for (const code of await deps.store.codes()) await start(code);
+    },
+    async act(raw, action) {
+      const code = normalizeTradeCode(raw);
+      const run = code === null ? undefined : runs.get(code);
+      if (!run) throw new Error('escrow not running');
+      await run.act(action);
+    },
+    async stop(raw) {
+      const code = normalizeTradeCode(raw);
+      const run = code === null ? undefined : runs.get(code);
+      if (!run) return;
+      runs.delete(run.code);
+      await run.halt();
+    },
+    async stopAll() {
+      await Promise.all([...runs.values()].map((r) => r.halt()));
+      runs.clear();
+    },
+  };
+}

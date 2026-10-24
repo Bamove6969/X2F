@@ -13,6 +13,7 @@
  */
 import type { PartyState } from '@x2f/escrow';
 import type { ReplayGuardJSON } from '@x2f/protocol';
+import type { Deal } from './policy.js';
 
 export const DB_NAME = 'x2f-escrow';
 export const TRADES = 'trades';
@@ -39,8 +40,10 @@ export interface StoredIntent {
   kind: 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund';
   /** The outcome last passed to settle(), if any. */
   outcome: { to: StoredPayout[]; builder: 'buyer' | 'seller' | 'mod'; cosigner: 'buyer' | 'seller' | 'mod' } | null;
-  /** The tx hash once settle() resolved. */
+  /** settle() resolved for this outcome. */
   done: boolean;
+  /** Chosen by the runtime (standing release co-sign, lapse refund), not by a tap. */
+  auto: boolean;
 }
 
 export interface EscrowRecord {
@@ -60,6 +63,14 @@ export interface EscrowRecord {
   ownAddress: string | null;
   /** The counterparty's signed trade.terms address, first one wins. */
   theirAddress: string | null;
+  /** The deal this device stored at setup and signed in its trade.terms. */
+  deal: Deal;
+  /** The counterparty's signed deal; it must equal `deal` before anything is settled. */
+  theirDeal: Deal | null;
+  /** The trade's size as this device works it out (deviceAmount), frozen once paid is known. */
+  sizeAtomic: bigint;
+  /** This device knows of "I've paid" (sent it, or got the buyer's trade.paid): no more growth. */
+  paidSeen: boolean;
   /** The moderator acknowledged our trade.terms. */
   termsAcked: boolean;
   intent: StoredIntent | null;
@@ -86,7 +97,7 @@ export class EscrowStoreError extends Error {
 }
 
 interface Wrapped {
-  iv: Uint8Array;
+  iv: Uint8Array<ArrayBuffer>;
   ct: ArrayBuffer;
 }
 
@@ -100,7 +111,7 @@ function unhex(s: string): Uint8Array {
   return out;
 }
 
-function encode(v: unknown): Uint8Array {
+function encode(v: unknown): Uint8Array<ArrayBuffer> {
   const json = JSON.stringify(v, function (this: Record<string, unknown>, k: string, val: unknown) {
     const raw = this[k];
     if (typeof raw === 'bigint') return { $b: raw.toString() };
@@ -170,7 +181,7 @@ async function wrapKey(db: IDBDatabase, subtle: SubtleCrypto): Promise<CryptoKey
   return chosen;
 }
 
-const aad = (store: string, code: string): Uint8Array => new TextEncoder().encode(`x2f-escrow/v1\0${store}\0${code}`);
+const aad = (store: string, code: string): Uint8Array<ArrayBuffer> => new TextEncoder().encode(`x2f-escrow/v1\0${store}\0${code}`);
 
 export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Crypto } = {}): Promise<EscrowStore> {
   const idb = o.indexedDB ?? globalThis.indexedDB;
@@ -200,7 +211,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
     return raw === undefined ? null : unwrap(store, code, raw);
   };
 
-  return {
+  const store: EscrowStore = {
     async codes() {
       const keys = await req(db.transaction(TRADES).objectStore(TRADES).getAllKeys());
       return keys.filter((k): k is string => typeof k === 'string');
@@ -223,7 +234,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
       return v.password;
     },
     async createPassword(code) {
-      const have = await this.password(code);
+      const have = await store.password(code);
       if (have !== null) return have;
       const fresh = hex(cr.getRandomValues(new Uint8Array(PASSWORD_BYTES)));
       const w = await wrap(SECRETS, code, { password: fresh });
@@ -234,7 +245,7 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
         e.preventDefault();
       };
       await done(tx).catch(() => undefined);
-      const stored = await this.password(code);
+      const stored = await store.password(code);
       if (stored === null) throw new EscrowStoreError('unavailable');
       return stored;
     },
@@ -248,4 +259,5 @@ export async function openEscrowStore(o: { indexedDB?: IDBFactory; crypto?: Cryp
       db.close();
     },
   };
+  return store;
 }

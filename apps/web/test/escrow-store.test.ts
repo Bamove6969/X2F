@@ -19,8 +19,12 @@ function record(code: string, secret: number): EscrowRecord {
     signalSeq: 4,
     ownAddress: '4SellerRefund',
     theirAddress: null,
+    deal: { poster: 'seller', takeAmountAtomic: 1_250_000_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 50_000n },
+    theirDeal: null,
+    sizeAtomic: 1_250_000_000_000n,
+    paidSeen: false,
     termsAcked: false,
-    intent: { kind: 'release', outcome: { to: [{ address: '4Buyer', amountAtomic: 1_250_000_000_000n }], builder: 'seller', cosigner: 'buyer' }, done: false },
+    intent: { kind: 'release', outcome: { to: [{ address: '4Buyer', amountAtomic: 1_250_000_000_000n }], builder: 'seller', cosigner: 'buyer' }, done: false, auto: false },
   };
 }
 
