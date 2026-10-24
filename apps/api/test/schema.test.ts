@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
-import { migrate } from '../src/db/migrate.js';
+import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
 
@@ -29,11 +29,67 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '010_wallet_wait_logout_timer.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
+    }
+  });
+
+  it('010 carries existing rows over: old tokens count as password, waits keep their time, trader sessions get 12 hours idle', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      for (const f of (await readdir(MIGRATIONS_DIR)).filter((f) => f < '010')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const t = new Date('2026-10-20T12:00:00Z');
+      const ins = async (sql: string, args: unknown[]) => (await db.query<{ id: string }>(sql, args)).rows[0]?.id;
+      const account = async (name: string, kind: string, wait: boolean) =>
+        ins(
+          `insert into accounts (username, username_key, kind, webauthn_user_id, payout_wait, payout_wait_off_at, created_at)
+           values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+          [name, name.toLowerCase(), kind, randomBytes(32), wait, wait ? new Date(t.getTime() + 3_600_000) : null, t],
+        );
+      const trader = await account('Trader01', 'trader', true);
+      const staff = await account('Staff001', 'staff', false);
+      const session = (accountId: string | undefined, level: string, lastSeen: Date) =>
+        ins(
+          `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at)
+           values ($1, $2, $3, 'b', $4, $4, $5) returning id`,
+          [accountId, randomBytes(32), level, lastSeen, new Date(lastSeen.getTime() + 7 * 86_400_000)],
+        );
+      const full = await session(trader, 'full', t);
+      const recovery = await session(trader, 'recovery', t);
+      const staffSession = await session(staff, 'full', t);
+      await db.query(
+        `insert into confirm_tokens (session_id, account_id, token_hash, action_hash, created_at, expires_at) values ($1, $2, $3, 'h', $4, $5)`,
+        [full, trader, randomBytes(32), t, new Date(t.getTime() + 300_000)],
+      );
+      const waiting = new Date(t.getTime() + 86_400_000);
+      await db.query(
+        `insert into wallets (account_id, app, label, address, created_at, usable_from) values ($1, 'cake', 'w', 'addr', $2, $3)`,
+        [trader, t, waiting],
+      );
+
+      expect(await migrate(db)).toEqual(['010_wallet_wait_logout_timer.sql']);
+
+      expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
+      expect((await db.query('select usable_from from wallets')).rows).toEqual([{ usable_from: waiting }]);
+      const cols = await db.query(`select column_name from information_schema.columns where table_name = 'accounts' and column_name like 'payout%'`);
+      expect(cols.rows).toEqual([]);
+      expect((await db.query('select idle_hours from accounts order by username')).rows).toEqual([{ idle_hours: 12 }, { idle_hours: 12 }]);
+      const expires = async (id: string | undefined) =>
+        (await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [id])).rows[0]!.expires_at;
+      expect(await expires(full)).toEqual(new Date(t.getTime() + 12 * 3_600_000));
+      // Recovery and staff sessions have their own fixed policies; the migration leaves them alone.
+      expect(await expires(recovery)).toEqual(new Date(t.getTime() + 7 * 86_400_000));
+      expect(await expires(staffSession)).toEqual(new Date(t.getTime() + 7 * 86_400_000));
+      await expect(db.query('update accounts set idle_hours = 3 where id = $1', [trader])).rejects.toMatchObject({ code: '23514' });
+      await expect(db.query(`update confirm_tokens set method = 'totp'`)).rejects.toMatchObject({ code: '23514' });
+    } finally {
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });

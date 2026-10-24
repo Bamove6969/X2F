@@ -7,7 +7,7 @@ import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { hashPassword } from '../src/auth/password.js';
 import { insertPgpKey } from '../src/auth/pgp.js';
 import { openSecret, verifyTotp } from '../src/auth/totp.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -389,6 +389,8 @@ describe('POST /v1/confirm/password with TOTP', () => {
     const ok = await b.post('/v1/confirm/password', { password: GOOD, totp: codeAt(secret, now), action });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ confirmToken: expect.any(String) });
+    // Password plus authenticator code is still the weak kind: a new wallet waits 24 hours (owner, 2026-10-23).
+    expect(await confirmTokenMethod(deps, ok.json().confirmToken)).toBe('password');
   });
 });
 
