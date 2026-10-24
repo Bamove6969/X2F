@@ -195,7 +195,10 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
     }
     await throttleReset(deps, key);
   }
-  const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });
+  // A password, with or without its TOTP code, is the weak kind of proof (a new wallet waits 24 hours).
+  const confirmToken = await issueConfirmToken(deps, {
+    sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: 'password',
+  });
   return { confirmToken };
 }
 
