@@ -88,7 +88,8 @@ describe('the client covers the API', () => {
   });
 
   it('every route of the API (but /healthz) has its client method', () => {
-    const expected = methodNames().map((n) => ROUTES[n]);
+    // Two methods may share a route (addWallet and addWallets both POST /v1/wallets).
+    const expected = new Set(methodNames().map((n) => ROUTES[n]));
     expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
   });
 

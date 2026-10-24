@@ -10,7 +10,7 @@ export type AlertKind =
   | 'login-method-removed'
   | 'sessions-ended'
   | 'wallet-added'
-  | 'payout-wait-off-scheduled'
+  | 'wallet-removed'
   | 'device-key-added';
 
 /**

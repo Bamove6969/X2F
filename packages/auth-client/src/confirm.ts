@@ -1,4 +1,4 @@
-import { addressEnd, addressHash, type ConfirmAction } from '@x2f/accounts';
+import { addressEnd, addressEnds, addressHash, addressesHash, type ConfirmAction } from '@x2f/accounts';
 import { AuthApiError } from './api.js';
 
 /**
@@ -29,6 +29,11 @@ export async function withConfirm<T>(
 /** The action a new payout wallet is confirmed for: the hash and the last 6 characters of the trimmed address. */
 export async function walletAction(address: string): Promise<Extract<ConfirmAction, { kind: 'add-wallet' }>> {
   return { kind: 'add-wallet', addressHash: await addressHash(address), addressEnd: addressEnd(address) };
+}
+
+/** The action a batch of payout wallets is confirmed for: the exact list in order, and their ends. */
+export async function walletsAction(addresses: readonly string[]): Promise<Extract<ConfirmAction, { kind: 'add-wallets' }>> {
+  return { kind: 'add-wallets', addressesHash: await addressesHash(addresses), addressEnds: addressEnds(addresses) };
 }
 
 const PLATFORMS: Record<string, string> = {
