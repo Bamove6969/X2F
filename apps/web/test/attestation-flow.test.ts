@@ -1,3 +1,4 @@
+import { PartyError } from '@x2f/escrow';
 import { channelFor } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import { cosignPolicy } from '../src/escrow/policy.js';
@@ -535,23 +536,107 @@ describe('resume on load (Review Focus 1)', () => {
     await tab1.runtime.stopAll();
     await until(() => tab2.last()?.phase === 'ready');
   });
+});
 
-  it('a closed trade with an empty escrow deletes both records', async () => {
+describe('after the trade closes: the escrow store is kept for 30 days or until this device saw its settle confirmed, whichever is later', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const empty = (confirmations = 12) => ({ balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations, unlocked: confirmations >= 10 }] });
+
+  async function released(o: { settle?: boolean; settledElsewhereMs?: number } = {}) {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
     const t = await setup();
-    const seller = await t.mk('seller');
+    const opts = { now: () => clock, ...(o.settledElsewhereMs !== undefined ? { settledElsewhereMs: o.settledElsewhereMs } : {}) };
+    const seller = await t.mk('seller', opts);
+    const buyer = await t.mk('buyer', opts);
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null && (await buyer.store.load(CODE))?.theirDeal != null);
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await seller.runtime.act(CODE, { type: 'release' });
+    await until(() => t.parties.pending.some((p) => p.role === 'seller') && t.parties.pending.some((p) => p.role === 'buyer'));
+    if (o.settle !== false) {
+      for (const p of t.parties.pending.splice(0)) p.resolve(p.role === 'buyer' ? 'txhash' : null);
+      await seller.status((s) => s.phase === 'done');
+    }
+    return { ...t, seller, buyer, advance: (ms: number) => (clock += ms) };
+  }
+
+  it('settled and confirmed: kept until 30 days after this device saw the trade closed, then both records go', async () => {
+    const t = await released();
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = empty();
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+    t.advance(30 * DAY - 1);
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+    t.advance(1);
+    await until(async () => (await t.seller.store.load(CODE)) === null);
+    expect(await t.seller.store.password(CODE)).toBeNull();
+    expect(t.seller.last()?.phase).toBe('done');
+  });
+
+  it('30 days passed but the settle tx is still in the pool: kept until it is in a block', async () => {
+    const t = await released();
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = empty(0);
+    await t.parties.ticks('seller');
+    t.advance(31 * DAY);
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+    t.parties.funds = empty(1);
+    await until(async () => (await t.seller.store.load(CODE)) === null);
+  });
+
+  it('the API says cancelled while the escrow still holds coins: never deleted, whatever the clock says', async () => {
+    const t = await released({ settle: false });
+    t.state.view = tradeView({ state: 'cancelled' });
+    await t.parties.ticks('seller');
+    t.advance(60 * DAY);
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+    expect(await t.seller.store.password(CODE)).not.toBeNull();
+  });
+
+  it('cancelled before any funding: nothing to settle, deleted only after 30 days', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const seller = await t.mk('seller', { now: () => clock });
     const buyer = await t.mk('buyer');
     await seller.runtime.start(CODE);
     await buyer.runtime.start(CODE);
-    await until(() => seller.last()?.phase === 'ready');
-    expect(await seller.store.password(CODE)).not.toBeNull();
-    // The API says released but the escrow still holds coins: keep everything.
-    t.state.view = tradeView({ state: 'released' });
-    t.parties.funds = funded();
-    await new Promise((r) => setTimeout(r, 60));
+    await seller.status((s) => s.phase === 'ready');
+    t.state.view = tradeView({ state: 'cancelled' });
+    await t.parties.ticks('seller', 3);
     expect(await seller.store.load(CODE)).not.toBeNull();
-    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'aa', amountAtomic: 1n, confirmations: 12, unlocked: true }] };
+    clock += 30 * DAY;
     await until(async () => (await seller.store.load(CODE)) === null);
-    expect(await seller.store.password(CODE)).toBeNull();
-    expect(seller.last()?.phase).toBe('done');
   });
+
+  it('closed and emptied while this device was still settling: settled elsewhere, escrow-failed, the store is kept', async () => {
+    const t = await released({ settle: false, settledElsewhereMs: 60_000 });
+    t.state.view = tradeView({ state: 'released' });
+    await t.parties.ticks('seller');
+    // Long after the close, the emptied escrow is seen while this device's own settle is still open.
+    t.advance(31 * 24 * 60 * 60 * 1000);
+    t.parties.funds = empty();
+    await t.parties.ticks('seller', 3);
+    expect(t.seller.last()?.phase).toBe('signing'); // not yet: the party may still catch up
+    expect(await t.seller.store.load(CODE)).not.toBeNull(); // its own settle was never seen: kept
+    t.advance(60_000);
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed' });
+    t.advance(60 * DAY);
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+  });
+
+  it('the party reports settled-elsewhere: escrow-failed, never a quiet close', async () => {
+    const t = await released({ settle: false });
+    const p = t.parties.pending.find((x) => x.role === 'seller')!;
+    p.reject(new PartyError('settled-elsewhere', 'another transaction emptied the escrow'));
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed' });
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+  });
+
 });

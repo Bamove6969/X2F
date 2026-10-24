@@ -74,6 +74,10 @@ export interface EscrowRecord {
   /** The moderator acknowledged our trade.terms. */
   termsAcked: boolean;
   intent: StoredIntent | null;
+  /** Device clock (ms) when this device first saw the trade closed; the 30-day keep counts from here. */
+  closedSeenAt?: number | null;
+  /** Device clock (ms) when this device saw its settle done and the escrow empty with nothing in the pool. */
+  settleSeenAt?: number | null;
 }
 
 export interface EscrowStore {

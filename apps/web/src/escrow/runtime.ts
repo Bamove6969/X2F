@@ -92,6 +92,13 @@ export interface RuntimeDeps {
   /** Runs `fn` holding an exclusive lock `name` (navigator.locks by default). */
   lock?: (name: string, fn: () => Promise<void>) => Promise<void>;
   pollMs?: number;
+  /** The device clock in ms (Date.now by default); only for the after-close keep rules. */
+  now?: () => number;
+  /**
+   * How long a closed, emptied escrow may wait for this device's own settle to resolve before
+   * it counts as settled elsewhere (escrow-failed). Default 5 min: the party re-checks within 60 s.
+   */
+  settledElsewhereMs?: number;
   onStatus(code: string, s: EscrowStatus): void;
 }
 
@@ -106,6 +113,8 @@ export interface EscrowRuntime {
 }
 
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
+/** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
+export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
 /** Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone before settling. */
@@ -174,6 +183,8 @@ function navigatorLock(name: string, fn: () => Promise<void>): Promise<void> {
 
 export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
   const pollMs = deps.pollMs ?? 5000;
+  const now = deps.now ?? (() => Date.now());
+  const settledElsewhereMs = deps.settledElsewhereMs ?? 5 * 60 * 1000;
   const lock = deps.lock ?? navigatorLock;
   const runs = new Map<string, TradeRun>();
 
@@ -197,6 +208,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     /** Outcomes the party refused because another was already committed. */
     private refused = new Set<string>();
     private ticking: Promise<void> = Promise.resolve();
+    /** Device clock when the escrow was first seen emptied while this device's settle was still open. */
+    private emptiedWhileSettling: number | null = null;
     readonly finished: Promise<void>;
     private finish!: () => void;
     acquired!: Promise<void>;
@@ -503,7 +516,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.error) return this.emit();
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
-      if (i?.done) return this.set('done');
+      if (i?.done || (this.rec.settleSeenAt != null && this.view !== null && CLOSED.includes(this.view.state))) return this.set('done');
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
     }
@@ -532,10 +545,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const r = this.rec;
       let changed = false;
 
-      // Closed, and this device sees the escrow empty with nothing in the pool: forget the trade.
-      if (CLOSED.includes(v.state) && f.balance === 0n && f.unlocked === 0n && f.incoming.every((t) => t.confirmations > 0)) {
-        await this.close();
-        return;
+      if (CLOSED.includes(v.state)) {
+        if (await this.afterClose(f)) return;
       }
       if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
         this.fail('deal-mismatch');
@@ -558,7 +569,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
       const tapped = r.intent !== null && !r.intent.auto;
       const tapHolds = tapped && (r.intent!.done || viewSupports(r.intent!.kind, v));
-      if (!tapHolds && !(r.intent?.auto && r.intent.done)) {
+      // Once closed nothing new is chosen: an open settle stays as it is (settled elsewhere is judged in afterClose).
+      if (!CLOSED.includes(v.state) && !tapHolds && !(r.intent?.auto && r.intent.done)) {
         const kind = this.autoKind(v);
         if (kind && (tapped || r.intent?.kind !== kind)) {
           r.intent = { kind, outcome: null, done: false, auto: true };
@@ -581,6 +593,40 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (o) this.settle(o);
       } else if (changed) await this.persist();
       this.refresh();
+    }
+
+    /**
+     * The keep rules once the API says closed (lead 2026-10-24): the store stays for 30 days from
+     * when this device first saw the trade closed, or until this device saw its own settle done
+     * and the escrow empty with nothing in the pool, whichever is later; never on the API's word
+     * alone. A closed escrow emptied while this device's own settle is still open, for longer
+     * than the party needs to catch up, was settled elsewhere: escrow-failed, and the store stays.
+     * Returns true once the trade is forgotten.
+     */
+    private async afterClose(f: { balance: bigint; unlocked: bigint; incoming: { confirmations: number }[] }): Promise<boolean> {
+      const r = this.rec;
+      const t = now();
+      let changed = false;
+      if (r.closedSeenAt == null) {
+        r.closedSeenAt = t;
+        changed = true;
+      }
+      const emptyInBlock = f.balance === 0n && f.unlocked === 0n && f.incoming.every((x) => x.confirmations > 0);
+      const open = r.intent !== null && r.intent.outcome !== null && !r.intent.done;
+      if (emptyInBlock && open) {
+        this.emptiedWhileSettling ??= t;
+        if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed');
+      } else this.emptiedWhileSettling = null;
+      if (emptyInBlock && !open && r.settleSeenAt == null) {
+        r.settleSeenAt = t;
+        changed = true;
+      }
+      if (changed) await this.persist();
+      if (!this.error && emptyInBlock && r.settleSeenAt != null && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
+        await this.close();
+        return true;
+      }
+      return false;
     }
 
     private autoKind(v: EscrowTradeView): SettleKind | null {

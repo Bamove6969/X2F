@@ -215,7 +215,17 @@ export interface Device {
 
 export async function device(
   role: 'buyer' | 'seller',
-  o: { api: ReturnType<Awaited<ReturnType<typeof makeApi>>['forRole']>; hub: Hub; parties: Parties; modPublic: string; idb?: IDBFactory; lock?: (n: string, fn: () => Promise<void>) => Promise<void> },
+  o: {
+    api: ReturnType<Awaited<ReturnType<typeof makeApi>>['forRole']>;
+    hub: Hub;
+    parties: Parties;
+    modPublic: string;
+    idb?: IDBFactory;
+    lock?: (n: string, fn: () => Promise<void>) => Promise<void>;
+    /** The device clock (ms). */
+    now?: () => number;
+    settledElsewhereMs?: number;
+  },
 ): Promise<Device> {
   const idb = o.idb ?? new IDBFactory();
   const store = await openEscrowStore({ indexedDB: idb });
@@ -243,6 +253,8 @@ export async function device(
     transport: o.hub.transport,
     lock: o.lock ?? ((_n, fn) => fn()),
     pollMs: 5,
+    ...(o.now ? { now: o.now } : {}),
+    ...(o.settledElsewhereMs !== undefined ? { settledElsewhereMs: o.settledElsewhereMs } : {}),
     onStatus: (_c, s) => onStatus(s),
   });
   const rawStart = runtime.start.bind(runtime);
