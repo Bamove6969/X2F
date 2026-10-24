@@ -69,13 +69,21 @@ const innerBytes = (type: string, payload: unknown) => sodium.from_string(canon(
 describe('round trip', () => {
   it('buyer -> seller', async () => {
     const e = await sealB({ amount: 42n, note: 'hi', list: [1, 'two', null, true] });
-    expect(await openAs(e, 'seller')).toEqual({ type: 'test', payload: { amount: 42n, note: 'hi', list: [1, 'two', null, true] } });
+    expect(await openAs(e, 'seller')).toEqual({ type: 'test', payload: { amount: 42n, note: 'hi', list: [1, 'two', null, true] }, from: 'buyer' });
   });
 
   it('buyer -> {seller, mod}: both open the same envelope', async () => {
     const e = await sealB('x', { to: ['seller', 'mod'] });
-    expect(await openAs(e, 'seller')).toEqual({ type: 'test', payload: 'x' });
-    expect(await openAs(e, 'mod')).toEqual({ type: 'test', payload: 'x' });
+    expect(await openAs(e, 'seller')).toEqual({ type: 'test', payload: 'x', from: 'buyer' });
+    expect(await openAs(e, 'mod')).toEqual({ type: 'test', payload: 'x', from: 'buyer' });
+  });
+
+  it('returns the signed sender, even when the frame reads differently afterwards', async () => {
+    const e = await sealB('x');
+    // A proxy that shows the signed fields to the checks but another sender to a later read.
+    const sly = new Proxy({ ...e }, { get: (t, k) => (k === 'from' ? 'mod' : Reflect.get(t, k)) });
+    expect((sly as { from: string }).from).toBe('mod');
+    expect((await openAs(sly, 'seller')).from).toBe('buyer');
   });
 
   it('a sender must include itself in `to` to re-read its own message', async () => {

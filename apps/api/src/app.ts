@@ -10,7 +10,9 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
+import { walletRoutes } from './wallets/routes.js';
 import { ApiError } from './errors.js';
+import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 
@@ -19,9 +21,12 @@ import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './stati
 export interface LeakedList {
   has(password: string): Promise<boolean>;
 }
-/** Task 12: Monero payout address check for the configured network. */
+/**
+ * Task 12: Monero payout address check for the configured network. Async because monero-ts's
+ * `MoneroUtils.isValidAddress` is (it runs in its WebAssembly task queue).
+ */
 export interface AddressValidator {
-  check(address: string): 'ok' | 'invalid' | 'integrated';
+  check(address: string): Promise<'ok' | 'invalid' | 'integrated'>;
 }
 /** Task 8: FIDO metadata snapshot and AAGUID allowlist for staff and owner keys. */
 export interface AttestationPolicy {
@@ -128,10 +133,28 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('budgets', newBudgets(deps.clock));
   app.decorate('deps', deps);
   app.decorateRequest('auth', null as never);
+  app.decorateRequest('confirmedAction', null);
   await app.register(fastifyCookie);
 
   // Referrer-Policy, COOP, HSTS and nosniff on every response, errors and 404s included (P3-I15).
   app.addHook('onRequest', addSecurityHeaders);
+
+  // API answers carry secrets (confirm tokens, recovery codes, TOTP secrets, login challenges) and
+  // private account data: never stored by a browser cache or a proxy.
+  app.addHook('onRequest', (req, reply, done) => {
+    // The raw URL can spell /v1 with percent-escapes (/%761/...); the router decodes them, so the
+    // matched route pattern and the decoded path count too.
+    let decoded = req.url;
+    try {
+      decoded = decodeURIComponent(req.url);
+    } catch {
+      // Undecodable: the framework error path answers it.
+    }
+    if (req.url.startsWith('/v1/') || decoded.startsWith('/v1/') || req.routeOptions.url?.startsWith('/v1/')) {
+      void reply.header('cache-control', 'no-store');
+    }
+    done();
+  });
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
@@ -163,9 +186,13 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   totpRoutes(app);
   recoveryRoutes(app);
   methodRoutes(app);
+  // Task 11: account overview, sessions, alerts and Terms.
+  accountRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
+  // Task 12: payout wallets and the 24-hour wait (traders only).
+  walletRoutes(app);
 
   return app;
 }

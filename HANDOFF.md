@@ -53,7 +53,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - **Buyer no-show:** the seller can **extend the timer** (+30 min, at most twice) or **Cancel & get refund**. The buyer gets a 15-minute final alert. If they stay silent, the **moderator key signs the refund automatically**, and only to the seller's refund address.
 - **Dispute after refund:** if the buyer paid anyway, they can dispute. The moderator can place a **trading hold** (it blocks new ads and trades, never coins). If the payment arrived, the seller must **send the XMR as agreed**, not a fiat refund, with an in-app payment proof. Refusing means suspension and a possible lifetime ban. Only if the seller provably can't send the XMR may the moderator order the fiat returned.
 - **Disputes:** human moderators, a published deadline, appeal to a second moderator, and two-moderator approval above a threshold.
-- **No trade limits for new accounts** (owner, 2026-10-17; spec 2.3). Anyone can trade any amount from day one; ad posters can require a minimum number of completed trades.
+- **Starter limits for new accounts** (owner, 2026-10-24; spec 2.3; replaces the 2026-10-17 "no limits" decision). New accounts graduate from $200 to $1,000 to no platform cap per trade (see Badges); ad posters can still require a minimum number of completed trades.
 - **No buyer deposits** (owner, 2026-10-17; spec 2.5). Only the seller funds the escrow.
 - **Extra XMR in an escrow:** see "Decided 2026-10-20" below. **Late extra XMR** waits until every coin has 10 confirmations (about 20 minutes), then everything is paid out; no separate time cap (owner, 2026-10-17; spec 11.1).
 - **Nudge:** an ICQ-style "buzz" that wakes a dozing counterparty. It's on by default, with quiet hours, rate limits and privacy-safe push text.
@@ -72,7 +72,8 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - The catalog was seeded from **Haveno's open-source list** (names only, no code copied). Five were dropped: three dead services and two crypto-only entries.
 
 ### Badges (milestones)
-- **New** (under 5 trades) is a safety badge: always shown, can't be hidden.
+- **New** is a safety badge: always shown, can't be hidden, until the account graduates from starter limits.
+- **Starter limits** (owner, 2026-10-24; spec 2.3): $200 per trade for 0–4 trades; $1,000 for 5–19 trades and 7+ days; no platform cap from 20 trades and 30 days. Owner can change the numbers. Replaces "no limits for new accounts" (2026-10-17).
 - **Milestones:** 10, 50, 100, 500 and 1,000 trades; Veteran at 1, 3 and 5 years; Trusted (100+ trades, 98%+ positive); Fast; Clean record.
 - **Security honours:** PGP verified and Security key verified.
 - **Past reputation** (owner, 2026-10-17; spec 5.5, Plan 5): a separate badge for trades on other sites, proven by signing with the PGP key shown on an archived old profile, approved by a moderator. Screenshots alone don't count. It never adds to the X2F trade count, rating or milestones.
@@ -185,3 +186,6 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 - `~/agy-repro` (a throwaway folder) still needs deleting by the owner.
 - The cause of the unexplained move of `~/claude-workspace` to `~/Public/claude-workspace` was never found.
 - Claude Code was downgraded from 2.1.300 to 2.1.292 by `/restart`, then the update channel was set to "latest". `/upgrade` showed "Login interrupted".
+
+## Decided 2026-10-23 (owner)
+- Price feed: the lead picks 3 public XMR price sources that need no account and are reachable over Tor, and the server uses their median. Sources are kept in config and can be changed later. Trading on market offers pauses when the price is stale (> 5 min) or the sources disagree (Plan 3 Task 3).

@@ -1,4 +1,5 @@
 import {
+  MoneroDaemonRpc,
   MoneroDestination,
   MoneroNetworkType,
   MoneroTxConfig,
@@ -6,13 +7,43 @@ import {
   MoneroWalletFull,
   type MoneroTxWallet,
 } from 'monero-ts';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Payout, type SavedSession } from './engine.js';
+import {
+  DAEMON_TIMEOUT_MS,
+  EscrowError,
+  type EscrowEngine,
+  type EscrowSession,
+  type Incoming,
+  type Payout,
+  type SavedSession,
+  type TxStatus,
+} from './engine.js';
 import { fromBase64, toBase64 } from './base64.js';
 import { checkPayouts, checkTxSet, sumPayouts, type DescribedTx } from './verify.js';
 
 export type EscrowNetwork = 'regtest' | 'stagenet' | 'mainnet';
 
 const THRESHOLD = 2;
+
+const TX_HASH = /^[0-9a-f]{64}$/;
+
+/**
+ * Give up on a daemon call after DAEMON_TIMEOUT_MS. The call itself may still finish later
+ * (monero-ts serialises wallet calls, so later ones wait behind it); its result is dropped.
+ */
+async function timed<T>(p: Promise<T>, what: string, code: 'daemon-unavailable' | 'not-ready' = 'daemon-unavailable'): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  p.catch(() => undefined);
+  try {
+    return await Promise.race([
+      p,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new EscrowError(code, `${what}: no answer from the daemon in ${DAEMON_TIMEOUT_MS / 1000} s`)), DAEMON_TIMEOUT_MS);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 function walletConfig(network: EscrowNetwork, daemonUri: string, password: string): MoneroWalletConfig {
   return new MoneroWalletConfig({
@@ -64,10 +95,29 @@ export class MoneroMultisigSession implements EscrowSession {
   }
 
   async sync(): Promise<{ balance: bigint; unlocked: bigint }> {
-    // The wallet caches the daemon height; refresh the connection so sync sees new blocks.
-    await this.wallet.setDaemonConnection({ uri: this.daemonUri });
-    await this.wallet.sync();
+    try {
+      await timed((async () => {
+        // The wallet caches the daemon height; refresh the connection so sync sees new blocks.
+        await this.wallet.setDaemonConnection({ uri: this.daemonUri, timeoutMs: DAEMON_TIMEOUT_MS });
+        await this.wallet.sync();
+      })(), 'sync');
+    } catch (e) {
+      if (e instanceof EscrowError) throw e;
+      throw new EscrowError('daemon-unavailable', `sync failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
     return { balance: await this.wallet.getBalance(), unlocked: await this.wallet.getUnlockedBalance() };
+  }
+
+  async incoming(): Promise<Incoming[]> {
+    const byTx = new Map<string, Incoming>();
+    for (const t of await this.wallet.getTransfers({ isIncoming: true, accountIndex: 0 })) {
+      const tx = t.getTx();
+      const txHash = tx.getHash();
+      const cur = byTx.get(txHash) ?? { txHash, amountAtomic: 0n, confirmations: tx.getNumConfirmations() ?? 0, unlocked: tx.getIsLocked() === false };
+      cur.amountAtomic += t.getAmount();
+      byTx.set(txHash, cur);
+    }
+    return [...byTx.values()];
   }
 
   exportState(): Promise<string> {
@@ -91,12 +141,13 @@ export class MoneroMultisigSession implements EscrowSession {
     if (sumPayouts(payouts) !== balance) throw new EscrowError('bad-payouts', 'payouts must sweep the whole escrow');
     let txs: MoneroTxWallet[];
     try {
-      txs = await this.wallet.createTxs(new MoneroTxConfig({
+      // A timeout here is a refused attempt (not-ready): the next attempt exports afresh.
+      txs = await timed(this.wallet.createTxs(new MoneroTxConfig({
         accountIndex: 0,
         destinations: payouts.map((p) => new MoneroDestination(p.address, p.amountAtomic)),
         subtractFeeFrom: [0],
         relay: false,
-      }));
+      })), 'build', 'not-ready');
     } catch (e) {
       // e.g. multisig state not yet imported: a fresh attempt can recover.
       throw new EscrowError('not-ready', `could not build: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
@@ -139,7 +190,7 @@ export class MoneroMultisigSession implements EscrowSession {
   }
 
   async submit(signedHex: string): Promise<string> {
-    const hashes = await this.wallet.submitMultisigTxHex(signedHex);
+    const hashes = await timed(this.wallet.submitMultisigTxHex(signedHex), 'submit');
     if (hashes.length !== 1) throw new EscrowError('build-failed', `expected 1 tx hash, got ${hashes.length}`);
     return hashes[0]!;
   }
@@ -151,16 +202,43 @@ export class MoneroMultisigSession implements EscrowSession {
     return txHash;
   }
 
-  async txSeen(txHash: string): Promise<boolean> {
-    if (!/^[0-9a-f]{64}$/.test(txHash)) return false;
-    const res = await fetch(`${this.daemonUri}/get_transactions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ txs_hashes: [txHash] }),
+  private daemon: Promise<MoneroDaemonRpc> | undefined;
+
+  /** monero-ts's daemon client, in-process, on the same URI as the wallet (the node proxy in browsers). */
+  private daemonClient(): Promise<MoneroDaemonRpc> {
+    this.daemon ??= MoneroDaemonRpc.connectToDaemonRpc({ server: { uri: this.daemonUri, timeoutMs: DAEMON_TIMEOUT_MS }, proxyToWorker: false });
+    this.daemon.catch(() => {
+      this.daemon = undefined;
     });
-    if (!res.ok) return false;
-    const body = (await res.json()) as { txs?: { tx_hash?: string }[]; missed_tx?: string[] };
-    return (body.txs ?? []).some((t) => t.tx_hash === txHash) && !(body.missed_tx ?? []).includes(txHash);
+    return this.daemon;
+  }
+
+  async txStatus(txHash: string): Promise<TxStatus> {
+    if (!TX_HASH.test(txHash)) return 'none';
+    let tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>;
+    try {
+      tx = await timed((async () => (await this.daemonClient()).getTx(txHash))(), 'tx lookup');
+    } catch (e) {
+      if (e instanceof EscrowError) throw e;
+      throw new EscrowError('daemon-unavailable', `tx lookup failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
+    if (!tx || tx.getHash() !== txHash) return 'none';
+    if (tx.getIsConfirmed() === true && tx.getInTxPool() !== true) return 'block';
+    return tx.getInTxPool() === true ? 'pool' : 'none';
+  }
+
+  async txSeen(txHash: string): Promise<boolean> {
+    return (await this.txStatus(txHash)) === 'block';
+  }
+
+  async spentBy(txHash: string): Promise<boolean> {
+    if (!TX_HASH.test(txHash)) return false;
+    try {
+      const txs = await this.wallet.getTxs({ hashes: [txHash], isOutgoing: true, isConfirmed: true });
+      return txs.length === 1 && txs[0]!.getHash() === txHash && txs[0]!.getIsOutgoing() === true && txs[0]!.getIsConfirmed() === true;
+    } catch {
+      return false;
+    }
   }
 
   async save(): Promise<SavedSession> {

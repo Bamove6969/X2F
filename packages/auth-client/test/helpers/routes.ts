@@ -99,18 +99,6 @@ export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'DELETE
   setPayoutWait: 'PUT /v1/account/security/payout-wait',
 };
 
-/**
- * Methods whose routes come with Plan 2 Tasks 11 and 12, which are not on the main line yet. A
- * tripwire in flows.test.ts fails once any of them reaches a route: then delete this set and the
- * exclusion in vitest.config.ts.
- */
-export const NEEDS_TASKS_11_12: ReadonlySet<keyof AuthApi> = new Set<keyof AuthApi>([
-  // Task 11: account overview, devices, alerts and the Terms of Service.
-  'getTerms', 'me', 'acceptTerms', 'listSessions', 'endSession', 'listAlerts', 'markAlertSeen',
-  // Task 12: wallets and the 24-hour wait.
-  'listWallets', 'addWallet', 'removeWallet', 'setPayoutWait',
-]);
-
 export const methodNames = (): Array<keyof AuthApi> => Object.keys(SAMPLE_CALLS) as Array<keyof AuthApi>;
 
 /** Calls `name` on `api` with its sample arguments; whether the server accepts them does not matter. */

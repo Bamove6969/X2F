@@ -68,7 +68,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   return { username, key };
 }
 
-// Which route each method reaches is checked in flows.test.ts once NEEDS_TASKS_11_12 is gone.
+// Which route each method reaches is checked in flows.test.ts.
 describe('the client covers the API (Tasks 11 and 12 routes)', () => {
   it('GET /v1/terms is the version sign-up needs', async () => {
     await expect(jar().api.getTerms()).resolves.toEqual({ version: srv.deps.config.termsVersion });

@@ -76,6 +76,13 @@ Owner decisions of 2026-10-17 applied before building. Authority: spec > this re
 
 - **R18** (Task 7 review, 2026-10-18): the single per-process Ed25519 decoy key is replaced by a decoy pool generated at startup (Ed25519 v4 ×2, v6 Ed25519/X25519 ×2, RSA-4096); each unknown username gets a fixed profile of 1 or 2 pool keys chosen by HMAC under `subkey('decoy')`, so repeated starts for one name look alike. A `refreshedKey` that matches no stored key gets a decoy encrypted to that submitted key, so a keyserver copy cannot test a username. A matching `refreshedKey` is merged into the stored key (`Key.update`), never replaces it, so an old copy cannot undo a revocation. Challenges record the Origin's host and `finish` must come from the same one; the login `start` limit tag uses its own label `subkey('pgp-start')`; login `finish` uses the `pendingId` stored with the challenge.
 
+## Revision 2026-10-23 (lead, from the Task 11 review)
+
+- `POST /v1/account/alerts/:id/seen` needs a full session. Marking an alert seen is a change, and a recovery session must not be able to hide its own `recovery-login` alert from the owner during the 24-hour hold (P2-I1). Reading alerts still allows recovery and held sessions.
+- `DELETE /v1/account/sessions/:id` also takes `allowStaleTerms`, so a stolen session can be ended without first accepting new Terms. It joins Task 4's list of routes that use that flag.
+- `POST /v1/account/terms` allows recovery sessions but not held ones: accepting the Terms is a change, so it waits for the hold like other changes.
+- Noted for Task 15: `hasBackup` counts every stored PGP key, including expired or revoked ones.
+
 ## Plan 4 reconciliation
 
 Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) builds on these Plan 2 exports; each is produced by the task named:
