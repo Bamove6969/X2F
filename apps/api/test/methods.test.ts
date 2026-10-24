@@ -189,7 +189,7 @@ async function addRecoveryCodes(accountId: string, codes: string[]) {
 }
 
 async function token(b: Browser, accountId: string, action: Parameters<typeof issueConfirmToken>[1]['action']) {
-  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action });
+  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action, method: 'password' });
 }
 
 async function alertsOf(accountId: string, kind: string) {

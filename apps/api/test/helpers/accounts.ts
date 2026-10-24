@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { AccountKind } from '@x2f/accounts';
 import type { Deps } from '../../src/app.js';
 
@@ -19,4 +19,12 @@ export async function seedAccount(
     [a.username, a.username.toLowerCase(), kind, randomBytes(32), terms, terms === null ? null : now, now, a.disabled ? now : null],
   );
   return rows[0]!.id;
+}
+
+/** The login method recorded on a confirm token when it was issued (tests only). */
+export async function confirmTokenMethod(deps: Pick<Deps, 'db'>, token: string): Promise<string | undefined> {
+  const { rows } = await deps.db.query<{ method: string }>('select method from confirm_tokens where token_hash = $1', [
+    createHash('sha256').update(token).digest(),
+  ]);
+  return rows[0]?.method;
 }

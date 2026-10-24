@@ -86,6 +86,40 @@ describe('createAuthApi requests', () => {
     expect(bodyOf(sent[0]!)).toEqual({ app: 'cake', label: 'Main', address: 'addr' });
   });
 
+  it('posts a batch of wallets with one confirm token to POST /v1/wallets and returns the list', async () => {
+    const out = [{ id: 'w1' }, { id: 'w2' }];
+    const { sent, fetch } = recorder(() => Response.json(out, { status: 201 }));
+    const wallets = [
+      { app: 'cake' as const, label: 'A', address: 'a1' },
+      { app: 'feather' as const, label: 'B', address: 'b2' },
+    ];
+    await expect(createAuthApi({ fetch }).addWallets({ wallets, confirmToken: 'tok' })).resolves.toEqual(out);
+    const s = sent[0]!;
+    expect(s.url).toBe('/v1/wallets');
+    expect(s.init.method).toBe('POST');
+    expect(bodyOf(s)).toEqual({ wallets, confirmToken: 'tok' });
+  });
+
+  it('leaves the token out of a batch that has none yet, and surfaces confirm-required naming add-wallets', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ error: 'confirm-required', action: 'add-wallets' }, { status: 403 }));
+    const e = await createAuthApi({ fetch })
+      .addWallets({ wallets: [{ app: 'cake', label: 'A', address: 'a1' }], confirmToken: undefined })
+      .catch((x: unknown) => x);
+    expect(bodyOf(sent[0]!)).toEqual({ wallets: [{ app: 'cake', label: 'A', address: 'a1' }] });
+    expect(e).toBeInstanceOf(AuthApiError);
+    expect((e as AuthApiError).code).toBe('confirm-required');
+    expect((e as AuthApiError).action).toBe('add-wallets');
+  });
+
+  it('reads the wallet rule with a GET to /v1/wallets/rule', async () => {
+    const rule = { firstWallet: false, strongMethods: ['passkey'], password: 'waits', waitHours: 24 };
+    const { sent, fetch } = recorder(() => Response.json(rule));
+    await expect(createAuthApi({ fetch }).getWalletRule()).resolves.toEqual(rule);
+    expect(sent[0]!.url).toBe('/v1/wallets/rule');
+    expect(sent[0]!.init.method).toBe('GET');
+    expect(sent[0]!.init.body).toBeUndefined();
+  });
+
   it('posts an empty JSON object to routes that take no input', async () => {
     const { sent, fetch } = recorder();
     await createAuthApi({ fetch }).logout();
@@ -94,15 +128,16 @@ describe('createAuthApi requests', () => {
     expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
   });
 
-  it('uses PUT for setting the password and the payout wait', async () => {
-    const { sent, fetch } = recorder(() => Response.json({ enabled: true, offAt: null }));
+  it('uses PUT for setting the password and the logout timer', async () => {
+    const { sent, fetch } = recorder(() => Response.json({ idleHours: 6, adjustable: true }));
     const api = createAuthApi({ fetch });
     await api.setPassword({ password: 'x' });
-    await api.setPayoutWait({ enabled: true });
+    await expect(api.setLogoutTimer({ idleHours: 6 })).resolves.toEqual({ idleHours: 6, adjustable: true });
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
       ['PUT', '/v1/account/password'],
-      ['PUT', '/v1/account/security/payout-wait'],
+      ['PUT', '/v1/account/security/logout-timer'],
     ]);
+    expect(bodyOf(sent[1]!)).toEqual({ idleHours: 6 });
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {
