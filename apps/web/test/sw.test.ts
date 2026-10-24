@@ -1,0 +1,103 @@
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { runInNewContext } from 'node:vm';
+import { beforeEach, describe, expect, it } from 'vitest';
+
+const SOURCE = readFileSync(fileURLToPath(new URL('../public/sw.js', import.meta.url)), 'utf8');
+const NUDGE = 'Someone nudged you on X2F';
+const TRADE = 'Something changed in a trade on X2F';
+
+type Listener = (e: unknown) => void;
+
+interface Harness {
+  listeners: Record<string, Listener>;
+  shown: Array<{ title: string; options: Record<string, unknown> }>;
+  opened: string[];
+  focused: string[];
+  clientsList: Array<{ url: string; focus(): Promise<unknown> }>;
+  dispatch(type: string, extra: Record<string, unknown>): Promise<void>;
+}
+
+/** Runs sw.js in a fresh context with a fake service-worker global. */
+function load(): Harness {
+  const h: Harness = {
+    listeners: {}, shown: [], opened: [], focused: [], clientsList: [],
+    async dispatch(type, extra) {
+      const waits: Promise<unknown>[] = [];
+      this.listeners[type]!({ ...extra, waitUntil: (p: Promise<unknown>) => void waits.push(p) });
+      await Promise.all(waits);
+    },
+  };
+  const self = {
+    location: { origin: 'https://x2f.test' },
+    addEventListener: (type: string, fn: Listener) => void (h.listeners[type] = fn),
+    registration: {
+      showNotification: async (title: string, options: Record<string, unknown>) => void h.shown.push({ title, options }),
+    },
+    clients: {
+      matchAll: async () => h.clientsList,
+      openWindow: async (url: string) => void h.opened.push(url),
+      claim: async () => undefined,
+    },
+    skipWaiting: async () => undefined,
+  };
+  runInNewContext(SOURCE, { self, URL });
+  return h;
+}
+
+const pushWith = (text: string | null) => ({ data: text === null ? null : { text: () => text } });
+
+let h: Harness;
+beforeEach(() => {
+  h = load();
+});
+
+describe('sw.js push', () => {
+  it('shows the nudge text for the nudge payload', async () => {
+    await h.dispatch('push', pushWith(NUDGE));
+    expect(h.shown).toHaveLength(1);
+    expect(h.shown[0]!.options.body).toBe(NUDGE);
+    expect(h.shown[0]!.title).toBe('X2F');
+  });
+
+  it('shows the trade text for the trade payload', async () => {
+    await h.dispatch('push', pushWith(TRADE));
+    expect(h.shown[0]!.options.body).toBe(TRADE);
+  });
+
+  it.each([null, '', 'Trade X2F-7KQ4-M9TD: 1.25 XMR from mira', '<b>hi</b>'])(
+    'shows only the fixed trade text for any other payload (%s)',
+    async (text) => {
+      await h.dispatch('push', pushWith(text));
+      expect(h.shown).toHaveLength(1);
+      expect(h.shown[0]!.options.body).toBe(TRADE);
+      expect(JSON.stringify(h.shown[0])).not.toContain('X2F-7KQ4');
+    },
+  );
+
+  it('carries no data, image or link beyond /', async () => {
+    await h.dispatch('push', pushWith(NUDGE));
+    const opts = h.shown[0]!.options;
+    expect(Object.keys(opts).sort()).toEqual(['body', 'tag']);
+  });
+});
+
+describe('sw.js notificationclick', () => {
+  it('closes the notification and opens / when no X2F window is open', async () => {
+    let closed = false;
+    await h.dispatch('notificationclick', { notification: { close: () => void (closed = true) } });
+    expect(closed).toBe(true);
+    expect(h.opened).toEqual(['/']);
+  });
+
+  it('focuses an open X2F window instead of opening another', async () => {
+    const focused: string[] = [];
+    h.clientsList.push(
+      { url: 'https://elsewhere.example/', focus: async () => focused.push('elsewhere') },
+      { url: 'https://x2f.test/trade/X', focus: async () => focused.push('x2f') },
+    );
+    await h.dispatch('notificationclick', { notification: { close: () => undefined } });
+    expect(focused).toEqual(['x2f']);
+    expect(h.opened).toEqual([]);
+  });
+});
