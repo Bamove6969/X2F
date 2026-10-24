@@ -1,6 +1,8 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { BuyQuote } from './screens/quote/BuyQuote.js';
+import { SellQuote } from './screens/quote/SellQuote.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -66,6 +68,8 @@ export function App() {
         <Route element={<Layout nav={false} />}>
           <Route path="/sell/:methodId" element={<Screen name="sell-offers" />} />
           <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
+          <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
+          <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
