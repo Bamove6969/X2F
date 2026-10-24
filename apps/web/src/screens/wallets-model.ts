@@ -50,3 +50,27 @@ export type WalletTone = 'ready' | 'waiting';
 export function walletStatus(w: WalletView): { label: string; tone: WalletTone } {
   return w.usable ? { label: 'Ready', tone: 'ready' } : { label: 'Waiting', tone: 'waiting' };
 }
+
+// TRIPWIRE / TODO(FU-B merge): copied from the lead's FU-B (wip/lead-p2-fub, @x2f/auth-client
+// `WalletDraft` and `WalletRule`); use those once FU-B is on the main line
+// (apps/web/test/wallets-tripwires.test.ts fails until then).
+
+/** One wallet of an add: what the person fills in. */
+export interface WalletDraft {
+  app: WalletApp;
+  label: string;
+  address: string;
+}
+
+/**
+ * `GET /v1/wallets/rule`: what adding wallets will do for this account (owner, 2026-10-24).
+ * `firstWallet`: it never had one, so the next add works at once whatever the method.
+ * `strongMethods`: methods it holds that make new wallets work at once. `password`: whether a
+ * password confirm is possible and would wait.
+ */
+export interface WalletRule {
+  firstWallet: boolean;
+  strongMethods: Array<'pgp' | 'passkey' | 'security-key'>;
+  password: 'none' | 'immediate' | 'waits';
+  waitHours: number;
+}
