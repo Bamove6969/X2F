@@ -60,3 +60,4 @@ Not needed: agy, desktop-commander.
     - The fail-closed catch in `usablePgpIds` has no test.
     - The `removeMethod` clock injection has no test.
   - The `ownerReady(deps, ownerId)` signature changed; Plan 4 owner setup must pass deps.
+  - Route to set a login name for pre-009 accounts — must land before any real deployment (without it they have no backup-code recovery).
