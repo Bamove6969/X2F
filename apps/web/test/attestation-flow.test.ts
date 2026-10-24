@@ -932,6 +932,16 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect(await again.store.load(CODE)).not.toBeNull();
   });
 
+  it('the party used up its attempts for an outcome: refused visibly (attempts-exhausted), not retried in a silent loop', async () => {
+    const t = await released({ settle: false });
+    const p = t.parties.pending.find((x) => x.role === 'seller')!;
+    const before = t.parties.settles.filter((x) => x.role === 'seller').length;
+    p.reject(new PartyError('bad-outcome', 'settlement attempts for this outcome are used up'));
+    expect(await t.seller.status((s) => s.refusal === 'attempts-exhausted')).toMatchObject({ error: null });
+    await t.parties.ticks('seller', 3);
+    expect(t.parties.settles.filter((x) => x.role === 'seller').length).toBe(before);
+  });
+
   it('the party reports settled-elsewhere: escrow-failed, never a quiet close', async () => {
     const t = await released({ settle: false });
     const p = t.parties.pending.find((x) => x.role === 'seller')!;

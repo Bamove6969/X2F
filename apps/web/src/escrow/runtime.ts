@@ -53,8 +53,10 @@ export interface ConfirmedTrade {
  * (buyer): this device knows of "I've paid" but holds no fixed amount (a record from before the
  * field, or a paid state it never tapped); no release is signed. Refunds are never refused for
  * an amount (they pay the whole balance to the seller's signed address whatever the amount).
+ * `attempts-exhausted`: the party used up its settlement attempts for the current outcome; it is
+ * not retried (the trade needs a dispute or another outcome).
  */
-export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'amount-unknown';
+export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'amount-unknown' | 'attempts-exhausted';
 
 export interface EscrowStatus {
   phase: EscrowPhase;
@@ -210,6 +212,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private words: string[] | null = null;
     error: EscrowErrorCode | null = null;
     private refusal: EscrowRefusal | null = null;
+    /** The party gave up on these outcomes (attempts used up); shown, never retried silently. */
+    private exhausted = new Set<string>();
     private phase: EscrowPhase = 'idle';
     private last = '';
     /** The settle() call in flight, by outcome key. */
@@ -386,6 +390,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         await this.persist();
       }
 
+      // Fail closed: no own address means nothing this device could sign terms for.
+      if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
       const [escrowChannel, signalsChannel] = await Promise.all([channelFor(this.code, 'escrow'), channelFor(this.code, 'signals')]);
       const role = this.rec.role;
       this.signals = runSignals({
@@ -401,7 +407,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           theirDeal: this.rec.theirDeal,
           termsAcked: this.rec.termsAcked,
         },
-        ownAddress: this.rec.ownAddress!,
+        ownAddress: this.rec.ownAddress,
         deal: this.rec.deal,
         save: async (s) => {
           this.rec.signalGuard = s.guard;
@@ -552,7 +558,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     /** The one place the app calls settle(): cosignPolicy over exactly what the party will pay. */
     private settle(o: Outcome): void {
       const k = key(o);
-      if (this.error || !this.party || this.inflight === k || this.refused.has(k)) return;
+      if (this.error || !this.party || this.inflight === k || this.refused.has(k) || this.exhausted.has(k)) return;
       // The party pays only when the balance equals the payouts' sum, so that is the balance the policy checks.
       const refundAddress = this.rec.role === 'seller' ? this.rec.ownAddress : this.rec.theirAddress;
       const refundShaped = o.to.length === 1 && o.to[0]!.address === refundAddress;
@@ -573,6 +579,11 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (this.inflight === k) this.inflight = null;
           if (e instanceof PartyError && e.code === 'bad-outcome') {
             if (/already signed/.test(e.message)) this.refused.add(k);
+            else if (/used up/.test(e.message)) {
+              this.exhausted.add(k);
+              this.refusal = 'attempts-exhausted';
+              this.emit();
+            }
             return;
           }
           if (e instanceof PartyError && e.code === 'stopped') return;
@@ -638,7 +649,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         }
       }
       // An amount this device does not accept is refused visibly (never silently) until it fits.
-      this.refusal = this.refusalFor(v);
+      this.refusal = this.refusalFor(v) ?? (r.intent?.outcome && this.exhausted.has(key(r.intent.outcome)) ? 'attempts-exhausted' : null);
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
       // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
       const tapped = r.intent !== null && !r.intent.auto;
