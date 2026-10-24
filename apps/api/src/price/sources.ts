@@ -21,10 +21,46 @@ type Fetch = typeof fetch;
 /** GET `url` and parse JSON: 200 only, no redirects, no cookies, size capped. Throws on anything else. */
 async function getJson(f: Fetch, url: string, signal: AbortSignal): Promise<unknown> {
   const res = await f(url, { method: 'GET', redirect: 'error', credentials: 'omit', headers: { accept: 'application/json' }, signal });
-  if (res.status !== 200) throw new Error('price source: bad status');
-  const text = await res.text();
-  if (text.length > MAX_BODY_BYTES) throw new Error('price source: body too large');
-  return JSON.parse(text) as unknown;
+  if (res.status !== 200) {
+    await res.body?.cancel().catch(() => undefined);
+    throw new Error('price source: bad status');
+  }
+  return JSON.parse(await readCapped(res, MAX_BODY_BYTES)) as unknown;
+}
+
+/**
+ * The body as UTF-8 text, refusing more than `max` bytes without buffering them: an announced
+ * Content-Length over the cap is refused before reading, and the stream is cancelled as soon as
+ * the bytes read pass the cap.
+ */
+export async function readCapped(res: Response, max: number): Promise<string> {
+  const tooLarge = () => new Error('price source: body too large');
+  const announced = Number(res.headers.get('content-length') ?? '');
+  if (Number.isFinite(announced) && announced > max) {
+    await res.body?.cancel().catch(() => undefined);
+    throw tooLarge();
+  }
+  if (!res.body) return '';
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => undefined);
+      throw tooLarge();
+    }
+    chunks.push(value);
+  }
+  const all = new Uint8Array(total);
+  let at = 0;
+  for (const c of chunks) {
+    all.set(c, at);
+    at += c.byteLength;
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(all);
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);

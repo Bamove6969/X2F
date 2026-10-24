@@ -3,7 +3,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 import { loadConfig } from '../src/config.js';
 import { CURRENCY_EXPONENTS, currencyExponent, decimalToMinor } from '../src/price/currencies.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed, median, type PriceQuote, type PriceSource } from '../src/price/feed.js';
-import { PRICE_SOURCE_NAMES, parsePriceSources, priceSources } from '../src/price/sources.js';
+import { PRICE_SOURCE_NAMES, parsePriceSources, priceSources, readCapped } from '../src/price/sources.js';
 import { testApp } from './helpers/app.js';
 
 const T0 = new Date('2026-10-24T06:00:00Z');
@@ -325,6 +325,50 @@ describe('price sources', () => {
       const r = one(name, fetch).fetchQuotes(signal);
       await expect(r, `${name} ${String(status)} ${JSON.stringify(body).slice(0, 30)}`).rejects.toThrow();
     }
+  });
+
+  it('stops reading a body past 256 KiB and cancels the stream (bytes, not characters)', async () => {
+    let pulled = 0;
+    let cancelled = false;
+    const chunk = new TextEncoder().encode('é'.repeat(8 * 1024)); // 16 KiB of bytes, 8 K characters
+    const endless = () =>
+      new Response(
+        new ReadableStream<Uint8Array>({
+          pull(c) {
+            pulled++;
+            c.enqueue(chunk);
+          },
+          cancel() {
+            cancelled = true;
+          },
+        }),
+        { status: 200 },
+      );
+    const f = (async () => endless()) as typeof fetch;
+    await expect(one('coingecko', f).fetchQuotes(signal)).rejects.toThrow(/too large/);
+    expect(cancelled).toBe(true);
+    expect(pulled).toBeLessThanOrEqual(20); // 256 KiB / 16 KiB + the read buffer
+    // The feed swallows it.
+    const feed = createPriceFeed([priceSources(['coingecko'], f)[0]!, stub('b', () => usd(33000n))], PRICE_FEED_DEFAULTS);
+    await expect(feed.poll()).resolves.toBeUndefined();
+
+    // 300 KB of ASCII is refused by its announced length before any read.
+    let read = false;
+    const announced = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(c) {
+          read = true;
+          c.enqueue(new Uint8Array(10));
+          c.close();
+        },
+      }),
+      { status: 200, headers: { 'content-length': '300000' } },
+    );
+    await expect(readCapped(announced, 256 * 1024)).rejects.toThrow(/too large/);
+    expect(read).toBe(false);
+    // Exactly at the cap is fine; one byte over is not.
+    await expect(readCapped(new Response(new Uint8Array(10).fill(0x61)), 10)).resolves.toBe('a'.repeat(10));
+    await expect(readCapped(new Response(new Uint8Array(11).fill(0x61)), 10)).rejects.toThrow(/too large/);
   });
 
   it('a price in exponent notation or below one minor unit is skipped', async () => {
