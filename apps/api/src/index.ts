@@ -56,3 +56,11 @@ export {
   LABEL_MAX, PAYOUT_WAIT_MS, REMOVED_ADDRESS_RETENTION_MS, WALLET_APPS, payoutWaitActive, payoutWaitState, purgeRemovedWalletAddresses,
   usableWallets, walletRoutes, type PayoutWaitRow, type Wallet, type WalletApp,
 } from './wallets/routes.js';
+export { RETENTION_JOBS } from './retentionJobs.js';
+export {
+  applyEvent, eventRecord, insertTrade, loadTrade, loadTradeRow, noPublish, rowToTrade,
+  type TradeDeps, type TradePublisher, type TradeRow, type TradeSides,
+} from './trades/store.js';
+export { ONLINE_MS, roleOf, toTradeView, traderSummary, type TradeView, type TraderSummary, type ViewContext } from './trades/view.js';
+export { tradeRoutes, type ProfileLookup, type TradeRouteOptions } from './trades/routes.js';
+export { PURGE_ROLE, TRADE_ADDRESS_RETENTION_MS, purgeTradeAddresses, purgeTradeAddressesJob } from './trades/purge.js';
