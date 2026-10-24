@@ -87,6 +87,19 @@ describe('GET /v1/trades/:code', () => {
     expect(res.body).not.toContain(sides.sellerRefund!);
   });
 
+  it('carries the locked rate and the offer maximum fixed at take, as the escrow runtime reads them (Task 12)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
+    for (const who of [seller, buyer]) {
+      const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
+      expect(v).toMatchObject({
+        poster: 'buyer', state: 'setup', amountAtomic: AMOUNT.toString(), settling: null, paidAt: null,
+        lockedRate: { currency: 'USD', centsPerXmr: '33000' }, maxFiatCents: '100000',
+      });
+    }
+  });
+
   it('answers 404 to a third trader and for an unknown code, 403 to staff, 401 without a session', async () => {
     const seller = await trader();
     const buyer = await trader();

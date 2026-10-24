@@ -68,6 +68,11 @@ export interface TradeView {
   amountAtomic: string;
   fiatCents: string;
   lockedRate: { currency: string; centsPerXmr: string };
+  /**
+   * The offer's maximum fiat total, fixed at take (Revision 2026-10-20): a growth stays within
+   * it. The browser escrow runtime (Task 12) checks it against the deal the user confirmed.
+   */
+  maxFiatCents: string;
   grown: { at: string; fromAtomic: string; fromFiatCents: string } | null;
   receivedAtomic: string;
   confirmations: number;
@@ -123,6 +128,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     amountAtomic: t.amountAtomic.toString(),
     fiatCents: t.fiatCents.toString(),
     lockedRate: { currency: t.lockedRate.currency, centsPerXmr: t.lockedRate.centsPerXmr.toString() },
+    maxFiatCents: t.maxFiatCents.toString(),
     grown: t.grown
       ? { at: t.grown.at.toISOString(), fromAtomic: t.grown.fromAtomic.toString(), fromFiatCents: t.grown.fromFiatCents.toString() }
       : null,
