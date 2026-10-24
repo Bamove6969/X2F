@@ -78,7 +78,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
   test('a release in the pool is not settled and holds chain reports', () => {
     const r1 = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
     // the wallet already counts the pool spend: balance 0 below what came in
-    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: false } });
+    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: false, confirmations: 0 } });
     expect(r2.reports).toEqual([]);
     expect(r2.closeChannels).toBe(false);
     // a spend the wallet sees but nobody has named yet: still held
@@ -88,17 +88,17 @@ describe('chain watcher decisions (Task 9, pure)', () => {
 
   test('a known spend still in the pool holds chain reports even before the wallet sees it', () => {
     const r1 = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
-    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)]), spend: { txHash: SETTLE, inBlock: false } });
+    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)]), spend: { txHash: SETTLE, inBlock: false, confirmations: 0 } });
     expect(r2.reports).toEqual([]);
   });
 
   test('the sweep in a block reports settled once, closes both channels once', () => {
     const r1 = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
-    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true }, now: at(5) });
+    const r2 = step({ apiState: 'settling', state: r1.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true, confirmations: 1 }, now: at(5) });
     expect(r2.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
     expect(r2.closeChannels).toBe(true);
     expect(r2.state.closedAt).toEqual(at(5));
-    const r3 = step({ apiState: 'released', state: r2.state, f: funds([inc(HASH_A, 1000n, 14)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true }, now: at(6) });
+    const r3 = step({ apiState: 'released', state: r2.state, f: funds([inc(HASH_A, 1000n, 14)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true, confirmations: 1 }, now: at(6) });
     expect(r3.reports).toEqual([]);
     expect(r3.closeChannels).toBe(false);
     expect(r3.watching).toBe(true);
@@ -106,7 +106,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
 
   test('a malformed spend hash is never reported settled', () => {
     for (const txHash of ['', 'C'.repeat(64), 'c'.repeat(63), `${'c'.repeat(63)}g`]) {
-      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash, inBlock: true } });
+      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash, inBlock: true, confirmations: 1 } });
       expect(r.reports).toEqual([]);
       expect(r.closeChannels).toBe(false);
     }
@@ -114,7 +114,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
 
   test('funds after released → chain with only the late coins, then late-funds once', () => {
     const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
-    const settled = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true }, now: at(5) });
+    const settled = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 13)], 0n, 0n), spend: { txHash: SETTLE, inBlock: true, confirmations: 1 }, now: at(5) });
     const late = funds([inc(HASH_A, 1000n, 20), inc(LATE, 7n, 0)], 7n, 0n);
     const r = step({ apiState: 'released', state: settled.state, f: late, now: at(60) });
     expect(r.reports).toEqual([
@@ -128,7 +128,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
   test('late-funds does not trust the balance: a wallet that never saw the sweep is no late payment', () => {
     const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 12)]) });
     // this wallet still shows the swept coins (it has no key images for the sweep)
-    const settled = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 13)]), spend: { txHash: SETTLE, inBlock: true } });
+    const settled = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 13)]), spend: { txHash: SETTLE, inBlock: true, confirmations: 1 } });
     expect(settled.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
     expect(step({ apiState: 'released', state: settled.state, f: funds([inc(HASH_A, 1000n, 30)]), now: at(30) }).reports).toEqual([]);
   });
@@ -139,7 +139,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       apiState: 'settling',
       state: open.state,
       f: funds([inc(HASH_A, 1000n, 13), inc(LATE, 3n, 1)], 3n, 0n),
-      spend: { txHash: SETTLE, inBlock: true },
+      spend: { txHash: SETTLE, inBlock: true, confirmations: 1 },
     });
     // settled first, so the API closes the trade before the late coins make it escalate
     expect(settled.reports).toEqual([
@@ -149,6 +149,82 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     ]);
     const r = step({ apiState: 'disputed', state: settled.state, f: funds([inc(HASH_A, 1000n, 14), inc(LATE, 3n, 2)], 3n, 0n) });
     expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 3n, unlockedAtomic: 0n, confirmations: 2 }]);
+  });
+
+  test('swept means confirmed at least 10 blocks before the sweep: a late deposit that unlocked before the close is late', () => {
+    const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)]) });
+    // LATE arrived after the sweep was built (2 blocks after its block) and has unlocked since
+    const settled = step({
+      apiState: 'settling',
+      state: open.state,
+      f: funds([inc(HASH_A, 1000n, 30), inc(LATE, 7n, 11)], 7n, 7n),
+      spend: { txHash: SETTLE, inBlock: true, confirmations: 13 },
+    });
+    expect(settled.reports).toEqual([
+      { kind: 'settled', txHash: SETTLE },
+      { kind: 'chain', receivedAtomic: 7n, unlockedAtomic: 7n, confirmations: 11 },
+      { kind: 'late-funds' },
+    ]);
+  });
+
+  test('a normal settle sweeps exactly the coins old enough to have been in it', () => {
+    const B = 'e'.repeat(64);
+    const C = 'f'.repeat(64);
+    const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 29), inc(B, 20n, 19)]) });
+    const settled = step({
+      apiState: 'settling',
+      state: open.state,
+      // settle tx 10 confirmations: A (30) and B (20) are 10+ blocks older; C (15) is not, although unlocked
+      f: funds([inc(HASH_A, 1000n, 30), inc(B, 20n, 20), inc(C, 4n, 15)], 4n, 4n),
+      spend: { txHash: SETTLE, inBlock: true, confirmations: 10 },
+    });
+    expect(settled.reports).toEqual([
+      { kind: 'settled', txHash: SETTLE },
+      { kind: 'chain', receivedAtomic: 4n, unlockedAtomic: 4n, confirmations: 15 },
+      { kind: 'late-funds' },
+    ]);
+    expect(settled.state.swept).toEqual([HASH_A, B]);
+  });
+
+  test('a coin confirmed 9 blocks before the sweep cannot have been in it: late', () => {
+    const r = step({
+      apiState: 'settling',
+      f: funds([inc(HASH_A, 1000n, 20), inc(LATE, 5n, 19)], 5n, 5n),
+      spend: { txHash: SETTLE, inBlock: true, confirmations: 10 },
+    });
+    expect(r.state.swept).toEqual([HASH_A]);
+    expect(r.reports.at(-1)).toEqual({ kind: 'late-funds' });
+  });
+
+  test('a close known only from the API sweeps nothing: every coin is unaccounted until the settle tx is known', () => {
+    const open = step({ apiState: 'secured', f: funds([inc(HASH_A, 1000n, 30)]) });
+    const r = step({ apiState: 'released', state: open.state, f: funds([inc(HASH_A, 1000n, 31)], 0n, 0n), now: at(5) });
+    expect(r.reports).toEqual([
+      { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 31 },
+      { kind: 'late-funds' },
+    ]);
+    expect(r.closeChannels).toBe(true);
+    expect(r.state.swept).toEqual([]);
+    // once the sweep is known, later facts count only the coins it did not take
+    const known = step({
+      apiState: 'released',
+      state: r.state,
+      f: funds([inc(HASH_A, 1000n, 32), inc(LATE, 2n, 0)], 2n, 0n),
+      spend: { txHash: SETTLE, inBlock: true, confirmations: 2 },
+      now: at(6),
+    });
+    expect(known.state.settledTx).toBe(SETTLE);
+    expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }]);
+  });
+
+  test('bad spend facts fail closed', () => {
+    for (const confirmations of [-1, 1.5, Number.NaN]) {
+      for (const inBlock of [true, false]) {
+        expect(() => step({ f: funds([]), spend: { txHash: SETTLE, inBlock, confirmations } })).toThrow(RangeError);
+      }
+    }
+    // in a block means at least one confirmation
+    expect(() => step({ f: funds([]), spend: { txHash: SETTLE, inBlock: true, confirmations: 0 } })).toThrow(RangeError);
   });
 
   test('a cancelled trade: close both channels; any coin arriving is late', () => {

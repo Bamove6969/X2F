@@ -17,15 +17,20 @@
  * - On `released`/`refunded` (our own `settled`) or `cancelled` (from the API): close both relay
  *   channels once. Closed escrows stay watched for 30 days.
  * - Late funds are judged by incoming transactions, never by the balance (a multisig wallet that
- *   did not take part in the sweep may not see it spent): every incoming tx not swept is late. Swept
- *   means "unlocked when the sweep was seen in a block" (a sweep only spends unlocked coins, R25;
- *   a locked coin then was certainly not in it); a cancelled trade swept nothing. Late coins are
+ *   did not take part in the sweep may not see it spent) and never by the API's state: every
+ *   incoming tx not swept is late. Swept is decided only from the sweep itself, failing closed: an
+ *   incoming tx counts as swept only when it was confirmed at least UNLOCK_CONFIRMATIONS blocks
+ *   before the sweep's block (`incoming.confirmations - spend.confirmations >= 10`), because the
+ *   builder sweeps only coins its wallet sees unlocked (R25), so nothing younger can be in it. Both
+ *   counts must be read at the same chain height. A close known only from the API (no sweep tx
+ *   known) sweeps nothing: every coin is unaccounted until the sweep is known. Late coins are
  *   reported as `chain` facts of the late coins alone, then `late-funds` once, which the API turns
  *   into `escalate`.
  */
 import type { Incoming } from '@x2f/escrow';
 import type { TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
+import { UNLOCK_CONFIRMATIONS } from './timers.js';
 
 export const WATCH_INTERVAL_MS = 15_000;
 export const WATCH_CLOSED_DAYS = 30;
@@ -36,10 +41,15 @@ export interface EscrowFunds {
   incoming: Incoming[];
 }
 
-/** A tx the watcher has established sweeps this escrow; `inBlock` = `txSeen` (in a block, not the pool). */
+/**
+ * A tx the watcher has established sweeps this escrow; `inBlock` = `txSeen` (in a block, not the
+ * pool). `confirmations` is the tx's own count (0 in the pool), read at the same chain height as
+ * the incoming list.
+ */
 export interface SpendEvidence {
   txHash: string;
   inBlock: boolean;
+  confirmations: number;
 }
 
 export interface ChainFacts {
@@ -57,7 +67,7 @@ export interface WatchState {
   closedAt: Date | null;
   /** The settling tx this watcher reported, if any. */
   settledTx: string | null;
-  /** Incoming txs the settlement took; set when the trade closes. */
+  /** Incoming txs the settlement took; set when the trade closes ([] until the sweep is known). */
   swept: string[] | null;
   lateFundsReported: boolean;
   channelsClosed: boolean;
@@ -94,6 +104,20 @@ function checkFunds(f: EscrowFunds): void {
   }
 }
 
+function checkSpend(sp: SpendEvidence | null): void {
+  if (sp === null) return;
+  if (typeof sp.inBlock !== 'boolean' || !Number.isSafeInteger(sp.confirmations) || sp.confirmations < 0) throw new RangeError('bad spend facts');
+  if (sp.inBlock && sp.confirmations < 1) throw new RangeError('bad spend facts');
+}
+
+/** A sweep in a block with a well-formed hash, or null. */
+const sweepOf = (sp: SpendEvidence | null): SpendEvidence | null =>
+  sp !== null && sp.inBlock && typeof sp.txHash === 'string' && TX_HASH.test(sp.txHash) ? sp : null;
+
+/** The incoming txs old enough to have been spent by `sweep` (see the module comment). */
+const sweptBy = (incoming: readonly Incoming[], sweep: SpendEvidence): string[] =>
+  incoming.filter((i) => i.confirmations - sweep.confirmations >= UNLOCK_CONFIRMATIONS).map((i) => i.txHash);
+
 const lowest = (incoming: readonly Incoming[]): number =>
   incoming.length === 0 ? 0 : Math.min(...incoming.map((i) => i.confirmations));
 const sum = (incoming: readonly Incoming[]): bigint => incoming.reduce((s, i) => s + i.amountAtomic, 0n);
@@ -109,6 +133,7 @@ export function watchStep(a: {
 }): WatchStepResult {
   if (!(a.now instanceof Date) || Number.isNaN(a.now.getTime())) throw new RangeError('bad clock');
   checkFunds(a.funds);
+  checkSpend(a.spend);
   const { funds, spend } = a;
   let s: WatchState = { ...a.state };
   const reports: WatchReport[] = [];
@@ -117,13 +142,14 @@ export function watchStep(a: {
     return { reports, closeChannels: false, state: s, watching: false };
   }
 
+  const sweep = sweepOf(spend);
   if (s.closedAt === null) {
-    const sweptNow = (): string[] => funds.incoming.filter((i) => i.unlocked).map((i) => i.txHash);
-    if (spend !== null && spend.inBlock && typeof spend.txHash === 'string' && TX_HASH.test(spend.txHash)) {
-      reports.push({ kind: 'settled', txHash: spend.txHash });
-      s = { ...s, closedAt: a.now, settledTx: spend.txHash, swept: sweptNow() };
+    if (sweep !== null) {
+      reports.push({ kind: 'settled', txHash: sweep.txHash });
+      s = { ...s, closedAt: a.now, settledTx: sweep.txHash, swept: sweptBy(funds.incoming, sweep) };
     } else if (CLOSED.includes(a.trade.state)) {
-      s = { ...s, closedAt: a.now, swept: a.trade.state === 'cancelled' ? [] : sweptNow() };
+      // Closed by the API alone: nothing is known to be swept, so every coin is unaccounted.
+      s = { ...s, closedAt: a.now, swept: [] };
     } else {
       const spending = spend !== null || funds.balance < sum(funds.incoming);
       const facts: ChainFacts = { receivedAtomic: funds.balance, unlockedAtomic: funds.unlocked, confirmations: lowest(funds.incoming) };
@@ -135,6 +161,8 @@ export function watchStep(a: {
     }
   }
 
+  // Closed by the API before the sweep was known: once it is, count only the coins it did not take.
+  if (s.settledTx === null && sweep !== null) s = { ...s, settledTx: sweep.txHash, swept: sweptBy(funds.incoming, sweep) };
   // Closed: close the channels once, and watch for coins the settlement did not take.
   const closeChannels = !s.channelsClosed;
   s = { ...s, channelsClosed: true };
