@@ -4,6 +4,8 @@
 
 > **Status: DRAFT, 2026-10-24.** Nothing is built from this plan until the owner approves it. Every owner choice is listed under "Assumptions (owner has not decided yet)" with options and a recommendation; tasks that depend on one say so and use only the named setting.
 
+> **Plan review, 2026-10-24** (branch `wip/lead-plan6-review`): clear mistakes were fixed in place (HAProxy port-443 routing, onion source key, migration ownership, `x2f_backup` grants, WebAuthn migration, R26 restore guard, WAL-G retention and lifecycle, SRI for the worker, the served `index.html` versus the manifest, metrics listeners, log sources outside journald, vault context privacy). The questions the owner must answer are marked "reviewer" under D3, D4, D7 and D8, and gap G17 is new.
+
 **Goal:** Make X2F safe to run on mainnet. The database is unreachable from the internet and backed up encrypted with keys kept apart. Stored-secret keys live in a hardware-backed vault. Nothing logs an IP address. A front proxy and the Tor onion services limit each source. The owner is alerted without user data being collected. The web app is tamper-evident, and the native apps resume escrow work after a pause. Then the external audit, the bug bounty and the launch follow.
 
 **Architecture:**
@@ -13,16 +15,16 @@
 - **Web tamper evidence:** SRI and import-map integrity are added at build time, the CSP carries hashes, builds are reproducible with a signed release manifest, and an outside monitor compares the live site against that manifest.
 - **`apps/native`** is a Capacitor 8 project wrapping `apps/web/dist`. It resumes escrow work when the app comes back to the foreground. Its auth and networking follow the spike in Task 19.
 
-**Tech Stack:** Node 24.22.1, npm 11.21.0, TypeScript 7.0.2, vitest 5.0.3, fastify 5.12.x (as pinned at the time; R31), pg 8.23.1, openpgp 6.3.2, React 19.3.0, Vite 8.3.3, @playwright/test 1.63.0, Semgrep 1.178.0, PostgreSQL 17.11. **New dependencies** (14-day rule: each was published on or before 2026-10-10. The version is checked again with `npm view <pkg> time --json`, or against the release page, on the day it is added, and a newer version is taken only if it also passes the rule):
+**Tech Stack:** Node 24.22.1, npm 11.21.0, TypeScript 7.0.2, vitest 5.0.3, fastify 5.12.x (as pinned at the time; R31), pg 8.23.1, openpgp 6.3.2, React 19.3.0, Vite 8.3.3, @playwright/test 1.63.0, Semgrep 1.178.0, PostgreSQL 17.11. **New dependencies** (14-day rule: each was published on or before 2026-10-10. The version is checked again with `npm view <pkg> time --json`, or against the release page, on the day it is added, and a newer version is taken only if it also passes the rule. **Container images:** a tag such as `node:24.22.1-bookworm-slim` is re-pushed when its base image is rebuilt (that tag was last pushed 2026-10-21), so "pinned by digest at task time" means a digest whose push date itself passes the 14-day rule, recorded with that date; never the newest digest of the tag. Versions and dates below were re-checked against the npm registry and the release pages on 2026-10-24 by the plan reviewer):
 
 | Dependency | Version | Published | Where | Why |
 |---|---|---|---|---|
 | @capacitor/core, @capacitor/cli, @capacitor/ios, @capacitor/android | 8.5.3 | 2026-10-07 | `apps/native` | Native wrappers (spec 8) |
 | @capacitor/app | 8.1.2 | 2026-10-02 | `apps/native` | Foreground/background events for resume |
-| pkcs11js | 2.1.7 | 2026-07-28 | `apps/api`, `apps/moderation` | **Only if D4 = (a) YubiHSM 2.** A native addon: `ignore-scripts=true` stays, and the one package is built by an explicit `npm rebuild pkcs11js` step (new ruling, Task 10) |
+| pkcs11js | 2.1.7 | 2026-07-28 | `apps/api`, `apps/moderation` | **Only if D4 = (a) YubiHSM 2.** A native addon: `ignore-scripts=true` stays, and the one package is built by an explicit `npm rebuild pkcs11js` step (new ruling at the next free number, Task 10; R34 is already taken) |
 | @aws-sdk/client-kms | 3.1149.0 | 2026-10-09 | `apps/api`, `apps/moderation` | **Only if D4 = (b) cloud KMS.** Large dependency tree; an audit-count check is part of Task 10 |
 | HAProxy (container `haproxy:3.4.6-alpine`, pinned by digest at task time) | 3.4.6 (3.4 LTS) | 2026-09-28 | front host, `tools/deploy` tests | Front proxy |
-| tor | 0.4.9.14 | 2026-10-07 | front host | Onion services, PoW defence |
+| tor | 0.4.9.14 | 2026-10-07 | front host | Onion services, PoW defence. The onion PoW defence exists only in a tor built with `--enable-gpl`; Task 3 checks `tor --list-modules` shows `pow: yes` on the installed package |
 | WAL-G | v3.0.9 | 2026-08-20 | database host | Encrypted base backups and WAL archive (PGP public-key encryption) |
 | lego | v5.5.2 | 2026-09-23 | front host | ACME certificates |
 | Prometheus / Alertmanager / node_exporter / postgres_exporter / blackbox_exporter | v3.15.0 / v0.34.1 / v1.12.1 / v0.20.1 / v0.29.0 | 2026-09-25 / 2026-09-17 / 2026-07-14 / 2026-07-08 / 2026-10-07 | monitoring | Owner alerting |
@@ -36,20 +38,23 @@
 ## Global Constraints
 
 - **No IP addresses are logged anywhere** (spec 4.1, R5): not by the apps, HAProxy, Tor, PostgreSQL, monerod, sshd, journald, nftables or the monitoring stack. The per-source limits keep source addresses (clearnet) or Tor circuit ids (onion) only in HAProxy's memory, in stick tables that expire after 10 minutes. They are never written, exported or exposed through a stats socket.
-- **No analytics or third-party trackers, and no third-party scripts** (spec 4.1). No third-party service terminates TLS for X2F (D9).
+- **No analytics or third-party trackers, and no third-party scripts** (spec 4.1). The tasks assume no third-party service terminates TLS for X2F; that is D9's recommendation, not yet the owner's decision (D9 (b) would conflict with spec 4.1 and 6.5, and Tasks 2, 13 and 14 would need rework).
+- **"No IPs logged" is about what X2F writes.** Upstream networks can still record source addresses outside X2F's control: the hosting provider's flow or DDoS telemetry, a cloud provider's flow logs, and the upstream of a scrubbing service. Gap G17.
 - **Non-custodial** (spec 1, 3.1). Nothing in this plan adds a key. The moderator key stays only in `apps/moderation`, and per-trade keys stay on devices.
 - **Target standard: OWASP ASVS Level 3** (spec 6.5).
 - **The database is never reachable from the internet.** Only the API and moderation roles connect, from their hosts. Every runtime role is least-privilege, and no runtime role owns a schema or is a superuser.
 - **Backups are encrypted to a public key whose private half is never on the database host, the backup storage or any app host** (D7).
 - **Secret keys:** in production the stored-secret keys (password pepper, recovery-code MAC, TOTP sealing, PGP-key sealing, the moderation keystore key) come only from the vault (D4). `X2F_LEGACY_SECRETS=off` at launch.
-- **Migrations run only while the API and the moderation process are stopped** (FU-C M3). Rolling deploys across a migration are not allowed.
+- **Migrations run only while the API and the moderation process are stopped** (FU-C M3). Rolling deploys across a migration are not allowed. Migration files are plain SQL run with only `DATABASE_URL`: they cannot read API settings such as `X2F_RP_ID`.
 - **Front-proxy starting values** (technical defaults, tuned on staging; every value is one named setting in `deploy/haproxy/haproxy.cfg`):
-  - Per source: a clearnet IPv4 address, a clearnet IPv6 /64, or an onion circuit.
+  - Per source: a clearnet IPv4 address, a clearnet IPv6 /64, or an onion circuit. On the onion frontends the key is the **whole** PROXY source address (`src`, no mask): Tor puts the circuit id in the low 32 bits of `fc00:dead:beef:4dad::/64`, so the clearnet `ipmask(32,64)` would put every onion visitor in one bucket.
+  - Per-source limits raise the cost of F1 but do not fix it: the in-app global budgets (`limits.ts`, 120 login starts a minute) are drained by 6 clearnet sources at 20 a minute each, and a new onion circuit costs an attacker only the PoW. Task 2 also sets a **global** login-start rate per frontend kind below the in-app budget, with a separate share for onion and clearnet, so a flood on one does not empty the other. Task 26 records F1 as "mitigated", not "fixed".
+  - New connections are rate-limited per source with `tcp-request connection` rules (before the TLS handshake, so a handshake flood costs the attacker, not the proxy CPU).
   - Limits per source: 20 concurrent connections; 120 HTTP requests per 10 s; 20 requests per minute to `^/v1/(login|register|backup|second-factor)/`; 8 concurrent WebSockets to the relay; 60 requests per 10 s to the node proxy.
   - Over the limit, the reply is HTTP 429 with body `{"error":"slow-down"}`, `content-type: application/json` and `SECURITY_HEADERS`. A connection over the concurrency limit is refused.
   - Timeouts: `http-request 10s`, `client 30s`, `server 60s`, `connect 5s`, `http-keep-alive 5s`, `tunnel 1h` (relay WebSockets), `client-fin 10s`.
   - `maxconn 20000` globally.
-  - `tune.bufsize 65536`, so a 32 KiB armored PGP key in a JSON body passes.
+  - `option http-buffer-request` on the API backend only (so `timeout http-request` also covers a slowly sent body), and `tune.bufsize 65536`, so a 32 KiB armored PGP key in a buffered JSON body passes. Worst-case buffer memory is about `maxconn × 2 × bufsize` (2.6 GB at these values); size the front host for it or lower `maxconn`.
 - **Tor onion services:** `HiddenServicePoWDefensesEnabled 1`, `HiddenServiceEnableIntroDoSDefense 1`, `HiddenServiceExportCircuitID haproxy`, `HiddenServiceMaxStreams 64`, `HiddenServiceMaxStreamsCloseCircuit 1`, `SafeLogging 1`, log level `notice` at most.
 - **Monitoring collects no user data:** metrics are aggregate counters and gauges whose labels come from fixed lists. They carry no account ids, usernames, trade codes, addresses, amounts, IPs or circuit ids, and Prometheus keeps them for 15 days.
 - Every dependency is pinned exactly and passes the 14-day rule. `npm audit --omit=dev` is clean, apart from exceptions under the standing rulings (R31, R33). `ignore-scripts=true` stays.
@@ -77,12 +82,20 @@ Each is used only through the named setting or task. None is decided by this pla
     - (b) 4 hosts (front; app; moderation; database), with monerod on the front host.
     - (c) 5 hosts: (b) plus a separate monerod host.
   - Rec.: (c). The moderation host holds the only server-side escrow key and should share nothing with public-facing processes, and monerod's peer-to-peer port is its own attack surface. Get quotes; prices vary widely by provider.
+  - **Open question (reviewer):** none of (a)–(c) has a **monitoring host**, yet D12 (b), Task 12 (Prometheus, Alertmanager, blackbox over Tor) and Task 14 (`verifyLive`) put work on one. The owner should say whether it is a separate small host (the reviewer's suggestion: it must survive the hosts it watches), or shares a host; Task 8's firewalls and Task 5's `pg_hba.conf` then gain its scrape rules.
+  - **Open question (reviewer):** with D4 = (a), where the HSM sits decides the network. The API needs the HSM on every password, TOTP and recovery login. If the HSM is on the moderation host, the API must reach that host (`yubihsm-connector` over the private network), which breaks Task 8's "moderation: no inbound except admin SSH" and joins the public-facing API to the key host. The options are an HSM per host that uses one (app host and moderation host), or a dedicated key host. The owner picks with D1/D4.
 - **D4 Vault backend for secret keys** (Tasks 9–11).
   - Options:
     - (a) YubiHSM 2 on the moderation/key host, over PKCS#11. Keys never leave the hardware. Needs physical access (D1 d) and two units for redundancy.
     - (b) Cloud KMS backed by an HSM (for example AWS KMS). No hardware to run, but an account with identity checks, an outside network dependency and a large SDK.
     - (c) OpenBao Transit on a separate hardened host. No npm dependency, but it is a software vault: hardware-backed only if its seal is kept in an HSM or KMS.
+    - (d) No vault: keep FU-C's file key rings (`_FILE`, mode 600) on a hardened host. Least work; ASVS 2.8.2 stays "Partial" and the Global Constraint "keys only from the vault" and Tasks 10–11's vault parts are dropped. (Added by the reviewer so the list is complete; the owner's 2026-10-23 decision asked for "a separate key store", which FU-C already is.)
   - Rec.: (a) if D1 allows hardware, else (b). The adapter interface is the same for all three, so this can change later.
+  - **Facts to weigh (reviewer):**
+    - **Third-party logs.** With (b), AWS CloudTrail records every `Encrypt`, `Decrypt` and `GenerateMac` call with its time and its `EncryptionContext` in clear. Today's contexts are `x2f/totp/<accountId>` and `x2f/pgp-key/<fingerprint>`, so passing them through would give the cloud provider a per-user login log. Task 10 therefore never sends the raw context to a provider. Even then, the provider sees the count and timing of password, TOTP and recovery logins. OpenBao's audit device (c) records the same calls, with values HMAC-ed.
+    - **Key loss.** Losing the vault's keys loses every password (pepper), TOTP secret, unused recovery code, sealed PGP v4 key and the moderation keystore, with no way back. Each backend needs a key backup: (a) a wrap key and `wrap-export` of each key to offline media, set up on both units; (b) imported key material (BYOK) kept offline, since KMS-generated keys cannot be exported; (c) the storage backend plus the unseal or recovery keys. Task 10 builds and tests it.
+    - **YubiHSM 2 mechanisms.** The reviewer could not confirm that the YubiHSM 2 offers `CKM_AES_GCM` through PKCS#11 (it is known for HMAC-SHA-256, AES-CCM wrap and, from firmware 2.3, AES-ECB/CBC). Task 10 checks the mechanism list first; if GCM is missing, the box becomes "HSM HMAC derives a per-record key, local AES-GCM", which keeps the long-term keys in the HSM.
+    - **Throughput.** A YubiHSM 2 does on the order of tens to a few hundred operations a second. Under a login flood the HSM, not Argon2, may become the limit; Task 10 measures it on staging.
 - **D5 Backup storage location.**
   - Options:
     - (a) S3-compatible object storage at a second provider, in a jurisdiction the lawyer approves, with object lock (immutability).
@@ -92,19 +105,24 @@ Each is used only through the named setting or task. None is decided by this pla
 - **D6 Backup retention.**
   - Options: 7, 14 or 30 days of daily base backups, with WAL kept back to the oldest one.
   - Rec.: **14 days.** Data deleted under spec 4.1 (chats and proofs at 90 days, disputes at 30 days, training copies at 6 months) is then gone from backups within 14 days of deletion, and the Terms and FAQ say so (spec gap G1).
-  - Setting: `WALG_RETAIN_FULL`, and object lock set to the same number of days.
+  - Setting: the retention age in `x2f-walg-retain.service` (Task 7: time-based, not a backup count), and object lock set to the same number of days.
 - **D7 Who holds the backup decryption key.**
   - Options:
     - (a) The owner, on a YubiKey (OpenPGP), plus a sealed offline paper copy in a second place.
     - (b) (a) plus a second trusted person.
   - Rec.: (a).
   - The release-signing key (D15) and the login-signing key (R7) are different keys.
+  - **Conflict found by the reviewer:** WAL-G decrypts in-process from a key file (`WALG_PGP_KEY_PATH` plus `WALG_PGP_KEY_PASSPHRASE`). It cannot use a key that lives only on a YubiKey or in gpg-agent, so with (a) as written `wal-g backup-fetch` cannot run. Options for the owner:
+    - (i) The backup key is a passphrase-protected key **file**, kept offline (encrypted USB plus paper copy), not on the YubiKey.
+    - (ii) Keep it on the YubiKey and restore by downloading the encrypted objects, decrypting each with `gpg` and the YubiKey, then running WAL-G against the decrypted local copy with encryption off. That is thousands of WAL files, so it is slow; the drill measures it.
+  - Either way, every restore and every monthly drill puts the backup private key on the restore host. So drills run on a host the owner controls, with an encrypted disk, and that host is wiped afterwards. Task 7 says how.
 - **D8 Disk unlock after a reboot.**
   - Options:
     - (a) A passphrase typed over SSH into the early-boot environment (the strongest; needs the owner at every reboot).
     - (b) Network-bound unlock from a key server on another host (unattended reboots; seizing both hosts unlocks both).
     - (c) The provider's TPM (weak against the provider).
   - Rec.: (a) for the database and moderation hosts, (b) for front, app and monerod.
+  - **Runbook constraint (reviewer):** with (a), the early-boot SSH server (dropbear in the initramfs) runs before nftables and WireGuard. On a host with no public address (database, moderation), the owner can reach it only over the provider's private network from another host, so the initramfs must bring up the private interface. The alternative, the provider's web console, shows the provider every typed passphrase. `disk-encryption.md` covers this, and the first staging reboot tests it.
 - **D9 DDoS protection.**
   - Options:
     - (a) Only the hosting provider's network-level filtering.
@@ -176,8 +194,8 @@ Each is used only through the named setting or task. None is decided by this pla
 
 The inputs and failure modes the spec implies but no task's main tests exercise, most likely to bite first. Each has a test in the task named.
 
-1. **Restoring the moderation database from a backup** brings back `mod_party_state` saves older than the moderator's last multisig signature. Resuming one and co-signing a different set reuses nonces and leaks the moderator's key share (R26). After any restore, every restored party must run a fresh export/import round before it co-signs. Test in Task 7.
-2. **The vault is unreachable mid-day** (HSM unplugged, KMS outage). Password, TOTP and recovery logins and TOTP enrolment must answer 503 `busy` (fail closed) without crashing, never fall back to env keys, and raise `x2f_vault_errors_total`. Test in Task 10.
+1. **Restoring the moderation database from a backup** brings back `mod_party_state` saves older than the moderator's last multisig signature. Resuming one and co-signing a different set reuses nonces and leaks the moderator's key share (R26). After any restore, every restored party must run a fresh export/import round before it co-signs, and must refuse any tx set built from its pre-restore export. A restore can also happen without the runbook (a provider disk or VM snapshot, a promoted replica), so the guard must not depend only on someone running `mark_restored()`. Test in Task 7.
+2. **The vault is unreachable mid-day** (HSM unplugged, KMS outage). Password, TOTP and recovery logins, TOTP enrolment and PGP login starts for stored v4 keys must answer 503 `busy` (fail closed) without crashing, never fall back to env keys, and raise `x2f_vault_errors_total`. **The 503 must not reveal whether an account exists:** an unknown username or an unknown PGP key gets the same 503 as a known one while the vault is down (otherwise the outage is an account-existence oracle that breaks spec 6.2's "an unknown key gets a message that looks the same"). Test in Task 10.
 3. **A legitimately large request through the proxy:** a 32 KiB armored PGP key in a register body, or a 1 MiB node-proxy body. The proxy limits must not refuse it. Test in Task 2.
 4. **A relay WebSocket left quiet for 20 minutes** while a party waits for its counterparty must stay open through the proxy (`timeout tunnel 1h`); only `client`/`server` idle timeouts apply to plain HTTP. Test in Task 2.
 5. **Tor Browser at the "Safest" level** (JavaScript off) on the onion sees a plain `<noscript>` message explaining that X2F needs JavaScript and how to switch to "Safer", not a blank page. Test in Task 13.
@@ -232,7 +250,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Interfaces:**
 - Produces:
-  - `type RuleId = 'haproxy-log' | 'tor-log' | 'pg-log-host' | 'pg-log-statement' | 'journald-retention' | 'sshd-log' | 'monerod-log' | 'nft-log' | 'secret-in-tree' | 'unit-hardening' | 'pg-hba' | 'pg-listen'`
+  - `type RuleId = 'haproxy-log' | 'tor-log' | 'pg-log-host' | 'pg-log-statement' | 'journald-retention' | 'sshd-log' | 'sysctl-log' | 'monerod-log' | 'nft-log' | 'secret-in-tree' | 'unit-hardening' | 'pg-hba' | 'pg-listen'`
   - `interface Finding { file: string; line: number; rule: RuleId }`
   - `lintDeploy(root: string): Finding[]`. Later tasks add rules to `rules.ts`.
   - `findIpAddresses(text: string, allow?: ReadonlySet<string>): string[]` returns IPv4 and IPv6 (including compressed forms and `::ffff:` mapped) addresses found in free text.
@@ -242,23 +260,30 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
     - an HAProxy file with a `log` line or `option httplog` (`haproxy-log`);
     - a torrc with `Log info stdout`, or without `SafeLogging 1` (`tor-log`);
     - a PostgreSQL fragment with `log_connections = on`, `log_hostname = on`, or a `log_line_prefix` containing `%h` or `%r` (`pg-log-host`);
-    - a PostgreSQL fragment with `log_statement` other than `'none'`, or `log_min_duration_statement` other than `-1` (`pg-log-statement`);
-    - a journald file with `MaxRetentionSec` missing or over `7day` (`journald-retention`);
-    - an sshd drop-in without `LogLevel QUIET` (`sshd-log`);
+    - a PostgreSQL fragment with `log_statement` other than `'none'`, `log_min_duration_statement` other than `-1`, `log_min_error_statement` other than `panic`, `log_error_verbosity` other than `terse`, or `log_parameter_max_length_on_error` other than `0` (`pg-log-statement`; by default an error logs its statement, and a unique-violation `DETAIL` quotes the value, such as a username or fingerprint);
+    - a journald file with `MaxRetentionSec` missing or over `7day`, or with `ForwardToSyslog=yes` (`journald-retention`);
+    - an sshd drop-in without `LogLevel QUIET`, or with `UseDNS yes` (`sshd-log`);
+    - a sysctl file without `net.ipv4.conf.all.log_martians=0` and `net.ipv4.conf.default.log_martians=0` (`sysctl-log`; martian-packet logs print source addresses);
     - a monerod config without `log-level=0` and `log-file=/dev/null` (`monerod-log`);
     - an nftables file with a `log` statement (`nft-log`);
     - a file holding `-----BEGIN .*PRIVATE KEY-----`, or a key-ring-shaped value `\b\d{1,5}:[A-Za-z0-9+/]{43}=` (`secret-in-tree`).
   - `ipscan.test.ts`:
     - finds `203.0.113.7`, `2001:db8::1`, `::ffff:198.51.100.2` and `fe80::1%eth0`;
     - does not report `v0.18.5.3`, `3.4.6`, `1.2.3` or a trade code;
+    - does not report `Tor 0.4.9.14` (an address in `0.0.0.0/8` is never a host, and tor prints its version at start, so Task 3's journal scan would otherwise always fail);
+    - does not report C++ scope names such as `epee::net_utils` or `std::string` from monerod (a bare `::` is not reported), or times such as `12:34:56`;
     - honours `allow`.
   - `tree.test.ts`: `lintDeploy('deploy')` on the real tree returns `[]`.
 - [ ] **Step 2:** Run `npx vitest run --project @x2f/deploy`. Expect FAIL (module missing).
 - [ ] **Step 3:** Implement `lintDeploy` (line-based checks per file kind, chosen by path under `deploy/`) and `findIpAddresses`. Write the real config files:
-  - journald: `Storage=persistent`, `MaxRetentionSec=7day`.
-  - sshd: `LogLevel QUIET`, `PasswordAuthentication no`, `ListenAddress` set per host at install time, `PermitRootLogin no`.
-  - sysctl: `fs.suid_dumpable=0`, `kernel.core_pattern=|/bin/false`.
-  - PostgreSQL logging: `log_connections = off`, `log_disconnections = off`, `log_hostname = off`, `log_line_prefix = '%m [%p] '`, `log_statement = 'none'`, `log_min_duration_statement = -1`.
+  - journald: `Storage=persistent`, `MaxRetentionSec=7day`, `ForwardToSyslog=no`.
+  - sshd: `LogLevel QUIET`, `UseDNS no`, `PasswordAuthentication no`, `ListenAddress` set per host at install time (the admin VPN address only), `PermitRootLogin no`.
+  - sysctl: `fs.suid_dumpable=0`, `kernel.core_pattern=|/bin/false`, `net.ipv4.conf.{all,default}.log_martians=0`, `net.ipv4.tcp_syncookies=1`.
+  - PostgreSQL logging: `log_connections = off`, `log_disconnections = off`, `log_hostname = off`, `log_line_prefix = '%m [%p] '`, `log_statement = 'none'`, `log_min_duration_statement = -1`, `log_min_error_statement = panic`, `log_error_verbosity = terse`, `log_parameter_max_length = 0`, `log_parameter_max_length_on_error = 0`, `log_replication_commands = off`.
+  - **Logs outside journald**, in `deploy/README.md` and `host-setup.md` (Task 8), with a check command for each:
+    - remove `rsyslog` (Debian and Ubuntu install it, and it keeps `auth.log` and `syslog` for weeks whatever journald's retention is);
+    - `wtmp`, `btmp` and `lastlog` record the source address of every SSH login and failed attempt whatever sshd's `LogLevel`: bind them to `/dev/null` (or a tmpfs) and check with `last -i` and `lastb -i` (both empty);
+    - the distribution's own unit files and default configs (`/etc/haproxy/haproxy.cfg` with `log /dev/log` and `stats socket`, `/etc/default/haproxy` with the master socket `-S`, Tor's default `torrc`) are replaced, not edited.
   - monerod: `restricted-rpc=1`, the RPC connection flags from `docs/dev-setup.md`, `log-level=0`, `log-file=/dev/null`, `no-igd=1`.
 
   `deploy/README.md` maps each file to its host and its install path.
@@ -268,35 +293,40 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 ### Task 2: Front proxy: TLS, timeouts and per-source limits (F1, Plan 1 finding 2)
 
 **Files:**
-- Create: `deploy/haproxy/haproxy.cfg`, `deploy/haproxy/errors/429.http`, `deploy/haproxy/lego.service`, `deploy/haproxy/lego.timer`
-- Modify: `tools/deploy/src/rules.ts` (new rule `haproxy-limits`: every public frontend has the stick tables, the timeouts and no `stats socket`)
+- Create: `deploy/haproxy/haproxy.cfg`, `deploy/haproxy/errors/429.http`, `deploy/haproxy/lego.service`, `deploy/haproxy/lego.timer`, `deploy/systemd/haproxy.service`
+- Modify: `tools/deploy/src/rules.ts` (new rule `haproxy-limits`: every public frontend has the stick tables, the timeouts and no `stats socket`; the unit has no `-S`)
 - Test: `tools/deploy/test/proxy.test.ts` (Docker, the pinned `haproxy:3.4.6-alpine` digest, `--network host`, a stub upstream on loopback), `tools/deploy/test/lint.test.ts` (new rule)
 
 **Interfaces:**
 - Consumes: the Global Constraints proxy values; `SECURITY_HEADERS` (`apps/api/src/static/serve.ts`), copied into the 429 file.
 - Produces:
-  - Frontends `fe_web` (443: `x2f.example` web and API), `fe_relay` (443 SNI `relay.*`, WebSocket), `fe_node` (443 SNI `node.*`) and `fe_metrics` (loopback only, the HAProxy Prometheus exporter, aggregates only).
+  - One frontend `fe_https` bound to 443 with every certificate. Two HAProxy frontends cannot share port 443 and be chosen by SNI, so routing is inside it: `use_backend` on the exact `Host` header (checked against the SNI with `ssl_fc_sni`) to `be_api` (`x2f.example`: web and API), `be_relay` (`relay.*`, WebSocket) and `be_node` (`node.*`). Each host's limits are separate `track-sc` rules in that frontend, keyed per host.
+  - `fe_http` on 80: the ACME HTTP-01 path to lego on loopback (`lego --http --http.port 127.0.0.1:8402`; lego cannot bind 80 while HAProxy holds it), and a redirect to https for everything else.
+  - `fe_metrics`: the HAProxy Prometheus exporter, aggregates only, bound to the private interface and allowed only from the monitoring host in nftables (Task 8). Not loopback-only, which a separate monitoring host could not scrape.
   - The onion frontends of Task 3 reuse the same backends.
-  - Source key: `src,ipmask(32,64)`.
+  - Source key: `src,ipmask(32,64)` on clearnet; plain `src` on the onion frontends (Global Constraints).
+  - A `deploy/systemd/haproxy.service` of X2F's own, started without the master CLI (`-S`); the distribution unit adds one by default, and through it `show table` would dump the stick tables.
 
 - [ ] **Step 1: Write the failing tests** in `proxy.test.ts`. The test starts HAProxy with the real config, with test certificates and loopback upstreams through a test-only include, and connects from `127.0.0.2` and `127.0.0.3` (`localAddress`).
   - **F1:** source A sends 25 `POST /v1/login/webauthn/start` in a minute and gets 429 `{"error":"slow-down"}` (with `referrer-policy`, `x-content-type-options` and `strict-transport-security`) after the 20th. Source B's 1st request in the same minute reaches the upstream.
+  - **Global share:** 8 sources each sending 20 login starts in a minute (within their own limit) together get no more than the clearnet share through to the upstream; the rest get 429. An onion source in the same minute still gets through (its share is separate).
   - Source A opens 21 concurrent connections: the 21st is refused, and source B still connects.
+  - Source A opening new connections faster than the `tcp-request connection` rate is refused before the TLS handshake completes.
   - Source A holds 8 relay WebSockets: the 9th is refused, and source B opens one.
   - **Slow headers:** a client sending one header byte per second is closed by 11 s and never reaches the upstream.
   - **Review Focus 3:** a 40 KiB JSON body to `/v1/register/pgp/start` and a 1 MiB body to `fe_node` both reach the upstream intact.
   - **Review Focus 4:** a relay WebSocket idle for 20 minutes stays open. A fake clock is not possible here, so the test runs with `tunnel 1h` overridden to `tunnel 25s` and `client 5s`, and asserts the socket is still open at 15 s.
   - HAProxy wrote nothing to stdout or stderr during the run (`findIpAddresses` on the captured output is `[]`, and the output is empty apart from the startup line).
-  - The lint rule flags a frontend without `http-request track-sc0`.
+  - The lint rule flags a frontend without `http-request track-sc0`, a `stats socket` line, and a unit whose `ExecStart` has `-S`.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Write `haproxy.cfg`:
   - TLS 1.2+ with the Mozilla intermediate ciphers, HTTP/2, HSTS left to the app's headers, and `http-request deny` for any Host not in the configured list.
-  - Stick tables `st_src` (conn_cur, conn_rate, http_req_rate(10s)), `st_login` (http_req_rate(60s)) and `st_relay` (conn_cur). Every table has `expire 10m`.
+  - Stick tables `st_src` (conn_cur, conn_rate(10s), http_req_rate(10s)), `st_login` (http_req_rate(60s)), `st_relay` (conn_cur) and `st_global` (one constant key per frontend kind, http_req_rate(60s) on the login paths; the global share). Every table has `expire 10m`.
   - The 429 file, no `log` lines, and no `stats socket`.
   - `option forwardfor` **off**: the API must never receive a source address (R5).
-  - lego renews certificates through the HTTP-01 challenge on `fe_web` port 80, which only redirects to https otherwise.
+  - lego renews certificates through the HTTP-01 challenge proxied by `fe_http` (above). HAProxy 3.4 also has a built-in ACME client; using it instead of lego would drop one dependency, and the implementer may propose it to the lead.
 - [ ] **Step 4:** Run the tests, then `npm run check`. Expect PASS.
-- [ ] **Step 5:** Mark the Plan 2 test `F1` (`apps/api/test/security-review.test.ts`) as "fixed in front: see tools/deploy/test/proxy.test.ts". The in-process behaviour stays pinned.
+- [ ] **Step 5:** Mark the Plan 2 test `F1` (`apps/api/test/security-review.test.ts`) as "mitigated in front (per-source and global-share limits): see tools/deploy/test/proxy.test.ts". The in-process behaviour stays pinned. A flood from many sources can still use up the clearnet share; owner question 1 of the Plan 2 review (changing the in-app budget design) stays open.
 - [ ] **Step 6:** Commit `feat(deploy): front proxy with per-source limits and timeouts (F1, relay finding 2)`.
 
 ### Task 3: Tor onion services and onion origins in the app
@@ -332,12 +362,16 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - `SafeLogging 1`, `Log notice stdout`;
   - `HiddenServicePort 80 127.0.0.1:<frontend port>`.
 
+  The onion frontends key their stick tables on the full `src` (Global Constraints). The web onion's origin is also added to `X2F_ORIGINS`, which the CSRF check and WebAuthn use; `preflight` (Task 11) accepts `http:` there only for a `^[a-z2-7]{56}\.onion$` host.
+
   The runbook covers making the keys offline, backing them up encrypted to the D7 key, installing them, rotating them (and publishing the new address, signed), and what to do if a key leaks.
 - [ ] **Step 4:** Run the tests, then `npm run check`. Expect PASS.
 - [ ] **Step 5: Verify on staging (stagenet):**
   - Tor Browser opens the web onion.
   - The app loads, logs in with PGP, and connects to the onion relay and node.
   - `tor` writes no address to the journal: run `findIpAddresses` over 24 hours of `journalctl -u tor`.
+  - `tor --list-modules` shows `pow: yes` (else the PoW option is ignored), and a PoW-capable client is asked for a puzzle once the introduction queue is loaded (`HiddenServicePoWQueueRate`/`Burst` at their defaults to start).
+  - The runbook notes that one tor process serves all three onions on one CPU core; if a flood saturates it, the next step is Onionbalance across several front hosts, not bigger limits.
 - [ ] **Step 6:** Commit `feat(onion): onion services, per-circuit limits, onion site profiles and CSP`.
 
 ### Task 4: WebAuthn per origin (clearnet and onion RP IDs)
@@ -349,15 +383,16 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Interfaces:**
 - Produces:
-  - `webauthn_credentials.rp_id text not null`. Existing rows are set to the configured clearnet RP ID by the migration.
+  - `webauthn_credentials.rp_id text` (nullable). A migration cannot read `X2F_RP_ID` (Global Constraints), so existing rows stay null, and null means "the configured clearnet RP ID" (`X2F_RP_ID`). Every new row stores its RP ID. (With D16 = (a), a fresh database, there are no existing rows at launch.)
   - Every ceremony uses `rpIdFor(request Origin)`.
-  - `allowCredentials` and assertion lookups filter on that `rp_id`.
+  - `allowCredentials` and assertion lookups filter on `coalesce(rp_id, <X2F_RP_ID>) = rpIdFor(origin)`.
 
 - [ ] **Step 1: Write the failing tests.**
   - A passkey registered on the onion origin is stored with the onion RP ID.
   - Login on the clearnet origin does not offer it, and an assertion for it presented on clearnet → `webauthn-failed`.
   - The reverse holds too.
   - A staff or owner account's security key registered on clearnet still works on clearnet.
+  - A row from before the migration (`rp_id` null) is offered and accepted on clearnet only.
   - An origin not in `X2F_ORIGINS` → 403, as today.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Implement. The Security screen copy (Plan 3) for an onion visitor reads "Passkeys and security keys are saved per address. A key added on the .onion address works only there." `// COPY-UNSIGNED`.
@@ -368,21 +403,22 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Files:**
 - Create: `deploy/postgres/{pg_hba.conf,roles.sql}`, `deploy/host/nftables-db.conf`, `apps/api/src/db/privilege.ts`
-- Modify: `deploy/postgres/postgresql.x2f.conf` (`listen_addresses` = the private address only, `password_encryption = scram-sha-256`, `ssl = on`, `ssl_min_protocol_version = 'TLSv1.3'`); `apps/api/src/db/pool.ts` (`createPool(url, max, applicationName)`); `apps/api/src/main.ts`; `tools/deploy/src/rules.ts` (`pg-hba`, `pg-listen`)
+- Modify: `deploy/postgres/postgresql.x2f.conf` (`listen_addresses` = the private address only, `password_encryption = scram-sha-256`, `ssl = on`, `ssl_min_protocol_version = 'TLSv1.3'`); `apps/api/src/db/pool.ts` (`createPool(url, max, applicationName)`); `apps/api/src/db/migrate.ts` (owner role for the run); `apps/api/src/main.ts`; `tools/deploy/src/rules.ts` (`pg-hba`, `pg-listen`)
 - Test: `apps/api/test/privilege.test.ts`, `tools/deploy/test/lint.test.ts`
 
 **Interfaces:**
 - Produces roles (`roles.sql`, idempotent):
-  - `x2f_owner` (NOLOGIN; owns the `x2f` database objects; migrations `SET ROLE x2f_owner`).
-  - `x2f_migrator` (LOGIN, member of `x2f_owner`; used only by `npm run migrate`).
-  - `x2f_api` (LOGIN; `SELECT, INSERT, UPDATE, DELETE` through `ALTER DEFAULT PRIVILEGES FOR ROLE x2f_owner`; no `CREATE` on any schema; no `TRUNCATE`; on the Plan 4 activity log, `INSERT, SELECT` only).
-  - `x2f_mod` (LOGIN; `CONNECT` only on `x2f_moderation`, which `x2f_api` cannot connect to).
-  - `x2f_backup` (`REPLICATION` and `pg_read_all_data`; used by WAL-G).
-  - `x2f_monitor` (`pg_monitor` only).
+  - `x2f_owner` (NOLOGIN; owns the `x2f` database objects).
+  - `x2f_mod_owner` (NOLOGIN; owns the `x2f_moderation` objects, including `mark_restored()` of Task 7).
+  - `x2f_migrator` (LOGIN, member of `x2f_owner` and `x2f_mod_owner`; used only by `npm run migrate` of the API and of moderation). **Every** migration runs as the owner role, not only those from 601 on: `migrate()` issues `SET ROLE x2f_owner` (moderation: `x2f_mod_owner`) on its client before creating `schema_migrations` and before the first file, when the connecting role is a member of that role. Two reasons: on a fresh production database (D16) migrations 001–3xx are applied by `x2f_migrator` too, and would otherwise be owned by it, outside `ALTER DEFAULT PRIVILEGES FOR ROLE x2f_owner`; and Plan 5's `3xx` files may be applied after the `6xx` ones, so a rule keyed on the file number would skip them.
+  - `x2f_api` (LOGIN; through `ALTER DEFAULT PRIVILEGES FOR ROLE x2f_owner`: `SELECT, INSERT, UPDATE, DELETE` on tables and `USAGE, SELECT` on sequences (Plan 4's `activity_log` is `bigserial`); no `CREATE` on any schema; no `TRUNCATE`; on the Plan 4 activity log, `INSERT, SELECT` only; on `schema_migrations`, `SELECT` only; `CONNECT` on `x2f` only).
+  - `x2f_mod` (LOGIN; `CONNECT` on `x2f_moderation` only, with the same table and sequence grants through `ALTER DEFAULT PRIVILEGES FOR ROLE x2f_mod_owner`; it cannot connect to `x2f`, and `x2f_api` cannot connect to `x2f_moderation`).
+  - `x2f_backup` (LOGIN over the local socket; `EXECUTE` on `pg_backup_start`, `pg_backup_stop` and `pg_switch_wal`, plus `pg_monitor`; used by WAL-G). **Not** `pg_read_all_data`: WAL-G reads the data directory as the `postgres` OS user and needs only the backup functions over SQL, so that grant would only add a role that can read every table.
+  - `x2f_monitor` (`pg_monitor` only; used by postgres_exporter, whose `pg_stat_replication` collector is disabled because it labels series with `client_addr`).
   - `REVOKE ALL ON DATABASE ... FROM PUBLIC` and `REVOKE CREATE ON SCHEMA public FROM PUBLIC`.
 - `assertLeastPrivilege(db: Queryable, expectedRole: 'x2f_api' | 'x2f_mod'): Promise<void>` throws `Error('db: role is too powerful: <reason>')` when:
   - `rolsuper`, `rolcreaterole`, `rolcreatedb` or `rolbypassrls` is set;
-  - the role is a member of `x2f_owner`;
+  - the role is a member (directly or through another role) of `x2f_owner`, `x2f_mod_owner` or any predefined `pg_*` role (in particular `pg_read_all_data`, `pg_write_all_data`, `pg_execute_server_program`, `pg_read_server_files`, `pg_write_server_files`);
   - it has `CREATE` on any schema;
   - it owns any table;
   - `current_user` differs from `expectedRole`.
@@ -390,18 +426,22 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 - `pg_hba.conf`:
   - only `hostssl x2f x2f_api <app host>/32 scram-sha-256`;
   - `hostssl x2f_moderation x2f_mod <moderation host>/32 scram-sha-256`;
-  - `hostssl replication x2f_backup` (local or the backup host), and `local` for `x2f_migrator` and `postgres` with `peer`;
+  - `local x2f,x2f_moderation x2f_backup peer map=walg` (WAL-G runs on the database host as the `postgres` OS user) and `local all postgres peer`;
+  - `x2f_migrator`: the migration CLI lives in the app code, which is on the app host, not the database host. So `hostssl x2f,x2f_moderation x2f_migrator <app host>/32 scram-sha-256`, with the migrator's password given to the deploy shell only during step 4 of `deploy.md` (Task 6), never in a unit's environment. (The draft's `local ... peer` would have needed the app code and Node on the database host.)
+  - `hostssl x2f x2f_monitor <monitoring host or local>/32 scram-sha-256`, per D3's monitoring host;
   - no `trust`, no `0.0.0.0/0`, no `::/0`.
-- `nftables-db.conf`: default drop; 5432 only from the app and moderation hosts; SSH only from the D11/admin VPN.
+  - Rejected connections are logged by PostgreSQL with the client's address whatever the log settings ("no pg_hba.conf entry for host ..."). Only X2F's own hosts can reach port 5432, so these are server addresses; Task 26's log scan allowlists the private range.
+- `nftables-db.conf`: default drop; 5432 only from the app and moderation hosts (and the exporter port from the monitoring host); SSH only from the admin VPN (`host-setup.md`, Task 8; D11 is about the staff site, not host administration).
 
 - [ ] **Step 1: Write the failing tests** (Docker PostgreSQL 17.11, the existing harness, applying `roles.sql` then migrating as `x2f_migrator`).
-  - `x2f_api` can `SELECT`/`INSERT`/`UPDATE`/`DELETE` on **every** table in `information_schema.tables` (catches a migration that forgets grants), and cannot `CREATE TABLE`, `ALTER TABLE accounts`, `TRUNCATE sessions` or `DROP`.
-  - `x2f_api` cannot connect to `x2f_moderation`.
+  - `x2f_api` has exactly the expected privileges on **every** table in `information_schema.tables` of the `public` schema (catches a migration that forgets grants, or a table owned by the wrong role): `SELECT`/`INSERT`/`UPDATE`/`DELETE` everywhere except a named append-only list (`activity_log`: `SELECT`/`INSERT`; `schema_migrations`: `SELECT`), and `USAGE` on every sequence. It cannot `CREATE TABLE`, `ALTER TABLE accounts`, `TRUNCATE sessions` or `DROP`.
+  - Every table and sequence is owned by `x2f_owner`, including those from migrations 001–0xx applied by `x2f_migrator` on a fresh database.
+  - `x2f_api` cannot connect to `x2f_moderation`, and `x2f_mod` cannot connect to `x2f`.
   - `assertLeastPrivilege` passes for `x2f_api` and throws for the test superuser, for `x2f_migrator` and for a role granted `CREATE` on `public`.
   - `createPool` sets `application_name`.
   - Lint: a `pg_hba.conf` with `trust`, or `host all all 0.0.0.0/0`, is flagged; `listen_addresses = '*'` is flagged.
 - [ ] **Step 2:** Run. Expect FAIL.
-- [ ] **Step 3:** Implement. Migrations from 601 on start with `SET ROLE x2f_owner` (the harness applies it too). `docs/dev-setup.md` gains the production database URL rules: `x2f_api` for the API, `x2f_migrator` for `npm run migrate`.
+- [ ] **Step 3:** Implement. `migrate()` sets the owner role for the whole run (above); migration files never contain `SET ROLE` themselves. The test harness applies `roles.sql` and migrates as `x2f_migrator`, so every API test runs against the production ownership model. `docs/dev-setup.md` gains the production database URL rules: `x2f_api` for the API, `x2f_migrator` for `npm run migrate`.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5: Verify on staging:**
   - From a host outside the private network, `nc -vz <db public address> 5432` fails (the database host has no public address at all where D1 allows).
@@ -417,11 +457,11 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Interfaces:**
 - Produces:
-  - `migrate(db, dir?, opts?: { liveCheck?: boolean })`. When `liveCheck` is true (the CLI default), it refuses with `Error('migrate: stop x2f-api and x2f-moderation first (<n> connected)')` while `pg_stat_activity` shows any backend with `application_name in ('x2f-api','x2f-moderation')`. It exits 2 and applies nothing.
+  - `migrate(db, dir?, opts?: { liveCheck?: boolean })`. When `liveCheck` is true (the CLI default), it refuses with `Error('migrate: stop x2f-api and x2f-moderation first (<n> connected)')` while `pg_stat_activity` shows any client backend whose `usename` is `x2f_api` or `x2f_mod` (the role, not `application_name`: the name is set by the client and a stray `psql` or tool session as `x2f_api` would not carry it). It exits 2 and applies nothing. `pg_stat_activity` shows `usename` for other roles' sessions without `pg_read_all_stats`; the test checks this as `x2f_migrator`.
   - `assertSchemaCurrent(db, dir): Promise<void>` throws `Error('db: schema is behind this build: <names>')` or `Error('db: schema has migrations this build does not know: <names>')`. `main.ts` calls it before listening, so an old API cannot run against a new schema, and a new one cannot run against an old schema.
 
 - [ ] **Step 1: Write the failing tests.**
-  - With a pool connected as `application_name = 'x2f-api'`, the CLI-mode `migrate` refuses and `schema_migrations` is unchanged.
+  - With a pool connected as `x2f_api` (any `application_name`), the CLI-mode `migrate`, run as `x2f_migrator`, refuses and `schema_migrations` is unchanged.
   - With none connected, it applies.
   - `assertSchemaCurrent` throws in both directions (a missing file; an extra row) and passes when equal.
 - [ ] **Step 2:** Run. Expect FAIL.
@@ -435,7 +475,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   7. Smoke checks: `GET /healthz`, a test PGP login, preflight (Task 11).
   8. Owner turns maintenance off.
 
-  It also gives the rollback path: restore to the backup from step 3 if a migration fails after commit.
+  It also gives the rollback path: restore to the backup from step 3 if a migration fails after commit. That restore rolls back the whole cluster, including `x2f_moderation`, so it follows `backup-restore.md` in full, including `mark_restored()` before `x2f-moderation` starts (R26, Task 7). It also brings back anything users changed after step 3; with maintenance on from step 1 that window is empty, which is why step 1 comes first.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5:** Commit `feat(db): migrate refuses while the API runs; schema handshake at start (FU-C M3)`.
 
@@ -444,30 +484,44 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 **Files:**
 - Create: `deploy/backup/{walg.env.example,x2f-backup.service,x2f-backup.timer,x2f-walg-retain.service,x2f-walg-retain.timer}`, `deploy/runbooks/backup-restore.md`, `tools/ops/restore-drill.sh`, `apps/moderation/migrations/601_restore_epoch.sql`
 - Modify: `deploy/postgres/postgresql.x2f.conf` (`archive_mode = on`, `archive_command = 'wal-g wal-push %p'`, `archive_timeout = 300`); `apps/api/src/retention.ts`, `apps/api/src/main.ts`; `apps/moderation` party resume; `tools/deploy/src/rules.ts` (`backup-keys`)
-- Test: `apps/api/test/retention.test.ts`, `apps/moderation/test/restore.test.ts`, `tools/deploy/test/lint.test.ts`
+- Test: `apps/api/test/retention.test.ts`, `apps/moderation/test/restore.test.ts`, `tools/regtest/restore-nonce.test.ts`, `tools/deploy/test/lint.test.ts`
 
 **Interfaces:**
 - Produces:
   - `runRetentionOnce(deps: Deps, jobs: RetentionJob[]): Promise<RetentionLog[]>`. `main.ts` awaits it **before** `listen`, so a restored database purges everything past its deadline before anyone can read it. It refuses to start if any job fails.
   - WAL-G env: `WALG_PGP_KEY_PATH` points at a **public** key, `WALG_S3_PREFIX` (D5), `WALG_COMPRESSION_METHOD=zstd`.
-  - Retention: `wal-g delete retain FULL <D6 days> --confirm`, daily.
-  - Both databases (`x2f`, `x2f_moderation`) are backed up.
-  - Moderation: `mod_restore_epoch (epoch int not null)`, one row. `mark_restored()` (a SQL function owned by `x2f_owner` and run by the restore runbook) increments it. Every saved party state records the epoch it was saved under.
-  - `resumeParty(...)` treats a save from an earlier epoch as `restored`, which forces R26's fresh export/import round before any cosign.
+  - `archive_command` calls a wrapper, `/usr/local/bin/x2f-wal-push %p`, which loads the WAL-G settings from a root-owned file (the `postgres` server process does not have them in its environment).
+  - Retention by **time**, not count: `wal-g delete retain FULL` counts backups, so the on-demand backups of `deploy.md` step 3 would shorten the window. Use `wal-g delete before FIND_FULL <now − D6 days> --confirm`, daily, in `x2f-walg-retain.service`.
+  - Object lock needs bucket versioning, and a deleted object then lives on as a noncurrent version. The bucket gets a lifecycle rule that expires noncurrent versions and delete markers one day after the lock ends; without it, "deleted" backups (and the user data in them) are kept forever. The DB host's storage credential can write and list but not delete or change the lock; the retention job's credential can delete (object lock still refuses anything younger than D6).
+  - Both databases (`x2f`, `x2f_moderation`) are backed up (one cluster, one WAL stream).
+  - Moderation: `mod_restore_epoch (epoch int not null, timeline int not null)`, one row. Every saved party state records the epoch and the PostgreSQL timeline (`select timeline_id from pg_control_checkpoint()`) it was saved under.
+    - `mark_restored()` (a SQL function owned by `x2f_mod_owner`, run by the restore runbook before `x2f-moderation` starts) increments the epoch.
+    - **Automatic guard as well**, for restores that skip the runbook: point-in-time recovery and replica promotion both start a new timeline, so `resumeParty` also treats a save made under a different timeline than the current one as restored. `startModeration` refuses to start while `pg_is_in_recovery()` is true. A provider disk or VM snapshot restore keeps the timeline, so `backup-restore.md` and `incident.md` say plainly that such a restore needs `mark_restored()` too, and that the moderation host's data is never restored from a provider snapshot.
+  - `resumeParty(...)` treats a save from an earlier epoch or another timeline as `restored`. A restored party first runs R26's fresh export/import round, and refuses to co-sign any tx set built from its pre-restore export (an older attempt number for that outcome, or a set that does not use the fresh round's info).
 
 - [ ] **Step 1: Write the failing tests.**
   - `retention.test.ts`: with rows past their deadline (a challenge, a removed wallet address, and the Plan 3 and 4 jobs registered by then), `runRetentionOnce` deletes them before `buildApi` is listening (the fake app records the order), and a throwing job makes `main` refuse to start.
-  - **Review Focus 1, `restore.test.ts`:** a party saved at epoch 1, then `mark_restored()`, then resumed, runs `exportState`/`importState` before `cosign` (a spy on a fake engine records the call order). A party saved at the current epoch resumes without the extra round.
+  - **Review Focus 1, `restore.test.ts`:**
+    - A party saved at epoch 1, then `mark_restored()`, then resumed, runs `exportState`/`importState` before `cosign` (a spy on a fake engine records the call order).
+    - After that resume, a peer sends a tx set built from the party's pre-restore export: the party does not co-sign it.
+    - A party saved under timeline 1 and resumed when the current timeline is 2, with no `mark_restored()`, is treated as restored the same way (the timeline is read through an injectable function, so the test does not need a real recovery).
+    - `startModeration` refuses while `pg_is_in_recovery()` is true.
+    - A party saved at the current epoch and timeline resumes without the extra round.
+  - **Regtest (`tools/regtest`), once:** a real 2-of-3 wallet set; the moderator exports, the state is saved, the moderator co-signs set A, the save is restored, and the restored moderator is offered set B built on the old export: it refuses, runs a fresh round, and co-signs a rebuilt set B. Fake engines cannot show that monero-ts really discards the old nonces on a fresh export; this test does.
   - Lint: `walg.env.example` containing `PRIVATE KEY` → `backup-keys`; `WALG_PGP_KEY_PATH` naming a `*secret*`/`*private*` path → flagged; missing `archive_command` → flagged.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Implement. `backup-restore.md` covers:
   - Making the backup key pair offline (D7) and installing only the public key.
   - The schedule: daily base backup at 03:00 UTC, continuous WAL.
   - Object lock set to D6.
-  - Restore: fetch, decrypt with the offline key on the restore host only, `wal-g backup-fetch` plus recovery to a point in time, `mark_restored()` on `x2f_moderation`, start with preflight.
-  - Why deleted data lives in backups for up to D6 days.
+  - Restore: fetch, decrypt with the offline key on the restore host only (the D7 key form decides how), `wal-g backup-fetch` plus recovery to a point in time, `mark_restored()` on `x2f_moderation`, start with preflight.
+  - After a production restore, anything users changed after the recovery point is gone, for example a payout wallet removed or a key revoked after it. The owner posts the announcement banner (Plan 4), and the incident notes list what users should re-check.
+  - Why deleted data lives in backups for up to D6 days, plus the lifecycle day.
 
-  `restore-drill.sh` restores the latest backup to a throwaway staging host, runs `assertSchemaCurrent`, `runRetentionOnce` and preflight, compares table row counts with production's monitor view, prints a pass/fail line with no data, and destroys the host.
+  `restore-drill.sh` restores the latest backup to a throwaway host, runs `assertSchemaCurrent`, `runRetentionOnce` and the database-only preflight checks (`least-privilege`, `schema-current`, `legacy-counts-zero`), compares table row counts with production's monitor view, prints a pass/fail line with no data, and destroys the host. The drill:
+  - holds real user data and the backup private key, so it runs on a host the owner controls with an encrypted disk, not on a provider's staging VM, and the disk is wiped (LUKS header destroyed) at the end;
+  - **never starts `x2f-moderation` or `x2f-api`**, and holds no vault credential, moderation keystore key, relay signing secret or mainnet daemon address. A restored moderator that reached the relay would co-sign with old nonces (R26). The script refuses to run if any of those settings is present;
+  - does not run the vault checks of preflight, which would need production vault access on the drill host.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5: Verify on staging:**
   - Run the first restore drill end to end, and record the time it takes in `backup-restore.md`.
@@ -484,23 +538,25 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 **Interfaces:**
 - Produces: every X2F unit has
   - a dedicated `User=`;
-  - `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `PrivateDevices=yes` (except the moderation unit when D4 = (a), which gets `DeviceAllow=` for the HSM only);
+  - `NoNewPrivileges=yes`, `ProtectSystem=strict`, `ProtectHome=yes`, `PrivateTmp=yes`, `PrivateDevices=yes`. A unit that talks to a USB HSM directly (D4 = (a)) gets `PrivateDevices=no`, `DevicePolicy=closed` and `DeviceAllow=` for that device only, because `PrivateDevices=yes` hides `/dev/bus/usb` whatever `DeviceAllow=` says;
+  - `ProtectKernelTunables=yes`, `ProtectKernelModules=yes`, `ProtectKernelLogs=yes`, `ProtectControlGroups=yes`, `ProtectClock=yes`, `ProtectHostname=yes`, `RestrictNamespaces=yes`, `RestrictRealtime=yes`, `RestrictSUIDSGID=yes`, `LockPersonality=yes`, `SystemCallFilter=@system-service`, `SystemCallArchitectures=native`, `UMask=0077` (without these the exposure target of Step 5 is not reachable; `MemoryDenyWriteExecute=` stays off because V8's JIT needs it);
   - `LimitCORE=0`;
   - `RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX`, `CapabilityBoundingSet=` (empty);
   - `ReadWritePaths=` limited to its own data directory;
-  - `EnvironmentFile=` with mode 600 (development only; production secrets come from the vault, Task 11).
+  - secrets that remain files in production (the database password, the vault credential or PIN, the PGP login-signing key) come through `LoadCredential=` (`$CREDENTIALS_DIRECTORY`), not `Environment=`/`EnvironmentFile=`, which child processes inherit and `/proc/<pid>/environ` shows. FU-C's `_FILE` check wants mode 600 and the API user as owner; Task 11 checks that the credential files systemd provides pass it (or adjusts the check to accept 0400) before this is relied on. `EnvironmentFile=` with mode 600 is for non-secret settings only.
 
 - [ ] **Step 1: Write the failing tests:** a unit missing any of the settings above → `unit-hardening`; an nftables file whose input chain policy is not `drop` → `nft-default-drop`.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Write the units and the firewalls:
   - front: 80 and 443 in;
   - app: only from the front host to the API, relay and node-proxy ports, and the internal listener only from the moderation host;
-  - moderation: no inbound except admin SSH;
+  - on every host, the exporter and metrics ports only from the monitoring host (D3);
+  - moderation: no inbound except admin SSH (and the monitoring host's node_exporter scrape);
   - monerod: p2p 18080 public, RPC only from the app host.
 
   `disk-encryption.md` covers:
   - LUKS2 (argon2id) on every data volume and on swap, or swap off (secrets in memory must not reach disk unencrypted);
-  - the unlock method by host (D8);
+  - the unlock method by host (D8), including how the early-boot SSH is reached on hosts with no public address (D8's runbook constraint);
   - checks: `cryptsetup status`, `lsblk -f`, `swapon --show`;
   - what to do when a disk is replaced.
 
@@ -515,7 +571,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Files:**
 - Modify: `apps/api/src/auth/keystore.ts`, `apps/api/src/auth/{password.ts,recovery.ts,totp.ts,pgp.ts}`, `apps/api/src/tools/rewrap-totp.ts`; `apps/moderation/src/keystore.ts` (adopt the same interfaces)
-- Create: `apps/api/test/helpers/secretBoxContract.ts`
+- Create: `apps/api/test/helpers/secretBoxContract.ts`, `apps/api/migrations/605_pgp_key_format.sql` (prefixes `0x00` to every existing `pgp_keys.armored_enc`, as migration 011 did for TOTP; run with the API stopped), `apps/api/src/tools/rewrap-pgp.ts`
 - Test: `apps/api/test/keystore.test.ts`, the existing password, recovery, TOTP and PGP tests
 
 **Interfaces:**
@@ -524,7 +580,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - `interface KeyedMac { current: number; mac(keyId: number, data: Uint8Array): Promise<Buffer> }`. The password pepper and the recovery-code HMAC go through this. `mac` with an unknown id rejects.
   - `keyringBox(ring, legacyKey?)` and `keyringMac(ring: Keyring): KeyedMac` are the env/file implementations.
   - `Deps.secrets: { totp: SecretBox; pgpKey: SecretBox; pepper: KeyedMac; recovery: KeyedMac }` is built once in `main.ts`.
-  - PGP v4 keys stored encrypted (today under `subkey('pgp-key')`) move to `secrets.pgpKey`. Format byte `0x00` marks the existing blobs, with a rewrap tool as for TOTP: `npm run rewrap-pgp -w @x2f/api`.
+  - PGP v4 keys stored encrypted (today under `subkey('pgp-key')`, as `nonce ‖ ciphertext ‖ tag` with no format byte) move to `secrets.pgpKey`. Migration 605 marks the existing blobs with format byte `0x00`, opened under `X2F_LEGACY_SECRETS` as FU-C does for TOTP, with a rewrap tool as for TOTP: `npm run rewrap-pgp -w @x2f/api`.
   - `secretBoxContract(name, make: () => Promise<SecretBox>)` and `keyedMacContract(...)` are shared vitest suites: round trip; wrong context rejects; a flipped byte rejects; a blob from another key id opens while that key is held and rejects after it is removed; `isCurrent`; `mac` is deterministic per key id and differs across ids.
 
 - [ ] **Step 1: Write the failing tests:** both contract suites against `keyringBox` and `keyringMac`; `rewrap-pgp` moves format-0 PGP blobs and is idempotent; the existing suites are updated to `await`.
@@ -537,7 +593,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Files:**
 - Create: `apps/api/src/auth/vault/{index.ts,pkcs11.ts | kms.ts | openbao.ts}` (only the one D4 picks), `tools/hsm-test/Dockerfile` (D4 = a: SoftHSM 2.7.0 from the signed tarball; D4 = c: the OpenBao v2.7.1 image pinned by digest)
-- Modify: `apps/api/src/config.ts` (`X2F_KEY_PROVIDER = 'keyring' | 'vault'`, plus the provider's settings), `apps/api/src/main.ts`, `apps/api/src/app.ts` (vault errors → 503 `busy`), `apps/moderation/src/main.ts`, `.npmrc` comment and new ruling R34 if D4 = a
+- Modify: `apps/api/src/config.ts` (`X2F_KEY_PROVIDER = 'keyring' | 'vault'`, plus the provider's settings), `apps/api/src/main.ts`, `apps/api/src/app.ts` (vault errors → 503 `busy`), `apps/moderation/src/main.ts`, `.npmrc` comment and a new ruling (next free number) if D4 = a
 - Test: `apps/api/test/vault.test.ts` (both contract suites against the adapter in the test container), `apps/api/test/vault-outage.test.ts`
 
 **Interfaces:**
@@ -546,19 +602,26 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - New blob format `0x02 ‖ vault key version (u16 BE) ‖ provider ciphertext`. The AAD is the header plus the context, as in format `0x01`.
   - Key handles are named `x2f-totp`, `x2f-pgp-key`, `x2f-pepper`, `x2f-recovery` and `x2f-mod-keystore` (moderation only). Each purpose has its own key, and the API's vault credential cannot use `x2f-mod-keystore`.
   - Per-operation calls: AES-GCM (or the provider's authenticated encryption with the context bound) for the boxes, HMAC-SHA-256 for the MACs. Keys never leave the vault.
+  - **The provider never sees a raw context.** Contexts name accounts and PGP fingerprints (`x2f/totp/<accountId>`, `x2f/pgp-key/<fingerprint>`), and KMS CloudTrail logs `EncryptionContext` in clear (OpenBao's audit device logs it HMAC-ed). The adapter sends `HMAC-SHA-256(subkey('vault-ctx'), context)` as the provider's context or AAD; the full context stays in the local format-`0x02` AAD. A test asserts that no call to the fake provider carries an account id or fingerprint.
+  - **Key backup and restore** for the chosen backend (D4 "Key loss"): Step 3 implements it and `rotation.md`/`incident.md` (Task 11) document it. A test restores the backed-up keys into a fresh container and opens blobs sealed before the restore.
   - `X2F_SERVER_KEY` (decoys, device cookies, PGP start) is fetched at start as a vault-wrapped data key (envelope), never from the environment, when `X2F_KEY_PROVIDER=vault`.
   - With `vault`, setting any of `X2F_PASSWORD_PEPPERS`, `X2F_RECOVERY_CODE_KEYS`, `X2F_TOTP_KEYS` or their `_FILE` forms is a config error: there is no silent fallback.
   - A metric counter `x2f_vault_errors_total{op}`, used by Task 12.
 
 - [ ] **Step 1: Write the failing tests.**
   - The contract suites pass against the containerised vault.
-  - **Review Focus 2, `vault-outage.test.ts`:** with the vault stopped mid-test, password login, TOTP second factor, recovery-code login and TOTP enrolment answer 503 `busy`. PGP, WebAuthn and existing sessions are unaffected. The process stays up, and `x2f_vault_errors_total` increases. No env key ring is consulted.
+  - **Review Focus 2, `vault-outage.test.ts`:** with the vault stopped mid-test:
+    - password login, TOTP second factor, recovery-code login, TOTP enrolment and PGP login for a stored v4 key answer 503 `busy`;
+    - the same requests for an unknown username and an unknown PGP key answer the **same** 503 (same status, body and headers), so the outage reveals no account;
+    - PGP v6 keys, WebAuthn and existing sessions are unaffected;
+    - the process stays up, `x2f_vault_errors_total` increases, and no env key ring is consulted;
+    - when the vault comes back, the next request succeeds without a restart.
   - Config: `vault` plus `X2F_TOTP_KEYS` → error naming the variable.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Implement the D4 adapter, with an `npm audit --omit=dev` and dependency-count note in the commit message.
-  - D4 = a: the PKCS#11 session pool, a login PIN from a root-only file read at start, `CKM_AES_GCM` and `CKM_SHA256_HMAC`. R34 records the one-package `npm rebuild pkcs11js`.
+  - D4 = a: the PKCS#11 session pool, a login PIN from a root-only file read at start, `CKM_AES_GCM` and `CKM_SHA256_HMAC`. First list the device's mechanisms (`C_GetMechanismList`) on the real YubiHSM 2, not only SoftHSM; if `CKM_AES_GCM` is missing, use the HMAC-derived per-record key described under D4. SoftHSM supports mechanisms the YubiHSM may not, so the contract suite also runs once against the real device on staging. A new ruling (the next free number; R34 is taken) records the one-package `npm rebuild pkcs11js`. Measure operations per second on the device and record it in `docs/dev-setup.md`.
   - D4 = b: KMS `Encrypt`/`Decrypt` with `EncryptionContext = { ctx: context }`, and `GenerateMac`.
-  - D4 = c: OpenBao Transit `encrypt`/`decrypt` with `context`, and `hmac`, over `fetch` with mTLS.
+  - D4 = c: OpenBao Transit `encrypt`/`decrypt` and `hmac`, over `fetch` with mTLS. Transit's `context` parameter is a key-derivation input (it needs `derived=true` keys), not AAD; use `associated_data` with an `aes256-gcm96` key, or derived keys, and say which in the commit.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5:** Commit `feat(secrets): <backend> vault adapter for stored-secret keys (ASVS 2.8.2)`.
 
@@ -584,7 +647,8 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - `fido-fresh`: the MDS snapshot `nextUpdate` is more than 7 days away.
   - `leaked-list-size`: at least 10,000,000 bytes. A test list is far smaller; the measured production size is recorded in `docs/dev-setup.md` (Task 25).
   - `monero-network`: `mainnet` in production.
-  - `origins-https-or-onion`.
+  - `origins-https-or-onion`: every `X2F_ORIGINS` and `X2F_SITES` origin is `https:`/`wss:`, or `http:`/`ws:` on a `^[a-z2-7]{56}\.onion$` host.
+  - `db-tls`: `DATABASE_URL` has `sslmode=verify-full` and the connection reports TLS 1.3 (`pg_stat_ssl` for its own backend).
   - `signing-key-mode`: the PGP signing key file is 600 and owned by the API user.
   - `no-insecure-origins`: `X2F_ALLOW_INSECURE_ORIGINS` unset.
   - In staging, `monero-network` expects `stagenet` and `legacy-*` may be on.
@@ -603,7 +667,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - the backup key pair (D7): a new pair, then the next base backup, then the old private key kept until the old backups expire;
   - the fee wallet's view key (the spend key stays offline, spec 6.6).
 
-  `incident.md` covers a suspected key leak, a host compromise, a lost HSM, emergency stop (Plan 4), and who to tell.
+  `incident.md` covers a suspected key leak, a host compromise, a lost HSM (restoring the vault keys from their backup, Task 10), a database restored outside the runbook (`mark_restored()` before `x2f-moderation` starts, Task 7), emergency stop (Plan 4), and who to tell.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5: Verify on staging:** with `X2F_KEY_PROVIDER=vault` and `X2F_LEGACY_SECRETS=off`, `npm run preflight -w @x2f/api` prints `"ok":true` (profile staging), and a full rotation of the TOTP key per `rotation.md` ends with `{"rewrapped":0,"failed":0}` on the re-run.
 - [ ] **Step 6:** Commit `feat(ops): launch preflight, rotation and incident runbooks; vault-only key custody in production`.
@@ -614,7 +678,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 
 **Files:**
 - Create: `apps/api/src/metrics.ts`, `apps/relay/src/metrics.ts`, `apps/node-proxy/src/metrics.ts`, `deploy/monitoring/{prometheus.yml,alerts.yml,alertmanager.yml,blackbox.yml}`, `deploy/runbooks/alerts.md`
-- Modify: the API internal listener (`GET /internal/metrics`), the relay admin listener (`GET /metrics`), node proxy (`NODE_PROXY_METRICS_PORT`, loopback, default 8790), `tools/deploy/src/rules.ts` (`prom-retention`: `--storage.tsdb.retention.time` ≤ 15d)
+- Modify: the API (a metrics-only listener, `X2F_METRICS_PORT`, serving only `GET /metrics`; not the internal listener, which carries `/internal/v1/*` and must stay reachable from the moderation host alone), the relay (a metrics-only listener, not the admin listener, for the same reason), node proxy (`NODE_PROXY_METRICS_PORT`, default 8790). Each binds to the private interface and is reachable only from the monitoring host (Task 8 firewalls); `tools/deploy/src/rules.ts` (`prom-retention`: `--storage.tsdb.retention.time` ≤ 15d)
 - Test: `apps/api/test/metrics.test.ts`, `apps/relay/test/metrics.test.ts`, `apps/node-proxy/test/metrics.test.ts`, `tools/deploy/test/lint.test.ts`
 
 **Interfaces:**
@@ -654,7 +718,10 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - A route not in the allowlist adds no series.
   - Lint flags Prometheus retention over 15 days.
 - [ ] **Step 2:** Run. Expect FAIL.
-- [ ] **Step 3:** Implement. Counters live in memory and reset on restart. The metrics endpoints are only on the private listeners. `alerts.md` says what each alert means and the first three things to check.
+- [ ] **Step 3:** Implement. Counters live in memory and reset on restart. The metrics endpoints are only on the private metrics listeners. `alerts.md` says what each alert means and the first three things to check. Also:
+  - Prometheus, Alertmanager and the exporters bind their web UIs and APIs to the private interface or loopback only, never a public address.
+  - postgres_exporter runs with its statement-statistics collector off (query text) and without any collector that reads `pg_stat_replication` or `pg_stat_activity.client_addr` (address labels); the exact flag names are checked against v0.20.1's `--help` and listed in the commit. A test scrape on staging is run through `findIpAddresses`. node_exporter keeps its default collectors (none labels a remote address).
+  - Alert messages carry only the alert name and fixed labels. With D12 (b), ntfy's phone apps wake through Google's or Apple's push services (and ntfy.sh's relay for iOS), which see that an alert was sent and when; `alerts.md` says so.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
 - [ ] **Step 5: Verify on staging:** stop `x2f-api` and see the alert reach the D12 channel within 3 minutes; stop the monitoring host and see the dead-man's switch alert.
 - [ ] **Step 6:** Commit `feat(ops): aggregate-only metrics, alert rules and owner alert routing`.
@@ -676,6 +743,9 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
     - returns the sha256 CSP source of that import map.
   - `sriPlugin(): Plugin` writes `dist/csp-hashes.json` (`{"scriptHashes":[…]}`).
   - `cspFor(profile, scriptHashes)` adds them to `script-src`.
+  - **Limits the task must close or record:**
+    - Import maps are per document. A module **worker** (the escrow worker, which holds the per-trade keys) does not use the page's import map, and SRI does not apply to `new Worker(url)`. So the worker and everything it imports are not covered by the steps above. The task makes the worker one self-contained file (no further chunk imports), and the page loads it by `fetch(url, { integrity })` and starts it from a `blob:` URL (`worker-src 'self' blob:`), or records in `plan-6-review.md` why another way is equivalent. The worker fetches its `.wasm` with `fetch(url, { integrity })`.
+    - A browser without import-map `integrity` support ignores it silently, and lazily loaded chunks are then unchecked there. Record the browser versions with support (Tor Browser's Firefox ESR base included) in `plan-6-review.md`.
 
 - [ ] **Step 1: Write the failing tests.**
   - `sri.test.ts`: given a fixture HTML and files, every tag has the right sha384; the import map lists every `.js` file in `files`; the returned hash equals `sha256` of the inserted script's text; a file missing from `files` throws.
@@ -683,6 +753,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - `integrity.spec.ts` (Playwright, phone size):
     - The production build loads with zero CSP or SRI console errors.
     - Flipping one byte in a lazily loaded chunk after the build makes loading that route fail with an integrity error, and nothing from the chunk runs.
+    - Flipping one byte in the escrow worker file, and separately in the `.wasm` it loads, stops the worker from starting, and the trade screen shows an error instead of running it.
     - **Review Focus 5:** with JavaScript disabled, the page shows the noscript text "X2F needs JavaScript. In Tor Browser, choose the Safer security level, not Safest." `// COPY-UNSIGNED`.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -702,10 +773,12 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
   - `manifest(dir): { commit: string; files: Record<string, string> }` (sha256 hex per file, sorted keys).
   - The release manifest is signed by the owner with the D15 key (`gpg --detach-sign --armor`) off the server.
   - `verifyLive(baseUrl: string, manifest, fetchImpl?): Promise<{ ok: boolean; mismatched: string[] }>` fetches `index.html` and every manifest file, plus every asset `index.html` references. Anything not in the manifest is a mismatch.
+  - **The served `index.html` is not the built one:** Task 3's `serveWeb` inserts the per-profile `<meta name="x2f-origins">`. So the manifest also lists each site profile's relay and node origins (`sites`), and `verifyLive` checks that the page has exactly one such meta tag, that its content equals the profile for `baseUrl`, and that the page with that one tag removed is byte-identical to the built `index.html`.
+  - `verifyLive` also checks the response's `content-security-policy` header equals `cspFor(profile, scriptHashes)` for that profile: SRI hashes are worthless if the CSP is loosened, and the CSP comes from the server, not the build.
 
 - [ ] **Step 1: Write the failing tests.**
   - `manifest` is stable under file order and timestamps.
-  - `verifyLive`, against a local fixture server, returns `ok` for an exact copy, and names the file for: a changed byte, an extra script tag pointing at an unlisted file, and a missing file.
+  - `verifyLive`, against a local fixture server, returns `ok` for an exact copy (with the origins meta tag inserted), and names the file for: a changed byte, an extra script tag pointing at an unlisted file, a missing file, a second or altered origins meta tag, and a loosened CSP header.
 - [ ] **Step 2:** Run. Expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`. Expect PASS.
@@ -713,7 +786,7 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 - [ ] **Step 6:** `release.md`:
   - build, compare with a second independent build, sign, publish (the site, the repo's release page, and the hash in the FAQ);
   - the monitoring host runs `verifyLive` every 15 minutes over Tor and clearnet (the Task 12 alert);
-  - the web app is not a strong defence against a compromised server (gap G10): large trades are nudged to the native app (Task 20).
+  - the web app is not a strong defence against a compromised server (gap G10): a compromised server can serve altered code to chosen users only and the clean build to the monitor, so `verifyLive` catches mass tampering, not targeted tampering. Large trades are nudged to the native app (Task 20).
 - [ ] **Step 7:** Commit `feat(release): reproducible web build, signed manifest, live integrity check`.
 
 ## Part E — Account and escrow hardening
@@ -862,7 +935,7 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 - Consumes: Plan 3 `useEscrow`, which resumes every stored trade on load. Here it is exposed as `resumeAll(): Promise<void>`.
 - Produces:
   - `startResume(app: Pick<AppPlugin, 'addListener'>, resumeAll, clock): () => void` calls `resumeAll()` on every `appStateChange` to `isActive: true` and on `resume`. Calls are debounced so overlapping events run it once. A run still in flight is not restarted.
-  - The bundled app carries the same CSP as the web (a meta tag from the same `cspFor`, with Task 13's hashes).
+  - The bundled app carries the same CSP as the web (a meta tag from the same `cspFor`, with Task 13's hashes). In the app, `'self'` is `https://localhost` or `capacitor://localhost`, so `connect-src` must also name the API origin, and the `x2f-origins` meta tag that `serveWeb` inserts on the web (Task 3) is written into the bundled `index.html` at app build time from the release's site profile.
   - `webDir: '../web/dist'`; app ids `org.x2f.app` (placeholder until D22).
   - The quote screen shows, for trades at or above the large-trade limit (the Plan 4 setting) and only in the web build, "For large trades, the X2F app is safer than the website." with a link to the downloads page. `// COPY-UNSIGNED`
 
@@ -883,7 +956,7 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 ### Task 21: Passkeys, security keys and Tor in the native apps (and own node if D19 = a)
 
 **Files:**
-- Modify: `apps/native/src/*`, `apps/native/{android,ios}` as Task 19 decided; `apps/api/src/config.ts` (the native app's origins in `X2F_ORIGINS` and the `rpIdFor` mapping: native apps use the clearnet RP ID through associated domains); the Settings screen (D19)
+- Modify: `apps/native/src/*`, `apps/native/{android,ios}` as Task 19 decided; `apps/api/src/config.ts` (the native app's origins in `X2F_ORIGINS` and the `rpIdFor` mapping: native apps use the clearnet RP ID through associated domains); the Settings screen (D19). Note: a passkey made through Android's native Credential Manager reports the origin `android:apk-key-hash:<hash of the signing certificate>`, which is not a URL origin and which `X2F_ORIGINS`'s parser refuses. If Task 19 picks native passkeys, WebAuthn's expected origins become a separate list (`X2F_WEBAUTHN_NATIVE_ORIGINS`) checked only by the WebAuthn verify step, never by the CSRF `Origin` check.
 - Test: `apps/native/test/*`, `apps/api/test/webauthn.test.ts`
 
 - [ ] **Step 1: Write the failing tests:**
@@ -984,7 +1057,7 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 
 **Files:**
 - Create: `docs/security/plan-6-review.md`
-- Modify: `docs/superpowers/plans/2026-10-15-roadmap.md` (the Plan 6 row → built), `docs/security/plan-2-review.md` (the ASVS 2.8.2 row → Met if D4 = a or b; F1 → fixed in front)
+- Modify: `docs/superpowers/plans/2026-10-15-roadmap.md` (the Plan 6 row → built), `docs/security/plan-2-review.md` (the ASVS 2.8.2 row → Met if D4 = a or b; F1 → mitigated in front, not fixed)
 
 - [ ] **Step 1:** The lead runs Claude Security from the main session over `apps/`, `packages/`, `tools/` and `deploy/`. It cannot run inside a subagent (Plan 2 review). Also run Semgrep with `deploy` included, `npm audit --omit=dev`, and the `security-review` skill on the branch.
 - [ ] **Step 2:** Walk ASVS 4.0 Level 3 chapters V1 (architecture), V6.4 (secret management: 6.4.1 and 6.4.2 key vault), V7 (logging: no sensitive data, no IPs), V9 (communications), V10.3 (deployed-code integrity), V14 (configuration, build and dependencies, headers) requirement by requirement, in the format of `plan-2-review.md`.
@@ -993,7 +1066,9 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
   - from outside, scan the front host (only 80 and 443 open);
   - from the app host, try to reach `x2f_moderation` as `x2f_api` (refused);
   - grep 7 days of staging logs on every host with `findIpAddresses` (empty apart from the allowlist);
-  - confirm that HAProxy's runtime offers no way to dump stick tables.
+  - confirm that HAProxy's runtime offers no way to dump stick tables (no `stats socket`, no master CLI);
+  - on every host, `last -i` and `lastb -i` are empty, `rsyslog` is not installed, and `/var/log` holds nothing older than journald's 7 days;
+  - `findIpAddresses` over one Prometheus scrape of every target.
 - [ ] **Step 5:** Record the findings and fixes, the accepted residuals with the owner's answers (gaps G1–G16; Plan 4 A9 not built), and the items for the external auditors. Fix every High and Medium finding before closing.
 - [ ] **Step 6:** Commit `docs(security): plan 6 review, roadmap row`.
 
@@ -1002,7 +1077,7 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 ## Spec gaps found while planning (for the owner; nothing decided here)
 
 - **G1 Backups keep deleted data.** The spec's retention rules (4.1) do not mention backups. Deleted data survives in encrypted backups for up to D6 days. The Terms and FAQ should say so.
-- **G2 IPs in memory.** Per-source limits need the proxy to see source addresses (or circuit ids). They are held in memory for up to 10 minutes and never written. Spec 4.1 says "no IP addresses are logged", which stays true, but the FAQ should be exact about it.
+- **G2 IPs in memory.** Per-source limits need the proxy to see source addresses (or circuit ids). They are held in memory for up to 10 minutes and never written. Spec 4.1 says "no IP addresses are logged", which stays true, but the FAQ should be exact about it. Anyone with root on the front host can still read them from HAProxy's memory while they last.
 - **G3 Passkeys are per address.** A passkey made on the clearnet site does not work on the `.onion` site, and the reverse (different RP IDs). Whether Tor Browser supports WebAuthn at all is checked in Task 19. The spec reads as if both just work.
 - **G4 Native app sessions.** The native apps' origins do not fit the `SameSite=Strict` cookie and exact-`Origin` design (Task 19). Spec 6.2 only mentions linking the domain for passkeys.
 - **G5 iOS builds cannot be reproducible.** Apple re-signs and encrypts App Store builds. Spec 6.5 says "signed, reproducible native builds"; Android can be reproducible, iOS only signed.
@@ -1017,3 +1092,4 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 - **G14 Monitoring and owner alerts for infrastructure** are not in the spec, which only covers price health alerts (11.6).
 - **G15 "Require a security key to log in" plus lost keys:** the spec does not say whether recovery codes still work (D18).
 - **G16 PGP-signed rulings and encrypted staff alerts** (Plan 4 A9, deferred to Plan 6) are not built here, because security-key taps already authorize rulings. Confirm they can be dropped.
+- **G17 Upstream networks can log addresses.** X2F writes no IPs, but the hosting provider (flow and DDoS telemetry), a cloud provider (flow logs, if D1 = c) or a scrubbing service (D9 c) may record source addresses of clearnet visitors, outside X2F's control. Only the onion avoids this. The FAQ and Terms should say so, in the lawyer's words.
