@@ -95,7 +95,8 @@ async function addRecoveryCodes(accountId: string, count: number, used = false):
 }
 
 interface Me {
-  username: string;
+  displayName: string;
+  loginNameSet: boolean;
   kind: string;
   level: string;
   holdUntil: string | null;
@@ -113,12 +114,21 @@ async function me(b: Browser): Promise<Me> {
 }
 
 describe('GET /v1/account/me', () => {
+  it('an account from before login names reads loginNameSet: false', async () => {
+    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer1' });
+    const b = await loggedIn(id);
+    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', loginNameSet: false });
+  });
+
   it('describes the account; a password-only account is told to add an authenticator and a backup', async () => {
     const { id, username } = await account();
     await addPassword(id);
     const b = await loggedIn(id);
+    const res = await b.get('/v1/account/me');
+    // The private login name is never sent, not even to its owner.
+    expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      username, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
+      displayName: `D${username}`, loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], payoutWait: { enabled: false, offAt: null }, termsCurrent: true,
     });
     await addTotp(id);

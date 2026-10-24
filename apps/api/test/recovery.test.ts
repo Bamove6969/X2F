@@ -78,7 +78,7 @@ async function newCodes(b: Browser): Promise<string[]> {
 }
 
 const backup = (b: Browser, username: string, kind: 'totp' | 'recovery-code', code: string) =>
-  b.post('/v1/login/backup', { username, kind, code, deviceLabel: 'Backup browser' });
+  b.post('/v1/login/backup', { loginName: username, kind, code, deviceLabel: 'Backup browser' });
 
 async function sessionRow(b: Browser) {
   const token = b.cookies[SESSION_COOKIE]!;

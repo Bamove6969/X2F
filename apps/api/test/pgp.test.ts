@@ -915,6 +915,43 @@ describe('review fixes', () => {
     expect((await loginStart(new Browser(), k)).json()).toEqual(sixth.json());
   });
 
+  it('a second start supersedes the first the same way for a known and an unknown key', async () => {
+    const known = await genKey();
+    await registerPgp(uniqueName(), known);
+    const stranger = await genKey();
+    const outcome = async (k: Pair) => {
+      const b = new Browser();
+      const first = await loginStart(b, k);
+      const second = await loginStart(b, k);
+      expect(second.statusCode).toBe(200);
+      const res = await loginFinish(b, first.json().challengeId, 'AAAA-AAAA-AAAA');
+      return { status: res.statusCode, body: res.json() };
+    };
+    const a = await outcome(known);
+    const b = await outcome(stranger);
+    expect(a).toEqual({ status: 400, body: { error: 'challenge-expired' } });
+    expect(b).toEqual(a);
+  });
+
+  it('the cap of 3 open anonymous challenges evicts the same way for a known and an unknown key', async () => {
+    const known = await genKey();
+    await registerPgp(uniqueName(), known);
+    const stranger = await genKey();
+    const outcome = async (k: Pair) => {
+      const starts = [];
+      for (let i = 0; i < 4; i++) {
+        setNow(new Date(now.getTime() + 1000));
+        starts.push(await loginStart(new Browser(), k));
+      }
+      const oldest = await loginFinish(new Browser(), starts[0]!.json().challengeId, 'AAAA-AAAA-AAAA');
+      const newest = await loginFinish(new Browser(), starts[3]!.json().challengeId, 'AAAA-AAAA-AAAA');
+      return [oldest.json(), newest.json()];
+    };
+    const a = await outcome(known);
+    expect(a).toEqual([{ error: 'challenge-expired' }, { error: 'code-invalid' }]);
+    expect(await outcome(stranger)).toEqual(a);
+  });
+
   it('M1: a challenge started on one origin cannot be finished from another', async () => {
     const b = new Browser();
     const key = await genKey();

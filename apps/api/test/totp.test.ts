@@ -74,7 +74,7 @@ async function enrol(b: Browser): Promise<string> {
 }
 
 const passwordLogin = (b: Browser, username: string) =>
-  b.post('/v1/login/password', { username, password: GOOD, deviceLabel: 'Test browser' });
+  b.post('/v1/login/password', { loginName: username, password: GOOD, deviceLabel: 'Test browser' });
 
 function chiSquare(counts: number[], total: number): number {
   const expected = total / counts.length;
@@ -85,7 +85,7 @@ describe('TOTP enrolment', () => {
   it('returns an otpauth URI and never stores the secret in the clear', async () => {
     const { id, username, b } = await trader();
     const s = await enrolStart(b);
-    expect(s.otpauthUri.startsWith(`otpauth://totp/X2F:${username}?`)).toBe(true);
+    expect(s.otpauthUri.startsWith(`otpauth://totp/X2F:D${username}?`)).toBe(true);
     expect(s.otpauthUri).toContain('digits=6&period=30');
     expect(s.otpauthUri).toContain('algorithm=SHA1');
     const raw = Buffer.from(Secret.fromBase32(s.secret).bytes);
@@ -280,7 +280,7 @@ describe('password login with TOTP (second factor)', () => {
     const first = new Browser(app);
     const { pendingId } = (await passwordLogin(first, username)).json() as { pendingId: string };
     const other = new Browser(app);
-    await other.post('/v1/login/pgp/start', { username: 'nobody-here' }); // a device cookie of its own
+    await other.post('/v1/login/pgp/start', { key: 'none' }); // a device cookie of its own
     const res = await other.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'challenge-expired' });
@@ -317,7 +317,7 @@ describe('password login with TOTP (second factor)', () => {
 
     // PGP is never throttled by the totp key.
     const owner = new Browser(app);
-    const start = await owner.post('/v1/login/pgp/start', { username });
+    const start = await owner.post('/v1/login/pgp/start', { key: key.publicKey });
     const { challengeId, encryptedMessage } = start.json() as { challengeId: string; encryptedMessage: string };
     const code = codeOf(await decrypt(encryptedMessage, key.privateKey));
     const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });
@@ -409,7 +409,7 @@ describe('no patterns in TOTP secrets (R9)', () => {
     expect(chiSquare(counts, 20_000)).toBeLessThan(345);
   }, 120_000);
 
-  it('the same username at different times never gets the same secret', async () => {
+  it('the same login name at different times never gets the same secret', async () => {
     const username = name('same');
     const first = await seedAccount(deps, { loginName: username });
     const b1 = new Browser(app);
