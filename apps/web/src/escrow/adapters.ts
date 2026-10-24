@@ -153,3 +153,43 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     paidAt: typeof v.paidAt === 'string' ? v.paidAt : null,
   };
 }
+
+// ── Tasks 6 and 8: the routes the runtime calls ─────────────────────────────
+
+/**
+ * The escrow runtime's API calls over a same-origin fetch (the worker's own; no redirects, the
+ * page's api() handles Terms and wallet redirects). GUESS for the Task 8 routes' answers:
+ * identity 200/201 (409 `identity-exists` counts as registered), attestation 200
+ * `{ attestation, sig }` or 202 while it is not ready.
+ */
+export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i)) {
+  const path = (code: string, rest = ''): string => `/v1/trades/${encodeURIComponent(code)}${rest}`;
+  const call = async (url: string, init: RequestInit = {}): Promise<Response> =>
+    f(url, { ...init, credentials: 'same-origin', redirect: 'error', headers: { accept: 'application/json', ...(init.body ? { 'content-type': 'application/json' } : {}) } });
+  const fail = async (res: Response): Promise<never> => {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    throw Object.assign(new Error(`api ${res.status}`), { status: res.status, code: typeof body?.error === 'string' ? body.error : 'internal' });
+  };
+  return {
+    async getTrade(code: string): Promise<unknown> {
+      const res = await call(path(code));
+      return res.ok ? res.json() : fail(res);
+    },
+    async registerIdentity(code: string, body: { signPublic: string; boxPublic: string; proof: string }): Promise<void> {
+      const res = await call(path(code, '/identity'), { method: 'POST', body: JSON.stringify(body) });
+      if (res.ok) return;
+      if (res.status === 409) {
+        const b = (await res.clone().json().catch(() => null)) as { error?: unknown } | null;
+        if (b?.error === 'identity-exists') return;
+      }
+      await fail(res);
+    },
+    async getAttestation(code: string): Promise<{ attestation: unknown; sig: unknown } | null> {
+      const res = await call(path(code, '/attestation'));
+      if (res.status === 202) return null;
+      if (!res.ok) return fail(res);
+      const b = (await res.json()) as { attestation?: unknown; sig?: unknown } | null;
+      return { attestation: b?.attestation, sig: b?.sig };
+    },
+  };
+}
