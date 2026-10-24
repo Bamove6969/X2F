@@ -130,6 +130,35 @@ describe('escrowStore', () => {
     await expect(again.password(CODE_A)).rejects.toMatchObject({ code: 'bad-record' });
   });
 
+  it('AAD binding: trade A’s wallet password and record written into trade B’s slots do not open as B’s', async () => {
+    const idb = new IDBFactory();
+    const store = await openEscrowStore({ indexedDB: idb });
+    await store.save(record(CODE_A, 3));
+    await store.save(record(CODE_B, 5));
+    const pwA = await store.createPassword(CODE_A);
+    const pwB = await store.createPassword(CODE_B);
+    expect(pwA).not.toBe(pwB);
+    store.close();
+    const secretA = (await raw(idb, SECRETS)).find((x) => x.key === CODE_A)!.value;
+    const recordA = (await raw(idb, TRADES)).find((x) => x.key === CODE_A)!.value;
+    const db = await new Promise<IDBDatabase>((res) => {
+      const r = idb.open(DB_NAME);
+      r.onsuccess = () => res(r.result);
+    });
+    const tx = db.transaction([TRADES, SECRETS], 'readwrite');
+    tx.objectStore(SECRETS).put(secretA, CODE_B);
+    tx.objectStore(TRADES).put(recordA, CODE_B);
+    await new Promise((res) => (tx.oncomplete = res));
+    db.close();
+    const again = await openEscrowStore({ indexedDB: idb });
+    await expect(again.password(CODE_B)).rejects.toMatchObject({ code: 'bad-record' });
+    await expect(again.createPassword(CODE_B)).rejects.toMatchObject({ code: 'bad-record' }); // never a fresh one over it either
+    await expect(again.load(CODE_B)).rejects.toMatchObject({ code: 'bad-record' });
+    // A's own slots still open as A's.
+    expect(await again.password(CODE_A)).toBe(pwA);
+    expect((await again.load(CODE_A))?.code).toBe(CODE_A);
+  });
+
   it('delete removes the record and the wallet password together', async () => {
     const store = await openEscrowStore({ indexedDB: new IDBFactory() });
     await store.save(record(CODE_A, 1));
