@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
-import { generateIdentity, type Identity } from '@x2f/protocol';
+import type { Identity } from '@x2f/protocol';
 import {
   attestationBytes,
   channelFor,
@@ -90,9 +90,18 @@ async function signedInject(
   return internal.inject({ method, url: path, headers, ...(payload === undefined ? {} : { payload }) });
 }
 
-/** The moderation service's job, done here with @x2f/trade only (the API test never imports @x2f/moderation). */
+/**
+ * Public keys for a stand-in moderator identity. The separation check forbids apps/api from naming
+ * the protocol's identity generator (tests included), so this test makes a key pair with libsodium.
+ */
+function stubModKeys(): { signPublic: string; boxPublic: string } {
+  const kp = sodium.crypto_sign_keypair();
+  return { signPublic: sodium.to_hex(kp.publicKey), boxPublic: sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(kp.publicKey)) };
+}
+
+/** The moderation service's job, done here with the shared trade package only (no moderation code in the API). */
 async function attestAndPost(code: string, buyer: Identity, seller: Identity): Promise<Attestation> {
-  const mod = await generateIdentity();
+  const mod = stubModKeys();
   const attestation: Attestation = {
     v: 1,
     trade: code,
@@ -217,7 +226,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
     await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
 
-    const mod = await generateIdentity();
+    const mod = stubModKeys();
     const attestation: Attestation = {
       v: 1,
       trade: code,

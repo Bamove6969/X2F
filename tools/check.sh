@@ -13,6 +13,8 @@ case "$NODE_V" in
 esac
 [ -x "$SEMGREP" ] || { echo "check: missing $SEMGREP (see docs/dev-setup.md)" >&2; exit 1; }
 npm run typecheck
+# Plan 3 Task 8: the API and web never reach moderation secrets; moderation never listens.
+npm run separation-check
 npm test
 npm run audit
 npm run semgrep
