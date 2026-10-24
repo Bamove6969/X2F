@@ -99,6 +99,32 @@ export interface EscrowRuntime {
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
+/** Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone before settling. */
+const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested'];
+
+/**
+ * Whether the trade view still supports a choice the user tapped. While the trade is settling,
+ * only the kind it is settling; otherwise mutual cancel needs a standing proposal, the seller's
+ * release needs secured or paid, and each refund its own state. A tap the view no longer
+ * supports gives way to the automatic choice (a buyer who proposed a cancel and then paid
+ * co-signs the release).
+ */
+export function viewSupports(kind: SettleKind, v: Pick<EscrowTradeView, 'state' | 'settling' | 'cancelProposedBy'>): boolean {
+  if (v.state === 'settling') return v.settling === kind;
+  switch (kind) {
+    case 'mutual-cancel':
+      return v.cancelProposedBy !== null && CANCEL_STATES.includes(v.state);
+    case 'buyer-cancel':
+      return BUYER_CANCEL_STATES.includes(v.state);
+    case 'release':
+      return v.state === 'secured' || v.state === 'paid';
+    case 'auto-refund':
+      return v.state === 'refund_requested';
+    case 'lapse-refund':
+      return v.state === 'lapsed';
+  }
+}
 
 const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
 const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
@@ -504,11 +530,17 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           changed = true;
         }
       }
-      // Automatic intents never replace one the user chose.
-      if (!r.intent || (r.intent.auto && !r.intent.done)) {
+      // A tapped choice holds while the view supports it (or once it settled); otherwise the
+      // automatic choice takes over, so an old tap never blocks the outcome the trade reached.
+      const tapped = r.intent !== null && !r.intent.auto;
+      const tapHolds = tapped && (r.intent!.done || viewSupports(r.intent!.kind, v));
+      if (!tapHolds && !(r.intent?.auto && r.intent.done)) {
         const kind = this.autoKind(v);
-        if (kind && r.intent?.kind !== kind) {
+        if (kind && (tapped || r.intent?.kind !== kind)) {
           r.intent = { kind, outcome: null, done: false, auto: true };
+          changed = true;
+        } else if (!kind && tapped) {
+          r.intent = null;
           changed = true;
         }
       }
@@ -542,24 +574,37 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     async act(a: EscrowAction): Promise<void> {
       const r = this.rec;
       if (!r || this.error) throw new Error('escrow not running');
+      // A tap must fit the trade as the API shows it now: the page records the event with the
+      // API first (propose or accept the cancel, start the release), then asks for the signature.
+      const fresh = async (kind: SettleKind): Promise<void> => {
+        await this.loadView();
+        if (!this.view || !viewSupports(kind, this.view)) throw new Error(`escrow: the trade does not allow ${kind} now`);
+      };
       const user = (kind: SettleKind): void => {
         r.intent = { kind, outcome: null, done: false, auto: false };
       };
       switch (a.type) {
         case 'release':
           if (r.role !== 'seller') throw new Error('only the seller releases');
+          await fresh('release');
           user('release');
           break;
-        case 'build-refund':
+        case 'build-refund': {
           if (r.role !== 'seller') throw new Error('only the seller builds a refund');
-          user(this.view?.state === 'lapsed' ? 'lapse-refund' : 'auto-refund');
+          await this.loadView();
+          const kind = this.view?.state === 'lapsed' ? 'lapse-refund' : 'auto-refund';
+          await fresh(kind);
+          user(kind);
           break;
+        }
         case 'buyer-cancel':
           if (r.role !== 'buyer') throw new Error('only the buyer cancels alone');
+          await fresh('buyer-cancel');
           await this.signals?.send('trade.cancel');
           user('buyer-cancel');
           break;
         case 'propose-cancel-sign':
+          await fresh('mutual-cancel');
           user('mutual-cancel');
           break;
         case 'signal':

@@ -122,6 +122,8 @@ export interface EscrowTradeView {
   centsPerXmr: bigint;
   maxFiatCents: bigint;
   settling: SettleKind | null;
+  /** GUESS (Task 2's Trade field): who has a mutual-cancel proposal standing, if anyone. */
+  cancelProposedBy: 'buyer' | 'seller' | null;
   paidAt: string | null;
 }
 
@@ -150,6 +152,7 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     centsPerXmr,
     maxFiatCents,
     settling,
+    cancelProposedBy: v.cancelProposedBy === 'buyer' || v.cancelProposedBy === 'seller' ? v.cancelProposedBy : null,
     paidAt: typeof v.paidAt === 'string' ? v.paidAt : null,
   };
 }

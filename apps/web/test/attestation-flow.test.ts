@@ -295,6 +295,49 @@ describe('settling', () => {
     await expect(t.seller.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
   });
 
+  it('a buyer who tapped propose-cancel and then paid co-signs the release once the seller releases', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'secured', cancelProposedBy: 'buyer' });
+    await t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' });
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
+    // The buyer pays anyway (its proposal stands, Task 2), then the seller releases.
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'buyer' });
+    await t.seller.runtime.act(CODE, { type: 'release' });
+    t.state.view = tradeView({ state: 'settling', settling: 'release', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'buyer' });
+    await until(() => t.parties.settles.some((s) => s.role === 'buyer' && s.o.builder === 'seller'));
+    const release = t.parties.settles.filter((s) => s.role === 'buyer').at(-1)!;
+    expect(release.o).toEqual(t.parties.settles.find((s) => s.role === 'seller')!.o);
+    expect(release.o.to[0]).toEqual({ address: ADDR.buyer, amountAtomic: AMOUNT });
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
+  });
+
+  it('a tapped mutual cancel stays while the proposal stands, and falls back once it is withdrawn', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'seller' });
+    await t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' });
+    await until(() => t.parties.settles.some((s) => s.role === 'buyer' && s.o.cosigner === 'seller'));
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
+    // The proposal is gone (withdrawn): the standing release co-sign comes back.
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: null });
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release');
+    await until(() => t.parties.settles.at(-1)?.role === 'buyer' && t.parties.settles.at(-1)?.o.builder === 'seller');
+  });
+
+  it('a tap the trade view does not support is refused and changes nothing', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release');
+    // No cancel proposed and not settling a mutual cancel: the tap has nothing to sign.
+    await expect(t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' })).rejects.toThrow();
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
+    // The seller's release tap outside secured/paid (here: refund_requested) is refused too.
+    t.state.view = tradeView({ state: 'refund_requested' });
+    await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
+  });
+
   it('lapsed with funds: the seller builds the lapse refund automatically and the buyer co-signs it', async () => {
     const t = await ready();
     const part = 400_000_000_000n;
