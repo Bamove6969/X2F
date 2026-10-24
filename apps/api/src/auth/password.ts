@@ -164,7 +164,8 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   const { loginName, password, deviceLabel } = strings(req.body, ['loginName', 'password', 'deviceLabel'] as const);
   const name = loginNameLookup(deps.config, loginName);
   // A malformed name cannot match an account: it takes the unknown-account path (dummy verify).
-  const found = name.key !== null ? await passwordFor(deps, { loginKey: name.key }) : { accountId: null, hash: DUMMY_HASH, real: false };
+  // Always one lookup: '' matches no login key, so a malformed name costs the same queries.
+  const found = await passwordFor(deps, { loginKey: name.key ?? '' });
   const key = await throttleKey(deps, req, 'password-login', found.accountId !== null ? { id: found.accountId } : { nameTag: name.tag });
   // The try is claimed only once an Argon2 slot is held, so a 503 `busy` never uses one up.
   const outcome = await ARGON2_SLOTS.run(async () => {

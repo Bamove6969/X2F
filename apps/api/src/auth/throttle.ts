@@ -10,6 +10,24 @@ import { deviceHash, isTrusted } from './device.js';
  */
 export type ThrottledMethod = 'password' | 'password-login' | 'totp' | 'recovery-code';
 
+/** Match no row: the stand-ins for "no account" and "no device cookie" in lookups that must always run. */
+export const NIL_UUID = '00000000-0000-0000-0000-000000000000';
+const ZERO32 = Buffer.alloc(32);
+
+/**
+ * The alert for a streak that reached its lock, or the same amount of database work when there is
+ * no account or the streak was already alerted (I-1): one update flips `alerted`, then either the
+ * alert insert or an update of the alerts table that matches no row.
+ */
+async function lockAlert(deps: Pick<Deps, 'db' | 'clock'>, key: string, accountId: string | null, method: string): Promise<void> {
+  const flipped = await deps.db.query('update login_throttle set alerted = true where key = $1 and alerted = false', [key]);
+  if ((flipped.rowCount ?? 0) > 0 && accountId !== null) {
+    await addAlert(deps.db, accountId, 'login-locked', { method }, deps.clock());
+  } else {
+    await deps.db.query('update alerts set seen_at = seen_at where account_id = $1', [NIL_UUID]);
+  }
+}
+
 const FREE_FAILURES = 3;
 const LOCK_AT = 10;
 const MAX_WAIT_MS = 30_000;
@@ -27,9 +45,12 @@ export async function throttleKey(
   method: ThrottledMethod,
   account: { id: string } | { nameTag: string },
 ): Promise<string> {
-  if (!('id' in account)) return `${method}:name:${account.nameTag}:anon`;
+  // The trusted-device lookup always runs, for no account and no cookie too, so the query count
+  // never tells a known login name from an unknown one (I-1).
   const hash = deviceHash(req);
-  const trusted = hash !== null && (await isTrusted(deps, account.id, hash));
+  const found = await isTrusted(deps, 'id' in account ? account.id : NIL_UUID, hash ?? ZERO32);
+  if (!('id' in account)) return `${method}:name:${account.nameTag}:anon`;
+  const trusted = hash !== null && found;
   return `${method}:${account.id}:${trusted ? `dev:${hash.toString('hex')}` : 'anon'}`;
 }
 
@@ -87,12 +108,9 @@ export async function throttleFail(deps: Pick<Deps, 'db' | 'clock'>, key: string
      returning failures`,
     [key, now, since],
   );
-  if ((rows[0]?.failures ?? 0) < LOCK_AT || accountId === null) return;
+  if ((rows[0]?.failures ?? 0) < LOCK_AT) return;
   // Only the caller that flips `alerted` adds the alert, so parallel failures add one.
-  const flipped = await deps.db.query('update login_throttle set alerted = true where key = $1 and alerted = false', [key]);
-  if ((flipped.rowCount ?? 0) > 0) {
-    await addAlert(deps.db, accountId, 'login-locked', { method: key.slice(0, key.indexOf(':')) }, now);
-  }
+  await lockAlert(deps, key, accountId, key.slice(0, key.indexOf(':')));
 }
 
 /** Clears the streak after a success. */
@@ -155,9 +173,8 @@ export async function claimPasswordTry(deps: Pick<Deps, 'db' | 'clock'>, key: st
  * person who typed it.
  */
 export async function passwordMiss(deps: Pick<Deps, 'db' | 'clock'>, key: string, tryNumber: number, accountId: string | null): Promise<void> {
-  if (tryNumber < QUIET_LOCK_AT || accountId === null) return;
-  const flipped = await deps.db.query('update login_throttle set alerted = true where key = $1 and alerted = false', [key]);
-  if ((flipped.rowCount ?? 0) > 0) await addAlert(deps.db, accountId, 'login-locked', { method: 'password' }, deps.clock());
+  if (tryNumber < QUIET_LOCK_AT) return;
+  await lockAlert(deps, key, accountId, 'password');
 }
 
 /** After about this many password-login misses in a row, the page sends the visitor away (Plan 3 builds the redirect). */
