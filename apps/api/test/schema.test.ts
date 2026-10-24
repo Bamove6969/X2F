@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { chmod, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { chmod, copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type pg from 'pg';
@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
-import { migrate } from '../src/db/migrate.js';
+import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
 
@@ -29,11 +29,31 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
+    }
+  });
+
+  it('009: an existing username becomes the display name, and the account gets no login name', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    try {
+      const all = await readdir(MIGRATIONS_DIR);
+      for (const f of all.filter((n) => n < '009')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      await db.query(
+        `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ('Old.Trader', 'old.trader', 'trader', $1, now())`,
+        [randomBytes(32)],
+      );
+      expect(await migrate(db)).toEqual(['009_login_names.sql']);
+      const { rows } = await db.query('select display_name, display_key, login_name, login_key from accounts');
+      expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: null, login_key: null }]);
+    } finally {
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 });
@@ -56,10 +76,11 @@ describe('schema', () => {
     expect(bad).toEqual([]);
   });
 
-  const insertAccount = (kind: string, name: string) =>
+  const insertAccount = (kind: string, name: string, login: string | null = `${name}.login`) =>
     db.query(
-      `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ($1, $2, $3, $4, now())`,
-      [name, name.toLowerCase(), kind, randomBytes(32)],
+      `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+       values ($1, $2, $3, $4, $5, $6, now())`,
+      [name, name.toLowerCase(), login, login?.toLowerCase() ?? null, kind, randomBytes(32)],
     );
 
   it('allows only one owner account', async () => {
@@ -69,10 +90,28 @@ describe('schema', () => {
     await insertAccount('trader', 'Trader02');
   });
 
-  it('refuses unknown account kinds and duplicate username keys', async () => {
+  it('refuses unknown account kinds and duplicate display or login name keys', async () => {
     await expect(insertAccount('admin', 'Someone1')).rejects.toMatchObject({ code: '23514' });
-    await insertAccount('trader', 'Alice123');
-    await expect(insertAccount('trader', 'ALICE123')).rejects.toMatchObject({ code: '23505' });
+    await insertAccount('trader', 'Alice123', 'alice.secret');
+    await expect(insertAccount('trader', 'ALICE123', 'other.secret')).rejects.toMatchObject({
+      code: '23505', constraint: 'accounts_display_key_key',
+    });
+    await expect(insertAccount('trader', 'Bob12345', 'ALICE.secret')).rejects.toMatchObject({
+      code: '23505', constraint: 'accounts_login_key_key',
+    });
+  });
+
+  it('keeps the login name and its key together, and different from the display name', async () => {
+    await expect(insertAccount('trader', 'Carol123', 'CAROL123')).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      db.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Dave1234', 'dave1234', 'dave.login', null, 'trader', $1, now())`,
+        [randomBytes(32)],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await insertAccount('trader', 'Erin1234', null);
+    await insertAccount('trader', 'Fred1234', null);
   });
 });
 
@@ -292,7 +331,7 @@ describe('app', () => {
       app.get('/dup', async () => {
         const insert = () =>
           deps.db.query(
-            `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
+            `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
             [marker, marker.toLowerCase(), randomBytes(32)],
           );
         await insert();

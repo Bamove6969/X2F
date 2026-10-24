@@ -94,7 +94,7 @@ export function loadConfig(env: Env): Config {
 }
 
 /** A purpose-bound key: HKDF-SHA-256 of `serverKey`, info `x2f/<label>`, 32 bytes. */
-export function subkey(config: Config, label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start'): Uint8Array {
+export function subkey(config: Config, label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name'): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }
 

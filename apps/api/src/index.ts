@@ -22,9 +22,10 @@ export {
   requireSession, sessionPolicy, startSession, type AuthContext, type LoginMethod, type SessionLevel,
 } from './auth/sessions.js';
 export {
-  dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
+  QUIET_LOCK_AT, QUIET_LOCK_MS, VISITOR_MISSES_BEFORE_LEAVING, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey,
+  throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
-export { assertTermsAccepted, assertUsername, createAccount } from './accounts.js';
+export { assertNamesFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {
