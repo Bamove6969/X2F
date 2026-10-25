@@ -267,6 +267,12 @@ export async function assertNotDisabled(db: Queryable, accountId: string): Promi
 /**
  * Ending sessions must end their live streams too, so the bus is required (pass `app.events`):
  * a caller cannot forget it and leave a revoked session streaming.
+ *
+ * Call with the pool, or call closeAccount after commit. The streams are ended at once, so with
+ * `db` a client inside a transaction a rollback would leave the sessions live with their streams
+ * gone, and a stream opened before the commit (the session still looks live) would outlive the
+ * revocation. In a transaction, pass a no-op bus and call `app.events.closeAccount` (or
+ * `closeSession`) once it has committed.
  */
 type EndDeps = Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeAccount' | 'closeSession'> };
 
