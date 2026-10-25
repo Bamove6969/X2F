@@ -273,3 +273,57 @@ test('a gift-card method shows the one bold warning (owner, 2026-10-21)', async 
   await f(page).method.selectOption('AMAZON_GIFT_CARD');
   await expect(warning).toBeVisible();
 });
+
+// Phone sizes (spec "Mobile ready at launch", owner 2026-10-25): a small Android, the boards'
+// 390x844 and a large Android. The form scrolls inside the screen while Post offer stays on it,
+// nothing scrolls sideways, and text inputs are at least 16 px (so phones don't zoom into them).
+for (const [width, height] of [
+  [360, 640],
+  [390, 844],
+  [412, 915],
+] as const) {
+  test(`at ${width}x${height} the form fits the phone`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await stub(page);
+    await page.goto('/post?method=ZELLE&currency=EUR');
+    await f(page).fixedMode.check();
+    await fillBoard(page);
+    await expect(f(page).post).toBeInViewport({ ratio: 1 });
+    const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
+    expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
+    const sizes = await page.locator('input, select, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    for (const s of sizes) expect(s).toBeGreaterThanOrEqual(15);
+    await page.getByRole('region', { name: 'Preview' }).scrollIntoViewIfNeeded();
+    await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeInViewport();
+    await expect(f(page).post).toBeInViewport({ ratio: 1 });
+  });
+}
+
+// Phone sizes (spec, owner 2026-10-25: every screen tested at phone sizes): a small Android, the
+// boards' iPhone and a large Android.
+for (const [width, height] of [
+  [360, 740],
+  [390, 844],
+  [412, 915],
+] as const) {
+  test(`at ${width}x${height} the form fits the phone and Post offer is reachable`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await stub(page);
+    await page.goto('/post?method=ZELLE&currency=EUR');
+    await fillBoard(page);
+    await f(page).fixedMode.check();
+    await f(page).fixed.fill('305.10');
+    const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
+    expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
+    await expect(page.locator('[data-primary]')).toHaveCount(1);
+    // Typed fields stay at 16 px so phones do not zoom into them.
+    const sizes = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    expect(sizes.length).toBeGreaterThan(0);
+    for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
+    await f(page).post.scrollIntoViewIfNeeded();
+    await expect(f(page).post).toBeInViewport();
+    const box = await f(page).post.boundingBox();
+    expect(box!.x).toBeGreaterThanOrEqual(0);
+    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
+  });
+}
