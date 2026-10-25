@@ -74,7 +74,11 @@ function marginLine(offer: Offer, copy: BrowseCopy): { text: string; favourable:
 }
 
 function Badges({ offer }: { offer: Offer }) {
-  const [open, setOpen] = useState(false);
+  // A tap or click pins the list open (and closes it again); a mouse hovering also shows it. Touch
+  // pointers are left out of hover, so a tap is not an open (hover) and a close (click) at once.
+  const [pinned, setPinned] = useState(false);
+  const [hover, setHover] = useState(false);
+  const open = pinned || hover;
   const all = badgesOf(offer);
   if (all.length === 0) return null;
   const featured = all.slice(0, FEATURED);
@@ -91,15 +95,21 @@ function Badges({ offer }: { offer: Offer }) {
             className="x2f-offer__more"
             aria-label={`Show all ${all.length} badges`}
             aria-expanded={open}
-            onMouseEnter={() => setOpen(true)}
-            onMouseLeave={() => setOpen(false)}
-            onClick={() => setOpen((o) => !o)}
+            onPointerEnter={(e) => {
+              if (e.pointerType === 'mouse') setHover(true);
+            }}
+            onPointerLeave={(e) => {
+              if (e.pointerType === 'mouse') setHover(false);
+            }}
+            onClick={() => setPinned((p) => !p)}
           >
             +{more}
           </button>
           {open ? (
             <span role="tooltip" className="x2f-offer__tip">
-              <span className="x2f-offer__tip-title">All of {offer.poster.username}'s badges</span>
+              <span className="x2f-offer__tip-title">
+                All of <span data-username>{offer.poster.username}</span>'s badges
+              </span>
               {all.map((b) => (
                 <span key={b.label}>
                   <strong data-tone={b.tone}>{b.label}</strong> · {b.meaning}

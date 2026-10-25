@@ -202,7 +202,10 @@
 }
 
 .x2f-text-button {
-  padding: 0;
+  /* A tap target at least 32 px tall on phones; the negative margin keeps the line box as it was. */
+  display: inline-block;
+  padding: 6px 0;
+  margin: -6px 0;
   border: 0;
   background: transparent;
   color: var(--x2f-monero-ink);
@@ -358,6 +361,10 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--x2f-ink-muted);
+}
+
+.x2f-offer__tip-title [data-username] {
+  text-transform: none;
 }
 
 .x2f-offer__tip strong[data-tone='escrow'] {

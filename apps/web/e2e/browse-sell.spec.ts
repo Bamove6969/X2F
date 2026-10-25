@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { expect, test, type Page, type Request } from '@playwright/test';
 import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
 import { expectParity } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 type Row = { id: string; name: string; group: string; giftCard: boolean; offers: number; bestRate: string | null };
 
@@ -206,3 +207,49 @@ test.describe('/sell/:methodId (SellOffers board)', () => {
     expect(color).toBe(muted);
   });
 });
+
+// Phone sizes (spec "Mobile ready at launch"): both boards at the board's 390x844 and a small
+// Android 360x800, with no sideways scroll, nothing cut off and every control tappable.
+for (const viewport of PHONE_VIEWPORTS) {
+  test.describe(`sell browse on a ${viewport} phone`, () => {
+    test.beforeEach(async ({ page }) => {
+      await setPhone(page, viewport);
+    });
+
+    test('Main: parity and phone layout', async ({ page }) => {
+      await stubApi(page);
+      await page.goto('/sell');
+      await expect(page.locator('main a').first()).toContainText('Zelle');
+      await expectPhoneLayout(page);
+      await expectParity(page, 'Main', { viewport });
+    });
+
+    test('Main with a search that has no match: phone layout', async ({ page }) => {
+      await stubApi(page);
+      await page.goto('/sell');
+      await page.getByRole('searchbox', { name: 'Search payment methods' }).fill('Kuda Pay');
+      await expect(page.getByRole('button', { name: 'Suggest it' })).toBeVisible();
+      await expectPhoneLayout(page);
+    });
+
+    test('SellOffers: parity and phone layout', async ({ page }) => {
+      await stubApi(page);
+      await page.goto('/sell/ZELLE');
+      await expect(page.locator('article')).toHaveCount(3);
+      await expectPhoneLayout(page);
+      await expectParity(page, 'SellOffers', { viewport });
+    });
+
+    test('SellOffers with greyed starter-limit offers and the badge popover open: phone layout', async ({ page }) => {
+      const [mira, nightowl, first] = boardSellOffers();
+      await stubApi(page, { signedIn: true, offers: () => [mira, { ...first!, opensAt: 'building' }, { ...nightowl!, opensAt: 'graduated' }] });
+      await page.goto('/sell/ZELLE');
+      await expect(page.locator('article[data-opens-at="building"]')).toContainText('Opens at Building');
+      await page.getByRole('button', { name: 'Show all 5 badges' }).click();
+      await expect(page.getByRole('tooltip')).toBeVisible();
+      // The username in the popover title keeps its case.
+      await expect(page.getByRole('tooltip').locator('[data-username]')).toHaveCSS('text-transform', 'none');
+      await expectPhoneLayout(page);
+    });
+  });
+}
