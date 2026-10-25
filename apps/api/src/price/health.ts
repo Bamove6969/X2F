@@ -28,6 +28,8 @@ export interface PriceAlert {
 }
 
 export interface HealthSnapshot {
+  /** When it was taken (the quiet period runs on this clock). */
+  at: Date;
   xmr: PriceSourceHealth[];
   fx: FxHealth;
   /** Currencies with no market price right now. */
@@ -66,18 +68,67 @@ function recoveredAlert(c: Condition): PriceAlert {
 
 const EVERY = Object.keys(CURRENCY_EXPONENTS).length;
 
+/**
+ * The quiet period: a condition (a failing source, a refused rate, a paused currency) counts as
+ * over only once it has stayed away for `quietPolls` snapshots in a row AND at least `quietMs`.
+ * Until then a return is the same outage, so a flapping source alerts once, not once per flap.
+ */
+export const PRICE_HEALTH_DEFAULTS = Object.freeze({ quietPolls: 3, quietMs: 15 * 60_000 });
+
+export interface AlertGrouperOptions {
+  failLimit?: number;
+  quietPolls?: number;
+  quietMs?: number;
+}
+
 export interface AlertGrouper {
   /** The alerts this snapshot starts or ends, in order: sources first, then currencies. */
   update(s: HealthSnapshot): PriceAlert[];
 }
 
-export function createAlertGrouper(o: { failLimit?: number } = {}): AlertGrouper {
+interface Open<T> {
+  value: T;
+  /** When it was first seen absent in the current clean run, and how many snapshots that run has. */
+  absentSince: number | null;
+  absentPolls: number;
+}
+
+export function createAlertGrouper(o: AlertGrouperOptions = {}): AlertGrouper {
   const failLimit = o.failLimit ?? FX_DEFAULTS.failLimit;
-  const active = new Map<string, Condition>();
-  let paused = new Set<string>();
+  const quietPolls = o.quietPolls ?? PRICE_HEALTH_DEFAULTS.quietPolls;
+  const quietMs = o.quietMs ?? PRICE_HEALTH_DEFAULTS.quietMs;
+  const sources = new Map<string, Open<Condition>>();
+  const paused = new Map<string, Open<string>>();
+
+  /** Opens the new keys, keeps the returning ones, and closes those quiet long enough; returns [started, ended]. */
+  function step<T>(open: Map<string, Open<T>>, present: Map<string, T>, at: number): [T[], T[]] {
+    const started: T[] = [];
+    const ended: T[] = [];
+    for (const [key, value] of present) {
+      const cur = open.get(key);
+      if (cur) {
+        cur.absentSince = null; // back during the quiet period: the same outage
+        cur.absentPolls = 0;
+      } else {
+        open.set(key, { value, absentSince: null, absentPolls: 0 });
+        started.push(value);
+      }
+    }
+    for (const [key, cur] of open) {
+      if (present.has(key)) continue;
+      cur.absentSince ??= at;
+      cur.absentPolls++;
+      if (cur.absentPolls >= quietPolls && at - cur.absentSince >= quietMs) {
+        open.delete(key);
+        ended.push(cur.value);
+      }
+    }
+    return [started, ended];
+  }
 
   return {
     update(s) {
+      const at = s.at.getTime();
       const now = new Map<string, Condition>();
       for (const x of s.xmr) {
         if (x.consecutiveFailures >= failLimit) now.set(`xmr:${x.name}`, { feed: 'xmr', source: x.name, reason: 'failures' });
@@ -90,25 +141,24 @@ export function createAlertGrouper(o: { failLimit?: number } = {}): AlertGrouper
       for (const r of s.fx.rejected) {
         now.set(`fx:${r.source}:${r.currency}`, { feed: 'fx', source: r.source, currency: r.currency, reason: 'rejected' });
       }
-      const out: PriceAlert[] = [];
-      for (const [key, c] of now) if (!active.has(key)) out.push(failingAlert(c, s.fx.settings.sanityBps));
-      for (const [key, c] of active) if (!now.has(key)) out.push(recoveredAlert(c));
       // A condition keeps the reason it started with: stale → failing is the same outage.
-      for (const key of [...active.keys()]) if (!now.has(key)) active.delete(key);
-      for (const [key, c] of now) if (!active.has(key)) active.set(key, c);
+      const [failing, recovered] = step(sources, now, at);
+      const out: PriceAlert[] = [
+        ...failing.map((c) => failingAlert(c, s.fx.settings.sanityBps)),
+        ...recovered.map(recoveredAlert),
+      ];
 
-      const next = new Set(s.paused);
-      const started = [...next].filter((c) => !paused.has(c)).sort();
-      const ended = [...paused].filter((c) => !next.has(c)).sort();
+      const [started, ended] = step(paused, new Map(s.paused.map((c) => [c, c])), at);
+      started.sort();
+      ended.sort();
       if (started.length > 0) {
-        const message = next.size >= EVERY ? 'Market prices paused in every currency' : `${started.join(', ')} market prices paused`;
+        const message = s.paused.length >= EVERY ? 'Market prices paused in every currency' : `${started.join(', ')} market prices paused`;
         out.push({ kind: 'market-prices-paused', detail: { urgent: true, currencies: started, message } });
       }
       if (ended.length > 0) {
-        const message = next.size === 0 && ended.length >= EVERY ? 'Market prices back in every currency' : `${ended.join(', ')} market prices back`;
+        const message = paused.size === 0 && ended.length >= EVERY ? 'Market prices back in every currency' : `${ended.join(', ')} market prices back`;
         out.push({ kind: 'market-prices-resumed', detail: { currencies: ended, message } });
       }
-      paused = next;
       return out;
     },
   };

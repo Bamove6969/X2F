@@ -47,6 +47,7 @@ const clock = () => new Date();
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
+  clock,
   onAlert: (a) => addOwnerAlert(db, a.kind, a.detail, clock()),
 });
 const deps: Deps = {

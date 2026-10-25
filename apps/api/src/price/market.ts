@@ -41,12 +41,15 @@ export interface MarketOptions {
   fx: FxRates;
   xmrPollMs?: number;
   fxPollMs?: number;
+  /** The server clock, for the alerts' quiet period. */
+  clock?: () => Date;
   /** Where price health alerts go (the owner's in-app alerts); a failure here never stops polling. */
   onAlert?: (a: PriceAlert) => void | Promise<void>;
 }
 
 export function createMarketPrices(o: MarketOptions): MarketPrices {
   const grouper = createAlertGrouper();
+  const clock = o.clock ?? (() => new Date());
   let sending: Promise<void> = Promise.resolve();
   const timers: Array<ReturnType<typeof setInterval>> = [];
   const inFlight = new Set<Promise<void>>();
@@ -75,7 +78,7 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
   /** After a poll: compares health with the last time and queues the alerts, in order. */
   function evaluate(): Promise<void> {
     if (!o.xmr.polled() || !o.fx.polled()) return sending;
-    const alerts = grouper.update(health());
+    const alerts = grouper.update({ at: clock(), ...health() });
     const sink = o.onAlert;
     if (sink) {
       for (const a of alerts) {

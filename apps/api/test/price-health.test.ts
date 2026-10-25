@@ -7,7 +7,7 @@ import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
 import { CURRENCY_EXPONENTS } from '../src/price/currencies.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed, type PriceQuote, type PriceSource, type PriceSourceHealth } from '../src/price/feed.js';
 import { createFxRates, decimalToScaled, type FxHealth, type FxSource } from '../src/price/fx.js';
-import { createAlertGrouper, type HealthSnapshot, type PriceAlert } from '../src/price/health.js';
+import { PRICE_HEALTH_DEFAULTS, createAlertGrouper, type HealthSnapshot, type PriceAlert } from '../src/price/health.js';
 import { createMarketPrices } from '../src/price/market.js';
 import { FX_SETTING_KEYS, loadFxSettings } from '../src/price/settings.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -61,79 +61,142 @@ const fxHealth = (over: Partial<FxHealth> = {}): FxHealth => ({
   ...over,
 });
 const snap = (over: Partial<HealthSnapshot> = {}): HealthSnapshot => ({
+  at: T0,
   xmr: [xmrSource('kraken', 0), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)],
   fx: fxHealth(),
   paused: [],
   ...over,
 });
 
+/** A grouper fed one snapshot every `stepMs` (default 5 min, the exchange-rate poll). */
+function stepper(stepMs = 5 * MIN) {
+  const g = createAlertGrouper();
+  let t = T0.getTime() - stepMs;
+  return (over: Partial<HealthSnapshot> = {}) => {
+    t += stepMs;
+    return g.update(snap({ ...over, at: new Date(t) }));
+  };
+}
+const kraken = (n: number) => ({ xmr: [xmrSource('kraken', n), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)] });
+
 describe('createAlertGrouper', () => {
-  it('1–2 failures are retried quietly; the 3rd in a row alerts once, however long the outage; recovery gives an all-clear', () => {
-    const g = createAlertGrouper();
-    expect(g.update(snap())).toEqual([]);
-    expect(g.update(snap({ xmr: [xmrSource('kraken', 1), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)] }))).toEqual([]);
-    expect(g.update(snap({ xmr: [xmrSource('kraken', 2), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)] }))).toEqual([]);
-    expect(g.update(snap({ xmr: [xmrSource('kraken', 3), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)] }))).toEqual([
+  it('uses the quiet period defaults: 3 clean polls in a row and at least 15 min', () => {
+    expect(PRICE_HEALTH_DEFAULTS).toEqual({ quietPolls: 3, quietMs: 15 * MIN });
+  });
+
+  it('1–2 failures are retried quietly; the 3rd in a row alerts once, however long the outage', () => {
+    const step = stepper(MIN);
+    expect(step()).toEqual([]);
+    expect(step(kraken(1))).toEqual([]);
+    expect(step(kraken(2))).toEqual([]);
+    expect(step(kraken(3))).toEqual([
       { kind: 'price-source-failing', detail: { feed: 'xmr', source: 'kraken', reason: 'failures', message: 'Kraken price feed failing, using backup' } },
     ]);
-    for (let n = 4; n < 300; n++) {
-      expect(g.update(snap({ xmr: [xmrSource('kraken', n), xmrSource('bitfinex', 0), xmrSource('coingecko', 0)] }))).toEqual([]);
-    }
-    expect(g.update(snap())).toEqual([
+    for (let n = 4; n < 300; n++) expect(step(kraken(n))).toEqual([]);
+  });
+
+  it('the all-clear waits until the condition has stayed away for 3 polls AND 15 min', () => {
+    const step = stepper(5 * MIN);
+    expect(step(kraken(3))).toHaveLength(1);
+    expect(step(), 'clean 1 (0 min)').toEqual([]);
+    expect(step(), 'clean 2 (5 min)').toEqual([]);
+    expect(step(), 'clean 3 (10 min): 3 polls but not 15 min yet').toEqual([]);
+    expect(step(), 'clean 4 (15 min)').toEqual([
       { kind: 'price-source-recovered', detail: { feed: 'xmr', source: 'kraken', message: 'Kraken price feed recovered' } },
     ]);
-    expect(g.update(snap())).toEqual([]);
+    expect(step()).toEqual([]);
+    // Time alone is not enough either: polls 10 min apart need 3 of them.
+    const slow = stepper(10 * MIN);
+    expect(slow(kraken(3))).toHaveLength(1);
+    expect(slow()).toEqual([]);
+    expect(slow(), '10 min, 2 polls').toEqual([]);
+    expect(slow(), '20 min, 3 polls').toHaveLength(1);
+  });
+
+  it('a flapping source (good 1 poll in 4) gives one alert per outage, not one per flap', () => {
+    for (const stepMs of [MIN, 5 * MIN]) {
+      const step = stepper(stepMs);
+      const alerts: PriceAlert[] = [];
+      for (let i = 0; i < 240; i++) alerts.push(...step(kraken([0, 1, 2, 3][i % 4]!)));
+      expect(alerts, `polls every ${stepMs / MIN} min`).toEqual([
+        { kind: 'price-source-failing', detail: { feed: 'xmr', source: 'kraken', reason: 'failures', message: 'Kraken price feed failing, using backup' } },
+      ]);
+    }
+  });
+
+  it('a condition that comes back during the quiet period is the same outage (no new alert)', () => {
+    const step = stepper();
+    expect(step(kraken(3))).toHaveLength(1);
+    expect(step()).toEqual([]);
+    expect(step()).toEqual([]);
+    expect(step(kraken(3))).toEqual([]);
+    for (let i = 0; i < 3; i++) expect(step()).toEqual([]);
+    expect(step()).toHaveLength(1); // 15 min after it went away again
   });
 
   it('an exchange-rate source failing or stale alerts once (stale and failing are one outage)', () => {
-    const g = createAlertGrouper();
-    const cb = (consecutiveFailures: number, stale: boolean) =>
-      fxHealth({ sources: [{ name: 'coinbase', rank: 1, lastGoodAt: T0, consecutiveFailures, stale, usedFor: [] }] });
-    expect(g.update(snap({ fx: cb(0, true) }))).toEqual([
+    const step = stepper();
+    const cb = (consecutiveFailures: number, stale: boolean) => ({
+      fx: fxHealth({ sources: [{ name: 'coinbase', rank: 1, lastGoodAt: T0, consecutiveFailures, stale, usedFor: [] }] }),
+    });
+    expect(step(cb(0, true))).toEqual([
       { kind: 'price-source-failing', detail: { feed: 'fx', source: 'coinbase', reason: 'stale', message: 'Coinbase exchange rates stale, using backup' } },
     ]);
-    expect(g.update(snap({ fx: cb(3, true) }))).toEqual([]);
-    expect(g.update(snap({ fx: cb(12, false) }))).toEqual([]);
-    expect(g.update(snap({ fx: cb(0, false) }))).toEqual([
+    expect(step(cb(3, true))).toEqual([]);
+    expect(step(cb(12, false))).toEqual([]);
+    for (let i = 0; i < 3; i++) expect(step(cb(0, false))).toEqual([]);
+    expect(step(cb(0, false))).toEqual([
       { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', message: 'Coinbase exchange rates recovered' } },
     ]);
     const g2 = createAlertGrouper();
-    expect(g2.update(snap({ fx: cb(3, false) }))[0]!.detail).toMatchObject({ reason: 'failures', message: 'Coinbase exchange rates failing, using backup' });
+    expect(g2.update(snap(cb(3, false)))[0]!.detail).toMatchObject({ reason: 'failures', message: 'Coinbase exchange rates failing, using backup' });
   });
 
-  it('a rate refused by the sanity guard alerts once per source and currency, and clears when accepted again', () => {
-    const g = createAlertGrouper();
-    const rejected = [{ source: 'coinbase', currency: 'EUR', at: T0 }];
-    expect(g.update(snap({ fx: fxHealth({ rejected }) }))).toEqual([
+  it('a rate refused by the sanity guard alerts once per source and currency, and clears after the quiet period', () => {
+    const step = stepper();
+    const rejected = { fx: fxHealth({ rejected: [{ source: 'coinbase', currency: 'EUR', at: T0 }] }) };
+    expect(step(rejected)).toEqual([
       {
         kind: 'price-source-failing',
         detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate moved more than 10%, using backup' },
       },
     ]);
-    expect(g.update(snap({ fx: fxHealth({ rejected }) }))).toEqual([]);
-    expect(g.update(snap())).toEqual([
+    expect(step(rejected)).toEqual([]);
+    for (let i = 0; i < 3; i++) expect(step()).toEqual([]);
+    expect(step()).toEqual([
       { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', message: 'Coinbase EUR rate back in range' } },
     ]);
   });
 
-  it('paused currencies: one urgent alert per outage listing them, one all-clear when they come back', () => {
-    const g = createAlertGrouper();
-    expect(g.update(snap({ paused: ['NGN', 'EUR'] }))).toEqual([
+  it('paused currencies: one urgent alert per outage listing them, one all-clear after the quiet period', () => {
+    const step = stepper();
+    expect(step({ paused: ['NGN', 'EUR'] })).toEqual([
       { kind: 'market-prices-paused', detail: { urgent: true, currencies: ['EUR', 'NGN'], message: 'EUR, NGN market prices paused' } },
     ]);
-    expect(g.update(snap({ paused: ['EUR', 'NGN'] }))).toEqual([]);
-    expect(g.update(snap({ paused: ['EUR', 'NGN', 'USD'] }))).toEqual([
+    expect(step({ paused: ['EUR', 'NGN'] })).toEqual([]);
+    expect(step({ paused: ['EUR', 'NGN', 'USD'] })).toEqual([
       { kind: 'market-prices-paused', detail: { urgent: true, currencies: ['USD'], message: 'USD market prices paused' } },
     ]);
-    expect(g.update(snap({ paused: ['NGN'] }))).toEqual([
+    for (let i = 0; i < 3; i++) expect(step({ paused: ['NGN'] })).toEqual([]);
+    expect(step({ paused: ['NGN'] })).toEqual([
       { kind: 'market-prices-resumed', detail: { currencies: ['EUR', 'USD'], message: 'EUR, USD market prices back' } },
     ]);
-    expect(g.update(snap({ paused: ALL }))).toEqual([
+    expect(step({ paused: ALL })).toEqual([
       { kind: 'market-prices-paused', detail: { urgent: true, currencies: ALL.filter((c) => c !== 'NGN').sort(), message: 'Market prices paused in every currency' } },
     ]);
-    expect(g.update(snap({ paused: [] }))[0]).toEqual({
+    for (let i = 0; i < 3; i++) expect(step({ paused: [] })).toEqual([]);
+    expect(step({ paused: [] })[0]).toEqual({
       kind: 'market-prices-resumed', detail: { currencies: [...ALL].sort(), message: 'Market prices back in every currency' },
     });
+  });
+
+  it('a flapping XMR median (every currency paused 1 poll in 2) sends one urgent alert, not one per flap', () => {
+    const step = stepper(MIN);
+    const alerts: PriceAlert[] = [];
+    for (let i = 0; i < 120; i++) alerts.push(...step({ paused: i % 2 === 0 ? ALL : [] }));
+    expect(alerts).toEqual([
+      { kind: 'market-prices-paused', detail: { urgent: true, currencies: [...ALL].sort(), message: 'Market prices paused in every currency' } },
+    ]);
   });
 });
 
@@ -147,7 +210,7 @@ describe('createMarketPrices', () => {
     const fxAnswers = o.fx ?? [() => ({ EUR: '0.90', JPY: '156.87', KWD: '0.310706' })];
     const fx = createFxRates(fxAnswers.map((a, i) => fxStub(['coinbase', 'bitpay', 'coingecko'][i]!, a)), { clock: c.clock });
     const alerts: PriceAlert[] = [];
-    const prices = createMarketPrices({ xmr, fx, onAlert: (a) => void alerts.push(a) });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock, onAlert: (a) => void alerts.push(a) });
     return { c, prices, alerts };
   }
 
@@ -210,6 +273,12 @@ describe('createMarketPrices', () => {
     expect(alerts).toEqual([{ kind: 'market-prices-paused', detail: { urgent: true, currencies: ['NGN'], message: 'NGN market prices paused' } }]);
     alerts.length = 0;
     ngn = true;
+    for (let i = 0; i < 3; i++) {
+      c.advance(5 * MIN);
+      await prices.poll();
+    }
+    expect(prices.current('NGN'), 'the price is back at once').not.toBeNull();
+    expect(alerts, 'the all-clear waits for the quiet period').toEqual([]);
     c.advance(5 * MIN);
     await prices.poll();
     expect(alerts).toEqual([{ kind: 'market-prices-resumed', detail: { currencies: ['NGN'], message: 'NGN market prices back' } }]);
@@ -231,12 +300,29 @@ describe('createMarketPrices', () => {
     expect(prices.quote('EUR')?.fx?.source).toBe('bitpay');
     alerts.length = 0;
     cb = true;
-    c.advance(5 * MIN);
-    await prices.poll();
+    for (let i = 0; i < 4; i++) {
+      c.advance(5 * MIN);
+      await prices.poll();
+    }
     expect(alerts).toEqual([
       { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', message: 'Coinbase exchange rates recovered' } },
     ]);
     expect(prices.quote('EUR')?.fx?.source).toBe('coinbase');
+  });
+
+  it('a flapping XMR median (down every other minute) sends one urgent paused alert in an hour', async () => {
+    let up = true;
+    const { prices, c, alerts } = build({ xmr: () => (up ? 33000n : new Error('down')) });
+    await prices.poll();
+    alerts.length = 0; // the start-up alert for the currencies no source quotes
+    for (let i = 0; i < 60; i++) {
+      up = !up;
+      c.advance(MIN);
+      await prices.poll();
+    }
+    expect(alerts).toEqual([
+      { kind: 'market-prices-paused', detail: { urgent: true, currencies: ['EUR', 'JPY', 'KWD', 'USD'], message: 'Market prices paused in every currency' } },
+    ]);
   });
 
   it('the sanity guard raises an alert and falls back', async () => {
