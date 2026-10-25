@@ -13,6 +13,7 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { tradeRoutes } from './trades/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -51,6 +52,8 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -221,6 +224,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }
