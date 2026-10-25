@@ -257,7 +257,7 @@ describe('a subscription lives only as long as the session that posted it (revie
     const t = await trader();
     await post(t.b, subscription());
     const { endAllSessions } = await import('../src/auth/sessions.js');
-    await endAllSessions(deps, t.id);
+    await endAllSessions({ ...deps, events: app.events }, t.id);
     expect(await stored(t.id)).toEqual([]);
   });
 

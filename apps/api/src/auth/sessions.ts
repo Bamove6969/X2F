@@ -264,8 +264,11 @@ export async function assertNotDisabled(db: Queryable, accountId: string): Promi
   if (rows[0]?.disabled_at != null) throw new ApiError(403, 'account-disabled');
 }
 
-/** The live-event bus, when the caller has one: ending sessions ends their streams at once. */
-type EndDeps = Pick<Deps, 'db' | 'clock'> & { events?: Pick<EventBus, 'closeAccount' | 'closeSession'> };
+/**
+ * Ending sessions must end their live streams too, so the bus is required (pass `app.events`):
+ * a caller cannot forget it and leave a revoked session streaming.
+ */
+type EndDeps = Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeAccount' | 'closeSession'> };
 
 /** Revokes one session and ends its streams; returns how many were live. */
 export async function endSession(deps: EndDeps, sessionId: string): Promise<number> {
@@ -273,7 +276,7 @@ export async function endSession(deps: EndDeps, sessionId: string): Promise<numb
     'update sessions set revoked_at = $2 where id = $1 and revoked_at is null returning account_id',
     [sessionId, deps.clock()],
   );
-  for (const row of r.rows) deps.events?.closeSession(row.account_id, sessionId);
+  for (const row of r.rows) deps.events.closeSession(row.account_id, sessionId);
   return r.rowCount ?? 0;
 }
 
@@ -283,7 +286,7 @@ export async function endOtherSessions(deps: EndDeps, accountId: string, keepSes
     'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
     [accountId, keepSessionId, deps.clock()],
   );
-  deps.events?.closeAccount(accountId, keepSessionId);
+  deps.events.closeAccount(accountId, keepSessionId);
   return r.rowCount ?? 0;
 }
 
@@ -295,7 +298,7 @@ export async function endAllSessions(deps: EndDeps, accountId: string): Promise<
   const r = await deps.db.query('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null', [
     accountId, deps.clock(),
   ]);
-  deps.events?.closeAccount(accountId);
+  deps.events.closeAccount(accountId);
   return r.rowCount ?? 0;
 }
 

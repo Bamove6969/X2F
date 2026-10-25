@@ -7,7 +7,7 @@ import { SECURITY_HEADERS } from '../src/static/serve.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
-import { Browser } from './helpers/totp.js';
+import { Browser, ORIGIN } from './helpers/totp.js';
 
 const T0 = new Date('2026-10-17T12:00:00Z');
 const DAY = 24 * 3600_000;
@@ -369,6 +369,20 @@ describe('ending sessions ends their streams (review minor 3)', () => {
     await Promise.all([s1.ended, s2.ended]);
     expect(app.events.size).toBe(1);
     expect(app.events.delivered(u.id)).toBe(true);
+  });
+
+  it('DELETE /v1/account/sessions/:id ends that session\'s streams at once', async () => {
+    const t = await trader();
+    const other = new Browser(app);
+    const id = ((await other.post('/t/login', { accountId: t.id })).json() as { sessionId: string }).sessionId;
+    const keep = await stream(t.b);
+    const gone = await stream(other);
+    const res = await app.inject({ method: 'DELETE', url: `/v1/account/sessions/${id}`, headers: { origin: ORIGIN }, cookies: t.b.cookies });
+    expect(res.statusCode).toBe(204);
+    await gone.ended;
+    expect(app.events.size).toBe(1);
+    expect(app.events.publish(t.id, accepted())).toBe(1);
+    await keep.waitFor((e) => (e as { type?: string }).type === 'accepted');
   });
 
   it('endOtherSessions (password change, method removal) keeps the current session streaming', async () => {
