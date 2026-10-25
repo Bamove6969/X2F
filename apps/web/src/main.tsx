@@ -14,6 +14,18 @@ async function start(): Promise<void> {
   }
   const root = document.getElementById('root');
   if (!root) throw new Error('missing #root');
+  // Fixture builds only: screen harnesses at /__harness/* (Task 23's BuyerPay until Task 22's room merges).
+  if (__X2F_FIXTURES__ && window.location.pathname.startsWith('/__harness/')) {
+    const { Harnesses } = await import('./fixtures/harness.js');
+    createRoot(root).render(
+      <StrictMode>
+        <BrowserRouter>
+          <Harnesses />
+        </BrowserRouter>
+      </StrictMode>,
+    );
+    return;
+  }
   createRoot(root).render(
     <StrictMode>
       <BrowserRouter>

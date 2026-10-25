@@ -1,0 +1,80 @@
+/* The Desktop board's chat column (fixture stand-in for Task 20's ChatPanel). */
+.x2f-board-chat {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.x2f-board-chat__log {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  flex-grow: 1;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-board-chat__notice {
+  align-self: center;
+  font-size: 12px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-board-chat__msg {
+  margin: 0;
+  align-self: flex-start;
+  max-width: 85%;
+  padding: 10px 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-board-chat__msg[data-from='me'] {
+  align-self: flex-end;
+}
+
+.x2f-board-chat__compose {
+  display: flex;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-board-chat__input {
+  flex-grow: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border-radius: var(--x2f-radius-sm);
+  border: 1px solid var(--x2f-line);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.x2f-board-chat__nudge,
+.x2f-board-chat__send {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: transparent;
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.x2f-board-chat__nudge {
+  width: 44px;
+  color: var(--x2f-caution);
+}
+
+.x2f-board-chat__send {
+  padding: 0 var(--x2f-space-4);
+  color: var(--x2f-ink);
+}
