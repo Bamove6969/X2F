@@ -15,6 +15,8 @@ describe('Task 20 wiring still waits for its dependencies', () => {
     // When building it: POST /v1/chats/:chat/envelopes runs checkChatEnvelope(body, channel,
     // sessionRole) with a 16 KiB bodyLimit (413); the identity route verifies
     // chatIdentityProofBytes; purgeChats follows chatPurgeDue; startRetention (Task 6) calls it.
+    // Review I1: the envelopes route refuses a (chat, from, seq) that is not above that sender's
+    // last stored seq with 409, backed by a unique index on (chat, from, seq).
     expect(has('apps/api/migrations/106_chat.sql')).toBe(false);
     expect(has('apps/api/src/chat/routes.ts')).toBe(false);
     expect(has('apps/api/src/chat/retention.ts')).toBe(false);
@@ -23,6 +25,8 @@ describe('Task 20 wiring still waits for its dependencies', () => {
   it('NEEDS_TASK_8: the chat mod identity comes from the attestation (channels.chat)', () => {
     // Then: verify the chat attestation (channels.chat === chatChannel(chat)) before the first
     // sealChatMessage, and pass its participants; never participants straight from the API.
+    // Review M4: apps/moderation verifies chat identities with chatIdentityProofBytes (the
+    // x2f/chat-identity/v1 domain), never the trade identity domain.
     expect(has('packages/trade/src/attestation.ts'), 'Task 8 landed: wire the chat attestation').toBe(false);
     expect('verifyAttestation' in trade).toBe(false);
   });
@@ -31,6 +35,9 @@ describe('Task 20 wiring still waits for its dependencies', () => {
     // Then: keep the chat identity (wrapped) and ChatState per chat in the device store; save
     // after sealing before posting, and after opening before showing. A second device of the
     // account has no identity: show "This conversation is open on another device" read-only.
+    // Review I1: ChatPanel opens every pending envelope before sealing, and sends posts one at a
+    // time. Review I2: it sets modMayPost only while a dispute is open on the trade. Review M5:
+    // it shows "a message is missing" when a sender's seq skips.
     expect(has('apps/web/src/chat/ChatPanel.tsx'), 'ChatPanel landed: wire chatCrypto through the device store').toBe(false);
   });
 });

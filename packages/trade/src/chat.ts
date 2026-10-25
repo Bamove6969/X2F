@@ -23,6 +23,7 @@ const DAY_MS = 86_400_000;
 const ENVELOPE_KEYS = ['v', 'trade', 'from', 'seq', 'slots', 'nonce', 'kh', 'ct', 'ctNonce', 'sig'] as const;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const HEX = /^[0-9a-f]+$/;
+const KEY_HEX = /^[0-9a-f]{64}$/;
 
 export type ChatEnvelopeErrorCode = 'bad-envelope' | 'wrong-channel' | 'wrong-sender' | 'too-large';
 
@@ -116,13 +117,15 @@ export function checkChatEnvelope(body: unknown, channel: string, sessionRole?: 
 
 /**
  * The bytes a chat identity's proof signs: "x2f/chat-identity/v1\0" + normalized chat code +
- * "\0" + role + "\0" + signPublic + boxPublic. The same rule as Task 8's trade identity proof,
+ * "\0" + role + "\0" + signPublic + boxPublic (each exactly 64 lower-case hex characters). The same rule as Task 8's trade identity proof,
  * under its own domain so a trade identity proof can never be replayed as a chat one.
  */
 export function chatIdentityProofBytes(chat: string, role: 'buyer' | 'seller', signPublic: string, boxPublic: string): Uint8Array {
   const code = normalizeTradeCode(chat);
   if (code === null) throw new TypeError('chatIdentityProofBytes: invalid chat code');
   if (role !== 'buyer' && role !== 'seller') throw new TypeError('chatIdentityProofBytes: role must be buyer or seller');
+  // The keys are joined with no separator, so each must have its fixed length.
+  if (!KEY_HEX.test(signPublic) || !KEY_HEX.test(boxPublic)) throw new TypeError('chatIdentityProofBytes: keys must be 32 bytes lower-case hex');
   return new TextEncoder().encode(`x2f/chat-identity/v1\0${code}\0${role}\0${signPublic}${boxPublic}`);
 }
 

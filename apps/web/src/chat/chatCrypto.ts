@@ -33,7 +33,7 @@ import {
 import sodium from 'libsodium-wrappers';
 
 export type ChatRole = 'buyer' | 'seller';
-export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message';
+export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
 
 /** Chat-level refusals. Envelope rejections stay ProtocolError / ChatEnvelopeError. */
 export class ChatError extends Error {
@@ -64,9 +64,16 @@ export interface ChatMessage {
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
 const STATE_KEYS = ['channel', 'nextSeq', 'guard'];
 const isSeq = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && !Object.is(n, -0);
-// C0 controls except \t and \n, DEL, C1 controls, and the bidi embedding/override/isolate
-// controls that can make a message read differently from what was sent.
-const FORBIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f‪-‮⁦-⁩]/u;
+// Refused anywhere in a message: C0 controls except \t and \n, DEL, C1 controls; the bidi
+// embeddings, overrides and isolates (U+202A-202E, U+2066-2069), which can make a message read
+// differently from what was sent; the deprecated format controls (U+206A-206F); the interlinear
+// annotation marks (U+FFF9-FFFB); and the zero-width characters that hide text (U+200B, U+2060,
+// U+FEFF, U+180E). ZWJ/ZWNJ (U+200C-200D) and LRM/RLM/ALM (U+200E-200F, U+061C) stay allowed:
+// emoji sequences, Persian and Indic text, and right-to-left writing need them.
+// Always written as \u escapes: no literal invisible characters in source (review M3).
+const FORBIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u180e\u200b\u202a-\u202e\u2060\u2066-\u206f\ufeff\ufff9-\ufffb]/u;
+/** Allowed but invisible: a message made only of these (and whitespace) is empty. */
+const INVISIBLE = /[\u061c\u200c-\u200f]/gu;
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
 /** The chat's relay-style channel ID: the `trade` of every envelope in it. */
@@ -102,7 +109,7 @@ export function parseChatState(json: unknown, channel: string): ChatState {
  * surrogates and no bidi overrides. Returns it unchanged. Throws ChatError 'bad-text' or 'too-large'.
  */
 export function checkChatText(text: unknown): string {
-  if (typeof text !== 'string' || text.trim() === '') throw new ChatError('bad-text', 'Message is empty');
+  if (typeof text !== 'string' || text.replace(INVISIBLE, '').trim() === '') throw new ChatError('bad-text', 'Message is empty');
   if (FORBIDDEN.test(text) || LONE_SURROGATE.test(text)) throw new ChatError('bad-text', 'Message has characters that are not allowed');
   if (new TextEncoder().encode(text).length > CHAT_TEXT_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
   return text;
@@ -127,6 +134,10 @@ export interface SealChatArgs {
 /**
  * Seals one message to buyer, seller and mod. Returns the envelope and the new state; persist
  * the state before posting the envelope. The input state is not changed.
+ *
+ * The caller must first open every pending envelope of the chat (so the guard knows this
+ * identity's latest seq, even one sent from an earlier session), and send one post at a time,
+ * sealing the next only after the previous post was answered.
  */
 export async function sealChatMessage(a: SealChatArgs): Promise<{ envelope: Envelope; state: ChatState }> {
   if (a.role !== 'buyer' && a.role !== 'seller') throw new TypeError('sealChatMessage: role must be buyer or seller');
@@ -159,11 +170,19 @@ export interface OpenChatArgs {
   me: Identity;
   participants: Participants;
   state: ChatState;
+  /**
+   * Accept messages from the chat's mod identity. Default false: traders see the moderator only
+   * inside a disputed trade's room (spec 6.6), so the panel sets it only while a dispute is open.
+   * When false, an authentic mod message is refused with ChatError('mod-not-allowed') and the
+   * guard does not move, so the same envelope opens once a dispute is open.
+   */
+  modMayPost?: boolean;
 }
 
 /**
  * Checks and opens one envelope from `GET …/envelopes`. Throws ChatEnvelopeError (shape, size,
- * wrong-channel), ProtocolError (signature, not-for-me, replay, …) or ChatError('bad-message').
+ * wrong-channel), ProtocolError (signature, not-for-me, replay, …) or ChatError('bad-message',
+ * or 'mod-not-allowed' for an authentic mod message without `modMayPost`).
  * On success returns the message and the new state; persist the state before showing the
  * message. The input state is not changed, so a rejected envelope leaves no trace.
  */
@@ -179,6 +198,9 @@ export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{
     guard,
     allowSelf: true,
   });
+  if (opened.from === 'mod' && a.modMayPost !== true) {
+    throw new ChatError('mod-not-allowed', 'Moderator messages are shown only in a dispute');
+  }
   const p = opened.payload;
   if (
     opened.type !== CHAT_MSG_TYPE ||
