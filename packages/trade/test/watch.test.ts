@@ -358,9 +358,9 @@ describe('settleKindFor', () => {
     expect(settleKindFor({ state: 'lapsed', settling: null })).toBe('lapse-refund');
     expect(settleKindFor({ state: 'refund_requested', settling: null })).toBe('auto-refund');
   });
-  test('in funding or securing only a buyer cancel can settle', () => {
-    expect(settleKindFor({ state: 'funding', settling: null })).toBe('buyer-cancel');
-    expect(settleKindFor({ state: 'securing', settling: null })).toBe('buyer-cancel');
+  test('funding or securing does not name a kind: a timed-out signing window can return any settlement there', () => {
+    expect(settleKindFor({ state: 'funding', settling: null })).toBeNull();
+    expect(settleKindFor({ state: 'securing', settling: null })).toBeNull();
   });
   test('anything else cannot be named from the trade alone', () => {
     for (const state of ['secured', 'paid', 'disputed'] as const) {
