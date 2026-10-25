@@ -57,21 +57,53 @@ describe('moderator party decisions (Task 9, pure)', () => {
     });
     expect(modPartyPlan(facts({ escrowAddress: '4escrow', apiState: 'released', watching: false })).start).toBe(false);
   });
+
+  test('a trade escalated after its close keeps its party even when the 30-day watch has passed', () => {
+    for (const apiState of ['disputed', 'settling'] as TradeState[]) {
+      const f = facts({ running: true, escrowAddress: '4escrow', apiState, watching: false, setupDoneReported: true });
+      expect(modPartyPlan(f).stop).toBe(false);
+      expect(modPartyPlan({ ...f, running: false }).start).toBe(true);
+    }
+  });
+
+  test('after a restart the persisted escrow address restarts the party for a closed trade with late funds', () => {
+    // running: false (fresh process); escrowAddress comes from mod_party_state / the API trade, not ready()
+    for (const apiState of ['released', 'cancelled', 'refunded'] as TradeState[]) {
+      expect(modPartyPlan(facts({ escrowAddress: '4escrow', apiState, setupDoneReported: true }))).toEqual({
+        start: true,
+        reportSetupDone: null,
+        stop: false,
+      });
+    }
+  });
 });
 
 describe('modPartyArgs (the runParty arguments for the moderator)', () => {
-  const io = { transport: {} as Transport, engine: {} as never, store: {} as PartyStore };
+  const transport = {} as Transport;
+  const asked: string[] = [];
+  const io = {
+    transport: (channel: string) => {
+      asked.push(channel);
+      return transport;
+    },
+    engine: {} as never,
+    store: {} as PartyStore,
+  };
 
   test('runs as mod on the escrow channel, never the trade code, with the attested participants and R27 password', async () => {
-    const a = await modPartyArgs(start, io);
+    asked.length = 0;
+    const { args: a, channel } = await modPartyArgs(start, io);
+    expect(channel).toBe(await channelFor(CODE, 'escrow'));
     expect(a.role).toBe('mod');
-    expect(a.trade).toBe(await channelFor(CODE, 'escrow'));
+    expect(a.trade).toBe(channel);
     expect(a.trade).not.toBe(CODE);
+    // the transport is built on the same channel
+    expect(asked).toEqual([channel]);
     expect(a.participants).toBe(participants);
     expect(a.me).toBe(me);
     expect(a.password).toBe(start.password);
     expect(a.daemonUri).toBe(start.daemonUri);
-    expect(a.transport).toBe(io.transport);
+    expect(a.transport).toBe(transport);
     expect(a.store).toBe(io.store);
   });
 
@@ -84,5 +116,16 @@ describe('modPartyArgs (the runParty arguments for the moderator)', () => {
 
   test("refuses when the mod's own keys are not the attested mod slot", async () => {
     await expect(modPartyArgs({ ...start, me: { ...me, signPublic: '4'.repeat(64) } }, io)).rejects.toThrow(RangeError);
+  });
+
+  test("refuses when the attested mod slot's box key is swapped", async () => {
+    const swapped = { ...participants, mod: { ...participants.mod, boxPublic: '5'.repeat(64) } };
+    await expect(modPartyArgs({ ...start, participants: swapped }, io)).rejects.toThrow(RangeError);
+  });
+
+  test('builds no transport when it refuses', async () => {
+    asked.length = 0;
+    await expect(modPartyArgs({ ...start, password: 'hunter2' }, io)).rejects.toThrow(RangeError);
+    expect(asked).toEqual([]);
   });
 });
