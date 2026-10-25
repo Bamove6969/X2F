@@ -74,6 +74,8 @@ function fakeNetwork(work: () => WorkItem[]) {
   const reports: Array<{ attestation: Attestation; sig: string }> = [];
   const registered: Array<{ channel: string; signPublics: Record<Role, string> }> = [];
   const refused: string[] = [];
+  /** Terminal `refused` reports posted to the API (signed like every internal request). */
+  const refusals: Array<{ trade: string; reason: string }> = [];
   const modKey = sodium.from_hex(modSign.public);
   const fetch: Fetch = async (url, init) => {
     const reply = (status: number, body: unknown = {}) => ({ status, json: async () => body });
@@ -88,8 +90,9 @@ function fakeNetwork(work: () => WorkItem[]) {
       }
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: work() });
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
-        const body = JSON.parse(init.body ?? '{}') as { attestation: Attestation; sig: string };
-        reports.push({ attestation: body.attestation, sig: body.sig });
+        const body = JSON.parse(init.body ?? '{}') as { kind: string; attestation: Attestation; sig: string; trade: string; reason: string };
+        if (body.kind === 'refused') refusals.push({ trade: body.trade, reason: body.reason });
+        else reports.push({ attestation: body.attestation, sig: body.sig });
         return reply(201, { ok: true });
       }
       return reply(404);
@@ -107,7 +110,7 @@ function fakeNetwork(work: () => WorkItem[]) {
     }
     return reply(404);
   };
-  return { fetch, reports, registered, refused };
+  return { fetch, reports, registered, refused, refusals };
 }
 
 async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = () => {}): Promise<ModerationHandle> {
@@ -161,8 +164,44 @@ describe('attesting a trade', () => {
     expect(await (await moderation(net.fetch)).tick()).toEqual([]);
     expect(net.reports).toHaveLength(0);
     expect(net.registered).toHaveLength(0);
+    // The refusal is final and reported, so the API drops the trade from work.
+    expect(net.refusals).toEqual([{ trade: code, reason: 'bad-proof' }]);
+    expect(net.refused).toEqual([]);
     const { rows } = await db.query('select 1 from signed_terms where trade = $1', [code]);
     expect(rows).toHaveLength(0);
+  });
+
+  it('101 refused trades at the front of the work list do not stall a fresh trade (I1)', async () => {
+    // One person with two accounts and the same key in both slots: moderation refuses each one.
+    // The fake API serves the OLDEST 100 open items, like the real listener, and drops refused ones.
+    type Item = WorkItem & { done: boolean };
+    const items: Item[] = [];
+    for (let i = 0; i < 101; i++) {
+      const code = newTradeCode();
+      const t = await trader(code, 'buyer');
+      const seller = { ...t.reg, proof: sodium.to_hex(sodium.crypto_sign_detached(identityProofBytes(code, 'seller', t.id.signPublic, t.id.boxPublic), t.id.signSecret)) };
+      items.push({ trade: code, participants: { buyer: t.reg, seller }, done: false });
+    }
+    const fresh = newTradeCode();
+    const buyer = await trader(fresh, 'buyer');
+    const seller = await trader(fresh, 'seller');
+    items.push({ trade: fresh, participants: { buyer: buyer.reg, seller: seller.reg }, done: false });
+
+    const net = fakeNetwork(() => items.filter((w) => !w.done).slice(0, 100).map(({ trade, participants }) => ({ trade, participants })));
+    const markDone = () => {
+      for (const r of net.refusals) items.find((w) => w.trade === r.trade)!.done = true;
+      for (const r of net.reports) items.find((w) => w.trade === r.attestation.trade)!.done = true;
+    };
+    const mod = await moderation(net.fetch);
+    expect(await mod.tick()).toEqual([]);
+    markDone();
+    expect(net.refusals).toHaveLength(100);
+    expect(new Set(net.refusals.map((r) => r.reason))).toEqual(new Set(['bad-work']));
+    expect(await mod.tick()).toEqual([fresh]);
+    markDone();
+    expect(net.refusals).toHaveLength(101);
+    expect(net.reports.map((r) => r.attestation.trade)).toEqual([fresh]);
+    await mod.stop();
   });
 
   it('swapped list: an API-generated buyer identity makes the real buyer abort, and no attestation pairs the real seller with an API-chosen mod', async () => {

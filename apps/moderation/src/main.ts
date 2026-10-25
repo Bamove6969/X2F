@@ -3,7 +3,7 @@ import { generateIdentity, type Identity, type Participants } from '@x2f/protoco
 import { channelFor, type Attestation } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
-import { attestTrade } from './attest.js';
+import { AttestRefused, attestTrade } from './attest.js';
 import { loadParty, saveParty, walletPassword } from './keystore.js';
 import { createLink, type Fetch, type Link, type WorkItem } from './link.js';
 
@@ -148,8 +148,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
       return done;
     }
     for (const w of work) {
+      const code = typeof w?.trade === 'string' ? normalizeTradeCode(w.trade) : null;
       try {
-        const code = typeof w?.trade === 'string' ? normalizeTradeCode(w.trade) : null;
         if (code === null) {
           log({ reason: 'bad-work' });
           continue;
@@ -188,7 +188,19 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
         log({ reason: 'attested' });
         done.push(code);
       } catch (e) {
-        log({ reason: e instanceof Error && e.name === 'AttestRefused' ? `refused-${e.message}` : 'trade-failed' });
+        if (!(e instanceof AttestRefused) || code === null) {
+          log({ reason: 'trade-failed' });
+          continue;
+        }
+        // A refusal is final (the proofs or keys will never change), so the API is told and drops
+        // the trade from work; otherwise refused trades would pile up at the front of the list.
+        log({ reason: `refused-${e.reason}` });
+        try {
+          const status = await link.postReport({ kind: 'refused', trade: code, reason: e.reason });
+          if (status !== 201) log({ reason: `refusal-not-recorded-${status}` });
+        } catch {
+          log({ reason: 'refusal-not-recorded' });
+        }
       }
     }
     return done;
