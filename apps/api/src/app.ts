@@ -10,6 +10,8 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
+import { tradeRoutes } from './trades/routes.js';
+import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
@@ -70,6 +72,8 @@ export interface BuildOptions {
   events?: EventBusOptions & EventStreamOptions;
   /** Task 19: where pushes go (default web-push); tests pass a fake push service. */
   pushTransport?: PushTransport;
+  /** Plan 3 Task 19's trade event delivery; a no-op until it exists. */
+  tradePublish?: TradePublisher;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -214,6 +218,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
   eventRoutes(app, events, options.events);
   pushRoutes(app);
+  // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
+  tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
 
   return app;
 }

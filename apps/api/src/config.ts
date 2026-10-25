@@ -1,5 +1,5 @@
-import { createECDH, hkdfSync } from 'node:crypto';
-import { constants } from 'node:fs';
+import { createECDH, hkdfSync, timingSafeEqual } from 'node:crypto';
+import { constants, readFileSync, statSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 
 export interface Config {
@@ -17,6 +17,27 @@ export interface Config {
   /** Task 19: VAPID key pair for Web Push, base64url (P-256 public point; private scalar). */
   vapidPublic: string;
   vapidPrivate: string;
+  /** Peppers mixed into password hashes (HMAC before Argon2id); `X2F_PASSWORD_PEPPERS`. */
+  passwordPeppers: Keyring;
+  /** Keys of the recovery-code HMAC; `X2F_RECOVERY_CODE_KEYS`. */
+  recoveryCodeKeys: Keyring;
+  /** Keys that seal TOTP secrets (the file/env key store, `totpBox`); `X2F_TOTP_KEYS`. */
+  totpKeys: Keyring;
+  /**
+   * `X2F_LEGACY_SECRETS` (`on` by default, or `off`): whether values stored before FU-C are still
+   * accepted: unpeppered password hashes, SHA-256 recovery codes and format-0 TOTP blobs. Turned off
+   * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
+   */
+  legacySecrets: boolean;
+}
+
+/**
+ * A versioned set of 32-byte secrets. New values always use `current`; the others are kept only so
+ * older stored values still verify or open until they are rehashed, rewrapped or regenerated.
+ */
+export interface Keyring {
+  current: number;
+  keys: ReadonlyMap<number, Uint8Array>;
 }
 
 type Env = Record<string, string | undefined>;
@@ -24,7 +45,7 @@ type Env = Record<string, string | undefined>;
 const NETWORKS = ['mainnet', 'stagenet', 'testnet'] as const;
 const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
 
-// Errors name the variable only, never its value (DATABASE_URL and X2F_SERVER_KEY are secrets).
+// Errors name the variable only, never its value (DATABASE_URL, X2F_SERVER_KEY and the key rings are secrets).
 function missing(name: string): Error {
   return new Error(`config: ${name} is missing`);
 }
@@ -65,6 +86,78 @@ function vapidPairMatches(publicKey: string, privateKey: string): boolean {
   }
 }
 
+/** Key ids are stored in `smallint` columns and in the sealed-blob header: 1..32767. */
+const KEY_ID = /^[1-9][0-9]{0,4}$/;
+const KEY_ID_MAX = 32_767;
+
+/**
+ * A key ring's text: `<NAME>` from the environment, or the contents of the file `<NAME>_FILE`
+ * (a regular file readable only by the API user, chmod 600), never both.
+ */
+function ringSource(env: Env, name: string): string {
+  const direct = env[name];
+  const path = env[`${name}_FILE`];
+  const hasDirect = direct !== undefined && direct !== '';
+  const hasPath = path !== undefined && path !== '';
+  if (hasDirect && hasPath) throw malformed(name, `set ${name} or ${name}_FILE, not both`);
+  if (!hasPath) {
+    if (!hasDirect) throw missing(name);
+    return direct;
+  }
+  const refuse = (why: string) => new Error(`config: ${name}_FILE ${why}`);
+  let text: string;
+  try {
+    const info = statSync(path);
+    if (!info.isFile()) throw refuse('is not a regular file');
+    if ((info.mode & 0o077) !== 0) throw refuse('must be readable only by the API user (chmod 600)');
+    // Skipped where the platform has no user ids (Windows).
+    if (typeof process.getuid === 'function' && info.uid !== process.getuid()) throw refuse('must be owned by the API user');
+    text = readFileSync(path, 'utf8');
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith(`config: ${name}_FILE`)) throw e;
+    throw refuse('is not a readable file');
+  }
+  return text;
+}
+
+/**
+ * `<id>:<base64 of 32 random bytes>[,<id>:<base64>...]`; the first entry is the current key. Ids
+ * are 1..32767 and unique. Errors name the variable only, never a key.
+ */
+function parseKeyring(name: string, raw: string): Keyring {
+  const shape = 'comma list of <id>:<base64 of 32 random bytes>, id 1-32767, newest first';
+  const keys = new Map<number, Uint8Array>();
+  let current: number | undefined;
+  for (const entry of raw.trim().split(',')) {
+    const at = entry.indexOf(':');
+    const idText = entry.slice(0, at).trim();
+    const keyText = entry.slice(at + 1).trim();
+    if (at < 0 || !KEY_ID.test(idText) || !BASE64.test(keyText)) throw malformed(name, shape);
+    const id = Number(idText);
+    const key = new Uint8Array(Buffer.from(keyText, 'base64'));
+    if (id > KEY_ID_MAX || key.length !== 32) throw malformed(name, shape);
+    if (keys.has(id)) throw malformed(name, 'each id once');
+    for (const other of keys.values()) if (timingSafeEqual(other, key)) throw malformed(name, 'each key once');
+    keys.set(id, key);
+    current ??= id;
+  }
+  if (current === undefined) throw malformed(name, shape);
+  return { current, keys };
+}
+
+/** The three rings and `serverKey` must not share a key: each secret protects one thing only. */
+function assertSeparate(serverKey: Uint8Array, rings: Array<[string, Keyring]>): void {
+  const seen: Uint8Array[] = [serverKey];
+  for (const [name, ring] of rings) {
+    for (const key of ring.keys.values()) {
+      if (seen.some((k) => timingSafeEqual(k, key))) {
+        throw malformed(name, 'its keys must be separate from X2F_SERVER_KEY and from the other key rings');
+      }
+    }
+    seen.push(...ring.keys.values());
+  }
+}
+
 /** Reads the API's settings; throws naming the first missing or malformed variable. */
 export function loadConfig(env: Env): Config {
   const siteName = env.X2F_SITE_NAME || 'X2F';
@@ -101,6 +194,16 @@ export function loadConfig(env: Env): Config {
     throw malformed('X2F_PGP_SIGNING_FINGERPRINT', 'lower-case hex, 40 or 64 characters');
   }
 
+  const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
+  const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
+  const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
+  const legacy = env.X2F_LEGACY_SECRETS || 'on';
+  if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
+  const legacySecrets = legacy === 'on';
+  assertSeparate(serverKey, [
+    ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
+  ]);
+
   // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
   const vapidPublic = required(env, 'X2F_VAPID_PUBLIC');
   const pub = /^[A-Za-z0-9_-]{87}$/.test(vapidPublic) ? Buffer.from(vapidPublic, 'base64url') : null;
@@ -115,11 +218,15 @@ export function loadConfig(env: Env): Config {
 
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
-    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, vapidPublic, vapidPrivate,
+    moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
+    legacySecrets, vapidPublic, vapidPrivate,
   };
 }
 
-/** A purpose-bound key: HKDF-SHA-256 of `serverKey`, info `x2f/<label>`, 32 bytes. */
+/**
+ * A purpose-bound key: HKDF-SHA-256 of `serverKey`, info `x2f/<label>`, 32 bytes. `totp` only
+ * opens format-0 (pre-FU-C) sealed TOTP secrets until `rewrapTotpSecrets` has moved them.
+ */
 export function subkey(config: Config, label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start'): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }

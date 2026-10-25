@@ -76,7 +76,7 @@ describe('WebAuthn ceremony wrappers', () => {
 
   it('confirmWithWebAuthn returns the confirm token for exactly the action', async () => {
     const { api, calls } = fakeApi();
-    const action = { kind: 'payout-wait-off' } as const;
+    const action = { kind: 'new-recovery-codes' } as const;
     await expect(confirmWithWebAuthn(api, action, authentication())).resolves.toBe('tok');
     expect(calls.confirmWebAuthnStart).toHaveBeenCalledWith({ action });
     expect(calls.confirmWebAuthnFinish).toHaveBeenCalledWith({ challengeId: 'ch-confirm', response: ASSERT });
