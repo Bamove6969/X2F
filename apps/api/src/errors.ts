@@ -35,6 +35,15 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Plan 3, Task 6: the trade events route and the state machine's refusals.
+  | 'event-not-allowed'
+  | 'wrong-state'
+  | 'wrong-party'
+  | 'too-early'
+  | 'too-late'
+  | 'no-extensions-left'
+  | 'not-releasable'
+  | 'total-changed'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

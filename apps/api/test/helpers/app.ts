@@ -1,11 +1,16 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
-import { buildApi, type Deps } from '../../src/app.js';
+import { buildApi, type BuildOptions, type Deps } from '../../src/app.js';
 import { pgpSignerFromArmored, type PgpSigner } from '../../src/auth/pgp.js';
-import type { Config } from '../../src/config.js';
+import type { Config, Keyring } from '../../src/config.js';
 import { testDb } from './db.js';
 import { captureLogs } from './logs.js';
+
+/** A one-key ring of fresh random bytes under `id`. */
+export function testRing(id = 1): Keyring {
+  return { current: id, keys: new Map([[id, new Uint8Array(randomBytes(32))]]) };
+}
 
 export function testConfig(over: Partial<Config> = {}): Config {
   return {
@@ -20,6 +25,10 @@ export function testConfig(over: Partial<Config> = {}): Config {
     termsVersion: '2026-10-17',
     pgpSigningKeyPath: '/nonexistent/signing.asc',
     pgpSigningFingerprint: '0'.repeat(40),
+    passwordPeppers: testRing(),
+    recoveryCodeKeys: testRing(),
+    totpKeys: testRing(),
+    legacySecrets: true,
     ...over,
   };
 }
@@ -49,7 +58,7 @@ function notYet<T extends object>(what: string): T {
   });
 }
 
-export async function testApp(overrides: Partial<Deps> = {}): Promise<{
+export async function testApp(overrides: Partial<Deps> = {}, options: Omit<BuildOptions, 'logStream'> = {}): Promise<{
   app: FastifyInstance;
   deps: Deps;
   setNow(d: Date): void;
@@ -70,7 +79,7 @@ export async function testApp(overrides: Partial<Deps> = {}): Promise<{
     ...overrides,
   };
   const { stream, logs } = captureLogs();
-  const app = await buildApi(deps, { logStream: stream });
+  const app = await buildApi(deps, { ...options, logStream: stream });
   if (ownDb) app.addHook('onClose', async () => deps.db.end());
   return { app, deps, setNow: (d) => void (now = d), logs };
 }
