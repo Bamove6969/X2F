@@ -77,7 +77,7 @@ describe('migrations', () => {
         [trader, t, waiting],
       );
 
-      expect(await migrate(db)).toEqual(['010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '103_trades.sql', '104_trade_retention.sql']);
+      expect(await migrate(db)).toEqual(['010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '103_trades.sql', '104_trade_retention.sql', '106_trade_identities.sql']);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
       expect((await db.query('select usable_from from wallets')).rows).toEqual([{ usable_from: waiting }]);

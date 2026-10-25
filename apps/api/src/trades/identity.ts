@@ -100,8 +100,13 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
       [normalized],
     );
     const row = rows[0];
-    // Ready only once the moderation service has posted it, which needs both traders registered.
-    if (!row) return reply.code(202).send({ status: 'pending' });
+    if (!row) {
+      // The moderation service refused this trade for good (no reason given): stop waiting.
+      const refused = await deps.db.query('select 1 from trade_refusals where code = $1', [normalized]);
+      if (refused.rows.length > 0) throw new ApiError(409, 'attestation-refused');
+      // Ready only once the moderation service has posted it, which needs both traders registered.
+      return reply.code(202).send({ status: 'pending' });
+    }
     return reply.send({ attestation: row.attestation, sig: row.sig });
   });
 }

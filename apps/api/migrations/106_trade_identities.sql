@@ -28,3 +28,12 @@ create table trade_attestations (
   sig text not null,
   created_at timestamptz not null default now()
 );
+
+-- The moderation service's word on a trade it will never attest (its proofs fail or its two slots
+-- share a key). Posted as a `refused` report over the signed internal listener; a refused trade is
+-- never served as work again, so a pile of such trades cannot starve the rest.
+create table trade_refusals (
+  code text primary key references trades (code),
+  reason text not null check (reason in ('bad-proof', 'bad-work')),
+  created_at timestamptz not null default now()
+);

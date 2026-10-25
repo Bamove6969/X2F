@@ -266,4 +266,74 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     // Still nothing stored.
     expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
   });
+
+  it('a refused report is terminal: the trade leaves work for good and its traders stop waiting', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const buyerId = identityFor(code, 'buyer');
+    const sellerId = identityFor(code, 'seller');
+
+    // Not work yet (only one identity): nothing to refuse.
+    await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
+    const early = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-proof' });
+    expect(early.statusCode).toBe(409);
+    expect(early.json()).toMatchObject({ error: 'not-refusable' });
+    await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
+
+    // Exact body only, and a fixed reason set.
+    for (const bad of [
+      { kind: 'refused', trade: code, reason: 'because' },
+      { kind: 'refused', trade: code, reason: 'bad-proof', extra: 1 },
+      { kind: 'refused', trade: 'not a code', reason: 'bad-proof' },
+    ]) {
+      expect((await signedInject('POST', '/internal/v1/reports', bad)).statusCode).toBe(400);
+    }
+    // Unsigned refusals are refused like any internal request.
+    const unsigned = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-proof' }, { sign: false });
+    expect(unsigned.statusCode).toBe(401);
+    const listed = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(listed.work.some((w) => w.trade === code)).toBe(true);
+
+    const res = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-proof' });
+    expect(res.statusCode).toBe(201);
+    // A repeat is idempotent.
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-proof' })).statusCode).toBe(201);
+
+    const after = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(after.work.some((w) => w.trade === code)).toBe(false);
+    for (const t of [buyer, seller]) {
+      const got = await t.b.get(`/v1/trades/${code}/attestation`);
+      expect(got.statusCode).toBe(409);
+      expect(got.json()).toMatchObject({ error: 'attestation-refused' });
+    }
+
+    // A refused trade is never attested afterwards.
+    const mod = stubModKeys();
+    const attestation: Attestation = {
+      v: 1,
+      trade: code,
+      channels: { escrow: await channelFor(code, 'escrow'), signals: await channelFor(code, 'signals') },
+      participants: {
+        buyer: { signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic },
+        seller: { signPublic: sellerId.id.signPublic, boxPublic: sellerId.id.boxPublic },
+        mod,
+      },
+      issuedAt: now.toISOString(),
+    };
+    const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
+    const late = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
+    expect(late.statusCode).toBe(409);
+    expect(late.json()).toMatchObject({ error: 'refused' });
+  });
+
+  it('an attested trade cannot be refused afterwards', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const buyerId = identityFor(code, 'buyer');
+    const sellerId = identityFor(code, 'seller');
+    await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
+    await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
+    await attestAndPost(code, buyerId.id, sellerId.id);
+    const res = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-work' });
+    expect(res.statusCode).toBe(409);
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
+  });
 });
