@@ -60,7 +60,8 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
  * `POST /v1/account/push { endpoint, keys }` → 204; `DELETE /v1/account/push` with `{ endpoint }`
  * drops that subscription of the caller's, with no body all of them → 204. All `requireTrader`.
  * No answer ever repeats an endpoint or a key, and none is logged (the request body is redacted
- * from every log line by buildApi).
+ * from every log line by buildApi). A subscription belongs to the session that posted it and goes
+ * when that session ends (migration 105's trigger; push/send.ts skips expired sessions).
  */
 export function pushRoutes(app: FastifyInstance): void {
   const requireTrader = requireSession({ kinds: ['trader'] });
@@ -79,10 +80,11 @@ export function pushRoutes(app: FastifyInstance): void {
         await client.query('select id from accounts where id = $1 for update', [accountId]);
         // The last account to post a browser's endpoint owns it (a shared or handed-on browser).
         await client.query(
-          `insert into push_subscriptions (account_id, endpoint, p256dh, auth, created_at) values ($1, $2, $3, $4, $5)
+          `insert into push_subscriptions (account_id, session_id, endpoint, p256dh, auth, created_at) values ($1, $2, $3, $4, $5, $6)
            on conflict (endpoint) do update
-             set account_id = excluded.account_id, p256dh = excluded.p256dh, auth = excluded.auth, created_at = excluded.created_at`,
-          [accountId, sub.endpoint, sub.p256dh, sub.auth, clock()],
+             set account_id = excluded.account_id, session_id = excluded.session_id, p256dh = excluded.p256dh,
+                 auth = excluded.auth, created_at = excluded.created_at`,
+          [accountId, req.auth.sessionId, sub.endpoint, sub.p256dh, sub.auth, clock()],
         );
         await client.query(
           `delete from push_subscriptions where id in (

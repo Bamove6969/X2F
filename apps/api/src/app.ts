@@ -153,7 +153,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('events', events);
   const transport = options.pushTransport ?? webPushTransport;
   app.decorate('push', {
-    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, config: deps.config, transport, log: app.log }, accountId, kind),
+    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind),
   });
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);

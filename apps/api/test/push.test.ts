@@ -240,6 +240,37 @@ describe('endpoint checks (shared by the routes and the sender)', () => {
   });
 });
 
+describe('a subscription lives only as long as the session that posted it (review minor 4)', () => {
+  it("logout deletes that browser's subscriptions and no other session's", async () => {
+    const t = await trader();
+    const other = new Browser(app);
+    expect((await other.post('/t/login', { accountId: t.id })).statusCode).toBe(200);
+    const mine = subscription();
+    const theirs = subscription();
+    await post(t.b, mine);
+    await post(other, theirs);
+    expect((await t.b.post('/v1/logout', {})).statusCode).toBe(200);
+    expect(await stored(t.id)).toEqual([theirs.endpoint]);
+  });
+
+  it('every revoke path drops them (the trigger): endAllSessions leaves none', async () => {
+    const t = await trader();
+    await post(t.b, subscription());
+    const { endAllSessions } = await import('../src/auth/sessions.js');
+    await endAllSessions(deps, t.id);
+    expect(await stored(t.id)).toEqual([]);
+  });
+
+  it('an expired session is never pushed to, and its row is deleted at send', async () => {
+    const t = await trader();
+    await post(t.b, subscription());
+    await deps.db.query('update sessions set expires_at = $2 where account_id = $1', [t.id, new Date(0)]);
+    expect(await app.push.send(t.id, 'trade')).toBe(false);
+    expect(calls).toEqual([]);
+    expect(await stored(t.id)).toEqual([]);
+  });
+});
+
 describe('DELETE /v1/account/push', () => {
   it("with an endpoint removes that subscription, and never another account's", async () => {
     const a = await trader();
@@ -328,7 +359,8 @@ describe('sendPush', () => {
     for (const endpoint of bad) {
       secrets.push(endpoint);
       await deps.db.query(
-        'insert into push_subscriptions (account_id, endpoint, p256dh, auth, created_at) values ($1, $2, $3, $4, $5)',
+        `insert into push_subscriptions (account_id, session_id, endpoint, p256dh, auth, created_at)
+         select $1, id, $2, $3, $4, $5 from sessions where account_id = $1 and revoked_at is null limit 1`,
         [t.id, endpoint, ecdh.getPublicKey().toString('base64url'), randomBytes(16).toString('base64url'), new Date()],
       );
     }

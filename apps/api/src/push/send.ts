@@ -44,6 +44,7 @@ export interface PushLog {
 
 export interface PushDeps {
   db: Queryable;
+  clock: () => Date;
   config: Pick<Config, 'origins' | 'vapidPublic' | 'vapidPrivate'>;
   transport: PushTransport;
   log: PushLog;
@@ -94,6 +95,14 @@ export const webPushTransport: PushTransport = makeWebPushTransport();
  * dropped the subscription: the row is deleted. Anything else is logged as its status only.
  */
 export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind): Promise<boolean> {
+  // A subscription whose session has ended (expired; a revoked one is already deleted by the
+  // trigger) is never sent to: it is deleted here.
+  const now = deps.clock();
+  await deps.db.query(
+    `delete from push_subscriptions p using sessions s
+      where p.account_id = $1 and s.id = p.session_id and (s.revoked_at is not null or s.expires_at <= $2)`,
+    [accountId, now],
+  );
   const { rows } = await deps.db.query<{ id: string; endpoint: string; p256dh: string; auth: string }>(
     'select id, endpoint, p256dh, auth from push_subscriptions where account_id = $1',
     [accountId],
