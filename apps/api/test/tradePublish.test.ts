@@ -1,4 +1,5 @@
 import { createECDH, randomBytes } from 'node:crypto';
+import { newTradeCode } from '@x2f/core';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -51,32 +52,97 @@ async function refundable() {
 const delivered = async (code: string) =>
   (await deps.db.query<{ d: boolean | null }>('select final_alert_delivered as d from trades where code = $1', [code])).rows[0]!.d;
 
-describe('trade event delivery (tradeEventPublisher)', () => {
-  it('final_alert_delivered is false with no stream and no subscription', async () => {
+const seen = (code: string) => `/v1/trades/${code}/final-alert-seen`;
+const errorOf = (res: { json(): unknown }) => (res.json() as { error?: string }).error;
+
+describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)', () => {
+  it('stays unset (not seen) with no stream and no subscription', async () => {
     const { seller, t } = await refundable();
     expect(await delivered(t.code)).toBeNull();
     const res = await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
     expect(res.statusCode).toBe(200);
-    expect(await delivered(t.code)).toBe(false);
+    expect(await delivered(t.code)).toBeNull();
     expect(calls).toEqual([]);
   });
 
-  it('final_alert_delivered is true when the push service accepts the buyer push, with the generic text', async () => {
+  it('a push service answering 201 alone never sets it; the push has the generic text', async () => {
     const { seller, buyer, t } = await refundable();
     expect((await buyer.browser.post('/v1/account/push', subscription())).statusCode).toBe(204);
     await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    expect(await delivered(t.code)).toBe(true);
     expect(calls.map((c) => c.payload)).toEqual(['Something changed in a trade on X2F']);
+    expect(await delivered(t.code)).toBeNull();
   });
 
-  it('final_alert_delivered stays false when the push service refuses', async () => {
+  it('an open stream alone never sets it, and a dead stream with no receipt stays unset', async () => {
     const { seller, buyer, t } = await refundable();
-    await buyer.browser.post('/v1/account/push', subscription());
-    status = 500;
-    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    expect(await delivered(t.code)).toBe(false);
+    const live: string[] = [];
+    const detachLive = app.events.attach(buyer.id, { send: (d) => void live.push(d), close: () => undefined })!;
+    const detachDead = app.events.attach(buyer.id, { send: () => { throw new Error('gone'); }, close: () => undefined })!;
+    try {
+      await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+      expect(live.join('')).toContain('refund_requested');
+      expect(await delivered(t.code)).toBeNull();
+    } finally {
+      detachLive();
+      detachDead();
+    }
   });
 
+  it("the buyer's receipt sets it true, and is idempotent", async () => {
+    const { seller, buyer, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
+    expect(await delivered(t.code)).toBe(true);
+    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
+    expect(await delivered(t.code)).toBe(true);
+  });
+
+  it('the seller cannot set it (409 wrong-party)', async () => {
+    const { seller, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    const res = await seller.browser.post(seen(t.code), {});
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('wrong-party');
+    expect(await delivered(t.code)).toBeNull();
+  });
+
+  it('before a refund is requested the receipt is refused (409 wrong-state)', async () => {
+    const { buyer, t } = await refundable();
+    const res = await buyer.browser.post(seen(t.code), {});
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('wrong-state');
+    expect(await delivered(t.code)).toBeNull();
+  });
+
+  it("an unknown code gets the same answer as someone else's trade", async () => {
+    const { seller, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    const stranger = await trader();
+    const notYours = await stranger.browser.post(seen(t.code), {});
+    const unknown = await stranger.browser.post(seen(newTradeCode()), {});
+    const malformed = await stranger.browser.post(seen('nonsense'), {});
+    for (const res of [notYours, unknown, malformed]) {
+      expect(res.statusCode).toBe(404);
+      expect(res.json()).toEqual({ error: 'not-found' });
+    }
+    expect(await delivered(t.code)).toBeNull();
+  });
+
+  it("the service worker's account receipt marks only the caller's refund-requested buyer trades", async () => {
+    const a = await refundable();
+    const b = await refundable();
+    await a.seller.browser.post(`/v1/trades/${a.t.code}/events`, { type: 'request-refund' });
+    await b.seller.browser.post(`/v1/trades/${b.t.code}/events`, { type: 'request-refund' });
+    // The seller of A calling it marks nothing of A (they are not its buyer).
+    expect((await a.seller.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
+    expect(await delivered(a.t.code)).toBeNull();
+    expect((await a.buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
+    expect(await delivered(a.t.code)).toBe(true);
+    expect(await delivered(b.t.code)).toBeNull();
+  });
+});
+
+describe('trade event delivery (tradeEventPublisher)', () => {
   it('a participant event goes live to both sides and is pushed only to the other side', async () => {
     const { seller, buyer, t } = await refundable();
     await seller.browser.post('/v1/account/push', subscription());

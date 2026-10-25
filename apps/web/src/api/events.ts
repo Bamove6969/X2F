@@ -35,6 +35,15 @@ export function parseLiveEvent(raw: string): LiveEvent | null {
   return out as LiveEvent;
 }
 
+/**
+ * The final alert's seen-receipt (P3-I13): when the live `refund_requested` event reaches this
+ * device, tell the API. The seller gets the same event and a 409, which is ignored.
+ */
+export function finalAlertSeen(e: LiveEvent, post: (path: string) => Promise<unknown>): void {
+  if (e.type !== 'trade' || e.state !== 'refund_requested') return;
+  void post(`/v1/trades/${encodeURIComponent(e.code)}/final-alert-seen`).catch(() => undefined);
+}
+
 export interface ConnectOptions {
   /** The browser's EventSource (injected by tests; undefined where there is none). */
   EventSource?: typeof EventSource | undefined;

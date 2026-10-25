@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
-import { setNavigator } from './api/client.js';
-import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { api, setNavigator } from './api/client.js';
+import { finalAlertSeen, useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet } from './screens/AcceptedSheet.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
@@ -63,6 +63,7 @@ function LiveAccepted() {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
   useLiveEvents((e) => {
+    finalAlertSeen(e, (path) => api(path, { method: 'POST' }));
     if (e.type === 'accepted') setAccepted(e);
   });
   if (!accepted) return null;

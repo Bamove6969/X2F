@@ -16,6 +16,7 @@ create table push_subscriptions (
 create unique index push_subscriptions_endpoint on push_subscriptions (endpoint);
 create index push_subscriptions_account on push_subscriptions (account_id, created_at);
 
--- The buyer's final alert on request-refund (P3-I13): true when a live stream was open or a push
--- service accepted the push; null until a refund is requested. Moderation (Task 10) escalates on false.
+-- The buyer's final alert on request-refund (P3-I13): true only once the buyer's device has shown
+-- it (the seen-receipt routes in trades/routes.ts). An open stream or a push service's 201 never
+-- sets it. Null and false both mean "not seen": Task 10 must treat null as false and escalate.
 alter table trades add column final_alert_delivered boolean;

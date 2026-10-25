@@ -220,7 +220,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ db: deps.db, events, push: app.push }) });
+  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
 
   return app;
 }

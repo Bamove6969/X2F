@@ -84,6 +84,37 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     return view(req, t, row.seller_wallet_app);
   });
 
+  /**
+   * `POST /v1/trades/:code/final-alert-seen` → 204: the buyer's device has shown the final alert
+   * (the web app on the live `refund_requested` event). The only way `final_alert_delivered`
+   * becomes true; a stream being open or a push service answering 201 never does (P3-I13).
+   * Idempotent. An unknown code and someone else's trade get the same 404; the seller gets 409
+   * `wrong-party`; before a refund is requested, 409 `wrong-state`.
+   */
+  app.post('/v1/trades/:code/final-alert-seen', { preHandler: session }, async (req, reply) => {
+    const t = rowToTrade(await tradeFor(req));
+    const role = roleOf(t, req.auth.accountId);
+    if (role === null) throw new ApiError(404, 'not-found');
+    if (role !== 'buyer') throw new ApiError(409, 'wrong-party');
+    if (t.finalAlertAt === null) throw new ApiError(409, 'wrong-state');
+    await req.server.deps.db.query('update trades set final_alert_delivered = true where code = $1', [t.code]);
+    return reply.code(204).send();
+  });
+
+  /**
+   * `POST /v1/account/final-alert-seen` → 204: the service worker has shown a trade push. Pushes
+   * carry no trade code (spec 4), so this marks every trade where the caller is the buyer and a
+   * refund is requested. Idempotent; touches no other account's trades.
+   */
+  app.post('/v1/account/final-alert-seen', { preHandler: session }, async (req, reply) => {
+    await req.server.deps.db.query(
+      `update trades set final_alert_delivered = true
+        where buyer_account_id = $1 and state = 'refund_requested' and final_alert_at is not null and final_alert_delivered is not true`,
+      [req.auth.accountId],
+    );
+    return reply.code(204).send();
+  });
+
   app.post('/v1/trades/:code/events', { preHandler: session }, async (req) => {
     const e = clientEvent(req.body);
     const row = await tradeFor(req);

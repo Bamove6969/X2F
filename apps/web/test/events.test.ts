@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { connectEvents, parseLiveEvent, type LiveEvent } from '../src/api/events.js';
+import { connectEvents, finalAlertSeen, parseLiveEvent, type LiveEvent } from '../src/api/events.js';
 
 /** A stand-in for the browser's EventSource. */
 class FakeSource {
@@ -139,5 +139,28 @@ describe('connectEvents', () => {
     const stop = connectEvents(() => undefined, { EventSource: undefined });
     expect(FakeSource.all).toHaveLength(0);
     stop();
+  });
+});
+
+describe('finalAlertSeen (the final alert seen-receipt, P3-I13)', () => {
+  it('posts the receipt for the live refund_requested event, with the code encoded', async () => {
+    const posted: string[] = [];
+    finalAlertSeen({ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'refund_requested' }, async (p) => void posted.push(p));
+    expect(posted).toEqual(['/v1/trades/X2F-7KQ4-M9TD/final-alert-seen']);
+  });
+
+  it('posts nothing for any other event', () => {
+    const posted: string[] = [];
+    const post = async (p: string) => void posted.push(p);
+    finalAlertSeen({ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'paid' }, post);
+    finalAlertSeen({ type: 'accepted', code: 'X2F-7KQ4-M9TD', by: 'mira' }, post);
+    expect(posted).toEqual([]);
+  });
+
+  it('swallows a refusal (the seller gets the same event and a 409)', async () => {
+    expect(() =>
+      finalAlertSeen({ type: 'trade', code: 'X2F-7KQ4-M9TD', state: 'refund_requested' }, () => Promise.reject(new Error('409'))),
+    ).not.toThrow();
+    await Promise.resolve();
   });
 });

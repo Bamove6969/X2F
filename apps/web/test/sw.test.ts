@@ -15,13 +15,15 @@ interface Harness {
   opened: string[];
   focused: string[];
   clientsList: Array<{ url: string; focus(): Promise<unknown> }>;
+  fetched: Array<{ url: string; init: Record<string, unknown> }>;
+  fetchFails: boolean;
   dispatch(type: string, extra: Record<string, unknown>): Promise<void>;
 }
 
 /** Runs sw.js in a fresh context with a fake service-worker global. */
 function load(): Harness {
   const h: Harness = {
-    listeners: {}, shown: [], opened: [], focused: [], clientsList: [],
+    listeners: {}, shown: [], opened: [], focused: [], clientsList: [], fetched: [], fetchFails: false,
     async dispatch(type, extra) {
       const waits: Promise<unknown>[] = [];
       this.listeners[type]!({ ...extra, waitUntil: (p: Promise<unknown>) => void waits.push(p) });
@@ -40,6 +42,11 @@ function load(): Harness {
       claim: async () => undefined,
     },
     skipWaiting: async () => undefined,
+    fetch: async (url: string, init: Record<string, unknown>) => {
+      h.fetched.push({ url, init });
+      if (h.fetchFails) throw new TypeError('offline');
+      return { ok: true };
+    },
   };
   runInNewContext(SOURCE, { self, URL });
   return h;
@@ -50,6 +57,25 @@ const pushWith = (text: string | null) => ({ data: text === null ? null : { text
 let h: Harness;
 beforeEach(() => {
   h = load();
+});
+
+describe('sw.js final-alert seen-receipt', () => {
+  it('after showing a trade push, posts the receipt (same origin, no body)', async () => {
+    await h.dispatch('push', pushWith(TRADE));
+    expect(h.shown).toHaveLength(1);
+    expect(h.fetched).toEqual([{ url: '/v1/account/final-alert-seen', init: { method: 'POST', credentials: 'same-origin' } }]);
+  });
+
+  it('sends no receipt for a nudge', async () => {
+    await h.dispatch('push', pushWith(NUDGE));
+    expect(h.fetched).toEqual([]);
+  });
+
+  it('a failed receipt still shows the notification and does not reject', async () => {
+    h.fetchFails = true;
+    await h.dispatch('push', pushWith(TRADE));
+    expect(h.shown).toHaveLength(1);
+  });
 });
 
 describe('sw.js push', () => {
