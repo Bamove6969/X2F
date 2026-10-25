@@ -260,7 +260,10 @@ test('another currency shows the local price and its US-dollar value (spec 11.6)
 test('with the price feed down, the form says so and a market offer can still be posted', async ({ page }) => {
   const posts = await stub(page, { price: 'down' });
   await page.goto('/post?method=ZELLE');
-  await expect(page.getByText('Price unavailable right now.', { exact: true })).toBeVisible();
+  // Under Your price, and in the preview instead of a price.
+  await expect(page.getByText('Price unavailable right now.', { exact: true })).toHaveCount(2);
+  await expect(page.getByRole('region', { name: 'Preview' }).getByText('Price unavailable right now.', { exact: true })).toBeVisible();
+  await expect(page.getByText(/^Market \S+ \/ XMR/)).toHaveCount(0);
   await fillBoard(page);
   await f(page).post.click();
   await expect.poll(() => posts.length).toBe(1);
