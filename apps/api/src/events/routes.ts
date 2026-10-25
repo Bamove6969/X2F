@@ -45,6 +45,12 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       if (!raw.writableEnded) raw.end();
     };
 
+    // The client may have gone while the session was checked: take no stream slot for it.
+    if (raw.destroyed || req.raw.socket?.destroyed) {
+      reply.hijack();
+      return;
+    }
+
     detach = bus.attach(req.auth.accountId, {
       send(data) {
         if (ended || raw.destroyed) throw new Error('stream closed');
