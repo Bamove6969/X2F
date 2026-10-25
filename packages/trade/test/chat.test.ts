@@ -125,21 +125,33 @@ describe('checkChatEnvelope (the API-side shape check; no keys, no decryption)',
 });
 
 describe('chatIdentityProofBytes', () => {
+  const SP = '0123456789abcdef'.repeat(4);
+  const BP = 'fedcba9876543210'.repeat(4);
+
   it('binds the chat, the role and both public keys under its own domain', () => {
-    const text = new TextDecoder().decode(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', 'aa', 'bb'));
-    expect(text).toBe('x2f/chat-identity/v1\0K7M2-9QXA-4FTR-8WPN\0buyer\0aabb');
+    const text = new TextDecoder().decode(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', SP, BP));
+    expect(text).toBe(`x2f/chat-identity/v1\0K7M2-9QXA-4FTR-8WPN\0buyer\0${SP}${BP}`);
   });
 
   it('is the same for any spelling of the chat code and differs per role and per key', () => {
-    const a = chatIdentityProofBytes('k7m2 9qxa 4ftr 8wpn', 'buyer', 'aa', 'bb');
-    expect(a).toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', 'aa', 'bb'));
-    expect(a).not.toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'seller', 'aa', 'bb'));
-    expect(a).not.toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', 'ab', 'bb'));
+    const a = chatIdentityProofBytes('k7m2 9qxa 4ftr 8wpn', 'buyer', SP, BP);
+    expect(a).toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', SP, BP));
+    expect(a).not.toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'seller', SP, BP));
+    expect(a).not.toEqual(chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'buyer', BP, SP));
   });
 
   it('refuses a bad chat code or a role other than buyer or seller', () => {
-    expect(() => chatIdentityProofBytes('nope', 'buyer', 'aa', 'bb')).toThrow(TypeError);
-    expect(() => chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'mod' as 'buyer', 'aa', 'bb')).toThrow(TypeError);
+    expect(() => chatIdentityProofBytes('nope', 'buyer', SP, BP)).toThrow(TypeError);
+    expect(() => chatIdentityProofBytes('K7M2-9QXA-4FTR-8WPN', 'mod' as 'buyer', SP, BP)).toThrow(TypeError);
+  });
+
+  it('requires both keys as exactly 64 lower-case hex characters (they are joined with no separator)', () => {
+    const code = 'K7M2-9QXA-4FTR-8WPN';
+    // Without the length rule, ("ab"+x, y) and ("a", "b"+x+y) would sign the same bytes.
+    for (const bad of ['', 'aa', SP.slice(1), `${SP}0`, SP.toUpperCase(), `${SP.slice(0, 63)}g`, `${SP.slice(0, 63)} `]) {
+      expect(() => chatIdentityProofBytes(code, 'buyer', bad, BP), bad).toThrow(TypeError);
+      expect(() => chatIdentityProofBytes(code, 'buyer', SP, bad), bad).toThrow(TypeError);
+    }
   });
 });
 

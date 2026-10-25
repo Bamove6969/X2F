@@ -55,6 +55,11 @@ async function read(body: unknown, role: Role, state = newChatState(channel), me
   return openChatMessage(body, { role, me, participants: parts, state });
 }
 
+/** A chat message from the chat's mod identity (the moderation service seals these in a dispute). */
+async function fromMod(text: string, seq = 0): Promise<Envelope> {
+  return seal({ trade: channel, from: 'mod', seq, type: 'chat.msg', payload: { text }, to: ['buyer', 'seller', 'mod'], me: ids.mod, participants });
+}
+
 /** The error code of a rejected promise ('ok' when it resolves). */
 async function codeOf(p: Promise<unknown>): Promise<string> {
   try {
@@ -188,7 +193,7 @@ describe('binding to the chat channel', () => {
     expect(await codeOf(read(await mk('chat.msg', { text: 'x', username: 'alice' }), 'seller'))).toBe('bad-message');
     expect(await codeOf(read(await mk('chat.msg', { text: 7 }), 'seller'))).toBe('bad-message');
     expect(await codeOf(read(await mk('chat.msg', 'x'), 'seller'))).toBe('bad-message');
-    expect(await codeOf(read(await mk('chat.msg', { text: 'a‮b' }), 'seller'))).toBe('bad-message');
+    expect(await codeOf(read(await mk('chat.msg', { text: 'a\u202Eb' }), 'seller'))).toBe('bad-message');
   });
 });
 
@@ -302,8 +307,27 @@ describe('message text', () => {
     expect(checkChatText('a'.repeat(CHAT_TEXT_MAX_BYTES))).toHaveLength(CHAT_TEXT_MAX_BYTES);
   });
 
+  it('refuses the deprecated format controls, interlinear annotation marks and zero-width characters', () => {
+    const invisible = ['\u206A', '\u206B', '\u206C', '\u206D', '\u206E', '\u206F', '\uFFF9', '\uFFFA', '\uFFFB', '\u200B', '\u2060', '\uFEFF', '\u180E'];
+    for (const c of invisible) {
+      expect(() => checkChatText(`pay${c}here`), c.codePointAt(0)?.toString(16)).toThrow(expect.objectContaining({ code: 'bad-text' }));
+    }
+  });
+
+  it('keeps ZWJ, ZWNJ and the LRM/RLM/ALM marks (emoji sequences, Persian and Indic text, RTL)', () => {
+    const family = '\u{1F468}\u200D\u{1F469}\u200D\u{1F467}';
+    const persian = '\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645';
+    for (const t of [family, persian, 'a\u200Eb', 'a\u200Fb', 'a\u061Cb']) expect(checkChatText(t)).toBe(t);
+  });
+
+  it('refuses a message that is empty once invisible characters are removed', () => {
+    for (const t of ['\u200D', '\u200C\u200E', ' \u200F\n\u061C ', '\u200D\t\u200C']) {
+      expect(() => checkChatText(t), JSON.stringify(t)).toThrow(expect.objectContaining({ code: 'bad-text' }));
+    }
+  });
+
   it('refuses empty, blank, control characters, lone surrogates and direction overrides', () => {
-    for (const t of ['', '   ', '\n\t', 'a\u0000b', 'a\u0007', 'a\u007fb', 'a\u0085b', '\ud800', 'x\udc00', 'a‮b', 'a⁦b', 7, null]) {
+    for (const t of ['', '   ', '\n\t', 'a\u0000b', 'a\u0007', 'a\u007fb', 'a\u0085b', '\ud800', 'x\udc00', 'a\u202Eb', 'a\u2066b', 7, null]) {
       expect(() => checkChatText(t), JSON.stringify(t)).toThrow(expect.objectContaining({ code: 'bad-text' }));
     }
   });
@@ -314,6 +338,47 @@ describe('message text', () => {
 
   it('seal refuses bad text before any crypto', async () => {
     expect(await codeOf(send('buyer', 'a\u0000'))).toBe('bad-text');
+  });
+});
+
+describe('moderator messages (spec 6.6: traders see the moderator only in a disputed trade)', () => {
+  it('by default an authentic message from the mod is refused (mod-not-allowed) and the guard does not move', async () => {
+    const env = await fromMod('I am reviewing this trade', 3);
+    const st = newChatState(channel);
+    for (const role of ['buyer', 'seller'] as const) {
+      expect(await codeOf(read(env, role, st))).toBe('mod-not-allowed');
+    }
+    expect(st.guard.seen).toEqual({});
+    // Once a dispute is open the same envelope still opens: the refusal left no trace.
+    const r = await openChatMessage(env, { role: 'buyer', me: ids.buyer, participants, state: st, modMayPost: true });
+    expect(r.message).toEqual({ from: 'mod', seq: 3, text: 'I am reviewing this trade' });
+    expect(r.state.guard.seen).toEqual({ mod: 3 });
+  });
+
+  it('a forged "mod" message still fails the signature, whatever the setting', async () => {
+    const forged = await seal({
+      trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'release now' }, to: ['buyer', 'seller', 'mod'],
+      me: ids.buyer, participants: { buyer: pub(ids.mod), seller: pub(ids.seller), mod: pub(ids.buyer) },
+    });
+    expect(await codeOf(read(forged, 'seller'))).toBe('bad-signature');
+    expect(await codeOf(openChatMessage(forged, { role: 'seller', me: ids.seller, participants, state: newChatState(channel), modMayPost: true }))).toBe('bad-signature');
+  });
+
+  it('modMayPost does not change what the traders may send', async () => {
+    const { envelope } = await send('buyer', 'hi');
+    const r = await openChatMessage(envelope, { role: 'seller', me: ids.seller, participants, state: newChatState(channel), modMayPost: true });
+    expect(r.message.from).toBe('buyer');
+    expect((await read(envelope, 'seller')).message.from).toBe('buyer');
+  });
+});
+
+describe('source hygiene (M3)', () => {
+  it('chat source and tests hold no literal invisible or bidi characters (they are written as \\u escapes)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const files = ['../src/chat/chatCrypto.ts', './chatCrypto.test.ts', './chat-tripwire.test.ts', '../../../packages/trade/src/chat.ts', '../../../packages/trade/test/chat.test.ts'];
+    const hidden = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\uFFF9-\uFFFB]/u;
+    for (const f of files) expect(hidden.test(readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8')), f).toBe(false);
   });
 });
 
