@@ -2,7 +2,10 @@
  * Recovery codes, the backup login and its 24-hour hold (Task 9, P2-I1).
  *
  * - Recovery codes come only from `newRecoveryCode()` (80 bits from `getRandomValues`, bias-free)
- *   and are stored only as SHA-256 of the normalized code.
+ *   and are stored only as `recoveryCodeHash`: HMAC-SHA-256 under the current `X2F_RECOVERY_CODE_KEYS`
+ *   key, bound to the account (FU-C, ASVS 2.6.2), its key id in `key_id`. Sets made before FU-C are
+ *   plain SHA-256 with `key_id` null; they cannot be converted (only the hash is kept) and keep
+ *   working, one use per code, until used up or regenerated.
  * - A backup login opens a `recovery` session, never a full one. A TOTP-only backup login is held
  *   for 24 hours: `requireSession` refuses it with 403 `recovery-hold` on every route that does not
  *   set `allowHeld`, so it cannot add a primary method early; a recovery code skips the hold.
@@ -10,10 +13,11 @@
  * - The backup login starts with the private login name (owner, 2026-10-23), never the display name.
  * - Staff and the owner have no backup login (R2): their login names take the unknown-name path.
  */
-import { createHash } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 import { newRecoveryCode, normalizeRecoveryCode, type AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { addAlert } from '../alerts.js';
+import type { Config } from '../config.js';
 import { ApiError } from '../errors.js';
 import { requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
@@ -29,7 +33,25 @@ export const TOTP_BACKUP_DAILY = 5;
 export const RECOVERY_CODE_COUNT = 10;
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-const codeHash = (normalized: string): Buffer => createHash('sha256').update(normalized, 'utf8').digest();
+/** A pre-FU-C code's stored form (`key_id` null): plain SHA-256 of the normalized code. */
+const legacyCodeHash = (normalized: string): Buffer => createHash('sha256').update(normalized, 'utf8').digest();
+
+/** HMAC-SHA-256(key `keyId`, `x2f/recovery-code` NUL account ID NUL normalized code). Throws for a key the ring lacks. */
+export function recoveryCodeHash(config: Config, keyId: number, accountId: string, normalized: string): Buffer {
+  const key = config.recoveryCodeKeys.keys.get(keyId);
+  if (key === undefined) throw new Error(`recovery-code key ${keyId} is not configured`);
+  return createHmac('sha256', key).update(`x2f/recovery-code\0${accountId}\0${normalized}`, 'utf8').digest();
+}
+
+/**
+ * Every (key id, hash) a typed code could be stored as: one per key in the ring, plus (0, SHA-256)
+ * for a legacy row (its null `key_id` is compared as 0) unless `X2F_LEGACY_SECRETS=off`.
+ */
+function candidates(config: Config, accountId: string, normalized: string): { ids: number[]; hashes: Buffer[] } {
+  // With X2F_LEGACY_SECRETS=off a legacy row can never match (its SHA-256 is not even computed).
+  const ids = [...(config.legacySecrets ? [0] : []), ...config.recoveryCodeKeys.keys.keys()];
+  return { ids, hashes: ids.map((id) => (id === 0 ? legacyCodeHash(normalized) : recoveryCodeHash(config, id, accountId, normalized))) };
+}
 
 /** The form login compares; generation hashes the same form, so the two can never drift apart. */
 function normalized(code: string): string {
@@ -62,9 +84,10 @@ async function newCodes(req: FastifyRequest) {
     await client.query('begin');
     try {
       await client.query('delete from recovery_codes where account_id = $1', [req.auth.accountId]);
+      const keyId = deps.config.recoveryCodeKeys.current;
       await client.query(
-        'insert into recovery_codes (account_id, code_hash) select $1, unnest($2::bytea[])',
-        [req.auth.accountId, list.map((c) => codeHash(normalized(c)))],
+        'insert into recovery_codes (account_id, code_hash, key_id) select $1, unnest($2::bytea[]), $3',
+        [req.auth.accountId, list.map((c) => recoveryCodeHash(deps.config, keyId, req.auth.accountId, normalized(c))), keyId],
       );
       await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'recovery-codes' }, now);
       await client.query('commit');
@@ -108,10 +131,14 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
     const key = await throttleKey(deps, req, 'recovery-code', who);
     await throttleCheck(deps, key);
     const normalized = normalizeRecoveryCode(code.slice(0, 64));
-    // Always one lookup; a malformed code or a missing account simply matches nothing.
+    // Always one lookup with the same hashing work; a malformed code or a missing account simply
+    // matches nothing. A row matches only under its own scheme: its key's HMAC, or SHA-256 if legacy.
+    const { ids, hashes } = candidates(deps.config, accountId ?? '', normalized ?? '');
     const { rows } = await deps.db.query<{ id: string }>(
-      'select id from recovery_codes where account_id = $1 and code_hash = $2 and used_at is null',
-      [accountId, codeHash(normalized ?? '')],
+      `select id from recovery_codes
+        where account_id = $1 and used_at is null
+          and (coalesce(key_id, 0), code_hash) in (select * from unnest($2::int[], $3::bytea[]))`,
+      [accountId, ids, hashes],
     );
     const codeId = rows[0]?.id;
     if (accountId === null || normalized === null || codeId === undefined) return refuse(key);

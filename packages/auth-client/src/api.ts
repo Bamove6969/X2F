@@ -13,7 +13,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
-import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
+import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
 import type { ApiErrorCode, IssuedChallenge, LoginResult } from '@x2f/api';
 
 export type { ApiErrorCode, LoginResult };
@@ -126,7 +126,7 @@ export interface AccountOverview {
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
-  payoutWait: PayoutWait;
+  logoutTimer: LogoutTimer;
   termsCurrent: boolean;
 }
 
@@ -163,10 +163,34 @@ export interface Wallet {
   usable: boolean;
 }
 
-/** Task 12: the opt-in 24-hour wait; `offAt` while a switch-off is scheduled. */
-export interface PayoutWait {
-  enabled: boolean;
-  offAt: string | null;
+/** One wallet of an add (the fields the person fills in). */
+export interface WalletDraft {
+  app: WalletApp;
+  label: string;
+  address: string;
+}
+
+/**
+ * `GET /v1/wallets/rule` (owner, 2026-10-24): what adding wallets will do for this account, for the
+ * Add a wallet screen to explain before anything is entered. `firstWallet`: the account never had
+ * one, so the next add works at once whatever the method. `strongMethods`: the methods it holds
+ * that make new wallets work at once. `password`: whether a password confirm is possible and would
+ * wait (`none`, `immediate`, `waits`).
+ */
+export interface WalletRule {
+  firstWallet: boolean;
+  strongMethods: Array<'pgp' | 'passkey' | 'security-key'>;
+  password: 'none' | 'immediate' | 'waits';
+  waitHours: number;
+}
+
+/**
+ * The logout timer (owner, 2026-10-23): idle hours before a session ends. Traders choose one of
+ * `IDLE_HOURS` (2-12, default 12; `adjustable`); staff and owner are fixed at 2.
+ */
+export interface LogoutTimer {
+  idleHours: number;
+  adjustable: boolean;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -248,11 +272,24 @@ export interface AuthApi {
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
-  /** The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`. */
-  addWallet(b: { app: WalletApp; label: string; address: string } & Token): Promise<Wallet>;
+  /**
+   * The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`.
+   * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
+   * TOTP code) `usableFrom` is 24 hours later.
+   */
+  addWallet(b: WalletDraft & Token): Promise<Wallet>;
+  /**
+   * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
+   * one `usableFrom`: one wait for the batch, not one each.
+   */
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[]>;
+  getWalletRule(): Promise<WalletRule>;
+  /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;
-  /** Switching the wait off needs a `payout-wait-off` token and takes effect after 24 hours. */
-  setPayoutWait(b: { enabled: boolean } & Token): Promise<PayoutWait>;
+  // Logout timer (owner, 2026-10-23)
+  getLogoutTimer(): Promise<LogoutTimer>;
+  /** Full trader sessions only; applies to the current session at once. */
+  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer>;
 }
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -367,7 +404,10 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
 
     listWallets: () => get('/v1/wallets'),
     addWallet: (b) => post('/v1/wallets', b),
+    addWallets: (b) => post('/v1/wallets', b),
+    getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
-    setPayoutWait: (b) => call('PUT', '/v1/account/security/payout-wait', b),
+    getLogoutTimer: () => get('/v1/account/security/logout-timer'),
+    setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
   };
 }

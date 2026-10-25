@@ -173,7 +173,8 @@ async function addCredential(accountId: string, kind: 'passkey' | 'security-key'
 }
 
 async function addPassword(accountId: string, pw = GOOD) {
-  await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [accountId, await hashPassword(pw), now]);
+  const { hash, pepperId } = await hashPassword(deps.config, pw);
+  await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [accountId, hash, pepperId, now]);
 }
 
 async function addTotp(accountId: string) {
@@ -189,7 +190,7 @@ async function addRecoveryCodes(accountId: string, codes: string[]) {
 }
 
 async function token(b: Browser, accountId: string, action: Parameters<typeof issueConfirmToken>[1]['action']) {
-  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action });
+  return issueConfirmToken(deps, { sessionId: b.sessionId, accountId, action, method: 'password' });
 }
 
 async function alertsOf(accountId: string, kind: string) {
@@ -562,6 +563,9 @@ describe('PUT /v1/account/password', () => {
     const t = await token(b, id, { kind: 'set-password' });
     const res = await b.put('/v1/account/password', { password: GOOD, confirmToken: t });
     expect(res.statusCode).toBe(200);
+    // Stored under the current pepper (FU-C).
+    const { rows: pw } = await deps.db.query('select pepper_id from passwords where account_id = $1', [id]);
+    expect(pw).toEqual([{ pepper_id: deps.config.passwordPeppers.current }]);
     expect((await other.get('/v1/account/methods')).statusCode).toBe(401);
     expect((await b.get('/v1/account/methods')).statusCode).toBe(200);
     expect(await alertsOf(id, 'login-method-added')).toEqual([{ method: 'password' }]);

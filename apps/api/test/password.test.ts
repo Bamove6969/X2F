@@ -1,4 +1,5 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
+import { normalizePassword } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -6,7 +7,7 @@ import type { Deps } from '../src/app.js';
 import { loginNameLookup } from '../src/accounts.js';
 import { requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
-import { DUMMY_HASH, hashPassword } from '../src/auth/password.js';
+import { DUMMY_HASH, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -249,7 +250,10 @@ describe('POST /v1/login/password', () => {
 
   it('an account from before login names (none set) cannot be reached by any name', async () => {
     const id = await seedAccount(deps, { loginName: null, displayName: 'Legacy.Acct' });
-    await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [id, await hashPassword(GOOD), now]);
+    const legacyHash = await hashPassword(deps.config, GOOD);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
+      id, legacyHash.hash, legacyHash.pepperId, now,
+    ]);
     expect((await login('Legacy.Acct', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
   });
 
@@ -305,8 +309,9 @@ describe('POST /v1/login/password', () => {
     await register('shape0001');
     await seedAccount(deps, { loginName: 'pgponly01' });
     const staffId = await seedAccount(deps, { loginName: 'staffer01', kind: 'staff' });
-    await deps.db.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [
-      staffId, await hashPassword(GOOD), now,
+    const staffHash = await hashPassword(deps.config, GOOD);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
+      staffId, staffHash.hash, staffHash.pepperId, now,
     ]);
     const cases: Array<[string, string]> = [
       ['nobody0001', GOOD],
@@ -370,7 +375,7 @@ describe('POST /v1/login/password', () => {
   it('verifies the dummy hash when the account is unknown', async () => {
     const verify = vi.spyOn(argon2, 'verify');
     await login('ghost0001', GOOD);
-    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, GOOD);
+    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
   });
 
   it('answers 413 to a body over 4 KiB without verifying', async () => {
@@ -480,7 +485,175 @@ describe('budgets (P2-I8)', () => {
   });
 });
 
+describe('pepper (FU-C, ASVS 2.4.5)', () => {
+  type Row = { hash: string; pepper_id: number | null; updated_at: Date };
+  const row = async (id: string) =>
+    (await deps.db.query<Row>('select hash, pepper_id, updated_at from passwords where account_id = $1', [id])).rows[0]!;
+  const hmac = (key: Uint8Array, pw: string) => createHmac('sha256', key).update(normalizePassword(pw), 'utf8').digest();
+  const ARGON2_PLAIN = { type: argon2.argon2id, memoryCost: 65_536, timeCost: 3, parallelism: 1 } as const;
+
+  /** Swaps the pepper ring for one test; the real one comes back afterwards. */
+  async function withPeppers(ring: typeof deps.config.passwordPeppers, f: () => Promise<void>) {
+    const saved = deps.config.passwordPeppers;
+    deps.config.passwordPeppers = ring;
+    try {
+      await f();
+    } finally {
+      deps.config.passwordPeppers = saved;
+    }
+  }
+
+  it('hashes HMAC-SHA-256(current pepper, NFC password) with Argon2id and records the pepper id', async () => {
+    await register('peppered1', 'Cafe\u0301-Horse-9');
+    const id = (await accountRow('peppered1'))!.id;
+    const r = await row(id);
+    const { current, keys } = deps.config.passwordPeppers;
+    expect(r.pepper_id).toBe(current);
+    expect(await argon2.verify(r.hash, hmac(keys.get(current)!, 'Café-Horse-9'))).toBe(true);
+    expect(await argon2.verify(r.hash, normalizePassword('Café-Horse-9'))).toBe(false);
+    expect(pepperedPassword(deps.config, current, 'Cafe\u0301-Horse-9')).toEqual(hmac(keys.get(current)!, 'Café-Horse-9'));
+  });
+
+  it('accepts a legacy hash (no pepper, marked null) and rehashes it under the current pepper on that login only', async () => {
+    const id = await seedAccount(deps, { loginName: 'legacypw1' });
+    const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
+    const changed = new Date(now.getTime() - 5 * HOUR);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, null, $3)', [id, legacy, changed]);
+    // A wrong password neither logs in nor touches the stored hash.
+    expect((await login('legacypw1', 'Wrong-Horse-9')).statusCode).toBe(401);
+    expect(await row(id)).toEqual({ hash: legacy, pepper_id: null, updated_at: changed });
+    const verify = vi.spyOn(argon2, 'verify');
+    const ok = await login('legacypw1', GOOD);
+    expect(ok.statusCode).toBe(200);
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledWith(legacy, normalizePassword(GOOD));
+    const r = await row(id);
+    const { current, keys } = deps.config.passwordPeppers;
+    expect(r.pepper_id).toBe(current);
+    expect(r.hash).not.toBe(legacy);
+    expect(r.updated_at).toEqual(changed); // a rehash is not a password change
+    expect(await argon2.verify(r.hash, hmac(keys.get(current)!, GOOD))).toBe(true);
+    // The next login checks the peppered hash and does not hash again.
+    const hash = vi.spyOn(argon2, 'hash');
+    expect((await login('legacypw1', GOOD)).statusCode).toBe(200);
+    expect(hash).not.toHaveBeenCalled();
+    expect((await row(id)).hash).toBe(r.hash);
+  });
+
+  it('rotates: a hash under an older pepper still logs in and moves to the current one', async () => {
+    const old = new Uint8Array(randomBytes(32));
+    const newer = new Uint8Array(randomBytes(32));
+    const id = await seedAccount(deps, { loginName: 'rotatepw1' });
+    const oldHash = await argon2.hash(hmac(old, GOOD), ARGON2_PLAIN);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, 4, $3)', [id, oldHash, now]);
+    await withPeppers({ current: 5, keys: new Map([[5, newer], [4, old]]) }, async () => {
+      expect((await login('rotatepw1', GOOD)).statusCode).toBe(200);
+      const r = await row(id);
+      expect(r.pepper_id).toBe(5);
+      expect(await argon2.verify(r.hash, hmac(newer, GOOD))).toBe(true);
+    });
+  });
+
+  it('refuses, with one dummy verify and no rehash, a hash whose pepper is no longer configured', async () => {
+    const gone = new Uint8Array(randomBytes(32));
+    const id = await seedAccount(deps, { loginName: 'lostpep01' });
+    const goneHash = await argon2.hash(hmac(gone, GOOD), ARGON2_PLAIN);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, 9, $3)', [id, goneHash, now]);
+    const verify = vi.spyOn(argon2, 'verify');
+    const res = await login('lostpep01', GOOD);
+    expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'credentials-invalid' });
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
+    expect((await row(id)).hash).toBe(goneHash);
+  });
+
+  it('a wrong password against a legacy or an older-pepper hash hashes nothing and changes nothing (review M5)', async () => {
+    const old = new Uint8Array(randomBytes(32));
+    const legacyId = await seedAccount(deps, { loginName: 'wrongleg1' });
+    const olderId = await seedAccount(deps, { loginName: 'wrongold1' });
+    const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
+    const older = await argon2.hash(hmac(old, GOOD), ARGON2_PLAIN);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, null, $3)', [legacyId, legacy, now]);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, 4, $3)', [olderId, older, now]);
+    const { current, keys } = deps.config.passwordPeppers;
+    await withPeppers({ current, keys: new Map([...keys, [4, old]]) }, async () => {
+      const hash = vi.spyOn(argon2, 'hash');
+      expect((await login('wrongleg1', 'Wrong-Horse-9')).statusCode).toBe(401);
+      expect((await login('wrongold1', 'Wrong-Horse-9')).statusCode).toBe(401);
+      expect(hash).not.toHaveBeenCalled();
+    });
+    expect(await row(legacyId)).toMatchObject({ hash: legacy, pepper_id: null });
+    expect(await row(olderId)).toMatchObject({ hash: older, pepper_id: 4 });
+  });
+
+  it('a password change between the check and the rehash wins: the conditional rehash writes nothing (review M5)', async () => {
+    const id = await seedAccount(deps, { loginName: 'racerh001' });
+    const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, null, $3)', [id, legacy, now]);
+    const changed = await hashPassword(deps.config, 'Other-Horse-9');
+    const query = deps.db.query.bind(deps.db) as (text: string, values?: unknown[]) => Promise<unknown>;
+    let raced = false;
+    vi.spyOn(deps.db, 'query').mockImplementation((async (text: string, values?: unknown[]) => {
+      if (!raced && text.startsWith('update passwords set hash = $2, pepper_id = $3')) {
+        raced = true;
+        await query('update passwords set hash = $2, pepper_id = $3 where account_id = $1', [id, changed.hash, changed.pepperId]);
+      }
+      return query(text, values);
+    }) as never);
+    expect((await login('racerh001', GOOD)).statusCode).toBe(200);
+    vi.restoreAllMocks();
+    expect(raced).toBe(true);
+    expect(await row(id)).toMatchObject({ hash: changed.hash, pepper_id: changed.pepperId });
+  });
+
+  it('with X2F_LEGACY_SECRETS=off a legacy hash is refused like a wrong password, with one dummy verify (review M1)', async () => {
+    const id = await seedAccount(deps, { loginName: 'legoff001' });
+    const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
+    await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, null, $3)', [id, legacy, now]);
+    deps.config.legacySecrets = false;
+    try {
+      const verify = vi.spyOn(argon2, 'verify');
+      const hash = vi.spyOn(argon2, 'hash');
+      const res = await login('legoff001', GOOD);
+      expect(res.statusCode).toBe(401);
+      expect(res.json()).toEqual({ error: 'credentials-invalid' });
+      expect(verify).toHaveBeenCalledTimes(1);
+      expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
+      expect(hash).not.toHaveBeenCalled();
+    } finally {
+      deps.config.legacySecrets = true;
+    }
+    expect(await row(id)).toMatchObject({ hash: legacy, pepper_id: null });
+  });
+
+  it('a confirm with the password also rehashes a legacy hash', async () => {
+    await register('confirmrh');
+    const id = (await accountRow('confirmrh'))!.id;
+    const ok = await login('confirmrh', GOOD);
+    const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
+    await deps.db.query('update passwords set hash = $2, pepper_id = null where account_id = $1', [id, legacy]);
+    const res = await post(
+      '/v1/confirm/password', { password: GOOD, action: { kind: 'set-password' } },
+      { [SESSION_COOKIE]: cookie(ok, SESSION_COOKIE)!, [DEVICE_COOKIE]: cookie(ok, DEVICE_COOKIE)! },
+    );
+    expect(res.statusCode).toBe(200);
+    expect((await row(id)).pepper_id).toBe(deps.config.passwordPeppers.current);
+  });
+});
+
 describe('logs', () => {
+  it('never contain a pepper', async () => {
+    const before = logs.length;
+    await register('PepperLog1', 'Very-Secret-Pw-43');
+    await login('PepperLog1', 'Very-Secret-Pw-43');
+    await login('PepperLog1', 'Wrong-Secret-Pw-43');
+    const text = logs.slice(before).join('\n');
+    for (const key of deps.config.passwordPeppers.keys.values()) {
+      for (const enc of ['base64', 'base64url', 'hex'] as const) expect(text).not.toContain(Buffer.from(key).toString(enc));
+    }
+  });
+
   it('never contain the password, the cookie value, the login name or the display name', async () => {
     const before = logs.length;
     const reg = await register('Logged.User', 'Very-Secret-Pw-42');

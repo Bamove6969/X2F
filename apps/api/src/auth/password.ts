@@ -1,8 +1,9 @@
-import { randomBytes } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { checkPassword, normalizePassword, type AccountKind } from '@x2f/accounts';
 import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
+import type { Config } from '../config.js';
 import { addAlert } from '../alerts.js';
 import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
 import { ApiError } from '../errors.js';
@@ -23,14 +24,47 @@ const ARGON2_OPTIONS = { type: argon2.argon2id, memoryCost: 65_536, timeCost: 3,
 /** Password routes refuse bigger bodies with 413 before any hashing. */
 export const PASSWORD_BODY_LIMIT = 4 * 1024;
 
-/** Argon2id of the NFC form, inside `ARGON2_SLOTS` (503 `busy` when full). */
-export function hashPassword(pw: string): Promise<string> {
-  return ARGON2_SLOTS.run(() => argon2.hash(normalizePassword(pw), ARGON2_OPTIONS));
+/**
+ * What Argon2id hashes (FU-C, ASVS 2.4.5): HMAC-SHA-256 of the NFC password under the pepper
+ * `pepperId` of `X2F_PASSWORD_PEPPERS`. A stolen database alone cannot be guessed against offline.
+ * Throws when the ring no longer holds `pepperId`.
+ */
+export function pepperedPassword(config: Config, pepperId: number, pw: string): Buffer {
+  const pepper = config.passwordPeppers.keys.get(pepperId);
+  if (pepper === undefined) throw new Error(`password pepper ${pepperId} is not configured`);
+  return createHmac('sha256', pepper).update(normalizePassword(pw), 'utf8').digest();
 }
 
-/** Checks `pw` against an Argon2 hash, inside `ARGON2_SLOTS` (503 `busy` when full). */
-export function verifyPassword(hash: string, pw: string): Promise<boolean> {
-  return ARGON2_SLOTS.run(() => argon2.verify(hash, normalizePassword(pw)));
+/** A stored password: the Argon2id string and the pepper it was made with (null = before FU-C, no pepper). */
+export interface StoredPassword {
+  hash: string;
+  pepperId: number | null;
+}
+
+/** Argon2id of the peppered NFC form under the current pepper, inside `ARGON2_SLOTS` (503 `busy` when full). */
+export async function hashPassword(config: Config, pw: string): Promise<{ hash: string; pepperId: number }> {
+  const pepperId = config.passwordPeppers.current;
+  const input = pepperedPassword(config, pepperId, pw);
+  return { hash: await ARGON2_SLOTS.run(() => argon2.hash(input, ARGON2_OPTIONS)), pepperId };
+}
+
+/**
+ * The Argon2 call that checks `pw` against `stored`, always exactly one verify: a legacy hash
+ * (pepper null) gets the NFC password, a peppered one its peppered form; a hash whose pepper the
+ * ring no longer holds, or a legacy hash with `X2F_LEGACY_SECRETS=off`, is checked as `DUMMY_HASH`
+ * (always false), so it fails like a wrong password.
+ */
+function verifyStored(config: Config, stored: StoredPassword, pw: string): Promise<boolean> {
+  if (stored.pepperId === null && config.legacySecrets) return argon2.verify(stored.hash, normalizePassword(pw));
+  if (stored.pepperId === null || !config.passwordPeppers.keys.has(stored.pepperId)) {
+    return argon2.verify(DUMMY_HASH, pepperedPassword(config, config.passwordPeppers.current, pw));
+  }
+  return argon2.verify(stored.hash, pepperedPassword(config, stored.pepperId, pw));
+}
+
+/** Checks `pw` against a stored password, inside `ARGON2_SLOTS` (503 `busy` when full). */
+export function verifyPassword(config: Config, stored: StoredPassword, pw: string): Promise<boolean> {
+  return ARGON2_SLOTS.run(() => verifyStored(config, stored, pw));
 }
 
 /**
@@ -65,42 +99,70 @@ function strings<K extends string>(body: unknown, keys: readonly K[]): Record<K,
  * and its kind may use one; otherwise `DUMMY_HASH`, so every path runs exactly one Argon2 verify.
  */
 const PASSWORD_BY_NAME =
-  'select a.id, a.kind, p.hash from accounts a left join passwords p on p.account_id = a.id where a.login_key = $1';
-const PASSWORD_BY_ID = 'select a.id, a.kind, p.hash from accounts a left join passwords p on p.account_id = a.id where a.id = $1';
+  'select a.id, a.kind, p.hash, p.pepper_id from accounts a left join passwords p on p.account_id = a.id where a.login_key = $1';
+const PASSWORD_BY_ID =
+  'select a.id, a.kind, p.hash, p.pepper_id from accounts a left join passwords p on p.account_id = a.id where a.id = $1';
 
-async function passwordFor(deps: Pick<Deps, 'db'>, where: { loginKey: string } | { accountId: string }) {
-  const { rows } = await deps.db.query<{ id: string; kind: AccountKind; hash: string | null }>(
+type Found = { accountId: string | null; stored: StoredPassword; real: boolean };
+
+/** `DUMMY_HASH` checked under the current pepper: the path of every login that has no real hash. */
+const dummyFor = (config: Config): StoredPassword => ({ hash: DUMMY_HASH, pepperId: config.passwordPeppers.current });
+
+async function passwordFor(deps: Pick<Deps, 'db' | 'config'>, where: { loginKey: string } | { accountId: string }): Promise<Found> {
+  const { rows } = await deps.db.query<{ id: string; kind: AccountKind; hash: string | null; pepper_id: number | null }>(
     'loginKey' in where ? PASSWORD_BY_NAME : PASSWORD_BY_ID,
     ['loginKey' in where ? where.loginKey : where.accountId],
   );
   const row = rows[0];
   const real = row !== undefined && row.hash !== null && passwordAllowed(row.kind);
-  return { accountId: row?.id ?? null, hash: real ? row.hash! : DUMMY_HASH, real };
+  return {
+    accountId: row?.id ?? null,
+    stored: real ? { hash: row.hash!, pepperId: row.pepper_id } : dummyFor(deps.config),
+    real,
+  };
+}
+
+/**
+ * FU-C migration, run in the Argon2 slot after a right password: a real hash stored without a
+ * pepper or under an older one gets a new hash under the current pepper; otherwise null.
+ */
+async function staleRehash(config: Config, found: Found, password: string): Promise<string | null> {
+  const current = config.passwordPeppers.current;
+  if (!found.real || found.stored.pepperId === current) return null;
+  return argon2.hash(pepperedPassword(config, current, password), ARGON2_OPTIONS);
+}
+
+/**
+ * Writes a `staleRehash` result back only if the stored hash is still the one just checked (a
+ * password change in between wins). `updated_at` stays: it is not a new password.
+ */
+async function storeRehash(deps: Pick<Deps, 'db' | 'config'>, accountId: string, found: Found, rehash: string | null): Promise<void> {
+  if (rehash === null) return;
+  await deps.db.query('update passwords set hash = $2, pepper_id = $3 where account_id = $1 and hash = $4', [
+    accountId, rehash, deps.config.passwordPeppers.current, found.stored.hash,
+  ]);
 }
 
 /**
  * The confirm path's throttled password check on the signed-in account's `password` key: one
  * Argon2 verify, a failure counted and answered 401 `credentials-invalid`. The throttle check runs
  * only once an Argon2 slot is held, so a 503 `busy` refusal never claims (and so never wastes) a
- * throttle try; a 429 refusal releases the slot without verifying.
+ * throttle try; a 429 refusal releases the slot without verifying. A right password under a stale
+ * pepper is hashed again in the same slot (`staleRehash`) and written back by `storeRehash`.
  */
-async function checkCredentials(
-  deps: Deps,
-  req: FastifyRequest,
-  found: { accountId: string | null; hash: string; real: boolean },
-  accountId: string,
-  password: string,
-): Promise<string> {
+async function checkCredentials(deps: Deps, req: FastifyRequest, found: Found, accountId: string, password: string): Promise<string> {
   const key = await throttleKey(deps, req, 'password', { id: accountId });
-  const verified = await ARGON2_SLOTS.run(async () => {
+  const { verified, rehash } = await ARGON2_SLOTS.run(async () => {
     await throttleCheck(deps, key);
-    return argon2.verify(found.hash, normalizePassword(password));
+    const ok = await verifyStored(deps.config, found.stored, password);
+    return { verified: ok, rehash: ok ? await staleRehash(deps.config, found, password) : null };
   });
   if (!verified || !found.real || found.accountId !== accountId) {
     await throttleFail(deps, key, accountId);
     throw new ApiError(401, 'credentials-invalid');
   }
   await throttleReset(deps, key);
+  await storeRehash(deps, accountId, found, rehash);
   return accountId;
 }
 
@@ -129,7 +191,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   await assertNewPassword(deps, password);
   // A taken display name answers before the expensive hash; a taken login name only at create.
   await assertDisplayNameFree(deps.db, names);
-  const hash = await hashPassword(password);
+  const { hash, pepperId } = await hashPassword(deps.config, password);
 
   const now = deps.clock();
   const client = await deps.db.connect();
@@ -138,7 +200,9 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
     await client.query('begin');
     try {
       accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
-      await client.query('insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)', [accountId, hash, now]);
+      await client.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
+        accountId, hash, pepperId, now,
+      ]);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -170,8 +234,10 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   // The try is claimed only once an Argon2 slot is held, so a 503 `busy` never uses one up.
   const outcome = await ARGON2_SLOTS.run(async () => {
     const tryNumber = await claimPasswordTry(deps, key);
-    const verified = await argon2.verify(tryNumber !== null ? found.hash : DUMMY_HASH, normalizePassword(password));
-    return { tryNumber, ok: verified && tryNumber !== null && found.real };
+    const stored = tryNumber !== null ? found.stored : dummyFor(deps.config);
+    const verified = await verifyStored(deps.config, stored, password);
+    const ok = verified && tryNumber !== null && found.real;
+    return { tryNumber, ok, rehash: ok ? await staleRehash(deps.config, found, password) : null };
   });
   if (!outcome.ok || found.accountId === null) {
     if (outcome.tryNumber !== null) await passwordMiss(deps, key, outcome.tryNumber, found.accountId);
@@ -180,6 +246,7 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   const accountId = found.accountId;
   await throttleReset(deps, key);
   await visitorReset(deps, deviceHash(req));
+  await storeRehash(deps, accountId, found, outcome.rehash);
   // Only after the password checks out, so a disabled account is not revealed to anyone else.
   await assertNotDisabled(deps.db, accountId);
   // With TOTP enrolled, no session until `POST /v1/login/second-factor` accepts the code.
@@ -219,7 +286,10 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
     }
     await throttleReset(deps, key);
   }
-  const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });
+  // A password, with or without its TOTP code, is the weak kind of proof (a new wallet waits 24 hours).
+  const confirmToken = await issueConfirmToken(deps, {
+    sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: 'password',
+  });
   return { confirmToken };
 }
 
@@ -244,7 +314,7 @@ async function setPasswordHandler(req: FastifyRequest) {
   const deps = req.server.deps;
   const password = checkedPassword.get(req);
   if (password === undefined) throw new ApiError(400, 'bad-request');
-  const hash = await hashPassword(password);
+  const { hash, pepperId } = await hashPassword(deps.config, password);
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
   const client = await deps.db.connect();
@@ -252,9 +322,9 @@ async function setPasswordHandler(req: FastifyRequest) {
     await client.query('begin');
     try {
       await client.query(
-        `insert into passwords (account_id, hash, updated_at) values ($1, $2, $3)
-         on conflict (account_id) do update set hash = excluded.hash, updated_at = excluded.updated_at`,
-        [accountId, hash, now],
+        `insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)
+         on conflict (account_id) do update set hash = excluded.hash, pepper_id = excluded.pepper_id, updated_at = excluded.updated_at`,
+        [accountId, hash, pepperId, now],
       );
       await addAlert(client, accountId, 'login-method-added', { method: 'password' }, now);
       const ended = await client.query(

@@ -15,6 +15,7 @@ import {
   loginWithPasskey,
   loginWithSecurityKey,
   walletAction,
+  walletsAction,
   withConfirm,
   type AuthApi,
 } from '../src/index.js';
@@ -101,6 +102,10 @@ describe('onboarding', () => {
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
+    expect(me.logoutTimer).toEqual({ idleHours: 12, adjustable: true });
+    await expect(own.api.setLogoutTimer({ idleHours: 4 })).resolves.toEqual({ idleHours: 4, adjustable: true });
+    await expect(own.api.getLogoutTimer()).resolves.toEqual({ idleHours: 4, adjustable: true });
+    expect((await own.api.me()).logoutTimer).toEqual({ idleHours: 4, adjustable: true });
   });
 
   it('a PGP account that adds a password still has no backup (R11)', async () => {
@@ -135,7 +140,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
       prove,
     );
     expect(prove).toHaveBeenCalledTimes(1);
-    expect(wallet).toMatchObject({ address, label: 'Second' });
+    // Confirmed with a passkey: usable at once (owner, 2026-10-23).
+    expect(wallet).toMatchObject({ address, label: 'Second', usable: true });
 
     const reused = apiError(await failure(fresh.api.addWallet({ app: 'feather', label: 'Third', address: fakeAddress(), confirmToken: token })));
     expect(reused.status).toBe(403);
@@ -157,6 +163,88 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
   });
 });
 
+describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', () => {
+  const drafts = (list: string[]) => list.map((address, i) => ({ app: 'cake' as const, label: `W${i + 1}`, address }));
+
+  it('password: the first batch works at once without a prompt; a later batch is proved once and waits on one clock', async () => {
+    const own = jar();
+    const { version } = await own.api.getTerms();
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
+
+    const first = await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) });
+    expect(first.map((w) => w.usable)).toEqual([true, true]);
+    await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 });
+
+    const list = [fakeAddress(), fakeAddress(), fakeAddress()];
+    const action = await walletsAction(list);
+    const prove = vi.fn(async (a: Parameters<typeof own.api.confirmPassword>[0]['action']) => {
+      expect(a).toEqual(action);
+      return (await own.api.confirmPassword({ password: GOOD, action: a })).confirmToken;
+    });
+    const added = await withConfirm(action, (t) => own.api.addWallets({ wallets: drafts(list), confirmToken: t }), prove);
+    expect(prove).toHaveBeenCalledTimes(1);
+    expect(added.map((w) => w.address)).toEqual(list);
+    expect(added.every((w) => !w.usable)).toBe(true);
+    expect(new Set(added.map((w) => w.usableFrom))).toEqual(new Set([new Date(srv.now().getTime() + 24 * 3_600_000).toISOString()]));
+
+    // The first batch stays usable while the later one waits.
+    const listed = await own.api.listWallets();
+    expect(listed.filter((w) => w.usable).map((w) => w.id).sort()).toEqual(first.map((w) => w.id).sort());
+    expect(listed).toHaveLength(5);
+  });
+
+  it('a token for list A does not add list B, nor A in another order, and stays usable for A', async () => {
+    const own = jar();
+    const { version } = await own.api.getTerms();
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
+    const a = [fakeAddress(), fakeAddress()];
+    const b = [fakeAddress(), fakeAddress()];
+    const { confirmToken } = await own.api.confirmPassword({ password: GOOD, action: await walletsAction(a) });
+    for (const other of [b, [a[1]!, a[0]!]]) {
+      const e = apiError(await failure(own.api.addWallets({ wallets: drafts(other), confirmToken })));
+      expect(e.status).toBe(403);
+      expect(e.code).toBe('confirm-invalid');
+    }
+    await expect(own.api.addWallets({ wallets: drafts(a), confirmToken })).resolves.toHaveLength(2);
+    await expect(own.api.listWallets()).resolves.toHaveLength(3);
+  });
+
+  it('PGP and a passkey, no password: the rule says so, and a later batch proved with the passkey works at once', async () => {
+    const own = jar();
+    await registerPgp(own);
+    const soft = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
+    await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: ['pgp', 'passkey'], password: 'none', waitHours: 24 });
+    await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
+
+    const fresh = jar();
+    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    await expect(fresh.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: ['pgp', 'passkey'], password: 'none', waitHours: 24 });
+    const list = [fakeAddress(), fakeAddress()];
+    const added = await withConfirm(
+      await walletsAction(list),
+      (t) => fresh.api.addWallets({ wallets: drafts(list), confirmToken: t }),
+      (a) => confirmWithWebAuthn(fresh.api, a, ceremonyOf(soft)),
+    );
+    expect(added.map((w) => w.usable)).toEqual([true, true]);
+  });
+
+  it('refuses a batch with one bad address whole: nothing is added', async () => {
+    const own = jar();
+    const { version } = await own.api.getTerms();
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    const e = apiError(await failure(own.api.addWallets({ wallets: drafts([fakeAddress(), 'not-an-address']) })));
+    expect(e.status).toBe(400);
+    expect(e.code).toBe('address-invalid');
+    await expect(own.api.listWallets()).resolves.toEqual([]);
+  });
+});
+
 describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () => {
   it('me() shows the staff account', async () => {
     const { username, soft, key } = await staffWithKeyAndPgp(srv);
@@ -165,6 +253,8 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     if (first.status !== 'second-factor') throw new Error('expected a second factor');
     const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
-    await expect(browser.me()).resolves.toMatchObject({ displayName: `D${username}`, loginNameSet: true, kind: 'staff' });
+    await expect(browser.me()).resolves.toMatchObject({
+      displayName: `D${username}`, loginNameSet: true, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
+    });
   });
 });

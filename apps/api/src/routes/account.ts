@@ -1,10 +1,9 @@
-import type { AccountKind, MethodType } from '@x2f/accounts';
+import { isIdleHours, type AccountKind, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
-import { endSession, requireSession, type SessionLevel } from '../auth/sessions.js';
-import { payoutWaitState } from '../wallets/routes.js';
+import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -21,8 +20,21 @@ export interface AccountOverview {
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
-  payoutWait: { enabled: boolean; offAt: string | null };
+  logoutTimer: LogoutTimer;
   termsCurrent: boolean;
+}
+
+/**
+ * The logout timer (owner, 2026-10-23): how many idle hours end a session. A trader chooses 2, 4,
+ * 6, 8, 10 or 12 (`adjustable`); staff and owner accounts are fixed at 2 hours.
+ */
+export interface LogoutTimer {
+  idleHours: number;
+  adjustable: boolean;
+}
+
+export function logoutTimerOf(kind: AccountKind, idleHours: IdleHours): LogoutTimer {
+  return kind === 'trader' ? { idleHours, adjustable: true } : { idleHours: STAFF_IDLE_HOURS, adjustable: false };
 }
 
 /** How many of each login method an account holds (read straight from the method tables). */
@@ -101,13 +113,12 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     display_name: string;
     login_set: boolean;
     kind: AccountKind;
-    payout_wait: boolean;
-    payout_wait_off_at: Date | null;
+    idle_hours: IdleHours;
     terms_version: string | null;
     level: SessionLevel;
     hold_until: Date | null;
   }>(
-    `select a.display_name, a.login_key is not null as login_set, a.kind, a.payout_wait, a.payout_wait_off_at, a.terms_version, s.level, s.hold_until
+    `select a.display_name, a.login_key is not null as login_set, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -126,8 +137,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     methods: methodTypes(counts),
     hasBackup: hasBackup(counts),
     suggestions: suggestionsFor(counts),
-    // The wait as the wallet routes apply it: a switch-off that has taken effect reads as off.
-    payoutWait: payoutWaitState(row, now),
+    logoutTimer: logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
   };
@@ -167,6 +177,57 @@ export function accountRoutes(app: FastifyInstance): void {
   app.get('/v1/account/me', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) =>
     overview(deps(), req),
   );
+
+  const LOGOUT_TIMER = '/v1/account/security/logout-timer';
+
+  // Reading changes nothing: any session, even a held recovery one, may see the timer.
+  app.get(LOGOUT_TIMER, { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
+    const { rows } = await deps().db.query<{ kind: AccountKind; idle_hours: IdleHours }>(
+      'select kind, idle_hours from accounts where id = $1',
+      [req.auth.accountId],
+    );
+    return logoutTimerOf(rows[0]!.kind, rows[0]!.idle_hours);
+  });
+
+  /**
+   * `PUT /v1/account/security/logout-timer { idleHours }`: full trader sessions only (a recovery
+   * session, held or not, gets 403 `recovery-session`; staff and owner 403 `wrong-account-kind`).
+   * The new timer applies at once: every live full session of the account gets its idle deadline
+   * moved to `last_seen_at + idleHours` (capped by the 30-day absolute limit); a session already
+   * idle that long is refused at its next request by `requireSession`.
+   */
+  app.put(LOGOUT_TIMER, { preHandler: requireSession({ kinds: ['trader'] }) }, async (req) => {
+    const d = deps();
+    const body = req.body;
+    if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
+    const idleHours = (body as { idleHours?: unknown }).idleHours;
+    if (!isIdleHours(idleHours)) throw new ApiError(400, 'bad-request');
+    const now = d.clock();
+    const policy = sessionPolicy('trader', 'full', idleHours);
+    const client = await d.db.connect();
+    try {
+      await client.query('begin');
+      try {
+        await client.query('update accounts set idle_hours = $2 where id = $1', [req.auth.accountId, idleHours]);
+        const { rows } = await client.query<{ id: string; created_at: Date; last_seen_at: Date }>(
+          `select id, created_at, last_seen_at from sessions
+            where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
+            for update`,
+          [req.auth.accountId, now],
+        );
+        for (const s of rows) {
+          await client.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
+        }
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      }
+    } finally {
+      client.release();
+    }
+    return logoutTimerOf('trader', idleHours);
+  });
 
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();

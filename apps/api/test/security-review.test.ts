@@ -118,18 +118,12 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
   });
 });
 
-describe('F2: GET /v1/account/me shows the 24-hour wait the way the wallet routes apply it', () => {
-  it('after a scheduled switch-off has taken effect, the wait is reported as off', async () => {
-    const t0 = new Date('2026-10-17T12:00:00Z');
-    setNow(t0);
+describe('F2 (superseded 2026-10-23): the opt-in wait is retired, so me no longer reports one', () => {
+  it('has no payoutWait in me', async () => {
+    setNow(new Date('2026-10-17T12:00:00Z'));
     const id = await seedAccount(deps, { loginName: 'waitoff01' });
-    const offAt = new Date(t0.getTime() + 24 * HOUR);
-    await deps.db.query('update accounts set payout_wait = true, payout_wait_off_at = $2 where id = $1', [id, offAt]);
     const b = await loggedIn(id);
-    expect((await b.get('/v1/account/me')).json().payoutWait).toEqual({ enabled: true, offAt: offAt.toISOString() });
-    setNow(new Date(offAt.getTime() + 1000));
-    // Same account, the wait no longer applies to a new wallet (payoutWaitActive): me must say so.
-    expect((await b.get('/v1/account/me')).json().payoutWait).toEqual({ enabled: false, offAt: null });
+    expect((await b.get('/v1/account/me')).json()).not.toHaveProperty('payoutWait');
   });
 });
 

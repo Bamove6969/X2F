@@ -730,7 +730,7 @@ async function confirmFinish(req: FastifyRequest) {
   });
   const action = parseConfirmAction(row.payload.action);
   if ((await actionHash(action)) !== row.payload.actionHash) throw new ApiError(400, 'challenge-expired');
-  const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });
+  const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: 'pgp' });
   return { confirmToken };
 }
 

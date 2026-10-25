@@ -37,7 +37,16 @@ export type ApiErrorCode =
   | 'address-integrated'
   | 'wallet-exists'
   | 'terms-not-accepted'
-  | 'terms-required';
+  | 'terms-required'
+  // Plan 3, Task 6: the trade events route and the state machine's refusals.
+  | 'event-not-allowed'
+  | 'wrong-state'
+  | 'wrong-party'
+  | 'too-early'
+  | 'too-late'
+  | 'no-extensions-left'
+  | 'not-releasable'
+  | 'total-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
