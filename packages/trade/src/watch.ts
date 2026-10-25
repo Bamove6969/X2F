@@ -103,6 +103,8 @@ export interface WatchState {
   lateReported: string[];
   /** The API trade was seen open again after this watcher's close; its next close restarts the 30 days. */
   reopened: boolean;
+  /** A `late-funds` was reported and the API has not yet been seen `disputed`: the watch never ends meanwhile. */
+  escalationPending: boolean;
   channelsClosed: boolean;
 }
 
@@ -127,6 +129,7 @@ export function newWatchState(): WatchState {
     swept: null,
     lateReported: [],
     reopened: false,
+    escalationPending: false,
     channelsClosed: false,
   };
 }
@@ -209,10 +212,14 @@ export function watchStep(a: {
     if (!apiClosed) s = { ...s, reopened: true };
     else if (s.reopened) s = { ...s, closedAt: a.now, reopened: false };
   }
-  // A closed escrow is dropped 30 days after its latest close, never while the trade is open.
-  if (s.closedAt !== null && apiClosed && a.now.getTime() > s.closedAt.getTime() + WATCH_CLOSED_DAYS * DAY_MS) {
-    return { reports, closeChannels: false, state: s, watching: false };
-  }
+  // Our late-funds escalation is confirmed only once the API shows the dispute.
+  if (a.trade.state === 'disputed') s = { ...s, escalationPending: false };
+  // A closed escrow is dropped 30 days after its latest close, never while the trade is open, never
+  // while an escalation is unconfirmed, and never on a step that finds a late coin not yet
+  // reported or a sweep not yet shown (both are handled first, below, and keep the watch).
+  const expiredState = s;
+  const expired = (st: WatchState): boolean =>
+    st.closedAt !== null && apiClosed && !st.escalationPending && a.now.getTime() > st.closedAt.getTime() + WATCH_CLOSED_DAYS * DAY_MS;
 
   const sweep = sweepOf(spend);
   let settledNow = false;
@@ -238,10 +245,18 @@ export function watchStep(a: {
 
   // A sweep shown after the close (the first one, if the API closed it, or e.g. a ruling's) takes
   // the oldest of the coins not yet swept, by the same exact-prefix rule.
+  // A later sweep is a later close: the 30 days restart from it.
   if (sweep !== null && !s.sweepTxs.includes(sweep.txHash)) {
     const taken = new Set([...(s.swept ?? []), ...s.sweepTxs]);
     const more = sweptBy(funds.incoming.filter((i) => !taken.has(i.txHash)), sweep);
-    s = { ...s, settledTx: s.settledTx ?? sweep.txHash, sweepTxs: [...s.sweepTxs, sweep.txHash], swept: [...(s.swept ?? []), ...more] };
+    s = {
+      ...s,
+      closedAt: a.now,
+      reopened: false,
+      settledTx: s.settledTx ?? sweep.txHash,
+      sweepTxs: [...s.sweepTxs, sweep.txHash],
+      swept: [...(s.swept ?? []), ...more],
+    };
   }
   // Closed: close the channels once, and watch for coins no sweep took (a sweep tx itself is never a late coin).
   const closeChannels = !s.channelsClosed;
@@ -262,9 +277,10 @@ export function watchStep(a: {
     const fresh = late.filter((i) => !s.lateReported.includes(i.txHash)).map((i) => i.txHash);
     if (fresh.length > 0 && (apiClosed || settledNow)) {
       reports.push({ kind: 'late-funds' });
-      s = { ...s, lateReported: [...s.lateReported, ...fresh] };
+      s = { ...s, lateReported: [...s.lateReported, ...fresh], escalationPending: true };
     }
   }
+  if (expired(s)) return { reports: [], closeChannels: false, state: expiredState, watching: false };
   return { reports, closeChannels, state: s, watching: true };
 }
 
