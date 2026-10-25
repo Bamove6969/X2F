@@ -38,6 +38,8 @@ export class EventBus {
   readonly perAccount: number;
   readonly global: number;
   private readonly streams = new Map<string, Set<StreamSink>>();
+  /** The session each stream was opened by (for closeSession and closeAccount's `keep`). */
+  private readonly sessionOf = new Map<StreamSink, string>();
   private count = 0;
 
   constructor(o: EventBusOptions = {}) {
@@ -51,12 +53,13 @@ export class EventBus {
   }
 
   /** Adds a stream; returns its detach function, or null when a cap is reached. */
-  attach(accountId: string, sink: StreamSink): (() => void) | null {
+  attach(accountId: string, sink: StreamSink, sessionId?: string): (() => void) | null {
     const own = this.streams.get(accountId);
     if (this.count >= this.global || (own?.size ?? 0) >= this.perAccount) return null;
     const set = own ?? new Set<StreamSink>();
     if (!own) this.streams.set(accountId, set);
     set.add(sink);
+    if (sessionId !== undefined) this.sessionOf.set(sink, sessionId);
     this.count++;
     let attached = true;
     return () => {
@@ -69,6 +72,7 @@ export class EventBus {
   private remove(accountId: string, sink: StreamSink): void {
     const set = this.streams.get(accountId);
     if (!set?.delete(sink)) return;
+    this.sessionOf.delete(sink);
     this.count--;
     if (set.size === 0) this.streams.delete(accountId);
   }
@@ -101,17 +105,49 @@ export class EventBus {
     return (this.streams.get(accountId)?.size ?? 0) > 0;
   }
 
+  private end(accountId: string, sink: StreamSink): void {
+    this.remove(accountId, sink);
+    try {
+      sink.close();
+    } catch {
+      // already gone
+    }
+  }
+
+  /**
+   * Ends the account's streams at once when its sessions end (log out everywhere, disable, revoke
+   * after a password change or a method removal), instead of at the stream's lifetime. `keepSessionId`
+   * spares the streams of the session that made the change. Returns how many were ended.
+   */
+  closeAccount(accountId: string, keepSessionId?: string): number {
+    const set = this.streams.get(accountId);
+    if (!set) return 0;
+    let n = 0;
+    for (const sink of [...set]) {
+      if (keepSessionId !== undefined && this.sessionOf.get(sink) === keepSessionId) continue;
+      this.end(accountId, sink);
+      n++;
+    }
+    return n;
+  }
+
+  /** Ends the streams one session opened (logout, a single revoked session). Returns how many. */
+  closeSession(accountId: string, sessionId: string): number {
+    const set = this.streams.get(accountId);
+    if (!set) return 0;
+    let n = 0;
+    for (const sink of [...set]) {
+      if (this.sessionOf.get(sink) !== sessionId) continue;
+      this.end(accountId, sink);
+      n++;
+    }
+    return n;
+  }
+
   /** Ends every stream (app shutdown). */
   closeAll(): void {
     for (const [accountId, set] of [...this.streams]) {
-      for (const sink of [...set]) {
-        this.remove(accountId, sink);
-        try {
-          sink.close();
-        } catch {
-          // already gone
-        }
-      }
+      for (const sink of [...set]) this.end(accountId, sink);
     }
   }
 }

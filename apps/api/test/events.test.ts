@@ -318,3 +318,70 @@ describe('public names in events', () => {
     expect(PUBLIC_NAME_COLUMN).not.toMatch(/login/);
   });
 });
+
+describe('ending sessions ends their streams (review minor 3)', () => {
+  const sink = () => {
+    const s = { closed: false, send: () => undefined, close: () => void (s.closed = true) };
+    return s;
+  };
+
+  it('bus.closeAccount ends every stream of the account, sparing `keep`; closeSession only that session', () => {
+    const bus = new EventBus({ perAccount: 5, global: 10 });
+    const [a1, a2, a3, b1] = [sink(), sink(), sink(), sink()];
+    bus.attach('a', a1, 's1');
+    bus.attach('a', a2, 's2');
+    bus.attach('a', a3, 's2');
+    bus.attach('b', b1, 's9');
+    expect(bus.closeSession('a', 's1')).toBe(1);
+    expect([a1.closed, a2.closed, a3.closed]).toEqual([true, false, false]);
+    expect(bus.closeAccount('a', 's2')).toBe(0);
+    expect(bus.closeAccount('a')).toBe(2);
+    expect([a2.closed, a3.closed, b1.closed]).toEqual([true, true, false]);
+    expect(bus.size).toBe(1);
+    expect(bus.delivered('a')).toBe(false);
+    expect(bus.closeAccount('nobody')).toBe(0);
+  });
+
+  it("POST /v1/logout ends that session's streams at once and no other session's", async () => {
+    const t = await trader();
+    const other = new Browser(app);
+    expect((await other.post('/t/login', { accountId: t.id })).statusCode).toBe(200);
+    const mine = await stream(t.b);
+    const theirs = await stream(other);
+    expect(app.events.size).toBe(2);
+    expect((await t.b.post('/v1/logout', {})).statusCode).toBe(200);
+    await mine.ended;
+    expect(app.events.size).toBe(1);
+    expect(app.events.publish(t.id, accepted())).toBe(1);
+    await theirs.waitFor((e) => (e as { type?: string }).type === 'accepted');
+  });
+
+  it('endAllSessions (log out everywhere, disable) ends every stream of the account', async () => {
+    const t = await trader();
+    const u = await trader();
+    const other = new Browser(app);
+    await other.post('/t/login', { accountId: t.id });
+    const s1 = await stream(t.b);
+    const s2 = await stream(other);
+    await stream(u.b);
+    const { endAllSessions } = await import('../src/auth/sessions.js');
+    expect(await endAllSessions({ ...deps, events: app.events }, t.id)).toBe(2);
+    await Promise.all([s1.ended, s2.ended]);
+    expect(app.events.size).toBe(1);
+    expect(app.events.delivered(u.id)).toBe(true);
+  });
+
+  it('endOtherSessions (password change, method removal) keeps the current session streaming', async () => {
+    const t = await trader();
+    const other = new Browser(app);
+    const res = await other.post('/t/login', { accountId: t.id });
+    const keep = (res.json() as { sessionId: string }).sessionId;
+    const gone = await stream(t.b);
+    await stream(other);
+    const { endOtherSessions } = await import('../src/auth/sessions.js');
+    expect(await endOtherSessions({ ...deps, events: app.events }, t.id, keep)).toBe(1);
+    await gone.ended;
+    expect(app.events.size).toBe(1);
+    expect(app.events.delivered(t.id)).toBe(true);
+  });
+});

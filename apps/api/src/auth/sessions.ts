@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
+import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 
@@ -102,6 +103,8 @@ export async function startSession(
 
   const client = await deps.db.connect();
   let sessionId: string;
+  /** The session this browser's cookie named, revoked by this login (its streams end too). */
+  let replaced: { id: string; account_id: string } | null = null;
   let absoluteMs: number;
   let expiresAt: Date;
   try {
@@ -117,9 +120,11 @@ export async function startSession(
       absoluteMs = policy.absoluteMs;
       expiresAt = deadline(now, now, policy);
       if (presented) {
-        await client.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [
-          tokenHash(presented), now,
-        ]);
+        const old = await client.query<{ id: string; account_id: string }>(
+          'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
+          [tokenHash(presented), now],
+        );
+        replaced = old.rows[0] ?? null;
       }
       const { rows } = await client.query<{ id: string }>(
         `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until)
@@ -151,6 +156,7 @@ export async function startSession(
   } finally {
     client.release();
   }
+  if (replaced) req.server.events.closeSession(replaced.account_id, replaced.id);
 
   void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(absoluteMs / 1000) });
   return sessionId;
@@ -258,26 +264,38 @@ export async function assertNotDisabled(db: Queryable, accountId: string): Promi
   if (rows[0]?.disabled_at != null) throw new ApiError(403, 'account-disabled');
 }
 
-/** Revokes one session; returns how many were live. */
-export async function endSession(deps: Pick<Deps, 'db' | 'clock'>, sessionId: string): Promise<number> {
-  const r = await deps.db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [sessionId, deps.clock()]);
+/** The live-event bus, when the caller has one: ending sessions ends their streams at once. */
+type EndDeps = Pick<Deps, 'db' | 'clock'> & { events?: Pick<EventBus, 'closeAccount' | 'closeSession'> };
+
+/** Revokes one session and ends its streams; returns how many were live. */
+export async function endSession(deps: EndDeps, sessionId: string): Promise<number> {
+  const r = await deps.db.query<{ account_id: string }>(
+    'update sessions set revoked_at = $2 where id = $1 and revoked_at is null returning account_id',
+    [sessionId, deps.clock()],
+  );
+  for (const row of r.rows) deps.events?.closeSession(row.account_id, sessionId);
   return r.rowCount ?? 0;
 }
 
 /** Revokes every session of the account except `keepSessionId` (after a password change or method removal). */
-export async function endOtherSessions(deps: Pick<Deps, 'db' | 'clock'>, accountId: string, keepSessionId: string): Promise<number> {
+export async function endOtherSessions(deps: EndDeps, accountId: string, keepSessionId: string): Promise<number> {
   const r = await deps.db.query(
     'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
     [accountId, keepSessionId, deps.clock()],
   );
+  deps.events?.closeAccount(accountId, keepSessionId);
   return r.rowCount ?? 0;
 }
 
-/** Revokes every session of the account (Plan 4 uses it when switching staff off). */
-export async function endAllSessions(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<number> {
+/**
+ * Revokes every session of the account and ends all its streams (log out everywhere; Plan 4 uses
+ * it when disabling an account or switching staff off: pass `events: app.events`).
+ */
+export async function endAllSessions(deps: EndDeps, accountId: string): Promise<number> {
   const r = await deps.db.query('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null', [
     accountId, deps.clock(),
   ]);
+  deps.events?.closeAccount(accountId);
   return r.rowCount ?? 0;
 }
 
@@ -291,7 +309,11 @@ export function logoutRoute(app: FastifyInstance): void {
     const token = presentedToken(req);
     if (token) {
       const { db, clock } = req.server.deps;
-      await db.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [tokenHash(token), clock()]);
+      const r = await db.query<{ id: string; account_id: string }>(
+        'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
+        [tokenHash(token), clock()],
+      );
+      for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);
     }
     void reply.clearCookie(SESSION_COOKIE, COOKIE_ATTRS);
     return { ok: true };

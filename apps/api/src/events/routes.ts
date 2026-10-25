@@ -57,7 +57,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
         raw.write(data);
       },
       close: end,
-    });
+    }, req.auth.sessionId);
     if (!detach) throw new ApiError(429, 'busy');
 
     // From here fastify no longer owns the response. The headers set by the onRequest hooks
