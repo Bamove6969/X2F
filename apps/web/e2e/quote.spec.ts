@@ -191,3 +191,92 @@ test.describe('SellQuote', () => {
     expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake' });
   });
 });
+
+// Mobile ready at launch (spec, owner 2026-10-25): every screen is tested at phone sizes. From a small
+// Android or iPhone SE (320 wide) up to a large phone (430 wide), both quotes fit the width, keep every
+// control on screen and big enough to tap, and a take still goes through by tapping.
+const PHONES = [
+  { width: 320, height: 568 },
+  { width: 360, height: 640 },
+  { width: 390, height: 844 },
+  { width: 412, height: 915 },
+  { width: 430, height: 932 },
+] as const;
+
+/** Elements whose box pokes out past the viewport's left or right edge (sideways clipping). */
+async function overflowing(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const out: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('#root *')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (r.left < -0.5 || r.right > vw + 0.5) out.push(`${el.tagName.toLowerCase()}.${el.className} [${Math.round(r.left)}..${Math.round(r.right)}]`);
+    }
+    return out;
+  });
+}
+
+/** Controls a thumb must hit that are under 44 px tall (the screen's own minimum). */
+async function smallTargets(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    for (const el of document.querySelectorAll<HTMLElement>('#root button, #root a, #root label.x2f-quote__wallet, #root input:not([type="radio"])')) {
+      const r = el.getBoundingClientRect();
+      if (r.width === 0 || r.height === 0) continue;
+      if (r.height < 44 - 0.5) out.push(`${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim() || el.getAttribute('aria-label')}" ${Math.round(r.height)} px`);
+    }
+    return out;
+  });
+}
+
+async function expectFitsPhone(page: Page): Promise<void> {
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await overflowing(page)).toEqual([]);
+  expect(await smallTargets(page)).toEqual([]);
+  // The one primary can be scrolled to and then sits wholly on screen.
+  await trade(page).scrollIntoViewIfNeeded();
+  await expect(trade(page)).toBeInViewport({ ratio: 1 });
+}
+
+test.describe('phone sizes', () => {
+  // A real phone: touch input and the mobile viewport meta tag are honoured.
+  test.use({ hasTouch: true, isMobile: true });
+
+  for (const vp of PHONES) {
+    test(`BuyQuote at ${vp.width}x${vp.height}: fits, every control tappable, Trade takes`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      const seen = await stubApi(page, base);
+      await page.goto(`${BUY}&amount=${B.amount}`);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await expect(card(page)).toContainText('1.250000 XMR');
+      await expect(card(page)).toContainText('$412.50 USD');
+      await expect(page.locator('#quote-amount')).toBeInViewport();
+      await expectFitsPhone(page);
+      await trade(page).tap();
+      await expect(page).toHaveURL(`/trade/${B.code}`);
+      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake' }]);
+    });
+
+    test(`BuyQuote at ${vp.width}x${vp.height} with no wallet and "Price unavailable right now" still fits`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      await stubApi(page, { ...base, price: 'down', wallets: [] });
+      await page.goto(`${BUY}&amount=${B.amount}`);
+      await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
+      await expectFitsPhone(page);
+    });
+
+    test(`SellQuote at ${vp.width}x${vp.height}: fits, Max and the wallet are tappable, Trade takes`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      const seen = await stubApi(page, { ...base, offers: [MIRA_BUYS] });
+      await page.goto(SELL);
+      await page.getByRole('button', { name: 'Max' }).tap();
+      await page.getByRole('radio', { name: /Cake Wallet/ }).tap();
+      await expect(card(page)).toContainText('4.545454 XMR');
+      await expectFitsPhone(page);
+      await trade(page).tap();
+      await expect(page).toHaveURL(`/trade/${B.code}`);
+      expect(seen.takes[0]).toMatchObject({ offerId: MIRA_BUYS.id, amountAtomic: '4545454000000', walletId: 'w-cake' });
+    });
+  }
+});
