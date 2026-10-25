@@ -66,6 +66,26 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  SetupPgpKey: [
+    {
+      text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The board\'s example key, shortened with "…", is not a key: the key check (type, expiry, fingerprint) needs a real pasted key, so the page shows the key the test pastes (Task 28).',
+    },
+    {
+      text: '-----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The same example key inside the textarea (see above).',
+    },
+    {
+      text: '3F2A 9C41 7B0E D5A2 61C8 0E4B 92D7 1F6A C3B8 0D15',
+      why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
+    },
+  ],
+  SetupWallet: [
+    {
+      text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
+      why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',
+    },
+  ],
 };
 
 /**
