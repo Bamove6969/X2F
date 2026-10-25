@@ -44,6 +44,8 @@ export type ApiErrorCode =
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
+  // Plan 3, Task 27: a second dispute on one trade.
+  | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

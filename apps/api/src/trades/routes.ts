@@ -28,7 +28,9 @@ function clientEvent(body: unknown): TradeEvent {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
   const b = body as Record<string, unknown>;
   const type = b.type;
-  if (typeof type !== 'string' || !CLIENT.has(type)) throw new ApiError(400, 'event-not-allowed');
+  // open-dispute is a client event, but only POST /v1/trades/:code/dispute (Task 27) sends it, so
+  // every dispute a trader opens has its reason row.
+  if (typeof type !== 'string' || !CLIENT.has(type) || type === 'open-dispute') throw new ApiError(400, 'event-not-allowed');
   if (type === 'mark-paid') {
     const cents = b.fiatCents;
     if (typeof cents !== 'string' || !CENTS.test(cents)) throw new ApiError(400, 'bad-request');
@@ -38,7 +40,7 @@ function clientEvent(body: unknown): TradeEvent {
 }
 
 /** The trade for a path code, or 404 for a malformed or unknown code. */
-async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
+export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
   const raw = (req.params as { code?: unknown }).code;
   const code = typeof raw === 'string' ? normalizeTradeCode(raw) : null;
   if (code === null) throw new ApiError(404, 'not-found');

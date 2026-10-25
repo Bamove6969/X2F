@@ -11,6 +11,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { tradeRoutes } from './trades/routes.js';
+import { disputeRoutes } from './disputes/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
@@ -202,6 +203,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   walletRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route.
   tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
+  // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side).
+  disputeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
 

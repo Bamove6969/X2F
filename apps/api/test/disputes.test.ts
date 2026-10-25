@@ -22,6 +22,11 @@ afterAll(async () => {
   await app.close();
 });
 
+/** A fresh session at the current test time (a jump of hours or days ends the old one). */
+async function relogin(...who: { id: string; browser: { post(url: string, body: unknown): Promise<{ statusCode: number }> } }[]) {
+  for (const w of who) expect((await w.browser.post('/t/login', { accountId: w.id })).statusCode).toBe(200);
+}
+
 const errorOf = (res: { json(): unknown }) => (res.json() as { error?: string }).error;
 const dispute = (code: string) => `/v1/trades/${code}/dispute`;
 const appeal = (code: string) => `/v1/trades/${code}/appeal`;
@@ -100,6 +105,7 @@ describe('POST /v1/trades/:code/dispute', () => {
     const { buyer, seller, t } = await tradeIn('secured');
     await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: 'ab'.repeat(32) }, 'system');
     setNow(at(90 * DAY));
+    await relogin(buyer, seller);
     const wrong = await seller.browser.post(dispute(t.code), { reason: 'other', note: '' });
     expect(errorOf(wrong)).toBe('wrong-party');
     const ok = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
@@ -110,6 +116,7 @@ describe('POST /v1/trades/:code/dispute', () => {
     const late = await tradeIn('secured');
     await applyEvent(deps, late.t.code, { type: 'settled', kind: 'auto-refund', txHash: 'cd'.repeat(32) }, 'system');
     setNow(at(90 * DAY + 1));
+    await relogin(late.buyer);
     const res = await late.buyer.browser.post(dispute(late.t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('too-late');
@@ -225,9 +232,10 @@ describe('POST /v1/trades/:code/appeal', () => {
   });
 
   it('accepts one appeal inside the window, and refuses it at the end of the window and after', async () => {
-    const { seller, buyer, t } = await ruled();
+    const { seller, t } = await ruled();
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
     setNow(at(48 * 60 * MIN));
+    await relogin(seller);
     const late = await seller.browser.post(appeal(t.code), { why: 'The moderator missed my bank statement.' });
     expect(late.statusCode).toBe(409);
     expect(errorOf(late)).toBe('too-late');
@@ -237,13 +245,13 @@ describe('POST /v1/trades/:code/appeal', () => {
     const b = await ruled();
     await rule(b.t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
     setNow(at(48 * 60 * MIN - 1));
+    await relogin(b.seller, b.buyer);
     const ok = await b.seller.browser.post(appeal(b.t.code), { why: 'The moderator missed my bank statement.' });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toMatchObject({ status: 'appealed', appeal: { by: 'seller', at: at(48 * 60 * MIN - 1).toISOString() } });
     expect(JSON.stringify(ok.json())).not.toContain('bank statement');
     const second = await b.buyer.browser.post(appeal(b.t.code), { why: 'I want a second look as well.' });
     expect(errorOf(second)).toBe('wrong-state');
-    void buyer;
   });
 
   it('stores exactly one appeal when both sides appeal at the same moment', async () => {
