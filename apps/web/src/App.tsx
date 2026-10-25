@@ -4,6 +4,8 @@ import { setNavigator } from './api/client.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
+import { TradeRoom } from './screens/trade/TradeRoom.js';
+import './screens/trade/screens.js';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -67,7 +69,7 @@ export function App() {
           <Route path="/sell/:methodId" element={<Screen name="sell-offers" />} />
           <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
           <Route path="/post" element={<Screen name="post" />} />
-          <Route path="/trade/:code" element={<Screen name="trade" />} />
+          <Route path="/trade/:code" element={<TradeRoom />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
