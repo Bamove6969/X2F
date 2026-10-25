@@ -267,6 +267,21 @@ describe('POST /v1/trades/:code/appeal', () => {
     expect(rows[0]).toEqual({ n: 1 });
   });
 
+  it('refuses an appeal unless the dispute is ruled: open, appealed, final and closed all stay as they are', async () => {
+    for (const status of ['open', 'appealed', 'final', 'closed']) {
+      const { seller, t } = await ruled();
+      await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
+      await deps.db.query('update disputes set status = $2 where code = $1', [t.code, status]);
+      setNow(at(2 * 60 * MIN));
+      const res = await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' });
+      expect(res.statusCode, status).toBe(409);
+      expect(errorOf(res), status).toBe('wrong-state');
+      expect(await disputeRow(t.code), status).toMatchObject({ status });
+      const { rows } = await deps.db.query('select count(*)::int as n from dispute_appeals where code = $1', [t.code]);
+      expect(rows[0], status).toEqual({ n: 0 });
+    }
+  });
+
   it('refuses an appeal on a final (appeal-round) ruling, a short reason, and an outsider', async () => {
     const { seller, buyer, t } = await ruled();
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });

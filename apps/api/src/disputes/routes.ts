@@ -233,7 +233,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const deps = req.server.deps;
     await inTransaction(deps.db, async (client) => {
       const d = (await client.query<{ status: string }>('select status from disputes where code = $1 for update', [row.code])).rows[0];
-      if (!d) throw new ApiError(409, 'wrong-state');
+      // Only a published first-round ruling can be appealed (never an open, appealed, final or closed case).
+      if (!d || d.status !== 'ruled') throw new ApiError(409, 'wrong-state');
       const now = deps.clock();
       const r = (await client.query<RulingRow>('select * from dispute_rulings where code = $1 order by round desc limit 1', [row.code])).rows[0];
       if (!r || r.round !== 1 || r.appeal_until === null) throw new ApiError(409, 'wrong-state');
@@ -243,7 +244,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
         [row.code, side, why, now],
       );
       if (rowCount !== 1) throw new ApiError(409, 'wrong-state');
-      await client.query(`update disputes set status = 'appealed' where code = $1`, [row.code]);
+      // Guarded transition: ruled -> appealed only (the row is locked above; the guard keeps it so).
+      const moved = await client.query(`update disputes set status = 'appealed' where code = $1 and status = 'ruled'`, [row.code]);
+      if (moved.rowCount !== 1) throw new ApiError(409, 'wrong-state');
     });
     return loadView(deps.db, row, side, req.auth.accountId, deps.clock());
   });
