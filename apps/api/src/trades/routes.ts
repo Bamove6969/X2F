@@ -1,8 +1,10 @@
+import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
-import { CLIENT_EVENTS, TradeRuleError, type Trade, type TradeEvent } from '@x2f/trade';
+import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
+import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
@@ -99,5 +101,44 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       throw err;
     }
     return view(req, next, row.seller_wallet_app);
+  });
+}
+
+/** What `GET /v1/trades/:code/confirmations` answers. */
+export interface ConfirmationsView {
+  /** From X2F's own node: 0 while in the pool, null when the node does not know the tx or cannot be asked. */
+  confirmations: number | null;
+  /** The count at which Monero unlocks the coins (the released screen's "1 of 10"). */
+  target: number;
+  /** The buyer's own payout address ending (`addressEnd`), on a release, for the buyer only. */
+  payoutEnd?: string;
+}
+
+/**
+ * `GET /v1/trades/:code/confirmations` (Task 24): the released screen's live confirmations of the
+ * trade's settlement tx, read from X2F's own node (spec 2.2 step 10). Task 6's rules: a trader
+ * session, participants only, and anyone else the same 404 as an unknown code. Only this trade's
+ * own `tx_hash` is ever looked up (nothing in the request names a tx). Before the trade has
+ * settled (no tx yet) → 409 `wrong-state`. The buyer of a release also gets their own payout
+ * address ending; nobody gets an address, an amount or the tx hash.
+ */
+export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations): void {
+  const session = requireSession({ kinds: ['trader'] });
+  app.get('/v1/trades/:code/confirmations', { preHandler: session }, async (req): Promise<ConfirmationsView> => {
+    const row = await tradeFor(req);
+    const t = rowToTrade(row);
+    const role = roleOf(t, req.auth.accountId);
+    if (role === null) throw new ApiError(404, 'not-found');
+    if (t.txHash === null || (t.state !== 'released' && t.state !== 'refunded')) throw new ApiError(409, 'wrong-state');
+    let confirmations: number | null = null;
+    try {
+      confirmations = await lookup(t.txHash);
+    } catch (err) {
+      // A fixed line: the logger reduces the error to its class and code (never the hash or the node's URL).
+      req.log.warn({ err }, 'confirmations lookup failed');
+    }
+    const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
+    if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);
+    return out;
   });
 }
