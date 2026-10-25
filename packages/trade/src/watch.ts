@@ -16,8 +16,9 @@
  *   wallet2's balance leaves pool deposits out, so they never count as spending.
  * - `settled { txHash }` only for a sweep in a block; a pool-only tx is not settled.
  * - On `released`/`refunded` (our own `settled`) or `cancelled` (from the API): close both relay
- *   channels once. A closed escrow is dropped after 30 days, but only while the API trade is still
- *   closed: a trade that late funds escalated (`disputed`) keeps its watcher.
+ *   channels once. A closed escrow is dropped 30 days after its LATEST close, and only while the API
+ *   trade is still closed: a trade seen open again (late funds escalated it, or a dispute after a
+ *   refund) keeps its watcher, and its next close restarts the 30 days.
  * - Late funds are judged by incoming transactions, never by the balance (a multisig wallet that
  *   did not take part in the sweep may not see it spent) and never by the API's state: every
  *   incoming tx not swept is late. Swept is decided only from the sweep itself, failing closed:
@@ -27,7 +28,12 @@
  *   `height <= sweep.height - 10`, that sums EXACTLY to `sweep.sweptAtomic`. No such prefix → nothing
  *   is swept and every coin is late (escalation). A close known only from the API (no sweep shown)
  *   sweeps nothing until the sweep is shown. Late coins are reported as `chain` facts of the late
- *   coins alone, then `late-funds` once, which the API turns into `escalate`.
+ *   coins alone. `late-funds` (which the API turns into `escalate`) is reported whenever a late tx
+ *   not reported before appears while the trade is closed (the API shows it closed, or this step
+ *   reported our own `settled`): each late tx escalates once, so a second batch after a ruling
+ *   escalates again while the first does not. A later sweep that is shown (e.g. a ruling's) takes,
+ *   by the same exact-prefix rule, the oldest of the coins not yet swept. A sweep tx itself is never
+ *   counted as a late coin.
  */
 import type { TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
@@ -87,11 +93,16 @@ export interface WatchState {
   lastChain: ChainFacts | null;
   /** When this watcher saw the trade close (its own `settled`, or the API's `cancelled`/close). */
   closedAt: Date | null;
-  /** The sweep tx this watcher has been shown, if any. */
+  /** The first sweep tx this watcher has been shown, if any. */
   settledTx: string | null;
-  /** Incoming txs the sweep took; set when the trade closes ([] until a sweep is shown). */
+  /** Every sweep tx this watcher has been shown (the first, then e.g. a ruling's). */
+  sweepTxs: string[];
+  /** Incoming txs the sweeps took; set when the trade closes ([] until a sweep is shown). */
   swept: string[] | null;
-  lateFundsReported: boolean;
+  /** Late txs already reported with `late-funds`; each escalates once. */
+  lateReported: string[];
+  /** The API trade was seen open again after this watcher's close; its next close restarts the 30 days. */
+  reopened: boolean;
   channelsClosed: boolean;
 }
 
@@ -108,7 +119,16 @@ const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 const DAY_MS = 24 * 60 * 60_000;
 
 export function newWatchState(): WatchState {
-  return { lastChain: null, closedAt: null, settledTx: null, swept: null, lateFundsReported: false, channelsClosed: false };
+  return {
+    lastChain: null,
+    closedAt: null,
+    settledTx: null,
+    sweepTxs: [],
+    swept: null,
+    lateReported: [],
+    reopened: false,
+    channelsClosed: false,
+  };
 }
 
 const isHeight = (h: unknown, chainHeight: number): h is number => Number.isSafeInteger(h) && (h as number) >= 0 && (h as number) < chainHeight;
@@ -181,18 +201,27 @@ export function watchStep(a: {
   const chainHeight = funds.chainHeight;
   let s: WatchState = { ...a.state };
   const reports: WatchReport[] = [];
+  const apiClosed = CLOSED.includes(a.trade.state);
 
-  // A closed escrow is dropped after 30 days, but never while the trade is open again (escalated).
-  if (s.closedAt !== null && CLOSED.includes(a.trade.state) && a.now.getTime() > s.closedAt.getTime() + WATCH_CLOSED_DAYS * DAY_MS) {
+  // Open again after our close (escalated, or disputed after a refund): note it; its next close
+  // restarts the 30 days, counted from that latest close.
+  if (s.closedAt !== null) {
+    if (!apiClosed) s = { ...s, reopened: true };
+    else if (s.reopened) s = { ...s, closedAt: a.now, reopened: false };
+  }
+  // A closed escrow is dropped 30 days after its latest close, never while the trade is open.
+  if (s.closedAt !== null && apiClosed && a.now.getTime() > s.closedAt.getTime() + WATCH_CLOSED_DAYS * DAY_MS) {
     return { reports, closeChannels: false, state: s, watching: false };
   }
 
   const sweep = sweepOf(spend);
+  let settledNow = false;
   if (s.closedAt === null) {
     if (sweep !== null) {
       reports.push({ kind: 'settled', txHash: sweep.txHash });
-      s = { ...s, closedAt: a.now, settledTx: sweep.txHash, swept: sweptBy(funds.incoming, sweep) };
-    } else if (CLOSED.includes(a.trade.state)) {
+      settledNow = true;
+      s = { ...s, closedAt: a.now, settledTx: sweep.txHash, sweepTxs: [sweep.txHash], swept: sweptBy(funds.incoming, sweep) };
+    } else if (apiClosed) {
       // Closed by the API alone: nothing is shown to be swept, so every coin is unaccounted.
       s = { ...s, closedAt: a.now, swept: [] };
     } else {
@@ -207,13 +236,18 @@ export function watchStep(a: {
     }
   }
 
-  // Closed by the API before a sweep was shown: once it is, count only the coins it did not take.
-  if (s.settledTx === null && sweep !== null) s = { ...s, settledTx: sweep.txHash, swept: sweptBy(funds.incoming, sweep) };
-  // Closed: close the channels once, and watch for coins the sweep did not take.
+  // A sweep shown after the close (the first one, if the API closed it, or e.g. a ruling's) takes
+  // the oldest of the coins not yet swept, by the same exact-prefix rule.
+  if (sweep !== null && !s.sweepTxs.includes(sweep.txHash)) {
+    const taken = new Set([...(s.swept ?? []), ...s.sweepTxs]);
+    const more = sweptBy(funds.incoming.filter((i) => !taken.has(i.txHash)), sweep);
+    s = { ...s, settledTx: s.settledTx ?? sweep.txHash, sweepTxs: [...s.sweepTxs, sweep.txHash], swept: [...(s.swept ?? []), ...more] };
+  }
+  // Closed: close the channels once, and watch for coins no sweep took (a sweep tx itself is never a late coin).
   const closeChannels = !s.channelsClosed;
   s = { ...s, channelsClosed: true };
-  const swept = new Set(s.swept ?? []);
-  const late = funds.incoming.filter((i) => !swept.has(i.txHash));
+  const notLate = new Set([...(s.swept ?? []), ...s.sweepTxs]);
+  const late = funds.incoming.filter((i) => !notLate.has(i.txHash));
   if (late.length > 0) {
     const facts: ChainFacts = {
       receivedAtomic: sum(late),
@@ -224,9 +258,11 @@ export function watchStep(a: {
       reports.push({ kind: 'chain', ...facts });
       s = { ...s, lastChain: facts };
     }
-    if (!s.lateFundsReported) {
+    // Each late tx escalates once, and only while the trade is closed (an open one is already in hand).
+    const fresh = late.filter((i) => !s.lateReported.includes(i.txHash)).map((i) => i.txHash);
+    if (fresh.length > 0 && (apiClosed || settledNow)) {
       reports.push({ kind: 'late-funds' });
-      s = { ...s, lateFundsReported: true };
+      s = { ...s, lateReported: [...s.lateReported, ...fresh] };
     }
   }
   return { reports, closeChannels, state: s, watching: true };

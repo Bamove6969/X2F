@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'vitest';
 import type { PartyArgs, PartyStore, Transport } from '@x2f/escrow';
-import { channelFor, modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type TradeState } from '../src/index.js';
+import {
+  channelFor,
+  modPartyArgs,
+  modPartyPlan,
+  newWatchState,
+  watchStep,
+  type ModPartyArgs,
+  type ModPartyFacts,
+  type TradeState,
+} from '../src/index.js';
 
 const CODE = 'ABCD2345EFGH6789';
 const keys = (c: string) => ({ signPublic: c.repeat(64), boxPublic: c.repeat(64) });
@@ -64,6 +73,24 @@ describe('moderator party decisions (Task 9, pure)', () => {
       expect(modPartyPlan(f).stop).toBe(false);
       expect(modPartyPlan({ ...f, running: false }).start).toBe(true);
     }
+  });
+
+  test("follows the watcher's latest close: a ruling at day 31 keeps the party for 30 days after it", () => {
+    const DAY = 24 * 60 * 60_000;
+    const T = Date.parse('2026-10-18T12:00:00.000Z');
+    const late = { txHash: 'd'.repeat(64), amountAtomic: 7n, height: 990, unlocked: true };
+    const funds = { balance: 7n, unlocked: 7n, chainHeight: 1000, incoming: [late] };
+    let state = newWatchState();
+    const at = (apiState: TradeState, ms: number) => {
+      const r = watchStep({ trade: { state: apiState }, funds, spend: null, state, now: new Date(T + ms) });
+      state = r.state;
+      return modPartyPlan(facts({ running: true, escrowAddress: '4escrow', setupDoneReported: true, apiState, watching: r.watching }));
+    };
+    expect(at('released', 0).stop).toBe(false);
+    expect(at('disputed', 31 * DAY).stop).toBe(false);
+    expect(at('refunded', 31 * DAY + 1).stop).toBe(false);
+    expect(at('refunded', 61 * DAY + 1).stop).toBe(false);
+    expect(at('refunded', 61 * DAY + 2).stop).toBe(true);
   });
 
   test('after a restart the persisted escrow address restarts the party for a closed trade with late funds', () => {

@@ -265,7 +265,9 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       now: at(6),
     });
     expect(known.state.settledTx).toBe(SETTLE);
-    expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }]);
+    // A is now accounted for; LATE is a new late tx, so it escalates on its own
+    expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
+    expect(known.state.lateReported).toEqual([HASH_A, LATE]);
   });
 
   test('a cancelled trade: close both channels; any coin arriving is late', () => {
@@ -287,6 +289,99 @@ describe('chain watcher decisions (Task 9, pure)', () => {
   test('a cancelled trade swept nothing: even an unlocked coin found at the cancel is late', () => {
     const r = step({ apiState: 'cancelled', f: funds([inc(LATE, 50n, 12)]) });
     expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 50n, unlockedAtomic: 50n, confirmations: 12 }, { kind: 'late-funds' }]);
+  });
+
+  test('a second batch of late funds after a ruling escalates again; the first batch does not re-escalate', () => {
+    const E = '8'.repeat(64);
+    // released: A swept by our own sweep
+    const settled = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 5), now: at(0) });
+    // late D → late-funds → the API escalates (disputed)
+    const d = step({ apiState: 'released', state: settled.state, f: funds([inc(HASH_A, 1000n, 31), inc(LATE, 7n, 1)]), now: at(10) });
+    expect(d.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    const disputed = step({ apiState: 'disputed', state: d.state, f: funds([inc(HASH_A, 1000n, 40), inc(LATE, 7n, 10)]), now: at(20) });
+    expect(disputed.reports).toEqual([{ kind: 'chain', receivedAtomic: 7n, unlockedAtomic: 7n, confirmations: 10 }]);
+    // a ruling refunds D; this watcher is not shown its sweep, so D stays in the incoming list
+    const ruled = step({ apiState: 'refunded', state: disputed.state, f: funds([inc(HASH_A, 1000n, 60), inc(LATE, 7n, 30)], 0n, 0n), now: at(30) });
+    expect(ruled.reports.filter((r) => r.kind === 'late-funds')).toEqual([]);
+    // late E: escalate again
+    const e = step({
+      apiState: 'refunded',
+      state: ruled.state,
+      f: funds([inc(HASH_A, 1000n, 61), inc(LATE, 7n, 31), inc(E, 3n, 0)], 0n, 0n),
+      now: at(40),
+    });
+    expect(e.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    expect(e.state.lateReported).toEqual([LATE, E]);
+  });
+
+  test('a late coin found while the trade is open again is reported only once it is closed', () => {
+    const E = '8'.repeat(64);
+    const d = step({ apiState: 'released', f: funds([inc(LATE, 7n, 1)]), now: at(0) });
+    expect(d.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    // E arrives during the dispute: no second escalation while it is open
+    const open = step({ apiState: 'disputed', state: d.state, f: funds([inc(LATE, 7n, 2), inc(E, 3n, 1)]), now: at(5) });
+    expect(open.reports.filter((r) => r.kind === 'late-funds')).toEqual([]);
+    // closed again with no sweep shown for E: fail closed, escalate
+    const closed = step({ apiState: 'refunded', state: open.state, f: funds([inc(LATE, 7n, 3), inc(E, 3n, 2)], 0n, 0n), now: at(10) });
+    expect(closed.reports.at(-1)).toEqual({ kind: 'late-funds' });
+  });
+
+  test('a ruling sweep that is shown takes its coins: no escalation for them after the re-close', () => {
+    const RULING = '9'.repeat(64);
+    const E = '8'.repeat(64);
+    // our own sweep took A; late D escalates
+    const settled = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 60)], 0n, 0n), spend: sweep(1000n, 45), now: at(0) });
+    const d = step({ apiState: 'released', state: settled.state, f: funds([inc(HASH_A, 1000n, 60), inc(LATE, 7n, 30)]), now: at(1) });
+    expect(d.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    const open = step({ apiState: 'disputed', state: d.state, f: funds([inc(HASH_A, 1000n, 61), inc(LATE, 7n, 31), inc(E, 3n, 20)]), now: at(5) });
+    // the ruling's sweep (shown) spent D and E: 10 blocks after both
+    const ruled = step({
+      apiState: 'refunded',
+      state: open.state,
+      f: funds([inc(HASH_A, 1000n, 70), inc(LATE, 7n, 40), inc(E, 3n, 29)], 0n, 0n),
+      spend: sweep(10n, 5, RULING),
+      now: at(10),
+    });
+    expect(ruled.reports.filter((r) => r.kind === 'late-funds')).toEqual([]);
+    expect(ruled.state.swept).toEqual([HASH_A, LATE, E]);
+    // a ruling sweep whose amount matches nothing takes nothing: E escalates
+    const wrong = step({
+      apiState: 'refunded',
+      state: open.state,
+      f: funds([inc(HASH_A, 1000n, 70), inc(LATE, 7n, 40), inc(E, 3n, 29)], 0n, 0n),
+      spend: sweep(9n, 5, RULING),
+      now: at(10),
+    });
+    expect(wrong.reports.at(-1)).toEqual({ kind: 'late-funds' });
+  });
+
+  test('the 30-day watch counts from the latest close: a long dispute restarts it', () => {
+    const d = step({ apiState: 'released', f: funds([inc(LATE, 7n, 1)]), now: at(0) });
+    // disputed for 31 days: still watched
+    const open = step({ apiState: 'disputed', state: d.state, f: funds([inc(LATE, 7n, 2)]), now: at(31 * DAY_MIN) });
+    expect(open.watching).toBe(true);
+    // the ruling closes it at day 31: watched on that step and for 30 days after
+    const ruled = step({ apiState: 'refunded', state: open.state, f: funds([inc(LATE, 7n, 3)], 0n, 0n), now: at(31 * DAY_MIN + 1) });
+    expect(ruled.watching).toBe(true);
+    expect(ruled.state.closedAt).toEqual(at(31 * DAY_MIN + 1));
+    const day60 = step({ apiState: 'refunded', state: ruled.state, f: funds([inc(LATE, 7n, 3)], 0n, 0n), now: at(61 * DAY_MIN + 1) });
+    expect(day60.watching).toBe(true);
+    const after = step({ apiState: 'refunded', state: ruled.state, f: funds([inc(LATE, 7n, 3)], 0n, 0n), now: new Date(at(61 * DAY_MIN + 1).getTime() + 1) });
+    expect(after.watching).toBe(false);
+  });
+
+  test('a short dispute also gets a full 30 days after its own close', () => {
+    const d = step({ apiState: 'released', f: funds([inc(LATE, 7n, 1)]), now: at(0) });
+    const open = step({ apiState: 'disputed', state: d.state, f: funds([inc(LATE, 7n, 2)]), now: at(25 * DAY_MIN) });
+    const ruled = step({ apiState: 'refunded', state: open.state, f: funds([inc(LATE, 7n, 3)], 0n, 0n), now: at(26 * DAY_MIN) });
+    expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(LATE, 7n, 3)], 0n, 0n), now: at(50 * DAY_MIN) }).watching).toBe(true);
+  });
+
+  test('a sweep tx is never counted as a late coin', () => {
+    const settled = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 5) });
+    // a wallet listing the sweep itself among incoming (e.g. a payout back to the escrow's own address)
+    const r = step({ apiState: 'released', state: settled.state, f: funds([inc(HASH_A, 1000n, 31), inc(SETTLE, 1n, 6)], 0n, 0n) });
+    expect(r.reports).toEqual([]);
   });
 
   test('closed escrows stay watched for exactly 30 days', () => {
