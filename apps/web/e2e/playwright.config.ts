@@ -14,6 +14,10 @@ export default defineConfig({
   forbidOnly: true,
   retries: 0,
   reporter: 'list',
+  // Board references for expectParity's reported pixel diff (parity.ts). They come only from
+  // tools/parity/capture-refs.ts: a missing reference is reported, never written.
+  snapshotPathTemplate: `${repo}design/x2f-app/refs/{arg}{ext}`,
+  updateSnapshots: 'none',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 390, height: 844 },
