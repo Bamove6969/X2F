@@ -21,7 +21,11 @@ import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext }
 import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
 import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
 
-export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'error';
+/**
+ * `settled-without-device`: the trade closed with the escrow emptied by the other two parties, in
+ * a way that needed nothing from this device (see EscrowRecord.settledWithoutDevice). Not an error.
+ */
+export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'settled-without-device' | 'error';
 /**
  * `participants-mismatch` is the plan's; the others are additions: the two sides signed
  * different deals, the party failed (a peer reported another escrow address, or the store
@@ -48,15 +52,17 @@ export interface ConfirmedTrade {
  * back in range (Plan 3 Revision 2026-10-24, starter caps; lead 2026-10-24). `amount-changed`:
  * this device already fixed the amount (paid, or an outcome handed to the party) and the API now
  * shows another one; nothing is signed until it shows the fixed amount again.
- * `paid-amount-refused` (seller): the buyer's signed trade.paid amount is outside what this
- * device accepts, or its fiat total does not fit; no release is signed. `amount-unknown`
+ * `paid-amount-refused` (seller, for good): the buyer's signed trade.paid has a total that does
+ * not fit its amount, an amount below the take amount, or differs from an earlier trade.paid; no
+ * release is signed. `paid-amount-waiting` (seller): the signed amount is above what this device's
+ * own escrow reading supports yet; it is fixed as soon as the reading catches up. `amount-unknown`
  * (buyer): this device knows of "I've paid" but holds no fixed amount (a record from before the
  * field, or a paid state it never tapped); no release is signed. Refunds are never refused for
  * an amount (they pay the whole balance to the seller's signed address whatever the amount).
  * `attempts-exhausted`: the party used up its settlement attempts for the current outcome; it is
  * not retried (the trade needs a dispute or another outcome).
  */
-export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'amount-unknown' | 'attempts-exhausted';
+export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted';
 
 export interface EscrowStatus {
   phase: EscrowPhase;
@@ -136,6 +142,8 @@ const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 /** The escrow store outlives the trade by at least this long (lead 2026-10-24). */
 export const KEEP_AFTER_CLOSE_MS = 30 * 24 * 60 * 60 * 1000;
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
+/** Where a seller still waiting to fix the signed paid amount keeps reading its own size (I2). */
+const SELLER_WAIT_STATES: readonly TradeState[] = ['paid', 'settling', 'refund_requested'];
 const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
 /** Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone before settling. */
 const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
@@ -536,17 +544,22 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
 
     // ── The trade amount: invariants (each has a test in test/attestation-flow.test.ts) ──
     //
-    // I1 Release binding. A release is signed for one amount only: the amount its outcome was
-    //    derived from when it was first handed to the party (intent.handedAtomic, saved before the
-    //    hand-over). While that release intent stands, a release for another amount is refused
-    //    ('amount-changed') and so is an "I've paid" tap for another amount.
-    //    Tests: "a release handed over before paid binds its amount" (incl. reload).
+    // I1 Release binding. A release is signed for one amount only: the amount of the FIRST release
+    //    this device handed to its party (releaseBoundAtomic, saved before the hand-over, never
+    //    cleared by an intent change). A release for another amount is refused ('amount-changed'),
+    //    and so is an "I've paid" tap for another amount. Refunds ignore it. Accepted cost: a real
+    //    top-up after the first hand-over cannot be paid for (follow-up in docs/coordination.md).
+    //    Tests: "a release handed over before paid binds its amount" (incl. reload), "I1: ... flips
+    //    secured, lapsed, secured with a lower amount".
     // I2 Paid fixes the amount (acceptedAtomic). Buyer: only at its own tap, to the API amount if
     //    it lies in [take, this device's size], its fiat at the locked rate equals the total the
     //    buyer confirmed, and it equals any bound release; saved before trade.paid leaves. Seller:
-    //    only from the buyer's signed trade.paid amount, under the same range and total checks,
-    //    folded into the same save as the signal's replay guard; never from the API; otherwise
-    //    'paid-amount-refused'. Tests: "fixed by the tap itself", "a fiat total other than",
+    //    only from the buyer's signed trade.paid amount, folded into the same save as the signal's
+    //    replay guard, never from the API: a total that fits and an amount >= take is kept pending
+    //    and fixed once <= its own size (growth keeps running until then, 'paid-amount-waiting');
+    //    a total that does not fit, an amount below take or a second different trade.paid is
+    //    'paid-amount-refused' for good. Tests: "fixed by the tap itself", "a fiat total other than",
+    //    "I2: a seller whose wallet saw the extra coins only after", "I2: a second, different",
     //    "the seller fixes the amount from the buyer's signed trade.paid", "a seller that sees paid
     //    in its API view first", "a signed trade.paid outside the seller's range".
     // I3 Once fixed, a release needs the view's amount to equal it ('amount-changed' otherwise),
@@ -567,7 +580,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     //    without fundedSeen".
     // I8 Crash or reload at any step: every fixed or bound value is in the AES-GCM record (AAD
     //    bound to store and trade) before the action it guards (the tap's fix before trade.paid,
-    //    handedAtomic before settle(), the seller's fix with the signal guard, the buyer-cancel
+    //    releaseBoundAtomic before settle(), the seller's pending amount with the signal guard, the buyer-cancel
     //    intent before trade.cancel). Tests: the reload checks above, "buyerCancel saves its
     //    intent before trade.cancel leaves", "AAD binding" (escrow-store.test.ts).
 
@@ -589,23 +602,43 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     /**
-     * The seller's side of "I've paid": the buyer's signed amount and total. Fixed only when the
-     * amount is within [take, this device's size] and the total is that amount at the locked rate;
-     * otherwise refused (visibly) and nothing is fixed. The first trade.paid wins; a different
-     * later one refuses too. Never from the API's view.
+     * The seller's side of "I've paid": the buyer's signed amount and total, never the API's view.
+     * The first trade.paid wins. A total that does not fit the amount at the locked rate, an amount
+     * below the take amount, or a later trade.paid with another amount or total is refused for
+     * good. Otherwise the amount is kept pending and fixed by `fixPending` once this device's own
+     * size reaches it (its wallet may see the extra coins after the buyer's did).
      */
     private absorbPaid(amount: bigint, total: bigint): void {
       const r = this.rec;
       r.paidSeen = true;
-      const fixed = r.acceptedAtomic ?? null;
-      if (fixed !== null) {
-        if (fixed !== amount) r.paidRefused = true;
+      const first = r.paidPending ?? null;
+      if (first !== null) {
+        if (first.amountAtomic !== amount || first.fiatCents !== total) r.paidRefused = true;
         return;
       }
-      const fits =
-        amount >= r.deal.takeAmountAtomic && amount <= r.sizeAtomic && total === fiatCents(amount, { currency: r.deal.currency, centsPerXmr: r.deal.centsPerXmr });
-      if (fits) r.acceptedAtomic = amount;
-      else r.paidRefused = true;
+      if (r.paidRefused === true) return;
+      const fits = amount >= r.deal.takeAmountAtomic && total === fiatCents(amount, { currency: r.deal.currency, centsPerXmr: r.deal.centsPerXmr });
+      if (!fits) {
+        r.paidRefused = true;
+        return;
+      }
+      r.paidPending = { amountAtomic: amount, fiatCents: total };
+      this.fixPending();
+    }
+
+    /** Seller: fixes the pending signed amount once it lies within [take, this device's size]. True when fixed now. */
+    private fixPending(): boolean {
+      const r = this.rec;
+      const p = r.paidPending ?? null;
+      if (r.role !== 'seller' || p === null || r.paidRefused === true || (r.acceptedAtomic ?? null) !== null) return false;
+      if (p.amountAtomic < r.deal.takeAmountAtomic || p.amountAtomic > r.sizeAtomic) return false;
+      const bound = r.releaseBoundAtomic ?? null;
+      if (bound !== null && bound !== p.amountAtomic) {
+        r.paidRefused = true;
+        return true;
+      }
+      r.acceptedAtomic = p.amountAtomic;
+      return true;
     }
 
     /**
@@ -624,6 +657,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const r = this.rec;
       if (r.paidRefused === true) return 'paid-amount-refused';
       if ((r.acceptedAtomic ?? null) !== null) return 'amount-changed';
+      if (r.role === 'seller' && (r.paidPending ?? null) !== null) return 'paid-amount-waiting';
       if (r.role === 'seller') return r.paidSeen || r.intent?.kind === 'release' ? 'amount-unknown' : null; // nothing to release yet
       if (r.paidSeen) return 'amount-unknown';
       return 'amount-out-of-range';
@@ -671,6 +705,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const i = this.rec.intent;
       if (!this.isReady) return this.set('setting-up');
       if (i?.done) return this.set('done'); // only from this device's own settle
+      if (this.rec.settledWithoutDevice === true) return this.set('settled-without-device');
       const active = i !== null && i.outcome !== null && (!i.auto || this.view?.state === 'settling' || this.view?.state === 'lapsed');
       this.set(active ? 'signing' : 'ready');
     }
@@ -713,7 +748,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       }
 
       if (CLOSED.includes(v.state)) {
-        if (await this.afterClose(f)) return;
+        if (await this.afterClose(f, v)) return;
       }
       if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
         this.fail('deal-mismatch');
@@ -723,13 +758,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         r.paidSeen = true;
         changed = true;
       }
-      if (!r.paidSeen && GROW_STATES.includes(v.state) && f.balance > 0n) {
+      // Growth runs only before this device knows of paid, except on a seller that has fixed no
+      // amount yet: its signed pending amount is then fixed once its own size reaches it (I2),
+      // which is safe because the fix is capped by both the buyer's signed amount and own funds.
+      const sellerWaiting = r.role === 'seller' && (r.acceptedAtomic ?? null) === null && r.paidRefused !== true;
+      if ((!r.paidSeen || sellerWaiting) && (GROW_STATES.includes(v.state) || (sellerWaiting && SELLER_WAIT_STATES.includes(v.state))) && f.balance > 0n) {
         const size = deviceAmount(r.deal, r.sizeAtomic, f.balance, f.unlocked);
         if (size !== r.sizeAtomic) {
           r.sizeAtomic = size;
           changed = true;
         }
       }
+      if (this.fixPending()) changed = true;
       // An amount this device does not accept is refused visibly (never silently) until it fits.
       this.refusal = this.refusalFor(v) ?? (r.intent?.outcome && this.exhausted.has(key(r.intent.outcome)) ? 'attempts-exhausted' : null);
       // A tapped choice holds while the view supports it (or once it settled); otherwise the
@@ -751,14 +791,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (i && !i.done && f.balance > 0n && f.balance === f.unlocked) {
         const ctx = this.context(f.balance, i.kind !== 'release');
         let o = ctx ? outcomeFor(i.kind, ctx) : null;
-        // I1: a release is bound to the amount of its first hand-over; another amount is refused.
+        // I1: a release is bound to the amount of the first release ever handed over; another
+        // amount is refused, whatever the intents did in between.
         if (o && ctx && i.kind === 'release') {
-          const bound = i.handedAtomic ?? null;
+          const bound = r.releaseBoundAtomic ?? null;
           if (bound !== null && ctx.deal.amountAtomic !== bound) {
             o = null;
             this.refusal = 'amount-changed';
           } else if (bound === null) {
-            r.intent = { ...r.intent!, handedAtomic: ctx.deal.amountAtomic };
+            r.releaseBoundAtomic = ctx.deal.amountAtomic;
             changed = true;
           }
         }
@@ -783,7 +824,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * that never held coins has nothing to settle and goes after the 30 days.
      * Returns true once the trade is forgotten.
      */
-    private async afterClose(f: { balance: bigint; unlocked: bigint; incoming: { confirmations: number }[] }): Promise<boolean> {
+    private async afterClose(f: { balance: bigint; unlocked: bigint; incoming: { confirmations: number }[] }, v: EscrowTradeView): Promise<boolean> {
       const r = this.rec;
       const t = now();
       let changed = false;
@@ -801,13 +842,29 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         r.settleSeenAt = t;
         changed = true;
       }
-      if (emptyInBlock && !ownDone && (ownOpen || coins)) {
+      // Settled by the other two parties in a way that needs nothing from this device: the seller
+      // in a buyer cancel; a buyer that never tapped "I've paid" in an auto or lapse refund. Only
+      // with no tapped settle of its own still open. Not a failure (the 30-day rule applies).
+      // TODO(lead, pending): prove it with the builder's signed txHash and an OutProof checked on
+      // this device's own daemon (needs a Task 10 signal); until then the API's closed kind decides.
+      const tappedOpen = r.intent !== null && !r.intent.auto && r.intent.outcome !== null && !r.intent.done;
+      const byOthers =
+        v.state === 'refunded' &&
+        ((r.role === 'seller' && v.settling === 'buyer-cancel') ||
+          (r.role === 'buyer' && (v.settling === 'auto-refund' || v.settling === 'lapse-refund') && (r.acceptedAtomic ?? null) === null));
+      if (emptyInBlock && !ownDone && byOthers && !tappedOpen && !this.error) {
+        this.emptiedWhileSettling = null;
+        if (r.settledWithoutDevice !== true) {
+          r.settledWithoutDevice = true;
+          changed = true;
+        }
+      } else if (emptyInBlock && !ownDone && (ownOpen || coins)) {
         if (!ownOpen) this.emptiedWhileSettling ??= t - settledElsewhereMs; // nothing of ours could still land
         else this.emptiedWhileSettling ??= t;
         if (!this.error && t - this.emptiedWhileSettling >= settledElsewhereMs) this.fail('escrow-failed', { integrity: true }); // confirmed settled elsewhere
       } else this.emptiedWhileSettling = null;
       if (changed) await this.persist();
-      const settled = r.settleSeenAt != null || neverFunded;
+      const settled = r.settleSeenAt != null || neverFunded || r.settledWithoutDevice === true;
       if (!this.error && emptyInBlock && settled && t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
         await this.close();
         return true;
@@ -856,9 +913,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         case 'buyer-cancel':
           if (r.role !== 'buyer') throw new Error('only the buyer cancels alone');
           await fresh('buyer-cancel');
+          if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
           user('buyer-cancel');
           await this.persist(); // the intent is saved before trade.cancel leaves: a reload still builds the refund
-          await this.signals?.send('trade.cancel');
+          await this.signals.send('trade.cancel');
           break;
         case 'propose-cancel-sign':
           await fresh('mutual-cancel');
@@ -877,17 +935,20 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             throw new Error('escrow: the total does not match the trade amount');
           }
           // I1: a release already handed over is bound to its amount; paying for another is refused.
-          const bound = r.intent?.kind === 'release' ? (r.intent.handedAtomic ?? null) : null;
+          const bound = r.releaseBoundAtomic ?? null;
           if (bound !== null && bound !== amount) throw new Error('escrow: a release for another amount is already under way');
+          if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
+          const signals = this.signals;
           this.fixAmount(amount);
           r.paidSeen = true;
           await this.persist(); // fixed before the signal leaves
-          await this.signals?.send('trade.paid', { amountAtomic: amount, fiatCents: a.fiatCents });
+          await signals.send('trade.paid', { amountAtomic: amount, fiatCents: a.fiatCents });
           break;
         }
         case 'signal':
           if ((a.signal as string) === 'trade.paid') throw new Error('escrow: use the paid action with the confirmed total');
-          await this.signals?.send(a.signal);
+          if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
+          await this.signals.send(a.signal);
           break;
       }
       await this.persist();

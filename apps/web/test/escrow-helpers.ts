@@ -56,6 +56,7 @@ export class Hub {
     this.opened.push({ channel: a.code, role: a.role });
     let closed = false;
     const me = this.box(a.code, a.role);
+    const mine = new Set<(v: unknown) => void>();
     return {
       send: (e) => {
         if (closed) return;
@@ -74,11 +75,16 @@ export class Hub {
           if (closed) return reject(new Error('closed'));
           const x = me.inbox.shift();
           if (x !== undefined) resolve(x);
-          else me.waiters.push(resolve);
+          else {
+            mine.add(resolve);
+            me.waiters.push(resolve);
+          }
         }),
       onReconnect: () => {},
       close: () => {
         closed = true;
+        // A closed transport's pending read must not swallow frames meant for the next one.
+        me.waiters = me.waiters.filter((w) => !mine.has(w));
       },
     };
   };
@@ -102,6 +108,8 @@ export class Parties {
   calls: { role: Role; args: PartyArgs }[] = [];
   settles: { role: Role; o: Outcome }[] = [];
   funds: Funds = { balance: 0n, unlocked: 0n, incoming: [] };
+  /** Per-role readings that override `funds` (one wallet lagging behind the other). */
+  fundsFor: Partial<Record<Role, Funds>> = {};
   /** How many times each role's runtime read funds() (one per tick once the party runs). */
   reads: Partial<Record<Role, number>> = {};
   /** Resolves once `role` has read funds() `n` more times: that many ticks went by. */
@@ -134,7 +142,7 @@ export class Parties {
       },
       funds: async () => {
         const n = (this.reads[args.role] = (this.reads[args.role] ?? 0) + 1);
-        const f = structuredClone(this.funds);
+        const f = structuredClone(this.fundsFor[args.role] ?? this.funds);
         for (const w of this.tickWaiters.splice(0)) {
           if (w.role === args.role && n >= w.want) setTimeout(w.resolve, 0); // after this tick has used the reading
           else this.tickWaiters.push(w);

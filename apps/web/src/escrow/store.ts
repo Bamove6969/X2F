@@ -44,12 +44,6 @@ export interface StoredIntent {
   done: boolean;
   /** Chosen by the runtime (standing release co-sign, lapse refund), not by a tap. */
   auto: boolean;
-  /**
-   * For a release: the trade amount its outcome was derived from when it was first handed to the
-   * party (saved before the hand-over). While this intent stands, a release for any other amount,
-   * or an "I've paid" tap for another amount, is refused. Refunds are never bound.
-   */
-  handedAtomic?: bigint | null;
 }
 
 export interface EscrowRecord {
@@ -97,8 +91,28 @@ export interface EscrowRecord {
    * never-funded.
    */
   fundedSeen?: boolean;
-  /** The seller refused the buyer's signed trade.paid amount (out of range, or a total that does not fit). */
+  /**
+   * The trade amount of the FIRST release this device handed to its party (saved before the
+   * hand-over) and never cleared, whatever the intents do afterwards. From then on a release for
+   * any other amount, and an "I've paid" tap for another amount, is refused. Refunds ignore it.
+   */
+  releaseBoundAtomic?: bigint | null;
+  /**
+   * The seller's copy of the buyer's first valid signed trade.paid, kept until this device's own
+   * size reaches it (then it becomes acceptedAtomic). Its wallet may see the extra coins later.
+   */
+  paidPending?: { amountAtomic: bigint; fiatCents: bigint } | null;
+  /**
+   * The seller refused the buyer's signed trade.paid for good: a total that does not fit the
+   * amount, an amount below the take amount, or a second, different trade.paid.
+   */
   paidRefused?: boolean;
+  /**
+   * The escrow was emptied by the other two parties in a way that needs nothing from this device
+   * (the seller in a buyer cancel; a buyer that never tapped "I've paid" in an auto or lapse
+   * refund). Not a failure; the store follows the 30-day rule.
+   */
+  settledWithoutDevice?: boolean;
   /**
    * An integrity failure that stops this trade on this device for good; kept so a reload stops it
    * again (participants or deal mismatch, a confirmed settled-elsewhere, party equivocation or
