@@ -224,7 +224,7 @@ for (const v of PHONES) {
     await page.goto('/setup');
     await acceptTerms(page);
     await pickNames(page, 'lumen.k', 'lumen-login-7');
-    await page.click('[role="radio"]:has-text("Password")');
+    await page.click('[data-method="password"]');
     await page.click('[data-part="method-continue"]');
     await expect(page).toHaveURL(/\/setup\/password\?/);
 
@@ -289,7 +289,7 @@ test('Mira.K_ shows exactly as typed after setup (password path, backup skipped)
   await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
   await acceptTerms(page);
   await pickNames(page, 'Mira.K_', 'mira-signin-01');
-  await page.click('[role="radio"]:has-text("Password")');
+  await page.click('[data-method="password"]');
   await page.click('[data-part="method-continue"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
@@ -344,7 +344,7 @@ test('a taken username at register sends the person back to change it', async ({
   await page.goto('/setup');
   await acceptTerms(page);
   await pickNames(page, 'lumen.k', 'lumen-login-7');
-  await page.click('[role="radio"]:has-text("Password")');
+  await page.click('[data-method="password"]');
   await page.click('[data-part="method-continue"]');
   await page.fill('#pw', 'Quiet-harbour-58');
   await page.fill('#pw2', 'Quiet-harbour-58');
@@ -430,7 +430,7 @@ test('a signed-in trader with no wallet who opens /setup lands on Link a wallet 
   const s = await stubApi(page, { signedIn: true, methods: ['pgp'], wallets: [] });
   await page.goto(`/setup?returnTo=${encodeURIComponent(TAKE)}`);
   await expect(page).toHaveURL(/\/setup\/wallet\?/);
-  await page.click('[role="radio"]:has-text("Edge")');
+  await page.click('[data-app="edge"]');
   await expect(page.getByText("For best privacy, turn on Full Sync in Edge's Monero settings.", { exact: false })).toBeVisible();
   await page.fill('#addr', ADDRESS);
   await page.click('[data-part="wallet-finish"]');

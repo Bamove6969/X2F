@@ -80,6 +80,18 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
     },
   ],
+  SetupPgpChallenge: [
+    {
+      text: '4:12',
+      why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
+    },
+  ],
+  SetupUsername: [
+    {
+      text: 'lumen.k is available',
+      why: 'No API answers whether a name is free before sign-up (Plan 2 and FU-A have none), so the page cannot claim it; a taken name comes back from the register call and returns the person to this screen. The page shows how the name will look instead (Task 28; open question for the lead).',
+    },
+  ],
   SetupWallet: [
     {
       text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",

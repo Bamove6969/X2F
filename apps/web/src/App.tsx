@@ -4,6 +4,8 @@ import { setNavigator } from './api/client.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
 import { Security } from './screens/settings/Security.js';
+import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -73,8 +75,8 @@ export function App() {
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
-          <Route path="/setup/*" element={<Screen name="setup" />} />
-          <Route path="/terms" element={<Screen name="terms" />} />
+          <Route path="/setup/*" element={<SetupFlow />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />

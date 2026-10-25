@@ -1,0 +1,143 @@
+/**
+ * Shared parts of the Getting started screens (Task 28): the flow's in-memory state and its
+ * context, the step paths, and the frame every setup board shares.
+ */
+import { createContext, useContext, type ReactNode } from 'react';
+import { Link } from 'react-router';
+import type { WalletApp } from '@x2f/auth-client';
+import { Icon } from '../../ui/icons.js';
+import type { RegisterPgpStart } from './register.js';
+import './setup.css';
+
+export type LoginMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
+export type BackupChoice = 'totp' | 'security-key' | 'pgp' | 'recovery-codes';
+export type Step = '' | 'name' | 'login' | 'pgp-key' | 'pgp-code' | 'password' | 'backup' | 'wallet' | 'welcome';
+
+export interface SetupState {
+  /** The Terms version accepted on the first screen; sent as `acceptedTerms` with the register call. */
+  terms: string | null;
+  displayName: string;
+  loginName: string;
+  method: LoginMethod;
+  publicKey: string;
+  challenge: RegisterPgpStart | null;
+  registered: boolean;
+  backup: BackupChoice | null;
+  wallet: { app: WalletApp; addressEnd: string } | null;
+}
+
+export const INITIAL: SetupState = {
+  terms: null,
+  displayName: '',
+  loginName: '',
+  method: 'pgp',
+  publicKey: '',
+  challenge: null,
+  registered: false,
+  backup: null,
+  wallet: null,
+};
+
+export interface SetupApi {
+  state: SetupState;
+  update: (patch: Partial<SetupState>) => void;
+  returnTo: string;
+  /** Goes to a step, keeping `returnTo`. */
+  go: (step: Step) => void;
+  path: (step: Step) => string;
+}
+
+export const SetupContext = createContext<SetupApi | null>(null);
+
+export function useSetup(): SetupApi {
+  const api = useContext(SetupContext);
+  if (api === null) throw new Error('useSetup outside SetupFlow');
+  return api;
+}
+
+/** `/setup/<step>?returnTo=…`; `returnTo` has already been through safeReturnTo. */
+export function stepPath(step: Step, returnTo: string): string {
+  return `/setup${step === '' ? '' : `/${step}`}?returnTo=${encodeURIComponent(returnTo)}`;
+}
+
+/**
+ * The frame every setup board shares: the back arrow, "Set up your account", "Step N of 5", the
+ * five-part progress bar and "Takes about 2 minutes.", then the screen, then its buttons at the
+ * bottom. `fit` keeps the whole frame in the viewport (the Terms box scrolls inside it).
+ */
+export function SetupFrame({
+  screen,
+  step,
+  back,
+  title = 'Set up your account',
+  fit = false,
+  footer,
+  children,
+}: {
+  screen: string;
+  step?: 1 | 2 | 3 | 4 | 5;
+  back?: string;
+  title?: string;
+  fit?: boolean;
+  footer: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className={fit ? 'x2f-setup x2f-setup--fit' : 'x2f-setup'} data-screen={screen}>
+      <header className="x2f-setup__head">
+        <div className="x2f-setup__bar">
+          {back !== undefined ? (
+            <Link className="x2f-icon-button x2f-setup__back" to={back} aria-label="Back">
+              <Icon name="chevron-left" />
+            </Link>
+          ) : (
+            <span className="x2f-setup__nobar" aria-hidden="true" />
+          )}
+          <span className="x2f-setup__title">{title}</span>
+          {step !== undefined ? <span className="x2f-setup__step">Step {step} of 5</span> : null}
+        </div>
+        {step !== undefined ? (
+          <>
+            <div className="x2f-setup__progress" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={5} aria-valuenow={step}>
+              {[1, 2, 3, 4, 5].map((i) => (
+                <span key={i} className="x2f-setup__seg" data-on={i <= step ? 'true' : 'false'} />
+              ))}
+            </div>
+            <span className="x2f-setup__time">Takes about 2 minutes.</span>
+          </>
+        ) : null}
+      </header>
+      <main className="x2f-setup__main">{children}</main>
+      <footer className="x2f-setup__foot">{footer}</footer>
+    </div>
+  );
+}
+
+/** The screen's heading and the sentence under it. */
+export function SetupIntro({ title, children }: { title: ReactNode; children?: ReactNode }) {
+  return (
+    <section className="x2f-setup__intro">
+      <h1 className="x2f-setup__h1">{title}</h1>
+      {children !== undefined ? <p className="x2f-setup__lead">{children}</p> : null}
+    </section>
+  );
+}
+
+/** A refused register call. A name problem links back to the names screen (what they typed is kept). */
+export function RegisterError({ error }: { error: { text: string; names: boolean } | null }) {
+  const { path } = useSetup();
+  if (error === null) return null;
+  return (
+    <p className="x2f-error" role="alert" data-part="register-error">
+      {error.text}
+      {error.names ? (
+        <>
+          {' '}
+          <Link className="x2f-link" to={path('name')} data-part="change-names">
+            Change your names
+          </Link>
+        </>
+      ) : null}
+    </p>
+  );
+}
