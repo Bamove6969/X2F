@@ -6,8 +6,8 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
 /**
- * Called after an event is committed (Task 19 delivers it over SSE and Web Push). Until Task 19
- * exists the default is `noPublish`. A publish failure never undoes or fails the event.
+ * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
+ * Push, final alert). The store's default is `noPublish`. A publish failure never undoes or fails the event.
  */
 export type TradePublisher = (t: Trade, e: TradeEvent, by: By) => void | Promise<void>;
 export const noPublish: TradePublisher = () => undefined;

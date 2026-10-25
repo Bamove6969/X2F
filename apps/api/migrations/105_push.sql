@@ -15,3 +15,7 @@ create table push_subscriptions (
 -- One browser subscription belongs to one account: the last one to post it.
 create unique index push_subscriptions_endpoint on push_subscriptions (endpoint);
 create index push_subscriptions_account on push_subscriptions (account_id, created_at);
+
+-- The buyer's final alert on request-refund (P3-I13): true when a live stream was open or a push
+-- service accepted the push; null until a refund is requested. Moderation (Task 10) escalates on false.
+alter table trades add column final_alert_delivered boolean;

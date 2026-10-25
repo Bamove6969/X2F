@@ -19,6 +19,7 @@ import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 import { EventBus, type EventBusOptions } from './events/bus.js';
 import { eventRoutes, type EventStreamOptions } from './events/routes.js';
+import { tradeEventPublisher } from './events/tradePublisher.js';
 import { pushRoutes } from './push/routes.js';
 import { sendPush, webPushTransport, type PushKind, type PushTransport } from './push/send.js';
 
@@ -72,7 +73,7 @@ export interface BuildOptions {
   events?: EventBusOptions & EventStreamOptions;
   /** Task 19: where pushes go (default web-push); tests pass a fake push service. */
   pushTransport?: PushTransport;
-  /** Plan 3 Task 19's trade event delivery; a no-op until it exists. */
+  /** Trade event delivery after commit; default Task 19's `tradeEventPublisher` (SSE, Web Push, final alert). */
   tradePublish?: TradePublisher;
 }
 
@@ -219,7 +220,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
+  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ db: deps.db, events, push: app.push }) });
 
   return app;
 }
