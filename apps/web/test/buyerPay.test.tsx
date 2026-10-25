@@ -71,6 +71,7 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
   const act = (name: string) => vi.fn(async (...a: unknown[]) => void calls.push(a.length ? `escrow:${name}(${String(a[0])})` : `escrow:${name}`));
   return {
     phase: 'ready',
+    escrowAddress: null,
     error: null,
     retryable: false,
     refusal: null,

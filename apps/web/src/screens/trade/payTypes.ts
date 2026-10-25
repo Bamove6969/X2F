@@ -1,5 +1,5 @@
 /**
- * Task 23's copy of the trade-room slot interface that Task 22 owns (wip/lead-p3-task22 @e8e1f44:
+ * Task 23's copy of the trade-room slot interface that Task 22 owns (wip/lead-p3-task22 @e8e1f44, updated to @4a8a3ab:
  * `screens/trade/TradeRoom.tsx` `TradeScreenProps`, `screens/trade/seams.ts` `TradeEscrow`,
  * `api/trade.ts` `TradeView`, `TraderSummary`, `publicName`). Task 23 builds its screens against
  * these copies so it never creates or edits Task 22's files.
@@ -90,9 +90,11 @@ export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'not-c
 export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted';
 export type UserSignal = 'trade.paid' | 'trade.cancel' | 'trade.extend' | 'trade.refund-request';
 
-/** Task 22's `TradeEscrow` (= Task 12's `UseEscrow`), field for field. */
+/** Task 22's `TradeEscrow` (= Task 12's `UseEscrow` plus `escrowAddress`, @4a8a3ab), field for field. */
 export interface TradeEscrow {
   phase: EscrowPhase;
+  /** The multisig address this device derived, or null until then (Task 22's addition; Task 23 never shows it). */
+  escrowAddress: string | null;
   error: EscrowErrorCode | null;
   retryable: boolean;
   refusal: EscrowRefusal | null;

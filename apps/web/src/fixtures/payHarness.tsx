@@ -41,6 +41,7 @@ function record(name: string) {
 
 const ESCROW: TradeEscrow = {
   phase: 'ready',
+  escrowAddress: null,
   error: null,
   retryable: false,
   refusal: null,
