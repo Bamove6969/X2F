@@ -42,7 +42,7 @@ const deps: Deps = {
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
-  // Task 26: shared context from real trades (Task 6); chats (Task 20) and delivery (Task 19) pending (nudge/wiring.ts).
+  // Task 26: shared context from real trades (Task 6), delivery over Task 19's SSE and Web Push; chats (Task 20) pending (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
 };
 

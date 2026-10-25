@@ -23,18 +23,15 @@ export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext
 }
 
 /**
- * Stand-ins for what is not merged yet (tripwires in test/nudge.test.ts):
- * - Task 20 (open chats): a chat code is not yet a shared context.
- * - Task 19: `publish` (events/bus.ts) and `sendPush(accountId, 'nudge')` (push/send.ts) deliver
- *   nothing until then; the nudge is still recorded and counted like a delivered one.
+ * Stand-in for what is not merged yet (tripwire in test/nudge.test.ts): Task 20 (open chats), so
+ * a chat code is not yet a shared context. Delivery is Task 19's real SSE bus and Web Push
+ * (`liveDelivery` in routes.ts), used whenever `publish` / `sendPush` are left out, as here.
  */
 export const pendingNudgeWiring: NudgeWiring = {
   hasSharedContext: async () => false,
-  publish: () => undefined,
-  sendPush: async () => false,
 };
 
-/** What main.ts uses: real trades (Task 6); chats (Task 20) and delivery (Task 19) still pending. */
+/** What main.ts uses: real trades (Task 6) and real delivery (Task 19); chats (Task 20) still pending. */
 export function productionNudgeWiring(db: Queryable): NudgeWiring {
   return { ...pendingNudgeWiring, hasSharedContext: tradeSharedContext(db) };
 }

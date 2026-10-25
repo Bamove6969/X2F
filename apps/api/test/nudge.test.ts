@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -664,20 +663,18 @@ describe('shared context from real trades (Task 6)', () => {
   });
 });
 
-describe('TRIPWIRES: real wiring for Tasks 19 and 20', () => {
-  it('until then, the production wiring delivers nothing and no chat code is a shared context', async () => {
+describe('TRIPWIRES: real wiring for Task 20 (Task 19 delivery is wired)', () => {
+  it('until then, no chat code is a shared context; delivery is left to Task 19 (no publish or sendPush stub)', async () => {
     expect(await pendingNudgeWiring.hasSharedContext('a', 'b', 'K7Q2-M9XW')).toBe(false);
-    expect(await pendingNudgeWiring.sendPush('a', 'nudge')).toBe(false);
+    // Left out on purpose: nudge/routes.ts then delivers over app.events and app.push (test/nudge-delivery.test.ts).
+    expect(pendingNudgeWiring.publish).toBeUndefined();
+    expect(pendingNudgeWiring.sendPush).toBeUndefined();
+    expect(productionNudgeWiring(deps.db).publish).toBeUndefined();
+    expect(productionNudgeWiring(deps.db).sendPush).toBeUndefined();
   });
 
   it('Task 20 (chats) is not merged yet: wire hasSharedContext to open chats in nudge/wiring.ts', async () => {
     const { rows } = await deps.db.query<{ t: string | null }>(`select to_regclass('public.chats')::text as t`);
     expect(rows[0]!.t, 'Task 20 merged: hasSharedContext must check open chats (apps/api/src/nudge/wiring.ts)').toBeNull();
-  });
-
-  it('Task 19 (events bus, Web Push) is not merged yet: wire publish and sendPush in nudge/wiring.ts', () => {
-    const src = new URL('../src/', import.meta.url);
-    expect(existsSync(new URL('events/bus.ts', src)), 'Task 19 merged: publish → events/bus.ts (nudge/wiring.ts)').toBe(false);
-    expect(existsSync(new URL('push/send.ts', src)), 'Task 19 merged: sendPush → push/send.ts (nudge/wiring.ts)').toBe(false);
   });
 });
