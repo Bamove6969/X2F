@@ -3,7 +3,7 @@ import { EscrowDots } from '../../ui/EscrowDots.js';
 import { ExternalLink } from '../../ui/ExternalLink.js';
 import { Icon } from '../../ui/icons.js';
 import { useConfirmations } from './release/seams.js';
-import { amounts, type ReleaseTrade } from './release/view.js';
+import { amounts, publicName, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
 /** The public explorer the board links to; it gets the tx hash and nothing else (no referrer). */
@@ -18,7 +18,7 @@ export const EXPLORER_TX = 'https://xmrchain.net/tx/';
  */
 export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlot?: ReactNode }) {
   const live = useConfirmations(trade.code);
-  const other = trade.counterparty.username;
+  const other = publicName(trade.counterparty);
   const a = amounts(trade);
   const buyer = trade.role === 'buyer';
   const target = live?.target ?? 10;

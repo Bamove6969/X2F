@@ -6,7 +6,7 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Released } from '../src/screens/trade/Released.js';
 import { SellerConfirm } from '../src/screens/trade/SellerConfirm.js';
-import { releaseScreenOf } from '../src/screens/trade/release/slots.js';
+import { RELEASE_SLOTS, ReleaseRoomScreen, releaseScreenOf } from '../src/screens/trade/release/slots.js';
 import type { ReleaseEscrow, ReleaseTrade } from '../src/screens/trade/release/view.js';
 import { advance, pointer, render } from './render.js';
 
@@ -290,10 +290,60 @@ describe('releaseScreenOf (the slot Task 22 registers in TradeRoom)', () => {
     expect(releaseScreenOf(trade({ state: 'paid' }))).toBe('seller-confirm');
     expect(releaseScreenOf(trade({ state: 'settling', settling: 'release' }))).toBe('seller-confirm');
     expect(releaseScreenOf(trade({ state: 'settling', settling: 'buyer-cancel' }))).toBeNull();
+    expect(releaseScreenOf(trade({ state: 'settling', settling: 'release', role: 'buyer' }))).toBe('released');
+    expect(releaseScreenOf(trade({ state: 'settling', settling: 'auto-refund', role: 'buyer' }))).toBeNull();
     expect(releaseScreenOf(trade({ state: 'paid', role: 'buyer' }))).toBeNull();
     expect(releaseScreenOf(trade({ state: 'released', role: 'buyer' }))).toBe('released');
     expect(releaseScreenOf(trade({ state: 'released' }))).toBe('released');
     expect(releaseScreenOf(trade({ state: 'secured' }))).toBeNull();
     expect(releaseScreenOf(trade({ state: 'refunded' }))).toBeNull();
+  });
+});
+
+describe('ReleaseRoomScreen (the trade room\'s props)', () => {
+  it('registers for exactly the lead\'s slots: seller in paid, both in settling (release only), both in released', () => {
+    expect(RELEASE_SLOTS.map((s) => [s.role, s.states.join(',')])).toEqual([
+      ['seller', 'paid'],
+      ['any', 'settling'],
+      ['any', 'released'],
+    ]);
+    const settling = RELEASE_SLOTS[1];
+    expect(settling.when({ settling: 'release' })).toBe(true);
+    expect(settling.when({ settling: 'buyer-cancel' })).toBe(false);
+  });
+
+  it('uses the room\'s escrow, server clock and refresh, and shows the display name over the old column', async () => {
+    vi.useFakeTimers();
+    answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
+    const escrow = escrowStub();
+    const refresh = vi.fn(async () => undefined);
+    const view = trade({ counterparty: { displayName: 'mira.k', username: 'old-column' } });
+    const r = render(
+      <MemoryRouter>
+        <ReleaseRoomScreen view={view} escrow={escrow} refresh={refresh} serverClock={() => new Date('2026-10-25T12:00:00Z')} wide={false} />
+      </MemoryRouter>,
+    );
+    expect(r.host.textContent).toContain('Selling to mira.k');
+    expect(r.host.textContent).not.toContain('old-column');
+    expect(r.host.textContent).toContain('1 h 52 min to confirm');
+    expect(r.host.querySelector('a.x2f-release__chat')!.textContent).toBe('Chat');
+    act(() => r.host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());
+    pointer(r.host.querySelector('button[data-primary]')!, 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(escrow.release).toHaveBeenCalledTimes(1);
+    expect(refresh).toHaveBeenCalled();
+  });
+
+  it('says so when the device could not sign (the Task 12 stand-in refuses)', async () => {
+    vi.useFakeTimers();
+    answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
+    const escrow = { release: vi.fn(() => Promise.reject(new Error('escrow runtime not wired (Task 12)'))) };
+    const s = sellerConfirm(trade(), escrow);
+    act(() => s.box().click());
+    pointer(s.hold(), 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The release didn’t finish on this device. Keep this page open.');
   });
 });

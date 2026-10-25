@@ -7,7 +7,8 @@ import type { Confirmations, ReleaseEscrow } from './view.js';
  * Task 12's `useEscrow(code)` (apps/web/src/escrow/useEscrow.ts) returns `release()`, which has
  * the seller's app build and sign the release and the buyer's app co-sign it through
  * `cosignPolicy`. Until it lands there is no escrow runtime in the browser, so `release()` here
- * does nothing; the API's `release-started` is still posted first. Tripwire:
+ * is refused, as Task 22's `PENDING_ESCROW` refuses it (SellerConfirm then says the release did
+ * not finish on this device); the API's `release-started` is still posted first. Tripwire:
  * apps/web/test/release-tripwires.test.ts fails once useEscrow.ts exists; then return
  * `useEscrow(code)` here and delete this stand-in.
  */
@@ -15,7 +16,7 @@ export function useReleaseEscrow(_code: string): ReleaseEscrow {
   return NO_ESCROW_RUNTIME;
 }
 
-const NO_ESCROW_RUNTIME: ReleaseEscrow = { release: async () => undefined };
+const NO_ESCROW_RUNTIME: ReleaseEscrow = { release: () => Promise.reject(new Error('escrow runtime not wired (Task 12)')) };
 
 /** How often the released screen asks for confirmations (each answer is cached by the API for 10 s). */
 export const CONFIRMATIONS_POLL_MS = 15_000;

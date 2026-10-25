@@ -5,7 +5,7 @@ import { Countdown } from '../../ui/Countdown.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { amounts, firstPerson, profileCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
+import { amounts, publicName, firstPerson, profileCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
 /**
@@ -22,6 +22,7 @@ export function SellerConfirm({
   onTrade,
   headerAction,
   proofSlot,
+  serverClock,
 }: {
   trade: ReleaseTrade;
   method: MethodInfo;
@@ -32,15 +33,18 @@ export function SellerConfirm({
   headerAction?: ReactNode;
   /** Plan 5's smart proof card. */
   proofSlot?: ReactNode;
+  /** The trade room's server clock; by default one anchored on `trade.serverNow`. */
+  serverClock?: () => Date;
 }) {
-  const clock = useServerClock(trade.serverNow);
+  const ownClock = useServerClock(trade.serverNow);
+  const clock = serverClock ?? ownClock;
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<'start' | 'sign' | null>(null);
   // A new key gives a fresh HoldButton after a failed attempt (it fires onComplete once per mount).
   const [attempt, setAttempt] = useState(0);
 
-  const buyer = trade.counterparty.username;
+  const buyer = publicName(trade.counterparty);
   const { amount, fiat } = amounts(trade);
   const { place, checkPrompt } = profileCopy(trade.profile);
   const done = trade.state === 'settling' && trade.settling === 'release';
@@ -94,7 +98,7 @@ export function SellerConfirm({
         {...(headerAction !== undefined ? { action: headerAction } : {})}
       />
 
-      <main className="x2f-release__main">
+      <div className="x2f-release__main">
         <div className="x2f-release__status">
           <span className="x2f-chip x2f-release__paid" data-tone="caution">
             <Icon name="check" size={16} />
@@ -129,7 +133,7 @@ export function SellerConfirm({
             </span>
           </label>
         </section>
-      </main>
+      </div>
 
       <footer className="x2f-release__footer">
         <HoldButton
