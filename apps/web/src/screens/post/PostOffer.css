@@ -5,9 +5,15 @@
 .post {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
+  /* The board's frame: the form scrolls inside the screen while Post offer stays on it. */
+  height: 100dvh;
   max-width: 640px;
   margin: 0 auto;
+}
+
+.post-header,
+.post-footer {
+  flex-shrink: 0;
 }
 
 .post-header {

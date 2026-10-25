@@ -196,6 +196,7 @@ test('a buy ad goes to the Sell list', async ({ page }) => {
 test('SBP and the other methods awaiting legal review are absent from the picker', async ({ page }) => {
   await stub(page);
   await page.goto('/post?method=SBP');
+  await expect(f(page).method.locator('option', { hasText: 'Zelle' })).toHaveCount(1);
   const options = await f(page).method.locator('option').allTextContents();
   expect(options).toContain('Zelle');
   for (const name of ['SBP — Faster Payments System (Russia)', 'Mir card', 'YooMoney']) expect(options).not.toContain(name);
@@ -291,39 +292,16 @@ for (const [width, height] of [
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
     const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
     expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
-    const sizes = await page.locator('input, select, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
-    for (const s of sizes) expect(s).toBeGreaterThanOrEqual(15);
+    await expect(page.locator('[data-primary]')).toHaveCount(1);
+    // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px.
+    const typed = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    expect(typed.length).toBeGreaterThan(0);
+    for (const s of typed) expect(s).toBeGreaterThanOrEqual(16);
+    const selects = await page.locator('select').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
+    for (const s of selects) expect(s).toBeGreaterThanOrEqual(15);
     await page.getByRole('region', { name: 'Preview' }).scrollIntoViewIfNeeded();
     await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeInViewport();
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
   });
 }
 
-// Phone sizes (spec, owner 2026-10-25: every screen tested at phone sizes): a small Android, the
-// boards' iPhone and a large Android.
-for (const [width, height] of [
-  [360, 740],
-  [390, 844],
-  [412, 915],
-] as const) {
-  test(`at ${width}x${height} the form fits the phone and Post offer is reachable`, async ({ page }) => {
-    await page.setViewportSize({ width, height });
-    await stub(page);
-    await page.goto('/post?method=ZELLE&currency=EUR');
-    await fillBoard(page);
-    await f(page).fixedMode.check();
-    await f(page).fixed.fill('305.10');
-    const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
-    expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
-    await expect(page.locator('[data-primary]')).toHaveCount(1);
-    // Typed fields stay at 16 px so phones do not zoom into them.
-    const sizes = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
-    expect(sizes.length).toBeGreaterThan(0);
-    for (const s of sizes) expect(s).toBeGreaterThanOrEqual(16);
-    await f(page).post.scrollIntoViewIfNeeded();
-    await expect(f(page).post).toBeInViewport();
-    const box = await f(page).post.boundingBox();
-    expect(box!.x).toBeGreaterThanOrEqual(0);
-    expect(box!.x + box!.width).toBeLessThanOrEqual(width);
-  });
-}
