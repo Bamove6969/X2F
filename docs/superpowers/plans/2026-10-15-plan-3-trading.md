@@ -2,6 +2,14 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-25 (lead-approved deviation, Task 19 as built)
+
+The final alert's delivery proof is stricter than the Task 19 interface text, approved by the lead. The Task 19 lines below are corrected to match. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
+
+- **`final_alert_delivered` is set true only by the buyer's seen-receipt** (`POST /v1/trades/:code/final-alert-seen` from the live `refund_requested` event, or `POST /v1/account/final-alert-seen` from the service worker after it showed the trade push). Nothing else writes it: an open stream or a push service's 201 is not proof that the buyer saw it. Otherwise it stays null.
+- **Task 10 treats null as false:** no auto-refund on a null or false proof; the refund escalates to a moderator instead.
+- This is stricter than the earlier `delivered || pushAccepted` (an open SSE stream, or a push service accepting the push, counted as delivered).
+
 ## Revision 2026-10-23 (Task 7 as built)
 
 Four deviations in the built Task 7, all accepted in its first review. The interface text below (Task 7 Interfaces, Global Constraints) is corrected to match. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
@@ -673,13 +681,13 @@ Rules the tests pin (one test each):
 - Produces:
   - `GET /v1/events` (SSE, `requireTrader`): `{type:'trade', code, state}`, `{type:'accepted', code, by}`, `{type:'chat', chat}`, `{type:'nudge', from, context}`. `publish(accountId, ev)` delivers only to that account's streams. `delivered(accountId): boolean` (any open stream).
   - `POST /v1/account/push { endpoint, keys }` and `DELETE`. `sendPush(accountId, kind: 'nudge' | 'trade')` uses web-push with VAPID (`VAPID_PUBLIC`, `VAPID_PRIVATE`). The payload is exactly "Someone nudged you on X2F" or "Something changed in a trade on X2F", with no code and no URL beyond `/`. It returns true when a push service answered 201.
-  - Final-alert delivery: on `request-refund`, the API publishes, pushes to the buyer, and records `final_alert_delivered = delivered || pushAccepted`, which is reported to moderation (Task 10).
+  - Final-alert delivery: on `request-refund`, the API publishes and pushes to the buyer; `final_alert_delivered` is set true only by the buyer's seen-receipt and is otherwise null, which moderation (Task 10) treats as false (Revision 2026-10-25; was `delivered || pushAccepted`).
   - `AcceptedSheet`: on `accepted`, the poster sees "<username> accepted your offer" and picks their wallet (`POST /v1/trades/:code/wallet`). Setup starts after that. A poster with no usable wallet left gets "Add a wallet" through `ConfirmSheet` (spec 6.4); the trade waits in `setup` until `setupBy`.
 
 - [ ] **Step 1: Write the failing tests:**
   - SSE delivers `accepted` to the poster within 1 s and never to a third account (P3-M9).
   - The push payload for each kind is exactly the generic string.
-  - `final_alert_delivered` is false with no stream and no subscription.
+  - `final_alert_delivered` stays null with no seen-receipt, even with an open stream or an accepted push (Revision 2026-10-25).
   - The accepted sheet posts the wallet and the room moves to "Setting up escrow".
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
