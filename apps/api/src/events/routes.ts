@@ -80,7 +80,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       const { rows } = await db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [
         req.auth.sessionId, clock(),
       ]);
-      live = rows.length >= 0;
+      live = rows.length > 0;
     } catch (e) {
       end();
       throw e;
