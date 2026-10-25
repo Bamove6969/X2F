@@ -10,7 +10,10 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
+import { tradeRoutes } from './trades/routes.js';
+import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -44,6 +47,8 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -58,6 +63,8 @@ declare module 'fastify' {
 export interface BuildOptions {
   /** Where log lines go (default stdout); tests capture them. */
   logStream?: { write(line: string): void };
+  /** Plan 3 Task 19's trade event delivery; a no-op until it exists. */
+  tradePublish?: TradePublisher;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -193,6 +200,10 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3, Task 6: the trade view and the participants' events route.
+  tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }

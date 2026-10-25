@@ -37,6 +37,12 @@ function memoryStore(): PartyStore & { current(): PartyState | null; onSave?: ((
 function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen: unknown[]; out: Envelope[]; dropSend: (n: number) => boolean; sent: number } {
   const injected: unknown[] = [];
   const seen: unknown[] = [];
+  // One read from the relay at a time, kept across next() calls so no relay frame is lost
+  // when an injected frame is handed out first.
+  let pending: Promise<{ frame: unknown }> | null = null;
+  // Wakes a next() that is already waiting on the relay: an injected frame must not sit
+  // in the queue until some real frame happens to arrive (the party loop is parked there).
+  let wake: (() => void) | null = null;
   const t = {
     sent: 0,
     out: [] as Envelope[],
@@ -47,17 +53,70 @@ function tapped(inner: Transport): Transport & { inject(f: unknown): void; seen:
       if (!t.dropSend(t.sent)) inner.send(e);
     },
     next: async () => {
-      const f = injected.length > 0 ? injected.shift() : await inner.next();
+      let f: unknown;
+      for (;;) {
+        if (injected.length > 0) {
+          f = injected.shift();
+          break;
+        }
+        if (!pending) {
+          pending = inner.next().then((frame) => ({ frame }));
+          pending.catch(() => undefined); // a close after the loop stopped reading is not an error
+        }
+        const woken = new Promise<null>((r) => (wake = () => r(null)));
+        const got = await Promise.race([pending, woken]);
+        wake = null;
+        if (got) {
+          pending = null;
+          f = got.frame;
+          break;
+        }
+      }
       seen.push(f);
       return f;
     },
     onReconnect: (cb: () => void) => inner.onReconnect(cb),
     close: () => inner.close(),
-    inject: (f: unknown) => injected.push(f),
+    inject: (f: unknown) => {
+      injected.push(f);
+      wake?.();
+    },
     seen,
   };
   return t;
 }
+
+describe('tapped test transport', () => {
+  it('hands an injected frame to a next() that is already waiting on a silent relay', async () => {
+    const silent: Transport = { send: () => {}, next: () => new Promise(() => {}), onReconnect: () => {}, close: () => {} };
+    const t = tapped(silent);
+    const waiting = t.next(); // the party loop is parked here when the test injects
+    t.inject('frame');
+    const got = await Promise.race([waiting, new Promise((r) => setTimeout(() => r('still waiting'), 1000))]);
+    expect(got).toBe('frame');
+  });
+
+  it('keeps a relay frame that arrives while injected frames are handed out', async () => {
+    // First in, first out like wsTransport: an abandoned read would swallow the next frame.
+    const readers: ((f: unknown) => void)[] = [];
+    const deliver = (f: unknown) => readers.shift()?.(f);
+    const relay: Transport = {
+      send: () => {},
+      next: () => new Promise((r) => readers.push(r)),
+      onReconnect: () => {},
+      close: () => {},
+    };
+    const t = tapped(relay);
+    const within = (p: Promise<unknown>) => Promise.race([p, new Promise((r) => setTimeout(() => r('still waiting'), 1000))]);
+    const first = t.next();
+    t.inject('injected');
+    expect(await within(first)).toBe('injected');
+    const second = t.next();
+    deliver('relayed');
+    expect(await within(second)).toBe('relayed');
+    expect(t.seen).toEqual(['injected', 'relayed']);
+  });
+});
 
 interface Trade {
   code: string;

@@ -7,7 +7,13 @@ import { MoneroNetworkType, MoneroWalletConfig, MoneroWalletFull } from 'monero-
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const REGTEST_DIR = join(ROOT, '.regtest');
-const MONEROD = join(REGTEST_DIR, 'bin', 'monero-x86_64-linux-gnu-v0.18.5.3', 'monerod');
+// Must match DIR_NAME in fetch-monerod.sh for each CPU it supports.
+const MONERO_DIRS: Partial<Record<NodeJS.Architecture, string>> = {
+  x64: 'monero-x86_64-linux-gnu-v0.18.5.3',
+  arm64: 'monero-aarch64-linux-gnu-v0.18.5.3',
+};
+const MONERO_DIR = MONERO_DIRS[process.arch];
+const MONEROD = MONERO_DIR === undefined ? undefined : join(REGTEST_DIR, 'bin', MONERO_DIR, 'monerod');
 
 export interface Regtest {
   rpcUri: string;
@@ -89,6 +95,7 @@ function exited(child: ChildProcess): Promise<void> {
 }
 
 export async function startRegtest(o: { restrictedRpc?: boolean } = {}): Promise<Regtest> {
+  if (MONEROD === undefined) throw new Error(`regtest supports x64 and arm64 Linux only, not ${process.arch}`);
   if (!existsSync(MONEROD)) throw new Error(`monerod missing at ${MONEROD}; run tools/regtest/fetch-monerod.sh`);
   mkdirSync(REGTEST_DIR, { recursive: true });
   const dataDir = mkdtempSync(join(REGTEST_DIR, 'node-'));

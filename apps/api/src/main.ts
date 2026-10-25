@@ -1,14 +1,14 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
-import { purgeExpired } from './auth/challenges.js';
 import { openLeakedList } from './auth/leaked.js';
 import { decoyPrivateKeys, loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
-import { startRetention, type RetentionJob } from './retention.js';
+import { startRetention } from './retention.js';
+import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
-import { purgeRemovedWalletAddresses } from './wallets/routes.js';
+import { productionNudgeWiring } from './nudge/wiring.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -42,11 +42,12 @@ const deps: Deps = {
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
+  // Task 26: shared context from real trades (Task 6); chats (Task 20) and delivery (Task 19) pending (nudge/wiring.ts).
+  nudges: productionNudgeWiring(db),
 };
 
-// Plan 2 registers purgeExpired (Task 4) and purgeRemovedWalletAddresses (Task 12); Plans 3 and 4 add theirs.
-const jobs: RetentionJob[] = [purgeExpired, purgeRemovedWalletAddresses];
-const stopRetention = startRetention(deps, jobs);
+// One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
+const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 const app = await buildApi(deps);
 if (web) await serveWeb(app, web);
