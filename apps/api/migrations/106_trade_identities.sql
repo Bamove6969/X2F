@@ -28,4 +28,3 @@ create table trade_attestations (
   sig text not null,
   created_at timestamptz not null default now()
 );
-
