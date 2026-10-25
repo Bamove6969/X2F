@@ -12,14 +12,27 @@
 // the page before the pixels are counted. The result goes into the test's annotations
 // ("parity-pixels") and, on a difference, the reference and the page are attached to the report for
 // a person to review. The references come only from tools/parity/capture-refs.ts; a missing one is
-// reported, never written.
+// reported, never written. The viewport defaults to the board's canvas.json size, so the staff and
+// mod boards (1280x900–1600) are shot at their reference's size. Known artifact: refs/SetupBackup.png
+// reads "Addauthenticator app" (the canvas runtime drops the space before a filled-in {{choice}});
+// it only adds pixel noise to the reported diff, and the PNG is not hand-edited.
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, type Locator, type Page } from '@playwright/test';
 
 export const BOARDS_DIR = fileURLToPath(new URL('../../../design/x2f-app/', import.meta.url));
 
-export type ParityViewport = '390x844' | '1280x800';
+/** A viewport as "<width>x<height>" (CSS pixels): 390x844, 1280x800, or a staff board's 1280x900–1600. */
+export type ParityViewport = `${number}x${number}`;
+
+/** The board's size in `boardsDir`/canvas.json as a ParityViewport (the size its reference was shot at). */
+export function boardViewport(board: string, boardsDir = BOARDS_DIR): ParityViewport {
+  const canvas = JSON.parse(readFileSync(join(boardsDir, 'canvas.json'), 'utf8')) as { boards: Record<string, { w: number; h: number }> };
+  const b = canvas.boards[`${board}.dc.html`];
+  if (!b) throw new Error(`no board "${board}" in ${join(boardsDir, 'canvas.json')}`);
+  return `${b.w}x${b.h}`;
+}
 
 /** The ratio of differing pixels at which the (reported) screenshot comparison counts as a difference. */
 export const MAX_DIFF_PIXEL_RATIO = 0.03;
@@ -89,12 +102,13 @@ const MASK_ATTR = 'data-parity-mask';
  * by default, the board-only example markers and the board's KNOWN_EXCEPTIONS. A template
  * placeholder ({{…}}, filled in by the canvas runtime) becomes the MASK sentinel, so the fixed copy
  * around it is still checked (as an anchored pattern in `missingTexts`); a text that is nothing but
- * placeholders is dropped. `within` narrows to one CSS selector's first match. Parsing happens in
+ * placeholders is dropped. `within` narrows to one CSS selector's first match; `boardsDir` reads the
+ * board from another folder (the tests use it). Parsing happens in
  * `page` with DOMParser, which runs nothing. Throws if a KNOWN_EXCEPTIONS entry is no longer on the
  * board (a stale exception to remove).
  */
-export async function boardTexts(page: Page, board: string, o: { within?: string } = {}): Promise<string[]> {
-  const html = readFileSync(`${BOARDS_DIR}${board}.dc.html`, 'utf8');
+export async function boardTexts(page: Page, board: string, o: { within?: string; boardsDir?: string } = {}): Promise<string[]> {
+  const html = readFileSync(join(o.boardsDir ?? BOARDS_DIR, `${board}.dc.html`), 'utf8');
   const raw = await page.evaluate(
     ({ html, within }) => {
       const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -139,83 +153,145 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
   return texts;
 }
 
-/** `s` as an anchored RegExp with every MASK a non-greedy wildcard and the rest matched literally. */
-function maskPattern(s: string): RegExp {
-  const parts = s.split(MASK).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp(`^${parts.join('.+?')}$`);
+// The body of a value-shaped text (a lone timer, amount, count or trade code): digits and the few
+// symbols/units such values use, or a code like K7M2-9QXA-4FTR-8WPN, nothing with words in it. A
+// masked page region may only stand in for such a value, so a masked countdown can cover "28:12"
+// on the board, but losing "1.237500 XMR is yours" or "· Zelle" cannot hide behind a mask.
+const VALUE = String.raw`(?:[\d$.,:\s]+(?:XMR|USD|min|h|s|left)?|[A-Z0-9]{4}(?:-[A-Z0-9]{4})+)`;
+const VALUE_SHAPED = new RegExp(`^${VALUE}$`);
+
+const escapeRe = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** A board text with MASKs (runtime-filled {{…}} placeholders): each MASK matches any text. */
+function boardPattern(s: string): RegExp {
+  return new RegExp(`^${s.split(MASK).map(escapeRe).join('.+?')}$`);
 }
 
-// A value-shaped text (a lone timer, amount or count) that a standalone masked region may stand in
-// for: digits and the few symbols/units such values use, nothing with words in it. So a masked
-// countdown can cover "28:12" on the board, but losing "1.237500 XMR is yours" or "Zelle" cannot
-// hide behind a mask.
-const VALUE_SHAPED = /^[\d$.,:\s]+(?:XMR|USD|min|h|s|left)?$/;
+/**
+ * A shown page text with MASKs (masked regions inline in a sentence): each MASK matches only a
+ * value-shaped piece (VALUE), so the mask never absorbs words of the board text around it.
+ */
+function pagePattern(s: string): RegExp {
+  return new RegExp(`^${s.split(MASK).map(escapeRe).join(VALUE)}$`);
+}
+
+/** One visible element's whole text, with the ids of the masked elements it contains. */
+interface Shown {
+  text: string;
+  masks: number[];
+}
 
 /**
  * The `texts` (from `boardTexts`) that no visible element on the page shows. A text matches when:
  *   - some visible element's whole text equals it (whitespace collapsed); or
  *   - the text has a MASK (a {{…}} placeholder) and its pattern matches some shown text; or
- *   - a masked page element (inside [data-mask] or one of `masks`) stands where the text's changing
- *     part is, e.g. "You pay · <Countdown/> left" covers "You pay · 62 min left"; or
- *   - the text is value-shaped (VALUE_SHAPED) and a masked element stands on its own for it (a lone
- *     timer or amount). Each masked pattern and each standalone masked region is used at most once,
- *     so one mask cannot stand in for two different board texts.
+ *   - a shown text has masked elements (inside [data-mask] or one of `masks`) inline where the
+ *     text's changing part is, and every piece they stand for is value-shaped, e.g.
+ *     "You pay · <Countdown/> left" covers "You pay · 62 min left" but not "You get · …"; or
+ *   - the text is value-shaped and a masked element stands on its own for it (a lone timer).
+ * Use is tied to the masked ELEMENT: each masked element covers at most one board text, however
+ * many wrapper elements repeat its sentence, and a {{…}} board text consumes the shown text (and
+ * the masks in it) it matched.
  */
 export async function missingTexts(page: Page, texts: string[], masks: Locator[] = []): Promise<string[]> {
   for (const m of masks) await m.evaluateAll((els, attr) => els.forEach((e) => e.setAttribute(attr, '')), MASK_ATTR);
-  const { shown, regions } = await page.evaluate(
+  const { shown, standalone } = await page.evaluate(
     ({ sel, mask }) => {
-      const shown: string[] = [];
-      const read = (node: Node): string => {
+      const visible = (el: Element) => el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+      // The outermost visible masked elements, each with an id.
+      const ids = new Map<Element, number>();
+      const standalone: number[] = [];
+      for (const el of Array.from(document.body.querySelectorAll(sel))) {
+        if (el.parentElement?.closest(sel) || !visible(el)) continue;
+        const id = ids.size;
+        ids.set(el, id);
+        // Standing on its own: no text of the parent's own beside it (not inline in a sentence).
+        const inline = Array.from(el.parentElement?.childNodes ?? []).some(
+          (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
+        );
+        if (!inline) standalone.push(id);
+      }
+      const read = (node: Node, found: number[]): string => {
         if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
         if (node.nodeType !== Node.ELEMENT_NODE) return '';
         const el = node as Element;
         if (el.matches('script, style, template')) return '';
-        if (el.matches(sel)) return mask;
-        return Array.from(el.childNodes).map(read).join('');
+        if (el.matches(sel)) {
+          const id = ids.get(el);
+          if (id !== undefined) found.push(id);
+          return mask;
+        }
+        return Array.from(el.childNodes)
+          .map((n) => read(n, found))
+          .join('');
       };
-      let regions = 0;
+      const shown: { text: string; masks: number[] }[] = [];
+      const seen = new Set<string>();
       for (const el of Array.from(document.body.querySelectorAll('*'))) {
-        if (el.matches('script, style, template') || !el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) continue;
-        // A masked element standing on its own (not inline in a sentence) may stand in for a board text.
-        const inline = Array.from(el.parentElement?.childNodes ?? []).some(
-          (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
-        );
-        if (el.matches(sel) && !el.parentElement?.closest(sel) && !inline) regions += 1;
-        if (el.closest(sel)) continue;
-        const text = read(el).replace(/\s+/g, ' ').trim();
-        if (text !== '') shown.push(text);
+        if (el.matches('script, style, template') || el.closest(sel) || !visible(el)) continue;
+        const found: number[] = [];
+        const text = read(el, found).replace(/\s+/g, ' ').trim();
+        if (text === '') continue;
+        // Wrapper elements repeat their only child's text: one copy per (text, masks).
+        const key = `${text}\u0001${found.join(',')}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        shown.push({ text, masks: found });
       }
-      return { shown, regions };
+      return { shown, standalone };
     },
     { sel: `[data-mask], [${MASK_ATTR}]`, mask: MASK },
   );
   for (const m of masks) await m.evaluateAll((els, attr) => els.forEach((e) => e.removeAttribute(attr)), MASK_ATTR);
 
-  const exact = new Set(shown.filter((s) => !s.includes(MASK)));
-  // One pattern per masked shown text (not deduped): two masked elements can cover two board texts,
-  // but one masked element cannot cover two — each pattern is consumed on its first match.
-  const patterns = shown.filter((s) => s.includes(MASK) && s.replaceAll(MASK, '').trim() !== '').map(maskPattern);
-  const usedPattern = patterns.map(() => false);
-  let regionsLeft = regions;
+  // Exact matches go first and take their shown text, so a {{…}} pattern ("Add …") cannot be
+  // satisfied by a sentence another board text already accounts for ("Add a backup login?").
+  const exact = new Set<string>();
+  const usedMask = new Set<number>();
+  const usedShown = new Set<Shown>();
+  const free = (s: Shown) => !usedShown.has(s) && s.masks.every((id) => !usedMask.has(id));
+  const take = (s: Shown) => {
+    usedShown.add(s);
+    for (const id of s.masks) usedMask.add(id);
+  };
+  // The best free shown text `ok` accepts: the fewest masks, then the shortest, so an ancestor that
+  // joins several sentences never takes masks a single sentence could have used.
+  const pick = (from: Shown[], ok: (s: Shown) => boolean): Shown | undefined =>
+    from
+      .filter((s) => free(s) && ok(s))
+      .sort((x, y) => x.masks.length - y.masks.length || x.text.length - y.text.length)[0];
+  // Shown sentences with masks inline in them, and real copy beside the masks.
+  const masked = shown.filter((s) => s.text.includes(MASK) && s.text.replaceAll(MASK, '').trim() !== '');
+
+  for (const t of texts) {
+    if (t.includes(MASK)) continue;
+    const hit = shown.find((s) => s.masks.length === 0 && s.text === t);
+    if (hit) {
+      exact.add(t);
+      usedShown.add(hit);
+    }
+  }
 
   const missing: string[] = [];
   for (const t of texts) {
     if (t.includes(MASK)) {
-      // A board placeholder text: present if its fixed copy is on the page around anything.
-      const re = maskPattern(t);
-      if (shown.some((s) => re.test(s))) continue;
-      missing.push(t);
+      // A board placeholder text: present if its fixed copy is on the page around anything. It takes
+      // the shown text it matched (the fewest masks first), so that one cannot cover another text.
+      const re = boardPattern(t);
+      const hit = pick(shown, (s) => re.test(s.text));
+      if (hit) take(hit);
+      else missing.push(t);
       continue;
     }
     if (exact.has(t)) continue;
-    const i = patterns.findIndex((p, idx) => !usedPattern[idx] && p.test(t));
-    if (i >= 0) {
-      usedPattern[i] = true;
+    const hit = pick(masked, (s) => pagePattern(s.text).test(t));
+    if (hit) {
+      take(hit);
       continue;
     }
-    if (regionsLeft > 0 && VALUE_SHAPED.test(t)) {
-      regionsLeft -= 1;
+    const lone = VALUE_SHAPED.test(t) ? standalone.find((id) => !usedMask.has(id)) : undefined;
+    if (lone !== undefined) {
+      usedMask.add(lone);
       continue;
     }
     missing.push(t);
@@ -227,9 +303,11 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
 export async function expectParity(
   page: Page,
   board: string,
-  o: { masks?: Locator[]; viewport?: ParityViewport; refsDir?: string } = {},
+  o: { masks?: Locator[]; viewport?: ParityViewport; refsDir?: string; boardsDir?: string } = {},
 ): Promise<void> {
-  const viewport = o.viewport ?? '390x844';
+  // The board's own canvas.json size by default (390x844 for the phone boards, 1280x800 for
+  // Desktop, 1280x900–1600 for the staff and mod boards), so the page is shot at the reference's size.
+  const viewport = o.viewport ?? boardViewport(board, o.boardsDir);
   const [width, height] = viewport.split('x').map(Number) as [number, number];
   const now = page.viewportSize();
   if (now?.width !== width || now.height !== height) {
@@ -256,7 +334,7 @@ export async function expectParity(
     );
   for (const x of transformed) failures.push(`text-transform ${x.t} on [data-username] "${x.name}"`);
 
-  const texts = await boardTexts(page, board);
+  const texts = await boardTexts(page, board, o.boardsDir ? { boardsDir: o.boardsDir } : {});
   if (texts.length === 0) failures.push(`no board texts read for ${board}`);
   for (const t of await missingTexts(page, texts, masks)) failures.push(`board copy missing: "${t.replaceAll(MASK, '…')}"`);
 

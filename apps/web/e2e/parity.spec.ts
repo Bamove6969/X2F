@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,10 @@ const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 /** A page that carries every text of `board`, one per element, with `extra` HTML after them. */
 async function pageWithBoardTexts(page: Page, board: string, extra = '<button data-primary>Go</button>'): Promise<void> {
   const texts = await boardTexts(page, board);
-  await page.setContent(`<!doctype html><html><body style="margin:0">${texts.map((t) => `<p>${escape(t)}</p>`).join('')}${extra}</body></html>`);
+  // A {{…}} placeholder (MASK) is filled with a sample value, as the app would fill it.
+  await page.setContent(
+    `<!doctype html><html><body style="margin:0">${texts.map((t) => `<p>${escape(t.replaceAll('\u0000', '7'))}</p>`).join('')}${extra}</body></html>`,
+  );
 }
 
 test.describe('expectParity: blocking checks', () => {
@@ -300,8 +303,11 @@ test.describe('reported pixel diff', () => {
 test.describe('capture-refs', () => {
   // Run as the command a person runs (tsx), with the boards and output pointed at a temp folder.
   async function capture(...args: string[]): Promise<{ code: number; out: string }> {
+    return captureWith(process.env, ...args);
+  }
+  async function captureWith(env: NodeJS.ProcessEnv, ...args: string[]): Promise<{ code: number; out: string }> {
     try {
-      const r = await run(process.execPath, [TSX, CAPTURE, ...args], { cwd: REPO, env: process.env, timeout: 60_000 });
+      const r = await run(process.execPath, [TSX, CAPTURE, ...args], { cwd: REPO, env, timeout: 60_000 });
       return { code: 0, out: r.stdout + r.stderr };
     } catch (e) {
       const err = e as { code?: number; stdout?: string; stderr?: string };
@@ -347,6 +353,26 @@ test.describe('capture-refs', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toMatch(/\{\{…\}\} is still in the rendered body/);
     await expect(readFile(join(dir, 'refs', 'Tiny.png'))).rejects.toThrow();
+  });
+
+  test('removes its staging temp folder when a board fails', async () => {
+    test.slow(); // a fresh TMPDIR means a cold tsx cache
+    await writeFile(join(dir, 'support.js'), '');
+    await writeFile(join(dir, 'Tiny.dc.html'), '<!doctype html><html><head><script src="./support.js"></script></head><body><x-dc><p>You pay {{amount}}</p></x-dc></body></html>');
+    const tmp = join(dir, 'tmp');
+    await mkdir(tmp);
+    const r = await captureWith({ ...process.env, TMPDIR: tmp }, `--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code).not.toBe(0);
+    expect((await readdir(tmp)).filter((n) => n.startsWith('x2f-refs-'))).toEqual([]);
+  });
+
+  test('fails when a board is not served with a 2xx status', async () => {
+    await writeFile(join(dir, 'support.js'), '');
+    await rm(join(dir, 'Other.dc.html'));
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Other');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/Other\.dc\.html returned HTTP 404/);
+    await expect(readFile(join(dir, 'refs', 'Other.png'))).rejects.toThrow();
   });
 
   test('fails on a page error thrown by the runtime', async () => {
