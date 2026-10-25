@@ -21,6 +21,10 @@ describe('Task 23 tripwires', () => {
     if (/^export interface TradeView\b/m.test(types)) {
       problems.push("payTypes.ts: replace the copied types with re-exports from '../../api/trade.js', './TradeRoom.js' and './seams.js'");
     }
+    const seams = readFileSync(`${SRC}screens/trade/paySeams.ts`, 'utf8');
+    if (/^export function (postTradeEvent|methodOf)\b/m.test(seams)) {
+      problems.push("paySeams.ts: use Task 22's postTradeEvent and methodOf from '../../api/trade.js' (keep the `fields` reading here)");
+    }
     if (!existsSync(fileURLToPath(new URL('../e2e/pay.spec.ts', import.meta.url)))) {
       problems.push('e2e: move pay.harness.ts to pay.spec.ts against /trade/:code (the room) and drop the fixtures harness route');
     }

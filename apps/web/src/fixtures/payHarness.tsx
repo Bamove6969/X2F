@@ -68,7 +68,7 @@ function BoardChat({ name }: TradeChatProps) {
         ))}
       </div>
       <div className="x2f-board-chat__compose">
-        <label htmlFor="msg" className="x2f-visually-hidden">
+        <label htmlFor="msg" className="x2f-board-chat__label">
           Message
         </label>
         <input id="msg" type="text" placeholder={`Message ${name}`} className="x2f-board-chat__input" />

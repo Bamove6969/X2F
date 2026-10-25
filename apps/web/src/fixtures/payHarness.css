@@ -78,3 +78,11 @@
   padding: 0 var(--x2f-space-4);
   color: var(--x2f-ink);
 }
+
+/* The board's off-screen label: 1 px, clipped, still visible to checkVisibility (no opacity). */
+.x2f-board-chat__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+}

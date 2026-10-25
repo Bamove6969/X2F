@@ -28,6 +28,11 @@
   border-top: 1px solid var(--x2f-surface-raised);
 }
 
+.x2f-pay__footer-row .x2f-button--quiet,
+.x2f-pay__footer-row .x2f-button--danger {
+  padding: 0 6px;
+}
+
 .x2f-pay__footer-row {
   display: flex;
   justify-content: space-between;
@@ -247,6 +252,7 @@
   flex-direction: column;
   gap: var(--x2f-space-2);
   font-size: 14px;
+  line-height: 18px;
 }
 
 .x2f-pay-card__row {
@@ -435,7 +441,15 @@
   color: var(--x2f-ink-muted);
 }
 
-/* The wide room (Desktop board): a main column and a 400 px chat column. */
+/* The wide room (Desktop board): a main column and a 400 px chat column, filling the shell's height
+   (the room's <main> is the DesktopShell body's child). */
+.x2f-desktop__body > main:has(> .x2f-room) {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
 .x2f-room {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 400px;
@@ -607,4 +621,5 @@
   border: 1px solid var(--x2f-escrow);
   border-radius: var(--x2f-radius-pill);
   padding: 3px 8px;
+  line-height: 16px;
 }
