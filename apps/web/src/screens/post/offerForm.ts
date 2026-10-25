@@ -101,6 +101,11 @@ function money(cents: bigint, currency: string, decimals: 0 | 2): string {
     .join('');
 }
 
+/** Always two decimals: "$329.90". */
+export function formatMoney(cents: bigint, currency: string): string {
+  return money(cents, currency, 2);
+}
+
 /** "$331.55 / XMR". */
 export function formatPrice(cents: bigint, currency: string): string {
   return `${money(cents, currency, 2)} / XMR`;

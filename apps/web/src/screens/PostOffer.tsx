@@ -20,6 +20,7 @@ import {
   afterPostPath,
   clearDraft,
   formatAmount,
+  formatMoney,
   formatPrice,
   loadDraft,
   marginText,
@@ -271,7 +272,7 @@ export function PostOffer() {
           ) : (
             <span className="post-note">
               Market {formatPrice(market, form.currency)}
-              {nonUsd ? ` (about ${usd(market)})` : ''} right now.
+              {quote && nonUsd ? ` (about ${formatMoney(usdValue(market, quote), 'USD')})` : ''} right now.
               {form.priceMode === 'market' && yourPrice !== null ? (
                 <>
                   {' '}

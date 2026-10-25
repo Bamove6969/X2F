@@ -9,6 +9,7 @@ import {
   POST_CURRENCIES,
   afterPostPath,
   formatAmount,
+  formatMoney,
   formatPrice,
   loadDraft,
   marginText,
@@ -92,6 +93,9 @@ describe('formatting', () => {
     expect(formatAmount(5000n, 'USD')).toBe('$50');
     expect(formatAmount(200000n, 'USD')).toBe('$2,000');
     expect(formatAmount(1250n, 'USD')).toBe('$12.50');
+    // The US-dollar value beside a market price: "(about $329.90)".
+    expect(formatMoney(32990n, 'USD')).toBe('$329.90');
+    expect(formatMoney(200000n, 'USD')).toBe('$2,000.00');
   });
 
   it("gives a local price's US-dollar value at the feed's rate (spec 11.6)", () => {
