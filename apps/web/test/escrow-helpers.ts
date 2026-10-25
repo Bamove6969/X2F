@@ -117,7 +117,8 @@ export class Parties {
   readyError: Partial<Record<Role, unknown>> = {};
   runParty = (args: PartyArgs): PartyHandle => {
     this.calls.push({ role: args.role, args });
-    void args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null });
+    // Saved like a real party's first save; a run stopped at once refuses it (no writes after stop).
+    args.store.save({ v: 1, session: { v: 1, keys: 'k', cache: 'c' }, guard: { trade: args.trade, seen: {} }, seq: 1, step: 'msig.prepare:0', address: null, sent: {}, received: {}, release: null }).catch(() => undefined);
     return {
       ready: async () => {
         if (this.readyError[args.role] !== undefined) {
