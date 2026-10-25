@@ -49,8 +49,11 @@ async function freshTrade(): Promise<{ code: string; buyer: { id: string; b: Bro
 }
 
 /** Build the registration body for a role: a fresh identity and its Ed25519 proof of possession. */
-function identityFor(code: string, role: 'buyer' | 'seller'): { id: Identity; body: { signPublic: string; boxPublic: string; proof: string } } {
-  const kp = sodium.crypto_sign_keypair();
+function identityFor(
+  code: string,
+  role: 'buyer' | 'seller',
+  kp: { publicKey: Uint8Array; privateKey: Uint8Array } = sodium.crypto_sign_keypair(),
+): { id: Identity; body: { signPublic: string; boxPublic: string; proof: string } } {
   const signPublic = sodium.to_hex(kp.publicKey);
   const boxPublic = sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(kp.publicKey));
   const msg = new TextEncoder().encode(`${IDENTITY_DOMAIN}${code}\0${role}\0${signPublic}${boxPublic}`);
@@ -156,6 +159,21 @@ describe('POST /v1/trades/:code/identity', () => {
     const again = await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
     expect(again.statusCode).toBe(409);
     expect(again.json()).toMatchObject({ error: 'identity-exists' });
+  });
+
+  it('refuses the key the other slot already holds with identity-conflict (no same-key trade becomes work)', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    // One person holding both accounts signs a valid proof for each role with the same key.
+    const kp = sodium.crypto_sign_keypair();
+    const first = await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer', kp).body);
+    expect(first.statusCode).toBe(201);
+    const same = await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller', kp).body);
+    expect(same.statusCode).toBe(409);
+    expect(same.json()).toMatchObject({ error: 'identity-conflict' });
+    const { rows } = await deps.db.query<{ role: string }>('select role from trade_identities where code = $1', [code]);
+    expect(rows.map((r) => r.role)).toEqual(['buyer']);
+    // A different key still registers the seller.
+    expect((await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body)).statusCode).toBe(201);
   });
 
   it('a buyer cannot register the seller slot: its session is always the buyer', async () => {

@@ -60,12 +60,34 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
     // conversion of signPublic; any failure is `bad-proof` (never says which).
     if (!(await identityProofValid(normalized, role, { signPublic, boxPublic, proof }))) throw new ApiError(400, 'bad-proof');
 
-    const { rowCount } = await deps.db.query(
-      `insert into trade_identities (code, role, sign_public, box_public, proof, created_at)
-       values ($1, $2, $3, $4, $5, $6) on conflict (code, role) do nothing`,
-      [normalized, role, signPublic, boxPublic, proof, deps.clock()],
-    );
-    if (rowCount === 0) throw new ApiError(409, 'identity-exists');
+    // Locked on the trade row, so the two slots are checked and written one at a time: a key the
+    // other slot already holds is 409 `identity-conflict`. The moderation service refuses such a
+    // trade for good, and refusing it here keeps a same-key trade from ever becoming work.
+    const client = await deps.db.connect();
+    try {
+      await client.query('begin');
+      try {
+        await client.query('select 1 from trades where code = $1 for update', [normalized]);
+        const other = await client.query(
+          `select 1 from trade_identities
+            where code = $1 and role <> $2 and (sign_public = $3 or box_public = $4)`,
+          [normalized, role, signPublic, boxPublic],
+        );
+        if (other.rows.length > 0) throw new ApiError(409, 'identity-conflict');
+        const { rowCount } = await client.query(
+          `insert into trade_identities (code, role, sign_public, box_public, proof, created_at)
+           values ($1, $2, $3, $4, $5, $6) on conflict (code, role) do nothing`,
+          [normalized, role, signPublic, boxPublic, proof, deps.clock()],
+        );
+        if (rowCount === 0) throw new ApiError(409, 'identity-exists');
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      }
+    } finally {
+      client.release();
+    }
     return reply.code(201).send({ ok: true, role });
   });
 
