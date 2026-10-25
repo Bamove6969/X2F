@@ -191,15 +191,18 @@ function validConfirmed(c: ConfirmedTrade): boolean {
   );
 }
 
-/** The fixed parts of the TradeView agree with this device's deal (the amount may grow; the policy checks it). */
-function viewMatches(v: EscrowTradeView, role: 'buyer' | 'seller', d: Deal, ownAddress: string | null): boolean {
+/**
+ * The fixed parts of the TradeView agree with this device's deal (the amount may grow; the policy
+ * checks it). The own payout address is not compared here: the view does not carry it. It is
+ * verified through the attestation (`wrong-terms`) and at the settle points, never from the API view.
+ */
+function viewMatches(v: EscrowTradeView, role: 'buyer' | 'seller', d: Deal): boolean {
   return (
     v.role === role &&
     v.poster === d.poster &&
     v.currency === d.currency &&
     v.centsPerXmr === d.centsPerXmr &&
-    v.maxFiatCents === d.maxFiatCents &&
-    (v.ownAddress === null || v.ownAddress === ownAddress)
+    v.maxFiatCents === d.maxFiatCents
   );
 }
 
@@ -364,7 +367,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (!c) return this.fail('not-confirmed');
         if (!validConfirmed(c)) return this.fail('not-confirmed');
         // The API must agree with what the user confirmed, or nothing is made, registered or signed.
-        if (!viewMatches(view, c.role, c.deal, c.ownAddress) || view.amountAtomic !== c.deal.takeAmountAtomic) return this.fail('deal-mismatch');
+        if (!viewMatches(view, c.role, c.deal) || view.amountAtomic !== c.deal.takeAmountAtomic) return this.fail('deal-mismatch');
         const id = await deps.newIdentity();
         this.rec = {
           v: 1,
@@ -750,7 +753,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (CLOSED.includes(v.state)) {
         if (await this.afterClose(f, v)) return;
       }
-      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal, r.ownAddress)) {
+      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal)) {
         this.fail('deal-mismatch');
         return;
       }

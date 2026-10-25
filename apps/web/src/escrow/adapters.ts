@@ -152,18 +152,17 @@ export function identityProofBytes(code: string, role: Role, signPublic: string,
 
 const STATES: readonly TradeState[] = ['setup', 'funding', 'securing', 'secured', 'paid', 'refund_requested', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'];
 
-/** The parts of `GET /v1/trades/:code` the escrow runtime reads (bigints arrive as decimal strings). */
+/**
+ * The parts of `GET /v1/trades/:code` the escrow runtime reads (bigints arrive as decimal strings).
+ * Checked against the real Task 6 TradeView. It carries no payout address on purpose: this device's
+ * own address is verified through the attestation (`wrong-terms`) and in runtime.ts at the settle
+ * points, never from the API view.
+ */
 export interface EscrowTradeView {
   role: 'buyer' | 'seller';
   state: TradeState;
   poster: 'seller' | 'buyer';
   amountAtomic: bigint;
-  /**
-   * GUESS: the viewer's own address for this trade, if the view carries it. Never used as the
-   * source (the runtime takes the address the user confirmed on this device); a different one
-   * here is a mismatch.
-   */
-  ownAddress: string | null;
   /** The locked rate and the offer maximum, fixed at take (OD-5, Revision 2026-10-20). */
   currency: string;
   centsPerXmr: bigint;
@@ -194,7 +193,6 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
     state: v.state as TradeState,
     poster: v.poster,
     amountAtomic,
-    ownAddress: typeof v.ownAddress === 'string' && v.ownAddress !== '' ? v.ownAddress : null,
     currency: lockedRate.currency,
     centsPerXmr,
     maxFiatCents,

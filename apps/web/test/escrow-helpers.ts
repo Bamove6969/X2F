@@ -210,7 +210,7 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
     return { attestation: a, sig: signAttestation(a, state.resign ?? mod.secret) };
   };
   const forRole = (role: 'buyer' | 'seller') => ({
-    getTrade: async () => ({ ownAddress: ADDR[role], ...state.view, role, ...(state.roleView?.[role] ?? {}) }),
+    getTrade: async () => ({ ...state.view, role, ...(state.roleView?.[role] ?? {}) }),
     registerIdentity: async (_code: string, body: { signPublic: string; boxPublic: string; proof: string }) => {
       state.identities[role] ??= body;
     },

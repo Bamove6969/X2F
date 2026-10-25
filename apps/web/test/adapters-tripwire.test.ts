@@ -1,5 +1,5 @@
 // TRIPWIRES for the guesses in src/escrow/adapters.ts and src/escrow/signals.ts (Task 12 was built
-// before Tasks 6, 8 and 10). Each fails once the real module is on the line: then replace the guess
+// before Tasks 6, 8 and 10; Task 6's TradeView is now checked). Each fails once the real module is on the line: then replace the guess
 // with the real import, adjust the runtime to the real shapes, and delete that tripwire.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -22,10 +22,6 @@ describe('Task 12 guesses still stand in for missing modules', () => {
 
   it('NEEDS_TASK_8: identity proof bytes and the identity/attestation route answers are guessed', () => {
     expect(has('apps/api/src/trades/identity.ts'), 'Task 8 identity route landed: check identityProofBytes and httpEscrowApi').toBe(false);
-  });
-
-  it('NEEDS_TASK_6: the TradeView fields parseTradeView reads are guessed', () => {
-    expect(has('apps/api/src/trades/view.ts'), 'Task 6 TradeView landed: check parseTradeView field names').toBe(false);
   });
 
   it('NEEDS_TASK_10: the trade.ack payload and the trade.terms deal field are guessed', () => {

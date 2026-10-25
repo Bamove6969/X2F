@@ -92,8 +92,9 @@ describe('attestation check before any escrow work (P3-C1)', () => {
   });
 
   it('this device confirmed another own address than the moderator attested: deal-mismatch, nothing settled', async () => {
-    // The mod attests the seller's real refund address; the API made the seller confirm another one.
-    const t = await setup({ roleView: { seller: { ownAddress: '4SellerOther' } } });
+    // The mod attests the seller's real refund address; the seller confirmed another one. The view
+    // carries no address, so only the attestation path (wrong-terms) can refuse this.
+    const t = await setup();
     const buyer = await t.mk('buyer');
     const seller = await t.mk('seller');
     await buyer.runtime.start(CODE);
@@ -177,7 +178,6 @@ describe('attestation check before any escrow work (P3-C1)', () => {
 
 describe('what this device signs comes from what the user confirmed, never the API', () => {
   const lies: [string, Partial<ApiState>][] = [
-    ['another own address', { roleView: { buyer: { ownAddress: '4AttackerAddress' } } }],
     ['another amount', { view: tradeView({ amountAtomic: (AMOUNT + 1n).toString() }) }],
     ['another poster', { view: tradeView({ poster: 'buyer' }) }],
     ['another rate', { view: tradeView({ lockedRate: { currency: 'USD', centsPerXmr: '33001' } }) }],
@@ -226,8 +226,8 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(t.state.identities).toEqual({});
   });
 
-  it('the terms this device signs carry the confirmed address and deal even when the view omits the address', async () => {
-    const t = await setup({ roleView: { seller: { ownAddress: undefined } } });
+  it('the terms this device signs carry the confirmed address and deal (the view has no address)', async () => {
+    const t = await setup();
     const buyer = await t.mk('buyer');
     const seller = await t.mk('seller');
     await buyer.runtime.start(CODE);
