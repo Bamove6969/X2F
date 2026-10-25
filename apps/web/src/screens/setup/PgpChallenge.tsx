@@ -28,6 +28,10 @@ export function PgpChallenge() {
   const clock = useMemo(() => serverClock(new Date(Date.parse(challenge.expiresAt) - CODE_LIFETIME_MS)), [challenge]);
 
   const verify = async () => {
+    if (code.trim() === '') {
+      setError({ text: 'Paste the code from the decrypted message first.', names: false });
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -82,7 +86,7 @@ export function PgpChallenge() {
             Continue
           </Button>
         ) : (
-          <Button variant="primary" disabled={busy || code.trim() === ''} onClick={() => void verify()} data-part="pgp-verify">
+          <Button variant="primary" disabled={busy} onClick={() => void verify()} data-part="pgp-verify">
             Verify
           </Button>
         )
@@ -114,7 +118,7 @@ export function PgpChallenge() {
                 <Icon name="clock" size={16} />
                 Expires in <Countdown deadline={challenge.expiresAt} serverClock={clock} />
               </span>
-              <button type="button" className="x2f-setup__textbutton" onClick={copy} data-part="copy">
+              <button type="button" className="x2f-setup__pill" onClick={copy} data-part="copy">
                 {copied ? 'Copied' : 'Copy message'}
               </button>
             </div>
@@ -143,7 +147,7 @@ export function PgpChallenge() {
               Send a new message
             </button>
           ) : null}
-          <p className="x2f-setup__help">
+          <p className="x2f-setup__warn">
             The decrypted message also names X2F and today's date and time. If it names a different site or an old time, stop and don't paste
             anything. Someone may be trying to phish you.
           </p>

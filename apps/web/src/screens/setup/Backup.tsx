@@ -58,7 +58,7 @@ export function Backup() {
           We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let
           you back in.
         </SetupIntro>
-        <p className="x2f-setup__help">
+        <p className="x2f-setup__panel">
           Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
         </p>
         {adding === null ? (

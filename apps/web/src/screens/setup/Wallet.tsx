@@ -52,6 +52,10 @@ export function Wallet() {
 
   const finish = async () => {
     const trimmed = address.trim();
+    if (trimmed === '') {
+      setError('Paste a receive address from your wallet first.');
+      return;
+    }
     if (!ADDRESS_RE.test(trimmed)) {
       setError("That doesn't look like a Monero address. Copy the whole receive address from your wallet.");
       return;
@@ -87,7 +91,7 @@ export function Wallet() {
         screen="setup-wallet"
         step={5}
         footer={
-          <Button variant={open ? 'secondary' : 'primary'} disabled={busy || address.trim() === ''} onClick={() => void finish()} data-part="wallet-finish">
+          <Button variant={open ? 'secondary' : 'primary'} disabled={busy} onClick={() => void finish()} data-part="wallet-finish">
             Finish setup
           </Button>
         }
@@ -129,7 +133,7 @@ export function Wallet() {
           This is your first payout wallet, so it works at once. Wallets you add later ask you to confirm it's you, and X2F always shows an alert when
           one is added.
         </p>
-        <p className="x2f-setup__help">
+        <p className="x2f-setup__small">
           Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your
           wallet for each trade.
         </p>
