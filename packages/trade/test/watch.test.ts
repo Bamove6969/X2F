@@ -387,9 +387,48 @@ describe('chain watcher decisions (Task 9, pure)', () => {
   test('closed escrows stay watched for exactly 30 days', () => {
     const r1 = step({ apiState: 'cancelled', f: funds([]), now: at(0) });
     expect(step({ apiState: 'cancelled', state: r1.state, f: funds([]), now: at(30 * DAY_MIN) }).watching).toBe(true);
-    const gone = step({ apiState: 'cancelled', state: r1.state, f: funds([inc(LATE, 50n, 0)]), now: new Date(at(30 * DAY_MIN).getTime() + 1) });
+    const gone = step({ apiState: 'cancelled', state: r1.state, f: funds([]), now: new Date(at(30 * DAY_MIN).getTime() + 1) });
     expect(gone.watching).toBe(false);
     expect(gone.reports).toEqual([]);
+  });
+
+  test('a late coin first seen on the step the 30 days run out is reported and keeps the watch (never dropped unseen)', () => {
+    const r1 = step({ apiState: 'cancelled', f: funds([]), now: at(0) });
+    const last = step({ apiState: 'cancelled', state: r1.state, f: funds([inc(LATE, 50n, 0)]), now: new Date(at(30 * DAY_MIN).getTime() + 1) });
+    expect(last.reports).toEqual([{ kind: 'chain', receivedAtomic: 50n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
+    expect(last.watching).toBe(true);
+  });
+
+  test('after late-funds the watch holds until the API shows the trade disputed (a stale closed view at day 30 does not drop it)', () => {
+    const r1 = step({ apiState: 'cancelled', f: funds([]), now: at(0) });
+    const late = step({ apiState: 'cancelled', state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: at(29 * DAY_MIN) });
+    expect(late.reports.at(-1)).toEqual({ kind: 'late-funds' });
+    // the escalation is not visible yet: the API still lists the trade cancelled after day 30
+    const stale = step({ apiState: 'cancelled', state: late.state, f: funds([inc(LATE, 50n, 13)]), now: at(31 * DAY_MIN) });
+    expect(stale.watching).toBe(true);
+    // a stale open view that is not the dispute does not release the hold either
+    const lag = step({ apiState: 'settling', state: stale.state, f: funds([inc(LATE, 50n, 14)]), now: at(31 * DAY_MIN + 1) });
+    expect(step({ apiState: 'cancelled', state: lag.state, f: funds([inc(LATE, 50n, 15)]), now: at(70 * DAY_MIN) }).watching).toBe(true);
+    // seen disputed, then ruled: the 30 days run from the ruling's close
+    const disputed = step({ apiState: 'disputed', state: stale.state, f: funds([inc(LATE, 50n, 14)]), now: at(32 * DAY_MIN) });
+    const ruled = step({ apiState: 'refunded', state: disputed.state, f: funds([inc(LATE, 50n, 15)], 0n, 0n), now: at(33 * DAY_MIN) });
+    expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(LATE, 50n, 15)], 0n, 0n), now: at(63 * DAY_MIN) }).watching).toBe(true);
+    expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(LATE, 50n, 15)], 0n, 0n), now: at(63 * DAY_MIN + 1) }).watching).toBe(false);
+  });
+
+  test('a later sweep shown after the close is a new close: the 30 days restart from it', () => {
+    const RULING = '9'.repeat(64);
+    const settled = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 60)], 0n, 0n), spend: sweep(1000n, 45), now: at(0) });
+    // the watcher never saw the trade open; a ruling's sweep of D is shown at day 20
+    const ruled = step({
+      apiState: 'refunded',
+      state: settled.state,
+      f: funds([inc(HASH_A, 1000n, 80), inc(LATE, 7n, 40)], 0n, 0n),
+      spend: sweep(7n, 5, RULING),
+      now: at(20 * DAY_MIN),
+    });
+    expect(ruled.state.closedAt).toEqual(at(20 * DAY_MIN));
+    expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(HASH_A, 1000n, 90), inc(LATE, 7n, 50)], 0n, 0n), now: at(49 * DAY_MIN) }).watching).toBe(true);
   });
 
   test('a trade escalated by late funds keeps its watcher past 30 days while it is not closed', () => {
@@ -399,7 +438,8 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     for (const apiState of ['disputed', 'settling', 'lapsed'] as TradeState[]) {
       expect(step({ apiState, state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: day31 }).watching).toBe(true);
     }
-    expect(step({ apiState: 'refunded', state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: day31 }).watching).toBe(false);
+    // closed again at day 31 without the watcher ever seeing the dispute: the escalation is unconfirmed, keep watching
+    expect(step({ apiState: 'refunded', state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: day31 }).watching).toBe(true);
   });
 
   test('a lapse is not a close: chain facts keep flowing (the timer loop escalates it)', () => {
