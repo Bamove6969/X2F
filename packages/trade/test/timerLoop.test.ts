@@ -1,10 +1,26 @@
 import { describe, expect, test } from 'vitest';
-import { TIMER_LOOP_MS, TIMERS, apply, newTrade, timerEvents, type Trade, type TradeEvent } from '../src/index.js';
+import { TIMER_LOOP_MS, TIMERS, apply, newTrade, timerEvents as decide, type Trade, type TradeEvent } from '../src/index.js';
 
 const MIN = 60_000;
 const T0 = new Date('2026-10-18T12:00:00.000Z');
 const at = (min: number, ms = 0) => new Date(T0.getTime() + min * MIN + ms);
 const FUNDS = 1_262_500_000_000n;
+
+function takeArgs() {
+  return {
+    code: 'ABCD2345EFGH6789',
+    offerId: 'offer-1',
+    poster: 'seller' as const,
+    sellerId: 'acct-s',
+    buyerId: 'acct-b',
+    methodId: 'revolut',
+    amountAtomic: 1_250_000_000_000n,
+    lockedRate: { currency: 'USD', centsPerXmr: 33000n },
+    confirmWindowMin: 120,
+    minFiatCents: 10_000n,
+    maxFiatCents: 50_000n,
+  };
+}
 
 function taken(code = 'ABCD2345EFGH6789'): Trade {
   return newTrade(
@@ -27,6 +43,9 @@ function taken(code = 'ABCD2345EFGH6789'): Trade {
 
 const sys = (t: Trade, e: TradeEvent, now: Date) => apply(t, e, 'system', now);
 
+/** The events only, without their times, for the simple cases (every event but pause is at `now`). */
+const timerEvents = (trades: Trade[], since: Date | null, now: Date) => decide(trades, since, now).events.map(({ code, event }) => ({ code, event }));
+
 /** setup-done at 1 min, funded and unlocked at 2 min: secured with payBy = 2 + 90 min. */
 function secured(code?: string): Trade {
   let t = sys(taken(code), { type: 'setup-done', escrowAddress: '4escrow' }, at(1));
@@ -38,8 +57,10 @@ function secured(code?: string): Trade {
 /** Run the loop's decisions through `apply`, the way the API loop will (one pass). */
 function pass(trades: Trade[], maintenanceSince: Date | null, now: Date): Trade[] {
   const byCode = new Map(trades.map((t) => [t.code, t]));
-  for (const { code, event } of timerEvents(trades, maintenanceSince, now)) {
-    byCode.set(code, sys(byCode.get(code)!, event, now));
+  const { events, skipped } = decide(trades, maintenanceSince, now);
+  expect(skipped).toEqual([]);
+  for (const { code, event, at: when } of events) {
+    byCode.set(code, sys(byCode.get(code)!, event, when));
   }
   return [...byCode.values()];
 }
@@ -137,6 +158,43 @@ describe('timer loop decisions (Task 9, pure)', () => {
     t = sys(t, { type: 'resume' }, at(100)); // 60 min pause: window now ends at 32 + 30 + 60 = 122
     expect(timerEvents([t], null, at(122))).toEqual([]);
     expect(timerEvents([t], null, at(122, 1))).toEqual([{ code: t.code, event: { type: 'escalate' } }]);
+  });
+
+  test('every event but pause is at the loop clock', () => {
+    const t = taken();
+    expect(decide([t], null, at(15, 1)).events).toEqual([{ code: t.code, event: { type: 'tick' }, at: at(15, 1) }]);
+    const paused = sys(t, { type: 'pause' }, at(5));
+    expect(decide([paused], null, at(9)).events[0]!.at).toEqual(at(9));
+  });
+
+  test('pause is at maintenance_since, so a loop that was down still shifts deadlines by the whole maintenance', () => {
+    const t = secured(); // payBy = 92 min
+    const since = at(30);
+    // the loop first sees the flag 10 min late, at 40, and maintenance ends at 50
+    const { events } = decide([t], since, at(40));
+    expect(events).toEqual([{ code: t.code, event: { type: 'pause' }, at: since }]);
+    const [after] = pass(pass([t], since, at(40)), null, at(50));
+    expect(after!.payBy).toEqual(at(92 + 20));
+  });
+
+  test('a trade taken during maintenance is paused from its take, not before it', () => {
+    const t = newTrade({ ...takeArgs(), code: 'QQQQ2345EFGH6789' }, at(35));
+    const { events } = decide([t], at(30), at(40));
+    expect(events).toEqual([{ code: t.code, event: { type: 'pause' }, at: at(35) }]);
+  });
+
+  test('a flag set in the future pauses at the loop clock', () => {
+    const t = taken();
+    expect(decide([t], at(60), at(10)).events).toEqual([{ code: t.code, event: { type: 'pause' }, at: at(10) }]);
+  });
+
+  test('one bad trade is skipped and surfaced; the rest of the pass still runs', () => {
+    // settling past settleBy with no settleFrom: the machine refuses the tick
+    const broken: Trade = { ...secured('BROK2345EFGH6789'), state: 'settling', settling: 'release', settleFrom: null, settleBy: at(3) };
+    const good = taken('GOOD2345EFGH6789');
+    const r = decide([broken, good], null, at(16));
+    expect(r.events).toEqual([{ code: good.code, event: { type: 'tick' }, at: at(16) }]);
+    expect(r.skipped).toEqual([{ code: broken.code, reason: 'wrong-state' }]);
   });
 
   test('a bad clock is refused', () => {

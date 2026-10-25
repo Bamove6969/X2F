@@ -33,7 +33,7 @@ export {
   type TradeRuleCode,
   type TradeState,
 } from './machine.js';
-export { TIMER_LOOP_MS, timerEvents, type TimerEvent } from './timerLoop.js';
+export { TIMER_LOOP_MS, timerEvents, type TimerEvent, type TimerPass } from './timerLoop.js';
 export {
   WATCH_CLOSED_DAYS,
   WATCH_INTERVAL_MS,
