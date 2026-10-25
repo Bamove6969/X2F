@@ -78,10 +78,11 @@ describe('POST /v1/trades/:code/events', () => {
     expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
   });
 
-  it('accepts every client event type past the whitelist (the machine decides)', async () => {
+  it('accepts every client event type past the whitelist (the machine decides), except open-dispute', async () => {
     const { buyer, t } = await tradeIn('secured');
     for (const type of CLIENT_EVENTS) {
-      if (type === 'mark-paid' || type === 'buyer-cancel') continue;
+      // open-dispute goes only through POST /v1/trades/:code/dispute (Task 27), so every dispute has its reason.
+      if (type === 'mark-paid' || type === 'buyer-cancel' || type === 'open-dispute') continue;
       const res = await buyer.browser.post(events(t.code), { type });
       expect(res.statusCode, type).not.toBe(400);
     }
@@ -117,22 +118,22 @@ describe('POST /v1/trades/:code/events', () => {
   it('answers 404 to a non-participant, an unknown and a malformed code, and needs a trader session', async () => {
     const { t } = await tradeIn('secured');
     const other = await trader();
-    expect((await other.browser.post(events(t.code), { type: 'open-dispute' })).statusCode).toBe(404);
-    expect((await other.browser.post(events('ZZZZ-ZZZZ-ZZZZ-ZZZZ'), { type: 'open-dispute' })).statusCode).toBe(404);
-    expect((await other.browser.post(events('not-a-code'), { type: 'open-dispute' })).statusCode).toBe(404);
+    expect((await other.browser.post(events(t.code), { type: 'propose-cancel' })).statusCode).toBe(404);
+    expect((await other.browser.post(events('ZZZZ-ZZZZ-ZZZZ-ZZZZ'), { type: 'propose-cancel' })).statusCode).toBe(404);
+    expect((await other.browser.post(events('not-a-code'), { type: 'propose-cancel' })).statusCode).toBe(404);
     const staff = await trader('staff');
-    const res = await staff.browser.post(events(t.code), { type: 'open-dispute' });
+    const res = await staff.browser.post(events(t.code), { type: 'propose-cancel' });
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('wrong-account-kind');
-    const anon = await app.inject({ method: 'POST', url: events(t.code), headers: { origin: 'https://x2f.test' }, payload: { type: 'open-dispute' } });
+    const anon = await app.inject({ method: 'POST', url: events(t.code), headers: { origin: 'https://x2f.test' }, payload: { type: 'propose-cancel' } });
     expect(anon.statusCode).toBe(401);
     expect((await loadTrade(deps.db, t.code))!.state).toBe('secured');
   });
 
   it('accepts a code in any spelling normalizeTradeCode accepts', async () => {
     const { buyer, t } = await tradeIn('secured');
-    const res = await buyer.browser.post(events(t.code.toLowerCase().replaceAll('-', '')), { type: 'open-dispute' });
+    const res = await buyer.browser.post(events(t.code.toLowerCase().replaceAll('-', '')), { type: 'propose-cancel' });
     expect(res.statusCode).toBe(200);
-    expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
+    expect((await loadTrade(deps.db, t.code))!.cancelProposedBy).toBe('buyer');
   });
 });
