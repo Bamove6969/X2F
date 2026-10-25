@@ -658,7 +658,10 @@ async function confirmFinish(req: FastifyRequest) {
   assertListed(ch, row);
   const action: ConfirmAction = parseConfirmAction(ch.payload.action);
   if ((await actionHash(action)) !== ch.payload.actionHash) throw expired();
-  const confirmToken = await issueConfirmToken(deps, { sessionId: req.auth.sessionId, accountId: req.auth.accountId, action });
+  // The method is the kind of the stored credential that just verified, never anything the client sent.
+  const confirmToken = await issueConfirmToken(deps, {
+    sessionId: req.auth.sessionId, accountId: req.auth.accountId, action, method: row.kind,
+  });
   return { confirmToken };
 }
 
