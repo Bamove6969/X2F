@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process';
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,7 +17,10 @@ const escape = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').rep
 /** A page that carries every text of `board`, one per element, with `extra` HTML after them. */
 async function pageWithBoardTexts(page: Page, board: string, extra = '<button data-primary>Go</button>'): Promise<void> {
   const texts = await boardTexts(page, board);
-  await page.setContent(`<!doctype html><html><body style="margin:0">${texts.map((t) => `<p>${escape(t)}</p>`).join('')}${extra}</body></html>`);
+  // A {{…}} placeholder (MASK) is filled with a sample value, as the app would fill it.
+  await page.setContent(
+    `<!doctype html><html><body style="margin:0">${texts.map((t) => `<p>${escape(t.replaceAll('\u0000', '7'))}</p>`).join('')}${extra}</body></html>`,
+  );
 }
 
 test.describe('expectParity: blocking checks', () => {
@@ -107,6 +110,33 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['You pay · 1 h left', 'You pay · 2 h left'])).toEqual(['You pay · 2 h left']);
   });
 
+  test('a mask inside a sentence only absorbs a value, never words around it', async ({ page }) => {
+    // The trade code is masked; losing " · Zelle" must be reported.
+    await page.setContent('<p>Trade <span data-mask>K7M2-9QXA-4FTR-8WPN</span></p>');
+    expect(await missingTexts(page, ['Trade K7M2-9QXA-4FTR-8WPN · Zelle'])).toEqual(['Trade K7M2-9QXA-4FTR-8WPN · Zelle']);
+    await page.setContent('<p>Trade <span data-mask>K7M2-9QXA-4FTR-8WPN</span> · Zelle</p>');
+    expect(await missingTexts(page, ['Trade K7M2-9QXA-4FTR-8WPN · Zelle'])).toEqual([]);
+    // A masked count next to a sentence cannot cover lost words before it.
+    await page.setContent('<ul><li><div><span data-mask>10 min</span></div><p> to fund escrow</p></li></ul>');
+    expect(await missingTexts(page, ['Seller has 10 min to fund escrow'])).toEqual(['Seller has 10 min to fund escrow']);
+    expect(await missingTexts(page, ['10 min to fund escrow'])).toEqual([]);
+  });
+
+  test('one mask covers one board text even when wrapper elements repeat its sentence', async ({ page }) => {
+    await page.setContent('<div id="root"><div><p>You pay · <span data-mask>1 h 2 min</span> left</p></div></div>');
+    expect(await missingTexts(page, ['You pay · 1 h left', 'You pay · 2 h left'])).toEqual(['You pay · 2 h left']);
+    // A mask used on its own for a value cannot also fill the sentence around it.
+    await page.setContent('<div id="root"><ul><li><div><span data-mask>10</span></div><p> min to fund escrow</p></li></ul></div>');
+    expect(await missingTexts(page, ['28:12', '10 min to fund escrow'])).toEqual(['10 min to fund escrow']);
+  });
+
+  test('a board placeholder text consumes the page sentence it matched', async ({ page }) => {
+    await page.setContent('<div id="root"><p><span data-mask>3</span> offers left</p></div>');
+    expect(await missingTexts(page, ['\u0000 offers left', '5 offers left'])).toEqual(['5 offers left']);
+    await page.setContent('<div id="root"><p><span data-mask>3</span> offers left</p><p><span data-mask>5</span> offers left</p></div>');
+    expect(await missingTexts(page, ['\u0000 offers left', '5 offers left'])).toEqual([]);
+  });
+
   test('a board placeholder checks the fixed copy around it', async ({ page }) => {
     // boardTexts turns "{{roleName}}" into a wildcard; the fixed sentence must still be present.
     await page.setContent('<p>Invite link for a new moderator. It works once and expires in 24 hours.</p>');
@@ -148,6 +178,46 @@ test.describe('board texts', () => {
     expect(review).not.toContain("Rating saved. satoshi_ghost sees it once they've rated you too.");
   });
 
+  test('a {{…}} board text is kept as a pattern: SetupBackup "Add {{choice}}"', async ({ page }) => {
+    const texts = await boardTexts(page, 'SetupBackup');
+    expect(texts).toContain('Add \u0000');
+    const page1 = (last: string) =>
+      `<body style="margin:0">${texts.filter((t) => !t.includes('\u0000')).map((t) => `<p>${escape(t)}</p>`).join('')}<a data-primary>${last}</a></body>`;
+    await page.setContent(page1('Add'));
+    await expect(expectParity(page, 'SetupBackup')).rejects.toThrow(/board copy missing: "Add …"/);
+    await page.setContent(page1('Add authenticator app'));
+    expect(await missingTexts(page, ['Add \u0000'])).toEqual([]);
+  });
+
+  test('real copy that mentions "example" is kept', () => {
+    expect(withoutBoardMarkers('For example, pay by Zelle.')).toBe('For example, pay by Zelle.');
+    expect(withoutBoardMarkers('Paste an example key from your keyring.')).toBe('Paste an example key from your keyring.');
+    expect(withoutBoardMarkers('These are examples of good names. Pick one.')).toBe('These are examples of good names. Pick one.');
+    expect(withoutBoardMarkers('Sample size: 3')).toBe('Sample size: 3');
+  });
+
+  test.describe('with a temp boards folder', () => {
+    let dir = '';
+    test.beforeEach(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'x2f-board-'));
+    });
+    test.afterEach(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    test('expectParity fails when no board text can be read', async ({ page }) => {
+      await writeFile(join(dir, 'canvas.json'), JSON.stringify({ boards: { 'Empty.dc.html': { w: 390, h: 844 } } }));
+      await writeFile(join(dir, 'Empty.dc.html'), '<!doctype html><html><body><x-dc><div><p>{{only}}</p></div></x-dc></body></html>');
+      await page.setContent('<body><button data-primary>Go</button></body>');
+      await expect(expectParity(page, 'Empty', { boardsDir: dir })).rejects.toThrow(/no board texts read for Empty/);
+    });
+
+    test('a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception)', async ({ page }) => {
+      await writeFile(join(dir, 'Desktop.dc.html'), '<!doctype html><html><body><x-dc><p>Escrow funded</p></x-dc></body></html>');
+      await expect(boardTexts(page, 'Desktop', { boardsDir: dir })).rejects.toThrow(/KNOWN_EXCEPTIONS\[Desktop\] lists "You pay · 62 min left".*stale/);
+    });
+  });
+
   test('known Desktop-board exceptions are listed with a reason and not required', async ({ page }) => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
@@ -176,6 +246,20 @@ test('expectParity at 1280x800 sets the viewport and compares the Desktop board'
   expect(pixels.at(-1)!.description).toMatch(/^Desktop 1280x800: /);
 });
 
+test('expectParity defaults to the board\'s canvas.json size, so a staff board is really compared', async ({ page }) => {
+  await pageWithBoardTexts(page, 'StaffLog');
+  await expectParity(page, 'StaffLog');
+  expect(page.viewportSize()).toEqual({ width: 1280, height: 900 });
+  const pixels = test.info().annotations.filter((a) => a.type === 'parity-pixels');
+  expect(pixels.at(-1)!.description).toMatch(/^StaffLog 1280x900: /);
+  expect(pixels.at(-1)!.description).not.toMatch(/sizes differ/);
+  // A tall board: the page is shot at the board's full height, not 800.
+  await pageWithBoardTexts(page, 'ModCase');
+  await expectParity(page, 'ModCase');
+  expect(page.viewportSize()).toEqual({ width: 1280, height: 1600 });
+  expect(test.info().annotations.at(-1)!.description).not.toMatch(/sizes differ/);
+});
+
 test.describe('reported pixel diff', () => {
   let dir = '';
   test.beforeEach(async () => {
@@ -194,13 +278,17 @@ test.describe('reported pixel diff', () => {
 
   test('is within the ratio when the page matches, and a mask covers a changed region', async ({ page }) => {
     await page.setViewportSize({ width: 200, height: 120 });
-    await page.setContent(`${canvas}<div style="color:#fff">Escrow funded</div><span data-mask style="color:#fff">28:12</span>`);
+    // The masked block is 100x60 = 25% of the image, far over the 3% ratio, so only a working mask
+    // keeps the result within the ratio.
+    const block = (colour: string, masked: boolean) =>
+      `${canvas}<div ${masked ? 'data-mask ' : ''}style="position:absolute;left:0;top:0;width:100px;height:60px;background:${colour}"></div>`;
+    await page.setContent(block('#ff0000', true));
     await writeFile(join(dir, 'Self.png'), await page.screenshot({ animations: 'disabled', caret: 'hide', scale: 'css' }));
-    // Only the masked region changes: it is blacked out in both, so the diff stays within the ratio.
-    await page.locator('[data-mask]').evaluate((e) => {
-      e.textContent = '00:01';
-    });
+    await page.setContent(block('#0000ff', true));
     expect(await reportPixels(page, 'Self', '390x844', [], dir)).toMatch(/within 3% of refs\/Self\.png/);
+    // The same change without the mask is reported.
+    await page.setContent(block('#0000ff', false));
+    expect(await reportPixels(page, 'Self', '390x844', [], dir)).toMatch(/reported, not blocking: 25\.\d+% of pixels differ/);
   });
 
   test('reports a large difference without blocking', async ({ page }) => {
@@ -215,8 +303,11 @@ test.describe('reported pixel diff', () => {
 test.describe('capture-refs', () => {
   // Run as the command a person runs (tsx), with the boards and output pointed at a temp folder.
   async function capture(...args: string[]): Promise<{ code: number; out: string }> {
+    return captureWith(process.env, ...args);
+  }
+  async function captureWith(env: NodeJS.ProcessEnv, ...args: string[]): Promise<{ code: number; out: string }> {
     try {
-      const r = await run(process.execPath, [TSX, CAPTURE, ...args], { cwd: REPO, env: process.env, timeout: 60_000 });
+      const r = await run(process.execPath, [TSX, CAPTURE, ...args], { cwd: REPO, env, timeout: 60_000 });
       return { code: 0, out: r.stdout + r.stderr };
     } catch (e) {
       const err = e as { code?: number; stdout?: string; stderr?: string };
@@ -262,6 +353,26 @@ test.describe('capture-refs', () => {
     expect(r.code).not.toBe(0);
     expect(r.out).toMatch(/\{\{…\}\} is still in the rendered body/);
     await expect(readFile(join(dir, 'refs', 'Tiny.png'))).rejects.toThrow();
+  });
+
+  test('removes its staging temp folder when a board fails', async () => {
+    test.slow(); // a fresh TMPDIR means a cold tsx cache
+    await writeFile(join(dir, 'support.js'), '');
+    await writeFile(join(dir, 'Tiny.dc.html'), '<!doctype html><html><head><script src="./support.js"></script></head><body><x-dc><p>You pay {{amount}}</p></x-dc></body></html>');
+    const tmp = join(dir, 'tmp');
+    await mkdir(tmp);
+    const r = await captureWith({ ...process.env, TMPDIR: tmp }, `--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code).not.toBe(0);
+    expect((await readdir(tmp)).filter((n) => n.startsWith('x2f-refs-'))).toEqual([]);
+  });
+
+  test('fails when a board is not served with a 2xx status', async () => {
+    await writeFile(join(dir, 'support.js'), '');
+    await rm(join(dir, 'Other.dc.html'));
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Other');
+    expect(r.code).not.toBe(0);
+    expect(r.out).toMatch(/Other\.dc\.html returned HTTP 404/);
+    await expect(readFile(join(dir, 'refs', 'Other.png'))).rejects.toThrow();
   });
 
   test('fails on a page error thrown by the runtime', async () => {

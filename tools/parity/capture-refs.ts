@@ -9,6 +9,12 @@
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts            # every board
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts Main Desktop
 //   (--boards-dir=<dir> and --out-dir=<dir> point it elsewhere; the tests use them.)
+//
+// Known canvas-runtime artifact: refs/SetupBackup.png shows "Addauthenticator app" on the primary
+// button. The board's text is "Add {{choice}}", and the canvas runtime drops the space before the
+// filled-in placeholder when it renders. The app shows "Add authenticator app". This is cosmetic:
+// it only adds a little pixel noise to the reported (non-blocking) diff. Do not hand-edit the PNG.
+// References come only from this script.
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -52,9 +58,31 @@ export async function captureRefs(o: {
   // Capture into a temp folder and move the images into place only when every board succeeds, so a
   // failed run never leaves a half-written or stale set of references behind.
   const staging = mkdtempSync(join(tmpdir(), 'x2f-refs-'));
+  try {
+    return await captureInto(staging, boardsDir, outDir, names, sizes, o.executablePath);
+  } finally {
+    // Removed on success and on failure alike.
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+async function captureInto(
+  staging: string,
+  boardsDir: string,
+  outDir: string,
+  names: string[],
+  sizes: Map<string, { width: number; height: number }>,
+  executablePathOption: string | undefined,
+): Promise<string[]> {
   const server = await serveBoards({ boardsDir });
-  const executablePath = o.executablePath ?? process.env.X2F_CHROMIUM_PATH;
-  const browser = await chromium.launch(executablePath ? { executablePath } : {});
+  const executablePath = executablePathOption ?? process.env.X2F_CHROMIUM_PATH;
+  let browser;
+  try {
+    browser = await chromium.launch(executablePath ? { executablePath } : {});
+  } catch (e) {
+    await server.close();
+    throw e;
+  }
   const staged: { name: string; file: string }[] = [];
   try {
     for (const name of names) {
@@ -94,7 +122,6 @@ export async function captureRefs(o: {
     copyFileSync(file, dest); // copy (not rename): the staging temp may be on another filesystem
     written.push(dest);
   }
-  rmSync(staging, { recursive: true, force: true });
   return written;
 }
 
