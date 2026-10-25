@@ -399,6 +399,15 @@ describe('quiet hours in the recipient\'s time zone', () => {
   const quiet = (p: Awaited<ReturnType<typeof pair>>, quietFrom: string, quietTo: string, tz: string) =>
     p.to.b.put('/v1/account/nudges', { enabled: true, quietFrom, quietTo, tz });
 
+  /**
+   * Moves the clock and logs the sender in again: the jumps here outlast a trader's logout timer
+   * (2-12 hours idle, FU-B), and an expired sender would get 401 before quiet hours are reached.
+   */
+  const jump = async (p: Awaited<ReturnType<typeof pair>>, d: Date) => {
+    setNow(d);
+    expect((await p.from.b.post('/t/login', { accountId: p.from.id })).statusCode).toBe(200);
+  };
+
   /** UTC midnight after the test clock's current day, plus `h` hours (the clock only moves forward). */
   const utcDay = (h: number) => {
     const d = new Date(now);
@@ -409,11 +418,11 @@ describe('quiet hours in the recipient\'s time zone', () => {
   it('01:00-07:00 in Tokyo (UTC+9): 17:30 UTC is 02:30 there (dropped), 02:30 UTC is 11:30 there (delivered)', async () => {
     const p = await pair();
     expect((await quiet(p, '01:00', '07:00', 'Asia/Tokyo')).statusCode).toBe(200);
-    setNow(utcDay(17.5));
+    await jump(p, utcDay(17.5));
     expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
     await settle();
     expect(published).toEqual([]);
-    setNow(utcDay(2.5));
+    await jump(p, utcDay(2.5));
     expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
     await settle();
     expect(published.map(([id]) => id)).toEqual([p.to.id]);
@@ -434,7 +443,7 @@ describe('quiet hours in the recipient\'s time zone', () => {
     for (const [h, delivers] of cases) {
       const iso = new Date(base.getTime() + h * HOUR).toISOString();
       published.length = 0;
-      setNow(new Date(iso));
+      await jump(p, new Date(iso));
       expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
       await settle();
       expect(published.length, iso).toBe(delivers ? 1 : 0);
