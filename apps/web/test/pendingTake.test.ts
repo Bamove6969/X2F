@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 // The single-use pending-take marker: a `resume=` link alone never takes an offer.
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PENDING_TAKE_KEY, PENDING_TAKE_MS, claimTake, rememberTake } from '../src/screens/quote/pendingTake.js';
+import { PENDING_TAKE_KEY, PENDING_TAKE_MS, claimTake, rememberTake, type PendingTake } from '../src/screens/quote/pendingTake.js';
 
-const P = { offerId: 'offer-ghost', unit: 'fiat' as const, text: '412.50' };
+const P: PendingTake = { offerId: 'offer-ghost', unit: 'fiat', text: '412.50' };
 
 beforeEach(() => sessionStorage.clear());
 
@@ -18,7 +18,7 @@ describe('pending take marker', () => {
 
   it('no marker, another offer, amount, unit or nonce, or an expired marker: false, and the marker is cleared', () => {
     expect(claimTake(P, 'a'.repeat(32))).toBe(false);
-    const bad: [Partial<typeof P>, string | null, number][] = [
+    const bad: [Partial<PendingTake>, string | null, number][] = [
       [{ offerId: 'offer-other' }, null, 1],
       [{ text: '412.51' }, null, 1],
       [{ unit: 'xmr' }, null, 1],
