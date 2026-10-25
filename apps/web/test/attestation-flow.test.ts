@@ -1198,12 +1198,18 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     await seller.runtime.start(CODE);
     await buyer.runtime.start(CODE);
     await seller.status((s) => s.phase === 'ready');
+    // Quiet every other writer: the buyer's terms arrived and it stops; the mod acks the seller's
+    // terms, so no terms resend saves the record. Only the tick's own save can store the flag.
+    await until(async () => (await seller.store.load(CODE))?.theirAddress === ADDR.buyer);
+    await buyer.runtime.stopAll();
+    const channel = await channelFor(CODE, 'signals');
+    const att = (await seller.store.load(CODE))!.attestation!.attestation as Attestation;
+    t.hub.inject(channel, 'seller', await seal({ trade: channel, from: 'mod', seq: 1, type: 'trade.ack', payload: { of: 'trade.terms' }, to: ROLES, me: t.api.modId, participants: att.participants }));
+    await until(async () => (await seller.store.load(CODE))?.termsAcked === true);
     t.state.view = tradeView({ state: 'cancelled' });
     await until(async () => (await seller.store.load(CODE))?.closedSeenAt != null);
     t.parties.funds = { balance: 5n, unlocked: 0n, incoming: [{ txHash: 'late', amountAtomic: 5n, confirmations: 0, unlocked: false }] };
-    await t.parties.ticks('seller', 2);
-    await seller.runtime.stopAll();
-    expect((await seller.store.load(CODE))?.fundedSeen).toBe(true);
+    await until(async () => (await seller.store.load(CODE))?.fundedSeen === true);
     void clock;
   });
 
