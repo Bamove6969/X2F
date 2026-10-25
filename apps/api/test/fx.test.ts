@@ -189,6 +189,8 @@ describe('FX sources', () => {
       X2F_ORIGINS: 'https://x2f.test', X2F_RP_ID: 'x2f.test', DATABASE_URL: 'postgres://u@h/x', X2F_LEAKED_LIST_PATH: '/x',
       X2F_SERVER_KEY: Buffer.alloc(32, 1).toString('base64'), X2F_MONERO_NETWORK: 'stagenet', X2F_TERMS_VERSION: 'v1',
       X2F_PGP_SIGNING_KEY_PATH: '/k', X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
+      X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 11).toString('base64')}`, X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 12).toString('base64')}`,
+      X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`,
     };
     expect(loadConfig(env).fxSources).toEqual(['coinbase', 'bitpay', 'coingecko']);
     expect(loadConfig({ ...env, FX_SOURCES: 'coingecko' }).fxSources).toEqual(['coingecko']);
@@ -425,7 +427,7 @@ describe('createFxRates', () => {
       expect(fx.rate('EUR')?.rate, 'the last good value is over 1 h old: nothing to compare with').toBe(r('1.20'));
     });
 
-    it('a real jump everywhere pauses that currency until the window passes, then resumes', async () => {
+    it('a real jump on 2+ sources that agree with each other and with none of the last hour replaces the history at once', async () => {
       const c = clockAt(T0);
       let ngn = '1332';
       const answer = () => ({ EUR: '0.90', NGN: ngn });
@@ -434,12 +436,114 @@ describe('createFxRates', () => {
       ngn = '1600';
       c.advance(5 * MIN);
       await fx.poll();
-      expect(fx.rate('NGN')).toBeNull();
-      expect(fx.rate('EUR')).not.toBeNull();
-      expect(fx.health().rejected.map((x) => x.source)).toEqual(['a', 'b', 'c']);
-      c.set(new Date(T0.getTime() + HOUR + 1));
+      expect(fx.rate('NGN')).toEqual({ currency: 'NGN', rate: r('1600'), source: 'a', at: c.clock() });
+      expect(fx.health().rejected).toEqual([]);
+    });
+
+    it('one source jumping alone is still refused against the history (no drop)', async () => {
+      const c = clockAt(T0);
+      let a = '1332';
+      const fx = createFxRates([stub('a', () => ({ NGN: a })), stub('b', () => ({ NGN: '1332' })), stub('c', () => ({ NGN: '1333' }))], { clock: c.clock });
       await fx.poll();
-      expect(fx.rate('NGN')?.rate).toBe(r('1600'));
+      a = '1600';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')?.source).toBe('b');
+      expect(fx.health().rejected.map((x) => x.source)).toEqual(['a']);
+    });
+  });
+
+  describe('no history: the cross-check fails closed (review I-1)', () => {
+    it('boot with #2 and #3 down and #1 wrong: nothing is served; #2 and #3 back correct: #2; #1 correct again: #1', async () => {
+      const c = clockAt(T0);
+      let a = '90'; // 100× the real EUR rate
+      let up = false;
+      const fx = createFxRates(
+        [stub('a', () => ({ EUR: a })), stub('b', () => (up ? { EUR: '0.90' } : new Error('down'))), stub('c', () => (up ? { EUR: '0.901' } : new Error('down')))],
+        { clock: c.clock },
+      );
+      await fx.poll();
+      expect(fx.rate('EUR'), 'no peer could check it, and b and c may list EUR').toBeNull();
+      expect(fx.health().rejected).toEqual([{ source: 'a', currency: 'EUR', at: T0 }]);
+      for (let i = 0; i < 48; i++) {
+        c.advance(5 * MIN);
+        await fx.poll();
+        expect(fx.rate('EUR'), `+${(i + 1) * 5} min`).toBeNull();
+      }
+      up = true;
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('EUR')).toEqual({ currency: 'EUR', rate: r('0.90'), source: 'b', at: c.clock() });
+      a = '0.899';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('EUR')?.source).toBe('a');
+      expect(fx.health().rejected).toEqual([]);
+    });
+
+    it('only #2 back, disagreeing with #1: neither can be checked, so nothing is served', async () => {
+      const c = clockAt(T0);
+      let up = false;
+      const fx = createFxRates(
+        [stub('a', () => ({ EUR: '90' })), stub('b', () => (up ? { EUR: '0.90' } : new Error('down'))), stub('c', () => new Error('down'))],
+        { clock: c.clock },
+      );
+      await fx.poll();
+      up = true;
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('EUR')).toBeNull();
+    });
+
+    it('a truly single-source currency (every other source answered without it) is accepted unchecked', async () => {
+      const c = clockAt(T0);
+      const fx = createFxRates([stub('a', () => ({ EUR: '0.90', VND: '25842' })), stub('b', () => ({ EUR: '0.90' })), stub('c', () => ({ EUR: '0.90' }))], { clock: c.clock });
+      await fx.poll();
+      expect(fx.rate('VND')).toEqual({ currency: 'VND', rate: r('25842'), source: 'a', at: T0 });
+      // An earlier good fetch without it counts too, while that source is down now.
+      let bUp = true;
+      const fx2 = createFxRates([stub('a', () => ({ VND: '25842' })), stub('b', () => (bUp ? { EUR: '0.90' } : new Error('down')))], { clock: c.clock });
+      bUp = true;
+      await fx2.poll();
+      expect(fx2.rate('VND')?.source).toBe('a');
+      let aUp = true;
+      const fx3 = createFxRates(
+        [stub('b', () => (bUp ? { EUR: '0.90' } : new Error('down'))), stub('a', () => (aUp ? { VND: '25842' } : new Error('down')))],
+        { clock: c.clock },
+      );
+      bUp = false;
+      await fx3.poll();
+      expect(fx3.rate('VND'), 'b has never answered: it might list VND').toBeNull();
+      bUp = true;
+      c.advance(5 * MIN);
+      await fx3.poll();
+      expect(fx3.rate('VND')?.source).toBe('a');
+      // Both down for over an hour (the history ages out), then a back while b is still down.
+      aUp = false;
+      bUp = false;
+      c.advance(HOUR + 1);
+      await fx3.poll();
+      aUp = true;
+      c.advance(1);
+      await fx3.poll();
+      expect(fx3.rate('VND')?.source, "b's last good fetch did not list VND: still single-source").toBe('a');
+    });
+
+    it('a peer whose last good rate is over 1 h old is not used for the cross-check (m-1)', async () => {
+      const c = clockAt(T0);
+      let a: Record<string, string> | Error = { EUR: '0.90' };
+      let b: Record<string, string> | Error = { EUR: '0.90' };
+      const fx = createFxRates([stub('a', () => a), stub('b', () => b)], { clock: c.clock, failLimit: 1_000 });
+      await fx.poll();
+      expect(fx.rate('EUR')?.source).toBe('a');
+      a = new Error('down');
+      b = new Error('down');
+      c.advance(HOUR + 1);
+      await fx.poll();
+      a = { EUR: '0.90' };
+      c.advance(1);
+      await fx.poll();
+      expect(fx.rate('EUR'), "b's 0.90 is over 1 h old: no fresh peer, and b lists EUR").toBeNull();
     });
   });
 
@@ -497,7 +601,7 @@ describe('createFxRates', () => {
       await expect(done).resolves.toBeUndefined();
       expect(aborted).toBe(true);
       expect(calls).toBe(1);
-      expect(fx.rate('EUR')?.source).toBe('b');
+      expect(fx.rate('EUR'), 'b alone, and the others might list EUR: not checked, not used').toBeNull();
       expect(fx.health().sources.map((s) => s.consecutiveFailures)).toEqual([1, 1, 0]);
     } finally {
       vi.useRealTimers();

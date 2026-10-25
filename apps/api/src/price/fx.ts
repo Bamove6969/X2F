@@ -250,6 +250,8 @@ interface SourceState {
   lastGoodAt: Date | null;
   failures: number;
   currencies: Map<string, PerCurrency>;
+  /** The currencies its latest good fetch listed (null before any good fetch). */
+  listed: Set<string> | null;
 }
 
 /**
@@ -267,7 +269,7 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
     staleAfterMs: o.staleAfterMs ?? FX_DEFAULTS.staleAfterMs,
     sanityBps: o.sanityBps ?? FX_DEFAULTS.sanityBps,
   };
-  const states: SourceState[] = sources.map((source) => ({ source, lastGoodAt: null, failures: 0, currencies: new Map() }));
+  const states: SourceState[] = sources.map((source) => ({ source, lastGoodAt: null, failures: 0, currencies: new Map(), listed: null }));
   /**
    * Per currency, every rate in use within the sanity window, with its fetch time: what the guard
    * compares with. Comparing with all of them (not only the latest) stops a walk in sub-limit steps.
@@ -303,14 +305,22 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
 
   /**
    * The sanity guard. With in-use values from the last hour: refused when more than sanityBps from
-   * ANY of them. With none (boot, restart, an outage over an hour): accepted only when another
-   * fresh source agrees within sanityBps, or when no other source has the currency at all. This
-   * is a cross-check, not an average: the value used is still the highest-ranked accepted one.
+   * ANY of them (the poll first drops that history when 2+ fresh sources agree with each other and
+   * with none of it: a real jump). With none (boot, restart, an outage over an hour): accepted
+   * only when another fresh source (this poll's answer, or a good rate within the staleness
+   * setting) agrees within sanityBps. With no fresh peer at all it is accepted only when the
+   * currency is truly single-source: every other source has had a good fetch that does not list
+   * it. Otherwise it is refused and the currency pauses until a peer answers, so a wrong #1 after
+   * a restart, while #2 and #3 are down, is never served or made the history. This is a
+   * cross-check, not an average: the value used is still the highest-ranked accepted one.
+   * Accepted risk (lead, 2026-10-24): #2 and #3 probably share an upstream, so if #1 is down and
+   * they agree on a wrong value, that value is accepted.
    */
-  function insane(currency: string, value: bigint, peers: bigint[], now: Date): boolean {
+  function insane(currency: string, value: bigint, peers: bigint[], singleSource: boolean, now: Date): boolean {
     const history = recent(currency, now);
     if (history.length > 0) return history.some((h) => far(value, h.rate));
-    return peers.length > 0 && peers.every((p) => far(value, p));
+    if (peers.length === 0) return !singleSource;
+    return peers.every((p) => far(value, p));
   }
 
   async function pollOnce(): Promise<void> {
@@ -330,22 +340,40 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
       ),
     );
     const now = clock();
-    /** What every other source says about `code` now: this poll's answer, or else its last fresh good rate. */
-    const peersOf = (i: number, code: string): bigint[] => {
-      const out: bigint[] = [];
-      states.forEach((t, j) => {
-        if (j === i) return;
-        const got = answers[j];
-        if (got) {
-          const v = got.get(code);
-          if (typeof v === 'bigint' && v > 0n) out.push(v);
-          return;
-        }
-        const c = t.currencies.get(code);
-        if (c?.good && now.getTime() - c.good.at.getTime() <= settings.staleAfterMs) out.push(c.good.rate);
-      });
-      return out;
+    /** What source `j` says about `code` now: this poll's answer, or else its last good rate within the staleness setting. */
+    const freshValue = (j: number, code: string): bigint | null => {
+      const got = answers[j];
+      if (got) {
+        const v = got.get(code);
+        return typeof v === 'bigint' && v > 0n ? v : null;
+      }
+      const c = states[j]!.currencies.get(code);
+      return c?.good && now.getTime() - c.good.at.getTime() <= settings.staleAfterMs ? c.good.rate : null;
     };
+    const peersOf = (i: number, code: string): bigint[] =>
+      states.flatMap((_t, j) => {
+        const v = j === i ? null : freshValue(j, code);
+        return v === null ? [] : [v];
+      });
+    /** Every other source has had a good fetch, and its latest one does not list `code`. */
+    const singleSource = (i: number, code: string): boolean =>
+      states.every((t, j) => {
+        if (j === i) return true;
+        const listed = answers[j] ? new Set(answers[j].keys()) : t.listed;
+        return listed !== null && !listed.has(code);
+      });
+    // A real jump: 2+ fresh sources agree with each other and with none of the last hour. Their
+    // agreement outweighs the history, which is dropped before any source is judged.
+    for (const code of new Set(answers.flatMap((m) => (m ? [...m.keys()] : [])))) {
+      const history = recent(code, now);
+      if (history.length === 0) continue;
+      const vals = states.flatMap((_t, j) => {
+        const v = freshValue(j, code);
+        return v === null ? [] : [v];
+      });
+      const outside = vals.filter((v) => history.every((h) => far(v, h.rate)));
+      if (outside.some((v, k) => outside.some((w, l) => l !== k && !far(v, w)))) inUse.set(code, []);
+    }
     states.forEach((s, i) => {
       const got = answers[i]!;
       if (got === null) {
@@ -355,12 +383,13 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
       }
       s.failures = 0;
       s.lastGoodAt = now;
+      s.listed = new Set(got.keys());
       for (const [code, c] of s.currencies) if (!got.has(code)) c.failures++;
       for (const [code, value] of got) {
         if (!supported(code) || typeof value !== 'bigint' || value <= 0n) continue;
         const c = s.currencies.get(code) ?? { good: null, failures: 0, rejectedAt: null };
         s.currencies.set(code, c);
-        if (insane(code, value, peersOf(i, code), now)) {
+        if (insane(code, value, peersOf(i, code), singleSource(i, code), now)) {
           // Counts as a failed fetch of this currency from this source: the next source is used.
           c.failures++;
           c.rejectedAt = now;
