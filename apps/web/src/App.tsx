@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { InterimTradeRoute } from './screens/trade/release/InterimTradeRoute.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -67,7 +68,8 @@ export function App() {
           <Route path="/sell/:methodId" element={<Screen name="sell-offers" />} />
           <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
           <Route path="/post" element={<Screen name="post" />} />
-          <Route path="/trade/:code" element={<Screen name="trade" />} />
+          {/* INTERIM (Task 24) until Task 22's TradeRoom: see screens/trade/release/InterimTradeRoute.tsx. */}
+          <Route path="/trade/:code" element={<InterimTradeRoute />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />

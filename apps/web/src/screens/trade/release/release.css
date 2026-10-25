@@ -1,0 +1,314 @@
+/*
+ * SellerConfirm and Released (Task 24): measurements from the SellerConfirm and Review boards
+ * (design/x2f-app/); colours are design tokens only. No inline styles (the CSP has no
+ * 'unsafe-inline' for styles): the confirmations bar width comes in as a custom property.
+ * Body text is at least 16 px on phones (Global Constraints).
+ */
+.x2f-release {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  box-sizing: border-box;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-sans);
+}
+
+.x2f-release *,
+.x2f-release *::before,
+.x2f-release *::after {
+  box-sizing: border-box;
+}
+
+.x2f-release [data-username] {
+  text-transform: none;
+  overflow-wrap: anywhere;
+}
+
+.x2f-release .x2f-trade-header {
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-release__chat {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  color: var(--x2f-ink);
+  font-size: 15px;
+  text-decoration: none;
+}
+
+.x2f-release__main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-release__status {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  flex-wrap: wrap;
+}
+
+.x2f-release__paid {
+  max-width: 100%;
+}
+
+.x2f-release__window {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  font-family: inherit;
+  font-size: 16px;
+  cursor: help;
+}
+
+.x2f-release__window .x2f-countdown {
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink);
+}
+
+.x2f-release__tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-ink);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.x2f-release__tip[hidden] {
+  display: none;
+}
+
+.x2f-release__title {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: var(--x2f-title-weight);
+  overflow-wrap: anywhere;
+}
+
+.x2f-release__prompt {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-release__warning {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-danger);
+}
+
+.x2f-release__warning-title {
+  margin: 0;
+  display: flex;
+  gap: var(--x2f-space-2);
+  align-items: center;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--x2f-danger);
+}
+
+.x2f-release__check {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  min-height: 44px;
+  font-size: 16px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.x2f-release__check input {
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--x2f-monero);
+}
+
+.x2f-release__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-release__footer .x2f-hold {
+  width: 100%;
+}
+
+.x2f-release__hint,
+.x2f-release__error {
+  font-size: 16px;
+  line-height: 22px;
+  text-align: center;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-release__error {
+  color: var(--x2f-danger);
+}
+
+.x2f-release__actions {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  flex-wrap: wrap;
+}
+
+/* Released (Review board, "Trade complete"). */
+.x2f-released {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: var(--x2f-space-6) var(--x2f-space-4) var(--x2f-space-4);
+  text-align: center;
+}
+
+.x2f-released .x2f-dot {
+  width: 16px;
+  height: 16px;
+}
+
+.x2f-released__label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-escrow);
+}
+
+.x2f-released__title {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 32px;
+  line-height: 36px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.x2f-released__where {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.x2f-released__mono {
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink);
+}
+
+.x2f-released__sums {
+  margin: 0;
+  width: 100%;
+  max-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 16px;
+}
+
+.x2f-released__sums > div {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-released__sums dt {
+  color: var(--x2f-ink-muted);
+  text-align: left;
+}
+
+.x2f-released__sums dd {
+  margin: 0;
+  font-family: var(--x2f-font-mono);
+  white-space: nowrap;
+}
+
+.x2f-released__sums > .x2f-released__rule {
+  height: 1px;
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-released__sums > .x2f-released__total {
+  font-weight: 600;
+}
+
+.x2f-released__sums > .x2f-released__total dt {
+  color: var(--x2f-ink);
+}
+
+.x2f-released__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  max-width: 300px;
+}
+
+.x2f-released__confirm-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-released__bar {
+  height: 6px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  overflow: hidden;
+}
+
+.x2f-released__bar > span {
+  display: block;
+  width: var(--x2f-confirmed, 0%);
+  height: 100%;
+  background: var(--x2f-escrow);
+}
+
+.x2f-released__confirm .x2f-link {
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  gap: 6px;
+  font-size: 16px;
+}
+
+.x2f-released__note {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
