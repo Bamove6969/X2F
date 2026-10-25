@@ -43,7 +43,10 @@ export type ApiErrorCode =
   | 'too-late'
   | 'no-extensions-left'
   | 'not-releasable'
-  | 'total-changed';
+  | 'total-changed'
+  // Plan 3, Task 26: the nudge sender's own limits.
+  | 'too-soon'
+  | 'no-shared-context';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
