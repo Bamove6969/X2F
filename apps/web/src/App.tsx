@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -68,7 +69,8 @@ export function App() {
           <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
           <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
-          <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
+          {/* Task 27: open, room and ruling (Task 22 links here from the trade room). */}
+          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
           <Route path="/terms" element={<Screen name="terms" />} />
