@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
-import { buildApi, type Deps } from '../../src/app.js';
+import { buildApi, type BuildOptions, type Deps } from '../../src/app.js';
 import { pgpSignerFromArmored, type PgpSigner } from '../../src/auth/pgp.js';
 import type { Config, Keyring } from '../../src/config.js';
 import { testDb } from './db.js';
@@ -58,7 +58,7 @@ function notYet<T extends object>(what: string): T {
   });
 }
 
-export async function testApp(overrides: Partial<Deps> = {}): Promise<{
+export async function testApp(overrides: Partial<Deps> = {}, options: Omit<BuildOptions, 'logStream'> = {}): Promise<{
   app: FastifyInstance;
   deps: Deps;
   setNow(d: Date): void;
@@ -78,7 +78,7 @@ export async function testApp(overrides: Partial<Deps> = {}): Promise<{
     ...overrides,
   };
   const { stream, logs } = captureLogs();
-  const app = await buildApi(deps, { logStream: stream });
+  const app = await buildApi(deps, { ...options, logStream: stream });
   if (ownDb) app.addHook('onClose', async () => deps.db.end());
   return { app, deps, setNow: (d) => void (now = d), logs };
 }
