@@ -13,6 +13,7 @@ import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
+import { spySql } from './helpers/sqlSpy.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -343,13 +344,16 @@ describe('POST /v1/login/password', () => {
   it('I-1: a known and an unknown login name cost the same queries, with or without a device cookie, on the 10th miss too', async () => {
     await register('parity001');
     const id = (await accountRow('parity001'))!.id;
-    const spy = vi.spyOn(deps.db, 'query');
+    // Pool AND checked-out client queries, in order (whitespace normalised), so parity covers the
+    // full statement sequence, not just their number or the pool's share.
+    const spy = spySql(deps.db);
     const count = async (loginName: string, cookies: Record<string, string>) => {
-      spy.mockClear();
+      spy.clear();
       const res = await login(loginName, 'Wrong-Horse-9', cookies);
       expect(res.statusCode).toBe(401);
-      // The SQL run, in order (whitespace normalised), so parity covers the statements, not just their number.
-      return JSON.stringify(spy.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' ').trim()));
+      const sql = spy.sql();
+      expect(sql.length).toBeGreaterThan(0);
+      return JSON.stringify(sql);
     };
     try {
       for (const cookies of [{}, { [DEVICE_COOKIE]: randomBytes(32).toString('base64url') }]) {
@@ -369,7 +373,7 @@ describe('POST /v1/login/password', () => {
       const locked = [await count('parity001', {}), await count('ghost.parity2', {})];
       expect(new Set(locked).size).toBe(1);
     } finally {
-      spy.mockRestore();
+      spy.restore();
     }
   });
 

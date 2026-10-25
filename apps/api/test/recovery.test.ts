@@ -12,6 +12,7 @@ import { sealSecret } from '../src/auth/totp.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { genKey, type Pair } from './helpers/pgpKeys.js';
+import { spySql } from './helpers/sqlSpy.js';
 import { Browser, STEP_MS, addTestLogin, codeAt, wrongCodeAt } from './helpers/totp.js';
 
 const T0 = new Date('2026-10-17T06:00:00Z'); // a step boundary, early in the UTC day
@@ -474,11 +475,14 @@ describe('backup login with TOTP (P2-I1)', () => {
 });
 
 describe('I-1: backup login costs the same queries for a known and an unknown login name', () => {
-  const count = async (spy: { mockClear(): void; mock: { calls: unknown[][] } }, run: () => Promise<{ statusCode: number }>) => {
-    spy.mockClear();
+  const count = async (spy: ReturnType<typeof spySql>, run: () => Promise<{ statusCode: number }>) => {
+    spy.clear();
     expect((await run()).statusCode).toBe(401);
-    // The SQL run, in order (whitespace normalised), so parity covers the statements, not just their number.
-    return JSON.stringify(spy.mock.calls.map((c) => String((c as unknown[])[0]).replace(/\s+/g, ' ').trim()));
+    // Pool AND checked-out client queries, in order (whitespace normalised), so parity covers the
+    // full statement sequence, not just their number or the pool's share.
+    const sql = spy.sql();
+    expect(sql.length).toBeGreaterThan(0);
+    return JSON.stringify(sql);
   };
 
   for (const kind of ['recovery-code', 'totp'] as const) {
@@ -494,7 +498,7 @@ describe('I-1: backup login costs the same queries for a known and an unknown lo
         if (withCookie) b.cookies[DEVICE_COOKIE] = randomBytes(32).toString('base64url');
         return b;
       };
-      const spy = vi.spyOn(deps.db, 'query');
+      const spy = spySql(deps.db);
       try {
         for (const withCookie of [false, true]) {
           const counts = [
@@ -515,7 +519,7 @@ describe('I-1: backup login costs the same queries for a known and an unknown lo
         ];
         expect(new Set(tenth).size).toBe(1);
       } finally {
-        spy.mockRestore();
+        spy.restore();
       }
       expect(await alerts(id, 'login-locked')).toEqual([{ method }]);
     });

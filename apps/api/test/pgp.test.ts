@@ -14,6 +14,7 @@ import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
+import { spySql } from './helpers/sqlSpy.js';
 
 const ORIGIN = 'https://x2f.test';
 const ONION = 'http://x2fexample.onion';
@@ -127,9 +128,6 @@ async function recipients(armored: string): Promise<string[]> {
     .filterByTag(openpgp.enums.packet.publicKeyEncryptedSessionKey)
     .map((p) => String((p as unknown as { publicKeyAlgorithm: number }).publicKeyAlgorithm));
 }
-
-/** The SQL a spied `query` ran, in order, whitespace normalised (for query-parity tests). */
-const sqlOf = (spy: { mock: { calls: unknown[][] } }) => spy.mock.calls.map((c) => String(c[0]).replace(/\s+/g, ' ').trim());
 
 /** A well-formed device cookie the client made up (32 random bytes, base64url). */
 const madeUpCookie = () => randomBytes(32).toString('base64url');
@@ -961,25 +959,29 @@ describe('review fixes', () => {
   it('I-1: PGP start costs the same queries for a known and an unknown key, with or without a device cookie', async () => {
     const known = await genKey();
     await registerPgp(uniqueName(), known);
-    const spy = vi.spyOn(deps.db, 'query');
+    // Pool AND checked-out client queries (storeLoginChallenge runs in a transaction), in order.
+    const spy = spySql(deps.db);
     const count = async (k: Pair, cookies: Record<string, string>, extra: Record<string, unknown> = {}) => {
-      spy.mockClear();
+      spy.clear();
       const res = await app.inject({
         method: 'POST', url: '/v1/login/pgp/start', headers: { origin: ORIGIN }, cookies, payload: { key: k.publicKey, ...extra },
       });
       expect(res.statusCode).toBe(200);
-      return sqlOf(spy);
+      return spy.sql();
     };
     try {
       for (const cookies of [{}, { [DEVICE_COOKIE]: madeUpCookie() }]) {
         for (const extra of [{}, { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' }]) {
           const [a, b] = [await count(known, cookies, extra), await count(await genKey(), cookies, extra)];
           expect(a.length, JSON.stringify({ cookies, extra })).toBeGreaterThan(0);
+          // The transaction's own statements are in the sequence compared.
+          expect(a, JSON.stringify({ cookies, extra })).toContain('begin');
+          expect(a.some((q) => q.includes('pg_advisory_xact_lock')), JSON.stringify({ cookies, extra })).toBe(true);
           expect(b, JSON.stringify({ cookies, extra })).toEqual(a);
         }
       }
     } finally {
-      spy.mockRestore();
+      spy.restore();
     }
   });
 
