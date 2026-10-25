@@ -76,7 +76,7 @@ export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlo
         <div className="x2f-released__confirm">
           <div className="x2f-released__confirm-row">
             <span>Confirmations</span>
-            <span className="x2f-released__mono" data-mask="confirmations">
+            <span className="x2f-released__mono">
               {shown === null ? 'Checking…' : `${shown} of ${target}`}
             </span>
           </div>

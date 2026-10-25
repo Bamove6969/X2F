@@ -160,8 +160,14 @@
   border-top: 1px solid var(--x2f-surface-raised);
 }
 
+/* The board's 64 px hold, allowed to grow when a long name wraps the main line on a small phone. */
 .x2f-release__footer .x2f-hold {
   width: 100%;
+  height: auto;
+  min-height: 64px;
+  padding: var(--x2f-space-2) 12px;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 .x2f-release__hint,
