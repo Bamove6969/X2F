@@ -43,6 +43,7 @@ export {
   type ChainFacts,
   type EscrowFunds,
   type SpendEvidence,
+  type WatchIncoming,
   type WatchReport,
   type WatchState,
   type WatchStepResult,
