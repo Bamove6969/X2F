@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
 import { describe, expect, it } from 'vitest';
-import { disablePush, enablePush, pushStatus, usePush, type PushEnv } from '../src/push/usePush.js';
+import { disablePush, enablePush, logOut, pushStatus, usePush, type PushEnv } from '../src/push/usePush.js';
 import { render } from './render.js';
 
 const KEY_BYTES = new Uint8Array(65).map((_, i) => (i === 0 ? 4 : i));
@@ -144,5 +144,26 @@ describe('usePush', () => {
       await hook!.disable();
     });
     expect(host.textContent).toBe('off');
+  });
+});
+
+describe('logOut', () => {
+  it('unsubscribes and deletes this browser\'s subscription, then logs out', async () => {
+    const { env: e, calls } = env({ permission: 'granted', existing: true });
+    await logOut(e);
+    expect(calls.unsubscribed).toBe(1);
+    expect(calls.api.map((c) => [c.path, c.method])).toEqual([
+      ['/v1/account/push', 'DELETE'],
+      ['/v1/logout', 'POST'],
+    ]);
+    expect(calls.api[0]!.body).toEqual({ endpoint: ENDPOINT });
+  });
+
+  it('still logs out with no subscription, or without push support', async () => {
+    for (const o of [{ permission: 'granted' as const }, { noPush: true }]) {
+      const { env: e, calls } = env(o);
+      await logOut(e);
+      expect(calls.api.map((c) => c.path)).toEqual(['/v1/logout']);
+    }
   });
 });

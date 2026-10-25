@@ -87,6 +87,20 @@ export async function disablePush(env: PushEnv): Promise<PushStatus> {
   return 'off';
 }
 
+/**
+ * Logging out (every log-out button calls this): first unsubscribes this browser from pushes and
+ * tells the API to forget it, while the session can still do that, then ends the session. A push
+ * failure never blocks the logout; the API also deletes the session's subscriptions itself.
+ */
+export async function logOut(env: PushEnv): Promise<void> {
+  try {
+    await disablePush(env);
+  } catch {
+    // best-effort: POST /v1/logout drops this session's subscriptions on the server anyway
+  }
+  await env.api('/v1/logout', { method: 'POST' });
+}
+
 /** Phone alerts on or off for this browser (Security settings and onboarding use it). */
 export function usePush(env?: PushEnv): {
   status: PushStatus | 'loading';
