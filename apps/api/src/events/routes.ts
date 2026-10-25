@@ -12,6 +12,11 @@ export interface EventStreamOptions {
    * receiving within this bound.
    */
   maxStreamMs?: number;
+  /**
+   * Tests only: runs after the stream is attached and before the session is checked again, the
+   * window in which a revoke could otherwise go unnoticed.
+   */
+  afterAttach?: () => Promise<void>;
 }
 
 export const HEARTBEAT_MS = 25_000;
@@ -29,12 +34,15 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
   const requireTrader = requireSession({ kinds: ['trader'] });
 
-  app.get('/v1/events', { preHandler: requireTrader }, (req: FastifyRequest, reply: FastifyReply) => {
+  app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
     const raw = reply.raw;
     let heartbeat: NodeJS.Timeout | undefined;
     let lifetime: NodeJS.Timeout | undefined;
     let ended = false;
+    let started = false;
     let detach: (() => void) | null = null;
+    // Events published before the headers are written wait here, then go out in order.
+    const pending: string[] = [];
 
     const end = () => {
       if (ended) return;
@@ -42,7 +50,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       clearInterval(heartbeat);
       clearTimeout(lifetime);
       detach?.();
-      if (!raw.writableEnded) raw.end();
+      if (started && !raw.writableEnded) raw.end();
     };
 
     // The client may have gone while the session was checked: take no stream slot for it.
@@ -54,15 +62,43 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     detach = bus.attach(req.auth.accountId, {
       send(data) {
         if (ended || raw.destroyed) throw new Error('stream closed');
-        raw.write(data);
+        if (started) raw.write(data);
+        else pending.push(data);
       },
       close: end,
     }, req.auth.sessionId);
     if (!detach) throw new ApiError(429, 'busy');
 
+    // Check the session again now that the stream is attached (security review, TOCTOU): a
+    // session revoked after requireTrader read it, but before attach, would otherwise stream
+    // until maxStreamMs, because its closeSession found nothing to close. A revoke after this
+    // check finds the stream attached and closes it.
+    await o.afterAttach?.();
+    const { db, clock } = req.server.deps;
+    let live = false;
+    try {
+      const { rows } = await db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [
+        req.auth.sessionId, clock(),
+      ]);
+      live = rows.length >= 0;
+    } catch (e) {
+      end();
+      throw e;
+    }
+    if (!live || ended) {
+      end();
+      throw new ApiError(401, 'not-authenticated');
+    }
+    if (raw.destroyed) {
+      end();
+      reply.hijack();
+      return;
+    }
+
     // From here fastify no longer owns the response. The headers set by the onRequest hooks
     // (SECURITY_HEADERS, cache-control) are carried over by hand.
     reply.hijack();
+    started = true;
     raw.writeHead(200, {
       ...(reply.getHeaders() as Record<string, string>),
       'content-type': 'text/event-stream; charset=utf-8',
@@ -71,6 +107,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
       connection: 'keep-alive',
     });
     raw.write(`retry: ${RETRY_MS}\n\n`);
+    for (const data of pending.splice(0)) raw.write(data);
     heartbeat = setInterval(() => {
       if (!ended && !raw.destroyed) raw.write(':\n\n');
     }, heartbeatMs);

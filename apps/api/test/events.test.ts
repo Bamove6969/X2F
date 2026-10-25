@@ -20,9 +20,13 @@ let logs: string[];
 let step = 0;
 let n = 0;
 const open: SseStream[] = [];
+/** Runs inside GET /v1/events between attach and the session re-check (the TOCTOU window). */
+let afterAttach: () => Promise<void> = async () => undefined;
 
 beforeAll(async () => {
-  ({ app, deps, setNow, logs } = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 40, maxStreamMs: 60_000 } }));
+  ({ app, deps, setNow, logs } = await testApp({}, {
+    events: { perAccount: 2, global: 4, heartbeatMs: 40, maxStreamMs: 60_000, afterAttach: () => afterAttach() },
+  }));
   app.post('/t/login', async (req, reply) => {
     const { startSession } = await import('../src/auth/sessions.js');
     const b = req.body as { accountId: string; level?: 'full' | 'recovery'; holdUntil?: string };
@@ -41,6 +45,7 @@ afterAll(async () => {
 });
 
 beforeEach(async () => {
+  afterAttach = async () => undefined;
   for (const s of open.splice(0)) s.close();
   await until(() => app.events.size === 0);
   setNow(new Date(T0.getTime() + ++step * DAY));
@@ -397,5 +402,53 @@ describe('ending sessions ends their streams (review minor 3)', () => {
     await gone.ended;
     expect(app.events.size).toBe(1);
     expect(app.events.delivered(t.id)).toBe(true);
+  });
+});
+
+describe('a session revoked between requireTrader and attach (security review MEDIUM, TOCTOU)', () => {
+  it('gets no stream: 401, the slot is freed, and nothing is delivered', async () => {
+    const t = await trader();
+    // A revoke whose closeSession ran before this stream was attached (so it closed nothing).
+    afterAttach = async () => {
+      await deps.db.query('update sessions set revoked_at = $2 where account_id = $1', [t.id, deps.clock()]);
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(401);
+    expect(s.body).toEqual({ error: 'not-authenticated' });
+    await until(() => app.events.size === 0);
+    expect(app.events.publish(t.id, accepted())).toBe(0);
+  });
+
+  it('an expired session in that window is refused the same way', async () => {
+    const t = await trader();
+    afterAttach = async () => {
+      await deps.db.query('update sessions set expires_at = $2 where account_id = $1', [t.id, new Date(0)]);
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(401);
+    expect(app.events.size).toBe(0);
+  });
+
+  it('a closeSession that lands during the re-check also ends it with 401', async () => {
+    const t = await trader();
+    const sessionId = (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [t.id])).rows[0]!.id;
+    afterAttach = async () => {
+      app.events.closeSession(t.id, sessionId);
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(401);
+    expect(app.events.size).toBe(0);
+  });
+
+  it('an event published before the headers go out is delivered after them, in order', async () => {
+    const t = await trader();
+    afterAttach = async () => {
+      app.events.publish(t.id, accepted('X2F-AAAA-AAAA'));
+      app.events.publish(t.id, accepted('X2F-BBBB-BBBB'));
+    };
+    const s = await stream(t.b);
+    expect(s.status).toBe(200);
+    await s.waitFor((e) => (e as { code?: string }).code === 'X2F-BBBB-BBBB');
+    expect(s.events.map((e) => (e as { code: string }).code)).toEqual(['X2F-AAAA-AAAA', 'X2F-BBBB-BBBB']);
   });
 });
