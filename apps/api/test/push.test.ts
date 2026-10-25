@@ -5,8 +5,9 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { EventBus } from '../src/events/bus.js';
 import { recordFinalAlert } from '../src/events/finalAlert.js';
+import { canonicalEndpoint, isPublicAddress, publicOnlyLookup } from '../src/push/endpoint.js';
 import {
-  PUSH_PAYLOADS, PUSH_SUBSCRIPTION_CAP, pushRequestOptions, type PushCall, type PushTransport,
+  PUSH_PAYLOADS, PUSH_SUBSCRIPTION_CAP, makeWebPushTransport, pushRequestOptions, type PushCall, type PushTransport,
 } from '../src/push/send.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -161,6 +162,26 @@ describe('POST /v1/account/push', () => {
     ['credentials in the URL', { endpoint: 'https://u:p@fcm.googleapis.com/fcm/send/abc' }],
     ['another port', { endpoint: 'https://fcm.googleapis.com:8443/fcm/send/abc' }],
     ['an over-long endpoint', { endpoint: `https://fcm.googleapis.com/${'a'.repeat(2048)}` }],
+    // Parser tricks (security review, HIGH): only the canonical WHATWG href of an allowed host passes.
+    ['an allowed host as userinfo', { endpoint: 'https://fcm.googleapis.com@evil.example/fcm/send/abc' }],
+    ['an allowed host as userinfo, encoded', { endpoint: 'https://fcm.googleapis.com%40evil.example/fcm/send/abc' }],
+    ['a backslash before the host', { endpoint: 'https:\\\\fcm.googleapis.com/fcm/send/abc' }],
+    ['a backslash after the host', { endpoint: 'https://evil.example\\@fcm.googleapis.com/fcm/send/abc' }],
+    ['a backslash in the path', { endpoint: 'https://fcm.googleapis.com\\fcm/send/abc' }],
+    ['percent-encoded dots in the host', { endpoint: 'https://fcm%2egoogleapis%2ecom/fcm/send/abc' }],
+    ['a percent-encoded host', { endpoint: 'https://%66cm.googleapis.com/fcm/send/abc' }],
+    ['an upper-case host', { endpoint: 'https://FCM.googleapis.com/fcm/send/abc' }],
+    ['a trailing-dot host', { endpoint: 'https://fcm.googleapis.com./fcm/send/abc' }],
+    ['an explicit default port', { endpoint: 'https://fcm.googleapis.com:443/fcm/send/abc' }],
+    ['an IPv6 literal', { endpoint: 'https://[::1]/fcm/send/abc' }],
+    ['a hex IPv4 literal', { endpoint: 'https://0x7f.0.0.1/fcm/send/abc' }],
+    ['a decimal IPv4 literal', { endpoint: 'https://2130706433/fcm/send/abc' }],
+    ['a numeric subdomain of an allowed host', { endpoint: 'https://127.0.0.1.fcm.googleapis.com.evil/x' }],
+    ['a leading space', { endpoint: ' https://fcm.googleapis.com/fcm/send/abc' }],
+    ['a tab inside the host', { endpoint: 'https://fcm.google\tapis.com/fcm/send/abc' }],
+    ['a fragment', { endpoint: 'https://fcm.googleapis.com/fcm/send/abc#x' }],
+    ['a non-ASCII host', { endpoint: 'https://fcm.googleapis.com\u3002evil.example/x' }],
+    ['an empty label', { endpoint: 'https://fcm..googleapis.com/fcm/send/abc' }],
     ['a p256dh that is not a P-256 point', { keys: { p256dh: randomBytes(65).toString('base64url') } }],
     ['a short auth secret', { keys: { auth: randomBytes(8).toString('base64url') } }],
     ['missing keys', { keys: undefined }],
@@ -193,6 +214,29 @@ describe('POST /v1/account/push', () => {
     bodies.push(res.body);
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ vapidPublic: deps.config.vapidPublic });
+  });
+});
+
+describe('endpoint checks (shared by the routes and the sender)', () => {
+  it('stores exactly the canonical href it validated', async () => {
+    const t = await trader();
+    const s = subscription();
+    await post(t.b, s);
+    expect(await stored(t.id)).toEqual([new URL(s.endpoint).href]);
+  });
+
+  it.each([
+    ['https://fcm.googleapis.com/fcm/send/abc', true],
+    ['https://wns2-by3p.notify.windows.com/w/?token=BQYAAA%2b%2f', true],
+    ['https://fcm.googleapis.com@evil.example/x', false],
+    ['https://evil.example/x', false],
+    ['https://notify.windows.com.evil/x', false],
+    ['https://-bad.notify.windows.com/x', false],
+    ['https://fcm.googleapis.com:443/x', false],
+  ])('canonicalEndpoint(%s) is allowed: %s', (raw, ok) => {
+    const url = canonicalEndpoint(raw);
+    expect(url !== null).toBe(ok);
+    if (url) expect(url.href).toBe(raw);
   });
 });
 
@@ -274,6 +318,25 @@ describe('sendPush', () => {
     expect(await stored(t.id)).toEqual([fine.endpoint]);
   });
 
+  it('re-checks every stored endpoint before sending: a bad row is never sent to and is deleted', async () => {
+    const t = await trader();
+    const good = subscription();
+    await post(t.b, good);
+    const ecdh = createECDH('prime256v1');
+    ecdh.generateKeys();
+    const bad = ['https://127.0.0.1/x', 'https://fcm.googleapis.com@evil.example/x', 'http://fcm.googleapis.com/x', 'https://evil.example/x'];
+    for (const endpoint of bad) {
+      secrets.push(endpoint);
+      await deps.db.query(
+        'insert into push_subscriptions (account_id, endpoint, p256dh, auth, created_at) values ($1, $2, $3, $4, $5)',
+        [t.id, endpoint, ecdh.getPublicKey().toString('base64url'), randomBytes(16).toString('base64url'), new Date()],
+      );
+    }
+    expect(await app.push.send(t.id, 'trade')).toBe(true);
+    expect(calls.map((c) => c.subscription.endpoint)).toEqual([good.endpoint]);
+    expect(await stored(t.id)).toEqual([good.endpoint]);
+  });
+
   it('builds a real encrypted Web Push request: VAPID from config, aes128gcm, no plaintext in the body', async () => {
     const s = subscription();
     const options = pushRequestOptions(deps.config);
@@ -282,6 +345,58 @@ describe('sendPush', () => {
     expect(details.headers['Content-Encoding']).toBe('aes128gcm');
     expect(String(details.headers.Authorization)).toContain(`k=${deps.config.vapidPublic}`);
     expect(Buffer.from(details.body!).toString('utf8')).not.toContain('X2F');
+  });
+});
+
+describe('the real transport refuses non-public addresses', () => {
+  it.each([
+    ['127.0.0.1', false], ['10.1.2.3', false], ['172.16.0.1', false], ['192.168.1.1', false], ['169.254.169.254', false],
+    ['100.64.0.1', false], ['0.0.0.0', false], ['224.0.0.1', false], ['::1', false], ['::', false], ['fe80::1', false],
+    ['fd00::1', false], ['::ffff:127.0.0.1', false], ['::ffff:10.0.0.1', false], ['64:ff9b::7f00:1', false],
+    ['142.250.180.10', true], ['2a00:1450:4001:80b::200a', true],
+  ])('isPublicAddress(%s) is %s', (ip, ok) => {
+    expect(isPublicAddress(ip)).toBe(ok);
+  });
+
+  type Addr = { address: string; family: number };
+  const fakeDns = (answer: Addr[]) =>
+    ((_h: string, _o: unknown, cb: (e: Error | null, a: Addr[]) => void) => cb(null, answer)) as never;
+
+  it('a host that resolves to any private address is refused; a public one is passed on', async () => {
+    const refuse = await new Promise<Error | null>((done) =>
+      publicOnlyLookup(fakeDns([{ address: '142.250.180.10', family: 4 }, { address: '10.0.0.5', family: 4 }]))(
+        'fcm.googleapis.com', {}, (e) => done(e)),
+    );
+    expect(refuse?.message).toBe('push: refused address');
+    const one = await new Promise<[Error | null, unknown, unknown]>((done) =>
+      publicOnlyLookup(fakeDns([{ address: '142.250.180.10', family: 4 }]))('fcm.googleapis.com', {}, (e, a, f) => done([e, a, f])),
+    );
+    expect(one).toEqual([null, '142.250.180.10', 4]);
+    const all = await new Promise<[Error | null, unknown]>((done) =>
+      publicOnlyLookup(fakeDns([{ address: '142.250.180.10', family: 4 }]))('fcm.googleapis.com', { all: true }, (e, a) => done([e, a])),
+    );
+    expect(all).toEqual([null, [{ address: '142.250.180.10', family: 4 }]]);
+  });
+
+  it('webPushTransport never connects to an allowed host that resolves to loopback', async () => {
+    const s = subscription();
+    const send = makeWebPushTransport(fakeDns([{ address: '127.0.0.1', family: 4 }]));
+    await expect(send({ subscription: s, payload: PUSH_PAYLOADS.trade, options: pushRequestOptions(deps.config) })).rejects.toThrow(
+      'push: network error',
+    );
+  });
+
+  it('webPushTransport refuses an endpoint that fails the checks, before any lookup', async () => {
+    let looked = false;
+    const send = makeWebPushTransport(((_h: string, _o: unknown, cb: (e: Error | null, a: Addr[]) => void) => {
+      looked = true;
+      cb(null, [{ address: '142.250.180.10', family: 4 }]);
+    }) as never);
+    const s = { ...subscription(), endpoint: 'https://fcm.googleapis.com@evil.example/x' };
+    await expect(send({ subscription: s, payload: PUSH_PAYLOADS.trade, options: pushRequestOptions(deps.config) })).rejects.toThrow(
+      'push: invalid endpoint',
+    );
+    expect(looked).toBe(false);
   });
 });
 
