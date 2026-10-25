@@ -440,6 +440,73 @@ describe('createFxRates', () => {
       expect(fx.health().rejected).toEqual([]);
     });
 
+    it('#2 and #3 jumping 20% together never refuse a steady #1: the trust order holds (re-review)', async () => {
+      const c = clockAt(T0);
+      let low = '1332';
+      const fx = createFxRates([stub('a', () => ({ NGN: '1332' })), stub('b', () => ({ NGN: low })), stub('c', () => ({ NGN: low }))], { clock: c.clock });
+      await fx.poll();
+      low = '1598.4';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')).toEqual({ currency: 'NGN', rate: r('1332'), source: 'a', at: c.clock() });
+      expect(fx.health().rejected.map((x) => x.source)).toEqual(['b', 'c']);
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')?.source, 'the next poll too: the history is still #1').toBe('a');
+    });
+
+    it('a jump only #2 and #3 agree on is no real jump while #1 still holds a usable rate it did not fetch this poll', async () => {
+      const c = clockAt(T0);
+      let a: string | Error = '1332';
+      let low = '1332';
+      const fx = createFxRates([stub('a', () => (a instanceof Error ? a : { NGN: a })), stub('b', () => ({ NGN: low })), stub('c', () => ({ NGN: low }))], { clock: c.clock });
+      await fx.poll();
+      a = new Error('blip');
+      low = '1598.4';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')?.source, 'one failure is retried quietly: #1 still serves').toBe('a');
+      a = '1332';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')).toEqual({ currency: 'NGN', rate: r('1332'), source: 'a', at: c.clock() });
+    });
+
+    it('with #1 down, a jump #2 and #3 agree on is a real jump (#2 is the highest-ranked fresh source)', async () => {
+      const c = clockAt(T0);
+      let a: string | Error = '1332';
+      let low = '1332';
+      const fx = createFxRates([stub('a', () => (a instanceof Error ? a : { NGN: a })), stub('b', () => ({ NGN: low })), stub('c', () => ({ NGN: low }))], { clock: c.clock });
+      await fx.poll();
+      a = new Error('down');
+      for (let i = 0; i < 3; i++) {
+        c.advance(5 * MIN);
+        await fx.poll();
+      }
+      expect(fx.rate('NGN')?.source).toBe('b');
+      low = '1600';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')).toEqual({ currency: 'NGN', rate: r('1600'), source: 'b', at: c.clock() });
+      expect(fx.health().rejected).toEqual([]);
+    });
+
+    it('#1 jumping first (refused alone), then #2 and #3 joining it: a real jump, #1 serves the new rate', async () => {
+      const c = clockAt(T0);
+      let a = '1332';
+      let low = '1332';
+      const fx = createFxRates([stub('a', () => ({ NGN: a })), stub('b', () => ({ NGN: low })), stub('c', () => ({ NGN: low }))], { clock: c.clock });
+      await fx.poll();
+      a = '1600';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')?.source).toBe('b');
+      low = '1600';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('NGN')).toEqual({ currency: 'NGN', rate: r('1600'), source: 'a', at: c.clock() });
+    });
+
     it('one source jumping alone is still refused against the history (no drop)', async () => {
       const c = clockAt(T0);
       let a = '1332';

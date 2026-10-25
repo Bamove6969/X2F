@@ -305,8 +305,8 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
 
   /**
    * The sanity guard. With in-use values from the last hour: refused when more than sanityBps from
-   * ANY of them (the poll first drops that history when 2+ fresh sources agree with each other and
-   * with none of it: a real jump). With none (boot, restart, an outage over an hour): accepted
+   * ANY of them (the poll first drops that history when the highest-ranked fresh source and another
+   * fresh source agree with each other and with none of it: a real jump). With none (boot, restart, an outage over an hour): accepted
    * only when another fresh source (this poll's answer, or a good rate within the staleness
    * setting) agrees within sanityBps. With no fresh peer at all it is accepted only when the
    * currency is truly single-source: every other source has had a good fetch that does not list
@@ -348,7 +348,8 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
         return typeof v === 'bigint' && v > 0n ? v : null;
       }
       const c = states[j]!.currencies.get(code);
-      return c?.good && now.getTime() - c.good.at.getTime() <= settings.staleAfterMs ? c.good.rate : null;
+      // A source that is down (failLimit failures in a row) says nothing, whatever it last said.
+      return c?.good && c.failures < failLimit && now.getTime() - c.good.at.getTime() <= settings.staleAfterMs ? c.good.rate : null;
     };
     const peersOf = (i: number, code: string): bigint[] =>
       states.flatMap((_t, j) => {
@@ -362,8 +363,10 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
         const listed = answers[j] ? new Set(answers[j].keys()) : t.listed;
         return listed !== null && !listed.has(code);
       });
-    // A real jump: 2+ fresh sources agree with each other and with none of the last hour. Their
-    // agreement outweighs the history, which is dropped before any source is judged.
+    // A real jump: the highest-ranked fresh source and at least one other fresh source agree with
+    // each other and with none of the last hour. Their agreement outweighs the history, which is
+    // dropped before any source is judged. A jump only lower-ranked sources agree on is not one:
+    // it must never refuse a higher-ranked source that still matches the history (the trust order).
     for (const code of new Set(answers.flatMap((m) => (m ? [...m.keys()] : [])))) {
       const history = recent(code, now);
       if (history.length === 0) continue;
@@ -371,8 +374,9 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
         const v = freshValue(j, code);
         return v === null ? [] : [v];
       });
-      const outside = vals.filter((v) => history.every((h) => far(v, h.rate)));
-      if (outside.some((v, k) => outside.some((w, l) => l !== k && !far(v, w)))) inUse.set(code, []);
+      const lead = vals[0];
+      if (lead === undefined || !history.every((h) => far(lead, h.rate))) continue;
+      if (vals.slice(1).some((w) => !far(lead, w) && history.every((h) => far(w, h.rate)))) inUse.set(code, []);
     }
     states.forEach((s, i) => {
       const got = answers[i]!;
