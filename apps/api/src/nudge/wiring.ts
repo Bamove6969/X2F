@@ -1,14 +1,40 @@
+import { normalizeTradeCode } from '@x2f/core';
+import type { Queryable } from '../db/pool.js';
 import type { NudgeWiring } from './routes.js';
 
 /**
- * Production stand-in until the tasks that own each piece merge (tripwires in test/nudge.test.ts):
- * - Task 6 (active trades) and Task 20 (open chats): `hasSharedContext`. Until then no chat or
- *   trade exists, so nobody shares one and every nudge is refused with `no-shared-context`.
- * - Task 19: `publish` (events/bus.ts) and `sendPush(accountId, 'nudge')` (push/send.ts). Never
- *   reached while `hasSharedContext` is false; they deliver nothing.
+ * Task 6: the two accounts are the buyer and the seller of the trade `context` names, and it has
+ * not closed. A trade stays open while disputed, and lapsed with funds still in the escrow
+ * (`closed_at` is null), so a nudge can still wake the other side then. Any spelling the trade
+ * code normaliser accepts (lower case, no hyphens) names the same trade.
+ */
+export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext'] {
+  return async (fromId, toId, context) => {
+    const code = normalizeTradeCode(context);
+    if (code === null) return false;
+    const { rows } = await db.query(
+      `select 1 from trades
+        where code = $1 and closed_at is null
+          and ((seller_account_id = $2 and buyer_account_id = $3) or (seller_account_id = $3 and buyer_account_id = $2))`,
+      [code, fromId, toId],
+    );
+    return rows.length > 0;
+  };
+}
+
+/**
+ * Stand-ins for what is not merged yet (tripwires in test/nudge.test.ts):
+ * - Task 20 (open chats): a chat code is not yet a shared context.
+ * - Task 19: `publish` (events/bus.ts) and `sendPush(accountId, 'nudge')` (push/send.ts) deliver
+ *   nothing until then; the nudge is still recorded and counted like a delivered one.
  */
 export const pendingNudgeWiring: NudgeWiring = {
   hasSharedContext: async () => false,
   publish: () => undefined,
   sendPush: async () => false,
 };
+
+/** What main.ts uses: real trades (Task 6); chats (Task 20) and delivery (Task 19) still pending. */
+export function productionNudgeWiring(db: Queryable): NudgeWiring {
+  return { ...pendingNudgeWiring, hasSharedContext: tradeSharedContext(db) };
+}

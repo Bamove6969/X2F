@@ -8,7 +8,7 @@ import { startRetention } from './retention.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
-import { pendingNudgeWiring } from './nudge/wiring.js';
+import { productionNudgeWiring } from './nudge/wiring.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -42,8 +42,8 @@ const deps: Deps = {
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
-  // Task 26: replaced piece by piece as Tasks 6, 19 and 20 merge (see nudge/wiring.ts).
-  nudges: pendingNudgeWiring,
+  // Task 26: shared context from real trades (Task 6); chats (Task 20) and delivery (Task 19) pending (nudge/wiring.ts).
+  nudges: productionNudgeWiring(db),
 };
 
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
