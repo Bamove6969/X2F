@@ -17,6 +17,9 @@ const ADDRESS = '4' + 'A'.repeat(94);
 const URI = `monero:${ADDRESS}?tx_amount=1.25`;
 const ATTACKER = '4' + 'B'.repeat(94);
 const WORDS = ['amber', 'canal', 'violin', 'oxygen'];
+const TAKER_DEAL = { poster: 'buyer' as const, takeAmountAtomic: 1_250_000_000_000n };
+const POSTER_DEAL = { poster: 'seller' as const, takeAmountAtomic: 1_250_000_000_000n };
+const verified = (over: Partial<TradeEscrow> = {}) => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS, deal: TAKER_DEAL, ...over });
 
 const base: TradeView = {
   code: CODE,
@@ -81,7 +84,7 @@ beforeEach(() => {
     }),
   );
   // This device derived ADDRESS and has its check words (the verified state funding needs).
-  setTradeEscrowHook(() => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }));
+  setTradeEscrowHook(() => verified());
   setLiveSource(null);
 });
 
@@ -139,6 +142,7 @@ describe('TradeFund (seller)', () => {
     let host = await room();
     expect(host.textContent).not.toContain('X2F fee');
     current = { ...base, poster: 'seller', fee: { atomic: '12500000000' }, funding: { ...base.funding!, sellerFundsAtomic: '1262500000000' } };
+    setTradeEscrowHook(() => verified({ deal: POSTER_DEAL }));
     host = await room();
     expect(host.textContent).toContain('Includes X2F fee (1%, your ad)');
     expect(host.textContent).toContain('0.012500 XMR');
@@ -197,7 +201,7 @@ describe('TradeFund (seller)', () => {
 
 describe('escrow check and the security check', () => {
   it('shows the four check words naming the other trader, on both sides', async () => {
-    setTradeEscrowHook(() => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }));
+    setTradeEscrowHook(() => verified());
     let host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on mira.k's screen.");
     expect([...host.querySelectorAll('[data-escrow-check] li')].map((l) => l.textContent)).toEqual(['amber', 'canal', 'violin', 'oxygen']);
@@ -257,13 +261,45 @@ describe('funding shows only the address this device verified', () => {
     expect(host.innerHTML).not.toContain(ATTACKER);
   });
 
+  it('an inflated server amount: the danger state and no address, link, QR or copy text', async () => {
+    current = { ...base, funding: { ...base.funding!, sellerFundsAtomic: '12500000000000', uri: `monero:${ADDRESS}?tx_amount=12.5` } };
+    const host = await room();
+    expect(host.textContent).toContain("Security check failed. Don't fund this trade.");
+    noFundingTraces(host);
+    expect(host.textContent).not.toContain('12.5');
+  });
+
+  it('an API that says the seller posted (fee added) when this device took the ad: the danger state', async () => {
+    current = { ...base, poster: 'seller', fee: { atomic: '12500000000' }, funding: { ...base.funding!, sellerFundsAtomic: '1262500000000' } };
+    const host = await room();
+    expect(host.textContent).toContain("Security check failed. Don't fund this trade.");
+    noFundingTraces(host);
+  });
+
+  it('the seller-poster funds amount + 1% worked out on the device: link and copy carry 1.2625', async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    current = { ...base, poster: 'seller', fee: { atomic: '12500000000' }, funding: { ...base.funding!, sellerFundsAtomic: '1262500000000' } };
+    setTradeEscrowHook(() => verified({ deal: POSTER_DEAL }));
+    const host = await room();
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 1_262_500_000_000n));
+    expect(host.textContent).toContain('1.2625 XMR filled in');
+    const copied: string[] = [];
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
+    await act(async () => footer()!.click());
+    const copyAmount = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Copy amount')!;
+    await act(async () => copyAmount.click());
+    await flush();
+    expect(copied).toEqual(['1.2625']);
+  });
+
   for (const [name, e] of [
     ['idle (runtime not wired)', {}],
     ['registering', { phase: 'registering', keepOpen: true }],
     ['verifying', { phase: 'verifying', keepOpen: true }],
     ['setting up', { phase: 'setting-up', keepOpen: true }],
     ['ready without check words', { phase: 'ready', escrowAddress: ADDRESS }],
-    ['ready without a derived address', { phase: 'ready', checkWords: WORDS }],
+    ['ready without a derived address', { phase: 'ready', checkWords: WORDS, deal: TAKER_DEAL }],
+    ['ready without the device deal', { phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }],
     ['a retryable error', { phase: 'error', error: 'escrow-failed', retryable: true, escrowAddress: ADDRESS, checkWords: WORDS }],
     ['an unsupported browser', { phase: 'error', error: 'unsupported-browser' }],
   ] as [string, Partial<TradeEscrow>][]) {

@@ -21,7 +21,7 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { exactXmr, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
-import { verifiedEscrowAddress } from './seams.js';
+import { verifiedFunding } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import './trade.css';
 
@@ -148,6 +148,7 @@ function SellerQuote({ view }: { view: TradeView }) {
 function WalletFooter({
   view,
   uri,
+  fundsAtomic,
   opened,
   onOpened,
   fallbackShown,
@@ -156,6 +157,8 @@ function WalletFooter({
   view: TradeView;
   /** Built on this device from the verified address (never the API's link). */
   uri: string;
+  /** The device-verified amount the link carries. */
+  fundsAtomic: bigint;
   opened: boolean;
   onOpened: () => void;
   fallbackShown: boolean;
@@ -185,7 +188,7 @@ function WalletFooter({
       />
       {opened ? null : (
         <span className="x2f-fund-hint">
-          Opens {wallet} with the escrow address and {exactXmr(BigInt(f.sellerFundsAtomic))} XMR filled in. You confirm there.
+          Opens {wallet} with the escrow address and {exactXmr(fundsAtomic)} XMR filled in. You confirm there.
         </span>
       )}
       {opened || fallbackShown ? null : (
@@ -215,19 +218,20 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
   const phone = isPhoneDevice(navigator.userAgent, navigator.maxTouchPoints);
   // The only address this screen ever shows or links: the one this device derived and verified
   // (check words ready, no error, the API's address equal to it). Until then it shows setup progress.
-  const verified = verifiedEscrowAddress(escrow, view);
+  const verified = verifiedFunding(escrow, view);
   const settingUp = view.state === 'setup' || verified === null;
   const funds = sellerFundsOf(view);
   const received = BigInt(view.receivedAtomic);
   const wallet = view.funding?.walletApp ?? null;
   const [opened, setOpened] = useState(() => hasFundMark(view.code, 'opened'));
   const [fallbackShown, setFallbackShown] = useState(false);
-  const canFund = !funded && !settingUp && verified !== null && view.funding !== null && funds > 0n;
-  // The `monero:` link is built here from verified values only; the API's `funding.uri` is never used.
-  const uri = canFund ? safeUri(verified, funds) : null;
+  const canFund = !funded && !settingUp && verified !== null;
+  // The `monero:` link, QR code and copy text are built here from the device-verified address and
+  // amount only; the API's `funding.uri` is never used.
+  const uri = canFund ? safeUri(verified.address, verified.fundsAtomic) : null;
   const fallback =
     uri !== null && (!phone || opened || fallbackShown) ? (
-      <FundFallback uri={uri} address={verified!} sellerFundsAtomic={funds} primary={!phone} />
+      <FundFallback uri={uri} address={verified!.address} sellerFundsAtomic={verified!.fundsAtomic} primary={!phone} />
     ) : null;
 
   return (
@@ -284,6 +288,7 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
         <WalletFooter
           view={view}
           uri={uri}
+          fundsAtomic={verified!.fundsAtomic}
           opened={opened}
           onOpened={() => setOpened(true)}
           fallbackShown={fallbackShown}

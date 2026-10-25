@@ -12,6 +12,7 @@
  * Tests (and the board fixtures) install fakes with `setTradeEscrowHook` / `setLiveSource`.
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { escrowPlan } from '@x2f/trade';
 
 // ---- Task 12: copied from wip/second-p3-t12 apps/web/src/escrow/runtime.ts (types only) ----
 
@@ -41,6 +42,13 @@ export interface TradeEscrow {
    * test/tradeRoom-tripwires.test.ts names it.
    */
   escrowAddress: string | null;
+  /**
+   * The deal THIS device confirmed on the take or accept screen (Task 12's stored `Deal`: who
+   * posted and the amount at take), or null until the runtime has it. The funding amount is
+   * worked out from it, never taken from the API. ADDITION to Task 12's UseEscrow, like
+   * `escrowAddress`.
+   */
+  deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint } | null;
   error: EscrowErrorCode | null;
   retryable: boolean;
   refusal: EscrowRefusal | null;
@@ -60,21 +68,51 @@ export interface TradeEscrow {
  * danger). Besides the runtime's own codes, an API whose escrow address differs from the one this
  * device derived is one: a lying server must never steer the seller's coins.
  */
-export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress'>, view?: { funding: { escrowAddress: string | null } | null }): boolean {
+export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress' | 'deal'>, view?: FundingFacts): boolean {
   if (e.error === 'participants-mismatch' || e.error === 'deal-mismatch') return true;
   const theirs = view?.funding?.escrowAddress ?? null;
-  return theirs !== null && e.escrowAddress !== null && theirs !== e.escrowAddress;
+  if (theirs !== null && e.escrowAddress !== null && theirs !== e.escrowAddress) return true;
+  // The amount to fund: the API's must be exactly what this device works out from its own deal.
+  if (view?.funding && e.deal) {
+    const mine = expectedFundsAtomic(e.deal);
+    if (mine === null || view.poster !== e.deal.poster || !/^[0-9]{1,30}$/.test(view.funding.sellerFundsAtomic) || BigInt(view.funding.sellerFundsAtomic) !== mine) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** The view facts the funding checks read. */
+export interface FundingFacts {
+  poster: 'seller' | 'buyer';
+  funding: { escrowAddress: string | null; sellerFundsAtomic: string } | null;
 }
 
 /**
- * The escrow address this device verified and may show for funding, or null: only once the
- * runtime is ready with check words and its own derived address, with no error, and only when the
- * API's address (if it sends one) is the same.
+ * What the seller must fund, from this device's own deal (@x2f/trade escrowPlan: the amount at
+ * take, plus the 1% fee when the seller posted the ad). Before funding the trade cannot have grown
+ * (growth needs releasable coins, plan Revision 2026-10-21), so this is the whole amount. Null for
+ * a deal escrowPlan refuses.
  */
-export function verifiedEscrowAddress(e: TradeEscrow, view: { funding: { escrowAddress: string | null } | null }): string | null {
-  if (e.phase !== 'ready' || e.error !== null || e.checkWords === null || e.escrowAddress === null) return null;
-  if (integrityFailed(e, view)) return null;
-  return e.escrowAddress;
+export function expectedFundsAtomic(deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint }): bigint | null {
+  try {
+    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster }).sellerFundsAtomic;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The funding this device verified and may show, or null: only once the runtime is ready with
+ * check words, its own derived address and its own deal, with no error, and only when the API's
+ * address and amount are exactly the device's. The address and amount returned are the device's.
+ */
+export function verifiedFunding(e: TradeEscrow, view: FundingFacts): { address: string; fundsAtomic: bigint } | null {
+  if (e.phase !== 'ready' || e.error !== null || e.checkWords === null || e.escrowAddress === null || e.deal === null) return null;
+  if (view.funding === null || integrityFailed(e, view)) return null;
+  const fundsAtomic = expectedFundsAtomic(e.deal);
+  if (fundsAtomic === null || fundsAtomic <= 0n) return null;
+  return { address: e.escrowAddress, fundsAtomic };
 }
 
 const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not wired (Task 12)'));
@@ -83,6 +121,7 @@ const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not
 export const PENDING_ESCROW: TradeEscrow = {
   phase: 'idle',
   escrowAddress: null,
+  deal: null,
   error: null,
   retryable: false,
   refusal: null,

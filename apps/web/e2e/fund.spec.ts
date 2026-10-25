@@ -1,11 +1,46 @@
 // TradeFund and the escrow check (Task 22; board TradeFund.dc.html; spec 2.2 step 5). The API is
-// stubbed with the boards' example trade (src/fixtures/boards.ts) in Task 6's TradeView shape. The
-// escrow runtime (Task 12) is not merged, so the room runs with its stand-in; the check words and
-// the security-check danger state are covered in test/tradeFund.test.tsx against a fake escrow.
+// stubbed with the boards' example trade (src/fixtures/boards.ts) in Task 6's TradeView shape.
+//
+// Funding shows only an address this device's escrow runtime derived and verified (security
+// review). Task 12's runtime is not merged, so most tests run against a fixtures-mode build
+// (`vite build --mode fixtures`, served here through the API's serveWeb with the real CSP) whose
+// escrow state each test sets with `window.__x2fFixtureEscrow`. The production build (the config's
+// web server) runs with the stand-in escrow, and its test checks that it shows no address at all.
+import { execFile } from 'node:child_process';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import { expect, test, type Page } from '@playwright/test';
+import Fastify, { type FastifyInstance } from 'fastify';
+import { clientErrorHandler, frameworkErrors, serveWeb } from '../../api/src/static/serve.js';
 import { fiatCents, formatFiat, moneroUri } from '@x2f/trade';
 import { BOARD_TRADE as B } from '../src/fixtures/boards.js';
 import { expectParity } from './parity.js';
+import { PORT } from './playwright.config.js';
+
+const WEB = fileURLToPath(new URL('..', import.meta.url));
+const FIXTURES_PORT = PORT + 1;
+const FIXTURES = `http://127.0.0.1:${FIXTURES_PORT}`;
+const PRODUCTION = `http://127.0.0.1:${PORT}`;
+let server: FastifyInstance | null = null;
+
+test.beforeAll(async () => {
+  test.setTimeout(240_000);
+  await promisify(execFile)(process.execPath, [join(WEB, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--mode', 'fixtures', '--logLevel', 'error'], {
+    cwd: WEB,
+    env: { ...process.env, VITE_FIXTURES: '1' },
+    timeout: 200_000,
+  });
+  server = Fastify({ logger: false, frameworkErrors, clientErrorHandler });
+  await serveWeb(server, { root: join(WEB, 'dist-fixtures'), relayOrigin: 'wss://relay.x2f.invalid', nodeProxyOrigin: 'https://node.x2f.invalid' });
+  await server.listen({ host: '127.0.0.1', port: FIXTURES_PORT });
+});
+
+test.afterAll(async () => {
+  await server?.close();
+});
+
+test.use({ baseURL: FIXTURES });
 
 const ANDROID = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36';
 const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1';
@@ -81,8 +116,21 @@ const posterView = (): View =>
 const buyerView = (): View =>
   sellerView({ role: 'buyer', funding: null, counterparty: { ...(sellerView().counterparty as object), username: B.seller } });
 
-/** Stubs the session and the trade; `view()` is read on every request, so a test can change it. */
-async function stub(page: Page, view: () => View): Promise<void> {
+const WORDS = ['amber', 'canal', 'violin', 'oxygen'];
+type FixtureEscrow = NonNullable<Window['__x2fFixtureEscrow']>;
+/** The device derived ADDRESS and has its check words: the only state that may show funding. */
+const VERIFIED: FixtureEscrow = { phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS, deal: { poster: 'buyer', takeAmountAtomic: B.amountAtomic.toString() } };
+/** The same, on a device whose user posted the sell ad (it funds amount + 1%). */
+const VERIFIED_POSTER: FixtureEscrow = { ...VERIFIED, deal: { poster: 'seller', takeAmountAtomic: B.amountAtomic.toString() } };
+
+/**
+ * Stubs the session and the trade (`view()` is read on every request, so a test can change it)
+ * and sets the fixture build's escrow state (VERIFIED unless given).
+ */
+async function stub(page: Page, view: () => View, escrow: FixtureEscrow = VERIFIED): Promise<void> {
+  await page.addInitScript((e) => {
+    window.__x2fFixtureEscrow = e;
+  }, escrow);
   await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
   await page.route(`**/v1/trades/${B.code}`, (r) => r.fulfill({ json: view() }));
 }
@@ -139,7 +187,7 @@ test.describe('TradeFund (seller, phone)', () => {
   });
 
   test('the poster seller funds amount + 1% and sees the fee; the link carries that exact total', async ({ page }) => {
-    await stub(page, posterView);
+    await stub(page, posterView, VERIFIED_POSTER);
     await room(page);
     await expect(page.getByText('Includes X2F fee (1%, your ad)')).toBeVisible();
     await expect(page.getByText('0.012500 XMR')).toBeVisible();
@@ -253,6 +301,67 @@ test.describe('TradeFund on a desktop', () => {
   });
 });
 
+test.describe('only a verified escrow address is ever shown', () => {
+  test.use({ userAgent: ANDROID });
+  const ATTACKER = '4' + 'Zz9Yy8Xx7W'.repeat(9) + 'vU6tS';
+
+  test('a server uri pointing elsewhere is never used: the link is built from the verified address', async ({ page }) => {
+    const opened = await recordWalletOpens(page);
+    await stub(page, () => sellerView({ funding: { ...(sellerView().funding as object), uri: moneroUri(ATTACKER, 99n * B.amountAtomic) } }));
+    await room(page);
+    await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, B.amountAtomic));
+    await hold(page);
+    expect(await opened()).toEqual([moneroUri(ADDRESS, B.amountAtomic)]);
+    expect(await page.content()).not.toContain(ATTACKER);
+  });
+
+  test('an API address that differs from the device-derived one: "Security check failed", no address, link or QR', async ({ page }) => {
+    await stub(page, () => sellerView({ funding: { ...(sellerView().funding as object), escrowAddress: ATTACKER, uri: moneroUri(ATTACKER, B.amountAtomic) } }));
+    await room(page);
+    await expect(page.getByRole('heading', { name: "Security check failed. Don't fund this trade." })).toBeVisible();
+    await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
+    expect(await page.content()).not.toContain(ATTACKER);
+    expect(await page.content()).not.toContain(ADDRESS);
+    expect(await page.content()).not.toContain('monero:');
+  });
+
+  test('an inflated server amount: "Security check failed", and no address, link, QR or copy', async ({ page }) => {
+    await stub(page, () => sellerView({ funding: { ...(sellerView().funding as object), sellerFundsAtomic: (10n * B.amountAtomic).toString() } }));
+    await room(page);
+    await expect(page.getByRole('heading', { name: "Security check failed. Don't fund this trade." })).toBeVisible();
+    await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: /Copy/ })).toHaveCount(0);
+    expect(await page.content()).not.toContain(ADDRESS);
+  });
+
+  for (const [name, escrow] of [
+    ['setting up', { phase: 'setting-up', keepOpen: true }],
+    ['an error', { phase: 'error', error: 'escrow-failed', retryable: true, escrowAddress: ADDRESS, checkWords: WORDS }],
+    ['participants-mismatch', { phase: 'error', error: 'participants-mismatch' }],
+  ] as [string, FixtureEscrow][]) {
+    test(`${name}: no address, link or QR`, async ({ page }) => {
+      await stub(page, () => sellerView(), escrow);
+      await room(page);
+      await expect(page.locator('[data-screen="trade"]')).toHaveAttribute('data-trade-state', 'funding');
+      await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
+      expect(await page.content()).not.toContain(ADDRESS);
+      expect(await page.content()).not.toContain('monero:');
+    });
+  }
+
+  test.describe('the production build (Task 12 not merged: stand-in escrow)', () => {
+    test.use({ baseURL: PRODUCTION });
+    test('shows setup progress and no address, link or QR, whatever the API sends', async ({ page }) => {
+      await stub(page, () => sellerView());
+      await room(page);
+      await expect(page.getByText('Setting up escrow')).toBeVisible();
+      await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
+      expect(await page.content()).not.toContain(ADDRESS);
+      expect(await page.content()).not.toContain('monero:');
+    });
+  });
+});
+
 test.describe('the buyer before funding', () => {
   test.use({ userAgent: ANDROID });
   test('sees "Waiting for <seller> to fund" and no address, QR code or wallet link', async ({ page }) => {
@@ -278,7 +387,7 @@ for (const [width, height] of [
 
     test('the seller funding room fits the phone, before and after the hold', async ({ page }) => {
       await recordWalletOpens(page);
-      await stub(page, posterView);
+      await stub(page, posterView, VERIFIED_POSTER);
       await room(page);
       const primary = page.locator('[data-primary]');
       await expect(primary).toHaveCount(1);
