@@ -36,7 +36,7 @@ export interface FeedQuote {
   price: Price;
   /** The oldest quote behind the median. */
   at: Date;
-  /** How many sources answered this currency in the last poll. */
+  /** How many sources agreed (within `maxSpreadBps` of the median) in the last poll. */
   sources: number;
   /** ISO 4217 exponent of the currency (the minor unit of `centsPerXmr`). */
   exponent: 0 | 2 | 3;
@@ -168,7 +168,7 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
       if (near.length < o.minSources) continue;
       for (const s of near) used.add(s.from);
       const at = new Date(Math.min(...samples.map((s) => s.at.getTime())));
-      next.set(currency, { price: { currency, centsPerXmr: mid }, at, sources: samples.length, exponent: currencyExponent(currency)! });
+      next.set(currency, { price: { currency, centsPerXmr: mid }, at, sources: near.length, exponent: currencyExponent(currency)! });
     }
     latest = next;
     for (const [i, h] of health.entries()) {

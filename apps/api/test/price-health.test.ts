@@ -357,6 +357,42 @@ describe('createMarketPrices', () => {
     expect(h.fx.settings).toEqual({ staleAfterMs: HOUR, sanityBps: 1_000 });
   });
 
+  it('stop() waits for a poll in flight and then for the alerts it queued', async () => {
+    const c = clockAt(T0);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    const slow: PriceSource = {
+      name: 'slow',
+      async fetchQuotes() {
+        await gate;
+        return [{ currency: 'USD', centsPerXmr: 33000n }];
+      },
+    };
+    const xmr = createPriceFeed([slow, xmrStub('b', () => 33000n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock, timeoutMs: 600_000 });
+    const fx = createFxRates([fxStub('coinbase', () => ({ EUR: '0.9' }))], { clock: c.clock });
+    let deliver!: () => void;
+    const delivered = new Promise<void>((r) => (deliver = r));
+    const sent: PriceAlert[] = [];
+    const prices = createMarketPrices({
+      xmr, fx, clock: c.clock,
+      onAlert: async (a) => {
+        await delivered;
+        sent.push(a);
+      },
+    });
+    prices.start();
+    let stopped = false;
+    const stopping = prices.stop().then(() => void (stopped = true));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(stopped, 'the poll is still in flight').toBe(false);
+    release();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(stopped, 'the poll is done but its alert is not delivered yet').toBe(false);
+    deliver();
+    await stopping;
+    expect(sent.map((a) => a.kind)).toEqual(['market-prices-paused']);
+  });
+
   it('a failing alert sink never breaks polling', async () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([xmrStub('a', () => 33000n), xmrStub('b', () => 33000n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
@@ -424,6 +460,15 @@ describe('with the database', () => {
     expect(rows).toEqual([
       { account_id: ownerId, kind: 'market-prices-paused', detail: { urgent: true, currencies: ['EUR'], message: 'EUR market prices paused' } },
     ]);
+    // A disabled owner account gets nothing.
+    await db.query('update accounts set disabled_at = $2 where id = $1', [ownerId, T0]);
+    try {
+      await addOwnerAlert(db, 'market-prices-resumed', { currencies: ['EUR'], message: 'EUR market prices back' }, T0);
+      const after = await db.query(`select 1 from alerts where kind = 'market-prices-resumed'`);
+      expect(after.rows).toEqual([]);
+    } finally {
+      await db.query('update accounts set disabled_at = null where id = $1', [ownerId]);
+    }
   });
 
   it('GET /v1/price answers the local price and its USD value, with no cookie', async () => {

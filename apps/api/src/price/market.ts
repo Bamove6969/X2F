@@ -75,9 +75,9 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
     return { xmr: o.xmr.sources(), fx: o.fx.health(), paused };
   }
 
-  /** After a poll: compares health with the last time and queues the alerts, in order. */
-  function evaluate(): Promise<void> {
-    if (!o.xmr.polled() || !o.fx.polled()) return sending;
+  /** After a poll: compares health with the last time and queues the alerts, in order (not awaited here). */
+  function evaluate(): void {
+    if (!o.xmr.polled() || !o.fx.polled()) return;
     const alerts = grouper.update({ at: clock(), ...health() });
     const sink = o.onAlert;
     if (sink) {
@@ -86,7 +86,6 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
         sending = sending.then(() => sink(a)).catch(() => undefined);
       }
     }
-    return sending;
   }
 
   function track(p: Promise<void>): Promise<void> {
@@ -98,7 +97,8 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
     quote,
     current: (currency) => quote(currency)?.price ?? null,
     health,
-    poll: () => track(Promise.all([o.xmr.poll(), o.fx.poll()]).then(evaluate)),
+    // poll() waits for its alerts too (callers and tests see them sent); the timers' polls do not.
+    poll: () => track(Promise.all([o.xmr.poll(), o.fx.poll()]).then(evaluate)).then(() => sending),
     start() {
       if (timers.length > 0) return;
       void track(Promise.all([o.xmr.poll(), o.fx.poll()]).then(evaluate));
@@ -112,8 +112,8 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
     },
     async stop() {
       for (const t of timers.splice(0)) clearInterval(t);
-      await Promise.all([...inFlight]);
-      await sending;
+      await Promise.all([...inFlight]); // the polls in flight queue their alerts…
+      await sending; // …which are sent before stop() returns
     },
   };
 }

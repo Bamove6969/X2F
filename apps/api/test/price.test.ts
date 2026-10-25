@@ -54,7 +54,8 @@ describe('createPriceFeed', () => {
     expect(feed.current('USD')).toBeNull(); // nothing polled yet
     await feed.poll();
     expect(feed.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33000n });
-    expect(feed.quote('USD')).toEqual({ price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 3, exponent: 2 });
+    // 39000 is 18% from the median: it does not agree, so 2 sources count (M4).
+    expect(feed.quote('USD')).toEqual({ price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 2, exponent: 2 });
     expect(feed.current('EUR')).toBeNull();
   });
 
@@ -119,6 +120,23 @@ describe('createPriceFeed', () => {
     );
     await feed.poll();
     expect(feed.quote('USD')).toMatchObject({ price: { centsPerXmr: 33005n }, at: T0, sources: 2 });
+    // Every quote future-dated: the clamp alone dates the median, so it still goes stale on time.
+    const future = new Date(T0.getTime() + 10 * MIN);
+    const ahead = createPriceFeed([stub('a', () => usd(33000n, future)), stub('b', () => usd(33010n, future))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    await ahead.poll();
+    expect(ahead.quote('USD')?.at).toEqual(T0);
+    c.set(new Date(T0.getTime() + 5 * MIN + 1));
+    expect(ahead.current('USD')).toBeNull();
+  });
+
+  it('counts only the agreeing sources in `sources` (M4)', async () => {
+    const c = clockAt(T0);
+    const feed = createPriceFeed(
+      [stub('a', () => usd(33000n)), stub('b', () => usd(33010n)), stub('far', () => usd(50000n))],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    await feed.poll();
+    expect(feed.quote('USD')).toMatchObject({ price: { centsPerXmr: 33010n }, sources: 2 });
   });
 
   it('returns null when the sources disagree (no two within 5% of the median)', async () => {
@@ -323,9 +341,13 @@ describe('price sources', () => {
     expect(calls[0]!.init?.redirect).toBe('error');
   });
 
-  it('kraken: an error array or a missing pair is not a price', async () => {
-    const bad = fakeFetch({ 'https://api.kraken.com/': { error: ['EQuery:Unknown asset pair'], result: {} } });
-    expect(await one('kraken', bad.fetch).fetchQuotes(signal)).toEqual([]);
+  it('kraken: an error entry is refused even with a result; a warning is not; a missing pair is not a price', async () => {
+    const bad = fakeFetch({ 'https://api.kraken.com/': { error: ['EService:Unavailable'], result: KRAKEN.result } });
+    await expect(one('kraken', bad.fetch).fetchQuotes(signal)).rejects.toThrow();
+    const warned = fakeFetch({ 'https://api.kraken.com/': { error: ['WGeneral:Notice'], result: KRAKEN.result } });
+    expect(await one('kraken', warned.fetch).fetchQuotes(signal)).toHaveLength(2);
+    const odd = fakeFetch({ 'https://api.kraken.com/': { error: [42], result: KRAKEN.result } });
+    await expect(one('kraken', odd.fetch).fetchQuotes(signal)).rejects.toThrow();
     const partial = fakeFetch({ 'https://api.kraken.com/': { error: [], result: { XXMRZUSD: KRAKEN.result.XXMRZUSD, XXMRXXBT: { c: ['0.0072', '1'] } } } });
     expect(await one('kraken', partial.fetch).fetchQuotes(signal)).toEqual([{ currency: 'USD', centsPerXmr: 58167n }]);
   });

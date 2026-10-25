@@ -91,6 +91,8 @@ function kraken(f: Fetch): PriceSource {
     async fetchQuotes(signal) {
       const body = await getJson(f, url, signal);
       if (!isRecord(body) || !Array.isArray(body.error) || !isRecord(body.result)) throw new Error('kraken: shape');
+      // Kraken lists errors as "E…" strings and warnings as "W…": any error, or anything else odd, refuses the answer.
+      if (body.error.some((e) => typeof e !== 'string' || !e.startsWith('W'))) throw new Error('kraken: error');
       const out: PriceQuote[] = [];
       for (const [pair, currency] of Object.entries(KRAKEN_PAIRS)) {
         const t = body.result[pair];
