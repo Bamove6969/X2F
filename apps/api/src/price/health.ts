@@ -16,7 +16,6 @@ export interface PriceAlertDetail {
   message: string;
   feed?: 'xmr' | 'fx';
   source?: string;
-  currency?: string;
   reason?: 'failures' | 'stale' | 'rejected';
   currencies?: string[];
   urgent?: true;
@@ -48,23 +47,42 @@ interface Condition {
   reason: 'failures' | 'stale' | 'rejected';
 }
 
-function failingAlert(c: Condition, sanityBps: number): PriceAlert {
+function failingAlert(c: Condition): PriceAlert {
   const who = label(c.source);
-  let message: string;
-  if (c.reason === 'rejected') message = `${who} ${c.currency!} rate off by more than ${sanityBps / 100}%, using backup`;
-  else if (c.feed === 'xmr') message = `${who} price feed failing, using backup`;
-  else message = `${who} exchange rates ${c.reason === 'stale' ? 'stale' : 'failing'}, using backup`;
-  const detail: PriceAlertDetail = { feed: c.feed, source: c.source, ...(c.currency ? { currency: c.currency } : {}), reason: c.reason, message };
-  return { kind: 'price-source-failing', detail };
+  const message = c.feed === 'xmr' ? `${who} price feed failing, using backup` : `${who} exchange rates ${c.reason === 'stale' ? 'stale' : 'failing'}, using backup`;
+  return { kind: 'price-source-failing', detail: { feed: c.feed, source: c.source, reason: c.reason, message } };
 }
 
 function recoveredAlert(c: Condition): PriceAlert {
   const who = label(c.source);
-  const message = c.currency
-    ? `${who} ${c.currency} rate back in range`
-    : `${who} ${c.feed === 'xmr' ? 'price feed' : 'exchange rates'} recovered`;
-  return { kind: 'price-source-recovered', detail: { feed: c.feed, source: c.source, ...(c.currency ? { currency: c.currency } : {}), message } };
+  return { kind: 'price-source-recovered', detail: { feed: c.feed, source: c.source, message: `${who} ${c.feed === 'xmr' ? 'price feed' : 'exchange rates'} recovered` } };
 }
+
+/** "EUR rate", "EUR, GBP rates", or "rates for 44 currencies" once the list gets long. */
+function ratesOf(currencies: string[]): string {
+  if (currencies.length === 1) return `${currencies[0]!} rate`;
+  return currencies.length <= 5 ? `${currencies.join(', ')} rates` : `rates for ${currencies.length} currencies`;
+}
+
+/**
+ * Sanity-guard refusals, grouped per source per snapshot (re-review): ONE alert listing every
+ * currency of that source the snapshot newly refused, and ONE all-clear for those it clears.
+ */
+function groupRejected(cs: Condition[], make: (source: string, currencies: string[]) => PriceAlert): PriceAlert[] {
+  const by = new Map<string, string[]>();
+  for (const c of cs) by.set(c.source, [...(by.get(c.source) ?? []), c.currency!]);
+  return [...by].map(([source, currencies]) => make(source, currencies.sort()));
+}
+
+const rejectedAlert = (sanityBps: number) => (source: string, currencies: string[]): PriceAlert => ({
+  kind: 'price-source-failing',
+  detail: { feed: 'fx', source, reason: 'rejected', currencies, message: `${label(source)} ${ratesOf(currencies)} off by more than ${sanityBps / 100}%, using backup` },
+});
+
+const inRangeAlert = (source: string, currencies: string[]): PriceAlert => ({
+  kind: 'price-source-recovered',
+  detail: { feed: 'fx', source, currencies, message: `${label(source)} ${ratesOf(currencies)} back in range` },
+});
 
 const EVERY = Object.keys(CURRENCY_EXPONENTS).length;
 
@@ -143,9 +161,12 @@ export function createAlertGrouper(o: AlertGrouperOptions = {}): AlertGrouper {
       }
       // A condition keeps the reason it started with: stale → failing is the same outage.
       const [failing, recovered] = step(sources, now, at);
+      const isRejected = (c: Condition) => c.reason === 'rejected';
       const out: PriceAlert[] = [
-        ...failing.map((c) => failingAlert(c, s.fx.settings.sanityBps)),
-        ...recovered.map(recoveredAlert),
+        ...failing.filter((c) => !isRejected(c)).map(failingAlert),
+        ...groupRejected(failing.filter(isRejected), rejectedAlert(s.fx.settings.sanityBps)),
+        ...recovered.filter((c) => !isRejected(c)).map(recoveredAlert),
+        ...groupRejected(recovered.filter(isRejected), inRangeAlert),
       ];
 
       const [started, ended] = step(paused, new Map(s.paused.map((c) => [c, c])), at);

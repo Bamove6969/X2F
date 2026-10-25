@@ -158,13 +158,41 @@ describe('createAlertGrouper', () => {
     expect(step(rejected)).toEqual([
       {
         kind: 'price-source-failing',
-        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate off by more than 10%, using backup' },
+        detail: { feed: 'fx', source: 'coinbase', reason: 'rejected', currencies: ['EUR'], message: 'Coinbase EUR rate off by more than 10%, using backup' },
       },
     ]);
     expect(step(rejected)).toEqual([]);
     for (let i = 0; i < 3; i++) expect(step()).toEqual([]);
     expect(step()).toEqual([
-      { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', message: 'Coinbase EUR rate back in range' } },
+      { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currencies: ['EUR'], message: 'Coinbase EUR rate back in range' } },
+    ]);
+  });
+
+  it('refusals are grouped per source per poll: Coinbase refused for 44 currencies gives 1 alert and 1 all-clear (re-review)', () => {
+    const step = stepper();
+    const codes = NON_USD.slice(0, 44);
+    expect(codes).toHaveLength(44);
+    const all = { fx: fxHealth({ rejected: codes.map((currency) => ({ source: 'coinbase', currency, at: T0 })) }) };
+    expect(step(all)).toEqual([
+      {
+        kind: 'price-source-failing',
+        detail: { feed: 'fx', source: 'coinbase', reason: 'rejected', currencies: [...codes].sort(), message: 'Coinbase rates for 44 currencies off by more than 10%, using backup' },
+      },
+    ]);
+    expect(step(all)).toEqual([]);
+    for (let i = 0; i < 3; i++) expect(step()).toEqual([]);
+    expect(step()).toEqual([
+      { kind: 'price-source-recovered', detail: { feed: 'fx', source: 'coinbase', currencies: [...codes].sort(), message: 'Coinbase rates for 44 currencies back in range' } },
+    ]);
+    expect(step()).toEqual([]);
+  });
+
+  it('refusals of two sources in one poll give one alert each, listing their currencies', () => {
+    const step = stepper();
+    const rej = (source: string, currency: string) => ({ source, currency, at: T0 });
+    expect(step({ fx: fxHealth({ rejected: [rej('bitpay', 'NGN'), rej('coingecko', 'NGN'), rej('bitpay', 'EUR')] }) })).toEqual([
+      { kind: 'price-source-failing', detail: { feed: 'fx', source: 'bitpay', reason: 'rejected', currencies: ['EUR', 'NGN'], message: 'BitPay EUR, NGN rates off by more than 10%, using backup' } },
+      { kind: 'price-source-failing', detail: { feed: 'fx', source: 'coingecko', reason: 'rejected', currencies: ['NGN'], message: 'CoinGecko NGN rate off by more than 10%, using backup' } },
     ]);
   });
 
@@ -337,7 +365,7 @@ describe('createMarketPrices', () => {
     expect(alerts).toEqual([
       {
         kind: 'price-source-failing',
-        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate off by more than 10%, using backup' },
+        detail: { feed: 'fx', source: 'coinbase', reason: 'rejected', currencies: ['EUR'], message: 'Coinbase EUR rate off by more than 10%, using backup' },
       },
     ]);
   });
