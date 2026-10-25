@@ -3,13 +3,15 @@
 //
 // - "!" is refused in user-visible text: JSX text, string literals (JSX attribute values included)
 //   and the text parts of template literals in JS/TS files (.ts/.tsx/.js/.jsx/.mjs/.cjs/.mts/.cts)
-//   under apps/web/src. Code operators (!x, !==, a!) are syntax, not text, so they never reach the
-//   check; comments and regex literals are skipped too.
+//   under apps/web/src, with HTML entities decoded as React does in JSX (`Done&#33;`, `&excl;`).
+//   Code operators (!x, !==, a!) are syntax, not text, so they never reach the check; comments
+//   and regex literals are skipped too.
 // - An emoji code point is refused anywhere in any file under apps/web/src, comments included:
-//   written literally, as a string/template escape ("\u{1F600}"), as a numeric HTML entity
-//   (&#128512;), or in a CSS `content` value's unicode escape ("\2705"). "Emoji" means a character
-//   that shows as an emoji by default (Emoji_Presentation), any pictograph forced to emoji style
-//   with U+FE0F, a regional-indicator flag letter or a keycap. Text-style marks the boards use
+//   written literally, as a string/template escape ("\u{1F600}"), as HTML entities (&#128512;, or
+//   a run such as &#x2764;&#xFE0F; decoded as a whole), or in a CSS `content` value's unicode
+//   escape ("\2705"). "Emoji" means a character that shows as an emoji by default
+//   (Emoji_Presentation), any pictograph forced to emoji style with U+FE0F, a regional-indicator
+//   flag letter or a keycap. Text-style marks the boards use
 //   (★ · … – −) are not emoji. lintSource throws on a file extension it has no rule for.
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
@@ -34,6 +36,24 @@ const isEmoji = (s: string): boolean => new RegExp(EMOJI.source, 'u').test(s);
 const JS_TS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.mts', '.cts']);
 const PLAIN = new Set(['.css', '.html', '.htm', '.md', '.json', '.svg']);
 
+// The named entities React's JSX decodes that matter here ("!" and the common ones); others are
+// left as written.
+const NAMED: Record<string, string> = { excl: '!', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0' };
+const ENTITY = /&(?:#(\d+)|#[xX]([0-9a-fA-F]+)|([a-zA-Z]+));/g;
+const ENTITY_RUN = /(?:&(?:#\d+|#[xX][0-9a-fA-F]+|[a-zA-Z]+);)+/g;
+
+/** `s` with numeric and the NAMED HTML entities decoded (an invalid code point is left as written). */
+export function decodeEntities(s: string): string {
+  return s.replace(ENTITY, (whole, dec: string | undefined, hex: string | undefined, name: string | undefined) => {
+    if (name != null) return NAMED[name] ?? whole;
+    try {
+      return String.fromCodePoint(dec != null ? Number.parseInt(dec, 10) : Number.parseInt(hex!, 16));
+    } catch {
+      return whole;
+    }
+  });
+}
+
 function position(src: string, offset: number): { line: number; column: number } {
   const before = src.slice(0, offset);
   const line = before.split('\n').length;
@@ -42,7 +62,7 @@ function position(src: string, offset: number): { line: number; column: number }
 
 /**
  * Every emoji in `src`: a literal emoji code point anywhere (comments included), one written as a
- * numeric HTML entity (`&#128512;`), and one hidden in a CSS `content` value's unicode escape
+ * run of HTML entities (`&#128512;`, `&#x2764;&#xFE0F;`), and one hidden in a CSS `content` value's unicode escape
  * (`content: "\2705"`). Emoji inside a string/template escape (`"\u{1F600}"`) are caught from the
  * cooked pieces in `lintSource`. A literal emoji is reported once, at its real position.
  */
@@ -53,14 +73,11 @@ function emojiFindings(src: string, file: string): { out: Finding[]; literal: Se
     literal.add(m[0]);
     out.push({ file, ...position(src, m.index), rule: 'emoji', text: m[0] });
   }
-  for (const m of src.matchAll(/&#(\d+);|&#x([0-9a-fA-F]+);/g)) {
-    let ch = '';
-    try {
-      ch = String.fromCodePoint(m[1] != null ? Number.parseInt(m[1], 10) : Number.parseInt(m[2]!, 16));
-    } catch {
-      continue;
-    }
-    if (isEmoji(ch)) out.push({ file, ...position(src, m.index), rule: 'emoji', text: m[0] });
+  // A run of entities is decoded as a whole, so an emoji written as an entity pair
+  // (`&#x2764;&#xFE0F;`, or a flag's two regional indicators) is caught; one finding per run.
+  for (const m of src.matchAll(ENTITY_RUN)) {
+    const decoded = decodeEntities(m[0]);
+    if (decoded !== m[0] && isEmoji(decoded)) out.push({ file, ...position(src, m.index), rule: 'emoji', text: m[0] });
   }
   for (const m of src.matchAll(/content\s*:\s*(['"])((?:\\.|(?!\1)[^])*)\1/gi)) {
     const decoded = m[2]!.replace(/\\([0-9a-fA-F]{1,6})\s?/g, (_, h: string) => {
@@ -117,7 +134,10 @@ export function lintSource(src: string, file: string): Finding[] {
     const pieces: { text: string; start: number }[] = [];
     textPieces(program, pieces);
     for (const p of pieces) {
-      if (p.text.includes('!')) found.push({ file, ...position(src, p.start), rule: 'exclamation', text: p.text.trim() });
+      // JSX text and attribute strings are entity-decoded by React (`Done&#33;` shows "Done!"), so
+      // every piece is checked decoded; a plain string literal holding an entity is rare enough
+      // that being stricter there costs nothing.
+      if (decodeEntities(p.text).includes('!')) found.push({ file, ...position(src, p.start), rule: 'exclamation', text: p.text.trim() });
       // Emoji written as a string/template escape (`"\u{1F600}"`) only shows in the cooked text.
       for (const e of p.text.matchAll(EMOJI_ALL)) if (!literal.has(e[0])) found.push({ file, ...position(src, p.start), rule: 'emoji', text: e[0] });
     }

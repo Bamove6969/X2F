@@ -76,6 +76,29 @@ describe('copy-lint', () => {
     expect(lintSource('.x::after { content: "\\2705"; }\n', 'a.css').map((f) => f.rule)).toEqual(['emoji']);
   });
 
+  it('flags "!" written as an entity in JSX text and JSX attributes (React renders it as "!")', () => {
+    for (const src of [
+      'export const A = () => <p>Done&#33;</p>;',
+      'export const A = () => <p>Done&#x21;</p>;',
+      'export const A = () => <p>Done&excl;</p>;',
+      'export const A = () => <p title="Hi&#33;">Ready</p>;',
+      'export const A = () => <p title="Hi&excl;">Ready</p>;',
+    ]) {
+      expect(lintSource(`${src}\n`, 'planted.tsx').map((f) => f.rule), src).toEqual(['exclamation']);
+    }
+    // Other entities are fine.
+    expect(lintSource('export const A = () => <p title="A &amp; B">1 &lt; 2&nbsp;min</p>;\n', 'ok.tsx')).toEqual([]);
+  });
+
+  it('flags an emoji written as a pair of entities', () => {
+    expect(lintSource('<p>&#x2764;&#xFE0F;</p>\n', 'a.html').map((f) => f.rule)).toEqual(['emoji']);
+    expect(lintSource('<p>&#10084;&#65039;</p>\n', 'a.html').map((f) => f.rule)).toEqual(['emoji']);
+    // A flag: two regional indicators, each an entity.
+    expect(lintSource('export const A = () => <p>&#x1F1FA;&#x1F1F8;</p>;\n', 'a.tsx').map((f) => f.rule)).toEqual(['emoji']);
+    // ❤ alone (text style) is not an emoji.
+    expect(lintSource('<p>&#x2764;</p>\n', 'a.html')).toEqual([]);
+  });
+
   it('allows the typographic marks the boards use (★, ·, …, –, −)', () => {
     expect(lintSource('export const s = "★★★★★ · 1 h 2 min… A–Z −0.012500 XMR";\n', 'marks.ts')).toEqual([]);
   });
