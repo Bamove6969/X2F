@@ -6,8 +6,8 @@
  * `TradeScreenProps` are assignable to them, so SellerRefund and FinalAlert register as they are.
  *
  * TRIPWIRE (test/refund-tripwires.test.ts): once TradeRoom.tsx is on this branch, import the real
- * types instead of these copies, register through `registerRefundScreens(registerTradeScreen)` at
- * the top of SellerRefund.tsx, and uncomment the Task 25 line in `screens.ts`.
+ * types instead of these copies, call `registerRefundScreens(registerTradeScreen)` at the top of
+ * refundScreens.ts, and import refundScreens.js on the Task 25 line of `screens.ts`.
  */
 
 export type Party = 'buyer' | 'seller';
