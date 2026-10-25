@@ -25,11 +25,22 @@ export interface PriceFeedOptions {
   timeoutMs?: number;
   /** A quote further than this from the median does not count towards `minSources` (Review Focus 5). */
   maxSpreadBps?: number;
+  /**
+   * The spread used instead when only two sources quote a currency in a poll (re-review): with two,
+   * the median is their mean, so one wrong source moves it by half the gap. 2% keeps that under 1%.
+   */
+  pairSpreadBps?: number;
+  /**
+   * A quote with no timestamp of its own (Kraken, Bitfinex) that has not changed for longer than
+   * this, while another source's quote for that currency has moved since, is treated as stale: the
+   * pair is frozen (a halted market, a delisting) even though each fetch looks fresh.
+   */
+  frozenAfterMs?: number;
   clock?: () => Date;
 }
 
 export const PRICE_FEED_DEFAULTS = Object.freeze({
-  minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000, maxSpreadBps: 500,
+  minSources: 2, maxAgeMs: 300_000, pollMs: 60_000, timeoutMs: 5_000, maxSpreadBps: 500, pairSpreadBps: 200, frozenAfterMs: 30 * 60_000,
 }) satisfies Required<Omit<PriceFeedOptions, 'clock'>>;
 
 export interface FeedQuote {
@@ -45,11 +56,14 @@ export interface FeedQuote {
 /** One source's health, for the owner's Price health panel (spec 11.6). */
 export interface PriceSourceHealth {
   name: string;
-  /** The last poll in which it gave at least one valid, fresh quote. */
+  /**
+   * The last poll in which it gave a valid, fresh USD quote. Health is judged on USD only
+   * (re-review): every market price is the USD median × an exchange rate, so USD is what counts.
+   */
   lastGoodAt: Date | null;
-  /** Polls in a row with no valid, fresh quote (failed, timed out, malformed, or only stale quotes). */
+  /** Polls in a row with no valid, fresh USD quote (failed, timed out, malformed, stale or frozen). */
   consecutiveFailures: number;
-  /** Its quote counted towards a published median in the last poll. */
+  /** Its USD quote counted towards the published median in the last poll. */
   inUse: boolean;
 }
 
@@ -123,11 +137,22 @@ async function ask(source: PriceSource, timeoutMs: number): Promise<PriceQuote[]
  * lie within `maxSpreadBps` of it. A quote already older than `maxAgeMs` when fetched (a frozen
  * pair after a delisting) is dropped. The price is dated by its oldest quote, so it goes stale on
  * time even if polling stops.
+ *
+ * There is no 1 h jump guard here like the exchange rates' sanity guard: for XMR the cross-source
+ * check IS the guard. A wrong quote is outvoted by the median and, being outside the spread, does
+ * not count towards `minSources`; with only two sources in play the tighter `pairSpreadBps` applies.
  */
 export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOptions): PriceFeed {
   const clock = o.clock ?? (() => new Date());
   const timeoutMs = o.timeoutMs ?? PRICE_FEED_DEFAULTS.timeoutMs;
   const maxSpreadBps = BigInt(o.maxSpreadBps ?? PRICE_FEED_DEFAULTS.maxSpreadBps);
+  const pairSpreadBps = BigInt(o.pairSpreadBps ?? PRICE_FEED_DEFAULTS.pairSpreadBps);
+  const frozenAfterMs = o.frozenAfterMs ?? PRICE_FEED_DEFAULTS.frozenAfterMs;
+  /**
+   * Per source and currency: its last quoted value, since when it has quoted exactly that, and
+   * whether that began with a change (not with the source's first quote).
+   */
+  const unchanged = sources.map(() => new Map<string, { cents: bigint; since: number; moved: boolean }>());
   let latest = new Map<string, FeedQuote>();
   let inFlight: Promise<void> | null = null;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -140,6 +165,8 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
     const byCurrency = new Map<string, Sample[]>();
     const good = new Set<number>();
     const used = new Set<number>();
+    /** This poll's valid quotes, before the staleness checks, with whether the source dated them. */
+    const valid: Array<{ from: number; currency: string; cents: bigint; at: Date | null }> = [];
     for (const [from, quotes] of answers.entries()) {
       const seen = new Set<string>();
       for (const q of quotes) {
@@ -148,25 +175,43 @@ export function createPriceFeed(sources: readonly PriceSource[], o: PriceFeedOpt
         if (typeof currency !== 'string' || currencyExponent(currency) === null || seen.has(currency)) continue;
         seen.add(currency); // one quote per source and currency: the first
         if (typeof centsPerXmr !== 'bigint' || centsPerXmr <= 0n) continue;
-        let at = q.at instanceof Date && !Number.isNaN(q.at.getTime()) ? q.at : now;
-        if (at.getTime() > now.getTime()) at = now;
-        if (now.getTime() - at.getTime() > o.maxAgeMs) continue;
-        const list = byCurrency.get(currency) ?? [];
-        list.push({ cents: centsPerXmr, at, from });
-        byCurrency.set(currency, list);
-        good.add(from);
+        valid.push({ from, currency, cents: centsPerXmr, at: q.at instanceof Date && !Number.isNaN(q.at.getTime()) ? q.at : null });
       }
+    }
+    const t = now.getTime();
+    for (const v of valid) {
+      const u = unchanged[v.from]!.get(v.currency);
+      if (!u || u.cents !== v.cents) unchanged[v.from]!.set(v.currency, { cents: v.cents, since: t, moved: u !== undefined });
+    }
+    for (const v of valid) {
+      let at = v.at ?? now;
+      if (at.getTime() > t) at = now;
+      if (t - at.getTime() > o.maxAgeMs) continue;
+      if (v.at === null) {
+        // Frozen: unchanged for over frozenAfterMs while another source's quote moved since.
+        const since = unchanged[v.from]!.get(v.currency)!.since;
+        const othersMoved = unchanged.some((m, j) => {
+          const w = j === v.from ? undefined : m.get(v.currency);
+          return w !== undefined && w.moved && w.since > since;
+        });
+        if (t - since > frozenAfterMs && othersMoved) continue;
+      }
+      const list = byCurrency.get(v.currency) ?? [];
+      list.push({ cents: v.cents, at, from: v.from });
+      byCurrency.set(v.currency, list);
+      if (v.currency === 'USD') good.add(v.from);
     }
     const next = new Map<string, FeedQuote>();
     for (const [currency, samples] of byCurrency) {
       if (samples.length < o.minSources) continue;
       const mid = median(samples.map((s) => s.cents));
+      const spread = samples.length === 2 ? pairSpreadBps : maxSpreadBps;
       const near = samples.filter((s) => {
         const diff = s.cents > mid ? s.cents - mid : mid - s.cents;
-        return diff * 10_000n <= mid * maxSpreadBps;
+        return diff * 10_000n <= mid * spread;
       });
       if (near.length < o.minSources) continue;
-      for (const s of near) used.add(s.from);
+      if (currency === 'USD') for (const s of near) used.add(s.from);
       const at = new Date(Math.min(...samples.map((s) => s.at.getTime())));
       next.set(currency, { price: { currency, centsPerXmr: mid }, at, sources: near.length, exponent: currencyExponent(currency)! });
     }

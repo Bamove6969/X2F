@@ -173,6 +173,94 @@ describe('createPriceFeed', () => {
     expect(feed.current('XXX')).toBeNull();
   });
 
+  it('with only two sources in play the spread is 2%, not 5% (re-review)', async () => {
+    expect(PRICE_FEED_DEFAULTS).toMatchObject({ maxSpreadBps: 500, pairSpreadBps: 200 });
+    const c = clockAt(T0);
+    // 3% apart: each is 1.5% from the mean, so within 2% of the median: a price.
+    const close = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(33990n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    await close.poll();
+    expect(close.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33495n });
+    // 6% apart: 3% from the mean each. Under the 5% spread that would count; with two it does not.
+    const two = createPriceFeed([stub('a', () => usd(33000n)), stub('b', () => usd(34980n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    await two.poll();
+    expect(two.current('USD')).toBeNull();
+    // The same gap with a third source in play keeps the 5% spread.
+    const three = createPriceFeed(
+      [stub('a', () => usd(33000n)), stub('b', () => usd(34980n)), stub('c', () => usd(34000n))],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    await three.poll();
+    expect(three.quote('USD')).toMatchObject({ price: { centsPerXmr: 34000n }, sources: 3 });
+  });
+
+  it('an undated quote unchanged for over 30 min while another source moves is stale (frozen pair, re-review)', async () => {
+    expect(PRICE_FEED_DEFAULTS.frozenAfterMs).toBe(30 * MIN);
+    const c = clockAt(T0);
+    let moving = 33000n;
+    const feed = createPriceFeed(
+      [stub('kraken', () => usd(33000n)), stub('bitfinex', () => usd(moving)), stub('steady', () => usd(33000n))],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    const at = (min: number) => c.set(new Date(T0.getTime() + min * MIN));
+    await feed.poll();
+    moving = 33010n;
+    at(30);
+    await feed.poll();
+    expect(feed.sources()[0], 'exactly 30 min unchanged: still fine').toMatchObject({ consecutiveFailures: 0, inUse: true });
+    at(31);
+    await feed.poll();
+    expect(feed.sources().map((s) => s.consecutiveFailures), 'over 30 min and bitfinex moved since: kraken and steady are frozen').toEqual([1, 0, 1]);
+    expect(feed.current('USD')).toBeNull();
+    moving = 33020n;
+    at(32);
+    await feed.poll();
+    expect(feed.current('USD'), 'still frozen').toBeNull();
+  });
+
+  it('an undated quote unchanged for hours is fine while no other source moves either (a quiet market)', async () => {
+    const c = clockAt(T0);
+    const feed = createPriceFeed([stub('kraken', () => usd(33000n)), stub('bitfinex', () => usd(33010n))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    for (let m = 0; m <= 180; m += 30) {
+      c.set(new Date(T0.getTime() + m * MIN));
+      await feed.poll();
+    }
+    expect(feed.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33005n });
+    expect(feed.sources().map((s) => s.consecutiveFailures)).toEqual([0, 0]);
+  });
+
+  it('a dated quote is judged by its own timestamp, never as frozen', async () => {
+    const c = clockAt(T0);
+    let moving = 33000n;
+    const feed = createPriceFeed(
+      [stub('coingecko', () => usd(33000n, c.clock())), stub('bitfinex', () => usd(moving))],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    await feed.poll();
+    moving = 33010n;
+    c.set(new Date(T0.getTime() + 40 * MIN));
+    await feed.poll();
+    expect(feed.current('USD')).toEqual({ currency: 'USD', centsPerXmr: 33005n });
+  });
+
+  it('source health is judged on the USD quote only (re-review)', async () => {
+    const c = clockAt(T0);
+    const eurOnly = (cents: bigint): PriceQuote[] => [{ currency: 'EUR', centsPerXmr: cents }];
+    const feed = createPriceFeed(
+      [
+        stub('a', () => [...usd(33000n), ...eurOnly(30000n)]),
+        stub('b', () => eurOnly(30010n)), // answers, but not USD: a failure
+        stub('c', () => usd(33010n)),
+      ],
+      { ...PRICE_FEED_DEFAULTS, clock: c.clock },
+    );
+    await feed.poll();
+    expect(feed.sources()).toEqual([
+      { name: 'a', lastGoodAt: T0, consecutiveFailures: 0, inUse: true },
+      { name: 'b', lastGoodAt: null, consecutiveFailures: 1, inUse: false },
+      { name: 'c', lastGoodAt: T0, consecutiveFailures: 0, inUse: true },
+    ]);
+  });
+
   it('records per source the last good fetch, failures in a row and whether it is in use (price health)', async () => {
     const c = clockAt(T0);
     let b: () => PriceQuote[] | Error = () => new Error('down');
