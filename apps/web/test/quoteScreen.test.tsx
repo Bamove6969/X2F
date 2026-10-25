@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fiatCents } from '@x2f/trade';
 import { BuyQuote } from '../src/screens/quote/BuyQuote.js';
 import { SellQuote } from '../src/screens/quote/SellQuote.js';
+import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
 import { fire, render } from './render.js';
 
@@ -51,6 +52,7 @@ function json(status: number, body: unknown): Response {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   session.status = 'signed-in';
   stub = {
     offers: [GHOST, FIXED, MIRA],
@@ -203,7 +205,7 @@ describe('BuyQuote', () => {
     expect(host.textContent).toContain('Enter an amount between $50 and $1,500.');
   });
 
-  it('with no usable wallet the primary is "Add a wallet", and it comes back to resume the take', async () => {
+  it('with no usable wallet the primary is "Add a wallet": it records a pending take and comes back with its nonce', async () => {
     stub.wallets = [WALLETS[2]];
     const { host } = await open(`${BUY}&amount=412.50`);
     expect(primary(host).textContent).toBe('Add a wallet');
@@ -214,26 +216,81 @@ describe('BuyQuote', () => {
     const back = new URL(to.searchParams.get('returnTo')!, 'http://x2f.test');
     expect(back.pathname).toBe('/buy/ZELLE/offer-ghost');
     expect(back.searchParams.get('amount')).toBe('412.50');
-    expect(back.searchParams.get('resume')).toBe('1');
+    const nonce = back.searchParams.get('resume')!;
+    expect(nonce).toMatch(/^[0-9a-f]{32}$/);
+    const stored = JSON.parse(sessionStorage.getItem(PENDING_TAKE_KEY)!) as Record<string, unknown>;
+    expect(stored).toMatchObject({ offerId: 'offer-ghost', unit: 'fiat', text: '412.50', nonce });
   });
 
-  it('back with resume=1 and one usable wallet: the take runs once and opens the trade', async () => {
+  /** A marker as Trade or Add a wallet leaves it, for `offerId` and `text`. */
+  const mark = (offerId = 'offer-ghost', text = '412.50') => rememberTake({ offerId, unit: 'fiat', text })!;
+
+  it('back with a matching marker and one usable wallet: the take runs once and opens the trade', async () => {
     stub.wallets = [WALLETS[0]];
-    const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=1`);
+    const nonce = mark();
+    const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${nonce}`);
     await settle();
     expect(stub.takes).toHaveLength(1);
     expect(stub.takes[0]!.walletId).toBe('w-cake');
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(sessionStorage.getItem(PENDING_TAKE_KEY)).toBeNull();
   });
 
-  it('back with resume=1 and several wallets: nothing is taken until the person picks (OD-11)', async () => {
-    const { host } = await open(`${BUY}&amount=412.50&resume=1`);
+  it('a crafted link with resume= but no marker in this tab takes nothing: the quote waits, filled in, for a tap', async () => {
+    stub.wallets = [WALLETS[0]];
+    for (const resume of ['1', 'a'.repeat(32)]) {
+      const { host, unmount } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${resume}`);
+      await settle();
+      expect(stub.takes).toHaveLength(0);
+      expect(where(host)).toBeNull();
+      expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('412.50');
+      unmount();
+    }
+  });
+
+  it('a marker for another offer, another amount or another nonce takes nothing, and is used up', async () => {
+    stub.wallets = [WALLETS[0]];
+    const cases = [
+      { nonce: mark('offer-fixed'), url: `${BUY}&amount=412.50&unit=fiat` },
+      { nonce: mark('offer-ghost', '1000'), url: `${BUY}&amount=412.50&unit=fiat` },
+      { nonce: (mark(), 'b'.repeat(32)), url: `${BUY}&amount=412.50&unit=fiat` },
+    ];
+    for (const c of cases) {
+      const { unmount } = await open(`${c.url}&resume=${c.nonce}`);
+      await settle();
+      expect(stub.takes).toHaveLength(0);
+      expect(sessionStorage.getItem(PENDING_TAKE_KEY)).toBeNull();
+      unmount();
+    }
+  });
+
+  it('a marker works exactly once: the same link again takes nothing', async () => {
+    stub.wallets = [WALLETS[0]];
+    const url = `${BUY}&amount=412.50&unit=fiat&resume=${mark()}`;
+    (await open(url)).unmount();
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    await open(url);
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+  });
+
+  it('an expired marker takes nothing', async () => {
+    stub.wallets = [WALLETS[0]];
+    const nonce = rememberTake({ offerId: 'offer-ghost', unit: 'fiat', text: '412.50' }, Date.now() - PENDING_TAKE_MS - 1)!;
+    await open(`${BUY}&amount=412.50&unit=fiat&resume=${nonce}`);
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('back with a marker and several wallets: nothing is taken until the person picks (OD-11)', async () => {
+    const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${mark()}`);
     await settle();
     expect(stub.takes).toHaveLength(0);
     expect(primary(host).disabled).toBe(true);
   });
 
-  it('logged out, Trade goes to setup with returnTo = this quote with resume=1', async () => {
+  it('logged out, Trade goes to setup with returnTo = this quote with a pending-take nonce', async () => {
     session.status = 'signed-out';
     const { host } = await open(`${BUY}&amount=412.50`);
     expect(host.querySelector('fieldset')).toBeNull();
@@ -243,8 +300,9 @@ describe('BuyQuote', () => {
     expect(to.pathname).toBe('/setup/terms');
     const back = new URL(to.searchParams.get('returnTo')!, 'http://x2f.test');
     expect(back.pathname).toBe('/buy/ZELLE/offer-ghost');
-    expect(back.searchParams.get('resume')).toBe('1');
     expect(back.searchParams.get('amount')).toBe('412.50');
+    const nonce = back.searchParams.get('resume')!;
+    expect(JSON.parse(sessionStorage.getItem(PENDING_TAKE_KEY)!)).toMatchObject({ offerId: 'offer-ghost', nonce });
     expect(stub.takes).toHaveLength(0);
   });
 

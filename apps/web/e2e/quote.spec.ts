@@ -139,6 +139,16 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toHaveLength(1);
   });
 
+  test('a crafted resume link takes nothing: the quote is filled in and waits for a tap', async ({ page }) => {
+    const seen = await stubApi(page, { ...base, wallets: [B.wallets[0]] });
+    await page.goto(`${BUY}&amount=${B.amount}&unit=fiat&resume=${'a'.repeat(32)}`);
+    await expect(card(page)).toContainText('1.250000 XMR');
+    await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
+    await expect(page).not.toHaveURL(/resume=/);
+    expect(seen.takes).toHaveLength(0);
+    await expect(page).not.toHaveURL(/\/trade\//);
+  });
+
   test("the quote's fiat total equals the fiatCents the trade stores (OD-5)", async ({ page }) => {
     const seen = await stubApi(page, base);
     await page.goto(`${BUY}&amount=777.77`);
