@@ -4,7 +4,7 @@
  * parallel branches merge without conflicts: replace your own comment with your import.
  */
 
-// Task 22: import './TradeFund.js';
+import './TradeFund.js'; // Task 22: TradeFund, BuyerWaitFund, SetupStatus
 
 // Task 23: import './BuyerPay.js';
 

@@ -105,3 +105,22 @@ export interface TradeView {
 export function getTrade(code: string, signal?: AbortSignal): Promise<TradeView> {
   return api<TradeView>(`/v1/trades/${encodeURIComponent(code)}`, signal ? { signal } : {});
 }
+
+/**
+ * The trade's payment method for the header and warnings. The view carries Task 3's profile as
+ * `profile` (null until Task 3 wires `getProfile`) and no display name; until a name is in the
+ * view, `profile.name` is read if present, else the method id (test/tradeRoom-tripwires.test.ts).
+ */
+export function methodOf(view: Pick<TradeView, 'methodId' | 'profile'>): { name: string; whatItIs: string; giftCard: boolean } {
+  const p = (view.profile !== null && typeof view.profile === 'object' ? view.profile : {}) as Record<string, unknown>;
+  return {
+    name: typeof p.name === 'string' && p.name !== '' ? p.name : view.methodId,
+    whatItIs: typeof p.whatItIs === 'string' ? p.whatItIs : '',
+    giftCard: p.giftCard === true,
+  };
+}
+
+/** POST /v1/trades/:code/events (Task 6); answers the new view, or throws ApiCallError (409 with the rule code). */
+export function postTradeEvent(code: string, event: { type: string; fiatCents?: bigint }): Promise<TradeView> {
+  return api<TradeView>(`/v1/trades/${encodeURIComponent(code)}/events`, { method: 'POST', body: event });
+}
