@@ -42,7 +42,8 @@ const db = createPool(config.databaseUrl);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
 // from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
 // owner_settings before each poll. Price health alerts go to the owner's in-app alerts. Every
-// source fetches through the global fetch (no proxy wired).
+// source fetches through the global fetch (no proxy wired; routing them over Tor is a Plan 6
+// follow-up, see docs/coordination.md).
 const clock = () => new Date();
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),

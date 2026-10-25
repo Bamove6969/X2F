@@ -49,6 +49,7 @@ Not needed: agy, desktop-commander.
 - 2026-10-24 second (Plan 3 Task 3, spec 11.6 price health), for later tasks:
   - **Price health panel UI → Plan 4 staff tools.** The data is ready at owner-only `GET /v1/owner/price-health` (each XMR and exchange-rate source with last good fetch, failures in a row and in-use; refused rates; paused currencies; settings).
   - **Phone push → the Plan 3 push channel (Task 19).** Price health alerts are in-app owner alerts only for now (`addOwnerAlert`, kinds `price-source-failing`, `price-source-recovered`, `market-prices-paused` (detail `urgent: true`), `market-prices-resumed`). Task 19 hooks the push in where `main.ts` passes `onAlert`; the push payload stays generic.
+  - **Plan 6 follow-up: fetch prices and exchange rates over Tor.** Today the API fetches all five price and exchange-rate sources (Kraken, Bitfinex, CoinGecko, Coinbase, BitPay) on clearnet, so each sees the server's IP. Route them through a SOCKS (Tor) dispatcher via the existing `f` fetch seam (`priceSources(names, f)`, `fxSources(names, f)` in `apps/api/src/price/`, passed in `main.ts`); all five answered over Tor in the 2026-10-24 evidence. Not built in Plan 3 (the plan does not ask for it).
   - **Owner settings live in `owner_settings`** (migration `109_owner_settings.sql`; one row per setting: `fx_stale_after_min` 60, `fx_sanity_pct` 10). The starter-limit settings (Revision 2026-10-24) should go in the same table. Plan 4's Settings screen writes the rows and logs each change.
 
 ## Merges while lead was away
