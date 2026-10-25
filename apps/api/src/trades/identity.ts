@@ -38,18 +38,18 @@ function identityBody(req: FastifyRequest): { signPublic: string; boxPublic: str
 async function roleInTrade(db: Queryable, rawCode: string, accountId: string): Promise<{ code: string; role: TraderRole }> {
   const code = normalizeTradeCode(rawCode);
   if (code === null) throw new ApiError(404, 'not-found');
-  const { rows } = await db.query<{ buyer_account: string; seller_account: string }>(
-    'select buyer_account, seller_account from trades where code = $1',
+  const { rows } = await db.query<{ buyer_account_id: string; seller_account_id: string }>(
+    'select buyer_account_id, seller_account_id from trades where code = $1',
     [code],
   );
   const trade = rows[0];
   if (!trade) throw new ApiError(404, 'not-found');
-  if (trade.buyer_account === accountId) return { code, role: 'buyer' };
-  if (trade.seller_account === accountId) return { code, role: 'seller' };
+  if (trade.buyer_account_id === accountId) return { code, role: 'buyer' };
+  if (trade.seller_account_id === accountId) return { code, role: 'seller' };
   throw new ApiError(404, 'not-found');
 }
 
-export function tradeRoutes(app: FastifyInstance): void {
+export function tradeIdentityRoutes(app: FastifyInstance): void {
   app.post('/v1/trades/:code/identity', { preHandler: requireTrader }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };

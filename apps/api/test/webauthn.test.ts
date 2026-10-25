@@ -19,7 +19,7 @@ import {
   webauthnRegistrationOptions,
 } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
-import { seedAccount } from './helpers/accounts.js';
+import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
 
@@ -572,6 +572,8 @@ describe('confirm and adding a credential', () => {
     };
 
     const token = await confirm({ kind: 'add-method', method: 'security-key' });
+    // The method comes from the stored credential that signed, never from the request (owner, 2026-10-23).
+    expect(await confirmTokenMethod(deps, token)).toBe('security-key');
     const start = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key', confirmToken: token });
     expect(start.statusCode).toBe(200);
     const { challengeId, options } = start.json();
@@ -592,6 +594,15 @@ describe('confirm and adding a credential', () => {
     const wallet = await t.b.post('/t/add-wallet', { confirmToken: passkeyToken });
     expect(wallet.statusCode).toBe(403);
     expect(errorOf(wallet)).toBe('confirm-invalid');
+  });
+
+  it('records passkey on a token confirmed with a passkey (owner, 2026-10-23)', async () => {
+    const t = await signUp('passkey');
+    const start = await t.b.post('/v1/confirm/webauthn/start', { action: { kind: 'set-password' } });
+    const { challengeId, options } = start.json();
+    const res = await t.b.post('/v1/confirm/webauthn/finish', { challengeId, response: t.auth.authenticate(options, ORIGIN) });
+    expect(res.statusCode).toBe(200);
+    expect(await confirmTokenMethod(deps, res.json().confirmToken)).toBe('passkey');
   });
 
   it('binds a confirm challenge to its session', async () => {
@@ -738,7 +749,7 @@ describe('review fixes', () => {
     const ownerId = await seedOwner();
     const b = await loggedIn(ownerId); // not the creating session: no onboarding window
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [ownerId]);
-    const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' } });
+    const token = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: ownerId, action: { kind: 'add-method', method: 'passkey' }, method: 'password' });
     const res = await b.post('/v1/account/webauthn/start', { kind: 'passkey', confirmToken: token });
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('method-not-allowed');

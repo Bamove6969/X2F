@@ -1,5 +1,4 @@
 import { createHash } from 'node:crypto';
-import { newTradeCode } from '@x2f/core';
 import type { Identity } from '@x2f/protocol';
 import {
   attestationBytes,
@@ -18,6 +17,7 @@ import { buildInternalListener } from '../src/internal/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
+import { seedTrade } from './helpers/trades.js';
 
 const IDENTITY_DOMAIN = 'x2f/trade-identity/v1\0';
 
@@ -44,10 +44,7 @@ async function trader(): Promise<{ id: string; b: Browser }> {
 async function freshTrade(): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
   const buyer = await trader();
   const seller = await trader();
-  const code = newTradeCode();
-  await deps.db.query('insert into trades (code, buyer_account, seller_account, created_at) values ($1, $2, $3, $4)', [
-    code, buyer.id, seller.id, now,
-  ]);
+  const { code } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
   return { code, buyer, seller };
 }
 

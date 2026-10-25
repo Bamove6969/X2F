@@ -131,7 +131,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
          join trade_identities si on si.code = t.code and si.role = 'seller'
          left join trade_attestations a on a.code = t.code
         where a.code is null
-        order by t.created_at
+        order by t.taken_at
         limit $1`,
       [WORK_LIMIT],
     );
