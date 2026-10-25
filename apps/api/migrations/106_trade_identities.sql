@@ -37,3 +37,11 @@ create table trade_refusals (
   reason text not null check (reason in ('bad-proof', 'bad-work')),
   created_at timestamptz not null default now()
 );
+
+-- When each open trade was last served as moderation work. The work list serves the least
+-- recently served first, so a trade that keeps failing for any reason goes to the back of the line
+-- and cannot hold the window shut for newer trades.
+create table trade_work_served (
+  code text primary key references trades (code),
+  served_at timestamptz not null
+);

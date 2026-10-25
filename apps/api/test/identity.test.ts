@@ -325,6 +325,45 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     expect(late.json()).toMatchObject({ error: 'refused' });
   });
 
+  it('work rotates: a trade that keeps failing cannot hold the window shut for newer trades', async () => {
+    // A listener serving 2 per pull. Older open trades (from other tests too) keep "failing": nothing
+    // ever attests or refuses them. Each new trade must still be served within a bounded number of pulls.
+    let clock = now.getTime();
+    const small = await buildInternalListener({ db: deps.db, modSigningPublic: modSign.public, now: () => clock, workLimit: 2 });
+    try {
+      const fresh: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const { code, buyer, seller } = await freshTrade();
+        await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+        await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+        fresh.push(code);
+      }
+      const { rows } = await deps.db.query<{ n: string }>(
+        `select count(*) as n from trades t
+           join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
+           join trade_identities si on si.code = t.code and si.role = 'seller'
+          where not exists (select 1 from trade_attestations a where a.code = t.code)
+            and not exists (select 1 from trade_refusals r where r.code = t.code)`,
+      );
+      const open = Number(rows[0]!.n);
+      const seen = new Set<string>();
+      for (let pull = 0; pull < Math.ceil(open / 2) + 1; pull++) {
+        clock += 1_000;
+        const at = clock;
+        const bytes = internalSignedBytes({ method: 'GET', path: '/internal/v1/work', at, bodyHash: sha256Hex('') });
+        const sig = sodium.to_base64(sodium.crypto_sign_detached(bytes, modSign.secret), sodium.base64_variants.ORIGINAL);
+        const res = await small.inject({ method: 'GET', url: '/internal/v1/work', headers: { [INTERNAL_AT_HEADER]: String(at), [INTERNAL_SIG_HEADER]: sig } });
+        expect(res.statusCode).toBe(200);
+        const { work } = res.json() as { work: Array<{ trade: string }> };
+        expect(work.length).toBeLessThanOrEqual(2);
+        for (const w of work) seen.add(w.trade);
+      }
+      for (const code of fresh) expect(seen.has(code)).toBe(true);
+    } finally {
+      await small.close();
+    }
+  });
+
   it('an attested trade cannot be refused afterwards', async () => {
     const { code, buyer, seller } = await freshTrade();
     const buyerId = identityFor(code, 'buyer');

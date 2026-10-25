@@ -22,8 +22,10 @@ export interface InternalOptions {
   db: pg.Pool;
   /** The moderation service's Ed25519 signing key (hex). The only secret-ish value here, and it is public. */
   modSigningPublic: string;
-  /** Clock for the freshness check; tests pass a fixed one. */
+  /** Clock for the freshness check and work rotation; tests pass a fixed one. */
   now?: () => number;
+  /** Most trades served per work pull. Default 100; tests lower it. */
+  workLimit?: number;
 }
 
 /** A signed request is refused when its `at` is further than this from the listener's clock. */
@@ -150,20 +152,30 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
 
   // The trades that both traders have registered an identity for, with no attestation yet and not
   // refused by the moderation service (a refused trade is done for good and never served again).
+  // Never-served trades come first, then the least recently served, so one trade that keeps failing
+  // moves to the back of the line instead of holding the window shut.
   app.get('/internal/v1/work', guard('/internal/v1/work', async (_req, reply) => {
     const { rows } = await o.db.query<RegisteredRow>(
-      `select t.code,
-              bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
-              si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
-         from trades t
-         join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
-         join trade_identities si on si.code = t.code and si.role = 'seller'
-         left join trade_attestations a on a.code = t.code
-         left join trade_refusals r on r.code = t.code
-        where a.code is null and r.code is null
-        order by t.taken_at
-        limit $1`,
-      [WORK_LIMIT],
+      `with picked as (
+         select t.code,
+                bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
+                si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+           from trades t
+           join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
+           join trade_identities si on si.code = t.code and si.role = 'seller'
+           left join trade_attestations a on a.code = t.code
+           left join trade_refusals r on r.code = t.code
+           left join trade_work_served w on w.code = t.code
+          where a.code is null and r.code is null
+          order by w.served_at nulls first, t.taken_at, t.code
+          limit $1
+       ), served as (
+         insert into trade_work_served (code, served_at)
+         select code, $2 from picked
+         on conflict (code) do update set served_at = excluded.served_at
+       )
+       select * from picked`,
+      [o.workLimit ?? WORK_LIMIT, new Date(now())],
     );
     const work = rows.map((r) => ({
       trade: r.code,
