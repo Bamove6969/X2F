@@ -1,6 +1,6 @@
-import { addressEnd, addressHash, type ConfirmAction } from '@x2f/accounts';
+import { addressEnd, addressHash, addressesHash, type ConfirmAction } from '@x2f/accounts';
 import { describe, expect, it, vi } from 'vitest';
-import { AuthApiError, defaultDeviceLabel, walletAction, withConfirm } from '../src/index.js';
+import { AuthApiError, MAX_WALLET_BATCH, defaultDeviceLabel, describeAction, walletAction, walletsAction, withConfirm } from '../src/index.js';
 
 const ACTION: ConfirmAction = { kind: 'new-recovery-codes' };
 const required = () => new AuthApiError(403, 'confirm-required', { action: 'new-recovery-codes' });
@@ -102,6 +102,41 @@ describe('walletAction', () => {
   it('differs for different addresses', async () => {
     const other = `${ADDRESS.slice(0, -1)}f`;
     expect((await walletAction(other)).addressHash).not.toBe((await walletAction(ADDRESS)).addressHash);
+  });
+});
+
+describe('walletsAction', () => {
+  const A = '4AdUndXHHZ6cfufTMvppY6JwXNouMBzSkbLYfpAV5Usx3skxNgYeYTRj5UzqtReoS44qo9mtmXCqY45DJ852K5Jv2684Rge';
+  const B = `4${'B'.repeat(94)}`;
+  const C = `4${'C'.repeat(94)}`;
+
+  it('builds the add-wallets action from the trimmed list, in order', async () => {
+    const a = await walletsAction([`  ${A}\n`, ` ${B}`]);
+    expect(a).toEqual({ kind: 'add-wallets', addressesHash: await addressesHash([A, B]), addressEnds: '684Rge,BBBBBB' });
+    expect(a.addressesHash).toMatch(/^[0-9a-f]{64}$/);
+    expect(describeAction(a)).toBe('add 2 payout wallets ending …684Rge, …BBBBBB');
+  });
+
+  it('binds the exact list: another order, another member or one more differs', async () => {
+    const base = (await walletsAction([A, B])).addressesHash;
+    expect((await walletsAction([B, A])).addressesHash).not.toBe(base);
+    expect((await walletsAction([A, C])).addressesHash).not.toBe(base);
+    expect((await walletsAction([A, B, C])).addressesHash).not.toBe(base);
+    expect((await walletsAction([A])).addressesHash).not.toBe(base);
+  });
+
+  it('never equals the single-wallet action for the same address', async () => {
+    const one = await walletsAction([A]);
+    expect(one).toEqual({ kind: 'add-wallets', addressesHash: (await walletAction(A)).addressHash, addressEnds: '684Rge' });
+    expect(one.kind).not.toBe((await walletAction(A)).kind);
+  });
+
+  it('covers a full batch of MAX_WALLET_BATCH (10)', async () => {
+    expect(MAX_WALLET_BATCH).toBe(10);
+    const list = Array.from({ length: MAX_WALLET_BATCH }, (_, i) => `4${'123456789A'[i]!.repeat(94)}`);
+    const a = await walletsAction(list);
+    expect(a.addressEnds.split(',')).toHaveLength(10);
+    expect(a.addressEnds.split(',')).toEqual(list.map(addressEnd));
   });
 });
 
