@@ -104,7 +104,7 @@ describe('enablePush', () => {
   });
 
   it('unsubscribes again when the API refuses the subscription', async () => {
-    const { env: e, calls } = env();
+    const { env: e, calls } = env({ failPost: true });
     await expect(enablePush(e)).rejects.toThrow('refused');
     expect(calls.unsubscribed).toBe(1);
   });

@@ -37,7 +37,7 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '105_push.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
