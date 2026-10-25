@@ -105,12 +105,12 @@ describe('createAlertGrouper', () => {
       { kind: 'price-source-recovered', detail: { feed: 'xmr', source: 'kraken', message: 'Kraken price feed recovered' } },
     ]);
     expect(step()).toEqual([]);
-    // Time alone is not enough either: polls 10 min apart need 3 of them.
-    const slow = stepper(10 * MIN);
+    // Time alone is not enough either: polls 15 min apart still need 3 of them.
+    const slow = stepper(15 * MIN);
     expect(slow(kraken(3))).toHaveLength(1);
-    expect(slow()).toEqual([]);
-    expect(slow(), '10 min, 2 polls').toEqual([]);
-    expect(slow(), '20 min, 3 polls').toHaveLength(1);
+    expect(slow(), '0 min, 1 poll').toEqual([]);
+    expect(slow(), '15 min, 2 polls').toEqual([]);
+    expect(slow(), '30 min, 3 polls').toHaveLength(1);
   });
 
   it('a flapping source (good 1 poll in 4) gives one alert per outage, not one per flap', () => {
@@ -158,7 +158,7 @@ describe('createAlertGrouper', () => {
     expect(step(rejected)).toEqual([
       {
         kind: 'price-source-failing',
-        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate moved more than 10%, using backup' },
+        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate off by more than 10%, using backup' },
       },
     ]);
     expect(step(rejected)).toEqual([]);
@@ -337,7 +337,7 @@ describe('createMarketPrices', () => {
     expect(alerts).toEqual([
       {
         kind: 'price-source-failing',
-        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate moved more than 10%, using backup' },
+        detail: { feed: 'fx', source: 'coinbase', currency: 'EUR', reason: 'rejected', message: 'Coinbase EUR rate off by more than 10%, using backup' },
       },
     ]);
   });

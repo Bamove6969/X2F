@@ -61,11 +61,18 @@ function ratio(x: bigint, usd: bigint): bigint {
 const numberText = (v: unknown): string | null => (typeof v === 'number' && Number.isFinite(v) && v > 0 ? String(v) : null);
 const supported = (code: unknown): code is string => typeof code === 'string' && code !== 'USD' && currencyExponent(code) !== null;
 
-/** Keeps the positive rates of supported currencies (USD left out), in code order. */
+/**
+ * Absolute bounds on USD→X, whatever a source says: no real currency is worth more than 10^4 USD
+ * or less than 10^-9 USD (KWD, the dearest, is about 0.31 per USD; VND about 26 000).
+ */
+const MIN_RATE = RATE_SCALE / 10_000n;
+const MAX_RATE = RATE_SCALE * 1_000_000_000n;
+
+/** Keeps the in-bounds rates of supported currencies (USD left out), in code order. */
 function keep(entries: Iterable<[string, bigint | null]>): Map<string, bigint> {
   const out = new Map<string, bigint>();
   for (const [code, rate] of [...entries].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-    if (rate !== null && rate > 0n && !out.has(code)) out.set(code, rate);
+    if (rate !== null && rate >= MIN_RATE && rate <= MAX_RATE && !out.has(code)) out.set(code, rate);
   }
   return out;
 }
@@ -261,8 +268,11 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
     sanityBps: o.sanityBps ?? FX_DEFAULTS.sanityBps,
   };
   const states: SourceState[] = sources.map((source) => ({ source, lastGoodAt: null, failures: 0, currencies: new Map() }));
-  /** Per currency, the last rate in use and when it was fetched: what the sanity guard compares with. */
-  const lastInUse = new Map<string, { rate: bigint; at: Date }>();
+  /**
+   * Per currency, every rate in use within the sanity window, with its fetch time: what the guard
+   * compares with. Comparing with all of them (not only the latest) stops a walk in sub-limit steps.
+   */
+  const inUse = new Map<string, Array<{ rate: bigint; at: Date }>>();
   let done = false;
   let inFlight: Promise<void> | null = null;
 
@@ -282,11 +292,25 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
     return null;
   }
 
-  function insane(currency: string, value: bigint, now: Date): boolean {
-    const ref = lastInUse.get(currency);
-    if (!ref || now.getTime() - ref.at.getTime() > sanityWindowMs) return false;
-    const diff = value > ref.rate ? value - ref.rate : ref.rate - value;
-    return diff * 10_000n > ref.rate * BigInt(settings.sanityBps);
+  const far = (value: bigint, ref: bigint) => (value > ref ? value - ref : ref - value) * 10_000n > ref * BigInt(settings.sanityBps);
+
+  /** The in-use history of `currency` still inside the window (older entries dropped). */
+  function recent(currency: string, now: Date): Array<{ rate: bigint; at: Date }> {
+    const kept = (inUse.get(currency) ?? []).filter((h) => now.getTime() - h.at.getTime() <= sanityWindowMs);
+    inUse.set(currency, kept);
+    return kept;
+  }
+
+  /**
+   * The sanity guard. With in-use values from the last hour: refused when more than sanityBps from
+   * ANY of them. With none (boot, restart, an outage over an hour): accepted only when another
+   * fresh source agrees within sanityBps, or when no other source has the currency at all. This
+   * is a cross-check, not an average: the value used is still the highest-ranked accepted one.
+   */
+  function insane(currency: string, value: bigint, peers: bigint[], now: Date): boolean {
+    const history = recent(currency, now);
+    if (history.length > 0) return history.some((h) => far(value, h.rate));
+    return peers.length > 0 && peers.every((p) => far(value, p));
   }
 
   async function pollOnce(): Promise<void> {
@@ -306,6 +330,22 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
       ),
     );
     const now = clock();
+    /** What every other source says about `code` now: this poll's answer, or else its last fresh good rate. */
+    const peersOf = (i: number, code: string): bigint[] => {
+      const out: bigint[] = [];
+      states.forEach((t, j) => {
+        if (j === i) return;
+        const got = answers[j];
+        if (got) {
+          const v = got.get(code);
+          if (typeof v === 'bigint' && v > 0n) out.push(v);
+          return;
+        }
+        const c = t.currencies.get(code);
+        if (c?.good && now.getTime() - c.good.at.getTime() <= settings.staleAfterMs) out.push(c.good.rate);
+      });
+      return out;
+    };
     states.forEach((s, i) => {
       const got = answers[i]!;
       if (got === null) {
@@ -320,7 +360,7 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
         if (!supported(code) || typeof value !== 'bigint' || value <= 0n) continue;
         const c = s.currencies.get(code) ?? { good: null, failures: 0, rejectedAt: null };
         s.currencies.set(code, c);
-        if (insane(code, value, now)) {
+        if (insane(code, value, peersOf(i, code), now)) {
           // Counts as a failed fetch of this currency from this source: the next source is used.
           c.failures++;
           c.rejectedAt = now;
@@ -333,7 +373,10 @@ export function createFxRates(sources: readonly FxSource[], o: FxOptions = {}): 
     });
     for (const code of Object.keys(CURRENCY_EXPONENTS)) {
       const r = rate(code);
-      if (r) lastInUse.set(code, { rate: r.rate, at: r.at });
+      if (!r) continue;
+      const history = recent(code, now);
+      const last = history.at(-1);
+      if (!last || last.rate !== r.rate || last.at.getTime() !== r.at.getTime()) history.push({ rate: r.rate, at: r.at });
     }
     done = true;
   }

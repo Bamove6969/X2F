@@ -158,6 +158,17 @@ describe('FX sources', () => {
     }
   });
 
+  it('a rate outside the absolute bounds (USD→X above 10^9 or below 10^-4) is skipped', async () => {
+    const cb = fakeFetch({
+      'https://': { data: { currency: 'USD', rates: { CAD: '1'.repeat(38), EUR: '0.00001', JPY: '1000000000', VND: '1000000001', CHF: '0.0001' } } },
+    });
+    expect([...(await one('coinbase', cb.fetch).fetchRates(signal)).keys()]).toEqual(['CHF', 'JPY']);
+    const bp = fakeFetch({ 'https://': [{ code: 'USD', rate: 1 }, { code: 'CAD', rate: 1e30 }, { code: 'EUR', rate: 0.9 }] });
+    expect([...(await one('bitpay', bp.fetch).fetchRates(signal)).keys()]).toEqual(['EUR']);
+    const cg = fakeFetch({ 'https://': { rates: { usd: { value: 1, type: 'fiat' }, cad: { value: 1e30, type: 'fiat' }, eur: { value: 0.9, type: 'fiat' } } } });
+    expect([...(await one('coingecko', cg.fetch).fetchRates(signal)).keys()]).toEqual(['EUR']);
+  });
+
   it('a zero, negative or non-numeric rate is skipped', async () => {
     const cb = fakeFetch({ 'https://': { data: { currency: 'USD', rates: { EUR: '0', GBP: '-1', JPY: 'abc', CHF: '0.8' } } } });
     expect([...(await one('coinbase', cb.fetch).fetchRates(signal)).keys()]).toEqual(['CHF']);
@@ -290,6 +301,75 @@ describe('createFxRates', () => {
   });
 
   describe('sanity guard', () => {
+    it('with no last good value (boot), #1 is used only if another fresh source agrees: a bad first fetch is refused', async () => {
+      const c = clockAt(T0);
+      let a = '90'; // 100× the real EUR rate
+      const fx = createFxRates([stub('a', () => ({ EUR: a })), stub('b', () => ({ EUR: '0.90' })), stub('c', () => ({ EUR: '0.901' }))], { clock: c.clock });
+      await fx.poll();
+      expect(fx.rate('EUR')).toEqual({ currency: 'EUR', rate: r('0.90'), source: 'b', at: T0 });
+      expect(fx.health().rejected).toEqual([{ source: 'a', currency: 'EUR', at: T0 }]);
+      // The correct value is accepted at the next poll, not refused for an hour.
+      a = '0.899';
+      c.advance(5 * MIN);
+      await fx.poll();
+      expect(fx.rate('EUR')?.source).toBe('a');
+      expect(fx.health().rejected).toEqual([]);
+    });
+
+    it('a restart (fresh state) cross-checks again, and the trust order stays (no average)', async () => {
+      const c = clockAt(T0);
+      const fresh = () => createFxRates([stub('a', () => ({ EUR: '0.95' })), stub('b', () => ({ EUR: '0.90' }))], { clock: c.clock });
+      const fx = fresh();
+      await fx.poll();
+      expect(fx.rate('EUR'), 'within 10% of b: #1 is used as is').toEqual({ currency: 'EUR', rate: r('0.95'), source: 'a', at: T0 });
+      const bad = createFxRates([stub('a', () => ({ EUR: '9.5' })), stub('b', () => ({ EUR: '0.90' }))], { clock: c.clock });
+      await bad.poll();
+      expect(bad.rate('EUR'), 'a and b disagree: b agrees with no one either, so nothing is used').toBeNull();
+      expect(bad.health().rejected.map((x) => x.source)).toEqual(['a', 'b']);
+    });
+
+    it('once the last in-use value is over 1 h old, the next fetch is cross-checked again', async () => {
+      const c = clockAt(T0);
+      let a: Record<string, string> | Error = { EUR: '0.90' };
+      let b: Record<string, string> | Error = { EUR: '0.90' };
+      const fx = createFxRates([stub('a', () => a), stub('b', () => b)], { clock: c.clock, staleAfterMs: 3 * HOUR, failLimit: 1_000 });
+      await fx.poll();
+      a = new Error('down');
+      b = new Error('down');
+      c.advance(HOUR + 1);
+      await fx.poll();
+      a = { EUR: '90' };
+      b = { EUR: '0.91' };
+      c.advance(1);
+      await fx.poll();
+      expect(fx.rate('EUR')).toBeNull();
+      expect(fx.health().rejected.map((x) => x.source)).toEqual(['a', 'b']);
+    });
+
+    it('a currency only one source has is accepted unchecked', async () => {
+      const c = clockAt(T0);
+      const fx = createFxRates([stub('a', () => ({ EUR: '0.90', GBP: '0.75' })), stub('b', () => ({ EUR: '0.90' }))], { clock: c.clock });
+      await fx.poll();
+      expect(fx.rate('GBP')).toEqual({ currency: 'GBP', rate: r('0.75'), source: 'a', at: T0 });
+    });
+
+    it('cannot be walked: a rate more than 10% from ANY in-use value of the last hour is refused (9% steps)', async () => {
+      const c = clockAt(T0);
+      let a = 0.9;
+      const fx = createFxRates([stub('a', () => ({ EUR: a.toFixed(6) })), stub('b', () => ({ EUR: '0.90' }))], { clock: c.clock });
+      await fx.poll();
+      const used: string[] = [];
+      for (let i = 0; i < 12; i++) {
+        a *= 1.09;
+        c.advance(5 * MIN);
+        await fx.poll();
+        used.push(fx.rate('EUR')!.source);
+      }
+      expect(used[0], 'the first 9% step is fine').toBe('a');
+      expect(used.slice(1), 'every later step is more than 10% from 0.90').toEqual(Array(11).fill('b'));
+      expect(fx.health().rejected).toEqual([{ source: 'a', currency: 'EUR', at: c.clock() }]);
+    });
+
     it('a move over 10% from the last good value within 1 h fails that source for that currency: fall back at once', async () => {
       const c = clockAt(T0);
       let a = '0.90';

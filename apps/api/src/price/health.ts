@@ -51,7 +51,7 @@ interface Condition {
 function failingAlert(c: Condition, sanityBps: number): PriceAlert {
   const who = label(c.source);
   let message: string;
-  if (c.reason === 'rejected') message = `${who} ${c.currency!} rate moved more than ${sanityBps / 100}%, using backup`;
+  if (c.reason === 'rejected') message = `${who} ${c.currency!} rate off by more than ${sanityBps / 100}%, using backup`;
   else if (c.feed === 'xmr') message = `${who} price feed failing, using backup`;
   else message = `${who} exchange rates ${c.reason === 'stale' ? 'stale' : 'failing'}, using backup`;
   const detail: PriceAlertDetail = { feed: c.feed, source: c.source, ...(c.currency ? { currency: c.currency } : {}), reason: c.reason, message };
