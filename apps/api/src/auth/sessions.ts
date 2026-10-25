@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { AccountKind } from '@x2f/accounts';
+import { DEFAULT_IDLE_HOURS, type AccountKind, type IdleHours } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -35,11 +35,22 @@ declare module 'fastify' {
   }
 }
 
-/** Idle and absolute lifetimes: traders 7 d / 30 d; staff and owner 2 h / 12 h (owner, 2026-10-17); recovery 25 h / 48 h. */
-export function sessionPolicy(kind: AccountKind, level: SessionLevel): { idleMs: number; absoluteMs: number } {
+/** The fixed idle and absolute lifetimes of staff and owner sessions (owner, 2026-10-17). */
+export const STAFF_IDLE_HOURS = 2;
+
+/**
+ * Idle and absolute lifetimes: traders their chosen logout timer (`idleHours`, 2-12 hours,
+ * default 12; owner, 2026-10-23) / 30 d; staff and owner a fixed 2 h / 12 h whatever the account
+ * stores; recovery 25 h / 48 h.
+ */
+export function sessionPolicy(
+  kind: AccountKind,
+  level: SessionLevel,
+  idleHours: IdleHours = DEFAULT_IDLE_HOURS,
+): { idleMs: number; absoluteMs: number } {
   if (level === 'recovery') return { idleMs: 25 * HOUR, absoluteMs: 48 * HOUR };
-  if (kind === 'trader') return { idleMs: 7 * DAY, absoluteMs: 30 * DAY };
-  return { idleMs: 2 * HOUR, absoluteMs: 12 * HOUR };
+  if (kind === 'trader') return { idleMs: idleHours * HOUR, absoluteMs: 30 * DAY };
+  return { idleMs: STAFF_IDLE_HOURS * HOUR, absoluteMs: 12 * HOUR };
 }
 
 const tokenHash = (token: string): Buffer => createHash('sha256').update(token).digest();
@@ -59,7 +70,7 @@ function cleanLabel(label: string): string {
 }
 
 /** The earlier of the absolute deadline and the idle deadline from `now`; stored as `expires_at` so idle sessions get purged. */
-function deadline(createdAt: Date, now: Date, p: { idleMs: number; absoluteMs: number }): Date {
+export function deadline(createdAt: Date, now: Date, p: { idleMs: number; absoluteMs: number }): Date {
   return new Date(Math.min(createdAt.getTime() + p.absoluteMs, now.getTime() + p.idleMs));
 }
 
@@ -96,10 +107,13 @@ export async function startSession(
   try {
     await client.query('begin');
     try {
-      const acct = await client.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [a.accountId]);
-      const kind = acct.rows[0]?.kind;
-      if (!kind) throw new ApiError(401, 'not-authenticated');
-      const policy = sessionPolicy(kind, a.level);
+      const acct = await client.query<{ kind: AccountKind; idle_hours: IdleHours }>(
+        'select kind, idle_hours from accounts where id = $1',
+        [a.accountId],
+      );
+      const row = acct.rows[0];
+      if (!row) throw new ApiError(401, 'not-authenticated');
+      const policy = sessionPolicy(row.kind, a.level, row.idle_hours);
       absoluteMs = policy.absoluteMs;
       expiresAt = deadline(now, now, policy);
       if (presented) {
@@ -152,6 +166,7 @@ interface SessionRow {
   expires_at: Date;
   revoked_at: Date | null;
   kind: AccountKind;
+  idle_hours: IdleHours;
   disabled_at: Date | null;
   terms_version: string | null;
   hold_until: Date | null;
@@ -180,7 +195,7 @@ export function requireSession(
     if (!token) throw new ApiError(401, 'not-authenticated');
     const { rows } = await deps.db.query<SessionRow>(
       `select s.id, s.account_id, s.level, s.onboarding_until, s.created_at, s.last_seen_at, s.expires_at, s.revoked_at,
-              s.hold_until, a.kind, a.disabled_at, a.terms_version
+              s.hold_until, a.kind, a.idle_hours, a.disabled_at, a.terms_version
          from sessions s join accounts a on a.id = s.account_id
         where s.token_hash = $1`,
       [tokenHash(token)],
@@ -188,7 +203,8 @@ export function requireSession(
     const row = rows[0];
     const now = deps.clock();
     if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
-    const policy = sessionPolicy(row.kind, row.level);
+    // The account's current logout timer: a change applies to every live session at its next request.
+    const policy = sessionPolicy(row.kind, row.level, row.idle_hours);
     if (
       now.getTime() >= row.expires_at.getTime() ||
       now.getTime() - row.last_seen_at.getTime() >= policy.idleMs ||
@@ -207,10 +223,25 @@ export function requireSession(
     }
     // expires_at is the idle deadline capped by the absolute one (created_at + absolute), so
     // purgeExpired removes idle sessions too.
-    await deps.db.query(
-      'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
-      [row.id, now, deadline(row.created_at, now, policy)],
-    );
+    if (row.kind === 'trader' && row.level === 'full') {
+      // The logout timer can change while this request runs (PUT /v1/account/security/logout-timer
+      // moves every session's deadline in its transaction). The idle hours are read again here,
+      // under a share lock, so this touch never writes back a deadline from the timer read above:
+      // a share lock waits for a pending change and then sees the committed value.
+      await deps.db.query(
+        `update sessions s
+            set last_seen_at = $2,
+                expires_at = least($3::timestamptz,
+                  $2::timestamptz + (select a.idle_hours from accounts a where a.id = s.account_id for share) * interval '1 hour')
+          where s.id = $1 and s.last_seen_at < $2`,
+        [row.id, now, new Date(row.created_at.getTime() + policy.absoluteMs)],
+      );
+    } else {
+      await deps.db.query(
+        'update sessions set last_seen_at = $2, expires_at = $3 where id = $1 and last_seen_at < $2',
+        [row.id, now, deadline(row.created_at, now, policy)],
+      );
+    }
     req.auth = {
       sessionId: row.id,
       accountId: row.account_id,

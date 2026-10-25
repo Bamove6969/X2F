@@ -36,7 +36,16 @@ export type ApiErrorCode =
   | 'terms-not-accepted'
   | 'terms-required'
   // Plan 3 (Task 3 onwards).
-  | 'price-unavailable';
+  | 'price-unavailable'
+  // Plan 3, Task 6: the trade events route and the state machine's refusals.
+  | 'event-not-allowed'
+  | 'wrong-state'
+  | 'wrong-party'
+  | 'too-early'
+  | 'too-late'
+  | 'no-extensions-left'
+  | 'not-releasable'
+  | 'total-changed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

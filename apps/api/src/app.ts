@@ -10,6 +10,8 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
+import { tradeRoutes } from './trades/routes.js';
+import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import type { MarketPrices } from './price/market.js';
@@ -65,6 +67,8 @@ declare module 'fastify' {
 export interface BuildOptions {
   /** Where log lines go (default stdout); tests capture them. */
   logStream?: { write(line: string): void };
+  /** Plan 3 Task 19's trade event delivery; a no-op until it exists. */
+  tradePublish?: TradePublisher;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -203,6 +207,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
   methodListRoutes(app);
   priceRoutes(app);
+  // Plan 3, Task 6: the trade view and the participants' events route.
+  tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
 
   return app;
 }

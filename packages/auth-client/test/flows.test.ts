@@ -27,10 +27,13 @@ const LABEL = 'Browser on Linux';
 /**
  * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
  * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
- * (Task 3: methods, method suggestions, price, the owner's price health). Any other new route
- * still needs a client method.
+ * (Task 3: methods, method suggestions, price, the owner's price health; Task 6: the trade view
+ * and the events route). Any other new route still needs a client method.
  */
-const NOT_AUTH_CLIENT = ['GET /v1/methods', 'GET /v1/owner/price-health', 'GET /v1/price', 'POST /v1/method-suggestions'] as const;
+const NOT_AUTH_CLIENT = [
+  'GET /v1/methods', 'GET /v1/owner/price-health', 'GET /v1/price', 'GET /v1/trades/:code', 'POST /v1/method-suggestions',
+  'POST /v1/trades/:code/events',
+] as const;
 
 let srv: Server;
 
@@ -96,7 +99,8 @@ describe('the client covers the API', () => {
   });
 
   it('every route of the API (but /healthz and the Plan 3 app routes) has its client method', () => {
-    const expected = methodNames().map((n) => ROUTES[n]);
+    // Two methods may share a route (addWallet and addWallets both POST /v1/wallets).
+    const expected = new Set(methodNames().map((n) => ROUTES[n]));
     const notAuth = new Set<string>(NOT_AUTH_CLIENT);
     expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz' && !notAuth.has(r))).toEqual([...expected].sort());
   });
