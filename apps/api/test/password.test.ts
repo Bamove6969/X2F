@@ -276,7 +276,8 @@ describe('POST /v1/login/password', () => {
     expect(locked.json()).toEqual({ error: 'credentials-invalid', misses: 11 });
     expect(locked.headers['retry-after']).toBeUndefined();
     expect(verify).toHaveBeenCalledTimes(1);
-    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, GOOD);
+    // A quietly locked name checks DUMMY_HASH under the current pepper (FU-C), like an unknown name.
+    expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
     verify.mockRestore();
     setNow(new Date(now.getTime() + 14 * 60_000));
     expect((await login('quietlock1', GOOD)).statusCode).toBe(401);
@@ -562,7 +563,7 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     const verify = vi.spyOn(argon2, 'verify');
     const res = await login('lostpep01', GOOD);
     expect(res.statusCode).toBe(401);
-    expect(res.json()).toEqual({ error: 'credentials-invalid' });
+    expect(res.json()).toEqual({ error: 'credentials-invalid', misses: expect.any(Number) });
     expect(verify).toHaveBeenCalledTimes(1);
     expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
     expect((await row(id)).hash).toBe(goneHash);
@@ -617,7 +618,7 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
       const hash = vi.spyOn(argon2, 'hash');
       const res = await login('legoff001', GOOD);
       expect(res.statusCode).toBe(401);
-      expect(res.json()).toEqual({ error: 'credentials-invalid' });
+      expect(res.json()).toEqual({ error: 'credentials-invalid', misses: expect.any(Number) });
       expect(verify).toHaveBeenCalledTimes(1);
       expect(verify).toHaveBeenCalledWith(DUMMY_HASH, pepperedPassword(deps.config, deps.config.passwordPeppers.current, GOOD));
       expect(hash).not.toHaveBeenCalled();

@@ -587,7 +587,7 @@ describe('binding', () => {
   // Each test starts a day later, past the 12-hour logout timer: log home in afresh.
   beforeEach(async () => {
     home = new Browser();
-    const s = await loginStart(home, name);
+    const s = await loginStart(home, key);
     await loginFinish(home, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
   });
 
