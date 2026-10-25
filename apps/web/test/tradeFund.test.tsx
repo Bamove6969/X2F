@@ -4,6 +4,7 @@
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { moneroUri } from '@x2f/trade';
 import type { TradeView } from '../src/api/trade.js';
 import { resetFundMarks } from '../src/screens/trade/fund.js';
 import { PENDING_ESCROW, setLiveSource, setTradeEscrowHook, type TradeEscrow, type TradeLiveEvent } from '../src/screens/trade/seams.js';
@@ -14,6 +15,8 @@ import { render } from './render.js';
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const ADDRESS = '4' + 'A'.repeat(94);
 const URI = `monero:${ADDRESS}?tx_amount=1.25`;
+const ATTACKER = '4' + 'B'.repeat(94);
+const WORDS = ['amber', 'canal', 'violin', 'oxygen'];
 
 const base: TradeView = {
   code: CODE,
@@ -77,7 +80,8 @@ beforeEach(() => {
       return respond(current);
     }),
   );
-  setTradeEscrowHook(null);
+  // This device derived ADDRESS and has its check words (the verified state funding needs).
+  setTradeEscrowHook(() => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }));
   setLiveSource(null);
 });
 
@@ -193,7 +197,7 @@ describe('TradeFund (seller)', () => {
 
 describe('escrow check and the security check', () => {
   it('shows the four check words naming the other trader, on both sides', async () => {
-    setTradeEscrowHook(() => escrow({ phase: 'ready', checkWords: ['amber', 'canal', 'violin', 'oxygen'] }));
+    setTradeEscrowHook(() => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }));
     let host = await room();
     expect(host.textContent).toContain("Escrow check: four words. They match on mira.k's screen.");
     expect([...host.querySelectorAll('[data-escrow-check] li')].map((l) => l.textContent)).toEqual(['amber', 'canal', 'violin', 'oxygen']);
@@ -221,6 +225,57 @@ describe('escrow check and the security check', () => {
     await flush();
     expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
   });
+});
+
+describe('funding shows only the address this device verified', () => {
+  const footer = () => [...document.querySelectorAll('button')].find((b) => b.textContent?.includes('Use another wallet'));
+
+  it('the wallet link and QR are built on this device from the verified address and the exact amount', async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    const host = await room();
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 1_250_000_000_000n));
+    await act(async () => footer()!.click());
+    expect(host.querySelector('[data-escrow-address]')?.textContent).toBe(ADDRESS);
+    expect(host.querySelector('[data-qr]')).not.toBeNull();
+  });
+
+  it("a tampered server uri is never used or shown", async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    current = { ...base, funding: { ...base.funding!, uri: `monero:${ATTACKER}?tx_amount=99` } };
+    const host = await room();
+    await act(async () => footer()!.click());
+    expect(host.innerHTML).not.toContain(ATTACKER);
+    expect(host.innerHTML).not.toContain('tx_amount=99');
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 1_250_000_000_000n));
+  });
+
+  it('an API address that differs from the device-derived one: the danger state, and NO address, link or QR (either one)', async () => {
+    current = { ...base, funding: { ...base.funding!, escrowAddress: ATTACKER, uri: `monero:${ATTACKER}?tx_amount=1.25` } };
+    const host = await room();
+    expect(host.textContent).toContain("Security check failed. Don't fund this trade.");
+    noFundingTraces(host);
+    expect(host.innerHTML).not.toContain(ATTACKER);
+  });
+
+  for (const [name, e] of [
+    ['idle (runtime not wired)', {}],
+    ['registering', { phase: 'registering', keepOpen: true }],
+    ['verifying', { phase: 'verifying', keepOpen: true }],
+    ['setting up', { phase: 'setting-up', keepOpen: true }],
+    ['ready without check words', { phase: 'ready', escrowAddress: ADDRESS }],
+    ['ready without a derived address', { phase: 'ready', checkWords: WORDS }],
+    ['a retryable error', { phase: 'error', error: 'escrow-failed', retryable: true, escrowAddress: ADDRESS, checkWords: WORDS }],
+    ['an unsupported browser', { phase: 'error', error: 'unsupported-browser' }],
+  ] as [string, Partial<TradeEscrow>][]) {
+    it(`${name}: no address, link or QR, only setup progress`, async () => {
+      setTradeEscrowHook(() => escrow(e));
+      const host = await room();
+      noFundingTraces(host);
+      expect(host.innerHTML).not.toContain(ATTACKER);
+      expect(host.querySelector('[data-setup-status]')).not.toBeNull();
+      expect(host.textContent).not.toContain('Open in');
+    });
+  }
 });
 
 describe('the buyer before funding', () => {

@@ -14,6 +14,7 @@ function fields(file: URL, name: string): string[] {
   const out: string[] = [];
   let depth = 0;
   let line = '';
+  let lineDepth = 0;
   for (const ch of src.slice(src.indexOf('{', start) + 1)) {
     if (ch === '{') depth++;
     if (ch === '}') {
@@ -21,9 +22,10 @@ function fields(file: URL, name: string): string[] {
       depth--;
     }
     if (ch === '\n') {
-      const m = depth === 0 ? /^\s*([a-zA-Z]+)\??:/.exec(line) : null;
+      const m = lineDepth === 0 ? /^\s*([a-zA-Z]+)\??:/.exec(line) : null;
       if (m) out.push(m[1]!);
       line = '';
+      lineDepth = depth;
     } else {
       line += ch;
     }
@@ -35,7 +37,7 @@ describe('TRIPWIRES: trade room', () => {
   it('Task 12 (browser escrow runtime) is not merged: useTradeEscrow is still the stand-in', () => {
     expect(
       existsSync(new URL('escrow/useEscrow.ts', web)),
-      'Task 12 merged: in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed), re-export its types instead of the copies, and drop PENDING_ESCROW from production paths',
+      'Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies',
     ).toBe(false);
   });
 

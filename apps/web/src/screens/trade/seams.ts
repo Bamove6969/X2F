@@ -27,9 +27,20 @@ export type UserSignal = 'trade.paid' | 'trade.cancel' | 'trade.extend' | 'trade
  */
 export type ConfirmedTrade = unknown;
 
-/** `UseEscrow` from wip/second-p3-t12 apps/web/src/escrow/useEscrow.ts, field for field. */
+/**
+ * `UseEscrow` from wip/second-p3-t12 apps/web/src/escrow/useEscrow.ts, field for field, plus
+ * `escrowAddress` (see below), which Task 12 must add before it merges.
+ */
 export interface TradeEscrow {
   phase: EscrowPhase;
+  /**
+   * The multisig address THIS device derived (`party.ready()` in Task 12's runtime, the address
+   * its check words are computed from), or null until then. The only address TradeFund ever shows
+   * or puts in a `monero:` link or QR code; the API's `funding.escrowAddress` is only compared with
+   * it. ADDITION to Task 12's UseEscrow (it is not in EscrowStatus yet); the tripwire in
+   * test/tradeRoom-tripwires.test.ts names it.
+   */
+  escrowAddress: string | null;
   error: EscrowErrorCode | null;
   retryable: boolean;
   refusal: EscrowRefusal | null;
@@ -44,9 +55,26 @@ export interface TradeEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-/** Integrity failures: the trade must not be funded or settled from this device (SetupStatus danger). */
-export function integrityFailed(e: Pick<TradeEscrow, 'error'>): boolean {
-  return e.error === 'participants-mismatch' || e.error === 'deal-mismatch';
+/**
+ * Integrity failures: the trade must not be funded or settled from this device (SetupStatus
+ * danger). Besides the runtime's own codes, an API whose escrow address differs from the one this
+ * device derived is one: a lying server must never steer the seller's coins.
+ */
+export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress'>, view?: { funding: { escrowAddress: string | null } | null }): boolean {
+  if (e.error === 'participants-mismatch' || e.error === 'deal-mismatch') return true;
+  const theirs = view?.funding?.escrowAddress ?? null;
+  return theirs !== null && e.escrowAddress !== null && theirs !== e.escrowAddress;
+}
+
+/**
+ * The escrow address this device verified and may show for funding, or null: only once the
+ * runtime is ready with check words and its own derived address, with no error, and only when the
+ * API's address (if it sends one) is the same.
+ */
+export function verifiedEscrowAddress(e: TradeEscrow, view: { funding: { escrowAddress: string | null } | null }): string | null {
+  if (e.phase !== 'ready' || e.error !== null || e.checkWords === null || e.escrowAddress === null) return null;
+  if (integrityFailed(e, view)) return null;
+  return e.escrowAddress;
 }
 
 const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not wired (Task 12)'));
@@ -54,6 +82,7 @@ const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not
 /** The stand-in until Task 12 merges: idle, no check words, every action refused. */
 export const PENDING_ESCROW: TradeEscrow = {
   phase: 'idle',
+  escrowAddress: null,
   error: null,
   retryable: false,
   refusal: null,

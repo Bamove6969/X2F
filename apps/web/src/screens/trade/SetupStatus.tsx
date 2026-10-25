@@ -48,7 +48,7 @@ export function SetupStatus({ view, escrow }: { view: TradeView; escrow: TradeEs
           <EscrowDots filled={[false, false, false]} tone="caution" />
         </div>
       )}
-      {escrow.keepOpen || (!ready && view.state === 'setup') ? (
+      {escrow.keepOpen || !ready ? (
         <p className="x2f-keep-open" role="status" data-keep-open="">
           <Icon name="info" size={16} /> Keep this page open until the escrow is ready.
         </p>

@@ -21,6 +21,20 @@
   min-width: 0;
 }
 
+/* Phones: the body scrolls between the header and the footer, so the primary action stays on screen. */
+@media (max-width: 1023px) {
+  .x2f-trade {
+    height: 100dvh;
+    min-height: 0;
+  }
+
+  .x2f-trade-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+}
+
 .x2f-trade-chip-row,
 .x2f-setup__row {
   display: flex;

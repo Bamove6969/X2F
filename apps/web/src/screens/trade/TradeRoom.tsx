@@ -30,8 +30,9 @@
  * - `wide`: true at 1024 px and wider (the Desktop board's room, Task 23).
  *
  * ### Choosing a screen
- * 1. If the escrow reports an integrity failure (`participants-mismatch`, `deal-mismatch`), the
- *    room shows SetupStatus's danger state whatever the slot: nobody funds or settles that trade.
+ * 1. If the escrow reports an integrity failure (`participants-mismatch`, `deal-mismatch`, or an
+ *    API escrow address that differs from the one this device derived), the room shows
+ *    SetupStatus's danger state whatever the slot: nobody funds or settles that trade.
  * 2. Otherwise, among the slots whose `role` (or 'any') and `states` match: the first one whose
  *    `when` returns true (in registration order), else the one without `when`.
  * 3. No match: a plain status card naming the state (until its task lands).
@@ -207,10 +208,18 @@ export function TradeRoom() {
   }
   const view = load.view;
   const props: TradeScreenProps = { view, escrow, refresh, serverClock: clock, wide };
-  const Screen = integrityFailed(escrow) ? integrityScreen : screenFor(view, clock().getTime());
+  const broken = integrityFailed(escrow, view);
+  const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
-      {Screen ? <Screen {...props} /> : <StatusCard view={view} />}
+      {Screen ? (
+        <Screen {...props} />
+      ) : broken ? (
+        // Fails closed even if no screen module registered the danger state.
+        <p role="alert">Security check failed. Don't fund this trade.</p>
+      ) : (
+        <StatusCard view={view} />
+      )}
     </main>
   );
 }

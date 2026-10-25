@@ -9,7 +9,7 @@
  * replaced by "Escrow funded" and never rendered again for that trade, across reloads.
  */
 import { useEffect, useRef, useState } from 'react';
-import { formatFiat, formatXmr } from '@x2f/trade';
+import { formatFiat, formatXmr, moneroUri } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
 import { Amount } from '../../ui/Amount.js';
 import { Button } from '../../ui/Button.js';
@@ -21,6 +21,7 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { exactXmr, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
+import { verifiedEscrowAddress } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import './trade.css';
 
@@ -139,26 +140,40 @@ function SellerQuote({ view }: { view: TradeView }) {
   );
 }
 
-/** The seller's funding controls while unfunded: the wallet hold on a phone, else QR and copy. */
-function FundControls({ view, phone }: { view: TradeView; phone: boolean }) {
+/**
+ * The phone's funding footer: the 1.5 s hold that opens the wallet once per trade (then
+ * "Waiting for your payment…"), its hint, and the way to the QR code. It stays on screen at
+ * every phone size; the QR code and address go in the scrolling body.
+ */
+function WalletFooter({
+  view,
+  uri,
+  opened,
+  onOpened,
+  fallbackShown,
+  onShowFallback,
+}: {
+  view: TradeView;
+  /** Built on this device from the verified address (never the API's link). */
+  uri: string;
+  opened: boolean;
+  onOpened: () => void;
+  fallbackShown: boolean;
+  onShowFallback: () => void;
+}) {
   const f = view.funding!;
-  const funds = BigInt(f.sellerFundsAtomic);
   const wallet = walletName(f.walletApp);
-  const [opened, setOpened] = useState(() => hasFundMark(view.code, 'opened'));
-  const [showFallback, setShowFallback] = useState(false);
   const link = useRef<HTMLAnchorElement>(null);
-  if (f.uri === null || f.escrowAddress === null) return null;
-  const fallback = <FundFallback uri={f.uri} address={f.escrowAddress} sellerFundsAtomic={funds} primary={!phone} />;
-  if (!phone) return <footer className="x2f-fund-footer">{fallback}</footer>;
   const open = () => {
+    // Once per trade on this device, whatever re-renders or reloads happened since.
     if (hasFundMark(view.code, 'opened')) return;
     setFundMark(view.code, 'opened');
-    setOpened(true);
+    onOpened();
     link.current?.click();
   };
   return (
     <footer className="x2f-fund-footer">
-      <a ref={link} href={f.uri} hidden data-wallet-link="" tabIndex={-1} aria-hidden="true">
+      <a ref={link} href={uri} hidden data-wallet-link="" tabIndex={-1} aria-hidden="true">
         {wallet}
       </a>
       <HoldButton
@@ -170,18 +185,25 @@ function FundControls({ view, phone }: { view: TradeView; phone: boolean }) {
       />
       {opened ? null : (
         <span className="x2f-fund-hint">
-          Opens {wallet} with the escrow address and {exactXmr(funds)} XMR filled in. You confirm there.
+          Opens {wallet} with the escrow address and {exactXmr(BigInt(f.sellerFundsAtomic))} XMR filled in. You confirm there.
         </span>
       )}
-      {opened || showFallback ? (
-        fallback
-      ) : (
-        <Button variant="quiet" onClick={() => setShowFallback(true)}>
+      {opened || fallbackShown ? null : (
+        <Button variant="quiet" onClick={onShowFallback}>
           Use another wallet (QR code or address)
         </Button>
       )}
     </footer>
   );
+}
+
+/** moneroUri, or null (nothing to fund with) for an address it refuses: fail closed. */
+function safeUri(address: string, funds: bigint): string | null {
+  try {
+    return moneroUri(address, funds);
+  } catch {
+    return null;
+  }
 }
 
 export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
@@ -191,10 +213,22 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
     if (fundedNow) setFundMark(view.code, 'funded');
   }, [fundedNow, view.code]);
   const phone = isPhoneDevice(navigator.userAgent, navigator.maxTouchPoints);
-  const settingUp = view.state === 'setup' || !view.funding?.escrowAddress;
+  // The only address this screen ever shows or links: the one this device derived and verified
+  // (check words ready, no error, the API's address equal to it). Until then it shows setup progress.
+  const verified = verifiedEscrowAddress(escrow, view);
+  const settingUp = view.state === 'setup' || verified === null;
   const funds = sellerFundsOf(view);
   const received = BigInt(view.receivedAtomic);
   const wallet = view.funding?.walletApp ?? null;
+  const [opened, setOpened] = useState(() => hasFundMark(view.code, 'opened'));
+  const [fallbackShown, setFallbackShown] = useState(false);
+  const canFund = !funded && !settingUp && verified !== null && view.funding !== null && funds > 0n;
+  // The `monero:` link is built here from verified values only; the API's `funding.uri` is never used.
+  const uri = canFund ? safeUri(verified, funds) : null;
+  const fallback =
+    uri !== null && (!phone || opened || fallbackShown) ? (
+      <FundFallback uri={uri} address={verified!} sellerFundsAtomic={funds} primary={!phone} />
+    ) : null;
 
   return (
     <div className="x2f-trade" data-trade-fund="" data-funded={funded ? 'true' : 'false'}>
@@ -240,12 +274,22 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
           </p>
         ) : null}
         <GiftCard view={view} />
+        {fallback}
         <SellerQuote view={view} />
         {settingUp && !funded ? null : <HowEscrow view={view} />}
         {!settingUp && escrow.checkWords ? <EscrowCheck view={view} words={escrow.checkWords} /> : null}
         {!funded && wallet === 'edge' ? <p className="x2f-muted x2f-tip">{EDGE_TIP}</p> : null}
       </div>
-      {funded || settingUp ? null : <FundControls view={view} phone={phone} />}
+      {uri !== null && phone ? (
+        <WalletFooter
+          view={view}
+          uri={uri}
+          opened={opened}
+          onOpened={() => setOpened(true)}
+          fallbackShown={fallbackShown}
+          onShowFallback={() => setFallbackShown(true)}
+        />
+      ) : null}
     </div>
   );
 }
