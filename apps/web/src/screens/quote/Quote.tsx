@@ -5,6 +5,7 @@ import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, quote, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
+import { claimTake, rememberTake } from './pendingTake.js';
 import { takeRefusal } from './takeErrors.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
@@ -124,24 +125,37 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   }, [here, params, setParams]);
 
   const path = `/${copy.adSide === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}/${encodeURIComponent(offerId)}`;
-  const resumeHref = `${path}?${new URLSearchParams([...here, ['resume', '1']])}`;
+  const pending = { offerId, unit, text };
+  /**
+   * This quote with `resume=<nonce>`, recording the single-use pending-take marker (pendingTake.ts).
+   * Called only when the person tapped Trade or Add a wallet and is being sent away. Without
+   * storage there is no marker, and the quote comes back filled in, waiting for a tap.
+   */
+  const resumeHref = () => {
+    const n = rememberTake(pending);
+    return `${path}?${n === null ? here : new URLSearchParams([...here, ['resume', n]])}`;
+  };
   const backHref = `/${copy.adSide === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
-  const addWalletHref = (resume: boolean) => `/wallets?add=1&returnTo=${encodeURIComponent(resume ? resumeHref : `${path}?${here}`)}`;
+  const addWalletHref = (resume: boolean) => `/wallets?add=1&returnTo=${encodeURIComponent(resume ? resumeHref() : `${path}?${here}`)}`;
 
-  // Back from setup or Add a wallet with `resume=1`: take the offer the person already tapped Trade
-  // on, once. Only when exactly one wallet can be picked: with more, the person picks (OD-11).
+  // Back from setup or Add a wallet with `resume=<nonce>`: take the offer the person already tapped
+  // Trade on, once, and only if this tab holds the matching marker (a crafted link never takes).
+  // Only when exactly one wallet can be picked: with more, the person picks (OD-11).
   const resumed = useRef(false);
   useEffect(() => {
-    if (resumed.current || params.get('resume') !== '1' || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
+    const nonce = params.get('resume');
+    if (resumed.current || nonce === null || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
     resumed.current = true;
     const next = new URLSearchParams(params);
     next.delete('resume');
     setParams(next, { replace: true });
+    // The marker is cleared here, before any take, whether or not it matches.
+    if (!claimTake(pending, nonce)) return;
     const only = usable.length === 1 ? usable[0]! : null;
     if (only === null || q.kind !== 'ok') return;
     setPicked(only.id);
     take({ amountAtomic: q.amountAtomic, walletId: only.id, resumeHref });
-  }, [params, signedIn, wallets.kind, q, usable, setParams, take, resumeHref]);
+  });
 
   if (offer.kind === 'loading') return <main className="x2f-quote" data-screen="quote" aria-busy="true" />;
   if (o === null) {
