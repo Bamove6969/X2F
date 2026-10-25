@@ -380,10 +380,15 @@ describe('the real transport refuses non-public addresses', () => {
 
   it('webPushTransport never connects to an allowed host that resolves to loopback', async () => {
     const s = subscription();
-    const send = makeWebPushTransport(fakeDns([{ address: '127.0.0.1', family: 4 }]));
+    const asked: string[] = [];
+    const send = makeWebPushTransport(((h: string, _o: unknown, cb: (e: Error | null, a: Addr[]) => void) => {
+      asked.push(h);
+      cb(null, [{ address: '127.0.0.1', family: 4 }]);
+    }) as never);
     await expect(send({ subscription: s, payload: PUSH_PAYLOADS.trade, options: pushRequestOptions(deps.config) })).rejects.toThrow(
       'push: network error',
     );
+    expect(asked).toEqual([new URL(s.endpoint).hostname]);
   });
 
   it('webPushTransport refuses an endpoint that fails the checks, before any lookup', async () => {

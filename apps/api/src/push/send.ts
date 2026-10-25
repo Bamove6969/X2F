@@ -1,6 +1,8 @@
+import { Agent } from 'node:https';
 import webpush, { type RequestOptions } from 'web-push';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
+import { canonicalEndpoint, publicOnlyLookup, type LookupFn } from './endpoint.js';
 
 export type PushKind = 'nudge' | 'trade';
 
@@ -64,19 +66,27 @@ export function pushRequestOptions(config: Pick<Config, 'origins' | 'vapidPublic
 }
 
 /**
- * The real transport: web-push encrypts the payload to the browser's keys and POSTs it to the
- * endpoint. A refusal (WebPushError) becomes its status code; the error itself is dropped because
- * it quotes the endpoint.
+ * A real transport: web-push encrypts the payload to the browser's keys and POSTs it to the
+ * endpoint. The endpoint is checked again here (`canonicalEndpoint`), and the connection goes
+ * through an agent whose DNS lookup refuses any non-public address, so neither a bad row nor a
+ * push-service name pointed at an internal address reaches inside the network. A refusal
+ * (WebPushError) becomes its status code; other errors are dropped because they quote the endpoint.
  */
-export const webPushTransport: PushTransport = async ({ subscription, payload, options }) => {
-  try {
-    const r = await webpush.sendNotification(subscription, payload, options);
-    return { statusCode: r.statusCode };
-  } catch (e) {
-    if (e instanceof webpush.WebPushError) return { statusCode: e.statusCode };
-    throw new Error('push: network error');
-  }
-};
+export function makeWebPushTransport(lookup?: LookupFn): PushTransport {
+  const agent = new Agent({ keepAlive: true, lookup: publicOnlyLookup(lookup) as never });
+  return async ({ subscription, payload, options }) => {
+    if (!canonicalEndpoint(subscription.endpoint)) throw new Error('push: invalid endpoint');
+    try {
+      const r = await webpush.sendNotification(subscription, payload, { ...options, agent, proxy: undefined });
+      return { statusCode: r.statusCode };
+    } catch (e) {
+      if (e instanceof webpush.WebPushError) return { statusCode: e.statusCode };
+      throw new Error('push: network error');
+    }
+  };
+}
+
+export const webPushTransport: PushTransport = makeWebPushTransport();
 
 /**
  * Pushes the fixed text for `kind` to every subscription of `accountId`. Returns true when at
@@ -93,6 +103,12 @@ export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind
   const payload = PUSH_PAYLOADS[kind];
   const results = await Promise.all(
     rows.map(async (row) => {
+      // Never send to a row that fails the subscribe route's checks; it cannot become valid.
+      if (!canonicalEndpoint(row.endpoint)) {
+        await deps.db.query('delete from push_subscriptions where id = $1', [row.id]);
+        deps.log.warn({ push: 'invalid-endpoint' }, 'push subscription dropped');
+        return false;
+      }
       let status: number;
       try {
         ({ statusCode: status } = await deps.transport({

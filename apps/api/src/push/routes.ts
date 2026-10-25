@@ -2,22 +2,8 @@ import { createECDH } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
+import { canonicalEndpoint } from './endpoint.js';
 import { PUSH_SUBSCRIPTION_CAP } from './send.js';
-
-export const ENDPOINT_MAX = 1024;
-
-/**
- * Push services a browser subscription may point at (Chrome and most Chromium browsers, Firefox,
- * Safari, Edge). The API POSTs to the endpoint, so any other host would let a caller aim the
- * server at a URL of their choosing (SSRF). A host matches itself or any subdomain.
- */
-export const PUSH_SERVICE_DOMAINS: readonly string[] = [
-  'fcm.googleapis.com',
-  'android.googleapis.com',
-  'push.services.mozilla.com',
-  'push.apple.com',
-  'notify.windows.com',
-];
 
 const B64URL_P256 = /^[A-Za-z0-9_-]{87}$/;
 const B64URL_AUTH = /^[A-Za-z0-9_-]{22}$/;
@@ -26,19 +12,11 @@ function refuse(): never {
   throw new ApiError(400, 'bad-request');
 }
 
-/** An https URL on a known push service, default port, no credentials; anything else is refused. */
-export function checkEndpoint(raw: unknown): string {
-  if (typeof raw !== 'string' || raw.length === 0 || raw.length > ENDPOINT_MAX) refuse();
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    refuse();
-  }
-  if (url.protocol !== 'https:' || url.username !== '' || url.password !== '' || url.port !== '') refuse();
-  const host = url.hostname.toLowerCase();
-  if (!PUSH_SERVICE_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) refuse();
-  return raw;
+/** A push-service endpoint in canonical form (see `canonicalEndpoint`); anything else is refused. */
+function checkEndpoint(raw: unknown): string {
+  const url = canonicalEndpoint(raw);
+  if (!url) refuse();
+  return url.href;
 }
 
 /** The browser's P-256 public key: base64url of an uncompressed point that is on the curve. */
