@@ -1,0 +1,172 @@
+{
+  "BadgeSettings": {
+    "sha256": "c18e8659fb953a8dcbba8e612ec4620464e1185b7a07cf2adaa8234f7c8f6302",
+    "w": 390,
+    "h": 844
+  },
+  "BuyerPay": {
+    "sha256": "7efd810083149678b659b459715ab16716c4f706f6c2fba503e887727c150aa9",
+    "w": 390,
+    "h": 844
+  },
+  "BuyMain": {
+    "sha256": "93ae52793577ed94253128896eefe57e943b62b925c92a4d3375c429ea00e207",
+    "w": 390,
+    "h": 844
+  },
+  "BuyOffers": {
+    "sha256": "0de9d41960e0668fe855f1d10b1da7cf37ab0550205d08390066120a50c565b1",
+    "w": 390,
+    "h": 844
+  },
+  "BuyQuote": {
+    "sha256": "7072e45c65bd8100b92b4ea4051262de3428420c3cbb8d3c22ca38c2a5a99add",
+    "w": 390,
+    "h": 844
+  },
+  "Desktop": {
+    "sha256": "8da041a5a627b296e4426c36222e3755677fe4acb8f26ad168007ab1d41e8f2f",
+    "w": 1280,
+    "h": 800
+  },
+  "DisputeOpen": {
+    "sha256": "291a973add7c9dd6d8bab7f421c9374264f5b6cef0ba253c03f1a71279b2228a",
+    "w": 390,
+    "h": 844
+  },
+  "DisputeRoom": {
+    "sha256": "ccc50008d08575758e326bf8c91a97fe08609db877653270c8c0ff0d066e9eb0",
+    "w": 390,
+    "h": 844
+  },
+  "DisputeRuling": {
+    "sha256": "51fb49ebf412141f46567c6054d77d356480aaee1777ac07dfa940d2d925f653",
+    "w": 390,
+    "h": 844
+  },
+  "Main": {
+    "sha256": "97c8d5bf23d0ac5c691c7e0d174f903361172af613c5e96f9520afcc61308645",
+    "w": 390,
+    "h": 844
+  },
+  "ModCase": {
+    "sha256": "8ababee137691a42b2842817b41b6b739cae9d48d4e5818024dbb17be340a14c",
+    "w": 1280,
+    "h": 1600
+  },
+  "ModQueue": {
+    "sha256": "2898948c5051fc99c9ab92976e518e7f2ae84028547a57b6857f16711e0e7084",
+    "w": 1280,
+    "h": 1000
+  },
+  "OwnerSetup": {
+    "sha256": "abf789df5a71ed6ad016e78b9d05f0d549145d17963eaa203a06440af41f058d",
+    "w": 1280,
+    "h": 1180
+  },
+  "PostOffer": {
+    "sha256": "9eb8c32d3274957b977a32eefecf95184ebf86282ac4717da71de8a525d413d6",
+    "w": 390,
+    "h": 844
+  },
+  "Profile": {
+    "sha256": "5166d98e2607cb2295f3116a9248b132a2b7de0c5ea9c18748778f0953c4ea45",
+    "w": 390,
+    "h": 844
+  },
+  "Review": {
+    "sha256": "83788318276bd72c074da4c248b9b3041526c184855185d99e880ecd4a0164d8",
+    "w": 390,
+    "h": 844
+  },
+  "SellerConfirm": {
+    "sha256": "88e6e4a06ee8b4462caef2905ed6de420807f4c391983a7306438461b1d1ac53",
+    "w": 390,
+    "h": 844
+  },
+  "SellerRefund": {
+    "sha256": "cb64bab25f2aee8dff34b356c8dd1a9ff4b8b89a6a8c47000a41a43d6a2bb0b8",
+    "w": 390,
+    "h": 844
+  },
+  "SellOffers": {
+    "sha256": "87f3af655749126bc2210222a5c011e874a1118021a90520dd5b8bc4d3050c67",
+    "w": 390,
+    "h": 844
+  },
+  "SetupBackup": {
+    "sha256": "b1aad1996bd61b1f2790dc333498975d2df1788327f43e642279418a596fc821",
+    "w": 390,
+    "h": 844
+  },
+  "SetupLogin": {
+    "sha256": "8640ff76b664aea479aec84cb73932b70e462144bcce9b2d9deb97c56a4420d1",
+    "w": 390,
+    "h": 844
+  },
+  "SetupPassword": {
+    "sha256": "c07027787e580d7fc47f4b109696aa453005b94102074641a1444aca70914260",
+    "w": 390,
+    "h": 844
+  },
+  "SetupPgpChallenge": {
+    "sha256": "438be76b44c0f0ea08c0769e37d710613c2412f4d456571002506a624868c6ed",
+    "w": 390,
+    "h": 844
+  },
+  "SetupPgpKey": {
+    "sha256": "08fc6b42c1d650a1227ae023b284ea37f87a4ff7417387430d4e997801a2c1ac",
+    "w": 390,
+    "h": 844
+  },
+  "SetupUsername": {
+    "sha256": "a2f3436e70b0e2bf56f19ba202c111e9a21cf21784648fa1e8d9c48b95fab075",
+    "w": 390,
+    "h": 844
+  },
+  "SetupWallet": {
+    "sha256": "291a85ef0e83ba455b3f9c04a0440d962388fbaf7e474077ae0ad6becc290405",
+    "w": 390,
+    "h": 844
+  },
+  "SetupWelcome": {
+    "sha256": "7ac78679ac03d4b3811c84f0a59312d762249de47459f6f31f6fb7e1cc73442c",
+    "w": 390,
+    "h": 844
+  },
+  "StaffList": {
+    "sha256": "e51ca3590b0d4c03c72b1581514cc3ac66285b953d94a4ef7c1845fe1edebb81",
+    "w": 1280,
+    "h": 1000
+  },
+  "StaffLog": {
+    "sha256": "6c62ea9801aca546c79c4d2b768bf81e180028045b5293e4cca6bc51e21aa40a",
+    "w": 1280,
+    "h": 900
+  },
+  "StaffOverview": {
+    "sha256": "dbb769ae9463f07f6e5aea1433c2e3123d6066649cf2f3feb79c88626d59e786",
+    "w": 1280,
+    "h": 1500
+  },
+  "StaffPerformance": {
+    "sha256": "1fd3050b5c9beb463bfb28723d8f4feb8e22c54ee5b3be24abc505b5be220979",
+    "w": 1280,
+    "h": 1400
+  },
+  "StaffSettings": {
+    "sha256": "dd8f3c52ff829b036cdd5a4a4e26d04bb0a666905c0d93b7373c9056b2eb6559",
+    "w": 1280,
+    "h": 1240
+  },
+  "TradeFund": {
+    "sha256": "876de103cb93e6f66af142789548e6db851d3e6afd4f61608d70c8257c49aa83",
+    "w": 390,
+    "h": 844
+  },
+  "Wallet": {
+    "sha256": "421e24148dbaa5d5bd326ee171103bd85947533aae167c80366986a7d74ef690",
+    "w": 390,
+    "h": 844
+  }
+}

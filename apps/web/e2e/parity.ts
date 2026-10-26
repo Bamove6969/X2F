@@ -10,8 +10,9 @@
 // Reported, not blocking (P3-M6): a screenshot diff against design/x2f-app/refs/<Board>.png at
 // MAX_DIFF_PIXEL_RATIO, with [data-mask] regions and `masks` blacked out in both the reference and
 // the page before the pixels are counted. The result goes into the test's annotations
-// ("parity-pixels") and, on a difference, the reference and the page are attached to the report for
-// a person to review. The references come only from tools/parity/capture-refs.ts; a missing one is
+// ("parity-pixels") and is printed as a "parity-pixels <Board> <viewport>: …" line; on a difference
+// the reference and the page are attached to the HTML report (playwright-report/) for a person to
+// review. The references come only from tools/parity/capture-refs.ts; a missing one is
 // reported, never written. The viewport defaults to the board's canvas.json size, so the staff and
 // mod boards (1280x900–1600) are shot at their reference's size. Known artifact: refs/SetupBackup.png
 // reads "Addauthenticator app" (the canvas runtime drops the space before a filled-in {{choice}});
@@ -160,6 +161,19 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
 const VALUE = String.raw`(?:[\d$.,:\s]+(?:XMR|USD|min|h|s|left)?|[A-Z0-9]{4}(?:-[A-Z0-9]{4})+)`;
 const VALUE_SHAPED = new RegExp(`^${VALUE}$`);
 
+/**
+ * The kind of a value-shaped text, so a lone mask only stands in for a board value like the one it
+ * hides: a masked countdown is not a missing amount. A code is a K7M2-9QXA-… trade code; money has a
+ * currency sign or unit or a decimal point; a time has a colon or a time unit; anything else is a
+ * count.
+ */
+export function valueKind(s: string): 'code' | 'money' | 'time' | 'count' {
+  if (/^[A-Z0-9]{4}(?:-[A-Z0-9]{4})+$/.test(s)) return 'code';
+  if (/[$]|XMR|USD|\d\.\d/.test(s)) return 'money';
+  if (/\d:\d|\d\s*(?:h|min|s)\b|\bleft$/.test(s)) return 'time';
+  return 'count';
+}
+
 const escapeRe = (p: string) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** A board text with MASKs (runtime-filled {{…}} placeholders): each MASK matches any text. */
@@ -188,7 +202,8 @@ interface Shown {
  *   - a shown text has masked elements (inside [data-mask] or one of `masks`) inline where the
  *     text's changing part is, and every piece they stand for is value-shaped, e.g.
  *     "You pay · <Countdown/> left" covers "You pay · 62 min left" but not "You get · …"; or
- *   - the text is value-shaped and a masked element stands on its own for it (a lone timer).
+ *   - the text is value-shaped and a masked element of the same kind (`valueKind`: time, money,
+ *     code, count) stands on its own for it (a lone timer).
  * Use is tied to the masked ELEMENT: each masked element covers at most one board text, however
  * many wrapper elements repeat its sentence, and a {{…}} board text consumes the shown text (and
  * the masks in it) it matched.
@@ -197,10 +212,20 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
   for (const m of masks) await m.evaluateAll((els, attr) => els.forEach((e) => e.setAttribute(attr, '')), MASK_ATTR);
   const { shown, standalone } = await page.evaluate(
     ({ sel, mask }) => {
-      const visible = (el: Element) => el.checkVisibility({ visibilityProperty: true, opacityProperty: true });
+      // Shown to a sighted person: rendered, and at least 2x2 px inside the document, so screen-reader
+      // only text (1 px clip), a 0x0 box or text moved off the page does not count.
+      const visible = (el: Element) => {
+        if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
+        const r = el.getBoundingClientRect();
+        if (r.width < 2 || r.height < 2) return false;
+        const doc = document.documentElement;
+        const left = r.left + window.scrollX;
+        const top = r.top + window.scrollY;
+        return left + r.width > 0 && top + r.height > 0 && left < doc.scrollWidth && top < doc.scrollHeight;
+      };
       // The outermost visible masked elements, each with an id.
       const ids = new Map<Element, number>();
-      const standalone: number[] = [];
+      const standalone: { id: number; text: string }[] = [];
       for (const el of Array.from(document.body.querySelectorAll(sel))) {
         if (el.parentElement?.closest(sel) || !visible(el)) continue;
         const id = ids.size;
@@ -209,7 +234,7 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
         const inline = Array.from(el.parentElement?.childNodes ?? []).some(
           (n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '',
         );
-        if (!inline) standalone.push(id);
+        if (!inline) standalone.push({ id, text: (el.textContent ?? '').replace(/\s+/g, ' ').trim() });
       }
       const read = (node: Node, found: number[]): string => {
         if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
@@ -289,9 +314,10 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
       take(hit);
       continue;
     }
-    const lone = VALUE_SHAPED.test(t) ? standalone.find((id) => !usedMask.has(id)) : undefined;
+    const kind = VALUE_SHAPED.test(t) ? valueKind(t) : null;
+    const lone = kind === null ? undefined : standalone.find((m) => !usedMask.has(m.id) && valueKind(m.text) === kind);
     if (lone !== undefined) {
-      usedMask.add(lone);
+      usedMask.add(lone.id);
       continue;
     }
     missing.push(t);
@@ -299,7 +325,11 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
   return missing;
 }
 
-/** Board parity for the page as it is now; see the top of this file. Throws on a blocking failure. */
+/**
+ * Board parity for the page as it is now; see the top of this file. Throws on a blocking failure.
+ * It first sets the page's viewport to `o.viewport` (default: the board's canvas.json size) and
+ * leaves it there, so a test that goes on after it runs at that size.
+ */
 export async function expectParity(
   page: Page,
   board: string,
@@ -432,5 +462,8 @@ export async function reportPixels(
     }
   }
   test.info().annotations.push({ type: 'parity-pixels', description: `${board} ${viewport}: ${result}` });
+  // The list reporter prints neither annotations nor attachments for a passing test: print the line
+  // so a person sees it (the HTML report in playwright-report/ keeps the attached images).
+  console.log(`parity-pixels ${board} ${viewport}: ${result}`);
   return result;
 }
