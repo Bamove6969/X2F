@@ -1,332 +1,425 @@
 {
-  "v": 3,
-  "createdOnFiles": {
-    "v": 1,
-    "at": "2026-10-15T04:05:00Z"
-  },
-  "title": "X2F App",
-  "launch": {
-    "view": "canvas",
-    "page": "all"
-  },
-  "pages": [
-    {
-      "id": "all",
-      "name": "All screens"
-    }
-  ],
+  "attachments": {},
   "boards": {
-    "Main.dc.html": {
-      "x": 0,
-      "y": 0,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "1 · Sell: pick how you get paid",
-      "is_interactive": true
-    },
-    "SellOffers.dc.html": {
-      "x": 470,
-      "y": 0,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "2 · Sell: buyers paying via Zelle",
-      "is_interactive": true
-    },
-    "PostOffer.dc.html": {
-      "x": 940,
-      "y": 0,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "3 · Post an offer",
-      "is_interactive": true
-    },
-    "TradeFund.dc.html": {
-      "x": 0,
-      "y": 1444,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "1 · Seller funds escrow",
-      "is_interactive": true
-    },
-    "BuyerPay.dc.html": {
-      "x": 470,
-      "y": 1444,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "2 · Buyer pays and uploads proof",
-      "is_interactive": true
-    },
-    "SellerConfirm.dc.html": {
-      "x": 940,
-      "y": 1444,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "3 · Seller checks bank and releases",
-      "is_interactive": true
-    },
-    "Review.dc.html": {
-      "x": 1410,
-      "y": 1444,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "4 · Released, rate the trade",
-      "is_interactive": true
-    },
-    "SellerRefund.dc.html": {
-      "x": 1880,
-      "y": 1444,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "Alt · buyer missed the deadline"
-    },
-    "Desktop.dc.html": {
-      "x": 0,
-      "y": 5776,
-      "w": 1280,
-      "h": 800,
-      "page": "all",
-      "title": "Desktop · buyer paying"
-    },
-    "Profile.dc.html": {
-      "x": 0,
-      "y": 2888,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "1 · Trader profile",
-      "is_interactive": true
-    },
     "BadgeSettings.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "2 \u00b7 Your badges (settings)",
+      "w": 390,
       "x": 470,
-      "y": 2888,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "2 · Your badges (settings)",
-      "is_interactive": true
-    },
-    "Wallet.dc.html": {
-      "x": 940,
-      "y": 2888,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "3 · Your wallets",
-      "is_interactive": true
-    },
-    "SetupUsername.dc.html": {
-      "x": 0,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "1 · Pick a username",
-      "is_interactive": true
-    },
-    "SetupLogin.dc.html": {
-      "x": 470,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "2 · How do you want to log in?",
-      "is_interactive": true
-    },
-    "SetupPgpKey.dc.html": {
-      "x": 940,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "3 · PGP: add your public key",
-      "is_interactive": true
-    },
-    "SetupPgpChallenge.dc.html": {
-      "x": 1410,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "3 · PGP: decrypt your first login code",
-      "is_interactive": true
-    },
-    "SetupBackup.dc.html": {
-      "x": 1880,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "4 · Backup way to log in (optional)",
-      "is_interactive": true
-    },
-    "SetupWallet.dc.html": {
-      "x": 2350,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "5 · Where should we send your XMR?",
-      "is_interactive": true
-    },
-    "SetupPassword.dc.html": {
-      "x": 3290,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "Alt 3 · Choose a password",
-      "is_interactive": true
-    },
-    "SetupWelcome.dc.html": {
-      "x": 2820,
-      "y": 4332,
-      "w": 390,
-      "h": 844,
-      "page": "all",
-      "title": "6 · Welcome, start trading",
-      "is_interactive": true
-    },
-    "OwnerSetup.dc.html": {
-      "x": 0,
-      "y": 7176,
-      "w": 1280,
-      "h": 1180,
-      "page": "all",
-      "title": "1 · First-run: create the owner account",
-      "expand": "fill",
-      "is_interactive": true
-    },
-    "StaffList.dc.html": {
-      "x": 1360,
-      "y": 7176,
-      "w": 1280,
-      "h": 1000,
-      "page": "all",
-      "title": "2 · Staff: add, set login hours, switch off",
-      "expand": "fill",
-      "is_interactive": true
-    },
-    "StaffSettings.dc.html": {
-      "x": 2720,
-      "y": 7176,
-      "w": 1280,
-      "h": 1240,
-      "page": "all",
-      "title": "3 · Settings: limits and pay",
-      "expand": "fill",
-      "is_interactive": true
-    },
-    "StaffLog.dc.html": {
-      "x": 4080,
-      "y": 7176,
-      "w": 1280,
-      "h": 900,
-      "page": "all",
-      "title": "4 · Activity log",
-      "expand": "fill",
-      "is_interactive": true
-    },
-    "StaffOverview.dc.html": {
-      "x": 5440,
-      "y": 7176,
-      "w": 1280,
-      "h": 1500,
-      "page": "all",
-      "title": "5 · Overview: emergency stop, earnings, banner",
-      "expand": "fill",
-      "is_interactive": true
-    },
-    "StaffPerformance.dc.html": {
-      "x": 6800,
-      "y": 7176,
-      "w": 1280,
-      "h": 1400,
-      "page": "all",
-      "title": "6 · Moderator performance, with charts",
-      "expand": "fill",
-      "is_interactive": true
+      "y": 2888
     },
     "BuyMain.dc.html": {
-      "x": 0,
-      "y": 9276,
-      "w": 390,
       "h": 844,
+      "is_interactive": true,
       "page": "all",
-      "title": "1 · Buy: pick how you pay",
-      "is_interactive": true
+      "title": "1 \u00b7 Buy: pick how you pay",
+      "w": 390,
+      "x": 0,
+      "y": 9276
     },
     "BuyOffers.dc.html": {
-      "x": 470,
-      "y": 9276,
-      "w": 390,
       "h": 844,
+      "is_interactive": true,
       "page": "all",
-      "title": "2 · Buy: sellers taking Zelle",
-      "is_interactive": true
+      "title": "2 \u00b7 Buy: sellers taking Zelle",
+      "w": 390,
+      "x": 470,
+      "y": 9276
     },
     "BuyQuote.dc.html": {
-      "x": 940,
-      "y": 9276,
-      "w": 390,
       "h": 844,
+      "is_interactive": true,
       "page": "all",
-      "title": "3 · Buy: amount, wallet, what you get",
-      "is_interactive": true
+      "title": "3 \u00b7 Buy: amount, wallet, what you get",
+      "w": 390,
+      "x": 940,
+      "y": 9276
+    },
+    "BuyerPay.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "2 \u00b7 Buyer pays and uploads proof",
+      "w": 390,
+      "x": 470,
+      "y": 1444
+    },
+    "Desktop.dc.html": {
+      "h": 800,
+      "page": "all",
+      "title": "Desktop \u00b7 buyer paying",
+      "w": 1280,
+      "x": 0,
+      "y": 5776
     },
     "DisputeOpen.dc.html": {
-      "x": 0,
-      "y": 10720,
-      "w": 390,
       "h": 844,
+      "is_interactive": true,
       "page": "all",
-      "title": "1 · Open a dispute",
-      "is_interactive": true
+      "title": "1 \u00b7 Open a dispute",
+      "w": 390,
+      "x": 0,
+      "y": 10720
     },
     "DisputeRoom.dc.html": {
-      "x": 470,
-      "y": 10720,
-      "w": 390,
       "h": 844,
+      "is_interactive": true,
       "page": "all",
-      "title": "2 · Moderator joined the trade room",
-      "is_interactive": true
+      "title": "2 \u00b7 Moderator joined the trade room",
+      "w": 390,
+      "x": 470,
+      "y": 10720
     },
     "DisputeRuling.dc.html": {
-      "x": 940,
-      "y": 10720,
-      "w": 390,
       "h": 844,
-      "page": "all",
-      "title": "3 · Ruling and appeal",
-      "is_interactive": true
-    },
-    "ModQueue.dc.html": {
-      "x": 0,
-      "y": 12164,
-      "w": 1280,
-      "h": 1000,
-      "page": "all",
-      "title": "1 · Dispute queue",
       "is_interactive": true,
-      "expand": "fill"
+      "page": "all",
+      "title": "3 \u00b7 Ruling and appeal",
+      "w": 390,
+      "x": 940,
+      "y": 10720
+    },
+    "Main.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 Sell: pick how you get paid",
+      "w": 390,
+      "x": 0,
+      "y": 0
     },
     "ModCase.dc.html": {
-      "x": 1360,
-      "y": 12164,
-      "w": 1280,
+      "expand": "fill",
       "h": 1600,
-      "page": "all",
-      "title": "2 · Case view and ruling tools",
       "is_interactive": true,
-      "expand": "fill"
+      "page": "all",
+      "title": "2 \u00b7 Case view and ruling tools",
+      "w": 1280,
+      "x": 1360,
+      "y": 12164
+    },
+    "ModQueue.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 Dispute queue",
+      "w": 1280,
+      "x": 0,
+      "y": 12164
+    },
+    "OwnerSetup.dc.html": {
+      "expand": "fill",
+      "h": 1180,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 First-run: create the owner account",
+      "w": 1280,
+      "x": 0,
+      "y": 7176
+    },
+    "PostOffer.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 Post an offer",
+      "w": 390,
+      "x": 940,
+      "y": 0
+    },
+    "Profile.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 Trader profile",
+      "w": 390,
+      "x": 0,
+      "y": 2888
+    },
+    "Review.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "4 \u00b7 Released, rate the trade",
+      "w": 390,
+      "x": 1410,
+      "y": 1444
+    },
+    "SellOffers.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "2 \u00b7 Sell: buyers paying via Zelle",
+      "w": 390,
+      "x": 470,
+      "y": 0
+    },
+    "SellerConfirm.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 Seller checks bank and releases",
+      "w": 390,
+      "x": 940,
+      "y": 1444
+    },
+    "SellerRefund.dc.html": {
+      "h": 844,
+      "page": "all",
+      "title": "Alt \u00b7 buyer missed the deadline",
+      "w": 390,
+      "x": 1880,
+      "y": 1444
+    },
+    "SetupBackup.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "4 \u00b7 Backup way to log in (optional)",
+      "w": 390,
+      "x": 2350,
+      "y": 4332
+    },
+    "SetupLogin.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "2 \u00b7 How do you want to log in?",
+      "w": 390,
+      "x": 970,
+      "y": 4332
+    },
+    "SetupPassword.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "Alt 3 \u00b7 Choose a password",
+      "w": 390,
+      "x": 3760,
+      "y": 4332
+    },
+    "SetupPgpChallenge.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 PGP: decrypt your first login code",
+      "w": 390,
+      "x": 1880,
+      "y": 4332
+    },
+    "SetupPgpKey.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 PGP: add your public key",
+      "w": 390,
+      "x": 1410,
+      "y": 4332
+    },
+    "SetupTerms.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "0 \u00b7 Terms of Service (accept)",
+      "w": 390,
+      "x": 0,
+      "y": 4332
+    },
+    "SetupUsername.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 Pick a username",
+      "w": 390,
+      "x": 470,
+      "y": 4332
+    },
+    "SetupWallet.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "5 \u00b7 Where should we send your XMR?",
+      "w": 390,
+      "x": 2820,
+      "y": 4332
+    },
+    "SetupWelcome.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "6 \u00b7 Welcome, start trading",
+      "w": 390,
+      "x": 3290,
+      "y": 4332
+    },
+    "StaffList.dc.html": {
+      "expand": "fill",
+      "h": 1000,
+      "is_interactive": true,
+      "page": "all",
+      "title": "2 \u00b7 Staff: add, set login hours, switch off",
+      "w": 1280,
+      "x": 1360,
+      "y": 7176
+    },
+    "StaffLog.dc.html": {
+      "expand": "fill",
+      "h": 900,
+      "is_interactive": true,
+      "page": "all",
+      "title": "4 \u00b7 Activity log",
+      "w": 1280,
+      "x": 4080,
+      "y": 7176
+    },
+    "StaffOverview.dc.html": {
+      "expand": "fill",
+      "h": 1500,
+      "is_interactive": true,
+      "page": "all",
+      "title": "5 \u00b7 Overview: emergency stop, earnings, banner",
+      "w": 1280,
+      "x": 5440,
+      "y": 7176
+    },
+    "StaffPerformance.dc.html": {
+      "expand": "fill",
+      "h": 1400,
+      "is_interactive": true,
+      "page": "all",
+      "title": "6 \u00b7 Moderator performance, with charts",
+      "w": 1280,
+      "x": 6800,
+      "y": 7176
+    },
+    "StaffSettings.dc.html": {
+      "expand": "fill",
+      "h": 1240,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 Settings: limits and pay",
+      "w": 1280,
+      "x": 2720,
+      "y": 7176
+    },
+    "TradeFund.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "1 \u00b7 Seller funds escrow",
+      "w": 390,
+      "x": 0,
+      "y": 1444
+    },
+    "Wallet.dc.html": {
+      "h": 844,
+      "is_interactive": true,
+      "page": "all",
+      "title": "3 \u00b7 Your wallets",
+      "w": 390,
+      "x": 940,
+      "y": 2888
+    }
+  },
+  "createdOnFiles": {
+    "at": "2026-10-15T04:05:00Z",
+    "v": 1
+  },
+  "designSystems": [
+    {
+      "artifact": "https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM",
+      "copiedAt": "2026-10-15T04:05:00Z",
+      "namespace": "x2f",
+      "title": "X2F",
+      "version": "1792021943-b4cf"
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  },
+  "notes": {
+    "account": {
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all",
+      "text": "Profile & your wallets \u00b7 phone",
+      "w": 240,
+      "x": 0,
+      "y": 2588
+    },
+    "browse": {
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all",
+      "text": "Browse & offers \u00b7 phone",
+      "w": 240,
+      "x": 0,
+      "y": -300
+    },
+    "buyside": {
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all",
+      "text": "Buy side \u00b7 phone",
+      "w": 240,
+      "x": 0,
+      "y": 8976
+    },
+    "desktop": {
+      "kind": "title1",
+      "maxW": 1280,
+      "page": "all",
+      "text": "Desktop \u00b7 buyer paying",
+      "w": 240,
+      "x": 0,
+      "y": 5476
+    },
+    "disputes": {
+      "kind": "title1",
+      "maxW": 1330,
+      "page": "all",
+      "text": "Disputes \u00b7 phone (trader view)",
+      "w": 240,
+      "x": 0,
+      "y": 10420
+    },
+    "modtools": {
+      "kind": "title1",
+      "maxW": 2640,
+      "page": "all",
+      "text": "Moderator tools \u00b7 desktop",
+      "w": 240,
+      "x": 0,
+      "y": 11864
+    },
+    "setup": {
+      "kind": "title1",
+      "maxW": 4150,
+      "page": "all",
+      "text": "Getting started \u00b7 phone",
+      "w": 240,
+      "x": 0,
+      "y": 4032
+    },
+    "staff": {
+      "kind": "title1",
+      "maxW": 8000,
+      "page": "all",
+      "text": "Owner & staff tools \u00b7 desktop",
+      "w": 240,
+      "x": 0,
+      "y": 6876
+    },
+    "tradeph": {
+      "kind": "title1",
+      "maxW": 2270,
+      "page": "all",
+      "text": "Trade room \u00b7 phone",
+      "w": 240,
+      "x": 0,
+      "y": 1144
     }
   },
   "order": [
@@ -342,6 +435,7 @@
     "Profile.dc.html",
     "BadgeSettings.dc.html",
     "Wallet.dc.html",
+    "SetupTerms.dc.html",
     "SetupUsername.dc.html",
     "SetupLogin.dc.html",
     "SetupPgpKey.dc.html",
@@ -365,87 +459,12 @@
     "ModQueue.dc.html",
     "ModCase.dc.html"
   ],
-  "notes": {
-    "browse": {
-      "x": 0,
-      "y": -300,
-      "text": "Browse & offers · phone",
-      "kind": "title1",
-      "maxW": 1330,
-      "page": "all"
-    },
-    "tradeph": {
-      "x": 0,
-      "y": 1144,
-      "text": "Trade room · phone",
-      "kind": "title1",
-      "maxW": 2270,
-      "page": "all"
-    },
-    "account": {
-      "x": 0,
-      "y": 2588,
-      "text": "Profile & your wallets · phone",
-      "kind": "title1",
-      "maxW": 1330,
-      "page": "all"
-    },
-    "desktop": {
-      "x": 0,
-      "y": 5476,
-      "text": "Desktop · buyer paying",
-      "kind": "title1",
-      "maxW": 1280,
-      "page": "all"
-    },
-    "setup": {
-      "x": 0,
-      "y": 4032,
-      "text": "Getting started · phone",
-      "kind": "title1",
-      "maxW": 3680,
-      "page": "all"
-    },
-    "staff": {
-      "x": 0,
-      "y": 6876,
-      "text": "Owner & staff tools · desktop",
-      "kind": "title1",
-      "maxW": 8080,
-      "page": "all"
-    },
-    "buyside": {
-      "x": 0,
-      "y": 8976,
-      "text": "Buy side · phone",
-      "kind": "title1",
-      "maxW": 1330,
-      "page": "all"
-    },
-    "disputes": {
-      "x": 0,
-      "y": 10420,
-      "text": "Disputes · phone (trader view)",
-      "kind": "title1",
-      "maxW": 1330,
-      "page": "all"
-    },
-    "modtools": {
-      "x": 0,
-      "y": 11864,
-      "text": "Moderator tools · desktop",
-      "kind": "title1",
-      "maxW": 2640,
-      "page": "all"
-    }
-  },
-  "designSystems": [
+  "pages": [
     {
-      "title": "X2F",
-      "namespace": "x2f",
-      "artifact": "https://claude.ai/artifact/Bywqtsd4FKmYPHta6wQNPM",
-      "version": "1792021943-b4cf",
-      "copiedAt": "2026-10-15T04:05:00Z"
+      "id": "all",
+      "name": "All screens"
     }
-  ]
+  ],
+  "title": "X2F App",
+  "v": 3
 }

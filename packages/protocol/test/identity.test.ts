@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import sodium from 'libsodium-wrappers';
-import { generateIdentity, joinMessage } from '../src/index.js';
+import { generateIdentity, joinMessage, signProof } from '../src/index.js';
 
 describe('generateIdentity', () => {
   it('Ed25519 signing keys with derived X25519 box keys', async () => {
@@ -18,6 +18,30 @@ describe('generateIdentity', () => {
   it('fresh keys each call', async () => {
     const [a, b] = await Promise.all([generateIdentity(), generateIdentity()]);
     expect(a.signPublic).not.toBe(b.signPublic);
+  });
+});
+
+describe('signProof', () => {
+  const msg = (t: string): Uint8Array => new TextEncoder().encode(`x2f/test/v1\0${t}`);
+
+  it('is a detached Ed25519 signature by the identity over the bytes, as 128 lower-case hex characters', async () => {
+    const id = await generateIdentity();
+    const proof = await signProof(id, msg('hello'));
+    expect(proof).toMatch(/^[0-9a-f]{128}$/);
+    const pk = sodium.from_hex(id.signPublic);
+    expect(sodium.crypto_sign_verify_detached(sodium.from_hex(proof), msg('hello'), pk)).toBe(true);
+    expect(sodium.crypto_sign_verify_detached(sodium.from_hex(proof), msg('hellp'), pk)).toBe(false);
+    const other = await generateIdentity();
+    expect(sodium.crypto_sign_verify_detached(sodium.from_hex(proof), msg('hello'), sodium.from_hex(other.signPublic))).toBe(false);
+  });
+
+  it('refuses an identity whose signSecret does not match signPublic, or non-byte input (TypeError)', async () => {
+    const [a, b] = await Promise.all([generateIdentity(), generateIdentity()]);
+    await expect(signProof({ ...a, signPublic: b.signPublic }, msg('x'))).rejects.toThrow(TypeError);
+    await expect(signProof({ ...a, signSecret: b.signSecret }, msg('x'))).rejects.toThrow(TypeError);
+    await expect(signProof({ ...a, signSecret: a.signSecret.subarray(0, 63) }, msg('x'))).rejects.toThrow(TypeError);
+    await expect(signProof({ ...a, signPublic: a.signPublic.toUpperCase() }, msg('x'))).rejects.toThrow(TypeError);
+    await expect(signProof(a, 'x' as unknown as Uint8Array)).rejects.toThrow(TypeError);
   });
 });
 

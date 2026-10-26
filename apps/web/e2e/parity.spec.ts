@@ -76,6 +76,13 @@ test.describe('expectParity: blocking checks', () => {
     await expect(expectParity(page, 'Review')).rejects.toThrow(/exactly one \[data-primary\], found 0/);
   });
 
+  test('a board with no primary action: { primary: false } requires no [data-primary] at all', async ({ page }) => {
+    await pageWithBoardTexts(page, 'Review', '');
+    await expectParity(page, 'Review', { primary: false });
+    await pageWithBoardTexts(page, 'Review', '<button data-primary>Go</button>');
+    await expect(expectParity(page, 'Review', { primary: false })).rejects.toThrow(/no \[data-primary\] on a board without a primary action, found 1/);
+  });
+
   test('fails a page that scrolls sideways', async ({ page }) => {
     await pageWithBoardTexts(page, 'Review', '<button data-primary>Go</button><div style="width: 600px; height: 4px"></div>');
     await expect(expectParity(page, 'Review')).rejects.toThrow(/horizontal scroll: 600 px wide in a 390 px viewport/);
