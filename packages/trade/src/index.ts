@@ -51,3 +51,19 @@ export {
   type TradeRuleCode,
   type TradeState,
 } from './machine.js';
+export { TIMER_LOOP_MS, timerEvents, type TimerEvent, type TimerPass } from './timerLoop.js';
+export {
+  WATCH_CLOSED_DAYS,
+  WATCH_INTERVAL_MS,
+  newWatchState,
+  settleKindFor,
+  watchStep,
+  type ChainFacts,
+  type EscrowFunds,
+  type SpendEvidence,
+  type WatchIncoming,
+  type WatchReport,
+  type WatchState,
+  type WatchStepResult,
+} from './watch.js';
+export { modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type ModPartyPlan } from './modParty.js';

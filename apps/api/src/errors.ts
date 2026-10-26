@@ -47,7 +47,11 @@ export type ApiErrorCode =
   // Plan 3, Task 8: participant identities and the moderation attestation.
   | 'identity-exists'
   | 'identity-conflict'
-  | 'bad-proof';
+  | 'bad-proof'
+  | 'attestation-refused'
+  // Plan 3, Task 26: the nudge sender's own limits.
+  | 'too-soon'
+  | 'no-shared-context';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

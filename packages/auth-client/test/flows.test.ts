@@ -27,10 +27,18 @@ const LABEL = 'Browser on Linux';
 /**
  * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
  * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
- * (Task 6: the trade view and the events route). Any other new route still needs a client method.
+ * (Task 6: the trade view and the events route; Task 8: the identity and attestation routes;
+ * Task 26: nudges, nudge settings and blocks). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
-  'GET /v1/trades/:code', 'GET /v1/trades/:code/attestation', 'POST /v1/trades/:code/events', 'POST /v1/trades/:code/identity',
+  'GET /v1/account/nudges',
+  'GET /v1/trades/:code',
+  'GET /v1/trades/:code/attestation',
+  'POST /v1/account/blocks',
+  'POST /v1/nudges',
+  'POST /v1/trades/:code/events',
+  'POST /v1/trades/:code/identity',
+  'PUT /v1/account/nudges',
 ] as const;
 
 let srv: Server;
