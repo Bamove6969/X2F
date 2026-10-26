@@ -104,3 +104,9 @@ Not needed: agy, desktop-commander.
 - copy-lint checks "!" only in JS/TS (tools/copy-lint.ts); CSS `content:`, SVG text and JSON strings get the emoji scan only.
 - copy-lint flags Extended_Pictographic only with U+FE0F: "⚠", "✔", "☺", "‼", "⁉" and fullwidth "！" (U+FF01) pass. Flag \p{Emoji} minus [0-9#*] with an allow-list, and add U+FF01/U+203C/U+2049 to the exclamation rule.
 - "Monero orange only on the one primary action" is enforced nowhere: expectParity counts [data-primary] only. Either a copy-lint rule keeping the orange tokens to tokens.css and .x2f-button--primary, or expectParity failing any orange outside [data-primary].
+
+## Task 30 follow-ups (re-review 2026-10-26, not done in the fix round)
+- `goLogin` is wired only through the auth client's fetch; raw `api()` callers never send an expired session to /login. Add an opt-in to `api()`, and note the gap in HANDOFF.
+- Methods: `me().hasBackup` and the suggestions ('add-authenticator', 'add-backup') are unused; spec 6.2's nudge for password-only users is absent, and nothing says a password is not a backup.
+- PGP revocation paste UI plus its small API route (coordination.md 2026-10-24) is absent on both sides: a ticket for the lead.
+- Methods → Add a PGP key has no "Send a new message" after an expired code (M5 reached login only).

@@ -27,11 +27,13 @@ describe('password-login rules (FU-A mirror)', () => {
     expect(shouldSendAway(new TypeError('network'))).toBe(false);
   });
 
-  it('a mismatch reads the one sentence; an outage reads as a neutral retry, never as a mismatch', () => {
+  it('a mismatch reads the one sentence; an outage reads as a neutral retry and too many tries as a wait, never as a mismatch', () => {
     expect(loginFailure(new ApiCallError(401, 'credentials-invalid', { misses: 1 }))).toBe("That login name and password don't match");
-    for (const e of [new ApiCallError(429, 'slow-down'), new ApiCallError(503, 'busy'), new ApiCallError(500, 'internal'), new TypeError('Failed to fetch')]) {
+    for (const e of [new ApiCallError(503, 'busy'), new ApiCallError(500, 'internal'), new TypeError('Failed to fetch')]) {
       expect(loginFailure(e)).toBe('X2F could not check that just now. Try again in a moment.');
     }
+    // Re-review item 3: a 429 says how long to wait (still not a miss).
+    expect(loginFailure(new ApiCallError(429, 'slow-down', { retryAfterSeconds: 5 }))).toBe('Too many tries. Try again in 1 minute.');
   });
 });
 

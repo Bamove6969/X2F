@@ -9,6 +9,7 @@ import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { refusalText } from '../auth/refusals.js';
 import { Qr } from './Qr.js';
 
 export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
@@ -24,7 +25,7 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     try {
       setEnrol(await withConfirm({ kind: 'add-method', method: 'totp' }, (t) => authApi.addTotpStart(t !== undefined ? { confirmToken: t } : {}), prove));
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('Could not start enrolment. Try again.');
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not start enrolment. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -36,8 +37,8 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     try {
       await authApi.addTotpFinish({ challengeId: enrol!.challengeId, code: code.trim() });
       onDone();
-    } catch {
-      setError('That code did not work. Check your authenticator app and try again.');
+    } catch (e) {
+      setError(refusalText(e, 'That code did not work. Check your authenticator app and try again.', { expired: 'That setup has expired. Start again.' }));
     } finally {
       setBusy(false);
     }

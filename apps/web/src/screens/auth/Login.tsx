@@ -8,11 +8,12 @@
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { loginWithPasskey, loginWithSecurityKey, type LoginResult, type PgpChallenge } from '@x2f/auth-client';
+import { loginWithPasskey, loginWithSecurityKey, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { afterLogin, authApi, deviceLabel, passwordLogin, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { loginFailure, shouldSendAway } from './loginRules.js';
+import { isExpired, refusalText } from './refusals.js';
 import '../screens.css';
 
 /**
@@ -79,13 +80,45 @@ function ErrorLine({ error, part }: { error: string | null; part?: string }) {
   );
 }
 
+/** A two-factor login waiting for its second step: the account's `pendingId` and what it `needs`. */
+interface Pending {
+  pendingId: string;
+  needs: MethodType[];
+}
+
+const NEEDS_WORDS: Partial<Record<MethodType, string>> = { pgp: 'PGP key', 'security-key': 'security key', passkey: 'passkey' };
+
 /**
- * The second step of a two-factor login (staff and the owner: PGP, then a security key). The
- * `pendingId` from the first step names the account, so no login name is asked for.
+ * The second step of a two-factor login (staff and the owner: PGP plus a security key, two PGP
+ * keys, or PGP plus a passkey). It offers exactly what the server `needs`; the `pendingId` from the
+ * first step names the account, so no login name is asked for.
  */
-function SecondStepKey({ pendingId, onLoggedIn }: { pendingId: string; onLoggedIn: () => void }) {
+function SecondStep({ pending, onLoggedIn }: { pending: Pending; onLoggedIn: () => void }) {
+  const offered = pending.needs.filter((m): m is 'pgp' | 'security-key' | 'passkey' => m in NEEDS_WORDS);
+  const words = offered.map((m) => NEEDS_WORDS[m]!).join(' or ');
+  return (
+    <div className="x2f-field" data-part="second-step">
+      {offered.length === 0 ? (
+        <p className="x2f-note">This account needs another step that this screen cannot do. Ask X2F staff support.</p>
+      ) : (
+        <p className="x2f-note">This account also needs its {words}.</p>
+      )}
+      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} pendingId={pending.pendingId} /> : null}
+      {/* One orange action: PGP's when it is offered, else the first key's. */}
+      {offered.includes('security-key') ? (
+        <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} />
+      ) : null}
+      {offered.includes('passkey') ? (
+        <SecondStepKey kind="passkey" primary={!offered.includes('pgp') && !offered.includes('security-key')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} />
+      ) : null}
+    </div>
+  );
+}
+
+function SecondStepKey({ kind, primary, pendingId, onLoggedIn }: { kind: 'security-key' | 'passkey'; primary: boolean; pendingId: string; onLoggedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const name = kind === 'passkey' ? 'passkey' : 'security key';
 
   const go = async () => {
     setBusy(true);
@@ -96,29 +129,29 @@ function SecondStepKey({ pendingId, onLoggedIn }: { pendingId: string; onLoggedI
       const result = await authApi.loginWebAuthnFinish({ challengeId, response, deviceLabel: deviceLabel(), pendingId });
       if (result.status === 'ok') onLoggedIn();
       else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
-    } catch {
-      setError('That security key did not work. Try again.');
+    } catch (e) {
+      setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <div className="x2f-field" data-part="second-step">
+    <div className="x2f-stack">
       <ErrorLine error={error} />
-      <p className="x2f-note">This account also needs its security key.</p>
-      <Button variant="primary" disabled={busy} onClick={() => void go()} data-part="second-step-key">
-        Use your security key
+      <Button variant={primary ? 'primary' : 'secondary'} disabled={busy} onClick={() => void go()} data-part={kind === 'passkey' ? 'second-step-passkey' : 'second-step-key'}>
+        Use your {name}
       </Button>
     </div>
   );
 }
 
-function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
+/** PGP login, or (with `pendingId`) the PGP second step of a two-factor login. */
+function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pendingId?: string }) {
   const [publicKey, setPublicKey] = useState('');
   const [challenge, setChallenge] = useState<PgpChallenge | null>(null);
   const [code, setCode] = useState('');
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -127,11 +160,12 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      setChallenge(await pgpLoginStart(publicKey.trim()));
+      setChallenge(await pgpLoginStart(publicKey.trim(), first !== undefined ? { pendingId: first } : {}));
       setCode('');
       setCopied(false);
-    } catch {
-      setError('Could not send a login message for that key. Check the key and try again.');
+    } catch (e) {
+      // An expired or revoked key is turned away with the reason (spec 6.2); a wait says how long.
+      setError(refusalText(e, 'Could not send a login message for that key. Check the key and try again.'));
     } finally {
       setBusy(false);
     }
@@ -143,9 +177,13 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result: LoginResult = await pgpLoginFinish(challenge!.challengeId, code.trim());
       if (result.status === 'ok') onLoggedIn();
-      else setPendingId(result.pendingId);
-    } catch {
-      setError('That code did not work. It may have expired: send a new message and try again.');
+      else setPending({ pendingId: result.pendingId, needs: result.needs });
+    } catch (e) {
+      setError(
+        isExpired(e)
+          ? 'That message has expired. Send a new message and try again.'
+          : refusalText(e, 'That code did not work. It may have expired: send a new message and try again.'),
+      );
     } finally {
       setBusy(false);
     }
@@ -158,7 +196,7 @@ function PgpLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     );
   };
 
-  if (pendingId !== null) return <SecondStepKey pendingId={pendingId} onLoggedIn={onLoggedIn} />;
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} />;
 
   return (
     <section className="x2f-stack" data-part="pgp">
@@ -224,8 +262,8 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
       const result = await loginWithPasskey(authApi, deviceLabel());
       if (result.status === 'ok') onLoggedIn();
       else setError('This account needs a staff login. Use PGP or a security key.');
-    } catch {
-      setError('That passkey did not work. Try again, or use another way in.');
+    } catch (e) {
+      setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
@@ -244,7 +282,7 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
 
 function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [loginName, setLoginName] = useState('');
-  const [pendingId, setPendingId] = useState<string | undefined>(undefined);
+  const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -252,15 +290,18 @@ function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      const result = await loginWithSecurityKey(authApi, loginName.trim(), deviceLabel(), undefined, pendingId !== undefined ? { pendingId } : {});
+      const result = await loginWithSecurityKey(authApi, loginName.trim(), deviceLabel());
       if (result.status === 'ok') onLoggedIn();
-      else setPendingId(result.pendingId);
-    } catch {
-      setError('That security key did not work. Try again, or use another way in.');
+      // Staff and the owner: the second step is whatever the server needs (often PGP), never the same key again.
+      else setPending({ pendingId: result.pendingId, needs: result.needs });
+    } catch (e) {
+      setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
   };
+
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} />;
 
   return (
     <section className="x2f-stack" data-part="security-key">
@@ -315,8 +356,8 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       await authApi.loginSecondFactor({ pendingId: pendingId!, code: totp.trim() });
       onLoggedIn();
-    } catch {
-      setError('That authenticator code did not work.');
+    } catch (e) {
+      setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
     } finally {
       setBusy(false);
     }

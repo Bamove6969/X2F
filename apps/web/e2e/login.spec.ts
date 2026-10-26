@@ -17,7 +17,6 @@ function overview(over: Overview = {}): Overview {
     methods: ['password', 'passkey'],
     hasBackup: true,
     suggestions: [],
-    payoutWait: { enabled: false, offAt: null },
     termsCurrent: true,
     ...over,
   };
@@ -198,7 +197,7 @@ test('the server miss count sends the visitor off the site, even across a method
   await expect(page).toHaveURL(/^https:\/\/duckduckgo\.com\//);
 });
 
-test('an outage is not a miss: a neutral retry message, and ten of them keep the visitor here', async ({ page }) => {
+test('an outage or a wait is not a miss: a neutral retry or the wait, and ten of them keep the visitor here', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview(), 401));
   let n = 0;
   await page.route('**/v1/login/password', (r) => {
@@ -210,9 +209,12 @@ test('an outage is not a miss: a neutral retry message, and ten of them keep the
   await page.click('[data-method="password"]');
   await page.fill('#login-name', 'nightowl');
   await page.fill('#login-password', 'Correct-Horse-9!');
-  for (let i = 0; i < 10; i++) {
+  for (let i = 1; i <= 10; i++) {
     await page.click('[data-part="password-login"]');
-    await expect(page.locator('[data-part="login-error"]')).toHaveText('X2F could not check that just now. Try again in a moment.');
+    // Odd tries get the 429 (re-review item 3: say how long), even ones the 503.
+    await expect(page.locator('[data-part="login-error"]')).toHaveText(
+      i % 2 === 1 ? 'Too many tries. Try again in 1 minute.' : 'X2F could not check that just now. Try again in a moment.',
+    );
   }
   await expect(page).toHaveURL(/\/login$/);
 });
@@ -261,7 +263,7 @@ test('a wrong backup code says so on the backup screen and does not redirect', a
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', 'wrong-code-00');
   await page.click('[data-part="backup-login"]');
-  await expect(page.locator('[role="alert"]')).toContainText('don\u2019t match');
+  await expect(page.locator('[role="alert"]')).toContainText("don't match");
   await expect(page).toHaveURL(/\/login\/backup\?returnTo=%2Fbuy$/);
 });
 
@@ -297,4 +299,97 @@ test('a login on a stale Terms version shows the Terms screen first', async ({ p
   await page.click('[data-method="passkey"]');
   await page.click('[data-part="passkey-login"]');
   await expect(page).toHaveURL(/\/terms\?returnTo=%2Fbuy$/);
+});
+
+// Task 30 re-review (items 2, 3, 4).
+
+test('PGP login: an expired or revoked key is turned away with the reason, a wait says how long', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  const answers = [json({ error: 'key-expired' }, 400), json({ error: 'key-revoked' }, 400), json({ error: 'slow-down', retryAfterSeconds: 600 }, 429)];
+  await page.route('**/v1/login/pgp/start', (r) => answers.shift()!(r));
+  await page.goto('/login');
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  await expect(page.locator('[role="alert"]')).toHaveText('That key has expired. Extend it in your PGP app, then paste it again.');
+  await page.click('text=Send me a login message');
+  await expect(page.locator('[role="alert"]')).toHaveText('That key has been revoked, so it cannot be used to log in. Use a key that is still valid.');
+  await page.click('text=Send me a login message');
+  await expect(page.locator('[role="alert"]')).toHaveText('Too many tries. Try again in 10 minutes.');
+});
+
+test('PGP login: an expired message says so (not "wrong code") and a new message starts again', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  await page.route('**/v1/login/pgp/start', json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
+  await page.route('**/v1/login/pgp/finish', json({ error: 'challenge-expired' }, 400));
+  await page.goto('/login');
+  await page.click('[data-method="pgp"]');
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  await page.fill('[aria-label="Login code"]', '11111111');
+  await page.click('[data-part="pgp-login"]');
+  await expect(page.locator('[role="alert"]')).toHaveText('That message has expired. Send a new message and try again.');
+  await expect(page.locator('[data-part="pgp-new-message"]')).toBeVisible();
+});
+
+test('password login: too many tries says how long to wait, not that the password was wrong', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  await page.route('**/v1/login/password', json({ error: 'locked', retryAfterSeconds: 900 }, 429));
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Some-Password-1!');
+  await page.click('[data-part="password-login"]');
+  await expect(page.locator('[data-part="login-error"]')).toHaveText('Too many tries. Try again in 15 minutes.');
+});
+
+test('security-key login: a second step that needs PGP asks for the PGP key, with the pendingId', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview()));
+  await page.route('**/v1/login/webauthn/start', json({ challengeId: 'w1', options: AUTH_OPTIONS }));
+  await page.route('**/v1/login/webauthn/finish', json({ status: 'second-factor', pendingId: 'p7', needs: ['pgp'] }));
+  let pgpStart: unknown = null;
+  await page.route('**/v1/login/pgp/start', (r) => {
+    pgpStart = JSON.parse(r.request().postData() ?? '{}');
+    return json({ challengeId: 'c1', encryptedMessage: PGP_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' })(r);
+  });
+  await page.route('**/v1/login/pgp/finish', json({ status: 'ok' }));
+
+  await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
+  await virtualAuthenticator(page);
+  await page.click('[data-method="security-key"]');
+  await page.fill('#sk-login-name', 'nightowl');
+  await page.click('[data-part="security-key-login"]');
+  await expect(page.locator('[data-part="second-step"]')).toContainText('This account also needs its PGP key.');
+  await expect(page.locator('[data-part="security-key-login"]')).toHaveCount(0);
+  await page.fill('#pgp-key', FAKE_KEY);
+  await page.click('text=Send me a login message');
+  expect(pgpStart).toEqual({ key: FAKE_KEY.trim(), pendingId: 'p7' });
+  await page.fill('[aria-label="Login code"]', '22222222');
+  await page.click('[data-part="pgp-login"]');
+  await expect(page).toHaveURL(/\/buy$/);
+});
+
+test('a TOTP backup login says when changes can be made, then carries on', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview({ level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' })));
+  await page.route('**/v1/login/backup', json({ status: 'ok', level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' }));
+  await page.goto('/login/backup?returnTo=%2Fbuy');
+  await page.click('[data-kind="totp"]');
+  await page.fill('#backup-login-name', 'nightowl');
+  await page.fill('#backup-code', '123456');
+  await page.click('[data-part="backup-login"]');
+  await expect(page.locator('[data-part="hold-note"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await expect(page).toHaveURL(/\/login\/backup/);
+  await page.click('[data-part="hold-continue"]');
+  await expect(page).toHaveURL(/\/buy$/);
+});
+
+test('the TOTP backup daily cap says when to try again', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview(), 401));
+  await page.route('**/v1/login/backup', json({ error: 'slow-down', retryAfterSeconds: 5 * 3600 }, 429));
+  await page.goto('/login/backup');
+  await page.click('[data-kind="totp"]');
+  await page.fill('#backup-login-name', 'nightowl');
+  await page.fill('#backup-code', '123456');
+  await page.click('[data-part="backup-login"]');
+  await expect(page.locator('[role="alert"]')).toContainText('Too many tries. Try again after');
 });

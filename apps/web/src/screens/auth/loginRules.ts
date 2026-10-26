@@ -9,6 +9,7 @@
  */
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
+import { refusalText } from './refusals.js';
 
 /** The one sentence for every failed password login: a guesser never learns which part was wrong. */
 export const PASSWORD_LOGIN_MISMATCH = "That login name and password don't match";
@@ -36,7 +37,10 @@ export function shouldSendAway(e: unknown): boolean {
   return (missesOf(e) ?? 0) >= MISSES_BEFORE_SENDING_AWAY;
 }
 
-/** What the login screen says for a refused password login: the mismatch sentence, or a neutral retry. */
+/**
+ * What the login screen says for a refused password login: the mismatch sentence; for too many
+ * tries, how long to wait; else a neutral retry.
+ */
 export function loginFailure(e: unknown): string {
-  return missesOf(e) === null ? LOGIN_RETRY_LATER : PASSWORD_LOGIN_MISMATCH;
+  return missesOf(e) === null ? refusalText(e, LOGIN_RETRY_LATER) : PASSWORD_LOGIN_MISMATCH;
 }
