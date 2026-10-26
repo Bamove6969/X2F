@@ -132,17 +132,26 @@ export interface ChatRetentionFacts {
 const valid = (d: Date | null): d is Date => d instanceof Date && Number.isFinite(d.getTime());
 
 /**
- * purgeChats' rule: never while a dispute is open; a trade's chat 90 days after the trade closes
- * (never while it is open); a pre-trade chat 7 days after its last message (or its creation).
- * Any invalid date keeps the chat.
+ * purgeChats' rule: never while a dispute is open; a trade's chat CHAT_AFTER_CLOSE_DAYS (90) days
+ * after the trade closes, the trade's own retention from the plan (never while it is open); a
+ * pre-trade chat CHAT_PRETRADE_IDLE_DAYS (7) days after its last message (or its creation).
+ *
+ * For a linked chat `disputeOpen` is redundant with `tradeClosedAt === null`: the trade machine
+ * nulls `closedAt` when a dispute opens and sets it at the ruling, so a disputed chat is kept by
+ * the open-trade rule and its 90 days count from the ruling. The flag is kept as belt and braces
+ * against a closedAt that was not nulled.
+ *
+ * Any invalid date, in either branch and whether or not that branch reads it, keeps the chat:
+ * a corrupt row is never a reason to delete.
  */
 export function chatPurgeDue(c: ChatRetentionFacts, now: Date): boolean {
-  if (c.disputeOpen || !valid(now)) return false;
+  const nullable = (d: Date | null): boolean => d === null || valid(d);
+  if (c.disputeOpen || !valid(now) || !valid(c.createdAt) || !nullable(c.lastMessageAt) || !nullable(c.tradeClosedAt)) return false;
   if (c.tradeLinked) {
     if (!valid(c.tradeClosedAt)) return false;
     return now.getTime() > c.tradeClosedAt.getTime() + CHAT_AFTER_CLOSE_DAYS * DAY_MS;
   }
   const last = c.lastMessageAt ?? c.createdAt;
-  if (!valid(last) || (c.lastMessageAt !== null && !valid(c.createdAt))) return false;
+  if (!valid(last)) return false;
   return now.getTime() > last.getTime() + CHAT_PRETRADE_IDLE_DAYS * DAY_MS;
 }

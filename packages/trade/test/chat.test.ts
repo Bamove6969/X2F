@@ -189,9 +189,19 @@ describe('chatPurgeDue (purgeChats retention rule)', () => {
     expect(chatPurgeDue({ ...pre, disputeOpen: true }, at(1000))).toBe(false);
   });
 
-  it('fails closed (keeps the chat) on an invalid date', () => {
-    expect(chatPurgeDue({ ...pre, createdAt: new Date('x') }, at(1000))).toBe(false);
-    expect(chatPurgeDue(pre, new Date('x'))).toBe(false);
-    expect(chatPurgeDue({ ...pre, tradeLinked: true, tradeClosedAt: new Date('x') }, at(1000))).toBe(false);
+  it('fails closed (keeps the chat) on any invalid date, in both branches', () => {
+    const corrupt = new Date('x');
+    expect(chatPurgeDue(pre, corrupt)).toBe(false);
+    // Pre-trade: a corrupt createdAt or lastMessageAt, with the other date valid and long past.
+    expect(chatPurgeDue({ ...pre, createdAt: corrupt }, at(1000))).toBe(false);
+    expect(chatPurgeDue({ ...pre, createdAt: corrupt, lastMessageAt: at(1) }, at(1000))).toBe(false);
+    expect(chatPurgeDue({ ...pre, lastMessageAt: corrupt }, at(1000))).toBe(false);
+    expect(chatPurgeDue({ ...pre, tradeClosedAt: corrupt }, at(1000))).toBe(false);
+    // Trade-linked: a corrupt tradeClosedAt, createdAt or lastMessageAt, the trade long closed.
+    const closed = { ...pre, tradeLinked: true, tradeClosedAt: at(10) };
+    expect(chatPurgeDue(closed, at(1000))).toBe(true);
+    expect(chatPurgeDue({ ...closed, tradeClosedAt: corrupt }, at(1000))).toBe(false);
+    expect(chatPurgeDue({ ...closed, createdAt: corrupt }, at(1000))).toBe(false);
+    expect(chatPurgeDue({ ...closed, lastMessageAt: corrupt }, at(1000))).toBe(false);
   });
 });
