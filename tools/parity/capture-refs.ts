@@ -14,8 +14,11 @@
 // button. The board's text is "Add {{choice}}", and the canvas runtime drops the space before the
 // filled-in placeholder when it renders. The app shows "Add authenticator app". This is cosmetic:
 // it only adds a little pixel noise to the reported (non-blocking) diff. Do not hand-edit the PNG.
-// References come only from this script.
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+// References come only from this script. Each capture also records the board in refs/manifest.json
+// ({ <Board>: { sha256 of the .dc.html, w, h } }), so a test can tell when a board changed after its
+// reference was shot (apps/web/test/serve-boards.test.ts).
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -34,6 +37,18 @@ export function boardSizes(boardsDir: string): Map<string, { width: number; heig
     if (file.endsWith('.dc.html')) sizes.set(file.slice(0, -'.dc.html'.length), { width: b.w, height: b.h });
   }
   return sizes;
+}
+
+/** One refs/manifest.json entry: the board file the reference was shot from, and its size. */
+export interface RefEntry {
+  sha256: string;
+  w: number;
+  h: number;
+}
+
+/** The sha256 (hex) of a board's .dc.html, as recorded in refs/manifest.json. */
+export function boardHash(boardsDir: string, name: string): string {
+  return createHash('sha256').update(readFileSync(join(boardsDir, `${name}.dc.html`))).digest('hex');
 }
 
 /** Captures `boards` (default: every board in canvas.json) and returns the files written. */
@@ -116,12 +131,19 @@ async function captureInto(
     await server.close();
   }
   mkdirSync(outDir, { recursive: true });
+  const manifestPath = join(outDir, 'manifest.json');
+  const manifest = (existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : {}) as Record<string, RefEntry>;
   const written: string[] = [];
   for (const { name, file } of staged) {
     const dest = join(outDir, `${name}.png`);
     copyFileSync(file, dest); // copy (not rename): the staging temp may be on another filesystem
+    const size = sizes.get(name)!;
+    manifest[name] = { sha256: boardHash(boardsDir, name), w: size.width, h: size.height };
     written.push(dest);
   }
+  // Sorted by board, so a recapture of one board changes one line.
+  const sorted = Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => a.localeCompare(b, 'en')));
+  writeFileSync(manifestPath, `${JSON.stringify(sorted, null, 2)}\n`);
   return written;
 }
 
