@@ -100,7 +100,8 @@ const MASK_ATTR = 'data-parity-mask';
  * board's template: for every element that holds text of its own, that element's whole text
  * (textContent, whitespace collapsed), so "Trade <code> · <method>" stays one text even when the
  * app splits it into nodes. Left out: scripts, styles, <helmet>, SVG, <sc-if> branches that are off
- * by default, the board-only example markers and the board's KNOWN_EXCEPTIONS. A template
+ * by default, text the board hides visually (screen-reader-only labels), the board-only example
+ * markers and the board's KNOWN_EXCEPTIONS. A template
  * placeholder ({{…}}, filled in by the canvas runtime) becomes the MASK sentinel, so the fixed copy
  * around it is still checked (as an anchored pattern in `missingTexts`); a text that is nothing but
  * placeholders is dropped. `within` narrows to one CSS selector's first match; `boardsDir` reads the
@@ -117,6 +118,13 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
       for (const el of Array.from(root.querySelectorAll('script, style, helmet, title, template, noscript, svg'))) el.remove();
       for (const el of Array.from(root.querySelectorAll('sc-if'))) {
         if (el.getAttribute('hint-placeholder-val') === '{{false}}') el.remove();
+      }
+      // Text the board itself hides visually (the screen-reader-only pattern: a box of at most 1 px
+      // with its overflow hidden or clipped) is not visible copy; the page may hide it the same way.
+      const tiny = (v: string) => v === '0' || v === '0px' || v === '1px';
+      for (const el of Array.from(root.querySelectorAll<HTMLElement>('[style]'))) {
+        const st = el.style;
+        if (tiny(st.width) && tiny(st.height) && (st.overflow === 'hidden' || st.clip !== '')) el.remove();
       }
       const scope = within ? root.querySelector(within) : root;
       if (!scope) throw new Error(`no ${within} on the board`);
