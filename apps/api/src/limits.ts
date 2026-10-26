@@ -70,9 +70,13 @@ export const REGISTER_BUCKET: BucketSize = { capacity: 20, perMinute: 20 };
 /** All `/v1/login/*` and `/v1/register/*\/start` routes and `login/password`. */
 export const START_BUCKET: BucketSize = { capacity: 120, perMinute: 120 };
 
+/** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
+export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
+  suggest: TokenBucket;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -80,5 +84,6 @@ export function newBudgets(clock: () => Date): Budgets {
   return {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
+    suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
   };
 }
