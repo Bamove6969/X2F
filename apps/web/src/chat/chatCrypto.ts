@@ -64,16 +64,20 @@ export interface ChatMessage {
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
 const STATE_KEYS = ['channel', 'nextSeq', 'guard'];
 const isSeq = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && !Object.is(n, -0);
-// Refused anywhere in a message: C0 controls except \t and \n, DEL, C1 controls; the bidi
-// embeddings, overrides and isolates (U+202A-202E, U+2066-2069), which can make a message read
-// differently from what was sent; the deprecated format controls (U+206A-206F); the interlinear
-// annotation marks (U+FFF9-FFFB); and the zero-width characters that hide text (U+200B, U+2060,
-// U+FEFF, U+180E). ZWJ/ZWNJ (U+200C-200D) and LRM/RLM/ALM (U+200E-200F, U+061C) stay allowed:
-// emoji sequences, Persian and Indic text, and right-to-left writing need them.
+// Hidden characters, by Unicode category rather than by a hand-picked list (review I1: a list let
+// the soft hyphen U+00AD, U+2061-2064 and the tag characters through, so "12<SHY>34" pasted as
+// another account number): every format character (Cf: zero-width space, word joiner, BOM, the
+// soft hyphen, the bidi embeddings, overrides and isolates, the deprecated format controls, the
+// interlinear annotation marks, the musical and tag format characters, ...), every control
+// character (Cc: C0, DEL, C1), the whole tag block U+E0000-E007F even where unassigned, the
+// combining grapheme joiner U+034F (a mark that renders as nothing) and the Hangul fillers
+// U+115F, U+1160, U+3164, U+FFA0 (letters that render as blank, so not Cf).
 // Always written as \u escapes: no literal invisible characters in source (review M3).
-const FORBIDDEN = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u180e\u200b\u202a-\u202e\u2060\u2066-\u206f\ufeff\ufff9-\ufffb]/u;
-/** Allowed but invisible: a message made only of these (and whitespace) is empty. */
-const INVISIBLE = /[\u061c\u200c-\u200f]/gu;
+const HIDDEN = /[\p{Cf}\p{Cc}\u034f\u115f\u1160\u3164\uffa0\u{e0000}-\u{e007f}]/gu;
+// Refused anywhere in a message: every hidden character except the allow-list, which the text
+// needs: tab and newline; ZWNJ/ZWJ (U+200C-200D) for Persian, Indic text and emoji sequences;
+// LRM/RLM/ALM (U+200E-200F, U+061C) for right-to-left writing. Nothing else is allowed.
+const FORBIDDEN = /(?![\t\n\u061c\u200c-\u200f])[\p{Cf}\p{Cc}\u034f\u115f\u1160\u3164\uffa0\u{e0000}-\u{e007f}]/u;
 const LONE_SURROGATE = /[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/;
 
 /** The chat's relay-style channel ID: the `trade` of every envelope in it. */
@@ -104,12 +108,14 @@ export function parseChatState(json: unknown, channel: string): ChatState {
 }
 
 /**
- * Validates message text: a string with something besides whitespace, at most
- * CHAT_TEXT_MAX_BYTES of UTF-8, no control characters other than tab and newline, no lone
- * surrogates and no bidi overrides. Returns it unchanged. Throws ChatError 'bad-text' or 'too-large'.
+ * Validates message text: a string with something besides whitespace and hidden characters, at
+ * most CHAT_TEXT_MAX_BYTES of UTF-8, no format or control characters other than the allow-list
+ * (tab, newline, ZWNJ, ZWJ, LRM, RLM, ALM) and no lone surrogates. Returns it unchanged. Throws
+ * ChatError 'bad-text' or 'too-large'.
  */
 export function checkChatText(text: unknown): string {
-  if (typeof text !== 'string' || text.replace(INVISIBLE, '').trim() === '') throw new ChatError('bad-text', 'Message is empty');
+  // A message of only whitespace and hidden characters (allowed or not) is empty.
+  if (typeof text !== 'string' || text.replace(HIDDEN, '').trim() === '') throw new ChatError('bad-text', 'Message is empty');
   if (FORBIDDEN.test(text) || LONE_SURROGATE.test(text)) throw new ChatError('bad-text', 'Message has characters that are not allowed');
   if (new TextEncoder().encode(text).length > CHAT_TEXT_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
   return text;

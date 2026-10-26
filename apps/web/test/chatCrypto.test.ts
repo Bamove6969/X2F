@@ -307,11 +307,31 @@ describe('message text', () => {
     expect(checkChatText('a'.repeat(CHAT_TEXT_MAX_BYTES))).toHaveLength(CHAT_TEXT_MAX_BYTES);
   });
 
-  it('refuses the deprecated format controls, interlinear annotation marks and zero-width characters', () => {
-    const invisible = ['\u206A', '\u206B', '\u206C', '\u206D', '\u206E', '\u206F', '\uFFF9', '\uFFFA', '\uFFFB', '\u200B', '\u2060', '\uFEFF', '\u180E'];
-    for (const c of invisible) {
-      expect(() => checkChatText(`pay${c}here`), c.codePointAt(0)?.toString(16)).toThrow(expect.objectContaining({ code: 'bad-text' }));
+  it('refuses every format (Cf) and control (Cc) character, the tag block, the Hangul fillers and the CGJ, except the seven allowed (review I1)', () => {
+    // Categories, not a hand-picked list: the list let U+00AD, U+2061-2064 and the tags through.
+    const allowed = new Set([0x09, 0x0a, 0x200c, 0x200d, 0x200e, 0x200f, 0x061c]);
+    const category = /[\p{Cf}\p{Cc}]/u;
+    const hidden = [0x034f, 0x115f, 0x1160, 0x3164, 0xffa0];
+    for (let cp = 0; cp <= 0x10ffff; cp++) if (category.test(String.fromCodePoint(cp))) hidden.push(cp);
+    for (let cp = 0xe0000; cp <= 0xe007f; cp++) if (!hidden.includes(cp)) hidden.push(cp);
+    expect(hidden.length).toBeGreaterThan(250);
+    let refused = 0;
+    for (const cp of hidden) {
+      const t = `pay${String.fromCodePoint(cp)}here`;
+      if (allowed.has(cp)) {
+        expect(checkChatText(t)).toBe(t);
+        continue;
+      }
+      expect(() => checkChatText(t), cp.toString(16)).toThrow(expect.objectContaining({ code: 'bad-text' }));
+      refused++;
     }
+    expect(refused).toBe(hidden.length - allowed.size);
+  });
+
+  it('a soft hyphen cannot hide in an account number, and a Hangul filler is not a message', () => {
+    expect(() => checkChatText('12\u00AD34')).toThrow(expect.objectContaining({ code: 'bad-text' }));
+    expect(() => checkChatText('\u3164')).toThrow(expect.objectContaining({ code: 'bad-text' }));
+    expect(() => checkChatText(' \u3164\u115F\u1160\uFFA0 ')).toThrow(expect.objectContaining({ code: 'bad-text' }));
   });
 
   it('keeps ZWJ, ZWNJ and the LRM/RLM/ALM marks (emoji sequences, Persian and Indic text, RTL)', () => {
