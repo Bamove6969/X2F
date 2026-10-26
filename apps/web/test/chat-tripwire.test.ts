@@ -1,7 +1,8 @@
 // TRIPWIRES for Task 20's wiring (only the pure parts are built: apps/web/src/chat/chatCrypto.ts
 // and packages/trade/src/chat.ts). Task 20's routes, migration and panel wait for Task 4's offers
-// table and Task 6's trades; the chat's mod identity waits for Task 8's attestation. Each check
-// fails once its dependency lands: then build that part against the real module and delete it.
+// table (Task 6's trades and startRetention are merged); the chat's mod identity waits for Task 8's
+// attestation; the device store for Task 12. Each check fails once its dependency lands: then
+// build that part against the real module and delete it.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import * as trade from '@x2f/trade';
@@ -11,10 +12,11 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 20 wiring still waits for its dependencies', () => {
-  it('NEEDS_TASK_4_6: the chat API (106_chat.sql, routes, retention) is not built yet', () => {
-    // When building it: POST /v1/chats/:chat/envelopes runs checkChatEnvelope(body, channel,
-    // sessionRole) with a 16 KiB bodyLimit (413); the identity route verifies
-    // chatIdentityProofBytes; purgeChats follows chatPurgeDue; startRetention (Task 6) calls it.
+  it("NEEDS_TASK_4: the chat API (106_chat.sql, routes, retention) waits for Task 4's offers table", () => {
+    // When building it (POST /v1/chats { offerId } needs the offers table): the envelopes route
+    // runs checkChatEnvelope(body, channel, sessionRole) with a 16 KiB bodyLimit (413); the
+    // identity route verifies chatIdentityProofBytes; purgeChats follows chatPurgeDue and is
+    // registered with the merged startRetention (apps/api/src/retention.ts).
     // Review I1: the envelopes route refuses a (chat, from, seq) that is not above that sender's
     // last stored seq with 409, backed by a unique index on (chat, from, seq).
     expect(has('apps/api/migrations/106_chat.sql')).toBe(false);

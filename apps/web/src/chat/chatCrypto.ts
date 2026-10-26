@@ -120,6 +120,11 @@ export function parseChatState(json: unknown, channel: string): ChatState {
  * most CHAT_TEXT_MAX_BYTES of UTF-8, no format or control characters other than the allow-list
  * (tab, newline, ZWNJ, ZWJ, LRM, RLM, ALM) and no lone surrogates. Returns it unchanged. Throws
  * ChatError 'bad-text' or 'too-large'.
+ *
+ * No Unicode normalisation is applied: the text is kept exactly as typed, and the byte limit is
+ * measured on that stored form. Sender and readers run this same check on the same bytes, and
+ * the panel must never normalise on one side only (NFC on send and not on read, or the reverse,
+ * would make the two sides disagree on what was said and on whether it fits).
  */
 export function checkChatText(text: unknown): string {
   // A message of only whitespace and hidden characters (allowed or not) is empty.
@@ -200,6 +205,11 @@ export interface OpenChatArgs {
  * or 'mod-not-allowed' for an authentic mod message without `modMayPost`).
  * On success returns the message and the new state; persist the state before showing the
  * message. The input state is not changed, so a rejected envelope leaves no trace.
+ *
+ * Intended consequences of "no trace": an envelope refused with 'mod-not-allowed' or
+ * 'bad-message' must not advance the panel's `GET …?after=` cursor (it is re-fetched and
+ * re-tried, e.g. once a dispute opens), and a sender whose message was 'bad-message' may reuse
+ * that seq, because this reader's guard did not move for it.
  */
 export async function openChatMessage(body: unknown, a: OpenChatArgs): Promise<{ message: ChatMessage; state: ChatState }> {
   const state = parseChatState(a.state, a.state.channel);
