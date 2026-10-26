@@ -1,6 +1,8 @@
 // What the browse screens read from the API: `GET /v1/methods`, `/v1/offers` and `/v1/price`
-// (no session needed, P3-M9) and `POST /v1/method-suggestions`. Every response is parsed strictly,
-// so a renamed or missing field fails loudly instead of rendering wrong. The shapes are plan Tasks
+// (no session needed, P3-M9) and `POST /v1/method-suggestions`. What the screens render is parsed
+// strictly, so a renamed or missing field fails loudly instead of rendering wrong; fields they do
+// not render (a method's group and giftCard, the price's currency and exponent) may be missing, but
+// are refused when of the wrong type. The shapes are plan Tasks
 // 3 and 4 (with the 2026-10-24 starter-limits revision); test/browse-tripwire.test.ts marks the
 // ones still guessed. The browser never works out a stage, a cap or who may take an offer: it shows
 // `poster.stage` and `opensAt` as the API sends them.
@@ -104,6 +106,11 @@ function bool(o: Obj, k: string, at: string): boolean {
   return v;
 }
 
+/** A field the screens do not render: `fallback` when absent, still refused when of the wrong type. */
+function optional<T>(o: Obj, k: string, at: string, read: (o: Obj, k: string, at: string) => T, fallback: T): T {
+  return o[k] === undefined ? fallback : read(o, k, at);
+}
+
 function orNull<T>(o: Obj, k: string, at: string, read: (o: Obj, k: string, at: string) => T): T | null {
   if (!(k in o)) throw new ApiShapeError(`${at}.${k}`);
   return o[k] === null ? null : read(o, k, at);
@@ -130,8 +137,8 @@ function parseRow(v: unknown, at: string): MethodRow {
   return {
     id: str(o, 'id', at),
     name: str(o, 'name', at),
-    group: str(o, 'group', at),
-    giftCard: bool(o, 'giftCard', at),
+    group: optional(o, 'group', at, str, ''),
+    giftCard: optional(o, 'giftCard', at, bool, false),
     offers: num(o, 'offers', at),
     bestRate: orNull(o, 'bestRate', at, big),
   };
@@ -147,7 +154,12 @@ export function parseMethodLists(v: unknown): MethodLists {
 
 export function parsePrice(v: unknown): Price {
   const o = obj(v, 'price');
-  return { currency: str(o, 'currency', 'price'), centsPerXmr: big(o, 'centsPerXmr', 'price'), exponent: num(o, 'exponent', 'price'), at: str(o, 'at', 'price') };
+  return {
+    currency: optional(o, 'currency', 'price', str, ''),
+    centsPerXmr: big(o, 'centsPerXmr', 'price'),
+    exponent: optional(o, 'exponent', 'price', num, 2),
+    at: str(o, 'at', 'price'),
+  };
 }
 
 function parsePoster(v: unknown, at: string): TraderSummary {

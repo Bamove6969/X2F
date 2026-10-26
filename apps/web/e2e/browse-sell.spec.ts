@@ -90,7 +90,9 @@ test.describe('/sell (Main board)', () => {
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
     expect(names).not.toContain('Zelle');
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
-    await expectParity(page, 'Main');
+    // Main has no primary action (only the tab bar), so the page carries no [data-primary].
+    await expectParity(page, 'Main', { primary: false });
+    await expect(page.locator('nav [data-primary]')).toHaveCount(0);
   });
 
   test('Sort asks the API for the chosen order', async ({ page }) => {
@@ -122,6 +124,88 @@ test.describe('/sell (Main board)', () => {
     await page.getByRole('searchbox', { name: 'Search payment methods' }).fill('cash');
     await expect(page.locator('main h2')).toHaveText([/^\d+ matches$/]);
     await expect(page.locator('main a').first()).toContainText('Cash');
+  });
+});
+
+test.describe('Task 16 review fixes', () => {
+  test('switching currency never shows the old rows under the new currency', async ({ page }) => {
+    await stubApi(page);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    await page.route('**/v1/methods?*currency=EUR*', async (r) => {
+      await held;
+      await r.fallback();
+    });
+    await page.goto('/sell');
+    await expect(page.locator('main a').first()).toContainText('34 buyers paying in USD');
+    await page.getByRole('radiogroup', { name: 'Currency' }).getByRole('radio', { name: 'EUR' }).click();
+    await expect(page.getByRole('radio', { name: 'EUR' })).toHaveAttribute('aria-checked', 'true');
+    // While the EUR list is on its way, nothing reads "EUR" with the USD numbers.
+    await expect(page.getByText(/paying in EUR/)).toHaveCount(0);
+    await expect(page.locator('main h2')).toHaveCount(0);
+    release();
+    await expect(page.locator('main a').first()).toContainText('3 buyers paying in EUR · up to €305.00');
+  });
+
+  test('a method list the app cannot read says so and logs the error, unlike a network failure', async ({ page }) => {
+    await stubApi(page);
+    const errors: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    await page.route('**/v1/methods?*', (r) => r.fulfill({ json: { live: 'nope', all: [] } }));
+    await page.goto('/sell');
+    await expect(page.getByText('This version of X2F could not read the payment methods. Reload the page to get the latest version.')).toBeVisible();
+    expect(errors.some((e) => /unexpected API shape at methods\.live/.test(e))).toBe(true);
+  });
+
+  test('an offer list the app cannot read says so and logs the error', async ({ page }) => {
+    await stubApi(page, { offers: () => [{ id: 'x' }] });
+    const errors: string[] = [];
+    page.on('console', (m) => {
+      if (m.type() === 'error') errors.push(m.text());
+    });
+    await page.goto('/sell/ZELLE');
+    await expect(page.getByText('This version of X2F could not read the offers. Reload the page to get the latest version.')).toBeVisible();
+    await expect(page.getByText('Offers could not be loaded right now. Try again in a moment.')).toHaveCount(0);
+    expect(errors.some((e) => /unexpected API shape at offers\[0\]/.test(e))).toBe(true);
+  });
+
+  test('a method id from the URL is never printed', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/sell/Zelle%20support%20555-0100');
+    await expect(page.getByText('This payment method is not available.')).toBeVisible();
+    await expect(page.locator('.x2f-browse__head-title')).toHaveText('Sell XMR');
+    expect(await page.locator('body').innerText()).not.toContain('555-0100');
+  });
+
+  test('every chip group is a radio group with arrow keys (Main sort, currency, offer sort)', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/sell');
+    const sort = page.getByRole('radiogroup', { name: 'Sort' });
+    await sort.getByRole('radio', { name: 'Most buyers' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(sort.getByRole('radio', { name: 'Best rate' })).toHaveAttribute('aria-checked', 'true');
+    await expect(sort.getByRole('radio', { name: 'Best rate' })).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await page.keyboard.press('ArrowLeft');
+    // Wraps from the first to the last.
+    await expect(sort.getByRole('radio', { name: 'A–Z' })).toHaveAttribute('aria-checked', 'true');
+    // Only the checked radio is in the tab order.
+    await expect(sort.getByRole('radio', { name: 'A–Z' })).toHaveAttribute('tabindex', '0');
+    await expect(sort.getByRole('radio', { name: 'Best rate' })).toHaveAttribute('tabindex', '-1');
+    const currency = page.getByRole('radiogroup', { name: 'Currency' });
+    await currency.getByRole('radio', { name: 'USD' }).focus();
+    await page.keyboard.press('ArrowRight');
+    await expect(page).toHaveURL(/currency=EUR/);
+    await expect(currency.getByRole('radio', { name: 'EUR' })).toBeFocused();
+
+    await page.goto('/sell/ZELLE');
+    const offerSort = page.getByRole('radiogroup', { name: 'Sort' });
+    await expect(offerSort.getByRole('radio', { name: 'Best price' })).toHaveAttribute('aria-checked', 'true');
+    await offerSort.getByRole('radio', { name: 'Best price' }).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(offerSort.getByRole('radio', { name: 'Online now' })).toHaveAttribute('aria-checked', 'true');
   });
 });
 
@@ -221,7 +305,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       await page.goto('/sell');
       await expect(page.locator('main a').first()).toContainText('Zelle');
       await expectPhoneLayout(page);
-      await expectParity(page, 'Main', { viewport });
+      await expectParity(page, 'Main', { viewport, primary: false });
     });
 
     test('Main with a search that has no match: phone layout', async ({ page }) => {

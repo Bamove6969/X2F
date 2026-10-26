@@ -11,6 +11,8 @@ export interface BrowseCopy {
   emptyRow: (currency: string) => string;
   /** SellOffers header title: "Sell XMR via Zelle". */
   offersTitle: (method: string) => string;
+  /** The title until the method is known (a method id from the URL is never shown). */
+  offersTitleBare: string;
   /** SellOffers header line: "34 buyers · USD". */
   offersCount: (count: number, currency: string) => string;
   /** The time line on an offer card: "Pays in ~6 min". */
@@ -31,6 +33,7 @@ export const SELL_COPY: BrowseCopy = {
   liveRow: (n, c, best) => `${people(n)} paying in ${c}${best === null ? '' : ` · up to ${best}`}`,
   emptyRow: (c) => `No ${c} buyers right now · post an offer`,
   offersTitle: (m) => `Sell XMR via ${m}`,
+  offersTitleBare: 'Sell XMR',
   offersCount: (n, c) => `${people(n)} · ${c}`,
   typicalTime: (m) => `Pays in ~${m} min`,
   noOffers: (c) => `No ${c} buyers for this method right now. You can post an offer.`,

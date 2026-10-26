@@ -353,14 +353,15 @@ describe('BottomNav', () => {
     expect(links.slice(1).every((a) => !a.hasAttribute('aria-current'))).toBe(true);
   });
 
-  it("the current tab is the screen's one orange item, so it carries data-primary (Main, BuyMain boards)", () => {
+  it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {
     const { host } = render(
       <MemoryRouter initialEntries={['/sell']}>
         <BottomNav />
       </MemoryRouter>,
     );
     const links = [...host.querySelectorAll('nav a')];
-    expect(links.filter((a) => a.hasAttribute('data-primary')).map((a) => a.textContent)).toEqual(['Trade']);
+    expect(links.filter((a) => a.hasAttribute('data-primary'))).toEqual([]);
+    expect(links.filter((a) => a.getAttribute('aria-current') === 'page').map((a) => a.textContent)).toEqual(['Trade']);
   });
 
   it('Trade is current on /buy too; Wallets on /wallets', () => {

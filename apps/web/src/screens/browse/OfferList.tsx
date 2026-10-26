@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { Icon } from '../../ui/icons.js';
-import { currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
+import { ApiShapeError, currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
 import { OfferCard } from './OfferCard.js';
+import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
@@ -12,7 +13,7 @@ import './browse.css';
 
 const SORT_IDS: readonly OfferSort[] = ['best', 'online', 'trades'];
 
-type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'failed' };
+type Load<T> = { kind: 'loading' } | { kind: 'ready'; value: T } | { kind: 'failed'; shape: boolean };
 
 function useLoad<T>(run: (signal: AbortSignal) => Promise<T>, deps: unknown[]): Load<T> {
   const [load, setLoad] = useState<Load<T>>({ kind: 'loading' });
@@ -20,8 +21,10 @@ function useLoad<T>(run: (signal: AbortSignal) => Promise<T>, deps: unknown[]): 
     const abort = new AbortController();
     run(abort.signal).then(
       (value) => setLoad({ kind: 'ready', value }),
-      () => {
-        if (!abort.signal.aborted) setLoad({ kind: 'failed' });
+      (err: unknown) => {
+        if (abort.signal.aborted) return;
+        if (err instanceof ApiShapeError) console.error(err);
+        setLoad({ kind: 'failed', shape: err instanceof ApiShapeError });
       },
     );
     return () => abort.abort();
@@ -67,7 +70,8 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
             <Icon name="chevron-left" size={24} />
           </Link>
           <div className="x2f-browse__head-text">
-            <span className="x2f-browse__head-title">{copy.offersTitle(row?.name ?? methodId)}</span>
+            {/* Never the method id from the URL: until the API names the method, the bare title. */}
+            <span className="x2f-browse__head-title">{row ? copy.offersTitle(row.name) : copy.offersTitleBare}</span>
             {row ? <span className="x2f-browse__head-sub">{copy.offersCount(row.offers, currency)}</span> : null}
           </div>
         </div>
@@ -82,19 +86,20 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
             <span className="x2f-browse__muted">Price unavailable right now</span>
           ) : null}
         </div>
-        <div className="x2f-browse__sorts">
+        <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.offerSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
-          {SORT_IDS.map((id, i) => (
-            <button key={id} type="button" aria-pressed={sort === id} className="x2f-chip-button" onClick={() => setSort(id)}>
-              {copy.offerSorts[i]}
-            </button>
-          ))}
-        </div>
+        </RadioChips>
       </header>
 
       <main className="x2f-browse__main x2f-browse__main--cards">
         {method.kind === 'ready' && method.value === null ? <p className="x2f-browse__note">This payment method is not available.</p> : null}
-        {offers.kind === 'failed' ? <p className="x2f-browse__note">Offers could not be loaded right now. Try again in a moment.</p> : null}
+        {offers.kind === 'failed' ? (
+          <p className="x2f-browse__note">
+            {offers.shape
+              ? 'This version of X2F could not read the offers. Reload the page to get the latest version.'
+              : 'Offers could not be loaded right now. Try again in a moment.'}
+          </p>
+        ) : null}
         {offers.kind === 'ready' && list.length === 0 ? <p className="x2f-browse__note">{copy.noOffers(currency)}</p> : null}
         {list.map((o) => (
           <OfferCard

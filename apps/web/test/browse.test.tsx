@@ -52,6 +52,21 @@ describe('browse API shapes', () => {
     expect(() => parseMethodLists({ live: [{ id: 'ZELLE' }], all: [] })).toThrow(ApiShapeError);
   });
 
+  it('reads strictly only what the screens render; group, giftCard, currency and exponent may be missing', () => {
+    const lists = parseMethodLists({ live: [{ id: 'ZELLE', name: 'Zelle', offers: 34, bestRate: '33120' }], all: [] });
+    expect(lists.live[0]).toMatchObject({ id: 'ZELLE', name: 'Zelle', offers: 34, bestRate: 33120n });
+    expect(parsePrice({ centsPerXmr: '32990', at: NOW.toISOString() }).centsPerXmr).toBe(32990n);
+    for (const k of ['id', 'name', 'offers', 'bestRate'] as const) {
+      const row: Record<string, unknown> = { id: 'ZELLE', name: 'Zelle', offers: 34, bestRate: '33120' };
+      delete row[k];
+      expect(() => parseMethodLists({ live: [row], all: [] }), k).toThrow(ApiShapeError);
+    }
+    expect(() => parsePrice({ at: NOW.toISOString() })).toThrow(/price\.centsPerXmr/);
+    expect(() => parsePrice({ centsPerXmr: '32990' })).toThrow(/price\.at/);
+    // A field that is there but of the wrong type is still refused.
+    expect(() => parseMethodLists({ live: [{ id: 'ZELLE', name: 'Zelle', offers: 34, bestRate: '33120', giftCard: 'no' }], all: [] })).toThrow(/giftCard/);
+  });
+
   it('a seller browses buy ads and a buyer sell ads', () => {
     expect(adSide('sell')).toBe('buy');
     expect(adSide('buy')).toBe('sell');
