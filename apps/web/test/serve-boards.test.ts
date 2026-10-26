@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -65,5 +66,27 @@ describe('capture-refs', () => {
     expect(onDisk).toBeGreaterThan(0);
     expect(sizes.size).toBe(onDisk);
     expect(sizes.size).toBe(inCanvas);
+  });
+
+  it('every board has a reference shot from its current .dc.html (refs/manifest.json: hash and PNG size)', () => {
+    const manifest = JSON.parse(readFileSync(join(BOARDS_DIR, 'refs', 'manifest.json'), 'utf8')) as Record<string, { sha256: string; w: number; h: number }>;
+    const stale: string[] = [];
+    for (const [name, size] of boardSizes(BOARDS_DIR)) {
+      const entry = manifest[name];
+      const hash = createHash('sha256').update(readFileSync(join(BOARDS_DIR, `${name}.dc.html`))).digest('hex');
+      if (!entry) {
+        stale.push(`${name}: not in refs/manifest.json`);
+        continue;
+      }
+      if (entry.sha256 !== hash) stale.push(`${name}: board changed since refs/${name}.png was captured`);
+      const png = readFileSync(join(BOARDS_DIR, 'refs', `${name}.png`));
+      // PNG IHDR: width and height are big-endian at bytes 16 and 20.
+      const shot = { w: png.readUInt32BE(16), h: png.readUInt32BE(20) };
+      if (shot.w !== size.width || shot.h !== size.height || entry.w !== size.width || entry.h !== size.height) {
+        stale.push(`${name}: reference is ${shot.w}x${shot.h}, board is ${size.width}x${size.height}`);
+      }
+    }
+    // Recapture with tools/parity/capture-refs.ts (see apps/web/src/ui/README.md).
+    expect(stale).toEqual([]);
   });
 });
