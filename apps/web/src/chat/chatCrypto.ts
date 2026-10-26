@@ -21,7 +21,18 @@
  * protocol's identity maker (separation check, lead answer 2026-10-24).
  */
 import type { Role } from '@x2f/core';
-import { ReplayGuard, open, seal, type Envelope, type Identity, type Participants, type ReplayGuardJSON } from '@x2f/protocol';
+import {
+  ReplayGuard,
+  hasExactKeys,
+  isPlainObject,
+  isValidSeq,
+  open,
+  seal,
+  type Envelope,
+  type Identity,
+  type Participants,
+  type ReplayGuardJSON,
+} from '@x2f/protocol';
 import {
   CHAT_BODY_MAX_BYTES,
   CHAT_MSG_TYPE,
@@ -62,8 +73,7 @@ export interface ChatMessage {
 }
 
 const ALL: readonly Role[] = ['buyer', 'seller', 'mod'];
-const STATE_KEYS = ['channel', 'nextSeq', 'guard'];
-const isSeq = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n >= 0 && !Object.is(n, -0);
+const STATE_KEYS = ['channel', 'nextSeq', 'guard'] as const;
 // Hidden characters, by Unicode category rather than by a hand-picked list (review I1: a list let
 // the soft hyphen U+00AD, U+2061-2064 and the tag characters through, so "12<SHY>34" pasted as
 // another account number): every format character (Cf: zero-width space, word joiner, BOM, the
@@ -92,11 +102,9 @@ export function newChatState(channel: string): ChatState {
 /** Validates a stored ChatState for this chat's channel. Throws ChatError('bad-state'). */
 export function parseChatState(json: unknown, channel: string): ChatState {
   const fail = (): ChatError => new ChatError('bad-state', 'Invalid saved chat state');
-  if (typeof json !== 'object' || json === null || Array.isArray(json)) throw fail();
-  const o = json as Record<string, unknown>;
-  const keys = Object.keys(o);
-  if (keys.length !== STATE_KEYS.length || !STATE_KEYS.every((k) => keys.includes(k))) throw fail();
-  if (o.channel !== channel || !isSeq(o.nextSeq)) throw fail();
+  if (!isPlainObject(json) || !hasExactKeys(json, STATE_KEYS)) throw fail();
+  const o = json;
+  if (o['channel'] !== channel || !isValidSeq(o['nextSeq'])) throw fail();
   let guard: ReplayGuard;
   try {
     guard = ReplayGuard.from(o.guard);
@@ -104,7 +112,7 @@ export function parseChatState(json: unknown, channel: string): ChatState {
     throw fail();
   }
   if (guard.trade !== channel) throw fail();
-  return { channel, nextSeq: o.nextSeq, guard: guard.toJSON() };
+  return { channel, nextSeq: o['nextSeq'], guard: guard.toJSON() };
 }
 
 /**

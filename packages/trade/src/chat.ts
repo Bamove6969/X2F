@@ -3,6 +3,7 @@
  * the browser's chatCrypto seals and opens; the API stores ciphertext only and checks the shape.
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
+import { ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
 
 /** The `type` inside every chat envelope's ciphertext. */
 export const CHAT_MSG_TYPE = 'chat.msg';
@@ -20,7 +21,6 @@ export const CHAT_PRETRADE_IDLE_DAYS = 7;
 export const CHAT_AFTER_CLOSE_DAYS = 90;
 
 const DAY_MS = 86_400_000;
-const ENVELOPE_KEYS = ['v', 'trade', 'from', 'seq', 'slots', 'nonce', 'kh', 'ct', 'ctNonce', 'sig'] as const;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;
 const HEX = /^[0-9a-f]+$/;
 const KEY_HEX = /^[0-9a-f]{64}$/;
@@ -51,18 +51,6 @@ export interface ChatEnvelope {
   sig: string;
 }
 
-function plain(x: unknown): x is Record<string, unknown> {
-  if (typeof x !== 'object' || x === null || Array.isArray(x)) return false;
-  const p = Object.getPrototypeOf(x) as unknown;
-  return p === Object.prototype || p === null;
-}
-
-function exactKeys(o: Record<string, unknown>, keys: readonly string[]): boolean {
-  if (Object.getOwnPropertySymbols(o).length > 0) return false;
-  const own = Object.getOwnPropertyNames(o);
-  return own.length === keys.length && keys.every((k) => Object.prototype.hasOwnProperty.call(o, k));
-}
-
 const bad = (what: string): ChatEnvelopeError => new ChatEnvelopeError('bad-envelope', `Invalid ${what}`);
 
 function b64(v: unknown, max: number, what: string): string {
@@ -76,13 +64,14 @@ function hex(v: unknown, len: number, what: string): string {
 }
 
 /**
- * The API's check of a posted chat envelope, before storing it: exact key set and field types,
+ * The API's check of a posted chat envelope, before storing it: exact key set (the protocol's
+ * ENVELOPE_KEYS, with its isPlainObject/hasExactKeys/isValidSeq) and field types,
  * at most CHAT_BODY_MAX_BYTES as JSON, `trade` equal to the chat's channel
  * (`channelFor(chat, 'chat')`), and `from` equal to the session's role when one is given. It
  * cannot check the signature or the contents; every reader's open() does.
  */
 export function checkChatEnvelope(body: unknown, channel: string, sessionRole?: Role): ChatEnvelope {
-  if (!plain(body) || !exactKeys(body, ENVELOPE_KEYS)) throw bad('envelope shape');
+  if (!isPlainObject(body) || !hasExactKeys(body, ENVELOPE_KEYS)) throw bad('envelope shape');
   let json: string;
   try {
     json = JSON.stringify(body);
@@ -94,8 +83,8 @@ export function checkChatEnvelope(body: unknown, channel: string, sessionRole?: 
   if (v !== 1) throw bad('v');
   if (typeof trade !== 'string') throw bad('trade');
   if (typeof from !== 'string' || !(ROLES as readonly string[]).includes(from)) throw bad('from');
-  if (typeof seq !== 'number' || !Number.isSafeInteger(seq) || seq < 0 || Object.is(seq, -0)) throw bad('seq');
-  if (!plain(slots) || !exactKeys(slots, ROLES)) throw bad('slots');
+  if (!isValidSeq(seq)) throw bad('seq');
+  if (!isPlainObject(slots) || !hasExactKeys(slots, ROLES)) throw bad('slots');
   const s = {} as Record<Role, string>;
   for (const r of ROLES) s[r] = b64(slots[r], 64, `slots.${r}`);
   const out: ChatEnvelope = {
