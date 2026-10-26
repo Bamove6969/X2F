@@ -79,6 +79,7 @@ export async function testApp(overrides: Partial<Deps> = {}, options: Omit<Build
     leaked: notYet('leaked list (Task 6)'),
     addresses: notYet('address validator (Task 12)'),
     attestation: notYet('attestation policy (Task 8)'),
+    nudges: notYet('nudge wiring (Tasks 6, 19, 20)'),
     pgpSigner,
     // No sources: every price is unavailable unless a test passes its own feed.
     prices: createMarketPrices({

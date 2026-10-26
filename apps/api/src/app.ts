@@ -14,6 +14,7 @@ import { tradeRoutes } from './trades/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
@@ -53,6 +54,8 @@ export interface Deps {
   prices: MarketPrices;
   /** Plan 3 Task 4 supplies this from the `offers` table; without it `/v1/methods` lists nothing live. */
   liveOffers?: LiveOfferStats;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -209,6 +212,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   priceRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route.
   tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }
