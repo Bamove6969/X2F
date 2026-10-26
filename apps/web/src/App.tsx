@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
@@ -64,11 +65,11 @@ export function App() {
       <Routes>
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy" element={<Screen name="buy" />} />
+          <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
         </Route>
         <Route element={<Layout nav={false} />}>
           <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<Screen name="buy-offers" />} />
+          <Route path="/buy/:methodId" element={<OfferList side="buy" copy={BUY_COPY} />} />
           <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />

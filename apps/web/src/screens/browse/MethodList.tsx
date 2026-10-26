@@ -6,14 +6,11 @@ import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
 
-// The Main board (/sell; Task 17 reuses it for /buy with side="buy"): the methods with live offers
+// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): the methods with live offers
 // in the chosen currency first, then every other method A–Z, a currency picker, search and Sort.
 
-const SORTS: { id: MethodSort; label: string }[] = [
-  { id: 'buyers', label: 'Most buyers' },
-  { id: 'rate', label: 'Best rate' },
-  { id: 'az', label: 'A–Z' },
-];
+/** The sort ids in the order of `copy.methodSorts`. */
+const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
 
 type Load = { kind: 'loading' } | { kind: 'ready'; lists: MethodLists } | { kind: 'failed' };
 
@@ -131,9 +128,9 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         </div>
         <div role="radiogroup" aria-label="Sort" className="x2f-browse__sorts">
           <span className="x2f-browse__sort-label">Sort</span>
-          {SORTS.map((s) => (
-            <button key={s.id} type="button" role="radio" aria-checked={sort === s.id} className="x2f-chip-button" onClick={() => setSort(s.id)}>
-              {s.label}
+          {SORT_IDS.map((id, i) => (
+            <button key={id} type="button" role="radio" aria-checked={sort === id} className="x2f-chip-button" onClick={() => setSort(id)}>
+              {copy.methodSorts[i]}
             </button>
           ))}
         </div>

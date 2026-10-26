@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router';
 import { Icon } from '../../ui/icons.js';
-import { currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
+import { currencyFrom, fetchMethods, fetchOffers, fetchPrice, formatMinor, sortOffers, type MethodRow, type Offer, type OfferSort, type Side } from './api.js';
 import { OfferCard } from './OfferCard.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
-// The SellOffers board (/sell/:methodId; Task 17 reuses it for /buy/:methodId with side="buy"):
-// the market price line, Sort, and the offer cards. The first offer that can be taken (online, no
+// The SellOffers board (/sell/:methodId) and, with side="buy", the BuyOffers board (/buy/:methodId):
+// the market price line, Sort, and the offer cards, kept in the chosen order whatever order the
+// API sent. The first offer that can be taken (online, no
 // `opensAt` from the API) carries the screen's one orange Trade.
 
 const SORT_IDS: readonly OfferSort[] = ['best', 'online', 'trades'];
@@ -56,7 +57,8 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
 
   const row = method.kind === 'ready' ? method.value : null;
   const now = new Date();
-  const list = offers.kind === 'ready' ? offers.value : [];
+  const list = offers.kind === 'ready' ? sortOffers(offers.value, sort, side) : [];
+  const market = price.kind === 'ready' ? price.value.centsPerXmr : null;
   const primaryId = list.find((o) => o.opensAt === undefined && o.poster.online)?.id;
 
   return (
@@ -82,10 +84,10 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
             <span className="x2f-browse__muted">Price unavailable right now</span>
           ) : null}
         </div>
-        <div className="x2f-browse__sorts">
+        <div role="radiogroup" aria-label="Sort" className="x2f-browse__sorts">
           <span className="x2f-browse__sort-label">Sort</span>
           {SORT_IDS.map((id, i) => (
-            <button key={id} type="button" aria-pressed={sort === id} className="x2f-chip-button" onClick={() => setSort(id)}>
+            <button key={id} type="button" role="radio" aria-checked={sort === id} className="x2f-chip-button" onClick={() => setSort(id)}>
               {copy.offerSorts[i]}
             </button>
           ))}
@@ -104,11 +106,13 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
             copy={copy}
             primary={o.id === primaryId}
             now={now}
+            market={market}
             {...(onTrade ? { onTrade } : {})}
             {...(onMessage ? { onMessage } : {})}
             {...(onNudge ? { onNudge } : {})}
           />
         ))}
+        {copy.offersFooter !== undefined && offers.kind === 'ready' ? <p className="x2f-browse__footer">{copy.offersFooter}</p> : null}
       </main>
     </div>
   );
