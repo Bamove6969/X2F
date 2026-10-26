@@ -1,5 +1,5 @@
 export { ProtocolError, type ProtocolErrorCode } from './errors.js';
-export { generateIdentity, type Identity } from './identity.js';
+export { generateIdentity, signProof, type Identity } from './identity.js';
 export { ReplayGuard, type ReplayGuardJSON } from './replay.js';
 export { joinMessage } from './join.js';
 export {

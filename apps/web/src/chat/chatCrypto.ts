@@ -28,6 +28,7 @@ import {
   isValidSeq,
   open,
   seal,
+  signProof,
   type Envelope,
   type Identity,
   type Participants,
@@ -41,7 +42,6 @@ import {
   chatIdentityProofBytes,
   checkChatEnvelope,
 } from '@x2f/trade';
-import sodium from 'libsodium-wrappers';
 
 export type ChatRole = 'buyer' | 'seller';
 export type ChatErrorCode = 'bad-text' | 'too-large' | 'bad-state' | 'bad-message' | 'mod-not-allowed';
@@ -129,11 +129,12 @@ export function checkChatText(text: unknown): string {
   return text;
 }
 
-/** The hex Ed25519 proof for `POST /v1/chats/:chat/identity` (chatIdentityProofBytes). */
-export async function signChatIdentity(me: Identity, chat: string, role: ChatRole): Promise<string> {
-  await sodium.ready;
-  const msg = chatIdentityProofBytes(chat, role, me.signPublic, me.boxPublic);
-  return sodium.to_hex(sodium.crypto_sign_detached(msg, me.signSecret));
+/**
+ * The hex Ed25519 proof for `POST /v1/chats/:chat/identity`: the protocol's signProof over
+ * chatIdentityProofBytes. No libsodium here; apps/web uses the protocol for every crypto call.
+ */
+export function signChatIdentity(me: Identity, chat: string, role: ChatRole): Promise<string> {
+  return signProof(me, chatIdentityProofBytes(chat, role, me.signPublic, me.boxPublic));
 }
 
 export interface SealChatArgs {
