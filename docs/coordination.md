@@ -63,3 +63,8 @@ Not needed: agy, desktop-commander.
 - 2026-10-24 lead: follow-ups from the owner's questions on stored login data:
   - **FU-D, login name stored only as a keyed tag.** After FU-A merges, replace the plaintext `accounts.login_name` / `login_key` with `login_tag = HMAC(login-name key ring, lower-cased NFC name)`, which has a key id and can be rotated like the FU-C rings. The names-differ check moves to the app, comparing the display-name tag with the login-name tag. A stolen database then holds no login names. Unknown-name lookups already use HMAC tags.
   - **Revoke or remove a PGP key in Security settings.** The user pastes a revocation certificate, which is merged (never replaced), or removes the key. X2F never polls keyservers, because that would tell them which keys X2F users hold. (Plan 3 Task 30 for the UI, plus a small API route.)
+
+## Task 15 follow-ups (review 2026-10-26, not done in the fix round)
+- copy-lint checks "!" only in JS/TS (tools/copy-lint.ts); CSS `content:`, SVG text and JSON strings get the emoji scan only.
+- copy-lint flags Extended_Pictographic only with U+FE0F: "⚠", "✔", "☺", "‼", "⁉" and fullwidth "！" (U+FF01) pass. Flag \p{Emoji} minus [0-9#*] with an allow-list, and add U+FF01/U+203C/U+2049 to the exclamation rule.
+- "Monero orange only on the one primary action" is enforced nowhere: expectParity counts [data-primary] only. Either a copy-lint rule keeping the orange tokens to tokens.css and .x2f-button--primary, or expectParity failing any orange outside [data-primary].
