@@ -10,6 +10,7 @@ export const BUY_COPY: BrowseCopy = {
   emptyRow: (c) => `No ${c} sellers right now · post an offer`,
   methodSorts: ['Most sellers', 'Best rate', 'A–Z'],
   offersTitle: (m) => `Buy XMR via ${m}`,
+  offersTitleBare: 'Buy XMR',
   offersCount: (n, c) => `${people(n)} · ${c}`,
   typicalTime: (m) => `Releases in ~${m} min`,
   noOffers: (c) => `No ${c} sellers for this method right now. You can post an offer.`,

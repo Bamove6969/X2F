@@ -117,8 +117,7 @@
   cursor: pointer;
 }
 
-.x2f-chip-button[aria-checked='true'],
-.x2f-chip-button[aria-pressed='true'] {
+.x2f-chip-button[aria-checked='true'] {
   border-color: var(--x2f-monero);
   background: var(--x2f-surface-raised);
   font-weight: 600;

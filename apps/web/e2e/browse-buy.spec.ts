@@ -34,7 +34,7 @@ test.describe('/buy (BuyMain board)', () => {
     await expect(page.getByRole('searchbox', { name: 'Search payment methods' })).toHaveAttribute('placeholder', `Search ${CATALOG.length} payment methods`);
     await expect(page.getByRole('radio', { name: 'Most sellers' })).toHaveAttribute('aria-checked', 'true');
     for (const r of seen.requests.filter((r) => new URL(r.url()).pathname === '/v1/methods')) expect(new URL(r.url()).searchParams.get('side')).toBe('sell');
-    await expectParity(page, 'BuyMain');
+    await expectParity(page, 'BuyMain', { primary: false });
   });
 
   test('Best rate on BuyMain asks the API for the lowest-first order', async ({ page }) => {
@@ -138,6 +138,14 @@ test.describe('/buy/:methodId (BuyOffers board)', () => {
     await expect(building.locator('.x2f-badge', { hasText: 'New' })).toHaveCount(0);
   });
 
+  test('a method id from the URL is never printed', async ({ page }) => {
+    await stub(page);
+    await page.goto('/buy/Zelle%20support%20555-0100');
+    await expect(page.getByText('This payment method is not available.')).toBeVisible();
+    await expect(page.locator('.x2f-browse__head-title')).toHaveText('Buy XMR');
+    expect(await page.locator('body').innerText()).not.toContain('555-0100');
+  });
+
   test('logged out, the buy lists render and no browse request fails', async ({ page }) => {
     const seen = await stub(page, { signedIn: false });
     const failed: string[] = [];
@@ -167,7 +175,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       await page.goto('/buy');
       await expect(page.locator('main a').first()).toContainText('Zelle');
       await expectPhoneLayout(page);
-      await expectParity(page, 'BuyMain', { viewport });
+      await expectParity(page, 'BuyMain', { viewport, primary: false });
     });
 
     test('BuyOffers: parity and phone layout', async ({ page }) => {
