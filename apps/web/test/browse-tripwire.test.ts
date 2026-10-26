@@ -1,5 +1,6 @@
 // TRIPWIRES for the API shapes the browse screens (Task 16) assume before the API tasks are on the
-// line. src/screens/browse/api.ts parses each response strictly, so a field that is renamed or
+// line. (Task 3's /v1/methods, /v1/price and /v1/method-suggestions are on the line since
+// 2026-10-26 and were checked against api.ts: same fields, sorts and 202; its tripwire is retired.) src/screens/browse/api.ts parses each response strictly, so a field that is renamed or
 // missing fails loudly at run time too. Each tripwire below fails once the real module lands: then
 // check the real shape against api.ts (and the Playwright stubs in e2e/browse-sell.spec.ts, which
 // use the src/fixtures/boards.ts shapes), fix any difference, and delete that tripwire.
@@ -30,12 +31,5 @@ describe('Task 16 guesses still stand in for missing API routes', () => {
     // Guessed ids: trusted, fast, veteran, pgp, security-key, clean-record, trades-10/50/100/500/1000.
     // Unknown ids are left off the card.
     expect(has('apps/api/src/traders/badges.ts'), 'Plan 5 badges landed: check the ids in OfferCard BADGES').toBe(false);
-  });
-
-  it('NEEDS_TASK_3: the /v1/methods, /v1/price and /v1/method-suggestions shapes are taken from the unmerged Task 3 branch', () => {
-    // From wip/second-p3-t3: { live: MethodRow[]; all: MethodRow[] }, MethodRow = { id; name; group;
-    // giftCard; offers; bestRate: string | null }; price { currency; centsPerXmr: string; exponent; at };
-    // suggestion { name } → 202.
-    expect(has('apps/api/src/methods/routes.ts'), 'Task 3 methods landed: check parseMethodLists and parsePrice').toBe(false);
   });
 });
