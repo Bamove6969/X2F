@@ -266,6 +266,18 @@ test.describe('board texts', () => {
       await expect(expectParity(page, 'Empty', { boardsDir: dir })).rejects.toThrow(/no board texts read for Empty/);
     });
 
+    test('text the board itself hides visually (a screen-reader-only label) is not required', async ({ page }) => {
+      await writeFile(
+        join(dir, 'Labels.dc.html'),
+        '<!doctype html><html><body><x-dc>' +
+          '<label for="cur" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Currency</label>' +
+          '<span style="position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)">Clipped</span>' +
+          '<p style="width: 1px">Narrow but shown</p><p>USD</p>' +
+          '</x-dc></body></html>',
+      );
+      expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
+    });
+
     test('a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception)', async ({ page }) => {
       await writeFile(join(dir, 'Desktop.dc.html'), '<!doctype html><html><body><x-dc><p>Escrow funded</p></x-dc></body></html>');
       await expect(boardTexts(page, 'Desktop', { boardsDir: dir })).rejects.toThrow(/KNOWN_EXCEPTIONS\[Desktop\] lists "You pay · 62 min left".*stale/);
