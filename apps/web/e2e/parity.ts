@@ -3,7 +3,8 @@
 // Desktop board.
 //
 // Blocking (the test fails):
-//   - exactly one visible [data-primary] on the page;
+//   - exactly one visible [data-primary] on the page (none with `primary: false`, for a board
+//     with no primary action);
 //   - no horizontal scroll;
 //   - no text-transform on any [data-username];
 //   - every text of the board present verbatim (see `boardTexts` and `missingTexts`).
@@ -341,13 +342,15 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
 
 /**
  * Board parity for the page as it is now; see the top of this file. Throws on a blocking failure.
- * It first sets the page's viewport to `o.viewport` (default: the board's canvas.json size) and
+ * `primary: false` is for a board with no primary action (Main, BuyMain: only the tab bar), where
+ * the page must have no [data-primary] at all. It first sets the page's viewport to `o.viewport`
+ * (default: the board's canvas.json size) and
  * leaves it there, so a test that goes on after it runs at that size.
  */
 export async function expectParity(
   page: Page,
   board: string,
-  o: { masks?: Locator[]; viewport?: ParityViewport; refsDir?: string; boardsDir?: string } = {},
+  o: { masks?: Locator[]; viewport?: ParityViewport; refsDir?: string; boardsDir?: string; primary?: boolean } = {},
 ): Promise<void> {
   // The board's own canvas.json size by default (390x844 for the phone boards, 1280x800 for
   // Desktop, 1280x900–1600 for the staff and mod boards), so the page is shot at the reference's size.
@@ -366,7 +369,11 @@ export async function expectParity(
   const primaries = await page
     .locator('[data-primary]')
     .evaluateAll((els) => els.filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length);
-  if (primaries !== 1) failures.push(`exactly one [data-primary], found ${primaries}`);
+  if (o.primary === false) {
+    if (primaries !== 0) failures.push(`no [data-primary] on a board without a primary action, found ${primaries}`);
+  } else if (primaries !== 1) {
+    failures.push(`exactly one [data-primary], found ${primaries}`);
+  }
 
   const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
   if (scroll.wide > scroll.view) failures.push(`horizontal scroll: ${scroll.wide} px wide in a ${scroll.view} px viewport`);
