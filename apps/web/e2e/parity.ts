@@ -127,10 +127,16 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
       }
       // Text the board itself hides visually (the screen-reader-only pattern: a box of at most 1 px
       // with its overflow hidden or clipped) is not visible copy; the page may hide it the same way.
-      const tiny = (v: string) => v === '0' || v === '0px' || v === '1px';
-      for (const el of Array.from(root.querySelectorAll<HTMLElement>('[style]'))) {
-        const st = el.style;
-        if (tiny(st.width) && tiny(st.height) && (st.overflow === 'hidden' || st.clip !== '')) el.remove();
+      // The style attribute is read as text: under the app's CSP (no inline styles) the parsed
+      // board's CSSOM stays empty.
+      const tiny = (v: string | undefined) => v === '0' || v === '0px' || v === '1px';
+      for (const el of Array.from(root.querySelectorAll('[style]'))) {
+        const st = new Map<string, string>();
+        for (const decl of (el.getAttribute('style') ?? '').split(';')) {
+          const i = decl.indexOf(':');
+          if (i > 0) st.set(decl.slice(0, i).trim().toLowerCase(), decl.slice(i + 1).trim().toLowerCase());
+        }
+        if (tiny(st.get('width')) && tiny(st.get('height')) && (st.get('overflow') === 'hidden' || st.has('clip') || st.has('clip-path'))) el.remove();
       }
       const scope = within ? root.querySelector(within) : root;
       if (!scope) throw new Error(`no ${within} on the board`);

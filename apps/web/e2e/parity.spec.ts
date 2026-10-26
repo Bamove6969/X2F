@@ -276,6 +276,9 @@ test.describe('board texts', () => {
           '</x-dc></body></html>',
       );
       expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
+      // The same under the app's CSP (no inline styles), where the parsed board's CSSOM stays empty.
+      await page.setContent(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'"></head><body></body></html>`);
+      expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
     });
 
     test('a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception)', async ({ page }) => {
