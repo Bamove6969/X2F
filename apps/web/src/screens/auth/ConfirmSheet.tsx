@@ -17,6 +17,7 @@ import { confirmWithWebAuthn, describeAction, type ConfirmAction, type MethodTyp
 import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
+import { refusalText } from './refusals.js';
 
 type Resolver = { resolve: (token: string) => void; reject: (reason: unknown) => void };
 
@@ -108,8 +109,9 @@ export function ConfirmSheet({
       setError(null);
       try {
         onToken(await fn());
-      } catch {
-        setError(wrong);
+      } catch (e) {
+        // A held backup session or too many tries says so; a plain miss reads `wrong`.
+        setError(refusalText(e, wrong));
         setBusy(null);
       }
     },
@@ -125,8 +127,8 @@ export function ConfirmSheet({
     try {
       setPgp(await authApi.confirmPgpStart({ action }));
       setPgpCode('');
-    } catch {
-      setError('Could not start the PGP check. Try again.');
+    } catch (e) {
+      setError(refusalText(e, 'Could not start the PGP check. Try again.'));
     } finally {
       setBusy(null);
     }
@@ -139,11 +141,15 @@ export function ConfirmSheet({
       'That code did not work. It may have expired: get a new message and try again.',
     );
 
+  // With an authenticator app the server needs its code with the password (a password alone is a
+  // miss and counts as one), so Confirm waits for both and always sends the code.
+  const passwordReady = password !== '' && (!hasTotp || totp.trim() !== '');
+
   const finishPassword = () =>
     void run(
       'password',
-      async () => (await authApi.confirmPassword({ password, action, ...(hasTotp && totp !== '' ? { totp } : {}) })).confirmToken,
-      hasTotp ? 'That password or code did not work. Try again.' : 'That password did not work. Try again.',
+      async () => (await authApi.confirmPassword({ password, action, ...(hasTotp ? { totp: totp.trim() } : {}) })).confirmToken,
+      hasTotp ? 'That password or authenticator code did not work. Try again.' : 'That password did not work. Try again.',
     );
 
   // Exactly one primary in the sheet: the PGP Confirm while a PGP challenge is up, else the password Confirm.
@@ -227,7 +233,7 @@ export function ConfirmSheet({
                 />
               </>
             ) : null}
-            <Button variant={pgpPrimary ? 'secondary' : 'primary'} disabled={busy !== null || password === ''} onClick={finishPassword}>
+            <Button variant={pgpPrimary ? 'secondary' : 'primary'} disabled={busy !== null || !passwordReady} onClick={finishPassword}>
               Confirm
             </Button>
           </div>

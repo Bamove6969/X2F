@@ -63,3 +63,9 @@ Not needed: agy, desktop-commander.
 - 2026-10-24 lead: follow-ups from the owner's questions on stored login data:
   - **FU-D, login name stored only as a keyed tag.** After FU-A merges, replace the plaintext `accounts.login_name` / `login_key` with `login_tag = HMAC(login-name key ring, lower-cased NFC name)`, which has a key id and can be rotated like the FU-C rings. The names-differ check moves to the app, comparing the display-name tag with the login-name tag. A stolen database then holds no login names. Unknown-name lookups already use HMAC tags.
   - **Revoke or remove a PGP key in Security settings.** The user pastes a revocation certificate, which is merged (never replaced), or removes the key. X2F never polls keyservers, because that would tell them which keys X2F users hold. (Plan 3 Task 30 for the UI, plus a small API route.)
+
+## Task 30 follow-ups (re-review 2026-10-26, not done in the fix round)
+- `goLogin` is wired only through the auth client's fetch; raw `api()` callers never send an expired session to /login. Add an opt-in to `api()`, and note the gap in HANDOFF.
+- Methods: `me().hasBackup` and the suggestions ('add-authenticator', 'add-backup') are unused; spec 6.2's nudge for password-only users is absent, and nothing says a password is not a backup.
+- PGP revocation paste UI plus its small API route (coordination.md 2026-10-24) is absent on both sides: a ticket for the lead.
+- Methods → Add a PGP key has no "Send a new message" after an expired code (M5 reached login only).

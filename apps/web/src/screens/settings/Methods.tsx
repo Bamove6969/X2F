@@ -18,6 +18,7 @@ import {
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { refusalText } from '../auth/refusals.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 
@@ -31,6 +32,17 @@ const LABELS: Record<MethodType, string> = {
 };
 
 const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
+
+/** The methods that log in on their own; an authenticator app and recovery codes only back them up. */
+const LOGIN_METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
+
+/**
+ * True when `m` is the account's only way to log in, so removing it is refused at once, before any
+ * confirm round-trip. The server still decides every other case (staff minimums, for one).
+ */
+export function isOnlyLogin(m: MethodEntry, all: readonly MethodEntry[]): boolean {
+  return LOGIN_METHODS.includes(m.type) && all.filter((x) => LOGIN_METHODS.includes(x.type)).length === 1;
+}
 
 type Adding = 'none' | 'password' | 'pgp' | 'totp' | 'recovery-codes';
 
@@ -55,13 +67,17 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove);
       await refresh();
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('Could not add that method. Try again.');
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not add that method. Try again.'));
     } finally {
       setBusy(false);
     }
   };
 
   const remove = async (m: MethodEntry) => {
+    if (methods !== null && isOnlyLogin(m, methods)) {
+      setError(LAST_METHOD_MESSAGE);
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
@@ -73,7 +89,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'last-login-method') setError(LAST_METHOD_MESSAGE);
-      else if (!isConfirmAbort(e)) setError('Could not remove that method. Try again.');
+      else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -149,7 +165,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
-      else if (!isConfirmAbort(e)) setError('Could not set a password. Try again.');
+      else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not set a password. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -197,7 +213,7 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
       );
       setMessage({ challengeId: challenge.challengeId, encryptedMessage: challenge.encryptedMessage });
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('Could not add that key. Check it and try again.');
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not add that key. Check it and try again.'));
     } finally {
       setBusy(false);
     }
@@ -209,8 +225,8 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
     try {
       await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
       onDone();
-    } catch {
-      setError('That code did not work. It may have expired.');
+    } catch (e) {
+      setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
     } finally {
       setBusy(false);
     }

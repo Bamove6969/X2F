@@ -1,0 +1,74 @@
+/**
+ * What the login and security screens say when the server refuses something for a reason the
+ * person can act on (Task 30 re-review, items 2 and 3). One helper so every screen words a wait, a
+ * held backup session, a refused PGP key or an expired step the same way:
+ *
+ * - 403 `recovery-hold`: a backup login's changes wait until `holdUntil` (Plan 2's 24-hour hold);
+ * - 429 `slow-down` / `locked`: how long to wait, from `retryAfterSeconds` (the TOTP backup's daily
+ *   cap waits until midnight UTC, so a long wait is given as a clock time);
+ * - 400 `key-expired` / `key-revoked`: the key is turned away with the reason (spec 6.2);
+ * - a `detail` sentence about the pasted key: shown as the server wrote it;
+ * - 400 `challenge-expired`: the step ran out of time and must start again.
+ *
+ * Anything else gets the caller's own fallback sentence.
+ */
+import { AuthApiError } from '@x2f/auth-client';
+import { ApiCallError } from '../../api/client.js';
+
+interface Refusal {
+  status: number;
+  code: string;
+  detail?: string;
+  retryAfterSeconds?: number;
+  holdUntil?: string;
+}
+
+/** The refusal fields of an error from either client, or null for anything else (a network failure). */
+function refusalOf(e: unknown): Refusal | null {
+  if (e instanceof AuthApiError || e instanceof ApiCallError) return e;
+  return null;
+}
+
+/** A clock time in the person's own time zone, e.g. "Tue 3:05 PM". */
+export function localTime(at: Date): string {
+  return at.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+/** The held-backup sentence, for `holdUntil` (an ISO time) or, if the server sent none, a day. */
+export function holdSentence(holdUntil: string | null | undefined): string {
+  const at = holdUntil ? new Date(holdUntil) : null;
+  if (at === null || Number.isNaN(at.getTime())) return 'You logged in with a backup, so changes to your account wait for a day.';
+  return `You logged in with a backup, so changes to your account wait until ${localTime(at)}.`;
+}
+
+/** How long to wait after too many tries: minutes up to an hour, else the clock time it ends. */
+export function waitSentence(seconds: number | undefined, now: Date = new Date()): string {
+  const s = seconds !== undefined && Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
+  if (s <= 3600) {
+    const min = Math.max(1, Math.ceil(s / 60));
+    return `Too many tries. Try again in ${min} ${min === 1 ? 'minute' : 'minutes'}.`;
+  }
+  return `Too many tries. Try again after ${localTime(new Date(now.getTime() + s * 1000))}.`;
+}
+
+export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, then paste it again.';
+export const KEY_REVOKED = 'That key has been revoked, so it cannot be used to log in. Use a key that is still valid.';
+export const STEP_EXPIRED = 'That step has expired. Start again.';
+
+/** True for a 400 `challenge-expired`: the screen should offer to start the step again. */
+export function isExpired(e: unknown): boolean {
+  return refusalOf(e)?.code === 'challenge-expired';
+}
+
+/** The sentence for a refusal the person can act on, else `fallback`. */
+export function refusalText(e: unknown, fallback: string, o: { expired?: string; now?: Date } = {}): string {
+  const r = refusalOf(e);
+  if (r === null) return fallback;
+  if (r.code === 'recovery-hold') return holdSentence(r.holdUntil);
+  if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
+  if (r.code === 'key-expired') return KEY_EXPIRED;
+  if (r.code === 'key-revoked') return KEY_REVOKED;
+  if (r.code === 'challenge-expired') return o.expired ?? STEP_EXPIRED;
+  if (typeof r.detail === 'string' && r.detail.trim() !== '') return r.detail;
+  return fallback;
+}

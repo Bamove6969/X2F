@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { IDLE_HOURS, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { holdSentence } from '../auth/refusals.js';
 import { Alerts } from './Alerts.js';
 import { Devices } from './Devices.js';
 import { Methods } from './Methods.js';
@@ -112,6 +113,32 @@ function LogoutTimer() {
   );
 }
 
+/**
+ * A backup login's recovery session is held (Plan 2: a TOTP backup waits a day): every change on
+ * this screen is refused until then, so the screen says so up front, from `me()`.
+ */
+function HoldBanner() {
+  const [held, setHeld] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    let live = true;
+    authApi.me().then(
+      (me) => {
+        if (live) setHeld(me.level === 'recovery' && me.holdUntil !== null && Date.parse(me.holdUntil) > Date.now() ? me.holdUntil : null);
+      },
+      () => undefined,
+    );
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (typeof held !== 'string') return null;
+  return (
+    <p className="x2f-note" role="status" data-part="hold-banner">
+      {holdSentence(held)}
+    </p>
+  );
+}
+
 export function Security() {
   const { prove, confirmUi, open } = useConfirm();
 
@@ -119,6 +146,7 @@ export function Security() {
     <ConfirmOpenProvider value={open}>
       <main className="x2f-screen" data-screen="security">
         <h1 className="x2f-screen__title">Security</h1>
+        <HoldBanner />
         <Methods prove={prove} />
         <PayoutWait />
         <Devices />

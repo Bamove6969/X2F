@@ -7,6 +7,7 @@ import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { refusalText } from '../auth/refusals.js';
 
 export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void }) {
   const primary = usePrimaryVariant();
@@ -21,7 +22,7 @@ export function RecoveryCodes({ prove, onDone }: { prove: (a: ConfirmAction) => 
       const result = await withConfirm({ kind: 'new-recovery-codes' }, (t) => authApi.newRecoveryCodes(t !== undefined ? { confirmToken: t } : {}), prove);
       setCodes(result.codes);
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('Could not make recovery codes. Try again.');
+      if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not make recovery codes. Try again.'));
     } finally {
       setBusy(false);
     }

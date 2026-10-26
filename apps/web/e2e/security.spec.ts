@@ -13,7 +13,6 @@ function overview(over: Overview = {}): Overview {
     methods: ['password'],
     hasBackup: false,
     suggestions: [],
-    payoutWait: { enabled: false, offAt: null },
     termsCurrent: true,
     ...over,
   };
@@ -201,4 +200,61 @@ test('ending another device’s session logs it out', async ({ page }) => {
   await page.click('[data-part="end-session"]');
   await expect(page.locator('[data-part="device-list"] li')).toHaveCount(1);
   await expect(page.getByText('Browser on Android')).toHaveCount(0);
+});
+
+// Task 30 re-review (items 1, 2, 7).
+
+test('with an authenticator app, the confirm sheet needs the code before Confirm and always sends it', async ({ page }) => {
+  await base(page, { me: { methods: ['password', 'totp'] } });
+  let body: Record<string, unknown> | null = null;
+  await page.route('**/v1/confirm/password', (r) => {
+    body = JSON.parse(r.request().postData() ?? '{}') as Record<string, unknown>;
+    return json({ confirmToken: 't1' })(r);
+  });
+  await page.route('**/v1/account/recovery-codes', async (r) => {
+    const b = JSON.parse(r.request().postData() ?? '{}') as { confirmToken?: string };
+    return b.confirmToken === undefined
+      ? json({ error: 'confirm-required', action: 'new-recovery-codes' }, 403)(r)
+      : json({ codes: ['code-1'] })(r);
+  });
+  await page.goto('/settings/security');
+  await page.click('[data-add="recovery-codes"]');
+  await page.click('[data-part="recovery-make"]');
+  await page.fill('#confirm-password', 'Correct-Horse-9!');
+  const confirm = page.locator('[data-method="password"] >> text=Confirm');
+  await expect(confirm).toBeDisabled();
+  await page.fill('#confirm-totp', '123456');
+  await expect(confirm).toBeEnabled();
+  await confirm.click();
+  await expect(page.locator('[data-part="code-list"] li')).toHaveCount(1);
+  expect(body).toMatchObject({ password: 'Correct-Horse-9!', totp: '123456' });
+});
+
+test('a held backup session shows a banner, and a held change says until when', async ({ page }) => {
+  await base(page, { me: { level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' } });
+  await page.route('**/v1/account/recovery-codes', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
+  await page.goto('/settings/security');
+  await expect(page.locator('[data-part="hold-banner"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await page.click('[data-add="recovery-codes"]');
+  await page.click('[data-part="recovery-make"]');
+  await expect(page.locator('[data-part="recovery-codes"] [role="alert"], [data-part="recovery-error"]').first()).toContainText('changes to your account wait until');
+});
+
+test('removing the only login method is refused at once, without a confirm or a request', async ({ page }) => {
+  await base(page, {
+    methods: [
+      { type: 'passkey', id: 'k1', label: 'Passkey', createdAt: null, lastUsedAt: null },
+      { type: 'totp', id: 'totp', label: 'Authenticator app', createdAt: null, lastUsedAt: null },
+    ],
+  });
+  let deletes = 0;
+  await page.route('**/v1/account/methods/passkey/k1', (r) => {
+    deletes += 1;
+    return json({ error: 'last-login-method' }, 409)(r);
+  });
+  await page.goto('/settings/security');
+  await page.click('[data-method="passkey"] [data-part="remove"]');
+  await expect(page.locator('[data-part="methods-error"]')).toContainText('only way to log in');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  expect(deletes).toBe(0);
 });

@@ -1,8 +1,8 @@
 /**
  * The backup way in (Task 30): a printed recovery code or an authenticator (TOTP) code, with the
  * login name. A password is never a backup (spec §6.2). A TOTP backup opens a recovery session
- * that is held for a day before it can make changes (Plan 2); this screen just gets the person in
- * and then follows the usual Terms-then-`returnTo` path.
+ * that is held for a day before it can make changes (Plan 2): then this screen says until when
+ * before it goes on. Then it follows the usual Terms-then-`returnTo` path.
  */
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -11,6 +11,7 @@ import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { afterLogin, authApi, deviceLabel } from './authApi.js';
 import { LOGIN_RETRY_LATER } from './loginRules.js';
+import { holdSentence, refusalText } from './refusals.js';
 import '../screens.css';
 
 type Kind = 'recovery-code' | 'totp';
@@ -24,20 +25,37 @@ export function BackupLogin() {
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set after a backup login whose changes are held: the screen says until when, then goes on.
+  const [heldUntil, setHeldUntil] = useState<string | null>(null);
 
   const submit = async () => {
     setBusy(true);
     setError(null);
     try {
-      await authApi.loginBackup({ username: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
-      await afterLogin((to) => navigate(to), returnTo);
+      const result = await authApi.loginBackup({ username: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
+      if (result.holdUntil !== null) setHeldUntil(result.holdUntil);
+      else await afterLogin((to) => navigate(to), returnTo);
     } catch (e) {
       // A wrong name or code reads the same; an outage or a rate limit is not a mismatch.
-      setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? 'That login name and backup code don’t match.' : LOGIN_RETRY_LATER);
+      setError(e instanceof AuthApiError && e.code === 'credentials-invalid' ? "That login name and backup code don't match." : refusalText(e, LOGIN_RETRY_LATER));
     } finally {
       setBusy(false);
     }
   };
+
+  if (heldUntil !== null) {
+    return (
+      <main className="x2f-screen" data-screen="backup-login">
+        <h1 className="x2f-screen__title">You're in</h1>
+        <p className="x2f-note" data-part="hold-note">
+          {holdSentence(heldUntil)}
+        </p>
+        <Button variant="primary" onClick={() => void afterLogin((to) => navigate(to), returnTo)} data-part="hold-continue">
+          Continue
+        </Button>
+      </main>
+    );
+  }
 
   return (
     <main className="x2f-screen" data-screen="backup-login">
