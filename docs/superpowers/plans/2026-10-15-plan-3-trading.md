@@ -309,6 +309,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): offers with method and hold guards`.
 
+**Revision 2026-10-26 (lead, from the Task 16 review):** `TraderSummary` in `/v1/offers` and `/v1/offers/:id` carries `stage` (the starter-limit stage the web screens grey cards by; the same field `GET /v1/me` returns). Tasks 16 and 17 already parse it; the API builder owes it.
+
 ### Task 5: Taking an offer (`apps/api`)
 
 **Files:**
