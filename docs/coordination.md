@@ -104,3 +104,11 @@ Not needed: agy, desktop-commander.
 - copy-lint checks "!" only in JS/TS (tools/copy-lint.ts); CSS `content:`, SVG text and JSON strings get the emoji scan only.
 - copy-lint flags Extended_Pictographic only with U+FE0F: "⚠", "✔", "☺", "‼", "⁉" and fullwidth "！" (U+FF01) pass. Flag \p{Emoji} minus [0-9#*] with an allow-list, and add U+FF01/U+203C/U+2049 to the exclamation rule.
 - "Monero orange only on the one primary action" is enforced nowhere: expectParity counts [data-primary] only. Either a copy-lint rule keeping the orange tokens to tokens.css and .x2f-button--primary, or expectParity failing any orange outside [data-primary].
+
+## Task 16 follow-ups (review 2026-10-26, not done in the fix round)
+- OfferCard badge list: role="tooltip" on a click-pinned list without aria-describedby; hover closes when the mouse moves onto the tip; no Escape or outside-tap dismiss. Make it a plain popover that closes on Escape and pointerdown outside, with the tip inside the hover zone.
+- Featured badges are the first 2 of poster.badges in API order; spec 5.4 makes Featured the trader's choice with defaults. Add a Plan 5 tripwire comment and fall back to the spec's default order.
+- OWNER QUESTION: selected chips use the --x2f-monero border (as the Main and SellOffers boards do), but the design system keeps orange for the one primary action; on SellOffers it sits beside the orange Trade. Boards kept as approved until the owner decides.
+- SellOffers parity exception '$20 – $200Deposit required' drops the whole limits element: add an explicit '$20 – $200' assertion. The 360 px pixel report always says "sizes differ" (expected).
+- The +N badge button is 32 px tall only through flex stretch: set min-height: 32px.
+- OfferList fetches the whole method list for its header; prefer a per-method route or router state later.
