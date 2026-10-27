@@ -302,8 +302,10 @@ describe('funding shows only the address this device verified', () => {
     ['ready without the device deal', { phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS }],
     ['a retryable error', { phase: 'error', error: 'escrow-failed', retryable: true, escrowAddress: ADDRESS, checkWords: WORDS }],
     ['an unsupported browser', { phase: 'error', error: 'unsupported-browser' }],
+    ['not confirmed on this device', { phase: 'error', error: 'not-confirmed' }],
+    ['a non-retryable escrow failure', { phase: 'error', error: 'escrow-failed', retryable: false }],
   ] as [string, Partial<TradeEscrow>][]) {
-    it(`${name}: no address, link or QR, only setup progress`, async () => {
+    it(`${name}: no address, link or QR, only setup status`, async () => {
       setTradeEscrowHook(() => escrow(e));
       const host = await room();
       noFundingTraces(host);
@@ -312,6 +314,74 @@ describe('funding shows only the address this device verified', () => {
       expect(host.textContent).not.toContain('Open in');
     });
   }
+});
+
+describe('non-retryable escrow errors are said, never endless setup (review 2026-10-27, I3)', () => {
+  it('unsupported-browser: its own sentence, no "Setting up escrow", no keep-open bar', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'unsupported-browser' }));
+    const host = await room();
+    expect(host.textContent).toContain("This browser can't run the escrow. Open the trade in an up-to-date browser.");
+    expect(host.textContent).not.toContain('Setting up escrow');
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+    expect(host.textContent).not.toContain('Try again');
+  });
+
+  it('not-confirmed: "Open this trade from the device you started it on."', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'not-confirmed' }));
+    const host = await room();
+    expect(host.textContent).toContain('Open this trade from the device you started it on.');
+    expect(host.textContent).not.toContain('Setting up escrow');
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+  });
+
+  it('a non-retryable escrow-failed: the cancel path (the seller proposes a cancel)', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'escrow-failed', retryable: false }));
+    const host = await room();
+    expect(host.textContent).toContain("The escrow can't be set up on this device.");
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+    expect(host.textContent).not.toContain('Try again');
+    const cancel = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Propose cancel')!;
+    await act(async () => cancel.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'propose-cancel' } }]);
+  });
+
+  it('a non-retryable escrow-failed for the buyer: the cancel path with buyer-cancel', async () => {
+    current = { ...base, role: 'buyer', funding: null };
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'escrow-failed', retryable: false }));
+    const host = await room();
+    const cancel = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
+    await act(async () => cancel.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'buyer-cancel' } }]);
+  });
+
+  it('a retryable error keeps "Try again" and drops the keep-open bar (error !== null)', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'escrow-failed', retryable: true, keepOpen: true }));
+    const host = await room();
+    expect(host.textContent).toContain('Try again');
+    expect(host.querySelector('[data-keep-open]')).toBeNull();
+  });
+});
+
+describe("the seller's cancel on the danger screen is a proposal (review 2026-10-27, Minor 4)", () => {
+  it('is labelled "Propose cancel", and afterwards says the buyer must accept', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'participants-mismatch' }));
+    let host = await room();
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Propose cancel')).toBe(true);
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Cancel')).toBe(false);
+    current = { ...base, cancelProposedBy: 'seller' };
+    host = await room();
+    expect(host.textContent).toContain('Cancel proposed, waiting for the buyer');
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Propose cancel')).toBe(false);
+  });
+
+  it("the buyer's button stays \"Cancel\"", async () => {
+    current = { ...base, role: 'buyer', funding: null };
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'participants-mismatch' }));
+    const host = await room();
+    expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Cancel')).toBe(true);
+  });
 });
 
 describe('the hold opens the wallet on the release, inside the pointerup (review 2026-10-27, I2)', () => {

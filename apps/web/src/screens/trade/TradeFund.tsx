@@ -218,7 +218,7 @@ function safeUri(address: string, funds: bigint): string | null {
   }
 }
 
-export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
+export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenProps) {
   const fundedNow = isFunded(view);
   const funded = fundedNow || hasFundMark(view.code, 'funded');
   useEffect(() => {
@@ -272,7 +272,7 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
             </p>
           </section>
         ) : settingUp ? (
-          <SetupStatus view={view} escrow={escrow} />
+          <SetupStatus view={view} escrow={escrow} refresh={refresh} />
         ) : (
           <section className="x2f-trade-intro">
             <h1 className="x2f-trade-title">
@@ -313,14 +313,15 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
 }
 
 /** The buyer before funding: setup progress, then "Waiting for <seller> to fund". No address, QR code or wallet link. */
-export function BuyerWaitFund({ view, escrow, serverClock }: TradeScreenProps) {
-  const settingUp = view.state === 'setup';
+export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScreenProps) {
+  // A stopped escrow is said to the buyer too (review 2026-10-27, I3), whatever the trade state.
+  const settingUp = view.state === 'setup' || escrow.error !== null;
   return (
     <div className="x2f-trade" data-buyer-wait="">
       <Header view={view} selling={false} />
       <div className="x2f-trade-body">
         {settingUp ? (
-          <SetupStatus view={view} escrow={escrow} />
+          <SetupStatus view={view} escrow={escrow} refresh={refresh} />
         ) : (
           <div className="x2f-trade-chip-row">
             <StatusChip tone="caution" icon="clock" label="Waiting for funding" />
