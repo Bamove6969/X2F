@@ -254,7 +254,7 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
     await expect(browser.me()).resolves.toMatchObject({
-      displayName: `D${username}`, loginNameSet: true, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
+      displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
     });
   });
 });

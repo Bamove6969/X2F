@@ -516,12 +516,29 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
       deps.db.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
          values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-        [staffId, deviceHash, JSON.stringify({ first: { method } }), now, new Date(now.getTime() + 5 * MIN)],
+        [
+          staffId, deviceHash,
+          // A PGP first factor as completeLogin records it (parseFactor needs the fingerprints).
+          JSON.stringify({ first: method === 'pgp' ? { method, fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } : { method } }),
+          now, new Date(now.getTime() + 5 * MIN),
+        ],
       );
     const afterPgp = (await insertPending('pgp', device.rows[0]!.device_hash)).rows[0]!.id;
     const withPending = (await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
     expect(ids(withPending)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
     expect(ids(withPending)).toHaveLength(MAX_SECURITY_KEYS);
+    // The second step needs no login name (review I3): the pending login from this device names the account.
+    const nameless = (await b.post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    expect(ids(nameless)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
+    expect(ids(nameless)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(nameless.options.userVerification).toBe('required');
+    // From another device, or with a pendingId that names nothing, it is a decoy; no name is needed either.
+    const elsewhere = (await new Browser().post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    expect(ids(elsewhere)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(elsewhere)).not.toContain(key.credentialId);
+    const nothing = (await b.post('/v1/login/webauthn/start', { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' })).json();
+    expect(ids(nothing)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(nothing)).not.toContain(key.credentialId);
     expect(withPending.options.userVerification).toBe('required');
 
     // Another device, or a first factor that was not PGP: security keys only.
@@ -532,6 +549,12 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     // Reading the pending row does not use it up.
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [afterPgp]);
     expect(rows[0].used_at).toBeNull();
+    // Finishing the nameless start logs the staff member in (the pending login is consumed).
+    const fin = await b.post('/v1/login/webauthn/finish', {
+      challengeId: nameless.challengeId, response: key.authenticate(nameless.options, ORIGIN), deviceLabel: 'Desk', pendingId: afterPgp,
+    });
+    expect(fin.statusCode).toBe(200);
+    expect(fin.json()).toEqual({ status: 'ok' });
   });
 });
 

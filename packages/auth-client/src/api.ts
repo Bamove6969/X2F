@@ -118,8 +118,8 @@ export type Suggestion = 'add-authenticator' | 'add-backup';
 export interface AccountOverview {
   /** The public display name; the private login name is never sent. */
   displayName: string;
-  /** False for an account made before login names existed: it has none yet. */
-  loginNameSet: boolean;
+  /** True for an account made before login names existed (migration 009): it still logs in by its public display name and should set a private login name (`setLoginName`). */
+  needsLoginName: boolean;
   kind: AccountKind;
   level: 'full' | 'recovery';
   holdUntil: string | null;
@@ -234,9 +234,12 @@ export interface AuthApi {
     label?: string;
   }): Promise<{ displayName: string }>;
   /** Without `loginName`: a discoverable passkey login (traders). */
+  /** Without `loginName`: discoverable passkey login, or with `pendingId` the second step of a staff or owner login (the pending login names the account). */
   loginWebAuthnStart(b: { loginName?: string; pendingId?: string }): Promise<AuthenticationChallenge>;
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
+  /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once; 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
+  setLoginName(b: { loginName: string }): Promise<{ ok: true }>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
   confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;
@@ -376,6 +379,7 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     loginWebAuthnStart: (b) => post('/v1/login/webauthn/start', b),
     loginWebAuthnFinish: (b) => post('/v1/login/webauthn/finish', b),
     logout: () => done(post('/v1/logout')),
+    setLoginName: (b) => post('/v1/account/login-name', b),
 
     confirmPassword: (b) => post('/v1/confirm/password', b),
     confirmPgpStart: (b) => post('/v1/confirm/pgp/start', b),

@@ -265,13 +265,20 @@ describe('POST /v1/login/password', () => {
     expect((await login('private.lg1', GOOD)).statusCode).toBe(200);
   });
 
-  it('an account from before login names (none set) cannot be reached by any name', async () => {
+  it('an account from before login names logs in by its old (public) name until it sets a private one (review I3)', async () => {
     const id = await seedAccount(deps, { loginName: null, displayName: 'Legacy.Acct' });
     const legacyHash = await hashPassword(deps.config, GOOD);
     await deps.db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
       id, legacyHash.hash, legacyHash.pepperId, now,
     ]);
+    const first = await login('Legacy.Acct', GOOD);
+    expect(first.statusCode).toBe(200);
+    const session = cookie(first, SESSION_COOKIE)!;
+    const set = await post('/v1/account/login-name', { loginName: 'legacy.private' }, { [SESSION_COOKIE]: session });
+    expect(set.statusCode).toBe(200);
+    // The old name no longer logs in; the new one does.
     expect((await login('Legacy.Acct', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });
+    expect((await login('legacy.private', GOOD)).statusCode).toBe(200);
   });
 
   it('never shows a wait: after 10 misses the name is quietly not checked for 15 minutes, with the same answer', async () => {

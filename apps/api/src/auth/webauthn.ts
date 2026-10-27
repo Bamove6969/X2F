@@ -502,6 +502,28 @@ async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: strin
   return rows.length > 0;
 }
 
+/**
+ * The account of the open pending login `pendingId` names, when it was started from this device
+ * after a PGP first factor (review I3: the second step needs no login name, so a pre-009 staff or
+ * owner account can finish it). Null for anything else.
+ */
+async function pendingPgpAccount(deps: Deps, req: FastifyRequest, pendingId: string): Promise<{ id: string; kind: AccountKind } | null> {
+  const device = deviceHash(req);
+  if (!UUID.test(pendingId) || device === null) return null;
+  const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>(
+    `select a.id, a.kind from challenges c join accounts a on a.id = c.account_id
+      where c.id = $1 and c.device_hash = $2 and c.purpose = 'second-factor' and c.method = 'pair'
+        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp'`,
+    [pendingId, device, deps.clock()],
+  );
+  return rows[0] ?? null;
+}
+
+/** The decoy tag of a nameless second step: HMAC of the pendingId under the name subkey (deterministic, never the id itself). */
+function pendingTag(deps: Pick<Deps, 'config'>, pendingId: string): string {
+  return createHmac('sha256', subkey(deps.config, 'name')).update(`pending/${pendingId}`).digest('hex');
+}
+
 interface LoginRouteOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
@@ -514,7 +536,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     req.server.budgets.start.take();
     const body = record(req.body);
 
-    if (body.loginName === undefined && opts.discoverable) {
+    if (body.loginName === undefined && body.pendingId === undefined && opts.discoverable) {
       // Discoverable passkey login (traders): no name, the authenticator picks the credential.
       const options = await generateAuthenticationOptions({
         rpID: deps.config.rpId, allowCredentials: [], userVerification: 'required', timeout: WEBAUTHN_TTL_MS,
@@ -525,19 +547,32 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       return { challengeId, options };
     }
 
-    // The private login name (owner, 2026-10-23), never the public display name.
-    const loginName = str(body, 'loginName');
     const pendingId = optStr(body, 'pendingId');
-    const name = loginNameLookup(deps.config, loginName);
-    // The same queries for a real account, an unknown name and a malformed one (review M3): an
-    // account lookup ('' matches no login key) and a credentials lookup (NIL_UUID matches none).
-    const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [
-      name.key ?? '',
-    ]);
-    const found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
-    // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
-    // query count does not reveal a staff login name (second review).
-    const afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+    let found: { id: string; kind: AccountKind } | null;
+    let afterPgp: boolean;
+    let tag: string;
+    if (body.loginName === undefined && pendingId !== undefined) {
+      // The second step of a staff or owner login, no name (review I3): the pending login from this
+      // device names the account. Anything else gets a decoy under the pendingId's tag.
+      const pending = await pendingPgpAccount(deps, req, pendingId);
+      found = pending !== null && opts.kinds.includes(pending.kind) ? pending : null;
+      afterPgp = found !== null;
+      tag = pendingTag(deps, pendingId);
+    } else {
+      // The private login name (owner, 2026-10-23), never the public display name.
+      const loginName = str(body, 'loginName');
+      const name = loginNameLookup(deps.config, loginName);
+      tag = name.tag;
+      // The same queries for a real account, an unknown name and a malformed one (review M3): an
+      // account lookup ('' matches no login key) and a credentials lookup (NIL_UUID matches none).
+      const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [
+        name.key ?? '',
+      ]);
+      found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
+      // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
+      // query count does not reveal a staff login name (second review).
+      afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+    }
     const withPasskeys = afterPgp && found?.kind === 'staff';
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
@@ -552,7 +587,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // staff second step after a PGP first factor (passkeys listed too) can exceed that, and it
     // already named the account.
     const lengths = await securityKeyIdLengths(deps.db);
-    const decoys = decoyCredentialIds(deps, name.tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
+    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
     creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );
@@ -607,7 +642,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
 }
 
 /**
- * The login-name-based WebAuthn login (`POST <prefix>/start { loginName, pendingId? }` and
+ * The login-name-based WebAuthn login (`POST <prefix>/start { loginName, pendingId? }`, or
+ * `{ pendingId }` alone for the second step of a staff or owner login, and
  * `POST <prefix>/finish { challengeId, response, deviceLabel, pendingId? }`), registered as a
  * fastify plugin. An account whose kind is not in `kinds` gets decoy options; `afterAuthenticate`
  * runs in `completeLogin` after the credential check passes. Plan 4 mounts it on the staff app.

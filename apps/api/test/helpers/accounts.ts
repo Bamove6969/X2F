@@ -4,9 +4,10 @@ import type { Deps } from '../../src/app.js';
 
 /**
  * Inserts an account directly (tests only). `loginName` is the private login name (null: an
- * account from before migration 009, with none); `displayName` defaults to `D` + the login name
- * (or a random one). A trader gets the current Terms version unless `termsVersion` says otherwise;
- * staff and owner accounts carry none.
+ * account from before migration 009, which logs in by its display name until it sets one:
+ * `legacy_login_name`); `displayName` defaults to `D` + the login name (or a random one). A trader
+ * gets the current Terms version unless `termsVersion` says otherwise; staff and owner accounts
+ * carry none.
  */
 export async function seedAccount(
   deps: Pick<Deps, 'db' | 'clock' | 'config'>,
@@ -17,10 +18,10 @@ export async function seedAccount(
   const display = a.displayName ?? (a.loginName !== null ? `D${a.loginName}` : `D${randomBytes(6).toString('hex')}`);
   const now = deps.clock();
   const { rows } = await deps.db.query<{ id: string }>(
-    `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
+    `insert into accounts (display_name, display_key, login_name, login_key, legacy_login_name, kind, webauthn_user_id, terms_version, terms_accepted_at, created_at, disabled_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
     [
-      display, display.toLowerCase(), a.loginName, a.loginName?.toLowerCase() ?? null, kind, randomBytes(32),
+      display, display.toLowerCase(), a.loginName ?? display, (a.loginName ?? display).toLowerCase(), a.loginName === null, kind, randomBytes(32),
       terms, terms === null ? null : now, now, a.disabled ? now : null,
     ],
   );

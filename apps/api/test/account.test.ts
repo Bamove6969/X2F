@@ -96,7 +96,7 @@ async function addRecoveryCodes(accountId: string, count: number, used = false):
 
 interface Me {
   displayName: string;
-  loginNameSet: boolean;
+  needsLoginName: boolean;
   kind: string;
   level: string;
   holdUntil: string | null;
@@ -114,10 +114,41 @@ async function me(b: Browser): Promise<Me> {
 }
 
 describe('GET /v1/account/me', () => {
-  it('an account from before login names reads loginNameSet: false', async () => {
+  it('an account from before login names reads needsLoginName: true until POST /v1/account/login-name sets a distinct one (review I3)', async () => {
     const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer1' });
+    const { id: other } = await account();
     const b = await loggedIn(id);
-    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', loginNameSet: false });
+    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: true });
+    const set = (loginName: unknown) => b.post('/v1/account/login-name', { loginName });
+    expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
+    expect(errorOf(await set('bad name'))).toBe('login-name-invalid');
+    expect(errorOf(await set(42))).toBe('login-name-invalid');
+    const { rows: taken } = await deps.db.query<{ login_name: string; display_name: string }>('select login_name, display_name from accounts where id = $1', [other]);
+    expect(errorOf(await set(taken[0]!.login_name))).toBe('names-unavailable'); // another account's login name
+    expect(errorOf(await set(taken[0]!.display_name))).toBe('names-unavailable'); // another account's display name
+    expect(await me(b)).toMatchObject({ needsLoginName: true });
+    const ok = await set('Private.OT1');
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ ok: true });
+    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: false });
+    const { rows } = await deps.db.query('select login_name, login_key, legacy_login_name from accounts where id = $1', [id]);
+    expect(rows).toEqual([{ login_name: 'Private.OT1', login_key: 'private.ot1', legacy_login_name: false }]);
+    expect((await deps.db.query('select key, kind from name_keys where account_id = $1 order by key', [id])).rows).toEqual([
+      { key: 'old.timer1', kind: 'display' }, { key: 'private.ot1', kind: 'login' },
+    ]);
+    // Once set, the route is closed (changing a login name is not this route's job).
+    const again = await set('Another.OT1');
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toBe('login-name-set');
+    // An account that chose its names at sign-up never needs one.
+    expect(errorOf(await (await loggedIn(other)).post('/v1/account/login-name', { loginName: 'Fresh.OT1' }))).toBe('login-name-set');
+  });
+
+  it('the login-name route needs a full session', async () => {
+    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer2' });
+    const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
+    expect((await held.post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(403);
+    expect((await new Browser(app).post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(401);
   });
 
   it('describes the account; a password-only account is told to add an authenticator and a backup', async () => {
@@ -128,7 +159,7 @@ describe('GET /v1/account/me', () => {
     // The private login name is never sent, not even to its owner.
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      displayName: `D${username}`, loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
+      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true,
     });
     await addTotp(id);

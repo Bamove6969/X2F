@@ -13,6 +13,7 @@ export type ApiErrorCode =
   | 'login-name-invalid'
   | 'names-unavailable'
   | 'names-same'
+  | 'login-name-set'
   | 'password-weak'
   | 'password-leaked'
   | KeyRefusal

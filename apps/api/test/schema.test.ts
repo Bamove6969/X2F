@@ -10,6 +10,8 @@ import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
+import { hashPassword } from '../src/auth/password.js';
+import { SESSION_COOKIE } from '../src/auth/sessions.js';
 
 const FULL_ENV = {
   X2F_ORIGINS: 'https://x2f.test,http://x2fexample.onion',
@@ -42,24 +44,44 @@ describe('migrations', () => {
     }
   });
 
-  it('009: an existing username becomes the display name, and the account gets no login name', async () => {
+  it('009: an existing username becomes the display name and, until the person picks one, the login name too (review I3)', async () => {
     const db = await emptyDb();
     const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    let close: (() => Promise<void>) | null = null;
     try {
       const all = await readdir(MIGRATIONS_DIR);
       for (const f of all.filter((n) => n < '009')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
       await migrate(db, dir);
-      await db.query(
-        `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ('Old.Trader', 'old.trader', 'trader', $1, now())`,
+      const { rows: inserted } = await db.query<{ id: string }>(
+        `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ('Old.Trader', 'old.trader', 'trader', $1, now()) returning id`,
         [randomBytes(32)],
       );
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
         '104_trade_retention.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
-      const { rows } = await db.query('select display_name, display_key, login_name, login_key from accounts');
-      expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: null, login_key: null }]);
+      const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
+      expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
+      // The one key is reserved once, in both namespaces.
+      expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
+      // Only a legacy row may have equal names.
+      await expect(db.query('update accounts set legacy_login_name = false where id = $1', [inserted[0]!.id])).rejects.toMatchObject({ code: '23514' });
+
+      // A pre-009 password account logs in after the migration with its old name, and is asked for a login name.
+      const { app, deps } = await testApp({ db });
+      close = () => app.close();
+      const pw = await hashPassword(deps.config, 'Correct-Horse-9');
+      await db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [inserted[0]!.id, pw.hash, pw.pepperId]);
+      const login = await app.inject({
+        method: 'POST', url: '/v1/login/password', headers: { origin: 'https://x2f.test' },
+        payload: { loginName: 'Old.Trader', password: 'Correct-Horse-9', deviceLabel: 'Old browser' },
+      });
+      expect(login.statusCode).toBe(200);
+      const session = login.cookies.find((c) => c.name === SESSION_COOKIE)?.value;
+      const me = await app.inject({ method: 'GET', url: '/v1/account/me', headers: { origin: 'https://x2f.test' }, cookies: { [SESSION_COOKIE]: session! } });
+      expect(me.json()).toMatchObject({ displayName: 'Old.Trader', needsLoginName: true });
     } finally {
+      if (close) await close();
       await db.end();
       await rm(dir, { recursive: true, force: true });
     }
