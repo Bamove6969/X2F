@@ -1,5 +1,5 @@
 {
- "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md. Added 2026-10-21 (owner): 13 gift cards and 20 methods LocalMonero offered; unverified until checked like the rest.",
+ "note": "X2F payment method catalog. Names seeded from Haveno's open-source method list (facts only, no code copied). Each entry must be checked against the provider's own site before launch (verified=false until then). Currency support is NOT recorded here: it comes from live offers. Updated 2026-10-21 (owner): removed Verse, Perfect Money and CelPay (shut down); names updated per research/payment-methods/REPORT.md. Added 2026-10-21 (owner): 13 gift cards and 20 methods LocalMonero offered; unverified until checked like the rest. Added 2026-10-24 (Plan 3 Task 3, owner rule of 2026-10-21): every method in \"Gift cards & vouchers\" carries giftCard: true; a gift-card offer must name the card's country and currency.",
  "methods": [
   {
    "id": "UPHOLD",
@@ -286,7 +286,8 @@
    "name": "Amazon gift card",
    "group": "Gift cards & vouchers",
    "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "PAY_BY_MAIL",
@@ -391,7 +392,8 @@
    "name": "PaysafeCard",
    "group": "Gift cards & vouchers",
    "source": "haveno PaymentMethod.java (names only)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "BLIK",
@@ -541,91 +543,104 @@
    "name": "Uber gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "VISA_GIFT_CARD",
    "name": "Visa prepaid gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "MASTERCARD_GIFT_CARD",
    "name": "Mastercard prepaid gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "APPLE_GIFT_CARD",
    "name": "Apple gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "GOOGLE_PLAY_GIFT_CARD",
    "name": "Google Play gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "STEAM_GIFT_CARD",
    "name": "Steam gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "RAZER_GOLD_GIFT_CARD",
    "name": "Razer Gold gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "XBOX_GIFT_CARD",
    "name": "Xbox gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "PLAYSTATION_GIFT_CARD",
    "name": "PlayStation gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "WALMART_GIFT_CARD",
    "name": "Walmart gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "TARGET_GIFT_CARD",
    "name": "Target gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "SEPHORA_GIFT_CARD",
    "name": "Sephora gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "OTHER_GIFT_CARD",
    "name": "Other gift card",
    "group": "Gift cards & vouchers",
    "source": "research/payment-methods/gift-cards.md (2026-10-21)",
-   "verified": false
+   "verified": false,
+   "giftCard": true
   },
   {
    "id": "SKRILL",

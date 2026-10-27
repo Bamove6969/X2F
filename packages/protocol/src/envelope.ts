@@ -74,7 +74,8 @@ export interface Opened {
 }
 
 const SIG_DOMAIN = 'x2f/envelope/v1\0';
-const ENVELOPE_KEYS = ['v', 'trade', 'from', 'seq', 'slots', 'nonce', 'kh', 'ct', 'ctNonce', 'sig'] as const;
+/** The exact own keys of an Envelope, the set checkShape demands (exported for the API-side chat check). */
+export const ENVELOPE_KEYS = ['v', 'trade', 'from', 'seq', 'slots', 'nonce', 'kh', 'ct', 'ctNonce', 'sig'] as const;
 const INNER_KEYS = ['type', 'payload'] as const;
 const BUCKETS = [256, 1024, 4096, 16384, 65536] as const;
 const MAX_PADDED = 65536;
