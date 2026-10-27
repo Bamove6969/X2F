@@ -55,14 +55,18 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   const session = requireSession({ kinds: ['trader'] });
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
+  // Delivery (Task 19: streams, pushes, the final alert) runs after the actor's request, as the
+  // nudge routes' `deliver` does: the store calls this after its commit, and setImmediate keeps
+  // it out of the response, so the actor's response time says nothing about the counterparty's
+  // subscriptions or open streams, and a slow push service never stalls the actor (review M8).
   // A failed delivery is logged as a fixed line: the error is reduced to its class and code by the
   // logger, and nothing about the trade is written.
   const publish: TradePublisher = async (t, e, by) => {
-    try {
-      await hook(t, e, by);
-    } catch (err) {
-      app.log.error({ err }, 'trade publish failed');
-    }
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => hook(t, e, by))
+        .catch((err: unknown) => app.log.error({ err }, 'trade publish failed'));
+    });
   };
 
   /** The view of `t` (the trade after this request's change, if any) with the row's non-machine columns. */

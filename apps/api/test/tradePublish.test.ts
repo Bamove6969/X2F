@@ -14,8 +14,11 @@ let setNow: (d: Date) => void;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 const calls: PushCall[] = [];
 let status = 201;
+/** When set, the fake push service answers only once this resolves (a slow round-trip). */
+let gate: Promise<void> | null = null;
 const fakeTransport: PushTransport = async (call) => {
   calls.push(call);
+  if (gate) await gate;
   return { statusCode: status };
 };
 
@@ -28,6 +31,7 @@ afterAll(async () => {
 beforeEach(() => {
   calls.length = 0;
   status = 201;
+  gate = null;
   vi.restoreAllMocks();
 });
 
@@ -53,6 +57,9 @@ async function refundable() {
 const delivered = async (code: string) =>
   (await deps.db.query<{ d: boolean | null }>('select final_alert_delivered as d from trades where code = $1', [code])).rows[0]!.d;
 
+/** Delivery runs after the response (setImmediate); gives a pending one time to finish before a negative check. */
+const settled = () => new Promise<void>((r) => setTimeout(r, 50));
+
 const seenAt = async (code: string) =>
   (await deps.db.query<{ at: Date | null }>('select final_alert_seen_at as at from trades where code = $1', [code])).rows[0]!.at;
 
@@ -65,6 +72,7 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     expect(await delivered(t.code)).toBeNull();
     const res = await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
     expect(res.statusCode).toBe(200);
+    await settled();
     expect(await delivered(t.code)).toBeNull();
     expect(calls).toEqual([]);
   });
@@ -73,7 +81,9 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     const { seller, buyer, t } = await refundable();
     expect((await buyer.browser.post('/v1/account/push', subscription())).statusCode).toBe(204);
     await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
     expect(calls.map((c) => c.payload)).toEqual(['Something changed in a trade on X2F']);
+    await settled();
     expect(await delivered(t.code)).toBeNull();
   });
 
@@ -84,7 +94,8 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     const detachDead = app.events.attach(buyer.id, { send: () => { throw new Error('gone'); }, close: () => undefined })!;
     try {
       await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-      expect(live.join('')).toContain('refund_requested');
+      await vi.waitFor(() => expect(live.join('')).toContain('refund_requested'));
+      await settled();
       expect(await delivered(t.code)).toBeNull();
     } finally {
       detachLive();
@@ -209,6 +220,7 @@ describe('trade event delivery (tradeEventPublisher)', () => {
     const publish = vi.spyOn(app.events, 'publish');
     const res = await buyer.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: String(t.fiatCents) });
     expect(res.statusCode).toBe(200);
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
     expect(publish.mock.calls.map(([id, ev]) => [id, ev])).toEqual([
       [seller.id, { type: 'trade', code: t.code, state: 'paid' }],
       [buyer.id, { type: 'trade', code: t.code, state: 'paid' }],
@@ -216,5 +228,28 @@ describe('trade event delivery (tradeEventPublisher)', () => {
     expect(calls).toHaveLength(1);
     const { rows } = await deps.db.query<{ endpoint: string }>('select endpoint from push_subscriptions where account_id = $1', [seller.id]);
     expect(calls[0]!.subscription.endpoint).toBe(rows[0]!.endpoint);
+  });
+});
+
+describe("delivery runs after the actor's response (review 2026-10-27, minor 8)", () => {
+  it("the actor's response does not wait on the push round-trip", async () => {
+    const { seller, buyer, t } = await refundable();
+    await buyer.browser.post('/v1/account/push', subscription());
+    let released = false;
+    gate = new Promise<void>((r) => {
+      // Were delivery awaited inside the request, the response could only arrive after this.
+      setTimeout(() => {
+        released = true;
+        r();
+      }, 400);
+    });
+    const res = await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    expect(res.statusCode).toBe(200);
+    expect((res.json() as { state: string }).state).toBe('refund_requested');
+    expect(released).toBe(false);
+    // The push still goes out, after the response, and still proves nothing about seeing it.
+    await vi.waitFor(() => expect(calls).toHaveLength(1));
+    await gate;
+    expect(await delivered(t.code)).toBeNull();
   });
 });
