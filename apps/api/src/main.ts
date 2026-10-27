@@ -1,9 +1,15 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
 import { loadPgpSigner } from './auth/pgp.js';
 import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
+import { PRICE_FEED_DEFAULTS, createPriceFeed } from './price/feed.js';
+import { createFxRates, fxSources } from './price/fx.js';
+import { createMarketPrices } from './price/market.js';
+import { loadFxSettings } from './price/settings.js';
+import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
@@ -31,15 +37,28 @@ const attestation = fileAttestationPolicy(config.attestationDir);
 await attestation.init();
 
 const db = createPool(config.databaseUrl);
+// Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
+// from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
+// owner_settings before each poll. Price health alerts go to the owner's in-app alerts. Every
+// source fetches through the global fetch (no proxy wired; routing them over Tor is a Plan 6
+// follow-up, see docs/coordination.md).
+const clock = () => new Date();
+const prices = createMarketPrices({
+  xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
+  fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
+  clock,
+  onAlert: (a) => addOwnerAlert(db, a.kind, a.detail, clock()),
+});
 const deps: Deps = {
   config,
   db,
-  clock: () => new Date(),
+  clock,
   leaked: await openLeakedList(config.leakedListPath),
   // Task 12: loads monero-ts's WebAssembly keys module before listening.
   addresses: await moneroAddressValidator(config.moneroNetwork),
   attestation,
   pgpSigner,
+  prices,
   // Task 26: shared context from real trades (Task 6); chats (Task 20) and delivery (Task 19) pending (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
 };
@@ -48,11 +67,13 @@ const deps: Deps = {
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 const app = await buildApi(deps);
+prices.start();
 if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
 const shutdown = async () => {
   await stopRetention(); // lets a purge in flight finish before the pool closes
+  await prices.stop();
   await app.close();
   await db.end();
 };

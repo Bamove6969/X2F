@@ -1,6 +1,8 @@
 import { hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { parseFxSources, type FxSourceName } from './price/fx.js';
+import { parsePriceSources, type PriceSourceName } from './price/sources.js';
 
 export interface Config {
   siteName: string;
@@ -14,6 +16,10 @@ export interface Config {
   termsVersion: string;
   pgpSigningKeyPath: string;
   pgpSigningFingerprint: string;
+  /** `PRICE_SOURCES` (spec 11.6): the price sources the feed asks, by name; default all of them. */
+  priceSources: PriceSourceName[];
+  /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
+  fxSources: FxSourceName[];
   /** Peppers mixed into password hashes (HMAC before Argon2id); `X2F_PASSWORD_PEPPERS`. */
   passwordPeppers: Keyring;
   /** Keys of the recovery-code HMAC; `X2F_RECOVERY_CODE_KEYS`. */
@@ -180,6 +186,8 @@ export function loadConfig(env: Env): Config {
     throw malformed('X2F_PGP_SIGNING_FINGERPRINT', 'lower-case hex, 40 or 64 characters');
   }
 
+  const priceSources = parsePriceSources(env.PRICE_SOURCES);
+  const fxSources = parseFxSources(env.FX_SOURCES);
   const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
@@ -193,7 +201,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    legacySecrets,
+    legacySecrets, priceSources, fxSources,
   };
 }
 
