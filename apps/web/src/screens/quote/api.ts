@@ -100,6 +100,11 @@ export interface PickWallet {
   id: string;
   app: string;
   label: string;
+  /**
+   * The full address, kept only to become `ownAddress` in the confirmed record the take hands the
+   * trade room (confirmed.ts); the screen shows `addressEnd`.
+   */
+  address: string;
   addressEnd: string;
   usable: boolean;
 }
@@ -111,8 +116,7 @@ export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> 
     const at = `wallets[${i}]`;
     const o = obj(v, at);
     if (typeof o.usable !== 'boolean') throw new ApiShapeError(`${at}.usable`);
-    // The full address is in the response; the quote keeps only its end.
-    return { id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), addressEnd: str(o, 'addressEnd', at), usable: o.usable };
+    return { id: str(o, 'id', at), app: str(o, 'app', at), label: str(o, 'label', at), address: str(o, 'address', at), addressEnd: str(o, 'addressEnd', at), usable: o.usable };
   });
 }
 

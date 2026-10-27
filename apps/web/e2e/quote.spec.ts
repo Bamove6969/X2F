@@ -163,6 +163,24 @@ test.describe('BuyQuote', () => {
     expect(shown).toBe('$777.77 USD');
   });
 
+  test("the take hands the trade room the device's own record of the quote shown, stored in this tab before navigating", async ({ page }) => {
+    const seen = await stubApi(page, base);
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await page.getByRole('radio', { name: /Ledger/ }).check();
+    await expect(card(page)).toContainText('1.250000 XMR');
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    // What the room reads after a reload (history state is gone): the taker's role, the picked
+    // wallet's full address and the deal as the quote showed it (Task 12's ConfirmedTrade).
+    const stored = await page.evaluate((key) => sessionStorage.getItem(key), `x2f.confirmed:${B.code}`);
+    expect(JSON.parse(stored ?? 'null')).toEqual({
+      role: 'buyer',
+      ownAddress: B.wallets[1].address,
+      deal: { poster: 'seller', takeAmountAtomic: seen.takes[0]!.amountAtomic, currency: 'USD', centsPerXmr: B.marketCentsPerXmr, maxFiatCents: B.offer.maxFiatCents },
+    });
+    expect(seen.takes[0]!.amountAtomic).toBe('1250000000000');
+  });
+
   test("an over-cap amount is refused with the caller's own stage only", async ({ page }) => {
     await stubApi(page, { ...base, take: () => ({ status: 409, json: { error: 'starter-limit', stage: 'starter', capUsdCents: '20000' } }) });
     await page.goto(`${BUY}&amount=${B.amount}`);

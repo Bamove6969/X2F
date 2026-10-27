@@ -30,6 +30,17 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer, takeRefusal's codes and the starter-limit fields").toBe(false);
   });
 
+  it("NEEDS_TASK_12: ConfirmedTrade and Deal in quote/confirmed.ts copy the unmerged escrow runtime's", () => {
+    // Copied from wip/lead-p3-task12-fixes apps/web/src/escrow/runtime.ts (ConfirmedTrade { role; ownAddress;
+    // deal }) and policy.ts (Deal { poster; takeAmountAtomic; currency; centsPerXmr; maxFiatCents }, bigints).
+    // The take stores the record under `x2f.confirmed:<code>` and navigates with { state: { confirmed } }
+    // (Task 22's seam); Task 12's room/useEscrow must read the state, else the stored copy, on first start.
+    expect(
+      has('apps/web/src/escrow/runtime.ts'),
+      "Task 12 landed: import ConfirmedTrade and Deal from escrow/ in quote/confirmed.ts, check validConfirmed accepts what the quote builds, and have the room fall back to readConfirmed(code) when history state is empty",
+    ).toBe(false);
+  });
+
   it('NEEDS_TASK_28: setup does not yet come back to the quote with resume=1', () => {
     // useTake sends a logged-out Trade to /setup/terms?returnTo=<quote>&resume=1. Setup must end on
     // returnTo with a fresh session (useSession reads /v1/account/me once per page load today).

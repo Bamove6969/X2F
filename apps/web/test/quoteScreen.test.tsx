@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fiatCents } from '@x2f/trade';
 import { BuyQuote } from '../src/screens/quote/BuyQuote.js';
 import { SellQuote } from '../src/screens/quote/SellQuote.js';
+import { readConfirmed } from '../src/screens/quote/confirmed.js';
 import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
 import { fire, render } from './render.js';
@@ -53,6 +54,7 @@ function json(status: number, body: unknown): Response {
 
 beforeEach(() => {
   sessionStorage.clear();
+  arrivedState = null;
   session.status = 'signed-in';
   stub = {
     offers: [GHOST, FIXED, MIRA],
@@ -83,8 +85,11 @@ beforeEach(() => {
 
 afterEach(() => vi.restoreAllMocks());
 
+/** Where the router went, and the navigation state it carried (read by `arrived`). */
+let arrivedState: unknown = null;
 function Where() {
   const l = useLocation();
+  arrivedState = l.state;
   return <output data-where={l.pathname + l.search} />;
 }
 
@@ -177,6 +182,26 @@ describe('BuyQuote', () => {
     expect(sent.walletId).toBe('w-cake');
     expect(fiatCents(BigInt(sent.amountAtomic), { currency: 'USD', centsPerXmr: 33_000n })).toBe(41_250n);
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it("the take hands the trade room the device's own record of what was confirmed, in the navigation state and in this tab's storage", async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    // Task 12's ConfirmedTrade: the taker's role, the full address of the wallet picked (the screen
+    // shows only its end) and the deal as shown: who posted, the XMR amount, the currency, the rate
+    // and the offer's ceiling. Never built from the API's trade.
+    const confirmed = {
+      role: 'buyer',
+      ownAddress: '4AAAAk3Fz0',
+      deal: { poster: 'seller', takeAmountAtomic: 1_250_000_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 150_000n },
+    };
+    expect(arrivedState).toEqual({ confirmed });
+    // Stored before navigating, so a reload of the room (or a tab opened on it) can read it back.
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
+    expect(host.textContent).not.toContain('4AAAAk3Fz0');
   });
 
   it('a market offer with the feed down is disabled with "Price unavailable right now"; a fixed-price offer still quotes', async () => {
@@ -366,5 +391,13 @@ describe('SellQuote', () => {
     await settle();
     expect(stub.takes[0]!.amountAtomic).toBe('4545454000000');
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    // The seller's record: role seller, the buy ad's poster is the buyer, the funding wallet's full address.
+    const confirmed = {
+      role: 'seller',
+      ownAddress: '4AAAAk3Fz0',
+      deal: { poster: 'buyer', takeAmountAtomic: 4_545_454_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 150_000n },
+    };
+    expect(arrivedState).toEqual({ confirmed });
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
   });
 });

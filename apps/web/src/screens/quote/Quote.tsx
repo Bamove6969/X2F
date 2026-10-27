@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { formatFiat, formatXmr, type Price } from '@x2f/trade';
+import { formatFiat, formatXmr, posterRole, type Price } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
+import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, quote, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { takeRefusal } from './takeErrors.js';
@@ -152,9 +153,18 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     // The marker is cleared here, before any take, whether or not it matches.
     if (!claimTake(pending, nonce)) return;
     const only = usable.length === 1 ? usable[0]! : null;
-    if (only === null || q.kind !== 'ok') return;
+    if (only === null || q.kind !== 'ok' || o === null) return;
     setPicked(only.id);
-    take({ amountAtomic: q.amountAtomic, walletId: only.id, resumeHref });
+    take({
+      amountAtomic: q.amountAtomic,
+      walletId: only.id,
+      confirmed: {
+        role: copy.adSide === 'sell' ? 'buyer' : 'seller',
+        ownAddress: only.address,
+        deal: { poster: posterRole(o.side), takeAmountAtomic: q.amountAtomic, currency: o.currency, centsPerXmr: q.rate.centsPerXmr, maxFiatCents: o.maxFiatCents },
+      },
+      resumeHref,
+    });
   });
 
   if (offer.kind === 'loading') return <main className="x2f-quote" data-screen="quote" aria-busy="true" />;
@@ -194,6 +204,18 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
   const canTrade = ok !== null && !state.busy && (signedIn === false || (signedIn === true && pickedWallet !== null));
+  /**
+   * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
+   * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
+   */
+  const confirmed: ConfirmedTrade | null =
+    ok && pickedWallet
+      ? {
+          role: copy.adSide === 'sell' ? 'buyer' : 'seller',
+          ownAddress: pickedWallet.address,
+          deal: { poster: posterRole(o.side), takeAmountAtomic: ok.amountAtomic, currency: o.currency, centsPerXmr: ok.rate.centsPerXmr, maxFiatCents: o.maxFiatCents },
+        }
+      : null;
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
 
   let walletLine: ReactNode = copy.noWalletLine;
@@ -317,7 +339,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <Button
             variant="primary"
             disabled={!canTrade}
-            onClick={() => ok && take({ amountAtomic: ok.amountAtomic, walletId: pickedWallet?.id ?? null, resumeHref })}
+            onClick={() => ok && take({ amountAtomic: ok.amountAtomic, walletId: pickedWallet?.id ?? null, confirmed, resumeHref })}
           >
             Trade
           </Button>
