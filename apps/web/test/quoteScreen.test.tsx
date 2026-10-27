@@ -465,6 +465,24 @@ describe('a 0-decimal currency', () => {
 describe('SellQuote', () => {
   const SELL = quotePath('buy', 'ZELLE', 'offer-mira', 'USD');
 
+  it('the XMR figure shows exactly what is sent: 1.0000009 typed is 1.0000009 XMR locked, not 1.000000', async () => {
+    const { host } = await open(SELL);
+    pick(host, 'w-cake');
+    type(host, '1.0000009');
+    const rows = host.querySelector('section[aria-label="What you get"]')!.textContent ?? '';
+    expect(rows).toContain('1.0000009 XMR');
+    expect(rows).not.toContain('1.000000 XMR');
+    // Switching the unit and back keeps the exact amount: nothing is silently re-rounded.
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Enter USD')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('330.00');
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Enter XMR')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('1.000000');
+    type(host, '1.0000009');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]!.amountAtomic).toBe('1000000900000');
+  });
+
   it('amount or Max, the funding and refund wallet, the same rows and no fee line', async () => {
     const { host } = await open(SELL);
     const text = host.textContent ?? '';

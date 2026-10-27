@@ -135,6 +135,18 @@ function mulDivHalfUp(a: bigint, b: bigint, d: bigint): bigint {
 }
 
 /**
+ * The XMR figure as shown: exactly what is sent. The board's 6 places, and more (up to all 12) only
+ * when the amount has non-zero digits past the sixth, trailing zeros trimmed, so 1.0000009 typed on
+ * SellQuote is never shown as "1.000000" (formatXmr truncates; Task 18 review, item 5).
+ */
+export function xmrText(atomic: bigint): string {
+  const full = formatXmr(atomic, 12);
+  const trimmed = full.replace(/0+$/, '');
+  const places = trimmed.length - trimmed.indexOf('.') - 1;
+  return places >= 6 ? trimmed : formatXmr(atomic, 6);
+}
+
+/**
  * Minor units as a currency string with `exponent` decimals: 41250n USD → "$412.50", 41250n JPY
  * (exponent 0) → "¥41,250", 1234n KWD (3) → "KWD 1.234". Exact for any bigint: the whole part is
  * formatted as a bigint and the fraction written in by hand (@x2f/trade formatFiat does the same

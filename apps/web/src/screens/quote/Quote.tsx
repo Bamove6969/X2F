@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { formatXmr, posterRole, type Price } from '@x2f/trade';
+import { posterRole, type Price } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
-import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
+import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { takeRefusal } from './takeErrors.js';
 import { useTake } from './useTake.js';
@@ -198,7 +198,8 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const switchUnit = () => {
     const to: Unit = unit === 'fiat' ? 'xmr' : 'fiat';
-    setText(ok ? (to === 'xmr' ? formatXmr(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '');
+    // The exact amount travels across the switch: nothing is re-rounded behind the person's back.
+    setText(ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '');
     setUnit(to);
   };
 
@@ -288,7 +289,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <div className="x2f-quote__figure">
             <span className="x2f-quote__label">{copy.headline}</span>
             <span className="x2f-quote__xmr">
-              {formatXmr(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
+              {xmrText(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
             <span className="x2f-quote__muted-sm">{walletLine}</span>
           </div>

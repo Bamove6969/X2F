@@ -2,7 +2,7 @@
 // these tests pin what the quote shows against those functions, so the UI never grows its own maths.
 import { describe, expect, it } from 'vitest';
 import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate } from '@x2f/trade';
-import { amountText, currencyExponent, fiatWhole, formatMinor, parseAmount, quote, quoteExponent, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
+import { amountText, currencyExponent, fiatWhole, formatMinor, parseAmount, quote, quoteExponent, xmrText, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
 import { takeRefusal } from '../src/screens/quote/takeErrors.js';
 import { ApiCallError } from '../src/api/client.js';
 
@@ -179,6 +179,19 @@ describe('quote', () => {
     // Half up, as every other figure: €1.00 at €300.00 and $330.00 is $1.10; €0.01 at €3.00 / $1.00 is $0.00 (0.33 cents).
     const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 0n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '1', unit: 'fiat' });
     expect(tiny.kind === 'ok' && tiny.usdCents).toBe(110n);
+  });
+});
+
+describe('xmrText', () => {
+  it('shows exactly what is sent: the board\'s 6 places, and more only when the amount has them, trailing zeros trimmed', () => {
+    expect(xmrText(1_250_000_000_000n)).toBe('1.250000');
+    expect(xmrText(1_000_000_900_000n)).toBe('1.0000009');
+    expect(xmrText(1_000_000_000_001n)).toBe('1.000000000001');
+    expect(xmrText(4_545_454_545_454n)).toBe('4.545454545454');
+    expect(xmrText(0n)).toBe('0.000000');
+    expect(xmrText(1_000_000_100_000n)).toBe('1.0000001');
+    // Never rounds: formatXmr(…, 6) would hide the 9 below.
+    expect(xmrText(999_999_900_000n)).toBe('0.9999999');
   });
 });
 
