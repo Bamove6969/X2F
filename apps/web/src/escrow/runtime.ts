@@ -81,6 +81,14 @@ export interface EscrowStatus {
   checkWords: string[] | null;
   keepOpen: boolean;
   role: 'buyer' | 'seller' | null;
+  /**
+   * The trade amount this device will accept for a release right now, and its fiat total at the
+   * locked rate: the amount a release is bound to (I1), else the fixed one (I2), else the API's
+   * amount within [take, this device's own size]; null when none fits. The trade screens (Tasks
+   * 18/19) show ONLY this as the sum to pay, never the API's amount (review 2026-10-26, I3).
+   */
+  amountAtomic: bigint | null;
+  fiatCents: bigint | null;
 }
 
 export type EscrowAction =
@@ -279,6 +287,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     emit(): void {
+      const amountAtomic = this.deviceAcceptedAmount();
       const s: EscrowStatus = {
         phase: this.error ? 'error' : this.phase,
         error: this.error,
@@ -287,8 +296,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         checkWords: this.words,
         keepOpen: ['registering', 'verifying', 'setting-up', 'signing'].includes(this.phase) && !this.error,
         role: this.rec?.role ?? null,
+        amountAtomic,
+        fiatCents: amountAtomic === null ? null : fiatCents(amountAtomic, { currency: this.rec.deal.currency, centsPerXmr: this.rec.deal.centsPerXmr }),
       };
-      const j = JSON.stringify(s);
+      const j = JSON.stringify(s, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
       if (j !== this.last) {
         this.last = j;
         deps.onStatus(this.code, s);
@@ -298,6 +309,19 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private set(p: EscrowPhase): void {
       this.phase = p;
       this.emit();
+    }
+
+    /** See EscrowStatus.amountAtomic: bound, else fixed, else the API's amount within [take, own size], else null. */
+    private deviceAcceptedAmount(): bigint | null {
+      const r = this.rec as EscrowRecord | undefined;
+      if (!r) return null;
+      const bound = r.releaseBoundAtomic ?? null;
+      if (bound !== null) return bound;
+      const fixed = r.acceptedAtomic ?? null;
+      if (fixed !== null) return fixed;
+      const v = this.view;
+      if (!v || r.paidRefused === true) return null;
+      return v.amountAtomic >= r.deal.takeAmountAtomic && v.amountAtomic <= r.sizeAtomic ? v.amountAtomic : null;
     }
 
     /**

@@ -539,6 +539,32 @@ describe('settling', () => {
       expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
     });
 
+    it('I3 status: amountAtomic and fiatCents are the sum this device will accept: the API amount in range, the bound one once a release was handed over (even when the API grows it), the fixed one after paid', async () => {
+      const t = await ready();
+      expect(await t.buyer.status((x) => x.phase === 'ready')).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) }); // the API amount, in range
+      // The API shows an amount above this device's own size: nothing this device accepts (and nothing to show as the sum).
+      t.state.view = tradeView({ state: 'securing', amountAtomic: grown.toString() });
+      expect(await t.buyer.status((x) => x.amountAtomic === null)).toMatchObject({ fiatCents: null });
+      // Secured at the take amount: the standing co-sign binds the release to it.
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      await until(async () => (await t.buyer.store.load(CODE))?.releaseBoundAtomic === AMOUNT);
+      // Extra coins grow the trade and the API follows: the status keeps the bound amount, the only one the device will release for.
+      t.parties.funds = { balance: fundsFor(grown), unlocked: fundsFor(grown), incoming: [] };
+      t.state.view = tradeView({ state: 'secured', amountAtomic: grown.toString() });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
+      await expect(pay(t.buyer, grown)).rejects.toThrow(); // the page never offered the grown sum
+      // The seller has fixed nothing yet: its status follows the API amount within its own range.
+      await until(async () => (await t.seller.store.load(CODE))?.sizeAtomic === grown);
+      expect(await t.seller.status((x) => x.amountAtomic === grown)).toMatchObject({ fiatCents: fiatOf(grown) });
+      // The API shows the take amount again and the buyer pays it: both sides now carry the fixed amount.
+      t.state.view = tradeView({ state: 'secured' });
+      await pay(t.buyer);
+      expect(await t.buyer.status((x) => x.refusal === null)).toMatchObject({ amountAtomic: AMOUNT, fiatCents: fiatOf(AMOUNT) });
+      await until(async () => (await t.seller.store.load(CODE))?.acceptedAtomic === AMOUNT);
+      expect(await t.seller.status((x) => x.amountAtomic === AMOUNT)).toMatchObject({ fiatCents: fiatOf(AMOUNT) });
+    });
+
     it('I1: a release bound at its first hand-over stays bound when the API flips secured, lapsed, secured with a lower amount', async () => {
       const t = await ready();
       t.state.view = tradeView({ state: 'securing' });

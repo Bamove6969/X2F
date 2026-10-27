@@ -21,7 +21,7 @@ function stubClient() {
       subs.set(code, cb);
       return () => subs.delete(code);
     },
-    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', ...s })),
+    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', amountAtomic: null, fiatCents: null, ...s })),
   };
   return c;
 }
@@ -101,7 +101,7 @@ describe('worker protocol', () => {
     await vi.waitFor(() => expect(calls).toContain(`start ${CODE} seller`));
     const seen: EscrowStatus[] = [];
     client.subscribe(CODE, (s) => seen.push(s));
-    emit(CODE, { phase: 'ready', error: null, retryable: false, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller' });
+    emit(CODE, { phase: 'ready', error: null, retryable: false, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller', amountAtomic: null, fiatCents: null });
     await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe('ready'));
     await expect(client.act(CODE, { type: 'buyer-cancel' })).resolves.toBeUndefined();
     await expect(client.act(CODE, { type: 'release' })).rejects.toThrow();

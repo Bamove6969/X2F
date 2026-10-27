@@ -90,7 +90,7 @@ export interface UseEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
