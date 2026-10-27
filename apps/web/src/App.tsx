@@ -1,14 +1,20 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { PostOffer } from './screens/PostOffer.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
+import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
+import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
+import { BuyQuote } from './screens/quote/BuyQuote.js';
+import { quotePath } from './screens/quote/quoteModel.js';
+import { SellQuote } from './screens/quote/SellQuote.js';
 import { Security } from './screens/settings/Security.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
@@ -47,6 +53,18 @@ function Layout({ nav }: { nav: boolean }) {
 /** Each screen's task replaces its placeholder (Tasks 16-30). */
 function Screen({ name }: { name: string }) {
   return <main data-screen={name} />;
+}
+
+/**
+ * The offer list (Tasks 16/17) with its Trade button opening the quote (Task 18): a sell ad opens
+ * BuyQuote at `/buy/<method>/<offer>`, a buy ad SellQuote at `/sell/<method>/<offer>`, in the
+ * currency being browsed.
+ */
+function BrowseOffers({ side, copy }: { side: Side; copy: BrowseCopy }) {
+  const { methodId = '' } = useParams();
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  return <OfferList side={side} copy={copy} onTrade={(o) => void navigate(quotePath(adSide(side), methodId, o.id, currencyFrom(search)))} />;
 }
 
 /** Hands the router's navigate to the API client, so terms-required and no-wallet redirects stay in the app. */
@@ -110,9 +128,11 @@ export function App() {
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
         </Route>
         <Route element={<Layout nav={false} />}>
-          <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<OfferList side="buy" copy={BUY_COPY} />} />
-          <Route path="/post" element={<Screen name="post" />} />
+          <Route path="/post" element={<PostOffer />} />
+          <Route path="/sell/:methodId" element={<BrowseOffers side="sell" copy={SELL_COPY} />} />
+          <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />
+          <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
+          <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />

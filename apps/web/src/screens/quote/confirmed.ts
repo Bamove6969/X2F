@@ -6,25 +6,11 @@
 // under the trade code, written BEFORE navigating, because history state does not survive a reload
 // of the room. The room may clear the stored copy once the escrow has it.
 //
-// TODO(Task 12 merge): `ConfirmedTrade` and `Deal` copy apps/web/src/escrow/{runtime,policy}.ts on
-// wip/lead-p3-task12-fixes field for field; once that is on the line, import them from there (the
-// NEEDS_TASK_12 tripwire in test/quote-tripwires.test.ts says when).
+// The types are Task 12's own (escrow/runtime.ts, escrow/policy.ts), imported, not copied.
+import type { ConfirmedTrade } from '../../escrow/runtime.js';
+import type { Deal } from '../../escrow/policy.js';
 
-/** Task 12's `Deal` (escrow/policy.ts): the terms this device holds the trade to. */
-export interface Deal {
-  poster: 'seller' | 'buyer';
-  takeAmountAtomic: bigint;
-  currency: string;
-  centsPerXmr: bigint;
-  maxFiatCents: bigint;
-}
-
-/** Task 12's `ConfirmedTrade` (escrow/runtime.ts). */
-export interface ConfirmedTrade {
-  role: 'buyer' | 'seller';
-  ownAddress: string;
-  deal: Deal;
-}
+export type { ConfirmedTrade, Deal };
 
 export const CONFIRMED_KEY_PREFIX = 'x2f.confirmed:';
 
@@ -81,6 +67,7 @@ export function readConfirmed(code: string): ConfirmedTrade | null {
     (o.role !== 'buyer' && o.role !== 'seller') ||
     typeof o.ownAddress !== 'string' ||
     o.ownAddress === '' ||
+    o.ownAddress.length > 256 ||
     (deal.poster !== 'seller' && deal.poster !== 'buyer') ||
     typeof deal.currency !== 'string' ||
     !/^[A-Z]{3}$/.test(deal.currency) ||

@@ -1,0 +1,276 @@
+/*
+ * PostOffer (Task 21). Measurements from design/x2f-app/PostOffer.dc.html; colours are design
+ * tokens only (src/theme/tokens.css).
+ */
+.post {
+  display: flex;
+  flex-direction: column;
+  /* The board's frame: the page scrolls as a page (so every text is on it for the parity harness and
+     a phone can collapse its address bar) while Post offer stays on screen in a sticky footer. */
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+}
+
+.post-header,
+.post-footer {
+  flex-shrink: 0;
+}
+
+.post-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--x2f-ground);
+}
+
+.post-header {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.post-header h1 {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.post-close {
+  display: flex;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  color: var(--x2f-ink);
+}
+
+.post-main {
+  flex-grow: 1;
+  min-height: 0;
+  padding: var(--x2f-space-4);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.post-section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.post-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.post-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.post-method-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--x2f-space-2);
+}
+
+/* The board's two-up choices (I want to, Your price), drawn by the shared RadioChips radio group. */
+.post-choices .x2f-chip-button {
+  height: 48px;
+  padding: 0;
+  border-radius: var(--x2f-radius-md);
+  color: var(--x2f-ink-muted);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.post-choices .x2f-chip-button[aria-checked='true'] {
+  color: var(--x2f-ink);
+}
+
+.post-choices--small .x2f-chip-button {
+  height: 44px;
+}
+
+.post-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.post-load-failed {
+  font-size: 15px;
+}
+
+.post-field select,
+.post-field input,
+.post-field textarea,
+.post-inline select {
+  border-radius: var(--x2f-radius-sm);
+  border: 1px solid var(--x2f-line);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+  min-width: 0;
+}
+
+.post-field select {
+  height: 48px;
+  padding: 0 10px;
+}
+
+.post-field input {
+  height: 48px;
+  padding: 0 12px;
+}
+
+.post-field textarea {
+  padding: 10px 12px;
+  resize: none;
+}
+
+.post-field [aria-invalid='true'] {
+  border-color: var(--x2f-danger);
+}
+
+.post-error {
+  color: var(--x2f-danger);
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.post-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 48px;
+  font-size: 15px;
+}
+
+.post-inline select {
+  height: 40px;
+  padding: 0 10px;
+  font-size: 15px;
+}
+
+.post-margin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.post-margin-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.post-step {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--x2f-radius-pill);
+  border: 1px solid var(--x2f-line);
+  background: transparent;
+  color: var(--x2f-ink);
+  font-size: 22px;
+  cursor: pointer;
+}
+
+.post-mono {
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.post-big {
+  font-size: 24px;
+  line-height: 28px;
+}
+
+.post-muted,
+.post-note {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.post-ink {
+  color: var(--x2f-ink);
+}
+
+.post-caution {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--x2f-space-2);
+  font-size: 15px;
+  line-height: 20px;
+  color: var(--x2f-caution);
+}
+
+.post-caution svg {
+  flex-shrink: 0;
+}
+
+.post-giftcard {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.post-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  border: 1px dashed var(--x2f-line);
+}
+
+.post-preview-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  flex-wrap: wrap;
+}
+
+.post-preview-price {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.post-footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.post-refusal {
+  margin: 0;
+  color: var(--x2f-danger);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.post-submit {
+  width: 100%;
+}

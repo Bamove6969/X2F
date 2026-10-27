@@ -319,6 +319,8 @@ Rules the tests pin (one test each):
 
 **Revision 2026-10-26 (lead, from the Task 16 review):** `TraderSummary` in `/v1/offers` and `/v1/offers/:id` carries `stage` (the starter-limit stage the web screens grey cards by; the same field `GET /v1/me` returns). Tasks 16 and 17 already parse it; the API builder owes it.
 
+**Revision 2026-10-27 (lead):** offers for gift-card methods carry `country` (ISO 3166-1 alpha-2); the API refuses a gift-card offer without it.
+
 ### Task 5: Taking an offer (`apps/api`)
 
 **Files:**
@@ -346,6 +348,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): take with wallet choice and race-safe limits`.
+
+Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `centsPerXmr` and `fiatCents`; it refuses with 409 `price-changed` when the offer's rate now (`offerRate`, market plus the offer's margin) differs from the quote by more than 0.5%; fixed-price offers compare exactly. When it accepts, it locks exactly the quoted `centsPerXmr` and `fiatCents` (never its own fresh rate), because the attested `deal.centsPerXmr` must equal the taker's `confirmed.deal.centsPerXmr` or the trade fails `deal-mismatch` (Task 18 re-review, 2026-10-27).
 
 ### Task 6: Trade store, view, events route, retention and log hygiene (`apps/api`)
 
@@ -504,6 +508,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(moderation): auto-refund and buyer-cancel refund from signed terms and signals only`.
+
+**Notes from Task 12 (lead, 2026-10-24):** Task 10 must accept `deal` in `trade.terms` (the seller's `{ refundAddress, deal }`, the buyer's `{ payoutAddress, deal }`, with `deal = { poster, takeAmountAtomic, currency, centsPerXmr, maxFiatCents }` as bigints) and `trade.ack` as `{ of: '<signal type>' }`. It must also accept `trade.paid` as `{ amountAtomic, fiatCents }` (bigints, the amount the buyer's device fixed and the total the buyer confirmed; the Task 12 security fix of 2026-10-24). The trader apps ignore a `trade.paid` without them. Details: `docs/coordination.md`, "Plan 3 Task 12".
 
 ### Task 11: Node proxy (`apps/node-proxy`)
 
