@@ -56,10 +56,19 @@ describe('TRIPWIRES: trade room', () => {
     ).toBe(true);
   });
 
-  it("Task 3 (method profiles) is not merged: methodOf falls back to the method id", () => {
+  it('Task 3 (method profiles) is merged but not wired into the trade view: methodOf still falls back to the method id', () => {
+    // Retired 2026-10-27 after checking Task 3's shapes: `name` and `giftCard` live on CatalogMethod,
+    // `whatItIs` on MethodProfile (apps/api/src/methods/profiles.ts), the three fields methodOf reads.
+    const catalog = fields(new URL('methods/profiles.ts', api), 'CatalogMethod');
+    const profile = fields(new URL('methods/profiles.ts', api), 'MethodProfile');
+    expect(catalog).toContain('name');
+    expect(catalog).toContain('giftCard');
+    expect(profile).toContain('whatItIs');
+    // The trade routes still take `profile?: ProfileLookup` and nothing passes one (routes.ts:9).
+    const wired = ['app.ts', 'main.ts'].some((f) => /tradeRoutes\([^)]*profile/s.test(readFileSync(new URL(f, api), 'utf8')));
     expect(
-      existsSync(new URL('methods/profiles.ts', api)),
-      'Task 3 merged: check methodOf in src/api/trade.ts reads the profile fields Task 3 serves (name, whatItIs, giftCard)',
+      wired,
+      'the trade view now carries a profile: it must be the catalog entry merged with the profile ({ ...getMethod(id), ...getProfile(id) }) so methodOf in src/api/trade.ts finds name, giftCard and whatItIs; then retire this test',
     ).toBe(false);
   });
 });
