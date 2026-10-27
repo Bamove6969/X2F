@@ -58,17 +58,18 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
 /**
  * Task 19: `GET /v1/account/push` → `{ vapidPublic }` (what the browser subscribes with);
  * `POST /v1/account/push { endpoint, keys }` → 204; `DELETE /v1/account/push` with `{ endpoint }`
- * drops that subscription of the caller's, with no body all of them → 204. All `requireTrader`.
+ * drops that subscription of the caller's, with no body all of them → 204. Traders and the owner
+ * (the owner's price-health push, spec 11.6; staff in a later plan); full sessions only.
  * No answer ever repeats an endpoint or a key, and none is logged (the request body is redacted
  * from every log line by buildApi). A subscription belongs to the session that posted it and goes
  * when that session ends (migration 105's trigger; push/send.ts skips expired sessions).
  */
 export function pushRoutes(app: FastifyInstance): void {
-  const requireTrader = requireSession({ kinds: ['trader'] });
+  const subscriber = requireSession({ kinds: ['trader', 'owner'] });
 
-  app.get('/v1/account/push', { preHandler: requireTrader }, async () => ({ vapidPublic: app.deps.config.vapidPublic }));
+  app.get('/v1/account/push', { preHandler: subscriber }, async () => ({ vapidPublic: app.deps.config.vapidPublic }));
 
-  app.post('/v1/account/push', { preHandler: requireTrader }, async (req, reply) => {
+  app.post('/v1/account/push', { preHandler: subscriber }, async (req, reply) => {
     const sub = parseSubscription(req.body);
     const { db, clock } = app.deps;
     const accountId = req.auth.accountId;
@@ -102,7 +103,7 @@ export function pushRoutes(app: FastifyInstance): void {
     return reply.code(204).send();
   });
 
-  app.delete('/v1/account/push', { preHandler: requireTrader }, async (req, reply) => {
+  app.delete('/v1/account/push', { preHandler: subscriber }, async (req, reply) => {
     const body: unknown = req.body;
     if (body === undefined || body === null) {
       await app.deps.db.query('delete from push_subscriptions where account_id = $1', [req.auth.accountId]);

@@ -6,6 +6,7 @@ import type { Deps } from '../src/app.js';
 import { EventBus } from '../src/events/bus.js';
 import { recordFinalAlert } from '../src/events/finalAlert.js';
 import { canonicalEndpoint, isPublicAddress, publicOnlyLookup } from '../src/push/endpoint.js';
+import { ownerAlertSink, pushOwnerAlert } from '../src/push/ownerAlert.js';
 import {
   PUSH_PAYLOADS, PUSH_SUBSCRIPTION_CAP, makeWebPushTransport, pushRequestOptions, type PushCall, type PushTransport,
 } from '../src/push/send.js';
@@ -61,10 +62,22 @@ beforeEach(() => {
 
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
-async function trader(o: { kind?: 'trader' | 'staff'; level?: 'full' | 'recovery' } = {}) {
+async function trader(o: { kind?: 'trader' | 'staff' | 'owner'; level?: 'full' | 'recovery' } = {}) {
   const id = await seedAccount(deps, { username: `Pu_${String(++n).padStart(4, '0')}`, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id, ...(o.level ? { level: o.level } : {}) })).statusCode).toBe(200);
+  return { id, b };
+}
+
+/**
+ * The one owner account (migration 109's `one_owner`), seeded once; each test logs it in afresh,
+ * because beforeEach moves the clock a day and an owner session lives 12 hours.
+ */
+let ownerId: Promise<string> | undefined;
+async function owner(): Promise<{ id: string; b: Browser }> {
+  const id = await (ownerId ??= seedAccount(deps, { username: 'Pu_owner', kind: 'owner' }));
+  const b = new Browser(app);
+  expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { id, b };
 }
 
@@ -116,6 +129,56 @@ describe('POST and DELETE /v1/account/push: who may call', () => {
     expect(errorOf(await post(rec.b, subscription()))).toBe('recovery-session');
     const staff = await trader({ kind: 'staff' });
     expect(errorOf(await post(staff.b, subscription()))).toBe('wrong-account-kind');
+  });
+
+  it('the owner may subscribe, read the key and unsubscribe (price-health push, spec 11.6)', async () => {
+    const o = await owner();
+    expect((await o.b.get('/v1/account/push')).statusCode).toBe(200);
+    expect((await post(o.b, subscription())).statusCode).toBe(204);
+    expect(await stored(o.id)).toHaveLength(1);
+    expect((await del(o.b)).statusCode).toBe(204);
+    expect(await stored(o.id)).toEqual([]);
+  });
+});
+
+describe("the owner's price-health push (review 2026-10-27, Important 3)", () => {
+  const ALERT = 'Something needs your attention';
+  // What main.ts hands the sink once the app is built: the pool, the clock and `app.push` (here on the fake push service).
+  const pushDeps = () => ({ db: deps.db, clock: deps.clock, push: app.push });
+
+  it('an urgent alert sends one generic push per owner subscription, with no detail', async () => {
+    const o = await owner();
+    await post(o.b, subscription());
+    await post(o.b, subscription());
+    const detail = { urgent: true as const, currencies: ['EUR'], message: 'EUR market prices paused' };
+    await ownerAlertSink(pushDeps())({ kind: 'market-prices-paused', detail });
+    expect(calls).toHaveLength(2);
+    expect(calls.map((c) => c.payload)).toEqual([ALERT, ALERT]);
+    expect(JSON.stringify(calls)).not.toContain('EUR');
+    // The in-app alert is still recorded.
+    const { rows } = await deps.db.query<{ detail: unknown }>(
+      "select detail from alerts where account_id = $1 and kind = 'market-prices-paused'", [o.id],
+    );
+    expect(rows).toEqual([{ detail }]);
+    await del(o.b);
+  });
+
+  it('a failing source pushes too; a recovery or a trader alert kind pushes nothing', async () => {
+    const o = await owner();
+    await post(o.b, subscription());
+    await pushOwnerAlert(pushDeps(), 'price-source-failing');
+    expect(calls).toHaveLength(1);
+    calls.length = 0;
+    for (const kind of ['price-source-recovered', 'market-prices-resumed', 'new-login', 'wallet-added'] as const) {
+      await pushOwnerAlert(pushDeps(), kind);
+    }
+    expect(calls).toEqual([]);
+    await del(o.b);
+  });
+
+  it('the alert payload is exactly the fixed string', () => {
+    expect(PUSH_PAYLOADS.alert).toBe(ALERT);
+    expect(Object.keys(PUSH_PAYLOADS).sort()).toEqual(['alert', 'nudge', 'trade']);
   });
 });
 
@@ -319,8 +382,10 @@ describe('sendPush', () => {
     expect(calls.map((c) => c.payload)).toEqual(['Something changed in a trade on X2F', 'Something changed in a trade on X2F']);
   });
 
-  it('the two payloads are exactly the fixed strings: no code, amount, name or URL', () => {
-    expect(PUSH_PAYLOADS).toEqual({ nudge: 'Someone nudged you on X2F', trade: 'Something changed in a trade on X2F' });
+  it('the three payloads are exactly the fixed strings: no code, amount, name, detail or URL', () => {
+    expect(PUSH_PAYLOADS).toEqual({
+      nudge: 'Someone nudged you on X2F', trade: 'Something changed in a trade on X2F', alert: 'Something needs your attention',
+    });
   });
 
   it('is false with no subscription, and false when no push service answered 201', async () => {

@@ -2,11 +2,13 @@
 // worker-src 'self'); it caches nothing. Its one request: after showing a trade push it tells the
 // API the final alert was seen (POST /v1/account/final-alert-seen, same origin, no body).
 //
-// A push can only ever show one of two fixed texts. Whatever the payload says, anything else is
-// shown as the generic trade text, so no code, amount, name or link can reach the lock screen even
-// if a payload were tampered with. A tap opens (or focuses) this site at `/`.
+// A push can only ever show one of three fixed texts (the nudge, the trade change, the owner's
+// alert). Whatever the payload says, anything else is shown as the generic trade text, so no code,
+// amount, name, alert detail or link can reach the lock screen even if a payload were tampered
+// with. A tap opens (or focuses) this site at `/`.
 const NUDGE = 'Someone nudged you on X2F';
 const TRADE = 'Something changed in a trade on X2F';
+const ALERT = 'Something needs your attention';
 
 self.addEventListener('install', () => {
   void self.skipWaiting();
@@ -23,7 +25,7 @@ self.addEventListener('push', (event) => {
   } catch {
     text = '';
   }
-  const body = text === NUDGE ? NUDGE : TRADE;
+  const body = text === NUDGE ? NUDGE : text === ALERT ? ALERT : TRADE;
   event.waitUntil(
     (async () => {
       await self.registration.showNotification('X2F', { body, tag: 'x2f' });

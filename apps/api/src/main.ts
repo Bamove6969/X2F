@@ -7,6 +7,7 @@ import { assertSigningKeyFile, loadConfig } from './config.js';
 import { createPool } from './db/pool.js';
 import { PRICE_FEED_DEFAULTS, createPriceFeed } from './price/feed.js';
 import { createFxRates, fxSources } from './price/fx.js';
+import type { PriceAlert } from './price/health.js';
 import { createMarketPrices } from './price/market.js';
 import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
@@ -15,6 +16,7 @@ import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
+import { ownerAlertSink } from './push/ownerAlert.js';
 
 function port(raw: string | undefined): number {
   if (raw === undefined || raw === '') return 8080;
@@ -41,15 +43,18 @@ await attestation.init();
 const db = createPool(config.databaseUrl);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
 // from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
-// owner_settings before each poll. Price health alerts go to the owner's in-app alerts. Every
-// source fetches through the global fetch (no proxy wired; routing them over Tor is a Plan 6
-// follow-up, see docs/coordination.md).
+// owner_settings before each poll. Price health alerts go to the owner's in-app alerts and, for
+// the urgent and source-failing kinds, to the owner's phone as the generic push (Task 19,
+// push/ownerAlert.ts; the sink needs `app.push`, so it is set once the app is built, before
+// polling starts). Every source fetches through the global fetch (no proxy wired; routing them
+// over Tor is a Plan 6 follow-up, see docs/coordination.md).
 const clock = () => new Date();
+let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind, a.detail, clock());
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
   clock,
-  onAlert: (a) => addOwnerAlert(db, a.kind, a.detail, clock()),
+  onAlert: (a) => onAlert(a),
 });
 const deps: Deps = {
   config,
@@ -69,6 +74,7 @@ const deps: Deps = {
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 const app = await buildApi(deps);
+onAlert = ownerAlertSink({ db, clock, push: app.push });
 prices.start();
 if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });

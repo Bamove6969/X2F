@@ -6,6 +6,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 const SOURCE = readFileSync(fileURLToPath(new URL('../public/sw.js', import.meta.url)), 'utf8');
 const NUDGE = 'Someone nudged you on X2F';
 const TRADE = 'Something changed in a trade on X2F';
+const ALERT = 'Something needs your attention';
 
 type Listener = (e: unknown) => void;
 
@@ -84,6 +85,13 @@ describe('sw.js push', () => {
     expect(h.shown).toHaveLength(1);
     expect(h.shown[0]!.options.body).toBe(NUDGE);
     expect(h.shown[0]!.title).toBe('X2F');
+  });
+
+  it("shows the owner's alert text for the alert payload, with no receipt (review 2026-10-27, I3)", async () => {
+    await h.dispatch('push', pushWith(ALERT));
+    expect(h.shown).toHaveLength(1);
+    expect(h.shown[0]!.options.body).toBe(ALERT);
+    expect(h.fetched).toEqual([]);
   });
 
   it('shows the trade text for the trade payload', async () => {

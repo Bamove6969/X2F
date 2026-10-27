@@ -4,16 +4,18 @@ import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { canonicalEndpoint, publicOnlyLookup, type LookupFn } from './endpoint.js';
 
-export type PushKind = 'nudge' | 'trade';
+export type PushKind = 'nudge' | 'trade' | 'alert';
 
 /**
- * The only two things a push can ever say (spec 4; Global Constraints). Pushes pass through
- * Apple's, Google's and Mozilla's servers, so they never carry a trade code, an amount, a name or
- * a link; the service worker opens `/` on a tap.
+ * The only three things a push can ever say (spec 4; Global Constraints). Pushes pass through
+ * Apple's, Google's and Mozilla's servers, so they never carry a trade code, an amount, a name, an
+ * alert detail or a link; the service worker opens `/` on a tap. `alert` is the owner's price
+ * health push (spec 11.6; push/ownerAlert.ts).
  */
 export const PUSH_PAYLOADS: Readonly<Record<PushKind, string>> = Object.freeze({
   nudge: 'Someone nudged you on X2F',
   trade: 'Something changed in a trade on X2F',
+  alert: 'Something needs your attention',
 });
 
 /** Subscriptions kept per account (browsers and devices); posting one more drops the oldest. */
