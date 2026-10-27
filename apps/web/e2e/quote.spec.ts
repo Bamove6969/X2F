@@ -183,7 +183,8 @@ test.describe('BuyQuote', () => {
     expect(seen.takes[0]!.centsPerXmr).toBe('33000');
     expect(seen.storedFiatCents).toHaveLength(0);
     await expect(card(page)).toContainText('$340.00 / XMR');
-    await expect(card(page)).toContainText('1.213235 XMR');
+    // 12.50 at 40.00 is 1.213235294117 XMR, shown in full: the figure is what is sent (M5).
+    await expect(card(page)).toContainText('1.213235294117 XMR');
     await expect(card(page)).toContainText('$412.50 USD');
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
