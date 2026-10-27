@@ -126,11 +126,13 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     setNow(new Date(first.getTime() + 60_000));
     expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
     expect(await seenAt(t.code)).toEqual(first);
-    for (const who of [buyer, seller]) {
-      const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
-      expect(v.finalAlertSeenAt).toBe(first.toISOString());
-      expect(typeof v.finalAlertAt).toBe('string');
-    }
+    const mine = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
+    expect(mine.finalAlertSeenAt).toBe(first.toISOString());
+    expect(typeof mine.finalAlertAt).toBe('string');
+    // The seller never learns when (or whether) the buyer saw it (re-review item 5): null, as for "not seen".
+    const theirs = (await seller.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
+    expect(theirs.finalAlertSeenAt).toBeNull();
+    expect(typeof theirs.finalAlertAt).toBe('string');
   });
 
   it('there is no account-wide receipt: a notification in the tray is not proof the alert was read (lead 2026-10-27)', async () => {
