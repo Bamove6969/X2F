@@ -27,8 +27,9 @@ import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
  */
 export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'settled-without-device' | 'error';
 /**
- * `participants-mismatch` is the plan's; the others are additions: the two sides signed
- * different deals, the party failed (a peer reported another escrow address, or the store
+ * `participants-mismatch` is the plan's; the others are additions: the API or the moderator's
+ * attestation disagrees with what the user confirmed (`deal-mismatch`, checked again on every
+ * start, never kept), the party failed (a peer reported another escrow address, or the store
  * could not save), or the browser has no Web Locks.
  */
 export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'not-confirmed' | 'escrow-failed' | 'unsupported-browser';
@@ -60,9 +61,12 @@ export interface ConfirmedTrade {
  * field, or a paid state it never tapped); no release is signed. Refunds are never refused for
  * an amount (they pay the whole balance to the seller's signed address whatever the amount).
  * `attempts-exhausted`: the party used up its settlement attempts for the current outcome; it is
- * not retried (the trade needs a dispute or another outcome).
+ * not retried (the trade needs a dispute or another outcome). `view-mismatch`: the API's trade
+ * view disagrees with the deal this device signed (role, poster, currency, rate or maximum);
+ * nothing is settled while it does, and the trade goes on once the view is right again (a lying
+ * or drifting API never stops the device's key share for good).
  */
-export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted';
+export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted' | 'view-mismatch';
 
 export interface EscrowStatus {
   phase: EscrowPhase;
@@ -297,13 +301,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     /**
-     * Stops the trade on this device. Integrity failures (participants or deal mismatch, and an
-     * escrow-failed the caller marks `integrity`) are kept in the record, so a reload stops again
-     * and nothing retries them. Every other escrow-failed is transient: kept in memory only and
-     * shown as retryable.
+     * Stops the trade on this device. Integrity failures (participants mismatch, and an
+     * escrow-failed the caller marks `integrity`: the party's own) are kept in the record, so a
+     * reload stops again and nothing retries them. Every other escrow-failed is transient: kept in
+     * memory only and shown as retryable. A deal mismatch is neither: it is found again on the
+     * next start from the attestation or the API, so nothing is kept (review 2026-10-26, I2).
      */
     fail(e: EscrowErrorCode, o: { integrity?: boolean } = {}): void {
-      const integrity = e === 'participants-mismatch' || e === 'deal-mismatch' || (e === 'escrow-failed' && o.integrity === true);
+      const integrity = e === 'participants-mismatch' || (e === 'escrow-failed' && o.integrity === true);
       this.error = e;
       this.retryable = e === 'escrow-failed' && !integrity;
       this.emit();
@@ -360,6 +365,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       const loaded = await deps.store.load(this.code);
       if (loaded) {
         this.rec = loaded;
+        // A deal mismatch kept by a record from before the fix of 2026-10-26 (one bad view or
+        // trade.terms stopped the device for good) is dropped: it is checked again below.
+        if (loaded.failed === 'deal-mismatch') loaded.failed = null;
         if (loaded.failed) return this.fail(loaded.failed, { integrity: true }); // stopped for good before: stays stopped
       }
       else {
@@ -441,6 +449,14 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.rec.attestation = att;
         await this.persist();
       }
+      // The counterparty's terms are the attested ones or none: a record that adopted others
+      // (written before the fix of 2026-10-26) waits for the attested terms again.
+      const attestedTheirAddress = this.rec.role === 'buyer' ? this.attested.sellerRefund : this.attested.buyerPayout;
+      if (this.rec.theirAddress !== null && (this.rec.theirAddress !== attestedTheirAddress || !this.rec.theirDeal || !sameDeal(this.rec.deal, this.rec.theirDeal))) {
+        this.rec.theirAddress = null;
+        this.rec.theirDeal = null;
+        await this.persist();
+      }
 
       const ownAddress = this.rec.ownAddress;
       const [escrowChannel, signalsChannel] = await Promise.all([channelFor(this.code, 'escrow'), channelFor(this.code, 'signals')]);
@@ -460,6 +476,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         },
         ownAddress,
         deal: this.rec.deal,
+        attestedTheirAddress,
         save: async (s) => {
           this.rec.signalGuard = s.guard;
           this.rec.signalSeq = s.seq;
@@ -781,8 +798,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         if (this.relayClosed) this.isReady = true;
         if (await this.afterClose(f, v)) return;
       }
-      if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal)) {
-        this.fail('deal-mismatch');
+      // The API's view disagrees with the deal this device signed: shown, nothing settled this tick,
+      // nothing kept (the view may be right again next tick). The counterparty's terms cannot
+      // disagree: only the attested ones are ever adopted (signals.ts), and context() checks again.
+      if (!viewMatches(v, r.role, r.deal)) {
+        this.refusal = 'view-mismatch';
+        this.refresh();
         return;
       }
       if (!r.paidSeen && (v.paidAt !== null || v.state === 'paid')) {

@@ -27,6 +27,7 @@ function side(role: 'buyer' | 'seller', hub: Hub, me: Identity, participants: Pa
     state: fresh(),
     ownAddress: ADDR[role],
     deal: confirmedFor(role).deal,
+    attestedTheirAddress: ADDR[role === 'buyer' ? 'seller' : 'buyer'],
     save: async (s) => void saves.push(s),
     absorb: (type) => absorbed.push({ type, savesBefore: saves.length }),
     onSignal: (type, from, payload) => got.push({ type, from, savedFirst: saves.length > 0, payload }),
@@ -57,7 +58,7 @@ describe('signals channel', () => {
     s.h.stop();
   });
 
-  it('the first terms win; a later different copy, a signal from the wrong role, malformed payloads and replays are ignored', async () => {
+  it('only the attested terms are adopted; another address or deal (before or after), a signal from the wrong role, malformed payloads and replays are ignored', async () => {
     const hub = new Hub();
     const { ids, participants } = await trio();
     const ignored = vi.fn();
@@ -65,6 +66,9 @@ describe('signals channel', () => {
     const deal = confirmedFor('seller').deal;
     const send = async (seq: number, type: string, payload: unknown, from: 'seller' | 'mod' = 'seller') =>
       hub.inject(CHANNEL, 'buyer', await seal({ trade: CHANNEL, from, seq, type, payload, to: ROLES, me: ids[from], participants }));
+    await send(0, 'trade.terms', { refundAddress: '4Attacker', deal }); // before the attested ones: ignored, not adopted
+    await until(() => ignored.mock.calls.length >= 1);
+    expect(b.last()?.theirAddress).toBeNull();
     await send(1, 'trade.terms', { refundAddress: ADDR.seller, deal });
     await until(() => b.last()?.theirAddress === ADDR.seller);
     await send(2, 'trade.terms', { refundAddress: '4Attacker', deal });
@@ -73,13 +77,13 @@ describe('signals channel', () => {
     await send(5, 'trade.terms', { payoutAddress: ADDR.seller, deal });
     await send(3, 'trade.extend', {}); // replayed seq
     await send(6, 'trade.terms', { refundAddress: ADDR.seller, deal: { ...deal, takeAmountAtomic: 1n } });
-    await until(() => ignored.mock.calls.length >= 6);
-    expect(ignored.mock.calls.map((c) => c[0])).toEqual(['terms-changed', 'malformed', 'malformed', 'malformed', 'replay', 'terms-changed']);
+    await until(() => ignored.mock.calls.length >= 7);
+    expect(ignored.mock.calls.map((c) => c[0])).toEqual(['terms-mismatch', 'terms-mismatch', 'malformed', 'malformed', 'malformed', 'replay', 'terms-mismatch']);
     expect(b.last()?.theirAddress).toBe(ADDR.seller);
     expect(b.last()?.theirDeal).toEqual(deal);
     // Every accepted signal was saved before it was acted on.
     expect(b.got.every((g) => g.savedFirst)).toBe(true);
-    expect(b.got.map((g) => g.type)).toEqual(['trade.terms', 'trade.terms', 'trade.terms']);
+    expect(b.got.map((g) => g.type)).toEqual(['trade.terms']); // the ignored copies never count as signals
     b.h.stop();
   });
 

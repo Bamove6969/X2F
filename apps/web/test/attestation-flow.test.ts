@@ -108,7 +108,7 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(t.parties.settles).toEqual([]);
   });
 
-  it('a counterparty trade.terms address that differs from the attestation stops this device (deal-mismatch)', async () => {
+  it('a counterparty trade.terms address that differs from the attestation is ignored, never adopted; the attested one is, and the device still settles', async () => {
     const t = await setup();
     // A stand-in seller: its identity is registered, then it signs terms with an address the mod did not attest.
     const seller = await testIdentity();
@@ -119,11 +119,20 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     const att = (await buyer.store.load(CODE))!.attestation!.attestation as Attestation;
     const channel = await channelFor(CODE, 'signals');
     const deal = confirmedFor('seller').deal;
-    t.hub.inject(channel, 'buyer', await seal({ trade: channel, from: 'seller', seq: 1, type: 'trade.terms', payload: { refundAddress: '4SellerOther', deal }, to: ROLES, me: seller, participants: att.participants }));
+    const terms = (seq: number, refundAddress: string) => seal({ trade: channel, from: 'seller', seq, type: 'trade.terms', payload: { refundAddress, deal }, to: ROLES, me: seller, participants: att.participants });
+    t.hub.inject(channel, 'buyer', await terms(1, '4SellerOther'));
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'secured' });
-    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    await until(async () => ((await buyer.store.load(CODE))?.signalGuard?.seen as Record<string, unknown>)?.seller !== undefined); // the frame was read (and its seq kept)
+    await t.parties.ticks('buyer', 3);
+    expect((await buyer.store.load(CODE))?.theirAddress).toBeNull();
+    expect(buyer.statuses.some((s) => s.phase === 'error')).toBe(false);
     expect(t.parties.settles).toEqual([]);
+    // The attested address arrives: adopted, and the buyer co-signs the release.
+    t.hub.inject(channel, 'buyer', await terms(2, ADDR.seller));
+    await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    expect((await buyer.store.load(CODE))?.theirAddress).toBe(ADDR.seller);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
   });
 
   it('a tampered attestation stored earlier is checked again on resume', async () => {
@@ -197,24 +206,31 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect(await buyer.store.load(CODE)).toBeNull();
   });
 
-  it('a deal mismatch is kept: after a reload the trade stays stopped even if the API turns honest', async () => {
+  it('an API view that disagrees with the stored deal mid-trade is a shown refusal (nothing settled), never a kept failure; it recovers when the view is right', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');
     const seller = await t.mk('seller');
     await buyer.runtime.start(CODE);
     await seller.runtime.start(CODE);
-    await buyer.status((s) => s.phase === 'ready');
-    t.state.view = tradeView({ state: 'secured', poster: 'buyer' });
-    await buyer.status((s) => s.error === 'deal-mismatch');
-    await buyer.runtime.stopAll();
-    expect((await buyer.store.load(CODE))?.failed).toBe('deal-mismatch');
-    t.state.view = tradeView({ state: 'secured' });
+    await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
-    const calls = t.parties.calls.length;
+    t.state.view = tradeView({ state: 'secured', poster: 'buyer' });
+    expect(await buyer.status((s) => s.refusal === 'view-mismatch')).toMatchObject({ phase: 'ready', error: null });
+    await t.parties.ticks('buyer', 3);
+    expect(t.parties.settles).toEqual([]);
+    expect((await buyer.store.load(CODE))?.failed ?? null).toBeNull();
+    // The view is right again: the refusal goes and the buyer co-signs the release.
+    t.state.view = tradeView({ state: 'secured' });
+    expect(await buyer.status((s) => s.refusal === null)).toMatchObject({ error: null });
+    await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    // A record a device wrote before this fix (stopped for good on one bad view) runs again.
+    await buyer.runtime.stopAll();
+    const rec = (await buyer.store.load(CODE))!;
+    await buyer.store.save({ ...rec, failed: 'deal-mismatch' });
     const again = await t.mk('buyer', { idb: buyer.idb });
     await again.runtime.resumeAll();
-    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
-    expect(t.parties.calls.length).toBe(calls); // no party, nothing settled
+    expect(await again.status((s) => s.phase === 'ready' || s.phase === 'signing')).toMatchObject({ error: null });
+    expect((await again.store.load(CODE))?.failed ?? null).toBeNull();
   });
 
   it('a first start without the user’s confirmation does nothing (not-confirmed)', async () => {
@@ -237,7 +253,7 @@ describe('what this device signs comes from what the user confirmed, never the A
     expect((await buyer.store.load(CODE))?.theirDeal).toEqual((await seller.store.load(CODE))?.deal);
   });
 
-  it('a view that turns into another poster mid-trade: deal-mismatch and nothing is settled', async () => {
+  it('a view that turns into another poster mid-trade: view-mismatch shown and nothing is settled', async () => {
     const t = await setup();
     const buyer = await t.mk('buyer');
     const seller = await t.mk('seller');
@@ -246,10 +262,11 @@ describe('what this device signs comes from what the user confirmed, never the A
     await until(async () => buyer.last()?.phase === 'ready' && (await buyer.store.load(CODE))?.theirDeal != null);
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'paid', poster: 'buyer' });
-    await until(() => buyer.last()?.phase === 'error' && seller.last()?.phase === 'error');
-    expect(buyer.last()?.error).toBe('deal-mismatch');
-    await expect(seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
+    await until(() => buyer.last()?.refusal === 'view-mismatch' && seller.last()?.refusal === 'view-mismatch');
+    await seller.runtime.act(CODE, { type: 'release' }); // the tap is recorded; nothing is signed while the view disagrees
+    await Promise.all([t.parties.ticks('seller', 3), t.parties.ticks('buyer', 3)]);
     expect(t.parties.settles).toEqual([]);
+    expect((await seller.store.load(CODE))?.failed ?? null).toBeNull();
   });
 });
 
@@ -789,7 +806,7 @@ describe('guards in front of settle', () => {
     return { ...t, buyer, seller };
   }
 
-  it('the counterparty signed another deal: deal-mismatch, nothing settled', async () => {
+  it('the counterparty signed another deal than the attested one: ignored, never adopted, nothing settled; the attested deal is adopted', async () => {
     // A real seller device would already stop at the attestation (its deal is not the attested
     // one); a stand-in seller signs terms with another offer maximum to test the buyer's own check.
     const t = await setup();
@@ -800,24 +817,50 @@ describe('guards in front of settle', () => {
     await until(async () => (await buyer.store.load(CODE))?.attestation != null);
     const att = (await buyer.store.load(CODE))!.attestation!.attestation as Attestation;
     const channel = await channelFor(CODE, 'signals');
-    const deal = { ...confirmedFor('seller').deal, maxFiatCents: 60_000n };
-    t.hub.inject(channel, 'buyer', await seal({ trade: channel, from: 'seller', seq: 1, type: 'trade.terms', payload: { refundAddress: ADDR.seller, deal }, to: ROLES, me: seller, participants: att.participants }));
+    const terms = (seq: number, deal: ReturnType<typeof confirmedFor>['deal']) => seal({ trade: channel, from: 'seller', seq, type: 'trade.terms', payload: { refundAddress: ADDR.seller, deal }, to: ROLES, me: seller, participants: att.participants });
+    t.hub.inject(channel, 'buyer', await terms(1, { ...confirmedFor('seller').deal, maxFiatCents: 60_000n }));
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'secured' });
-    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
-    await until(async () => (await buyer.store.load(CODE))?.theirDeal != null); // that save has landed
-    expect((await buyer.store.load(CODE))?.theirDeal?.maxFiatCents).toBe(60_000n);
+    await until(async () => ((await buyer.store.load(CODE))?.signalGuard?.seen as Record<string, unknown>)?.seller !== undefined);
+    await t.parties.ticks('buyer', 3);
+    expect((await buyer.store.load(CODE))?.theirDeal).toBeNull();
+    expect(buyer.statuses.some((s) => s.phase === 'error')).toBe(false);
     expect(t.parties.settles).toEqual([]);
+    t.hub.inject(channel, 'buyer', await terms(2, confirmedFor('seller').deal));
+    await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    expect((await buyer.store.load(CODE))?.theirDeal?.maxFiatCents).toBe(50_000n);
   });
 
-  it('a seller that confirmed another deal than the moderator attested stops before signing terms', async () => {
+  it('a seller that confirmed another deal than the moderator attested stops before signing terms (checked again on every start, not kept)', async () => {
     const t = await setup({ roleView: { seller: { maxFiatCents: '60000' } } });
     const seller = await t.mk('seller');
     await seller.runtime.start(CODE, confirmedFor('seller', { maxFiatCents: 60_000n }));
     const buyer = await t.mk('buyer');
     await buyer.runtime.start(CODE);
-    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    expect(await seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch', retryable: false });
     expect(t.hub.opened.filter((o) => o.role === 'seller')).toEqual([]);
+    await seller.runtime.stopAll();
+    expect((await seller.store.load(CODE))?.failed ?? null).toBeNull();
+  });
+
+  it('a failure is kept in the record only for participants-mismatch and the party’s integrity errors', async () => {
+    // participants-mismatch: kept.
+    const t = await setup({ tamper: (a) => ({ ...a, participants: { ...a.participants, buyer: a.participants.mod } }) });
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    expect(await buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'participants-mismatch', retryable: false });
+    await until(async () => (await buyer.store.load(CODE))?.failed === 'participants-mismatch');
+    // The party's address-mismatch: kept.
+    const u = await setup();
+    u.parties.readyError = { seller: new PartyError('address-mismatch', 'buyer reports another escrow address') };
+    const s2 = await u.mk('seller');
+    const b2 = await u.mk('buyer');
+    await s2.runtime.start(CODE);
+    await b2.runtime.start(CODE);
+    expect(await s2.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    await until(async () => (await s2.store.load(CODE))?.failed === 'escrow-failed');
   });
 
   async function settlingSeller() {
@@ -833,8 +876,9 @@ describe('guards in front of settle', () => {
     return t;
   }
 
-  it('on resume, a stored outcome next to a changed counterparty deal is not settled', async () => {
+  it('on resume, a stored counterparty deal that is not the attested one is dropped: the stored outcome is not settled and nothing is kept as failed', async () => {
     const t = await settlingSeller();
+    await t.buyer.runtime.stopAll(); // no resend of the right terms during this test
     const rec = (await t.seller.store.load(CODE))!;
     expect(rec.intent?.outcome).not.toBeNull();
     await t.seller.store.save({ ...rec, theirDeal: { ...rec.theirDeal!, maxFiatCents: 60_000n } });
@@ -842,8 +886,12 @@ describe('guards in front of settle', () => {
     const count = sellers();
     const again = await t.mk('seller', { idb: t.seller.idb });
     await again.runtime.resumeAll();
-    expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'deal-mismatch' });
+    await again.status((s) => s.phase === 'ready' || s.phase === 'signing');
+    await t.parties.ticks('seller', 3);
     expect(sellers()).toBe(count);
+    expect(again.statuses.some((s) => s.phase === 'error')).toBe(false);
+    const after = (await again.store.load(CODE))!;
+    expect([after.theirDeal, after.theirAddress, after.failed ?? null]).toEqual([null, null, null]);
   });
 
   it('on resume, a stored outcome is gated by cosignPolicy again: a tampered one is never settled', async () => {
@@ -1115,7 +1163,7 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect(await again.store.load(CODE)).not.toBeNull();
   });
 
-  it('fundedSeen is saved at once, even when the same tick stops on a deal mismatch, and survives a reload', async () => {
+  it('fundedSeen is saved at once, even when the same tick refuses a view that disagrees with the deal, and survives a reload', async () => {
     const t = await setup();
     const seller = await t.mk('seller');
     const buyer = await t.mk('buyer');
@@ -1125,7 +1173,7 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     // Coins arrive in the same reading as a view that disagrees with the deal.
     t.state.view = tradeView({ state: 'secured', poster: 'buyer' });
     t.parties.funds = funded();
-    expect(await seller.status((s) => s.error === 'deal-mismatch')).toBeTruthy();
+    expect(await seller.status((s) => s.refusal === 'view-mismatch')).toBeTruthy();
     await seller.runtime.stopAll();
     expect((await seller.store.load(CODE))?.fundedSeen).toBe(true);
   });

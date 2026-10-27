@@ -4,9 +4,11 @@
  * envelope, with its own ReplayGuard and seq saved before anything is acted on or sent.
  *
  * - trade.terms (once at setup, resent until answered): the seller's `{ refundAddress, deal }`
- *   and the buyer's `{ payoutAddress, deal }`. The counterparty's first terms win; a different
- *   later copy is ignored. `deal` is a deviation from the plan (which signs the address only):
- *   both sides sign the trade's size and rate so a lying API cannot resize the payouts.
+ *   and the buyer's `{ payoutAddress, deal }`. Only terms whose address and deal are the ones the
+ *   moderator attested are adopted; any other copy is ignored (never adopted, never fatal: one
+ *   wrong message from a peer must not stop this device's key share for good). `deal` is a
+ *   deviation from the plan (which signs the address only): both sides sign the trade's size and
+ *   rate so a lying API cannot resize the payouts.
  * - trade.paid (buyer): `{ amountAtomic, fiatCents }`, the trade amount the buyer's device fixed
  *   and the fiat total the buyer confirmed (bigints, signed with the envelope). A deviation from
  *   the plan's `{}` (security fix 2026-10-24): the seller fixes the amount from this signed value,
@@ -52,7 +54,10 @@ export interface SignalsArgs {
   transport: Transport;
   state: SignalsState;
   ownAddress: string;
+  /** This device's deal, as the moderator attested it (verified before the signals run). */
   deal: Deal;
+  /** The counterparty's address as the moderator attested it; terms with another one are ignored. */
+  attestedTheirAddress: string;
   /** Saves the state; resolves once it is stored. Called before acting on or sending anything. */
   save(s: SignalsState): Promise<void>;
   /**
@@ -162,11 +167,13 @@ export function runSignals(a: SignalsArgs): SignalsHandle {
     if (type === 'trade.terms') {
       const addr = p[addressKey(from)] as string;
       const deal = parseDeal(p.deal)!;
+      if (addr !== a.attestedTheirAddress || !sameDeal(deal, a.deal)) {
+        await persist(); // the replay guard has seen it
+        return ignored('terms-mismatch');
+      }
       if (state.theirAddress === null) {
         state = { ...state, theirAddress: addr, theirDeal: deal };
         answerTerms = true; // the peer may have missed ours
-      } else if (state.theirAddress !== addr || !state.theirDeal || !sameDeal(state.theirDeal, deal)) {
-        ignored('terms-changed');
       }
     }
     if (type === 'trade.ack' && p.of === 'trade.terms') state = { ...state, termsAcked: true };

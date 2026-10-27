@@ -115,8 +115,9 @@ export interface EscrowRecord {
   settledWithoutDevice?: boolean;
   /**
    * An integrity failure that stops this trade on this device for good; kept so a reload stops it
-   * again (participants or deal mismatch, a confirmed settled-elsewhere, party equivocation or
-   * address mismatch). Transient failures are never stored.
+   * again: participants mismatch, or the party's own (a confirmed settled-elsewhere, equivocation,
+   * address mismatch). Transient failures are never stored. 'deal-mismatch' was kept by records
+   * written before 2026-10-26 and is dropped on load (a deal mismatch is checked again on every start).
    */
   failed?: 'participants-mismatch' | 'deal-mismatch' | 'escrow-failed' | null;
 }
