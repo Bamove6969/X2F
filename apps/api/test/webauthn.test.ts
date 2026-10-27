@@ -4,14 +4,14 @@ import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { loginNameLookup } from '../src/accounts.js';
+import { randomBytes } from 'node:crypto';
 import { fileAttestationPolicy } from '../src/auth/attestation.js';
 import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { SESSION_COOKIE, requireSession, startSession } from '../src/auth/sessions.js';
 import {
   assertCredentialAllowed,
-  decoyCredentialIds,
+  MAX_SECURITY_KEYS,
   registrationOptionsFor,
   securityKeyLoginRoutes,
   verifyWebAuthnAssertion,
@@ -23,6 +23,7 @@ import { ApiError } from '../src/errors.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
+import { spySql } from './helpers/sqlSpy.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -366,10 +367,7 @@ describe('enumeration (P2-I7)', () => {
     const first = responses[1]!.json();
     expect(again.options.allowCredentials).toEqual(first.options.allowCredentials);
     expect(again.options.challenge).not.toEqual(first.options.challenge);
-    expect([1, 2]).toContain(first.options.allowCredentials.length);
-    expect(first.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual(
-      decoyCredentialIds(deps, loginNameLookup(deps.config, 'Nobody.Here42').tag).map((id) => id.toString('base64url')),
-    );
+    expect(first.options.allowCredentials).toHaveLength(MAX_SECURITY_KEYS);
     const other = (await b.post('/v1/login/webauthn/start', { loginName: 'Nobody.Else42' })).json();
     expect(other.options.allowCredentials).not.toEqual(first.options.allowCredentials);
     // The passkey-only account's decoy does not list its passkey.
@@ -467,7 +465,10 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     await insertCredential(ownerId, pk, 'passkey', false);
     const { rows } = await deps.db.query<{ username: string }>('select login_name as username from accounts where id = $1', [ownerId]);
     const { res, options } = await usernameLogin(pk, rows[0]!.username);
-    expect(options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const listed = options.allowCredentials.map((c: { id: string }) => c.id);
+    expect(listed).toHaveLength(MAX_SECURITY_KEYS); // the key plus decoys (review I2)
+    expect(listed).toContain(key.credentialId);
+    expect(listed).not.toContain(pk.credentialId);
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('method-not-allowed');
     expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
@@ -504,7 +505,11 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     await insertCredential(staffId, pk, 'passkey', false);
     const b = new Browser();
     const plain = (await b.post('/v1/login/webauthn/start', { loginName: name })).json();
-    expect(plain.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const ids = (j: { options: { allowCredentials: Array<{ id: string }> } }) => j.options.allowCredentials.map((c) => c.id);
+    // The key among decoys (review I2: always MAX_SECURITY_KEYS entries), never the passkey.
+    expect(ids(plain)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(plain)).toContain(key.credentialId);
+    expect(ids(plain)).not.toContain(pk.credentialId);
 
     const device = await deps.db.query<{ device_hash: Buffer }>('select device_hash from challenges where id = $1', [plain.challengeId]);
     const insertPending = (method: string, deviceHash: Buffer) =>
@@ -515,14 +520,15 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
       );
     const afterPgp = (await insertPending('pgp', device.rows[0]!.device_hash)).rows[0]!.id;
     const withPending = (await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
-    expect(withPending.options.allowCredentials.map((c: { id: string }) => c.id).sort()).toEqual([key.credentialId, pk.credentialId].sort());
+    expect(ids(withPending)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
+    expect(ids(withPending)).toHaveLength(MAX_SECURITY_KEYS);
     expect(withPending.options.userVerification).toBe('required');
 
     // Another device, or a first factor that was not PGP: security keys only.
     const other = (await new Browser().post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
-    expect(other.options.allowCredentials).toHaveLength(1);
+    expect(ids(other)).not.toContain(pk.credentialId);
     const afterKey = (await insertPending('security-key', device.rows[0]!.device_hash)).rows[0]!.id;
-    expect((await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterKey })).json().options.allowCredentials).toHaveLength(1);
+    expect(ids((await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterKey })).json())).not.toContain(pk.credentialId);
     // Reading the pending row does not use it up.
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [afterPgp]);
     expect(rows[0].used_at).toBeNull();
@@ -593,7 +599,7 @@ describe('confirm and adding a credential', () => {
     expect(alerts.rows).toEqual([{ detail: { method: 'security-key' } }]);
 
     const login = (await new Browser().post('/v1/login/webauthn/start', { loginName: t.username })).json();
-    expect(login.options.allowCredentials.map((c: { id: string }) => c.id).sort()).toEqual([t.auth.credentialId, second.credentialId].sort());
+    expect(login.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual(expect.arrayContaining([t.auth.credentialId, second.credentialId]));
     expect((await usernameLogin(second, t.username)).res.json()).toEqual({ status: 'ok' });
 
     const passkeyToken = await confirm({ kind: 'add-method', method: 'passkey' });
@@ -697,32 +703,103 @@ describe('review fixes', () => {
     await insertCredential(crewId, key, 'security-key', true);
     await insertCredential(crewId, pk, 'passkey', false);
     const { res, options } = await usernameLogin(pk, await usernameOf(crewId), new Browser(), '/t/two');
-    expect(options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const listed = options.allowCredentials.map((c: { id: string }) => c.id);
+    expect(listed).toContain(key.credentialId);
+    expect(listed).not.toContain(pk.credentialId);
     expect(res.statusCode).toBe(401);
     expect(errorOf(res)).toBe('webauthn-failed');
     expect(twoFactorCalls).toEqual([]);
   });
 
-  it('M3: decoys look like real security-key IDs and cost the same queries', async () => {
-    const real = await signUp('security-key');
-    const b = new Browser();
-    const a1 = (await b.post('/v1/login/webauthn/start', { loginName: 'Ghost.User77' })).json();
-    const a2 = (await b.post('/v1/login/webauthn/start', { loginName: 'Ghost.User77' })).json();
-    expect(a2.options.allowCredentials).toEqual(a1.options.allowCredentials);
-    for (const c of a1.options.allowCredentials) expect(Buffer.from(c.id, 'base64url')).toHaveLength(64);
-    expect(Buffer.from(real.auth.credentialId, 'base64url')).toHaveLength(64);
-
-    const spy = vi.spyOn(deps.db, 'query');
-    const count = async (username: string) => {
-      spy.mockClear();
-      expect((await b.post('/v1/login/webauthn/start', { loginName: username })).statusCode).toBe(200);
-      return spy.mock.calls.length;
-    };
-    const counts = [await count(real.username), await count('Ghost.User77'), await count('bad name!')];
-    expect(new Set(counts).size).toBe(1);
+  const idsOf = (res: LightMyRequestResponse): string[] => (res.json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
+  const lengthsOf = (res: LightMyRequestResponse): number[] => idsOf(res).map((id) => Buffer.from(id, 'base64url').length);
+  /** A soft authenticator whose credential ID has `bytes` bytes (real authenticators differ: YubiKeys use 64). */
+  const withIdLength = (bytes: number): SoftAuthenticator => ({
+    ...createSoftAuthenticator({ backedUp: false, userVerified: true }), credentialId: randomBytes(bytes).toString('base64url'),
   });
 
-  it('M3: with a pendingId, staff, trader and unknown usernames cost the same queries', async () => {
+  it('I2: a known name, an unknown one and a malformed one list exactly MAX_SECURITY_KEYS entries and run the same SQL', async () => {
+    const real = await signUp('security-key');
+    await insertCredential(real.accountId, withIdLength(64), 'security-key', false);
+    await insertCredential(real.accountId, withIdLength(32), 'security-key', false);
+    const b = new Browser();
+    await b.post('/v1/login/webauthn/start', {}); // the device cookie
+    const spy = spySql(deps.db);
+    try {
+      const run = async (loginName: string) => {
+        spy.clear();
+        const res = await b.post('/v1/login/webauthn/start', { loginName });
+        expect(res.statusCode).toBe(200);
+        return { res, sql: spy.sql() };
+      };
+      const known = await run(real.username);
+      const unknown = await run('Ghost.User77');
+      const malformed = await run('bad name!');
+      // Three real keys plus two decoys, five decoys, five decoys: never a count that only a real account produces.
+      for (const r of [known, unknown, malformed]) expect(idsOf(r.res)).toHaveLength(MAX_SECURITY_KEYS);
+      expect(idsOf(known.res)).toEqual(expect.arrayContaining([real.auth.credentialId]));
+      expect(new Set(idsOf(known.res)).size).toBe(MAX_SECURITY_KEYS);
+      // The same statements in the same order (Minor 6: sequence, not count).
+      expect(unknown.sql).toEqual(known.sql);
+      expect(malformed.sql).toEqual(known.sql);
+      expect(known.sql.length).toBeGreaterThan(2);
+      // Deterministic per name: a retry lists the same entries (real and decoy alike), another name lists others.
+      expect(idsOf((await run(real.username)).res)).toEqual(idsOf(known.res));
+      expect(idsOf((await run('Ghost.User77')).res)).toEqual(idsOf(unknown.res));
+      expect(idsOf((await run('Ghost.User78')).res)).not.toEqual(idsOf(unknown.res));
+    } finally {
+      spy.restore();
+    }
+  });
+
+  it('I2: decoy ID lengths are drawn from the lengths of the security keys actually stored, not a fixed 64', async () => {
+    const holder = await signUp('security-key');
+    for (let i = 0; i < 3; i++) await insertCredential(holder.accountId, withIdLength(32), 'security-key', false);
+    const { rows } = await deps.db.query<{ len: number }>(
+      "select distinct length(credential_id)::int as len from webauthn_credentials where kind = 'security-key'",
+    );
+    const stored = new Set(rows.map((r) => r.len));
+    expect(stored.has(32)).toBe(true);
+    expect(stored.has(64)).toBe(true);
+    const b = new Browser();
+    const seen = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      for (const len of lengthsOf(await b.post('/v1/login/webauthn/start', { loginName: `Stranger.${i}` }))) {
+        expect(stored.has(len)).toBe(true);
+        seen.add(len);
+      }
+    }
+    expect(seen.has(32)).toBe(true);
+    expect(seen.has(64)).toBe(true);
+  });
+
+  it('I2: at most MAX_SECURITY_KEYS security keys per account; the next one is refused at start and at finish', async () => {
+    const t = await signUp('security-key');
+    for (let i = 0; i < MAX_SECURITY_KEYS - 2; i++) await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
+    // Within onboarding: no confirm token needed. The fifth key is allowed.
+    const start = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    expect(start.statusCode).toBe(200);
+    const { challengeId, options } = start.json();
+    // Another key reaches the table before this ceremony finishes: the finish is refused too.
+    await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
+    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: fifth.register(options, ORIGIN), label: 'Sixth' });
+    expect(fin.statusCode).toBe(409);
+    expect(errorOf(fin)).toBe('security-key-limit');
+    const again = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toBe('security-key-limit');
+    // Passkeys are not counted.
+    expect((await t.b.post('/v1/account/webauthn/start', { kind: 'passkey' })).statusCode).toBe(200);
+    const { rows } = await deps.db.query("select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = 'security-key'", [t.accountId]);
+    expect(rows[0].n).toBe(MAX_SECURITY_KEYS);
+    // Its login options still list exactly MAX_SECURITY_KEYS entries: all real, no decoy.
+    const login = await new Browser().post('/v1/login/webauthn/start', { loginName: t.username });
+    expect(idsOf(login)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(idsOf(login)).toEqual(expect.arrayContaining([t.auth.credentialId]));
+  });
+
+  it('M3: with a pendingId, staff, trader, unknown and malformed names run the same SQL', async () => {
     const trader = await signUp('security-key');
     const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     await insertCredential(crewId, createSoftAuthenticator({ backedUp: false, userVerified: true }), 'security-key', true);
@@ -731,14 +808,18 @@ describe('review fixes', () => {
     await b.post('/v1/login/webauthn/start', {}); // the device cookie
     const pendingId = '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90';
 
-    const spy = vi.spyOn(deps.db, 'query');
-    const count = async (username: string) => {
-      spy.mockClear();
-      expect((await b.post('/v1/login/webauthn/start', { loginName: username, pendingId })).statusCode).toBe(200);
-      return spy.mock.calls.length;
-    };
-    const counts = [await count(crew), await count(trader.username), await count('Ghost.User77'), await count('bad name!')];
-    expect(new Set(counts).size).toBe(1);
+    const spy = spySql(deps.db);
+    try {
+      const run = async (loginName: string) => {
+        spy.clear();
+        expect((await b.post('/v1/login/webauthn/start', { loginName, pendingId })).statusCode).toBe(200);
+        return spy.sql();
+      };
+      const sequences = [await run(crew), await run(trader.username), await run('Ghost.User77'), await run('bad name!')];
+      for (const seq of sequences) expect(seq).toEqual(sequences[0]);
+    } finally {
+      spy.restore();
+    }
   });
 
   it('M4: an add-key challenge cannot be spent at login', async () => {

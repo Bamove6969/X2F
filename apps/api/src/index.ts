@@ -51,7 +51,7 @@ export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
 export {
-  WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
+  MAX_SECURITY_KEYS, WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
   verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
   webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
 } from './auth/webauthn.js';

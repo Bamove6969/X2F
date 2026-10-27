@@ -30,6 +30,12 @@ export type CredentialKind = 'passkey' | 'security-key';
 
 /** WebAuthn challenges live 5 minutes; at exactly 5:00 they are refused. */
 export const WEBAUTHN_TTL_MS = 5 * 60_000;
+/**
+ * At most this many security keys per account (FU-A review I2), so that a login by name can always
+ * list exactly this many credential IDs, real ones padded with decoys: the entry count then never
+ * says whether a login name exists. The next key is refused with 409 `security-key-limit`.
+ */
+export const MAX_SECURITY_KEYS = 5;
 /** EdDSA, ES256, RS256. */
 const ALGORITHMS = [-8, -7, -257];
 const LABEL_MAX = 60;
@@ -170,7 +176,21 @@ interface NewCredential {
   aaguid: string | null;
 }
 
+/** How many security keys the account holds; 409 `security-key-limit` when another would exceed `MAX_SECURITY_KEYS`. */
+async function assertSecurityKeyRoom(db: Queryable, accountId: string): Promise<void> {
+  const { rows } = await db.query<{ n: number }>(
+    "select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = 'security-key'",
+    [accountId],
+  );
+  if (rows[0]!.n >= MAX_SECURITY_KEYS) throw new ApiError(409, 'security-key-limit');
+}
+
+/**
+ * Stores a credential. A security key is counted against `MAX_SECURITY_KEYS` first; a caller that
+ * must be race-proof locks the account row in its transaction (`addKeyFinish`).
+ */
 async function insertCredential(db: Queryable, accountId: string, c: NewCredential, label: string, now: Date): Promise<string> {
+  if (c.kind === 'security-key') await assertSecurityKeyRoom(db, accountId);
   try {
     const { rows } = await db.query<{ id: string }>(
       `insert into webauthn_credentials
@@ -415,18 +435,52 @@ function allowed(accountKind: AccountKind, c: { kind: string; attested: boolean 
 // ---------------------------------------------------------------------------------------------
 // Login routes
 
+/** How many stored security-key credential IDs have each byte length: the distribution the decoys draw from. */
+export interface IdLengths {
+  len: number;
+  n: number;
+}
+
+/** Grouped, so the result is a handful of rows however many keys there are. Runs on every name-based start (parity). */
+async function securityKeyIdLengths(db: Queryable): Promise<IdLengths[]> {
+  const { rows } = await db.query<{ len: number; n: string }>(
+    "select length(credential_id) as len, count(*) as n from webauthn_credentials where kind = 'security-key' group by len order by len",
+  );
+  return rows.map((r) => ({ len: r.len, n: Number(r.n) }));
+}
+
 /**
- * Decoy credential IDs for a login name without usable security keys (P2-I7): HMAC under
- * `subkey('decoy')` of `nameTag ‖ i` (the name's `loginNameLookup` tag) for i < 1 + (first HMAC byte mod 2), so repeated calls
- * for one name are identical and different names differ. HMAC-SHA-512 rather than the plan's
- * SHA-256, so each ID is 64 bytes like a YubiKey's non-discoverable credential ID (review M3).
+ * `count` decoy credential IDs for a login name (P2-I7, review I2): deterministic under
+ * `subkey('decoy')` for the name's tag (`loginNameLookup`), so repeated starts for one name are
+ * identical and different names differ. Each decoy's byte length is drawn, by HMAC, from the
+ * lengths of the security keys actually stored (`lengths`, weighted by count), so a stranger's name
+ * lists IDs of the same lengths as registered accounts do; with nothing stored yet, 64 bytes (a
+ * YubiKey's non-discoverable credential ID). The bytes come from HMAC-SHA-512 in counter mode.
  */
-export function decoyCredentialIds(deps: Pick<Deps, 'config'>, nameTag: string): Buffer[] {
+export function decoyCredentialIds(deps: Pick<Deps, 'config'>, nameTag: string, count: number, lengths: readonly IdLengths[]): Buffer[] {
   const key = subkey(deps.config, 'decoy');
-  const mac = (i: number) => createHmac('sha512', key).update(Buffer.concat([Buffer.from(nameTag, 'utf8'), Buffer.from([i])])).digest();
-  const first = mac(0);
-  const n = 1 + (first[0]! % 2);
-  return Array.from({ length: n }, (_, i) => (i === 0 ? first : mac(i)));
+  const mac = (label: string, i: number, j: number) =>
+    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
+  const total = lengths.reduce((sum, l) => sum + l.n, 0);
+  // A uniform draw in [0, 1) per decoy, mapped through the cumulative distribution of the stored
+  // lengths, so a shift in the stored mix moves only the few draws near a boundary (the modulo
+  // alternative would re-pick nearly every decoy on every registration site-wide).
+  const lengthFor = (i: number): number => {
+    if (total === 0) return 64;
+    const u = mac('len', i, 0).readUInt32BE(0) / 2 ** 32;
+    let seen = 0;
+    for (const l of lengths) {
+      seen += l.n;
+      if (u < seen / total) return l.len;
+    }
+    return lengths[lengths.length - 1]!.len;
+  };
+  return Array.from({ length: count }, (_, i) => {
+    const len = lengthFor(i);
+    const blocks: Buffer[] = [];
+    for (let j = 0; blocks.length * 64 < len; j++) blocks.push(mac('id', i, j));
+    return Buffer.concat(blocks).subarray(0, len);
+  });
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -492,7 +546,16 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // Passkeys are in `creds` only after a staff member's PGP first factor (they may then be the only
     // credential listed: PGP + passkey is a staff pair).
     if (found !== null && creds.length > 0) account = found;
-    else creds = decoyCredentialIds(deps, name.tag).map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }));
+    else creds = [];
+    // Always exactly MAX_SECURITY_KEYS entries (review I2): real IDs padded with decoys whose lengths
+    // follow the stored keys, ordered by their bytes so real and decoy entries interleave. Only a
+    // staff second step after a PGP first factor (passkeys listed too) can exceed that, and it
+    // already named the account.
+    const lengths = await securityKeyIdLengths(deps.db);
+    const decoys = decoyCredentialIds(deps, name.tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
+    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
+      Buffer.compare(x.credential_id, y.credential_id),
+    );
     const options = await buildAssertionOptions(deps, creds);
     const challengeId = await storeChallenge(deps, req, {
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
@@ -674,6 +737,7 @@ async function addKeyStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const kind = credentialKind(record(req.body).kind);
   const account = await accountById(deps.db, req.auth.accountId);
+  if (kind === 'security-key') await assertSecurityKeyRoom(deps.db, account.id);
   const exclude = (await credentialsOf(deps.db, account.id)).map((c) => c.credential_id);
   const options = await buildRegistrationOptions(deps, {
     kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.display_name, exclude,
@@ -698,6 +762,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
+      // The account row is locked so two parallel finishes cannot both pass the security-key count.
+      await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
       await insertCredential(client, req.auth.accountId, cred, cleanLabel(label, kind), now);
       await addAlert(client, req.auth.accountId, 'login-method-added', { method: kind }, now);
       await client.query('commit');

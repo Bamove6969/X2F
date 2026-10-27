@@ -32,6 +32,7 @@ export type ApiErrorCode =
   | 'method-not-allowed'
   | 'last-login-method'
   | 'webauthn-failed'
+  | 'security-key-limit'
   | 'origin-refused'
   | 'address-invalid'
   | 'address-integrated'
