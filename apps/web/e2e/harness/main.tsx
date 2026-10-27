@@ -5,8 +5,10 @@
  *
  * `/?screen=seller-refund|final-alert&code=<trade code>`: reads GET /v1/trades/:code (stubbed by
  * the spec with page.route), re-reads it on `refresh()`, and passes the server clock from
- * `serverNow`. The escrow is a recorder: each call is pushed to `window.__escrowCalls`, and
- * `&escrow=fail` makes every call fail until the spec sets `window.__escrowFail = false` (the
+ * `serverNow`. The escrow is Task 12's real `useEscrow(code)` over a recorder `EscrowClient`
+ * (`setEscrowClient`, as the hook's tests do) instead of the worker: each action is pushed to
+ * `window.__escrowCalls` by the runtime's action names (`signal:<type>`, `build-refund`), and
+ * `&escrow=fail` makes every action fail until the spec sets `window.__escrowFail = false` (the
  * relay is back). FinalAlert's paid sheet is a labelled stand-in dialog.
  * Built from this folder only (vite.config.ts), never part of the app's `dist`.
  */
@@ -17,9 +19,12 @@ import '../../src/theme/fonts.css';
 import '../../src/theme/tokens.css';
 import '../../src/theme/base.css';
 import { api, serverClock } from '../../src/api/client.js';
+import type { EscrowStatus } from '../../src/escrow/runtime.js';
+import { setEscrowClient, useEscrow } from '../../src/escrow/useEscrow.js';
 import { FinalAlert, setFinalAlertPaidSheet } from '../../src/screens/trade/FinalAlert.js';
-import type { RefundEscrow, RefundView } from '../../src/screens/trade/refundSlot.js';
+import type { RefundView } from '../../src/screens/trade/refundSlot.js';
 import { SellerRefund } from '../../src/screens/trade/SellerRefund.js';
+import { sellerView } from './refundViews.js';
 
 declare global {
   interface Window {
@@ -34,14 +39,35 @@ const code = q.get('code') ?? '';
 
 window.__escrowCalls = [];
 window.__escrowFail = q.get('escrow') === 'fail';
-const record = async (call: string): Promise<void> => {
-  window.__escrowCalls?.push(call);
-  if (window.__escrowFail) throw new Error('escrow refused');
+// The device's status for the board's trade: ready, with the board's amount as the accepted one.
+const board = sellerView();
+const READY: EscrowStatus = {
+  phase: 'ready',
+  error: null,
+  retryable: false,
+  refusal: null,
+  checkWords: null,
+  keepOpen: true,
+  role: screen === 'final-alert' ? 'buyer' : 'seller',
+  amountAtomic: BigInt(board.amountAtomic),
+  fiatCents: BigInt(board.fiatCents),
 };
-const escrow: RefundEscrow = {
-  signal: (s) => record(`signal:${s}`),
-  buildRefund: () => record('build-refund'),
-};
+const subscribers = new Set<(s: EscrowStatus) => void>();
+setEscrowClient({
+  start: () => {
+    for (const cb of subscribers) cb(READY);
+  },
+  act: async (_code, a) => {
+    window.__escrowCalls?.push(a.type === 'signal' ? `signal:${a.signal}` : a.type);
+    if (window.__escrowFail) throw new Error('escrow action refused');
+  },
+  retry: () => undefined,
+  subscribe: (_code, cb) => {
+    subscribers.add(cb);
+    cb(READY);
+    return () => subscribers.delete(cb);
+  },
+});
 
 setFinalAlertPaidSheet(({ open, onClose }) =>
   open ? (
@@ -54,6 +80,7 @@ setFinalAlertPaidSheet(({ open, onClose }) =>
 );
 
 function Harness() {
+  const escrow = useEscrow(code);
   const [view, setView] = useState<RefundView | null>(null);
   const refresh = useCallback(async () => {
     setView(await api<RefundView>(`/v1/trades/${encodeURIComponent(code)}`));

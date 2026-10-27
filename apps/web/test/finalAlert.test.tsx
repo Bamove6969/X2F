@@ -26,7 +26,7 @@ afterEach(() => {
   setFinalAlertPaidSheet(null);
 });
 
-const escrow = { signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined) };
+const escrow = { signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined), amountAtomic: null };
 
 function mount(view: RefundView, clock: () => Date) {
   const r = render(

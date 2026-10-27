@@ -5,10 +5,15 @@
  * screens read, copied field for field. Task 22's `TradeView`, `TradeEscrow` and
  * `TradeScreenProps` are assignable to them, so SellerRefund and FinalAlert register as they are.
  *
+ * The escrow side is no copy: `RefundEscrow` is Task 12's `UseEscrow` (on the line since
+ * 2026-10-27), narrowed to what these screens use.
+ *
  * TRIPWIRE (test/refund-tripwires.test.ts): once TradeRoom.tsx is on this branch, import the real
  * types instead of these copies, call `registerRefundScreens(registerTradeScreen)` at the top of
  * refundScreens.ts, and import refundScreens.js on the Task 25 line of `screens.ts`.
  */
+import type { UserSignal } from '../../escrow/signals.js';
+import type { UseEscrow } from '../../escrow/useEscrow.js';
 
 export type Party = 'buyer' | 'seller';
 
@@ -69,14 +74,17 @@ export interface RefundView {
   serverNow: string;
 }
 
-/** Task 12's escrow signals the seller sends from these screens. */
-export type RefundSignal = 'trade.extend' | 'trade.refund-request';
+/** The signals `UseEscrow.signal` takes (Task 12, escrow/signals.ts); these screens send `trade.extend` and `trade.refund-request`. */
+export type RefundSignal = Exclude<UserSignal, 'trade.paid'>;
 
-/** The parts of Task 22's `TradeEscrow` (Task 12's `UseEscrow`) these screens call. */
-export interface RefundEscrow {
-  buildRefund(): Promise<void>;
-  signal(type: RefundSignal | 'trade.cancel'): Promise<void>;
-}
+/**
+ * The parts of Task 22's `TradeEscrow` (Task 12's `UseEscrow`, escrow/useEscrow.ts) these screens
+ * use: `signal` and `buildRefund` (the runtime's `signal` and `build-refund` actions; the latter
+ * settles `payoutsFor('auto-refund')`, builder seller, cosigner mod, once the view is
+ * `refund_requested`), and `amountAtomic`, the trade amount this device accepts
+ * (`EscrowStatus.amountAtomic`), shown in place of the API's amount when the device has one.
+ */
+export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAtomic'>;
 
 /** Task 22's `TradeScreenProps`, narrowed to what these screens read. */
 export interface RefundScreenProps {
