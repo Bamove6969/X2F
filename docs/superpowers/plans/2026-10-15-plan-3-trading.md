@@ -497,6 +497,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(moderation): auto-refund and buyer-cancel refund from signed terms and signals only`.
 
+**Notes from Task 12 (lead, 2026-10-24):** Task 10 must accept `deal` in `trade.terms` (the seller's `{ refundAddress, deal }`, the buyer's `{ payoutAddress, deal }`, with `deal = { poster, takeAmountAtomic, currency, centsPerXmr, maxFiatCents }` as bigints) and `trade.ack` as `{ of: '<signal type>' }`. It must also accept `trade.paid` as `{ amountAtomic, fiatCents }` (bigints, the amount the buyer's device fixed and the total the buyer confirmed; the Task 12 security fix of 2026-10-24). The trader apps ignore a `trade.paid` without them. Details: `docs/coordination.md`, "Plan 3 Task 12".
+
 ### Task 11: Node proxy (`apps/node-proxy`)
 
 **Files:**
