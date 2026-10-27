@@ -89,14 +89,11 @@ export function App() {
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
         </Route>
         <Route element={<Layout nav={false} />}>
-          <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<OfferList side="buy" copy={BUY_COPY} />} />
           <Route path="/post" element={<PostOffer />} />
           <Route path="/sell/:methodId" element={<BrowseOffers side="sell" copy={SELL_COPY} />} />
           <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />
           <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
-          <Route path="/post" element={<Screen name="post" />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
