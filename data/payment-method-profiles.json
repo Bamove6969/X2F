@@ -1,0 +1,99 @@
+{
+ "note": "X2F payment method profiles (spec 2.6). Each profile drives all copy about its method: what it is, where the money lands (this fills every \"check your ...\" prompt, so it never names the method itself), the typical arrival time (which sets the seller's confirmation window: 120 min for instant apps, 1440 for wires) and the matching fields. Ids are catalog ids from data/payment-methods.json. Launch set (spec 11.5, Plan 3 Task 3); wording to be checked by the owner.",
+ "profiles": [
+  {
+   "id": "ZELLE",
+   "whatItIs": "Zelle: a US bank-to-bank instant transfer built into most US banking apps.",
+   "landsIn": "your bank account, checked in your bank's app",
+   "checkPrompt": "Open your bank's app and check that the payment arrived in your account.",
+   "arrival": "instant",
+   "confirmWindowMin": 120,
+   "fields": [
+    { "key": "recipient", "label": "Email or US phone number", "kind": "email-or-phone" },
+    { "key": "name", "label": "Name on the account", "kind": "text" }
+   ]
+  },
+  {
+   "id": "CASH_APP",
+   "whatItIs": "Cash App: a US payment app for sending money between people by $cashtag.",
+   "landsIn": "your app balance, checked in the app's activity list",
+   "checkPrompt": "Open the app's activity list and check that the payment is shown as received.",
+   "arrival": "instant",
+   "confirmWindowMin": 120,
+   "fields": [
+    { "key": "cashtag", "label": "$cashtag", "kind": "account" }
+   ]
+  },
+  {
+   "id": "REVOLUT",
+   "whatItIs": "Revolut: a payments app with accounts in many currencies, used mostly in Europe.",
+   "landsIn": "your app balance, checked in the app's transactions",
+   "checkPrompt": "Open the app's transactions and check that the payment arrived in your balance.",
+   "arrival": "instant",
+   "confirmWindowMin": 120,
+   "fields": [
+    { "key": "revtag", "label": "Revtag or phone number", "kind": "account" }
+   ]
+  },
+  {
+   "id": "TRANSFERWISE",
+   "whatItIs": "Wise: an online money transfer service with balances in many currencies.",
+   "landsIn": "your account balance, checked in the app or on the website",
+   "checkPrompt": "Open the app or the website and check that the transfer is shown as received.",
+   "arrival": "same-day",
+   "confirmWindowMin": 480,
+   "fields": [
+    { "key": "recipient", "label": "Email registered with the account", "kind": "email-or-phone" },
+    { "key": "name", "label": "Name on the account", "kind": "text" }
+   ]
+  },
+  {
+   "id": "ACH_TRANSFER",
+   "whatItIs": "ACH: the standard US bank-to-bank transfer, usually settled in one to three business days.",
+   "landsIn": "your bank account, checked in your bank's app or statement",
+   "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
+   "arrival": "days",
+   "confirmWindowMin": 1440,
+   "fields": [
+    { "key": "name", "label": "Name on the account", "kind": "text" },
+    { "key": "routing", "label": "Routing number", "kind": "account" },
+    { "key": "account", "label": "Account number", "kind": "account" }
+   ]
+  },
+  {
+   "id": "SEPA",
+   "whatItIs": "SEPA: a euro bank transfer between banks in the Single Euro Payments Area, usually arriving the next business day.",
+   "landsIn": "your bank account, checked in your bank's app or statement",
+   "checkPrompt": "Check your bank's app or statement for the incoming transfer before you release.",
+   "arrival": "days",
+   "confirmWindowMin": 1440,
+   "fields": [
+    { "key": "name", "label": "Name on the account", "kind": "text" },
+    { "key": "iban", "label": "IBAN", "kind": "iban" },
+    { "key": "bic", "label": "BIC (optional)", "kind": "account" }
+   ]
+  },
+  {
+   "id": "PAY_BY_MAIL",
+   "whatItIs": "Cash by mail: banknotes sent in a sealed envelope by post or courier.",
+   "landsIn": "the envelope delivered to your mailing address, checked by counting it when it arrives",
+   "checkPrompt": "Open the envelope, count the notes and check the amount before you release.",
+   "arrival": "days",
+   "confirmWindowMin": 1440,
+   "fields": [
+    { "key": "address", "label": "Mailing address", "kind": "postal" }
+   ]
+  },
+  {
+   "id": "CUSTOM",
+   "whatItIs": "A payment method the two traders agree on in chat, for anything not yet in the list.",
+   "landsIn": "wherever the two of you agreed, checked there yourself",
+   "checkPrompt": "Check that the payment arrived the way you agreed before you release.",
+   "arrival": "same-day",
+   "confirmWindowMin": 1440,
+   "fields": [
+    { "key": "details", "label": "Payment details", "kind": "text" }
+   ]
+  }
+ ]
+}

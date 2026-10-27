@@ -10,12 +10,9 @@ import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
+import { VAPID_ENV } from './helpers/vapid.js';
 
-const VAPID = (() => {
-  const ecdh = createECDH('prime256v1');
-  ecdh.setPrivateKey(Buffer.alloc(32, 5));
-  return { X2F_VAPID_PUBLIC: ecdh.getPublicKey().toString('base64url'), X2F_VAPID_PRIVATE: Buffer.alloc(32, 5).toString('base64url') };
-})();
+const VAPID = VAPID_ENV;
 
 const FULL_ENV = {
   X2F_ORIGINS: 'https://x2f.test,http://x2fexample.onion',
@@ -42,7 +39,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql',
+        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -85,7 +82,10 @@ describe('migrations', () => {
         [trader, t, waiting],
       );
 
-      expect(await migrate(db)).toEqual(['010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql']);
+      expect(await migrate(db)).toEqual([
+        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
+        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
+      ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
       expect((await db.query('select usable_from from wallets')).rows).toEqual([{ usable_from: waiting }]);

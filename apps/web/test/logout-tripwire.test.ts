@@ -14,6 +14,14 @@ import { describe, expect, it } from 'vitest';
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 /** The one place allowed to call /v1/logout. */
 const OWNER = 'push/usePush.ts';
+/**
+ * Screens whose "Log out" control ends ANOTHER device's session (`authApi.endSession(id)`, Task 30's
+ * Devices list). That browser's push rows go with its session (migration 105's trigger), and this
+ * browser's subscription is untouched, so `logOut(env)` is not the right call there. They may still
+ * never call /v1/logout or the auth client's logout() themselves.
+ */
+const REMOTE_SESSION_END = new Set(['screens/settings/Devices.tsx']);
+const SHOWS_LOG_OUT = 'shows "Log out" without calling logOut(env)';
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { recursive: true, withFileTypes: true })
@@ -51,9 +59,20 @@ describe('TRIPWIRE (L2): every UI log-out path calls logOut(env)', () => {
     for (const file of sources(SRC)) {
       const rel = relative(SRC, file).split('\\').join('/');
       if (rel === OWNER) continue;
-      for (const why of bypasses(readFileSync(file, 'utf8'))) found.push(`${rel}: ${why}`);
+      for (const why of bypasses(readFileSync(file, 'utf8'))) {
+        if (why === SHOWS_LOG_OUT && REMOTE_SESSION_END.has(rel)) continue;
+        found.push(`${rel}: ${why}`);
+      }
     }
     expect(found, 'use logOut(env) from src/push/usePush.ts for every log-out').toEqual([]);
+  });
+
+  it('each exempt screen exists, ends another session with endSession(id), and bypasses nothing else', () => {
+    for (const rel of REMOTE_SESSION_END) {
+      const code = strip(readFileSync(join(SRC, rel), 'utf8'));
+      expect(code, rel).toMatch(/\bendSession\s*\(/);
+      expect(bypasses(code), rel).toEqual([SHOWS_LOG_OUT]);
+    }
   });
 
   it(`${OWNER}'s logOut unsubscribes before it calls /v1/logout`, () => {
