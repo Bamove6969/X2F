@@ -157,6 +157,29 @@ test('Cancel & get refund sends exactly one event, one signal and one tx set', a
   expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'build-refund']);
 });
 
+test('the relay is down at the tap: the final-alert view resumes the run, Retry finishes the tx set once the relay is back (review I1)', async ({ page }) => {
+  const s = await stubTrade(page, sellerView());
+  await open(page, 'seller-refund', '&escrow=fail');
+  await button(page, 'Cancel & get refund').click();
+  // The API accepted request-refund, so the seller sees the final alert running; the signal failed
+  // and the resume failed again, so the seller is told and offered Retry. No tx set was built.
+  await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
+  await expect(page.getByRole('alert')).toHaveText('That did not work. Try again.');
+  await expect(button(page, 'Retry')).toBeVisible();
+  expect(s.posted).toEqual([{ type: 'request-refund' }]);
+  expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request']);
+  // The relay is back.
+  await page.evaluate(() => {
+    window.__escrowFail = false;
+  });
+  await button(page, 'Retry').click();
+  await expect(button(page, 'Retry')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.getByRole('timer')).toHaveText(/^1[45]:\d\d$/);
+  expect(s.posted).toEqual([{ type: 'request-refund' }]);
+  expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request', 'signal:trade.refund-request', 'build-refund']);
+});
+
 test('a refused request-refund sends no signal and no tx set', async ({ page }) => {
   await stubTrade(page, sellerView());
   await page.route(`**/v1/trades/${CODE}/events`, json({ error: 'too-early' }, 409));

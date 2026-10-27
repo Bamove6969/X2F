@@ -11,6 +11,13 @@
  * accepted the event. A retry resumes at the step that failed (an event the API accepted is never
  * posted twice, a signal that went out is never sent twice), and a second tap while running
  * shares the run in flight.
+ *
+ * The Cancel & get refund run outlives the screen that started it (`refundRun`): once the API has
+ * accepted request-refund the trade is `refund_requested` and the room swaps the "window ended"
+ * view for the "final alert sent" view, which must still finish the signal and the tx set (the
+ * seller's device is the builder; without its set the moderator has nothing to co-sign). Review
+ * 2026-10-27 I1. The cursor lives in this module for the life of the page; a reload loses it
+ * (follow-up: persist it in Task 12's store).
  */
 import type { RefundEscrow } from './refundSlot.js';
 
@@ -56,4 +63,46 @@ export function cancelAndRefundSteps(d: RefundFlowDeps): Steps {
 
 export function extendSteps(d: RefundFlowDeps): Steps {
   return steps([() => d.post({ type: 'extend' }), () => d.escrow.signal('trade.extend')]);
+}
+
+interface RefundRunEntry {
+  steps: Steps;
+  /** The deps of the latest screen that holds the run: a resume calls the room's current escrow, not a stale one. */
+  deps: RefundFlowDeps;
+}
+
+const refundRuns = new Map<string, RefundRunEntry>();
+
+/**
+ * The one Cancel & get refund run for `code`, created on the first call and returned again for the
+ * life of the page, done or not: a done run is a no-op, so a second tap that lands after the run
+ * finished but before the room re-read the trade posts nothing (a trade is refunded once). Each call
+ * records `deps` as the ones the run uses from now on. Tests call `forgetRefundRuns()` between trades.
+ */
+export function refundRun(code: string, deps: RefundFlowDeps): Steps {
+  let entry = refundRuns.get(code);
+  if (entry === undefined) {
+    const e: RefundRunEntry = { deps, steps: null as unknown as Steps };
+    e.steps = cancelAndRefundSteps({
+      post: (ev) => e.deps.post(ev),
+      escrow: { signal: (s) => e.deps.escrow.signal(s), buildRefund: () => e.deps.escrow.buildRefund() },
+    });
+    refundRuns.set(code, e);
+    entry = e;
+  }
+  entry.deps = deps;
+  return entry.steps;
+}
+
+/** The run for `code` if one was started on this page and has not finished; `deps` (when given) are recorded as above. */
+export function pendingRefundRun(code: string, deps?: RefundFlowDeps): Steps | null {
+  const entry = refundRuns.get(code);
+  if (entry === undefined || entry.steps.done()) return null;
+  if (deps !== undefined) entry.deps = deps;
+  return entry.steps;
+}
+
+/** Drops every run (tests). */
+export function forgetRefundRuns(): void {
+  refundRuns.clear();
 }

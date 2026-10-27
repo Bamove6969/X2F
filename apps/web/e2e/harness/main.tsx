@@ -6,7 +6,8 @@
  * `/?screen=seller-refund|final-alert&code=<trade code>`: reads GET /v1/trades/:code (stubbed by
  * the spec with page.route), re-reads it on `refresh()`, and passes the server clock from
  * `serverNow`. The escrow is a recorder: each call is pushed to `window.__escrowCalls`, and
- * `&escrow=fail` makes every call fail. FinalAlert's paid sheet is a labelled stand-in dialog.
+ * `&escrow=fail` makes every call fail until the spec sets `window.__escrowFail = false` (the
+ * relay is back). FinalAlert's paid sheet is a labelled stand-in dialog.
  * Built from this folder only (vite.config.ts), never part of the app's `dist`.
  */
 import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react';
@@ -23,18 +24,19 @@ import { SellerRefund } from '../../src/screens/trade/SellerRefund.js';
 declare global {
   interface Window {
     __escrowCalls?: string[];
+    __escrowFail?: boolean;
   }
 }
 
 const q = new URLSearchParams(window.location.search);
 const screen = q.get('screen');
 const code = q.get('code') ?? '';
-const failing = q.get('escrow') === 'fail';
 
 window.__escrowCalls = [];
+window.__escrowFail = q.get('escrow') === 'fail';
 const record = async (call: string): Promise<void> => {
   window.__escrowCalls?.push(call);
-  if (failing) throw new Error('escrow refused');
+  if (window.__escrowFail) throw new Error('escrow refused');
 };
 const escrow: RefundEscrow = {
   signal: (s) => record(`signal:${s}`),

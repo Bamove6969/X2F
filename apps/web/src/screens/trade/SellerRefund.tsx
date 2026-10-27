@@ -12,12 +12,14 @@
  *
  * The room shows it only once `payBy` has passed by the server clock (`sellerRefundOpen`), and
  * every button asks the @x2f/trade machine again on the server clock (refundRules.ts). After the
- * request the seller sees the final alert running, with its countdown.
+ * request the seller sees the final alert running, with its countdown; if the run that started
+ * it is not finished (the signal or the tx set failed, or the room re-read the trade while it was
+ * in flight) that view resumes it, and offers Retry when it fails again (review 2026-10-27 I1).
  *
  * The header's Chat link is the board's; the chat screen is Task 20's, so it points at the room's
  * chat anchor for now.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
@@ -25,7 +27,7 @@ import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { cancelAndRefundSteps, extendSteps, type Steps } from './refundFlow.js';
+import { extendSteps, pendingRefundRun, refundRun, type RefundFlowDeps, type Steps } from './refundFlow.js';
 import { canExtend, canRequestRefund, finalAlertEnds } from './refundRules.js';
 import { methodOf, publicName, type RefundScreenProps } from './refundSlot.js';
 import { postTradeEvent, TRY_AGAIN, useServerNow, xmrText } from './refundUi.js';
@@ -94,9 +96,10 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const [error, setError] = useState(false);
   const [nudge, setNudge] = useState<string | null>(null);
 
-  const deps = useMemo(() => ({ post: (e: { type: 'extend' } | { type: 'request-refund' }) => postTradeEvent(view.code, e), escrow }), [view.code, escrow]);
-  // One run per trade, and one per extension (the second extension is a new run).
-  const refund = useMemo(() => cancelAndRefundSteps(deps), [deps]);
+  const deps = useFlowDeps(view.code, escrow);
+  // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it;
+  // one extension run per extension (the second extension is a new run).
+  const refund = refundRun(view.code, deps);
   const extend = useMemo(() => extendSteps(deps), [deps, view.extensions]);
 
   const go = async (which: 'refund' | 'extend', run: Steps) => {
@@ -184,10 +187,41 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   );
 }
 
-/** After Cancel & get refund: the buyer's final alert is running (seller, refund_requested). */
-function RefundRequested({ view, serverClock }: RefundScreenProps) {
+function useFlowDeps(code: string, escrow: RefundScreenProps['escrow']): RefundFlowDeps {
+  return useMemo(() => ({ post: (e: { type: 'extend' } | { type: 'request-refund' }) => postTradeEvent(code, e), escrow }), [code, escrow]);
+}
+
+/**
+ * After Cancel & get refund: the buyer's final alert is running (seller, refund_requested). A run
+ * this page started and did not finish (the signal or the tx set) is resumed here on mount; when
+ * it fails again the seller sees why and Retry.
+ */
+function RefundRequested({ view, escrow, serverClock }: RefundScreenProps) {
   const name = publicName(view.counterparty);
   const ends = finalAlertEnds(view);
+  const deps = useFlowDeps(view.code, escrow);
+  const [pending, setPending] = useState<'none' | 'running' | 'failed'>('none');
+
+  const resume = async (run: Steps) => {
+    setPending('running');
+    try {
+      await run();
+      setPending('none');
+    } catch {
+      setPending('failed');
+    }
+  };
+  useEffect(() => {
+    const run = pendingRefundRun(view.code, deps);
+    if (run !== null) void resume(run);
+    // Once per mount and per trade; a changed escrow is picked up by the run through `deps`.
+  }, [view.code]);
+  const onRetry = () => {
+    const run = pendingRefundRun(view.code, deps);
+    if (run !== null) void resume(run);
+    else setPending('none');
+  };
+
   return (
     <div className="x2f-refund" data-screen-part="seller-refund-requested">
       <Header view={view} />
@@ -209,6 +243,16 @@ function RefundRequested({ view, serverClock }: RefundScreenProps) {
           <IfYouCancel view={view} all={false} />
         </section>
       </section>
+      {pending === 'failed' ? (
+        <footer className="x2f-refund__footer">
+          <p role="alert" className="x2f-refund__error">
+            {TRY_AGAIN}
+          </p>
+          <Button variant="primary" onClick={onRetry}>
+            Retry
+          </Button>
+        </footer>
+      ) : null}
     </div>
   );
 }

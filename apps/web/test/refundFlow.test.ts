@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { cancelAndRefundSteps, extendSteps, steps } from '../src/screens/trade/refundFlow.js';
+import { afterEach, describe, expect, it } from 'vitest';
+import { cancelAndRefundSteps, extendSteps, forgetRefundRuns, pendingRefundRun, refundRun, steps } from '../src/screens/trade/refundFlow.js';
 import type { RefundEscrow } from '../src/screens/trade/refundSlot.js';
 
 function fakes(fail: Partial<Record<'post' | 'signal' | 'build', number>> = {}) {
@@ -79,5 +79,43 @@ describe('steps', () => {
     expect(run.done()).toBe(false);
     await run();
     expect(run.done()).toBe(true);
+  });
+});
+
+describe('refundRun: the one Cancel & get refund run per trade, kept across remounts', () => {
+  afterEach(() => forgetRefundRuns());
+
+  it('returns the same run for a trade, done or not: a trade is refunded once per page', async () => {
+    const f = fakes();
+    const run = refundRun('T-1', f);
+    expect(refundRun('T-1', f)).toBe(run);
+    expect(refundRun('T-2', f)).not.toBe(run);
+    await run();
+    expect(run.done()).toBe(true);
+    expect(refundRun('T-1', f)).toBe(run);
+    await refundRun('T-1', f)();
+    expect(f.calls).toEqual(['post:request-refund', 'signal:trade.refund-request', 'build']);
+  });
+
+  it('a run that failed half-way is pending; a finished or unknown trade has none', async () => {
+    const f = fakes({ signal: 1 });
+    const run = refundRun('T-1', f);
+    await expect(run()).rejects.toThrow('signal failed');
+    expect(pendingRefundRun('T-1')).toBe(run);
+    expect(pendingRefundRun('T-9')).toBeNull();
+    await run();
+    expect(pendingRefundRun('T-1')).toBeNull();
+    expect(f.calls).toEqual(['post:request-refund', 'signal:trade.refund-request', 'signal:trade.refund-request', 'build']);
+  });
+
+  it('a resumed run calls the deps it was last given, not the ones it was created with', async () => {
+    const first = fakes({ signal: 1 });
+    const run = refundRun('T-1', first);
+    await expect(run()).rejects.toThrow('signal failed');
+    const second = fakes();
+    expect(refundRun('T-1', second)).toBe(run);
+    await run();
+    expect(first.calls).toEqual(['post:request-refund', 'signal:trade.refund-request']);
+    expect(second.calls).toEqual(['signal:trade.refund-request', 'build']);
   });
 });

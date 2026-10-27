@@ -3,6 +3,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOARD, SERVER_NOW, sellerRequestedView, sellerView } from '../e2e/harness/refundViews.js';
+import { forgetRefundRuns } from '../src/screens/trade/refundFlow.js';
 import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
 import type { RefundEscrow, RefundView } from '../src/screens/trade/refundSlot.js';
 import { fire, render } from './render.js';
@@ -26,7 +27,10 @@ beforeEach(() => {
     }),
   );
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  forgetRefundRuns();
+});
 
 function escrowFake() {
   const calls: string[] = [];
@@ -46,7 +50,14 @@ function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow 
     </MemoryRouter>,
   );
   const button = (name: string) => [...r.host.querySelectorAll('button')].find((b) => b.textContent?.trim() === name) ?? null;
-  return { ...r, ...e, refresh, button };
+  /** The room re-read the trade: the same screen with the new view (same escrow, same refresh). */
+  const show = (next: RefundView) =>
+    r.rerender(
+      <MemoryRouter>
+        <SellerRefund view={next} escrow={e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+  return { ...r, ...e, refresh, button, show };
 }
 
 const settle = async () => {
@@ -179,6 +190,72 @@ describe('SellerRefund: Nudge', () => {
     fire(m.button('Nudge mira.k')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(m.host.querySelector('[role="status"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+  });
+});
+
+describe('SellerRefund: a refund half done when the view flips to refund_requested (review I1)', () => {
+  /** An escrow whose named calls fail the first `times` they are made. */
+  function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
+    const calls: string[] = [];
+    const left = { signal: fail.signal ?? 0, build: fail.build ?? 0 };
+    const maybe = async (k: keyof typeof left, name: string) => {
+      calls.push(name);
+      if (left[k] > 0) {
+        left[k] -= 1;
+        throw new Error(`${k} failed`);
+      }
+    };
+    const escrow: RefundEscrow = {
+      signal: vi.fn((s: string) => maybe('signal', `signal:${s}`)),
+      buildRefund: vi.fn(() => maybe('build', 'build')),
+    };
+    return { calls, escrow };
+  }
+
+  it('the signal fails once: once the request is accepted and the view flips, the run resumes and builds exactly once', async () => {
+    const e = flakyEscrow({ signal: 1 });
+    const m = mount(sellerView(), { escrow: e.escrow });
+    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(requests).toEqual([{ path: EVENTS, body: { type: 'request-refund' } }]);
+    expect(e.calls).toEqual(['signal:trade.refund-request']);
+    expect(m.refresh).toHaveBeenCalled();
+    // The API accepted request-refund, so the re-read view is refund_requested.
+    m.show(sellerRequestedView());
+    await settle();
+    expect(m.host.textContent).toContain('Final alert sent');
+    expect(e.calls).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request', 'build']);
+    expect(e.escrow.buildRefund).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(1);
+    expect(m.host.querySelector('[role="alert"]')).toBeNull();
+    expect(m.button('Retry')).toBeNull();
+  });
+
+  it('the build fails on the resume too: it says so with Retry, and Retry builds once more without a second event or signal', async () => {
+    const e = flakyEscrow({ signal: 1, build: 1 });
+    const m = mount(sellerView(), { escrow: e.escrow });
+    fire(m.button('Cancel & get refund')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    m.show(sellerRequestedView());
+    await settle();
+    expect(e.calls).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request', 'build']);
+    expect(m.host.querySelector('[role="alert"]')?.textContent).toBe('That did not work. Try again.');
+    const retry = m.button('Retry')!;
+    expect(retry).not.toBeNull();
+    fire(retry, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(e.escrow.buildRefund).toHaveBeenCalledTimes(2);
+    expect(e.escrow.signal).toHaveBeenCalledTimes(2);
+    expect(requests).toHaveLength(1);
+    expect(m.host.querySelector('[role="alert"]')).toBeNull();
+    expect(m.button('Retry')).toBeNull();
+  });
+
+  it('a fresh refund_requested view with no run on this device (a reload) resumes nothing', async () => {
+    const m = mount(sellerRequestedView());
+    await settle();
+    expect(m.calls).toEqual([]);
+    expect(m.button('Retry')).toBeNull();
   });
 });
 
