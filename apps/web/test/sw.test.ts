@@ -60,22 +60,16 @@ beforeEach(() => {
   h = load();
 });
 
-describe('sw.js final-alert seen-receipt', () => {
-  it('after showing a trade push, posts the receipt (same origin, no body)', async () => {
-    await h.dispatch('push', pushWith(TRADE));
+describe('sw.js posts no seen-receipt (lead 2026-10-27: a shown notification is not proof it was read)', () => {
+  it.each([TRADE, NUDGE, ALERT])('shows %s and makes no request', async (text) => {
+    await h.dispatch('push', pushWith(text));
     expect(h.shown).toHaveLength(1);
-    expect(h.fetched).toEqual([{ url: '/v1/account/final-alert-seen', init: { method: 'POST', credentials: 'same-origin' } }]);
-  });
-
-  it('sends no receipt for a nudge', async () => {
-    await h.dispatch('push', pushWith(NUDGE));
     expect(h.fetched).toEqual([]);
   });
 
-  it('a failed receipt still shows the notification and does not reject', async () => {
-    h.fetchFails = true;
-    await h.dispatch('push', pushWith(TRADE));
-    expect(h.shown).toHaveLength(1);
+  it('names no API route at all', () => {
+    expect(SOURCE).not.toContain('/v1/');
+    expect(SOURCE).not.toContain('fetch(');
   });
 });
 

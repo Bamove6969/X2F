@@ -92,7 +92,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
 
   /**
    * `POST /v1/trades/:code/final-alert-seen` → 204: the buyer's device has shown the final alert
-   * (Task 25's FinalAlert, once per finalAlertAt, only while the alert is on screen). The only way
+   * (Task 25's FinalAlert, once per finalAlertAt, only while the alert is on screen; the service
+   * worker posts nothing, since a notification in the tray is not proof it was read). The only way
    * `final_alert_delivered` becomes true; a stream being open or a push service answering 201
    * never does (P3-I13). `final_alert_seen_at` keeps the first receipt's time (Task 10 counts the
    * buyer's 15 minutes from it). Idempotent. An unknown code and someone else's trade get the same
@@ -113,21 +114,6 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       [t.code, req.auth.accountId, clock()],
     );
     if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
-    return reply.code(204).send();
-  });
-
-  /**
-   * `POST /v1/account/final-alert-seen` → 204: the service worker has shown a trade push. Pushes
-   * carry no trade code (spec 4), so this marks every trade where the caller is the buyer and a
-   * refund is requested. Idempotent; touches no other account's trades.
-   */
-  app.post('/v1/account/final-alert-seen', { preHandler: session }, async (req, reply) => {
-    const { db, clock } = req.server.deps;
-    await db.query(
-      `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $2)
-        where buyer_account_id = $1 and state = 'refund_requested' and final_alert_at is not null and final_alert_delivered is not true`,
-      [req.auth.accountId, clock()],
-    );
     return reply.code(204).send();
   });
 

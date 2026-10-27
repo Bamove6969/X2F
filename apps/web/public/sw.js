@@ -1,6 +1,7 @@
 // X2F service worker (Plan 3 Task 19): Web Push only. Served from this origin at /sw.js (CSP
-// worker-src 'self'); it caches nothing. Its one request: after showing a trade push it tells the
-// API the final alert was seen (POST /v1/account/final-alert-seen, same origin, no body).
+// worker-src 'self'); it caches nothing and makes no request. It posts no final-alert seen-receipt:
+// a notification in the tray is not proof the buyer read it (lead 2026-10-27). That receipt comes
+// only from Task 25's FinalAlert, once the alert is on screen in the app.
 //
 // A push can only ever show one of three fixed texts (the nudge, the trade change, the owner's
 // alert). Whatever the payload says, anything else is shown as the generic trade text, so no code,
@@ -32,11 +33,6 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       await self.registration.showNotification('X2F', { body, tag });
-      // The seen-receipt (P3-I13): only a shown trade push counts. A failure leaves the trade's
-      // final_alert_delivered unset, which moderation treats as not seen.
-      if (body === TRADE) {
-        await self.fetch('/v1/account/final-alert-seen', { method: 'POST', credentials: 'same-origin' }).catch(() => undefined);
-      }
     })(),
   );
 });

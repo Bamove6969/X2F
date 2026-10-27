@@ -42,7 +42,6 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/price',
   'GET /v1/trades/:code',
   'POST /v1/account/blocks',
-  'POST /v1/account/final-alert-seen',
   'POST /v1/account/push',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',

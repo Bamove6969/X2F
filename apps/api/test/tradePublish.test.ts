@@ -122,10 +122,9 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     setNow(first);
     expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
     expect(await seenAt(t.code)).toEqual(first);
-    // A second receipt (another tab, the service worker) never moves the time: Task 10 counts 15 min from the first.
+    // A second receipt (another tab) never moves the time: Task 10 counts 15 min from the first.
     setNow(new Date(first.getTime() + 60_000));
     expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
-    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
     expect(await seenAt(t.code)).toEqual(first);
     for (const who of [buyer, seller]) {
       const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
@@ -134,14 +133,13 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     }
   });
 
-  it("the service worker's receipt records the time too", async () => {
+  it('there is no account-wide receipt: a notification in the tray is not proof the alert was read (lead 2026-10-27)', async () => {
     const { seller, buyer, t } = await refundable();
     await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
-    const at = new Date(deps.clock().getTime() + 60_000);
-    setNow(at);
-    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
-    expect(await seenAt(t.code)).toEqual(at);
-    expect(await delivered(t.code)).toBe(true);
+    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(404);
+    await settled();
+    expect(await delivered(t.code)).toBeNull();
+    expect(await seenAt(t.code)).toBeNull();
   });
 
   it('the seller cannot set it (409 wrong-party)', async () => {
@@ -196,19 +194,6 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('wrong-state');
     expect(await delivered(t.code)).toBeNull();
-  });
-
-  it("the service worker's account receipt marks only the caller's refund-requested buyer trades", async () => {
-    const a = await refundable();
-    const b = await refundable();
-    await a.seller.browser.post(`/v1/trades/${a.t.code}/events`, { type: 'request-refund' });
-    await b.seller.browser.post(`/v1/trades/${b.t.code}/events`, { type: 'request-refund' });
-    // The seller of A calling it marks nothing of A (they are not its buyer).
-    expect((await a.seller.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
-    expect(await delivered(a.t.code)).toBeNull();
-    expect((await a.buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
-    expect(await delivered(a.t.code)).toBe(true);
-    expect(await delivered(b.t.code)).toBeNull();
   });
 });
 
