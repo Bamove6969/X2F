@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { PostOffer } from './screens/PostOffer.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -73,7 +74,7 @@ export function App() {
         <Route element={<Layout nav={false} />}>
           <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy/:methodId" element={<OfferList side="buy" copy={BUY_COPY} />} />
-          <Route path="/post" element={<Screen name="post" />} />
+          <Route path="/post" element={<PostOffer />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
