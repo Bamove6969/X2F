@@ -94,6 +94,15 @@ function redirect(pathname: string, query: string): void {
   go(`${pathname}?${query}${query ? '&' : ''}returnTo=${returnTo}`);
 }
 
+/**
+ * Sends the page to `/login` with `returnTo` = here (Task 30): an expired session anywhere routes
+ * to the login screen, which returns to this screen once the person logs back in. A no-op on
+ * `/login` itself, so a login call that is refused never loops.
+ */
+export function goLogin(): void {
+  redirect('/login', '');
+}
+
 const json = (body: unknown) => JSON.stringify(body, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
 
 /**
