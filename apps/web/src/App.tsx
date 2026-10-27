@@ -5,6 +5,9 @@ import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
+import { BackupLogin } from './screens/auth/BackupLogin.js';
+import { Login } from './screens/auth/Login.js';
+import { Security } from './screens/settings/Security.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -76,8 +79,9 @@ export function App() {
           <Route path="/wallets" element={<Screen name="wallets" />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
           <Route path="/terms" element={<Screen name="terms" />} />
-          <Route path="/login" element={<Screen name="login" />} />
-          <Route path="/settings/security" element={<Screen name="security" />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/login/backup" element={<BackupLogin />} />
+          <Route path="/settings/security" element={<Security />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>
