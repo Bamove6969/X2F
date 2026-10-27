@@ -57,6 +57,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import { useLocation, useParams } from 'react-router';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
+import { readConfirmed } from '../quote/confirmed.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 
 export interface TradeScreenProps {
@@ -176,7 +177,12 @@ function StatusCard({ view }: { view: TradeView }) {
 export function TradeRoom() {
   const { code = '' } = useParams();
   const location = useLocation();
-  const confirmed = (location.state as { confirmed?: ConfirmedTrade } | null)?.confirmed;
+  // What the user confirmed on the take or accept screen: the navigation's history state, else the
+  // copy the quote or the accept sheet stored in this tab before navigating (a reload drops the
+  // state). Task 12 needs it only for the first start of the trade on this device.
+  const fromState = (location.state as { confirmed?: ConfirmedTrade } | null)?.confirmed;
+  const stored = useMemo(() => (fromState ? null : readConfirmed(code)), [fromState, code]);
+  const confirmed = fromState ?? stored ?? undefined;
   const escrow = useTradeEscrow(code, confirmed);
   const { load, refresh } = useTradeView(code);
   const wide = useWide();
