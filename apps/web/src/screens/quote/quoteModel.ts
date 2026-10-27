@@ -91,7 +91,10 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
   if (total < offer.minFiatCents) return { kind: 'too-low', rate };
   if (total > offer.maxFiatCents) return { kind: 'too-high', rate };
 
-  const usd = offer.currency !== 'USD' && market?.usdCentsPerXmr != null ? { currency: 'USD', centsPerXmr: market.usdCentsPerXmr } : null;
+  // The US-dollar figures are the trade's own figures (at the offer's rate, margin or fixed price
+  // included) converted at the exchange rate the feed implies, usdCentsPerXmr / centsPerXmr: never
+  // the raw market XMR/USD, which would leave out the margin (Task 18 review, item 3).
+  const toUsd = offer.currency !== 'USD' && market?.usdCentsPerXmr != null ? (cents: bigint) => mulDivHalfUp(cents, market.usdCentsPerXmr!, market.centsPerXmr) : null;
   return {
     kind: 'ok',
     rate,
@@ -99,9 +102,14 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
     fiatCents: total,
     receiveAtomic: amountAtomic,
     sellerFundsAtomic: escrowPlan({ amountAtomic, poster: posterRole(offer.side) }).sellerFundsAtomic,
-    usdCents: usd ? fiatCents(amountAtomic, usd) : null,
-    usdPerXmrCents: usd ? usd.centsPerXmr : null,
+    usdCents: toUsd ? toUsd(total) : null,
+    usdPerXmrCents: toUsd ? toUsd(rate.centsPerXmr) : null,
   };
+}
+
+/** a * b / d, rounded half up (bigint only; the same rounding as the rest of the quote). */
+function mulDivHalfUp(a: bigint, b: bigint, d: bigint): bigint {
+  return (a * b + d / 2n) / d;
 }
 
 /** Money with no cents shown when there are none: the board's "$50 to $1,500". */

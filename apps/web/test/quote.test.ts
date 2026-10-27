@@ -111,6 +111,25 @@ describe('quote', () => {
     const usd = quote({ offer: SELL_AD, market: MARKET_USD, text: '300', unit: 'fiat' });
     expect(usd.kind === 'ok' && usd.usdCents).toBeNull();
   });
+
+  it("the US-dollar figures are the trade's own figures at the exchange rate: the offer's margin or fixed price applies to them too", () => {
+    // A EUR market offer at +5%: €300.00 / XMR market, €315.00 / XMR offered; $330.00 / XMR market.
+    const margin = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'market', marginBps: 500 } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '315', unit: 'fiat' });
+    if (margin.kind !== 'ok') throw new Error('expected a quote');
+    expect(margin.rate.centsPerXmr).toBe(31_500n);
+    expect(margin.amountAtomic).toBe(1_000_000_000_000n);
+    // 1 XMR at the offer's €315.00 is $346.50 / XMR in dollars, and the €315.00 total is about $346.50.
+    expect(margin.usdPerXmrCents).toBe(34_650n);
+    expect(margin.usdCents).toBe(34_650n);
+    // A fixed-price EUR offer far from market: €400.00 / XMR is $440.00 / XMR in dollars.
+    const fixed = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: 40_000n } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '200', unit: 'fiat' });
+    if (fixed.kind !== 'ok') throw new Error('expected a quote');
+    expect(fixed.usdPerXmrCents).toBe(44_000n);
+    expect(fixed.usdCents).toBe(22_000n);
+    // Half up, as every other figure: €1.00 at €300.00 and $330.00 is $1.10; €0.01 at €3.00 / $1.00 is $0.00 (0.33 cents).
+    const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 0n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '1', unit: 'fiat' });
+    expect(tiny.kind === 'ok' && tiny.usdCents).toBe(110n);
+  });
 });
 
 describe('amount text', () => {
