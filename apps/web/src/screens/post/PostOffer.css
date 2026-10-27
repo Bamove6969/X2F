@@ -5,8 +5,9 @@
 .post {
   display: flex;
   flex-direction: column;
-  /* The board's frame: the form scrolls inside the screen while Post offer stays on it. */
-  height: 100dvh;
+  /* The board's frame: the page scrolls as a page (so every text is on it for the parity harness and
+     a phone can collapse its address bar) while Post offer stays on screen in a sticky footer. */
+  min-height: 100dvh;
   max-width: 640px;
   margin: 0 auto;
 }
@@ -14,6 +15,12 @@
 .post-header,
 .post-footer {
   flex-shrink: 0;
+}
+
+.post-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--x2f-ground);
 }
 
 .post-header {
@@ -43,7 +50,6 @@
 .post-main {
   flex-grow: 1;
   min-height: 0;
-  overflow-y: auto;
   padding: var(--x2f-space-4);
   display: flex;
   flex-direction: column;
@@ -76,27 +82,22 @@
   gap: var(--x2f-space-2);
 }
 
-.post-choice {
+/* The board's two-up choices (I want to, Your price), drawn by the shared RadioChips radio group. */
+.post-choices .x2f-chip-button {
   height: 48px;
+  padding: 0;
   border-radius: var(--x2f-radius-md);
-  border: 1px solid var(--x2f-line);
-  background: transparent;
   color: var(--x2f-ink-muted);
-  font-family: inherit;
   font-size: 16px;
   font-weight: 600;
-  cursor: pointer;
 }
 
-.post-choice[aria-checked='true'] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface-raised);
+.post-choices .x2f-chip-button[aria-checked='true'] {
   color: var(--x2f-ink);
 }
 
-.post-choice--small {
+.post-choices--small .x2f-chip-button {
   height: 44px;
-  font-size: 16px;
 }
 
 .post-field {
@@ -105,6 +106,10 @@
   gap: 6px;
   font-size: 13px;
   color: var(--x2f-ink-muted);
+}
+
+.post-load-failed {
+  font-size: 15px;
 }
 
 .post-field select,

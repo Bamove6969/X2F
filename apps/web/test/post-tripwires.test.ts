@@ -1,7 +1,10 @@
 // TRIPWIRES for the API shapes PostOffer (Task 21) assumes before the API tasks are on the main
-// line. src/screens/post/api.ts parses each response strictly, so a renamed or missing field also
-// fails loudly at run time. Each tripwire fails once the real module lands: then check the real
-// shape against src/screens/post/{api,offerForm}.ts and the stubs in e2e/post.spec.ts, fix any
+// line. (Task 3's GET /v1/methods and GET /v1/price are on the line since 2026-10-26 and were checked
+// against src/screens/post/api.ts on 2026-10-27: same fields, string bigints, 503 price-unavailable,
+// and the 39 two-decimal currencies of CURRENCY_EXPONENTS match the parsers; its tripwire is retired.)
+// src/screens/post/api.ts parses each response strictly, so a renamed or missing field also fails
+// loudly at run time. Each tripwire fails once the real module lands: then check the real shape
+// against src/screens/post/{api,offerForm}.ts and the stubs in e2e/post.spec.ts, fix any
 // difference, and delete that tripwire.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -14,19 +17,13 @@ describe('Task 21 guesses still stand in for missing API routes', () => {
   it('NEEDS_TASK_4: the POST /v1/offers body and answer are guessed from the plan', () => {
     // Guessed (plan Task 4): POST /v1/offers { side; methodId; currency; pricing: { mode: 'market';
     // marginBps } | { mode: 'fixed'; centsPerXmr: string }; minFiatCents: string; maxFiatCents:
-    // string; minTrades: 0|5|10|50; terms } → 2xx (the body is not read). Refusals shown as text:
+    // string; minTrades: 0|5|10|50; terms; country? } → 2xx (the body is not read). `country` (ISO
+    // 3166-1 alpha-2, the same field name as POST /v1/method-suggestions) is sent only for a
+    // gift-card method, which must name the card's country (Revision 2026-10-21; plan Task 4
+    // Revision 2026-10-27: the API refuses a gift-card offer without it). Refusals shown as text:
     // trading-hold, trading-paused, method-unavailable; no-wallet goes to Add a wallet (client.ts);
-    // 401 not-authenticated goes to setup. Also open: a gift-card offer must name the card's country
-    // and currency (Revision 2026-10-21), and the body has no field for the country yet.
+    // 401 not-authenticated goes to setup.
     expect(has('apps/api/src/offers/routes.ts'), 'Task 4 offers landed: check validate() and the POST stubs against it').toBe(false);
-  });
-
-  it('NEEDS_TASK_3: /v1/methods and /v1/price are taken from the unmerged Task 3 branch', () => {
-    // From wip/second-p3-t3: GET /v1/methods?side&currency → { live; all: MethodRow[] }, MethodRow =
-    // { id; name; group; giftCard; offers; bestRate } (unavailable methods already left out);
-    // GET /v1/price?currency → { currency; centsPerXmr: string; exponent; at; usdCentsPerXmr: string },
-    // 503 price-unavailable. POST_CURRENCIES copies the two-decimal codes of its CURRENCY_EXPONENTS.
-    expect(has('apps/api/src/price/routes.ts'), 'Task 3 price landed: check parsePrice, parseMethods and POST_CURRENCIES').toBe(false);
   });
 
   it('NEEDS_TASK_28: logged out, PostOffer sends the user to /setup?returnTo=…', () => {

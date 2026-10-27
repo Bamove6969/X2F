@@ -1,7 +1,9 @@
 // PostOffer's form logic (Task 21; board PostOffer.dc.html; spec 2.2 step 5, 2.3, 11.6). Fiat is
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
+import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
+import { isCountryCode } from './countries.js';
 
 export const MIN_TRADES = [0, 5, 10, 50] as const;
 export type MinTrades = (typeof MIN_TRADES)[number];
@@ -19,6 +21,8 @@ export interface FormState {
   max: string;
   terms: string;
   minTrades: MinTrades;
+  /** The card's country (ISO 3166-1 alpha-2) for a gift-card method; '' until chosen. */
+  country: string;
 }
 
 /** The board's starting state: Sell XMR, USD, market +0.5%. */
@@ -33,18 +37,16 @@ export const DEFAULT_FORM: FormState = {
   max: '',
   terms: '',
   minTrades: 0,
+  country: '',
 };
 
 /**
- * The two-decimal currencies Task 3's feed prices (its CURRENCY_EXPONENTS), the board's USD, EUR
- * and GBP first. Zero- and three-decimal ones (JPY, KRW, CLP, VND, KWD, BHD) wait for formatFiat.
+ * The one currency list, shared with the browse screens (lead, Task 21 review 2026-10-27): a poster
+ * returns to the list that shows the offer's currency, so the picker here offers exactly what the
+ * lists can show. It grows with browse's CURRENCIES (all two-decimal until formatFiat takes the
+ * currency's exponent; Task 3's feed prices 39 two-decimal currencies).
  */
-export const POST_CURRENCIES: readonly string[] = [
-  'USD', 'EUR', 'GBP',
-  'AED', 'ARS', 'AUD', 'BDT', 'BMD', 'BRL', 'CAD', 'CHF', 'CNY', 'CZK', 'DKK', 'GEL', 'HKD', 'HUF', 'IDR', 'ILS',
-  'INR', 'LKR', 'MMK', 'MXN', 'MYR', 'NGN', 'NOK', 'NZD', 'PHP', 'PKR', 'PLN', 'RUB', 'SAR', 'SEK', 'SGD', 'THB',
-  'TRY', 'TWD', 'UAH', 'ZAR',
-];
+export const POST_CURRENCIES: readonly string[] = CURRENCIES;
 
 export const FIXED_STALE_WARNING = 'A fixed price goes stale when the market moves.';
 export const PRICE_UNAVAILABLE = 'Price unavailable right now.';
@@ -52,6 +54,11 @@ export const PRICE_UNAVAILABLE = 'Price unavailable right now.';
 export const FEE_SENTENCE = 'You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.';
 /** Owner, 2026-10-21 (spec 11.8): the one bold warning on gift-card offers. */
 export const GIFT_CARD_WARNING = 'When trading Monero for gift cards, you accept all risks and responsibilities that come with gift cards. Buyer beware.';
+
+/** The inline refusal when a gift-card offer names no country (Revision 2026-10-21). */
+export const COUNTRY_REQUIRED = "Choose the card's country.";
+/** Shown with a Retry button when GET /v1/methods fails, instead of an empty picker. */
+export const METHODS_FAILED = "The payment methods didn't load.";
 
 /** The board's margin limits (±10%) and step (0.1%). */
 export const MARGIN_LIMIT_BPS = 1000;
@@ -116,6 +123,28 @@ export function formatAmount(cents: bigint, currency: string): string {
   return money(cents, currency, cents % 100n === 0n ? 0 : 2);
 }
 
+/** A fixed price this far off the market (in bps) gets a caution line; this far gets refused. */
+export const FIXED_CAUTION_BPS = 1000n;
+export const FIXED_REFUSE_BPS = 5000n;
+
+export type FixedPriceCheck = { kind: 'ok' } | { kind: 'caution'; text: string } | { kind: 'refuse'; text: string };
+
+/**
+ * A fixed price against the market (Task 21 review 2026-10-27): within 10% nothing is said; from 10%
+ * off, a caution line with the percentage and the direction (paired with a caution icon by the
+ * screen); from 50% off (a missed decimal point, a stale number) the price is refused inline, naming
+ * the market price. `fixed` and `market` are minor units of `currency`, market > 0.
+ */
+export function fixedPriceCheck(fixed: bigint, market: bigint, currency: string): FixedPriceCheck {
+  const diff = fixed > market ? fixed - market : market - fixed;
+  const bps = (diff * 10_000n) / market;
+  if (bps < FIXED_CAUTION_BPS) return { kind: 'ok' };
+  if (bps >= FIXED_REFUSE_BPS) return { kind: 'refuse', text: `Check your price: the market is ${formatPrice(market, currency)}` };
+  const pct = Number(bps) / 100;
+  const shown = Number.isInteger(pct) ? `${pct}%` : `${pct.toFixed(1)}%`;
+  return { kind: 'caution', text: `Caution: that is ${shown} ${fixed > market ? 'above' : 'below'} the market price` };
+}
+
 export function previewLine(side: Side, methodName: string, currency: string, minTrades: MinTrades): string {
   const base = `${side === 'sell' ? 'Selling XMR' : 'Buying XMR'} via ${methodName} · ${currency} · you`;
   return minTrades === 0 ? base : `${base} · ${minTrades}+ completed trades`;
@@ -126,11 +155,20 @@ export function afterPostPath(side: Side, methodId: string, currency: string): s
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
 
-export type FieldError = 'method' | 'min' | 'max' | 'fixed';
+export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed';
 
-export function validate(f: FormState): { errors: Partial<Record<FieldError, string>>; body?: PostOfferBody } {
+export interface ValidateContext {
+  /** The chosen method is a gift card, so the card's country is required and sent. */
+  giftCard?: boolean;
+  /** The market price per XMR in the form's currency, when the feed has one (fixed-price sanity). */
+  market?: bigint | null;
+}
+
+export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Partial<Record<FieldError, string>>; body?: PostOfferBody } {
   const errors: Partial<Record<FieldError, string>> = {};
   if (f.methodId === '') errors.method = 'Choose a payment method.';
+  const giftCard = ctx.giftCard === true;
+  if (giftCard && !isCountryCode(f.country)) errors.country = COUNTRY_REQUIRED;
   const min = parseAmount(f.min);
   const max = parseAmount(f.max);
   const amountError = 'Enter an amount, like 50 or 2,000.';
@@ -141,6 +179,10 @@ export function validate(f: FormState): { errors: Partial<Record<FieldError, str
   if (f.priceMode === 'fixed') {
     fixed = parseAmount(f.fixed);
     if (fixed === null || fixed === 0n) errors.fixed = 'Enter your price per XMR.';
+    else if (ctx.market !== undefined && ctx.market !== null && ctx.market > 0n) {
+      const check = fixedPriceCheck(fixed, ctx.market, f.currency);
+      if (check.kind === 'refuse') errors.fixed = check.text;
+    }
   }
   if (Object.keys(errors).length > 0) return { errors };
   return {
@@ -154,6 +196,7 @@ export function validate(f: FormState): { errors: Partial<Record<FieldError, str
       maxFiatCents: max!,
       minTrades: f.minTrades,
       terms: f.terms.trim(),
+      ...(giftCard ? { country: f.country } : {}),
     },
   };
 }
@@ -217,7 +260,8 @@ export function loadDraft(storage: Storage): FormState | null {
     str(d.min, 32) &&
     str(d.max, 32) &&
     str(d.terms, 4000) &&
-    MIN_TRADES.includes(d.minTrades as MinTrades);
+    MIN_TRADES.includes(d.minTrades as MinTrades) &&
+    (d.country === '' || isCountryCode(d.country));
   if (!ok) return null;
   return {
     side: d.side as Side,
@@ -230,5 +274,6 @@ export function loadDraft(storage: Storage): FormState | null {
     max: d.max as string,
     terms: d.terms as string,
     minTrades: d.minTrades as MinTrades,
+    country: d.country as string,
   };
 }

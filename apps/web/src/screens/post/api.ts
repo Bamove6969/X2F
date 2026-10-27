@@ -1,6 +1,7 @@
 // The API answers PostOffer reads, parsed strictly so a renamed or missing field fails loudly.
-// Shapes: GET /v1/price and GET /v1/methods from Task 3 (wip/second-p3-t3, not merged yet);
-// POST /v1/offers from the plan's Task 4. test/post-tripwires.test.ts fails when those land.
+// Shapes: GET /v1/price and GET /v1/methods from Task 3 (apps/api/src/price, apps/api/src/methods;
+// on the main line, checked against these parsers 2026-10-27); POST /v1/offers from the plan's
+// Task 4. test/post-tripwires.test.ts fails when Task 4 lands.
 import { api } from '../../api/client.js';
 
 /** GET /v1/price?currency: the market price in the currency's minor units, and the same XMR in US cents. */
@@ -30,6 +31,8 @@ export interface PostOfferBody {
   maxFiatCents: bigint;
   minTrades: 0 | 5 | 10 | 50;
   terms: string;
+  /** The card's country for a gift-card method (ISO 3166-1 alpha-2, Revision 2026-10-21); absent otherwise. */
+  country?: string;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === 'object' && !Array.isArray(v);

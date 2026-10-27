@@ -3,22 +3,26 @@
 // currency (spec 11.6); the minimum completed trades is shown openly in the preview (spec 2.3).
 // The form is kept in sessionStorage, so a signed-out poster (sent to setup) or one with no
 // wallet (sent to Add a wallet by the API client) comes back to it filled in.
-import { useEffect, useId, useMemo, useState, type ChangeEvent } from 'react';
+import { useEffect, useId, useMemo, useState, type ChangeEvent, type ReactNode } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
-import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote } from './post/api.js';
+import { RadioChips } from './browse/RadioChips.js';
+import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
+import { COUNTRIES } from './post/countries.js';
 import {
   DEFAULT_FORM,
   FEE_SENTENCE,
   FIXED_STALE_WARNING,
   GIFT_CARD_WARNING,
+  METHODS_FAILED,
   MIN_TRADES,
   POST_CURRENCIES,
   PRICE_UNAVAILABLE,
   afterPostPath,
   clearDraft,
+  fixedPriceCheck,
   formatAmount,
   formatMoney,
   formatPrice,
@@ -36,11 +40,21 @@ import {
   type FieldError,
   type FormState,
   type MinTrades,
+  type PriceMode,
 } from './post/offerForm.js';
 import './post/PostOffer.css';
 
 /** Re-asks the feed this often, so "right now" stays true while the form is open. */
 const PRICE_REFRESH_MS = 60_000;
+
+const SIDES: readonly { id: Side; label: string }[] = [
+  { id: 'sell', label: 'Sell XMR' },
+  { id: 'buy', label: 'Buy XMR' },
+];
+const MODES: readonly { id: PriceMode; label: string }[] = [
+  { id: 'market', label: 'Market ± %' },
+  { id: 'fixed', label: 'Fixed price per XMR' },
+];
 
 function storage(): Storage | null {
   try {
@@ -69,6 +83,12 @@ function initialForm(search: string): FormState {
   };
 }
 
+/** Where Close goes: the Buy side when the poster came from it (router state `from`, set by the tab bar), else Sell. */
+export function closePath(state: unknown): string {
+  const from = state !== null && typeof state === 'object' ? (state as { from?: unknown }).from : undefined;
+  return typeof from === 'string' && /^\/buy(\/|\?|$)/.test(from) ? '/buy' : '/sell';
+}
+
 function usePrice(currency: string): PriceQuote | null | undefined {
   const [quote, setQuote] = useState<{ currency: string; q: PriceQuote | null } | undefined>();
   useEffect(() => {
@@ -89,11 +109,31 @@ function usePrice(currency: string): PriceQuote | null | undefined {
   return quote?.currency === currency ? quote.q : undefined;
 }
 
+type Methods = { kind: 'loading' } | { kind: 'ready'; list: PickMethod[] } | { kind: 'failed' };
+
+/** The catalog list (`all`), read once per visit and again on Retry; it does not depend on side or currency. */
+function useMethods(): [Methods, () => void] {
+  const [methods, setMethods] = useState<Methods>({ kind: 'loading' });
+  const [attempt, setAttempt] = useState(0);
+  useEffect(() => {
+    let live = true;
+    setMethods({ kind: 'loading' });
+    fetchMethods(DEFAULT_FORM.side, DEFAULT_FORM.currency).then(
+      (m) => live && setMethods({ kind: 'ready', list: m }),
+      () => live && setMethods({ kind: 'failed' }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [attempt]);
+  return [methods, () => setAttempt((n) => n + 1)];
+}
+
 export function PostOffer() {
   const location = useLocation();
   const navigate = useNavigate();
   const [form, setForm] = useState<FormState>(() => initialForm(location.search));
-  const [methods, setMethods] = useState<PickMethod[] | null>(null);
+  const [methods, retryMethods] = useMethods();
   const [errors, setErrors] = useState<Partial<Record<FieldError, string>>>({});
   const [refusal, setRefusal] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -107,23 +147,12 @@ export function PostOffer() {
     if (s) clearDraft(s);
   }, []);
 
-  useEffect(() => {
-    let live = true;
-    fetchMethods(form.side, form.currency).then(
-      (m) => live && setMethods(m),
-      () => live && setMethods([]),
-    );
-    return () => {
-      live = false;
-    };
-    // The catalog list (`all`) does not depend on side or currency; one read per visit is enough.
-  }, []);
-
   // A method that is not on the list (unavailable, P3-I20, or unknown) is never kept selected.
-  const method = methods?.find((m) => m.id === form.methodId) ?? null;
+  const list = methods.kind === 'ready' ? methods.list : null;
+  const method = list?.find((m) => m.id === form.methodId) ?? null;
   useEffect(() => {
-    if (methods && form.methodId !== '' && !method) setForm((f) => ({ ...f, methodId: '' }));
-  }, [methods, method, form.methodId]);
+    if (list && form.methodId !== '' && !method) setForm((f) => ({ ...f, methodId: '' }));
+  }, [list, method, form.methodId]);
 
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
@@ -132,22 +161,26 @@ export function PostOffer() {
   const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
 
   const market = quote ? quote.centsPerXmr : null;
+  const fixedCents = useMemo(() => {
+    const p = parseAmount(form.fixed);
+    return p !== null && p > 0n ? p : null;
+  }, [form.fixed]);
   const yourPrice = useMemo(() => {
-    if (form.priceMode === 'fixed') {
-      const p = parseAmount(form.fixed);
-      return p !== null && p > 0n ? p : null;
-    }
+    if (form.priceMode === 'fixed') return fixedCents;
     return market === null ? null : priceWithMargin(market, form.marginBps);
-  }, [form.priceMode, form.fixed, form.marginBps, market]);
+  }, [form.priceMode, fixedCents, form.marginBps, market]);
+  // The fixed price against the market: a caution line from 10% off; from 50% off, Post offer refuses it.
+  const sanity = form.priceMode === 'fixed' && fixedCents !== null && market !== null && market > 0n ? fixedPriceCheck(fixedCents, market, form.currency) : null;
   const nonUsd = form.currency !== 'USD';
   const usd = (cents: bigint) => (quote && nonUsd ? formatPrice(usdValue(cents, quote), 'USD') : null);
 
   const min = parseAmount(form.min);
   const max = parseAmount(form.max);
   const range = min !== null && max !== null ? `${formatAmount(min, form.currency)} – ${formatAmount(max, form.currency)}` : 'Set your smallest and largest trade';
+  const giftCard = method?.giftCard === true;
 
   async function submit(): Promise<void> {
-    const r = validate(form);
+    const r = validate(form, { giftCard, market });
     setErrors(r.errors);
     setRefusal(null);
     if (!r.body) return;
@@ -175,27 +208,26 @@ export function PostOffer() {
   const errorId = (k: FieldError) => `${ids}-${k}-error`;
   const invalid = (k: FieldError) =>
     errors[k] ? { 'aria-invalid': true as const, 'aria-describedby': errorId(k) } : {};
+  // The error comes after the <label>, never inside it: it describes the control (aria-describedby)
+  // and is no part of the control's name.
   const fieldError = (k: FieldError) =>
     errors[k] ? (
       <span className="post-error" id={errorId(k)}>
         {errors[k]}
       </span>
     ) : null;
-  const sideButton = (side: 'sell' | 'buy', label: string) => (
-    <button type="button" role="radio" aria-checked={form.side === side} className="post-choice" onClick={() => set('side', side)}>
-      {label}
-    </button>
-  );
-  const modeButton = (mode: 'market' | 'fixed', label: string) => (
-    <button type="button" role="radio" aria-checked={form.priceMode === mode} className="post-choice post-choice--small" onClick={() => set('priceMode', mode)}>
-      {label}
-    </button>
+  const field = (id: string, label: string, control: ReactNode, error: FieldError | null = null) => (
+    <div className="post-field">
+      <label htmlFor={id}>{label}</label>
+      {control}
+      {error ? fieldError(error) : null}
+    </div>
   );
 
   return (
     <div className="post" data-screen="post">
       <header className="post-header">
-        <Link to="/sell" aria-label="Close" className="post-close">
+        <Link to={closePath(location.state)} aria-label="Close" className="post-close">
           <Icon name="close" size={22} />
         </Link>
         <h1>Post an offer</h1>
@@ -203,50 +235,83 @@ export function PostOffer() {
 
       <main className="post-main">
         <section className="post-section">
-          <span className="post-label">I want to</span>
-          <div role="radiogroup" aria-label="I want to" className="post-two">
-            {sideButton('sell', 'Sell XMR')}
-            {sideButton('buy', 'Buy XMR')}
-          </div>
+          <span className="post-label" id={`${ids}-side`}>
+            I want to
+          </span>
+          <RadioChips label={{ by: `${ids}-side` }} options={SIDES} value={form.side} onChange={(v) => set('side', v)} className="post-two post-choices" />
         </section>
 
         <section className="post-method-row">
-          <label htmlFor="method" className="post-field">
-            Payment method
-            <select id="method" value={form.methodId} onChange={(e) => set('methodId', e.target.value)} {...invalid('method')}>
-              <option value="" disabled>
-                Choose a method
-              </option>
-              {(methods ?? []).map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.name}
+          {methods.kind === 'failed' ? (
+            <div className="post-field">
+              <span>Payment method</span>
+              <span className="post-error post-load-failed">{METHODS_FAILED}</span>
+              <Button variant="secondary" onClick={retryMethods}>
+                Retry
+              </Button>
+            </div>
+          ) : (
+            field(
+              'method',
+              'Payment method',
+              <select id="method" value={form.methodId} onChange={(e) => set('methodId', e.target.value)} {...invalid('method')}>
+                <option value="" disabled>
+                  Choose a method
                 </option>
-              ))}
-            </select>
-            {fieldError('method')}
-          </label>
-          <label htmlFor="currency" className="post-field">
-            Currency
+                {(list ?? []).map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+              </select>,
+              'method',
+            )
+          )}
+          {field(
+            'currency',
+            'Currency',
             <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
               {POST_CURRENCIES.map((c) => (
                 <option key={c}>{c}</option>
               ))}
-            </select>
-          </label>
+            </select>,
+          )}
         </section>
 
-        {method?.giftCard ? (
-          <p className="post-giftcard">
-            <strong>{GIFT_CARD_WARNING}</strong>
-          </p>
+        {giftCard ? (
+          <>
+            {field(
+              'country',
+              'Country',
+              <select id="country" value={form.country} onChange={(e) => set('country', e.target.value)} {...invalid('country')}>
+                <option value="" disabled>
+                  Choose the card's country
+                </option>
+                {COUNTRIES.map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>,
+              'country',
+            )}
+            <p className="post-giftcard">
+              <strong>{GIFT_CARD_WARNING}</strong>
+            </p>
+          </>
         ) : null}
 
         <section className="post-section">
-          <span className="post-label">Your price</span>
-          <div role="radiogroup" aria-label="Price" className="post-two">
-            {modeButton('market', 'Market ± %')}
-            {modeButton('fixed', 'Fixed price per XMR')}
-          </div>
+          <span className="post-label" id={`${ids}-price`}>
+            Your price
+          </span>
+          <RadioChips
+            label={{ by: `${ids}-price` }}
+            options={MODES}
+            value={form.priceMode}
+            onChange={(v) => set('priceMode', v)}
+            className="post-two post-choices post-choices--small"
+          />
           {form.priceMode === 'market' ? (
             <div className="post-margin">
               <button type="button" aria-label="Lower margin by 0.1%" className="post-step" onClick={() => set('marginBps', stepMargin(form.marginBps, -1))}>
@@ -261,11 +326,12 @@ export function PostOffer() {
               </button>
             </div>
           ) : (
-            <label htmlFor="fixed" className="post-field">
-              Your price per XMR
-              <input id="fixed" type="text" inputMode="decimal" autoComplete="off" value={form.fixed} onChange={text('fixed')} {...invalid('fixed')} />
-              {fieldError('fixed')}
-            </label>
+            field(
+              'fixed',
+              'Your price per XMR',
+              <input id="fixed" type="text" inputMode="decimal" autoComplete="off" value={form.fixed} onChange={text('fixed')} {...invalid('fixed')} />,
+              'fixed',
+            )
           )}
           {market === null || quote === undefined ? (
             <span className="post-note">{quote === undefined ? '' : PRICE_UNAVAILABLE}</span>
@@ -287,36 +353,45 @@ export function PostOffer() {
               {FIXED_STALE_WARNING}
             </span>
           ) : null}
+          {sanity?.kind === 'caution' ? (
+            <span className="post-caution">
+              <Icon name="alert" size={20} />
+              {sanity.text}
+            </span>
+          ) : null}
         </section>
 
         <section className="post-two">
-          <label htmlFor="min" className="post-field">
-            Smallest trade
-            <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />
-            {fieldError('min')}
-          </label>
-          <label htmlFor="max" className="post-field">
-            Largest trade
-            <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />
-            {fieldError('max')}
-          </label>
+          {field(
+            'min',
+            'Smallest trade',
+            <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />,
+            'min',
+          )}
+          {field(
+            'max',
+            'Largest trade',
+            <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />,
+            'max',
+          )}
         </section>
 
-        <label htmlFor="terms" className="post-field">
-          Your terms (optional)
+        {field(
+          'terms',
+          'Your terms (optional)',
           <textarea
             id="terms"
             rows={3}
             placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo."
             value={form.terms}
             onChange={text('terms')}
-          />
-        </label>
+          />,
+        )}
 
         <section className="post-section">
           <span className="post-label">Who can trade with you</span>
-          <label htmlFor="mintrades" className="post-inline">
-            Minimum completed trades
+          <div className="post-inline">
+            <label htmlFor="mintrades">Minimum completed trades</label>
             <select id="mintrades" value={form.minTrades} onChange={(e) => set('minTrades', Number(e.target.value) as MinTrades)}>
               {MIN_TRADES.map((n) => (
                 <option key={n} value={n}>
@@ -324,7 +399,7 @@ export function PostOffer() {
                 </option>
               ))}
             </select>
-          </label>
+          </div>
         </section>
 
         <section aria-label="Preview" className="post-section">

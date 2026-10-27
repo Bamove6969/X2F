@@ -2,12 +2,16 @@
 // (spec 11.6), validation into the POST /v1/offers body, the preview line, the saved draft and the
 // refusal copy. The screen itself is covered by apps/web/e2e/post.spec.ts.
 import { describe, expect, it } from 'vitest';
+import { CURRENCIES } from '../src/screens/browse/api.js';
 import { parseMethods, parsePrice } from '../src/screens/post/api.js';
+import { COUNTRIES } from '../src/screens/post/countries.js';
 import {
+  COUNTRY_REQUIRED,
   DEFAULT_FORM,
   FIXED_STALE_WARNING,
   POST_CURRENCIES,
   afterPostPath,
+  fixedPriceCheck,
   formatAmount,
   formatMoney,
   formatPrice,
@@ -104,10 +108,62 @@ describe('formatting', () => {
     expect(usdValue(30663n, quote)).toBe(33155n);
   });
 
-  it('offers only two-decimal currencies, USD, EUR and GBP first (Revision 2026-10-20)', () => {
+  it('offers the one currency list the browse screens use, USD, EUR and GBP first (lead, Task 21 review 2026-10-27)', () => {
+    // One shared list, so a poster never lands on a list that cannot show the offer's currency.
+    expect(POST_CURRENCIES).toBe(CURRENCIES);
     expect(POST_CURRENCIES.slice(0, 3)).toEqual(['USD', 'EUR', 'GBP']);
     for (const zeroOrThree of ['JPY', 'KRW', 'CLP', 'VND', 'KWD', 'BHD']) expect(POST_CURRENCIES).not.toContain(zeroOrThree);
     expect(new Set(POST_CURRENCIES).size).toBe(POST_CURRENCIES.length);
+  });
+});
+
+describe('fixedPriceCheck (a fixed price against the market, Task 21 review 2026-10-27)', () => {
+  const market = 32990n; // $329.90
+  const at = (pct: number) => BigInt(Math.round(32990 * (1 - pct / 100)));
+
+  it('says nothing within 10% of the market, either way', () => {
+    expect(fixedPriceCheck(market, market, 'USD')).toEqual({ kind: 'ok' });
+    expect(fixedPriceCheck(29724n, market, 'USD')).toEqual({ kind: 'ok' }); // 9.9% below
+    expect(fixedPriceCheck(36256n, market, 'USD')).toEqual({ kind: 'ok' }); // 9.9% above
+  });
+
+  it('cautions from 10% to under 50% off the market, with the percentage and the direction', () => {
+    expect(fixedPriceCheck(29691n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 10% below the market price' });
+    expect(fixedPriceCheck(36289n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 10% above the market price' });
+    expect(fixedPriceCheck(at(49.9), market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 49.9% below the market price' });
+    expect(fixedPriceCheck(29000n, market, 'USD')).toEqual({ kind: 'caution', text: 'Caution: that is 12.1% below the market price' });
+  });
+
+  it('refuses from 50% off the market, naming the market price', () => {
+    expect(fixedPriceCheck(16495n, market, 'USD')).toEqual({ kind: 'refuse', text: 'Check your price: the market is $329.90 / XMR' });
+    expect(fixedPriceCheck(49485n, market, 'USD')).toEqual({ kind: 'refuse', text: 'Check your price: the market is $329.90 / XMR' });
+    expect(fixedPriceCheck(330n, market, 'USD').kind).toBe('refuse'); // 99% below: a missed decimal point
+    expect(fixedPriceCheck(26530n, 26530n, 'GBP')).toEqual({ kind: 'ok' });
+    expect(fixedPriceCheck(100n, 26530n, 'GBP')).toEqual({ kind: 'refuse', text: 'Check your price: the market is £265.30 / XMR' });
+  });
+
+  it('uses no exclamation marks', () => {
+    for (const fixed of [29691n, 16495n, 29000n]) {
+      const r = fixedPriceCheck(fixed, market, 'USD');
+      expect(r.kind).not.toBe('ok');
+      if (r.kind !== 'ok') expect(r.text).not.toContain('!');
+    }
+  });
+});
+
+describe('countries (the gift card\'s country, Revision 2026-10-21)', () => {
+  it('lists every ISO 3166-1 alpha-2 code once, named in English and sorted by name', () => {
+    expect(COUNTRIES).toHaveLength(249);
+    expect(new Set(COUNTRIES.map((c) => c.code)).size).toBe(249);
+    for (const c of COUNTRIES) {
+      expect(c.code).toMatch(/^[A-Z]{2}$/);
+      expect(c.name.length).toBeGreaterThan(2);
+    }
+    const names = COUNTRIES.map((c) => c.name);
+    expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b, 'en')));
+    expect(COUNTRIES.find((c) => c.code === 'US')?.name).toBe('United States');
+    expect(COUNTRIES.find((c) => c.code === 'GB')?.name).toBe('United Kingdom');
+    expect(COUNTRIES.find((c) => c.code === 'DE')?.name).toBe('Germany');
   });
 });
 
@@ -143,6 +199,32 @@ describe('validate', () => {
     expect(r.body).toBeUndefined();
     expect(Object.keys(r.errors).sort()).toEqual(['fixed', 'max', 'method', 'min']);
   });
+
+  it('a gift-card method needs the card\'s country, sent as `country` (Revision 2026-10-21)', () => {
+    const refused = validate(form({ methodId: 'AMAZON_GIFT_CARD' }), { giftCard: true });
+    expect(refused.body).toBeUndefined();
+    expect(refused.errors).toEqual({ country: COUNTRY_REQUIRED });
+    const ok = validate(form({ methodId: 'AMAZON_GIFT_CARD', country: 'US' }), { giftCard: true });
+    expect(ok.errors).toEqual({});
+    expect(ok.body?.country).toBe('US');
+  });
+
+  it('never sends a country for a method that is not a gift card', () => {
+    const r = validate(form({ country: 'US' }), { giftCard: false });
+    expect(r.errors).toEqual({});
+    expect(r.body).not.toHaveProperty('country');
+    expect(validate(form()).body).not.toHaveProperty('country');
+  });
+
+  it('refuses a fixed price 50% or more off the market inline, on the price; cautions do not block', () => {
+    const market = 32990n;
+    const refused = validate(form({ priceMode: 'fixed', fixed: '160' }), { market });
+    expect(refused.body).toBeUndefined();
+    expect(refused.errors.fixed).toBe('Check your price: the market is $329.90 / XMR');
+    expect(validate(form({ priceMode: 'fixed', fixed: '290' }), { market }).body?.pricing).toEqual({ mode: 'fixed', centsPerXmr: 29000n });
+    // With no quote the stale-price line stands and any price goes through.
+    expect(validate(form({ priceMode: 'fixed', fixed: '160' }), { market: null }).body?.pricing).toEqual({ mode: 'fixed', centsPerXmr: 16000n });
+  });
 });
 
 describe('preview and navigation', () => {
@@ -164,9 +246,15 @@ describe('preview and navigation', () => {
 describe('draft', () => {
   it('round-trips the form through storage', () => {
     const s = memoryStorage();
-    const f = form({ side: 'buy', priceMode: 'fixed', fixed: '340', terms: 'cash only', minTrades: 50 });
+    const f = form({ side: 'buy', priceMode: 'fixed', fixed: '340', terms: 'cash only', minTrades: 50, country: 'GB' });
     saveDraft(s, f);
     expect(loadDraft(s)).toEqual(f);
+  });
+
+  it('refuses a draft whose country is not an alpha-2 code', () => {
+    const s = memoryStorage();
+    s.setItem('x2f.post-draft', JSON.stringify({ ...form(), country: 'usa' }));
+    expect(loadDraft(s)).toBeNull();
   });
 
   it('ignores a missing, broken or wrongly shaped draft', () => {
@@ -197,7 +285,7 @@ describe('refusalText', () => {
   });
 });
 
-describe('api parsers (Task 3 shapes from wip/second-p3-t3)', () => {
+describe('api parsers (Task 3 shapes: GET /v1/price, GET /v1/methods on the main line)', () => {
   it('parsePrice reads the price route', () => {
     expect(
       parsePrice({ currency: 'EUR', centsPerXmr: '30510', exponent: 2, at: '2026-10-24T12:00:00.000Z', usdCentsPerXmr: '32990' }),

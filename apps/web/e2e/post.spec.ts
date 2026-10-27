@@ -1,15 +1,17 @@
 // PostOffer (Task 21, board PostOffer.dc.html). The API is stubbed per test with page.route, in
-// the shapes of Task 3 (wip/second-p3-t3: GET /v1/methods, GET /v1/price) and the plan's Task 4
-// (POST /v1/offers); apps/web/test/post-tripwires.test.ts fails when the real routes land so these
-// stubs get checked against them. The method list is built from data/payment-methods.json with
-// Task 3's own rule (a method with `legalReview` is unavailable and left out).
-import { existsSync, readFileSync } from 'node:fs';
+// the shapes of Task 3 (GET /v1/methods, GET /v1/price, on the main line and checked against the
+// parsers 2026-10-27) and the plan's Task 4 (POST /v1/offers, GET /v1/offers);
+// apps/web/test/post-tripwires.test.ts fails when Task 4 lands so these stubs get checked against
+// it. The method list is built from data/payment-methods.json with Task 3's own rule (a method with
+// `legalReview` is unavailable and left out).
+import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
+import { expect, test, type Page, type Request, type Route } from '@playwright/test';
+import { boardBuyOffers } from '../src/fixtures/boards.js';
+import { expectParity } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const HARNESS = fileURLToPath(new URL('./parity.ts', import.meta.url));
-const REF = `${ROOT}design/x2f-app/refs/PostOffer.png`;
 
 type CatalogEntry = { id: string; name: string; group: string; legalReview?: string };
 const CATALOG = (JSON.parse(readFileSync(`${ROOT}data/payment-methods.json`, 'utf8')) as { methods: CatalogEntry[] }).methods;
@@ -34,13 +36,25 @@ interface Stubs {
   price?: 'ok' | 'down';
   /** What POST /v1/offers answers. */
   post?: { status: number; body: unknown };
+  /** What GET /v1/offers lists (the browse list a poster lands on). */
+  offers?: unknown[];
+  /** GET /v1/methods fails this many times before it answers. */
+  methodsFailures?: number;
 }
 
 /** Stubs the API; returns the POST /v1/offers requests seen. */
 async function stub(page: Page, o: Stubs = {}): Promise<Request[]> {
   const posts: Request[] = [];
+  let methodsFailures = o.methodsFailures ?? 0;
   await page.route('**/v1/account/me', json(o.signedIn === false ? { error: 'not-authenticated' } : ME, o.signedIn === false ? 401 : 200));
-  await page.route(/\/v1\/methods\?/, json({ live: [], all: ROWS }));
+  await page.route(/\/v1\/methods\?/, (r) => {
+    if (methodsFailures > 0) {
+      methodsFailures -= 1;
+      return json({ error: 'internal' }, 500)(r);
+    }
+    return json({ live: [], all: ROWS })(r);
+  });
+  await page.route('**/v1/offers?*', json(o.offers ?? []));
   await page.route(/\/v1\/price\?/, (r) => {
     const currency = new URL(r.request().url()).searchParams.get('currency') ?? '';
     const p = PRICES[currency];
@@ -67,6 +81,7 @@ const f = (page: Page) => ({
   fixed: page.getByLabel('Your price per XMR'),
   market: page.getByRole('radio', { name: 'Market ± %' }),
   fixedMode: page.getByRole('radio', { name: 'Fixed price per XMR' }),
+  country: page.getByLabel('Country', { exact: true }),
   up: page.getByRole('button', { name: 'Raise margin by 0.1%' }),
   down: page.getByRole('button', { name: 'Lower margin by 0.1%' }),
   post: page.getByRole('button', { name: 'Post offer' }),
@@ -78,22 +93,14 @@ async function fillBoard(page: Page): Promise<void> {
   await x.max.fill('$2,000');
 }
 
-type ExpectParity = (page: Page, board: string, o?: { masks?: Locator[]; viewport?: '390x844' | '1280x800' }) => Promise<void>;
-
 test('parity with PostOffer at 390x844', async ({ page }) => {
-  // TRIPWIRE (Task 15): the parity harness and the board references are not on the main line yet.
-  // This skips until both are present, then runs. When it first runs: the board's method option
-  // "Bank transfer (ACH)" is the catalog's "ACH bank transfer (US)" (data/payment-methods.json),
-  // and the board has no pricing choice yet (the plan's controller step adds Market ± % / Fixed
-  // price per XMR to the canvas and re-captures PostOffer.png); add either to KNOWN_EXCEPTIONS if
-  // the harness reports them.
-  const why = !existsSync(HARNESS) ? 'Task 15 parity harness (apps/web/e2e/parity.ts) is not on this branch yet' : !existsSync(REF) ? 'design/x2f-app/refs/PostOffer.png is absent' : null;
-  test.skip(why !== null, why ?? '');
+  // KNOWN_EXCEPTIONS.PostOffer (parity.ts): the board's "Bank transfer (ACH)" option is the catalog's
+  // "ACH bank transfer (US)", and its "Custom method" option has no counterpart (P3-M3 suggests a
+  // missing method from the browse screens). The board has no pricing choice yet (the plan's
+  // controller step adds Market ± % / Fixed price per XMR to the canvas and re-captures PostOffer.png).
   await stub(page);
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
-  const path = './parity.js';
-  const { expectParity } = (await import(path)) as { expectParity: ExpectParity };
   await expectParity(page, 'PostOffer');
 });
 
@@ -141,7 +148,51 @@ test('a smallest trade above the largest is refused inline and nothing is posted
   await f(page).post.click();
   await expect(page.getByText("The smallest trade can't be more than the largest.", { exact: true })).toBeVisible();
   await expect(f(page).min).toHaveAttribute('aria-invalid', 'true');
+  // The error describes the field; it is no part of the field's name.
+  await expect(f(page).min).toHaveAccessibleName('Smallest trade');
+  await expect(f(page).min).toHaveAccessibleDescription("The smallest trade can't be more than the largest.");
   expect(posts).toHaveLength(0);
+});
+
+test('I want to and Your price are radio groups the arrow keys move through', async ({ page }) => {
+  await stub(page);
+  await page.goto('/post?method=ZELLE');
+  const sell = page.getByRole('radio', { name: 'Sell XMR' });
+  const buy = page.getByRole('radio', { name: 'Buy XMR' });
+  await expect(page.getByRole('radiogroup', { name: 'I want to' })).toBeVisible();
+  await expect(page.getByRole('radiogroup', { name: 'Your price' })).toBeVisible();
+  await sell.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(buy).toBeChecked();
+  await expect(buy).toBeFocused();
+  await expect(page.getByRole('region', { name: 'Preview' }).getByText(/^Buying XMR via Zelle/)).toBeVisible();
+  await buy.press('ArrowLeft');
+  await expect(sell).toBeChecked();
+  await f(page).market.focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(f(page).fixedMode).toBeChecked();
+});
+
+test('Close returns to where the poster came from: Buy from the buy side, Sell otherwise', async ({ page }) => {
+  await stub(page);
+  await page.goto('/buy');
+  await page.getByRole('link', { name: 'Post offer' }).click();
+  await expect(page).toHaveURL(/\/post$/);
+  await page.getByRole('link', { name: 'Close' }).click();
+  await expect(page).toHaveURL(/\/buy$/);
+  await page.goto('/post?method=ZELLE');
+  await page.getByRole('link', { name: 'Close' }).click();
+  await expect(page).toHaveURL(/\/sell$/);
+});
+
+test('when the methods do not load, the form says so and Retry loads them', async ({ page }) => {
+  await stub(page, { methodsFailures: 1 });
+  await page.goto('/post?method=ZELLE');
+  await expect(page.getByText("The payment methods didn't load.", { exact: true })).toBeVisible();
+  await expect(f(page).method).toHaveCount(0);
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(f(page).method.locator('option', { hasText: 'Zelle' })).toHaveCount(1);
+  await expect(page.getByText("The payment methods didn't load.", { exact: true })).toHaveCount(0);
 });
 
 test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async ({ page }) => {
@@ -168,17 +219,21 @@ test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async
   });
 });
 
-test('posting a sell ad returns to the list where buyers see it', async ({ page }) => {
-  // TRIPWIRE (Tasks 16/17): the browse lists are still placeholders on the main line, so this checks
-  // the destination only; "with the offer visible" is asserted once /buy/:methodId lists offers.
-  const posts = await stub(page);
+test('posting a sell ad returns to the list where buyers see it, with the offer visible', async ({ page }) => {
+  // The Buy list (Task 17) reads GET /v1/offers?side=sell; the stub lists the new offer under the poster's name.
+  const [satoshi] = boardBuyOffers();
+  const mine = { ...satoshi!, id: 'of_1', poster: { ...satoshi!.poster, username: ME.displayName }, pricing: { mode: 'market', marginBps: 50 }, rate: '33155', minTrades: 5 };
+  const posts = await stub(page, { offers: [mine] });
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).terms.fill('Put the trade number in the memo.');
   await f(page).minTrades.selectOption({ label: '5+' });
   await f(page).post.click();
   await expect(page).toHaveURL(/\/buy\/ZELLE\?currency=USD$/);
+  await expect(page.locator('article')).toHaveCount(1);
+  await expect(page.locator('article [data-username]').first()).toHaveText('nightowl_44');
   expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'market', marginBps: 50 }, minTrades: 5, terms: 'Put the trade number in the memo.' });
+  expect(posts[0]!.postDataJSON()).not.toHaveProperty('country');
   // The draft is cleared once posted: a new /post starts empty.
   await page.goto('/post');
   await expect(f(page).min).toHaveValue('');
@@ -278,24 +333,62 @@ test('a gift-card method shows the one bold warning (owner, 2026-10-21)', async 
   await expect(warning).toBeVisible();
 });
 
-// Phone sizes (spec "Mobile ready at launch", owner 2026-10-25): a small Android, the boards'
-// 390x844 and a large Android. The form scrolls inside the screen while Post offer stays on it,
-// nothing scrolls sideways, and text inputs are at least 16 px (so phones don't zoom into them).
-for (const [width, height] of [
-  [360, 640],
-  [390, 844],
-  [412, 915],
-] as const) {
-  test(`at ${width}x${height} the form fits the phone`, async ({ page }) => {
-    await page.setViewportSize({ width, height });
+test("a gift-card offer needs the card's country and sends it as `country` (Revision 2026-10-21)", async ({ page }) => {
+  const posts = await stub(page);
+  await page.goto('/post?method=ZELLE');
+  // Never for a method that is not a gift card.
+  await expect(f(page).country).toHaveCount(0);
+  await f(page).method.selectOption('AMAZON_GIFT_CARD');
+  await expect(f(page).country).toBeVisible();
+  await fillBoard(page);
+  await f(page).post.click();
+  await expect(page.getByText("Choose the card's country.", { exact: true })).toBeVisible();
+  await expect(f(page).country).toHaveAttribute('aria-invalid', 'true');
+  expect(posts).toHaveLength(0);
+  await f(page).country.selectOption({ label: 'United States' });
+  await f(page).post.click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]!.postDataJSON()).toMatchObject({ methodId: 'AMAZON_GIFT_CARD', country: 'US' });
+  // Back on a plain method the field goes, and the country is not sent.
+  await page.goto('/post?method=ZELLE');
+  await expect(f(page).country).toHaveCount(0);
+});
+
+test('a fixed price far from the market gets a caution line, and one 50% off is refused', async ({ page }) => {
+  const posts = await stub(page);
+  await page.goto('/post?method=ZELLE');
+  await f(page).fixedMode.check();
+  await fillBoard(page);
+  await f(page).fixed.fill('290');
+  await expect(page.getByText('Caution: that is 12.1% below the market price', { exact: true })).toBeVisible();
+  await f(page).fixed.fill('335');
+  await expect(page.getByText(/^Caution:/)).toHaveCount(0);
+  await f(page).fixed.fill('160');
+  await f(page).post.click();
+  await expect(page.getByText('Check your price: the market is $329.90 / XMR', { exact: true })).toBeVisible();
+  await expect(f(page).fixed).toHaveAttribute('aria-invalid', 'true');
+  expect(posts).toHaveLength(0);
+  await f(page).fixed.fill('290');
+  await f(page).post.click();
+  await expect.poll(() => posts.length).toBe(1);
+  expect(posts[0]!.postDataJSON()).toMatchObject({ pricing: { mode: 'fixed', centsPerXmr: '29000' } });
+});
+
+// Phone sizes (spec "Mobile ready at launch", owner 2026-10-25): the harness's viewports and layout
+// rule (no sideways scroll, nothing past the sides, every control big enough to tap). Post offer
+// stays on the screen while the form scrolls, and text inputs are at least 16 px (so phones don't
+// zoom into them).
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`at ${viewport} the form fits the phone`, async ({ page }) => {
+    await setPhone(page, viewport);
     await stub(page);
-    await page.goto('/post?method=ZELLE&currency=EUR');
+    await page.goto('/post?method=AMAZON_GIFT_CARD&currency=EUR');
     await f(page).fixedMode.check();
+    await f(page).fixed.fill('250');
     await fillBoard(page);
+    await expect(f(page).country).toBeVisible();
+    await expectPhoneLayout(page);
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
-    const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
-    expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
-    await expect(page.locator('[data-primary]')).toHaveCount(1);
     // Typed fields are 16 px; the board's "Minimum completed trades" select is 15 px.
     const typed = await page.locator('input, textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
     expect(typed.length).toBeGreaterThan(0);
@@ -305,6 +398,6 @@ for (const [width, height] of [
     await page.getByRole('region', { name: 'Preview' }).scrollIntoViewIfNeeded();
     await expect(page.getByText('You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.', { exact: true })).toBeInViewport();
     await expect(f(page).post).toBeInViewport({ ratio: 1 });
+    await expectPhoneLayout(page);
   });
 }
-
