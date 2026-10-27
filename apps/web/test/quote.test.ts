@@ -228,6 +228,12 @@ describe('take refusals', () => {
     expect(odd).not.toMatch(/starter|building|graduated/i);
   });
 
+  it('a not-enough-trades refusal counts in the singular for 1', () => {
+    const one = takeRefusal(new ApiCallError(409, 'not-enough-trades', {}), { ...SELL_AD, minTrades: 1 });
+    expect(one).toBe('This offer needs at least 1 completed trade.');
+    expect(takeRefusal(new ApiCallError(409, 'not-enough-trades', {}), { ...SELL_AD, minTrades: 5 })).toBe('This offer needs at least 5 completed trades.');
+  });
+
   it('every known refusal has its own words, and none carries "!"', () => {
     const codes = ['own-offer', 'out-of-range', 'not-enough-trades', 'trading-hold', 'trading-paused', 'price-unavailable', 'price-changed', 'method-unavailable', 'wallet-not-ready', 'already-waiting', 'ad-busy', 'starter-limit'];
     const seen = new Set<string>();

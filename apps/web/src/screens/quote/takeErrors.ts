@@ -31,7 +31,7 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
     case 'out-of-range':
       return "That amount is outside this offer's range.";
     case 'not-enough-trades':
-      return `This offer needs at least ${offer.minTrades} completed trades.`;
+      return `This offer needs at least ${offer.minTrades} completed ${offer.minTrades === 1 ? 'trade' : 'trades'}.`;
     case 'trading-hold':
       return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
     case 'trading-paused':
