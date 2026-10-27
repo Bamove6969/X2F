@@ -85,10 +85,11 @@ export async function fetchMarket(currency: string, signal?: AbortSignal): Promi
   try {
     const o = obj(await api(`/v1/price?${new URLSearchParams({ currency })}`, signal ? { signal } : {}), 'price');
     if (str(o, 'currency', 'price') !== currency) throw new ApiShapeError('price.currency');
-    // The ISO 4217 exponent (Revision 2026-10-20): the route always sends it, and nothing here may assume 2.
-    num(o, 'exponent', 'price');
+    // The ISO 4217 exponent (Revision 2026-10-20): the route always sends it, and every fiat figure honours it.
+    const exponent = num(o, 'exponent', 'price');
+    if (!Number.isInteger(exponent) || exponent < 0 || exponent > 4) throw new ApiShapeError('price.exponent');
     const usd = o.usdCentsPerXmr;
-    return { centsPerXmr: big(o, 'centsPerXmr', 'price'), usdCentsPerXmr: usd === undefined || usd === null ? null : big(o, 'usdCentsPerXmr', 'price') };
+    return { centsPerXmr: big(o, 'centsPerXmr', 'price'), exponent, usdCentsPerXmr: usd === undefined || usd === null ? null : big(o, 'usdCentsPerXmr', 'price') };
   } catch (e) {
     if (e instanceof ApiCallError && e.status === 503 && e.code === 'price-unavailable') return null;
     throw e;

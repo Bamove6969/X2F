@@ -425,6 +425,43 @@ describe('BuyQuote', () => {
   });
 });
 
+describe('a 0-decimal currency', () => {
+  it('a JPY offer is quoted and shown in whole yen from the price route\'s exponent', async () => {
+    globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = new URL(String(input), 'http://x2f.test');
+      if (url.pathname === '/v1/offers') return json(200, [{ ...GHOST, minFiatCents: '5000', maxFiatCents: '150000' }]);
+      if (url.pathname === '/v1/methods') return json(200, { live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'x', giftCard: false, offers: 0, bestRate: null }] });
+      if (url.pathname === '/v1/price') return json(200, { currency: 'JPY', centsPerXmr: '33000', exponent: 0, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '22000' });
+      if (url.pathname === '/v1/wallets') return json(200, WALLETS);
+      const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
+      if (take && init?.method === 'POST') {
+        stub.takes.push(JSON.parse(String(init.body)) as TakeBody);
+        return json(200, { code: 'K7M2-9QXA-4FTR-8WPN' });
+      }
+      return json(404, { error: 'not-found' });
+    }) as typeof fetch;
+    const { host } = await open(`${quotePath('sell', 'ZELLE', 'offer-ghost', 'JPY')}&amount=41250`);
+    pick(host, 'w-cake');
+    const text = host.textContent ?? '';
+    expect(text).toContain('Zelle · JPY · ¥33,000 / XMR');
+    expect(text).toContain('satoshi_ghost sells ¥5,000 to ¥150,000 per trade.');
+    expect(text).toContain('1.250000 XMR');
+    expect(text).toContain('¥41,250 JPY');
+    expect(text).not.toMatch(/¥[\d,]+\.\d/);
+    // The dollar figures stay in cents: ¥33,000 / XMR is $220.00 / XMR.
+    expect(text).toContain('$220.00 / XMR');
+    expect(text).toContain('About $275.00 USD');
+    // A decimal is not an amount in yen.
+    type(host, '412.50');
+    expect(host.textContent).toContain('Enter an amount between ¥5,000 and ¥150,000.');
+    expect(primary(host).disabled).toBe(true);
+    type(host, '41250');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes[0]).toMatchObject({ amountAtomic: '1250000000000', centsPerXmr: '33000', fiatCents: '41250' });
+  });
+});
+
 describe('SellQuote', () => {
   const SELL = quotePath('buy', 'ZELLE', 'offer-mira', 'USD');
 

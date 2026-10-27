@@ -3,7 +3,7 @@
 // the rate from offerRate, XMR for a fiat amount from atomicForFiat, the fiat total from fiatCents
 // and what the seller locks from escrowPlan. This file only reads what the person typed and picks
 // which of those results to show; it does no money maths of its own.
-import { atomicForFiat, escrowPlan, fiatCents, formatFiat, formatXmr, offerRate, posterRole, type Price, type Pricing } from '@x2f/trade';
+import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate, posterRole, type Price, type Pricing } from '@x2f/trade';
 
 /** The ad's side: a sell ad (the poster sells XMR, the taker buys: BuyQuote) or a buy ad (SellQuote). */
 export type AdSide = 'sell' | 'buy';
@@ -26,10 +26,32 @@ export interface QuoteOffer {
   opensAt?: OpensAt;
 }
 
-/** `GET /v1/price` for the offer's currency: the market price and the same XMR in US-dollar cents. */
+/**
+ * `GET /v1/price` for the offer's currency: the market price in the currency's minor units, the
+ * currency's ISO 4217 exponent (how many decimals a minor unit is: 0 for JPY, 3 for KWD, 2 for
+ * most; Revision 2026-10-20) and the same XMR in US-dollar cents.
+ */
 export interface MarketNow {
   centsPerXmr: bigint;
+  exponent: number;
   usdCentsPerXmr: bigint | null;
+}
+
+/**
+ * The currency's exponent from the currency itself (Intl's ISO 4217 table), for a fixed-price offer
+ * quoting with the feed down; 2 for a code Intl does not know.
+ */
+export function currencyExponent(currency: string): number {
+  try {
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits ?? 2;
+  } catch {
+    return 2;
+  }
+}
+
+/** The exponent every fiat figure of this quote uses: the feed's when it is up, else the currency's own. */
+export function quoteExponent(offer: Pick<QuoteOffer, 'currency'>, market: MarketNow | null): number {
+  return market?.exponent ?? currencyExponent(offer.currency);
 }
 
 export type Quote =
@@ -58,21 +80,21 @@ export type Quote =
       usdPerXmrCents: bigint | null;
     };
 
-const DECIMALS: Record<Unit, number> = { fiat: 2, xmr: 12 };
+const XMR_DECIMALS = 12;
 
 /**
- * What the person typed, in cents (fiat) or atomic units (XMR); null unless it is a plain
- * non-negative decimal with at most 2 (fiat) or 12 (XMR) places. Thousands commas and spaces are
- * ignored.
+ * What the person typed, in the currency's minor units (fiat, `exponent` places: cents for USD,
+ * whole yen for JPY) or atomic units (XMR, 12 places); null unless it is a plain non-negative
+ * decimal with at most that many places. Thousands commas and spaces are ignored.
  */
-export function parseAmount(text: string, unit: Unit): bigint | null {
+export function parseAmount(text: string, unit: Unit, exponent = 2): bigint | null {
   const t = text.replace(/[,\s]/g, '');
   const m = /^(\d{0,15})(?:\.(\d*))?$/.exec(t);
   if (!m) return null;
   const whole = m[1] ?? '';
   const frac = m[2] ?? '';
   if (whole === '' && frac === '') return null;
-  const places = DECIMALS[unit];
+  const places = unit === 'xmr' ? XMR_DECIMALS : exponent;
   if (frac.length > places) return null;
   return BigInt(whole === '' ? '0' : whole) * 10n ** BigInt(places) + BigInt(frac.padEnd(places, '0') || '0');
 }
@@ -83,7 +105,7 @@ export function quote(i: { offer: QuoteOffer; market: MarketNow | null; text: st
   const rate = offerRate(offer.pricing, offer.currency, market ? { currency: offer.currency, centsPerXmr: market.centsPerXmr } : null);
   if (rate === null) return { kind: 'price-unavailable' };
 
-  const typed = parseAmount(text, unit);
+  const typed = parseAmount(text, unit, quoteExponent(offer, market));
   if (typed === null || typed === 0n) return { kind: 'enter', rate };
   const amountAtomic = unit === 'fiat' ? atomicForFiat(typed, rate) : typed;
   if (amountAtomic === 0n) return { kind: 'too-low', rate };
@@ -112,24 +134,45 @@ function mulDivHalfUp(a: bigint, b: bigint, d: bigint): bigint {
   return (a * b + d / 2n) / d;
 }
 
-/** Money with no cents shown when there are none: the board's "$50 to $1,500". */
-export function fiatWhole(cents: bigint, currency: string): string {
-  const s = formatFiat(cents, currency);
-  return cents % 100n === 0n ? s.replace(/\.00(?=\D*$)/, '') : s;
+/**
+ * Minor units as a currency string with `exponent` decimals: 41250n USD → "$412.50", 41250n JPY
+ * (exponent 0) → "¥41,250", 1234n KWD (3) → "KWD 1.234". Exact for any bigint: the whole part is
+ * formatted as a bigint and the fraction written in by hand (@x2f/trade formatFiat does the same
+ * for 2 decimals).
+ */
+export function formatMinor(minor: bigint, currency: string, exponent: number): string {
+  const unit = 10n ** BigInt(exponent);
+  const whole = minor / unit;
+  const frac = (minor % unit).toString().padStart(exponent, '0');
+  const nf = new Intl.NumberFormat('en-US', { style: 'currency', currency, minimumFractionDigits: exponent, maximumFractionDigits: exponent });
+  return nf
+    .formatToParts(whole)
+    .map((p) => (p.type === 'fraction' ? frac : p.value))
+    .join('');
 }
 
-/** The currency's sign for the amount box ("$" on the board), from formatFiat. */
+/** Money with no fraction shown when it is zero: the board's "$50 to $1,500". */
+export function fiatWhole(minor: bigint, currency: string, exponent = 2): string {
+  const s = formatMinor(minor, currency, exponent);
+  return exponent > 0 && minor % 10n ** BigInt(exponent) === 0n ? s.replace(new RegExp(`\\.0{${exponent}}(?=\\D*$)`), '') : s;
+}
+
+/** The currency's sign for the amount box ("$" on the board). */
 export function currencySign(currency: string): string {
-  return formatFiat(0n, currency).replace(/[\d.,\s-]/g, '');
+  return formatMinor(0n, currency, 0).replace(/[\d.,\s-]/g, '');
 }
 
 /**
- * The text Max puts in the amount box for `fiatCentsMax`: the cents as a plain decimal, or the XMR
- * that buys at most that much at `rate` (atomicForFiat floors, formatXmr truncates).
+ * The text Max puts in the amount box for `fiatMinorMax`: the minor units as a plain decimal with
+ * `exponent` places, or the XMR that buys at most that much at `rate` (atomicForFiat floors,
+ * formatXmr truncates).
  */
-export function amountText(fiatCentsMax: bigint, unit: Unit, rate: Price): string {
-  if (unit === 'fiat') return `${fiatCentsMax / 100n}.${(fiatCentsMax % 100n).toString().padStart(2, '0')}`;
-  return formatXmr(atomicForFiat(fiatCentsMax, rate));
+export function amountText(fiatMinorMax: bigint, unit: Unit, rate: Price, exponent = 2): string {
+  if (unit === 'fiat') {
+    const u = 10n ** BigInt(exponent);
+    return exponent === 0 ? `${fiatMinorMax}` : `${fiatMinorMax / u}.${(fiatMinorMax % u).toString().padStart(exponent, '0')}`;
+  }
+  return formatXmr(atomicForFiat(fiatMinorMax, rate));
 }
 
 export const STAGE_NAMES: Record<Stage, string> = { starter: 'Starter', building: 'Building', graduated: 'Graduated' };

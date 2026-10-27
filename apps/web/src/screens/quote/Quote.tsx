@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
-import { formatFiat, formatXmr, posterRole, type Price } from '@x2f/trade';
+import { formatXmr, posterRole, type Price } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
-import { STAGE_NAMES, amountText, currencySign, fiatWhole, quote, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
+import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { takeRefusal } from './takeErrors.js';
 import { useTake } from './useTake.js';
@@ -85,7 +85,7 @@ function useMarket(currency: string): { market: Load<MarketNow | null>; refresh:
   return { market: last, refresh };
 }
 
-const perXmr = (cents: bigint, currency: string) => `${formatFiat(cents, currency)} / XMR`;
+const perXmr = (minor: bigint, currency: string, exponent: number) => `${formatMinor(minor, currency, exponent)} / XMR`;
 
 function rateOf(q: Quote): Price | null {
   return 'rate' in q ? q.rate : null;
@@ -181,8 +181,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const poster = o.poster.username;
   const posterName = <span data-username="">{poster}</span>;
-  const min = fiatWhole(o.minFiatCents, o.currency);
-  const max = fiatWhole(o.maxFiatCents, o.currency);
+  // Every fiat figure below is in the currency's minor units with its exponent (whole yen, 3-place dinars).
+  const exponent = quoteExponent(o, marketNow);
+  const min = fiatWhole(o.minFiatCents, o.currency, exponent);
+  const max = fiatWhole(o.maxFiatCents, o.currency, exponent);
   const rate = q ? rateOf(q) : null;
   const ok = q?.kind === 'ok' ? q : null;
 
@@ -196,7 +198,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const switchUnit = () => {
     const to: Unit = unit === 'fiat' ? 'xmr' : 'fiat';
-    setText(ok ? (to === 'xmr' ? formatXmr(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate)) : '');
+    setText(ok ? (to === 'xmr' ? formatXmr(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '');
     setUnit(to);
   };
 
@@ -230,7 +232,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <span className="x2f-quote__title">{copy.title(posterName)}</span>
           <span className="x2f-quote__muted-sm">
             {methodName} · {o.currency}
-            {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency)}` : ''}
+            {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency, exponent)}` : ''}
           </span>
         </div>
         {/* TODO(Task 20): opens the pre-trade chat with the poster. */}
@@ -267,7 +269,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             />
             <span className="x2f-quote__unit">{unit === 'fiat' ? o.currency : 'XMR'}</span>
             {copy.showMax && rate ? (
-              <button type="button" className="x2f-quote__max" onClick={() => setText(amountText(o.maxFiatCents, unit, rate))}>
+              <button type="button" className="x2f-quote__max" onClick={() => setText(amountText(o.maxFiatCents, unit, rate, exponent))}>
                 Max
               </button>
             ) : null}
@@ -293,12 +295,12 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <div className="x2f-quote__rows">
             <div className="x2f-quote__row">
               <span className="x2f-quote__muted">Rate</span>
-              <span className="x2f-quote__mono">{rate ? perXmr(rate.centsPerXmr, o.currency) : 'Price unavailable right now'}</span>
+              <span className="x2f-quote__mono">{rate ? perXmr(rate.centsPerXmr, o.currency, exponent) : 'Price unavailable right now'}</span>
             </div>
             {ok?.usdPerXmrCents != null ? (
               <div className="x2f-quote__row">
                 <span className="x2f-quote__muted">In US dollars</span>
-                <span className="x2f-quote__mono">{perXmr(ok.usdPerXmrCents, 'USD')}</span>
+                <span className="x2f-quote__mono">{perXmr(ok.usdPerXmrCents, 'USD', 2)}</span>
               </div>
             ) : null}
             <div className="x2f-quote__row">
@@ -309,13 +311,13 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             <div className="x2f-quote__row x2f-quote__row--total">
               <span>{copy.total(methodName)}</span>
               <span className="x2f-quote__mono">
-                {formatFiat(ok ? ok.fiatCents : 0n, o.currency)} {o.currency}
+                {formatMinor(ok ? ok.fiatCents : 0n, o.currency, exponent)} {o.currency}
               </span>
             </div>
             {ok?.usdCents != null ? (
               <div className="x2f-quote__row">
                 <span className="x2f-quote__muted">In US dollars</span>
-                <span className="x2f-quote__mono">About {formatFiat(ok.usdCents, 'USD')} USD</span>
+                <span className="x2f-quote__mono">About {formatMinor(ok.usdCents, 'USD', 2)} USD</span>
               </div>
             ) : null}
           </div>

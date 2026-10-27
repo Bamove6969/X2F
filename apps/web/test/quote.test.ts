@@ -2,11 +2,11 @@
 // these tests pin what the quote shows against those functions, so the UI never grows its own maths.
 import { describe, expect, it } from 'vitest';
 import { atomicForFiat, escrowPlan, fiatCents, formatXmr, offerRate } from '@x2f/trade';
-import { amountText, fiatWhole, parseAmount, quote, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
+import { amountText, currencyExponent, fiatWhole, formatMinor, parseAmount, quote, quoteExponent, type QuoteOffer } from '../src/screens/quote/quoteModel.js';
 import { takeRefusal } from '../src/screens/quote/takeErrors.js';
 import { ApiCallError } from '../src/api/client.js';
 
-const MARKET_USD = { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n };
+const MARKET_USD = { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n, exponent: 2 };
 
 /** satoshi_ghost's sell ad on the BuyQuote board: Zelle, USD, $330.00 / XMR, $50 to $1,500. */
 const SELL_AD: QuoteOffer = {
@@ -35,6 +35,56 @@ describe('parseAmount', () => {
     for (const bad of ['', ' ', 'abc', '1.234', '1e3', '-5', '1.2.3', '$5', '0x10']) expect(parseAmount(bad, 'fiat')).toBeNull();
     expect(parseAmount('1.0000000000001', 'xmr')).toBeNull();
   });
+
+  it("honours the currency's exponent (Revision 2026-10-20): yen have no minor unit, dinars have three", () => {
+    expect(parseAmount('41250', 'fiat', 0)).toBe(41_250n);
+    expect(parseAmount('412.5', 'fiat', 0)).toBeNull();
+    expect(parseAmount('1.234', 'fiat', 3)).toBe(1_234n);
+    expect(parseAmount('1.2345', 'fiat', 3)).toBeNull();
+    // The exponent never touches XMR.
+    expect(parseAmount('1.25', 'xmr', 0)).toBe(1_250_000_000_000n);
+  });
+});
+
+describe('exponent-aware fiat text', () => {
+  it('formatMinor writes minor units with the exponent, exactly, and fiatWhole drops a zero fraction', () => {
+    expect(formatMinor(41_250n, 'USD', 2)).toBe('$412.50');
+    expect(formatMinor(41_250n, 'JPY', 0)).toBe('¥41,250');
+    // Intl writes a no-break space after a code it has no sign for.
+    expect(formatMinor(1_234n, 'KWD', 3)).toBe('KWD\u00a01.234');
+    expect(formatMinor(5n, 'KWD', 3)).toBe('KWD\u00a00.005');
+    expect(fiatWhole(5_000n, 'JPY', 0)).toBe('¥5,000');
+    expect(fiatWhole(150_000n, 'USD', 2)).toBe('$1,500');
+    expect(fiatWhole(1_500n, 'KWD', 3)).toBe('KWD\u00a01.500');
+  });
+
+  it('amountText fills the box with the exponent the quote uses', () => {
+    const rate = { currency: 'JPY', centsPerXmr: 33_000n };
+    expect(amountText(150_000n, 'fiat', rate, 0)).toBe('150000');
+    expect(amountText(1_500n, 'fiat', { currency: 'KWD', centsPerXmr: 100_000n }, 3)).toBe('1.500');
+    expect(amountText(150_000n, 'fiat', { currency: 'USD', centsPerXmr: 33_000n }, 2)).toBe('1500.00');
+  });
+
+  it("the exponent comes from /v1/price when the feed is up, else from the currency itself (a fixed-price offer with the feed down)", () => {
+    const jpy = { ...SELL_AD, currency: 'JPY', pricing: { mode: 'fixed' as const, centsPerXmr: 33_000n } };
+    expect(quoteExponent(jpy, { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n, exponent: 0 })).toBe(0);
+    expect(quoteExponent(jpy, null)).toBe(0);
+    expect(currencyExponent('JPY')).toBe(0);
+    expect(currencyExponent('KWD')).toBe(3);
+    expect(currencyExponent('USD')).toBe(2);
+    expect(currencyExponent('XXX')).toBe(2);
+  });
+
+  it('a JPY market offer quotes whole yen: typing 41250 at ¥33,000 / XMR is 1.25 XMR, never ¥4,125,000', () => {
+    const jpy = { ...SELL_AD, currency: 'JPY', minFiatCents: 5_000n, maxFiatCents: 150_000n };
+    const market = { centsPerXmr: 33_000n, usdCentsPerXmr: 33_000n, exponent: 0 };
+    const q = quote({ offer: jpy, market, text: '41250', unit: 'fiat' });
+    if (q.kind !== 'ok') throw new Error('expected a quote');
+    expect(q.amountAtomic).toBe(1_250_000_000_000n);
+    expect(q.fiatCents).toBe(41_250n);
+    // Yen have no fraction: a decimal is not an amount here.
+    expect(quote({ offer: jpy, market, text: '412.50', unit: 'fiat' }).kind).toBe('enter');
+  });
 });
 
 describe('quote', () => {
@@ -55,7 +105,7 @@ describe('quote', () => {
     const markets = [32_990n, 33_000n, 33_123n, 1_234_567n];
     for (const centsPerXmr of markets) {
       for (const text of ['50', '50.01', '99.99', '412.50', '777.77', '1499.99', '1500']) {
-        const q = quote({ offer: SELL_AD, market: { centsPerXmr, usdCentsPerXmr: centsPerXmr }, text, unit: 'fiat' });
+        const q = quote({ offer: SELL_AD, market: { centsPerXmr, usdCentsPerXmr: centsPerXmr, exponent: 2 }, text, unit: 'fiat' });
         if (q.kind !== 'ok') continue;
         expect(q.fiatCents).toBe(fiatCents(q.amountAtomic, q.rate));
         expect(q.fiatCents).toBe(parseAmount(text, 'fiat'));
@@ -102,7 +152,7 @@ describe('quote', () => {
 
   it('shows the US-dollar value beside a non-USD trade (spec 11.6), from the feed', () => {
     const eur = { ...SELL_AD, currency: 'EUR' };
-    const q = quote({ offer: eur, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '300', unit: 'fiat' });
+    const q = quote({ offer: eur, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '300', unit: 'fiat' });
     if (q.kind !== 'ok') throw new Error('expected a quote');
     expect(q.rate).toEqual({ currency: 'EUR', centsPerXmr: 30_000n });
     expect(q.usdCents).toBe(fiatCents(q.amountAtomic, { currency: 'USD', centsPerXmr: 33_000n }));
@@ -114,7 +164,7 @@ describe('quote', () => {
 
   it("the US-dollar figures are the trade's own figures at the exchange rate: the offer's margin or fixed price applies to them too", () => {
     // A EUR market offer at +5%: €300.00 / XMR market, €315.00 / XMR offered; $330.00 / XMR market.
-    const margin = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'market', marginBps: 500 } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '315', unit: 'fiat' });
+    const margin = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'market', marginBps: 500 } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '315', unit: 'fiat' });
     if (margin.kind !== 'ok') throw new Error('expected a quote');
     expect(margin.rate.centsPerXmr).toBe(31_500n);
     expect(margin.amountAtomic).toBe(1_000_000_000_000n);
@@ -122,12 +172,12 @@ describe('quote', () => {
     expect(margin.usdPerXmrCents).toBe(34_650n);
     expect(margin.usdCents).toBe(34_650n);
     // A fixed-price EUR offer far from market: €400.00 / XMR is $440.00 / XMR in dollars.
-    const fixed = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: 40_000n } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '200', unit: 'fiat' });
+    const fixed = quote({ offer: { ...SELL_AD, currency: 'EUR', pricing: { mode: 'fixed', centsPerXmr: 40_000n } }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '200', unit: 'fiat' });
     if (fixed.kind !== 'ok') throw new Error('expected a quote');
     expect(fixed.usdPerXmrCents).toBe(44_000n);
     expect(fixed.usdCents).toBe(22_000n);
     // Half up, as every other figure: €1.00 at €300.00 and $330.00 is $1.10; €0.01 at €3.00 / $1.00 is $0.00 (0.33 cents).
-    const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 0n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n }, text: '1', unit: 'fiat' });
+    const tiny = quote({ offer: { ...SELL_AD, currency: 'EUR', minFiatCents: 0n }, market: { centsPerXmr: 30_000n, usdCentsPerXmr: 33_000n, exponent: 2 }, text: '1', unit: 'fiat' });
     expect(tiny.kind === 'ok' && tiny.usdCents).toBe(110n);
   });
 });
