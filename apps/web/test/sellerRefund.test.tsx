@@ -65,8 +65,9 @@ function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
 /**
  * `fresh`: the room hands the screen a NEW escrow object on every render, as Task 12's `useEscrow`
  * returns one (its status object is rebuilt per render), and `refresh()` re-renders the room.
+ * `reread`: the view `refresh()` re-reads (the API's view after the tap), shown with a fresh escrow.
  */
-function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow; fresh?: boolean } = {}) {
+function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow; fresh?: boolean; reread?: RefundView } = {}) {
   const e = o.escrow ? { calls: [] as string[], escrow: o.escrow } : escrowFake();
   let current = view;
   const tree = () => (
@@ -75,6 +76,7 @@ function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow;
     </MemoryRouter>
   );
   const refresh = vi.fn(async () => {
+    if (o.reread !== undefined) current = o.reread;
     if (o.fresh) r.rerender(tree());
   });
   const r = render(tree());
@@ -202,9 +204,10 @@ describe('SellerRefund: Give 30 more min', () => {
     expect(m.refresh).toHaveBeenCalled();
   });
 
-  it("a failed extend signal is retried without a second extend, although the room hands a new escrow object each render (Task 12's useEscrow does)", async () => {
+  it("a failed extend signal is retried without a second extend, although the re-read view already counts the extension and the room hands a new escrow object each render (Task 12's useEscrow does)", async () => {
     const e = flakyEscrow({ signal: 1 });
-    const m = mount(sellerView(), { escrow: e.escrow, fresh: true });
+    // The API committed the extend before the signal failed, so the re-read view carries extensions + 1.
+    const m = mount(sellerView(), { escrow: e.escrow, fresh: true, reread: sellerView({ extensions: 1 }) });
     fire(m.button('Give 30 more min')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(requests).toEqual([{ path: EVENTS, body: { type: 'extend' } }]);

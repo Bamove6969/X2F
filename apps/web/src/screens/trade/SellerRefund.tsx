@@ -69,7 +69,9 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
 /**
  * The board's "If you cancel" steps (the last is the dispute-after-refund warning, spec 2.3). The
  * XMR owed after a lost dispute is the trade amount this device accepts (Task 12's status), never
- * the API's while the device has one (Task 12 review I3); the escrow balance is the view's.
+ * the API's while the device has one (Task 12 review I3); the escrow balance is the view's. The
+ * `?? view.amountAtomic` fallback is a deliberate departure from I3's "null = no sum yet": this is
+ * a warning sentence, not a sum to pay, and it must stay on screen before the tap.
  */
 function IfYouCancel({ view, escrow, all }: Pick<RefundScreenProps, 'view' | 'escrow'> & { all: boolean }) {
   const name = publicName(view.counterparty);
@@ -102,8 +104,15 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
 
   const deps = useFlowDeps(view.code, escrow);
   // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it; it
-  // is created at the tap (see refundRun). One extension run per extension (the second is a new run).
-  const extend = useMemo(() => extendSteps(deps), [deps, view.extensions]);
+  // is created at the tap (see refundRun). The extension run is kept until it is done, not keyed on
+  // the view: the API commits extend before the signal, so a re-read after a failed signal already
+  // counts the extension, and a new run there would post extend again (spending the second, last
+  // extension unasked) and never send the first one's signal. A new run starts only once the last is done.
+  const extendRun = useRef<Steps | null>(null);
+  const extend = (): Steps => {
+    if (extendRun.current === null || extendRun.current.done()) extendRun.current = extendSteps(deps);
+    return extendRun.current;
+  };
 
   const go = async (which: 'refund' | 'extend', run: Steps) => {
     setBusy(which);
@@ -171,7 +180,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
         </Button>
         <div className="x2f-refund__row">
           {offerExtend ? (
-            <Button variant="secondary" disabled={busy !== null} onClick={() => void go('extend', extend)}>
+            <Button variant="secondary" disabled={busy !== null} onClick={() => void go('extend', extend())}>
               Give 30 more min
             </Button>
           ) : null}
