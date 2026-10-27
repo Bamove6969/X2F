@@ -9,7 +9,16 @@
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts            # every board
 //   X2F_CHROMIUM_PATH=/usr/bin/chromium npx tsx tools/parity/capture-refs.ts Main Desktop
 //   (--boards-dir=<dir> and --out-dir=<dir> point it elsewhere; the tests use them.)
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+//
+// Known canvas-runtime artifact: refs/SetupBackup.png shows "Addauthenticator app" on the primary
+// button. The board's text is "Add {{choice}}", and the canvas runtime drops the space before the
+// filled-in placeholder when it renders. The app shows "Add authenticator app". This is cosmetic:
+// it only adds a little pixel noise to the reported (non-blocking) diff. Do not hand-edit the PNG.
+// References come only from this script. Each capture also records the board in refs/manifest.json
+// ({ <Board>: { sha256 of the .dc.html, w, h } }), so a test can tell when a board changed after its
+// reference was shot (apps/web/test/serve-boards.test.ts).
+import { createHash } from 'node:crypto';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -28,6 +37,18 @@ export function boardSizes(boardsDir: string): Map<string, { width: number; heig
     if (file.endsWith('.dc.html')) sizes.set(file.slice(0, -'.dc.html'.length), { width: b.w, height: b.h });
   }
   return sizes;
+}
+
+/** One refs/manifest.json entry: the board file the reference was shot from, and its size. */
+export interface RefEntry {
+  sha256: string;
+  w: number;
+  h: number;
+}
+
+/** The sha256 (hex) of a board's .dc.html, as recorded in refs/manifest.json. */
+export function boardHash(boardsDir: string, name: string): string {
+  return createHash('sha256').update(readFileSync(join(boardsDir, `${name}.dc.html`))).digest('hex');
 }
 
 /** Captures `boards` (default: every board in canvas.json) and returns the files written. */
@@ -52,9 +73,31 @@ export async function captureRefs(o: {
   // Capture into a temp folder and move the images into place only when every board succeeds, so a
   // failed run never leaves a half-written or stale set of references behind.
   const staging = mkdtempSync(join(tmpdir(), 'x2f-refs-'));
+  try {
+    return await captureInto(staging, boardsDir, outDir, names, sizes, o.executablePath);
+  } finally {
+    // Removed on success and on failure alike.
+    rmSync(staging, { recursive: true, force: true });
+  }
+}
+
+async function captureInto(
+  staging: string,
+  boardsDir: string,
+  outDir: string,
+  names: string[],
+  sizes: Map<string, { width: number; height: number }>,
+  executablePathOption: string | undefined,
+): Promise<string[]> {
   const server = await serveBoards({ boardsDir });
-  const executablePath = o.executablePath ?? process.env.X2F_CHROMIUM_PATH;
-  const browser = await chromium.launch(executablePath ? { executablePath } : {});
+  const executablePath = executablePathOption ?? process.env.X2F_CHROMIUM_PATH;
+  let browser;
+  try {
+    browser = await chromium.launch(executablePath ? { executablePath } : {});
+  } catch (e) {
+    await server.close();
+    throw e;
+  }
   const staged: { name: string; file: string }[] = [];
   try {
     for (const name of names) {
@@ -88,13 +131,19 @@ export async function captureRefs(o: {
     await server.close();
   }
   mkdirSync(outDir, { recursive: true });
+  const manifestPath = join(outDir, 'manifest.json');
+  const manifest = (existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, 'utf8')) : {}) as Record<string, RefEntry>;
   const written: string[] = [];
   for (const { name, file } of staged) {
     const dest = join(outDir, `${name}.png`);
     copyFileSync(file, dest); // copy (not rename): the staging temp may be on another filesystem
+    const size = sizes.get(name)!;
+    manifest[name] = { sha256: boardHash(boardsDir, name), w: size.width, h: size.height };
     written.push(dest);
   }
-  rmSync(staging, { recursive: true, force: true });
+  // Sorted by board, so a recapture of one board changes one line.
+  const sorted = Object.fromEntries(Object.entries(manifest).sort(([a], [b]) => a.localeCompare(b, 'en')));
+  writeFileSync(manifestPath, `${JSON.stringify(sorted, null, 2)}\n`);
   return written;
 }
 

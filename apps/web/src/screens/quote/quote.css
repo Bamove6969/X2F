@@ -166,12 +166,31 @@
   background: var(--x2f-surface);
 }
 
+/*
+ * The radio's hit box is 32x32 (the phone rule's minimum, e2e/phone.ts MIN_TAP) while the ring it
+ * draws stays the board's 20px, centred where the native 20px control sat (the -6px margin absorbs
+ * the extra), so the row's layout and the parity shot are unchanged.
+ */
 .x2f-quote__wallet input {
+  appearance: none;
   flex-shrink: 0;
-  width: 20px;
-  height: 20px;
-  margin: 0;
-  accent-color: var(--x2f-monero);
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  margin: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, transparent calc(100% - 2px), var(--x2f-ink-muted) calc(100% - 2px)) center / 20px 20px no-repeat;
+  cursor: pointer;
+}
+
+.x2f-quote__wallet input:checked {
+  background-image: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-monero) calc(100% - 2px));
+}
+
+.x2f-quote__wallet input:focus-visible {
+  outline: 2px solid var(--x2f-monero);
+  outline-offset: 2px;
 }
 
 .x2f-quote__wallet-text {

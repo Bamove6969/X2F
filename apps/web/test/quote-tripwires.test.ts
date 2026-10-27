@@ -1,7 +1,10 @@
 // TRIPWIRES for what the quote (Task 18) assumes before the tasks it plugs into are on the line.
-// Each one fails once the named module lands: then do what its message says (check the real shape
-// against src/screens/quote/api.ts and the stubs in e2e/quote.spec.ts and test/quoteScreen.test.tsx,
-// or wire the live call), and delete that tripwire.
+// (Task 3's /v1/price and /v1/methods are on the line since 2026-10-26 and were checked against
+// api.ts on 2026-10-27: same fields, `exponent` always sent; Tasks 16 and 17's offer lists are on
+// the line and App.tsx hands their Trade button to the quote, which reads offers through browse's
+// parseOffers; those tripwires are retired.) Each one below fails once the named module lands: then
+// do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
+// e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -16,7 +19,7 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     // pricing: { mode: 'market'; marginBps } | { mode: 'fixed'; centsPerXmr: string }; minFiatCents: string;
     // maxFiatCents: string; minTrades: number; opensAt?: 'building'|'graduated' }]. There is no single-offer
     // route, so the quote finds its offer in that list.
-    expect(has('apps/api/src/offers/routes.ts'), 'Task 4 landed: check parseOffer (poster.username is the display name, stage, opensAt, bigint strings)').toBe(false);
+    expect(has('apps/api/src/offers/routes.ts'), 'Task 4 landed: check quoteOffer and browse parseOffers (poster.username is the display name, stage, opensAt, bigint strings)').toBe(false);
   });
 
   it('NEEDS_TASK_5: the take route and its starter-limit refusal are guessed', () => {
@@ -25,26 +28,6 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     // capUsdCents?: string } naming only the caller's own stage (Revision 2026-10-24). Also check that
     // the trade's stored fiatCents is fiatCents(amountAtomic, lockedRate) (OD-5), which the quote shows.
     expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer, takeRefusal's codes and the starter-limit fields").toBe(false);
-  });
-
-  it('NEEDS_TASK_3: GET /v1/price is taken from the unmerged Task 3 branch', () => {
-    // From wip/second-p3-t3: { currency; centsPerXmr: string; exponent; at; usdCentsPerXmr: string } or
-    // 503 price-unavailable; /v1/methods { live; all } rows with { id; name }.
-    expect(has('apps/api/src/price/routes.ts'), 'Task 3 landed: check fetchMarket (usdCentsPerXmr) and fetchMethodName').toBe(false);
-  });
-
-  it("NEEDS_TASK_16: the sell browse Trade button does not open SellQuote yet, and parseOffer duplicates Task 16's", () => {
-    expect(
-      has('apps/web/src/screens/browse/OfferList.tsx'),
-      "Task 16 landed: pass onTrade={(o) => navigate(quotePath('buy', methodId, o.id, currency))} on /sell/:methodId, and use browse/api.ts parseOffers in quote/api.ts",
-    ).toBe(false);
-  });
-
-  it('NEEDS_TASK_17: the buy browse Trade button does not open BuyQuote yet', () => {
-    expect(
-      has('apps/web/src/screens/browse/BuyCopy.ts'),
-      "Task 17 landed: pass onTrade={(o) => navigate(quotePath('sell', methodId, o.id, currency))} on /buy/:methodId",
-    ).toBe(false);
   });
 
   it('NEEDS_TASK_28: setup does not yet come back to the quote with resume=1', () => {

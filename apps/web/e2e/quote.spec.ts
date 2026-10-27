@@ -5,6 +5,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { fiatCents } from '@x2f/trade';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 interface Stub {
   signedIn: boolean;
@@ -192,16 +193,18 @@ test.describe('SellQuote', () => {
   });
 });
 
-// Mobile ready at launch (spec, owner 2026-10-25): every screen is tested at phone sizes. From a small
-// Android or iPhone SE (320 wide) up to a large phone (430 wide), both quotes fit the width, keep every
-// control on screen and big enough to tap, and a take still goes through by tapping.
-const PHONES = [
+// Mobile ready at launch (spec, owner 2026-10-25): every screen is tested at phone sizes. The rule's
+// two sizes (PHONE_VIEWPORTS: the boards' 390x844 and a small Android phone, 360x800) run the shared
+// layout check and BuyQuote parity; a few more widths, from an iPhone SE (320) to a large phone (430),
+// check that both quotes fit, keep every control on screen and big enough to tap, and that a take
+// still goes through by tapping.
+const EXTRA_PHONES = [
   { width: 320, height: 568 },
-  { width: 360, height: 640 },
-  { width: 390, height: 844 },
   { width: 412, height: 915 },
   { width: 430, height: 932 },
 ] as const;
+
+const PHONES = [...PHONE_VIEWPORTS.map((v) => ({ width: Number(v.split('x')[0]), height: Number(v.split('x')[1]) })), ...EXTRA_PHONES];
 
 /** Elements whose box pokes out past the viewport's left or right edge (sideways clipping). */
 async function overflowing(page: Page): Promise<string[]> {
@@ -217,7 +220,7 @@ async function overflowing(page: Page): Promise<string[]> {
   });
 }
 
-/** Controls a thumb must hit that are under 44 px tall (the screen's own minimum). */
+/** Controls a thumb must hit that are under 44 px tall (the screen's own minimum, above phone.ts's MIN_TAP). */
 async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
@@ -231,7 +234,7 @@ async function smallTargets(page: Page): Promise<string[]> {
 }
 
 async function expectFitsPhone(page: Page): Promise<void> {
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  await expectPhoneLayout(page);
   expect(await overflowing(page)).toEqual([]);
   expect(await smallTargets(page)).toEqual([]);
   // The one primary can be scrolled to and then sits wholly on screen.
@@ -239,7 +242,43 @@ async function expectFitsPhone(page: Page): Promise<void> {
   await expect(trade(page)).toBeInViewport({ ratio: 1 });
 }
 
-test.describe('phone sizes', () => {
+// The rule's sizes: BuyQuote parity (the board is 390x844; at 360x800 the pixel report says the sizes
+// differ, which is expected) and the shared phone layout check, for both quote states.
+for (const viewport of PHONE_VIEWPORTS) {
+  test.describe(`quotes on a ${viewport} phone`, () => {
+    test.beforeEach(async ({ page }) => {
+      await setPhone(page, viewport);
+    });
+
+    test('BuyQuote: parity and phone layout', async ({ page }) => {
+      await stubApi(page, base);
+      await page.goto(`${BUY}&amount=${B.amount}`);
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await expect(card(page)).toContainText('1.250000 XMR');
+      await expectPhoneLayout(page);
+      await expectParity(page, 'BuyQuote', { viewport });
+    });
+
+    test('BuyQuote with no wallet (Add a wallet) and "Price unavailable right now": phone layout', async ({ page }) => {
+      await stubApi(page, { ...base, price: 'down', wallets: [] });
+      await page.goto(`${BUY}&amount=${B.amount}`);
+      await expect(page.locator('#quote-amount-help')).toHaveText('Price unavailable right now');
+      await expect(trade(page)).toHaveText('Add a wallet');
+      await expectPhoneLayout(page);
+    });
+
+    test('SellQuote after Max with a wallet picked: phone layout', async ({ page }) => {
+      await stubApi(page, { ...base, offers: [MIRA_BUYS] });
+      await page.goto(SELL);
+      await page.getByRole('button', { name: 'Max' }).click();
+      await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+      await expect(card(page)).toContainText('4.545454 XMR');
+      await expectPhoneLayout(page);
+    });
+  });
+}
+
+test.describe('phone sizes: fit and a take by tapping', () => {
   // A real phone: touch input and the mobile viewport meta tag are honoured.
   test.use({ hasTouch: true, isMobile: true });
 
