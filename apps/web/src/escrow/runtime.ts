@@ -1037,12 +1037,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       await this.tickOnce();
     }
 
+    /**
+     * Forgets the trade (the store's keep rules are met). The phase stays what it was: 'done' only
+     * if this device's own settle was done; a never-funded or settled-without-device trade is
+     * never reported 'done' (review 2026-10-26, minor 6).
+     */
     private async close(): Promise<void> {
       await this.halt(false);
       await this.saving;
       await deps.store.delete(this.code);
-      this.isReady = true;
-      this.set('done');
     }
 
     /**

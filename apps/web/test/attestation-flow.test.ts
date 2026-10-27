@@ -1128,8 +1128,12 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     t.state.view = tradeView({ state: 'cancelled' });
     await t.parties.ticks('seller', 3);
     expect(await seller.store.load(CODE)).not.toBeNull();
+    const before = seller.last()?.phase;
     clock += 30 * DAY;
     await until(async () => (await seller.store.load(CODE)) === null);
+    // Nothing was settled by this device: forgetting the record never reports 'done' (minor 6); the last phase stays.
+    expect(seller.last()?.phase).toBe(before);
+    expect(seller.last()?.phase).not.toBe('done');
   });
 
   it('closed and emptied while this device was still settling: settled elsewhere, escrow-failed, the store is kept', async () => {
@@ -1263,6 +1267,7 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect((await seller.store.load(CODE))?.failed ?? null).toBeNull();
     clock += 30 * DAY;
     await until(async () => (await seller.store.load(CODE)) === null);
+    expect(seller.last()?.phase).toBe('settled-without-device'); // never 'done': this device signed nothing
   });
 
   it.each([
