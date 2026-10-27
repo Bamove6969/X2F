@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { cancelAndRefundSteps, extendSteps, forgetRefundRuns, pendingRefundRun, refundRun, steps } from '../src/screens/trade/refundFlow.js';
-import type { RefundEscrow } from '../src/screens/trade/refundSlot.js';
+import { cancelAndRefundSteps, extendSteps, forgetRefundRuns, pendingRefundRun, refundRun, steps, type RefundFlowDeps } from '../src/screens/trade/refundFlow.js';
 
 function fakes(fail: Partial<Record<'post' | 'signal' | 'build', number>> = {}) {
   const calls: string[] = [];
@@ -13,7 +12,7 @@ function fakes(fail: Partial<Record<'post' | 'signal' | 'build', number>> = {}) 
     }
   };
   const post = (e: { type: 'extend' | 'request-refund' }) => maybe('post', `post:${e.type}`);
-  const escrow: RefundEscrow = {
+  const escrow: RefundFlowDeps['escrow'] = {
     signal: (s) => maybe('signal', `signal:${s}`),
     buildRefund: () => maybe('build', 'build'),
   };

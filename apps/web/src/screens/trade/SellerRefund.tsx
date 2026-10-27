@@ -19,7 +19,7 @@
  * The header's Chat link is the board's; the chat screen is Task 20's, so it points at the room's
  * chat anchor for now.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
@@ -29,7 +29,7 @@ import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { extendSteps, pendingRefundRun, refundRun, type RefundFlowDeps, type Steps } from './refundFlow.js';
 import { canExtend, canRequestRefund, finalAlertEnds } from './refundRules.js';
-import { methodOf, publicName, type RefundScreenProps } from './refundSlot.js';
+import { methodOf, publicName, type RefundScreenProps, type RefundSignal } from './refundSlot.js';
 import { postTradeEvent, TRY_AGAIN, useServerNow, xmrText } from './refundUi.js';
 import './refund.css';
 
@@ -66,11 +66,15 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
   );
 }
 
-/** The board's "If you cancel" steps (the last is the dispute-after-refund warning, spec 2.3). */
-function IfYouCancel({ view, all }: { view: RefundScreenProps['view']; all: boolean }) {
+/**
+ * The board's "If you cancel" steps (the last is the dispute-after-refund warning, spec 2.3). The
+ * XMR owed after a lost dispute is the trade amount this device accepts (Task 12's status), never
+ * the API's while the device has one (Task 12 review I3); the escrow balance is the view's.
+ */
+function IfYouCancel({ view, escrow, all }: Pick<RefundScreenProps, 'view' | 'escrow'> & { all: boolean }) {
   const name = publicName(view.counterparty);
   const held = xmrText(view.receivedAtomic);
-  const owed = xmrText(view.amountAtomic);
+  const owed = xmrText(escrow.amountAtomic ?? view.amountAtomic);
   return (
     <ol className="x2f-refund__steps">
       <li>
@@ -144,7 +148,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
         </section>
         <section aria-label="How the refund works" className="x2f-refund__card">
           <h2 className="x2f-refund__card-title">If you cancel</h2>
-          <IfYouCancel view={view} all />
+          <IfYouCancel view={view} escrow={escrow} all />
         </section>
         <section className="x2f-refund__check">
           <span className="x2f-refund__check-icon">
@@ -186,8 +190,24 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   );
 }
 
+/**
+ * The flow's deps, one object per trade for the life of the screen: Task 12's `useEscrow` returns
+ * a new object on every render of the room, and a run keeps its cursor only while its deps stay
+ * the same (the extend run is memoised on them). Each call goes to the latest escrow the room
+ * passed, never a stale one.
+ */
 function useFlowDeps(code: string, escrow: RefundScreenProps['escrow']): RefundFlowDeps {
-  return useMemo(() => ({ post: (e: { type: 'extend' } | { type: 'request-refund' }) => postTradeEvent(code, e), escrow }), [code, escrow]);
+  const latest = useRef(escrow);
+  useEffect(() => {
+    latest.current = escrow;
+  });
+  return useMemo(
+    () => ({
+      post: (e: { type: 'extend' } | { type: 'request-refund' }) => postTradeEvent(code, e),
+      escrow: { signal: (s: RefundSignal) => latest.current.signal(s), buildRefund: () => latest.current.buildRefund() },
+    }),
+    [code],
+  );
 }
 
 /**
@@ -239,7 +259,7 @@ function RefundRequested({ view, escrow, serverClock }: RefundScreenProps) {
           </section>
         ) : null}
         <section aria-label="How the refund works" className="x2f-refund__card">
-          <IfYouCancel view={view} all={false} />
+          <IfYouCancel view={view} escrow={escrow} all={false} />
         </section>
       </section>
       {pending === 'failed' ? (

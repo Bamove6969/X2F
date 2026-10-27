@@ -1,7 +1,8 @@
 // SellerRefund and FinalAlert (Task 25, board SellerRefund.dc.html). TradeRoom (Task 22) is not on
 // the main line yet, so these drive the screens through the e2e screen harness (harness/main.tsx),
 // built from the same sources and served with the real CSP. The API is stubbed per test with
-// page.route in Task 6's shapes; the escrow is the harness recorder (window.__escrowCalls).
+// page.route in Task 6's shapes; the escrow is Task 12's useEscrow over the harness's recorder
+// client (window.__escrowCalls names the runtime's actions).
 // TRIPWIRE NEEDS_TASK_22 (test/refund-tripwires.test.ts): once TradeRoom lands, drive /trade/:code.
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

@@ -76,6 +76,9 @@ export interface UseEscrow {
   refusal: EscrowRefusal | null;
   checkWords: string[] | null;
   keepOpen: boolean;
+  /** `EscrowStatus.amountAtomic` / `fiatCents`: the trade amount this device accepts now and its fiat total; the screens show these, never the API's. */
+  amountAtomic: bigint | null;
+  fiatCents: bigint | null;
   release(): Promise<void>;
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
@@ -114,6 +117,8 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     refusal: status.refusal,
     checkWords: status.checkWords,
     keepOpen: status.keepOpen,
+    amountAtomic: status.amountAtomic,
+    fiatCents: status.fiatCents,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),

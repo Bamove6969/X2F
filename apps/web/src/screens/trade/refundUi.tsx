@@ -3,8 +3,8 @@ import { formatXmr } from '@x2f/trade';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../../api/client.js';
 
-/** "1.25" for 1.25 XMR: the boards' prose amounts, exact to the atomic unit with trailing zeros dropped. */
-export function xmrText(atomic: string): string {
+/** "1.25" for 1.25 XMR: the boards' prose amounts (the view's strings or the escrow status's bigints), exact to the atomic unit with trailing zeros dropped. */
+export function xmrText(atomic: string | bigint): string {
   const full = formatXmr(BigInt(atomic), 12);
   return full.replace(/\.?0+$/, '');
 }

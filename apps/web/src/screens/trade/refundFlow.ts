@@ -59,7 +59,7 @@ export function steps(list: readonly Step[]): Steps {
 export interface RefundFlowDeps {
   /** POST /v1/trades/:code/events with this event. */
   post(e: { type: 'extend' } | { type: 'request-refund' }): Promise<unknown>;
-  escrow: RefundEscrow;
+  escrow: Pick<RefundEscrow, 'signal' | 'buildRefund'>;
 }
 
 export function cancelAndRefundSteps(d: RefundFlowDeps): Steps {

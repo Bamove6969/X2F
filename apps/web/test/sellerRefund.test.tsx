@@ -32,31 +32,58 @@ afterEach(() => {
   forgetRefundRuns();
 });
 
-function escrowFake() {
+/** The parts of Task 12's `useEscrow` these screens use, as a recorder; `amountAtomic` is the device's accepted amount (null: none). */
+function escrowFake(amountAtomic: bigint | null = null) {
   const calls: string[] = [];
   const escrow: RefundEscrow = {
     signal: vi.fn(async (s: string) => void calls.push(`signal:${s}`)),
     buildRefund: vi.fn(async () => void calls.push('build')),
+    amountAtomic,
   };
   return { calls, escrow };
 }
 
-function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow } = {}) {
+/** An escrow whose named calls fail the first `times` they are made. */
+function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
+  const calls: string[] = [];
+  const left = { signal: fail.signal ?? 0, build: fail.build ?? 0 };
+  const maybe = async (k: keyof typeof left, name: string) => {
+    calls.push(name);
+    if (left[k] > 0) {
+      left[k] -= 1;
+      throw new Error(`${k} failed`);
+    }
+  };
+  const escrow: RefundEscrow = {
+    signal: vi.fn((s: string) => maybe('signal', `signal:${s}`)),
+    buildRefund: vi.fn(() => maybe('build', 'build')),
+    amountAtomic: null,
+  };
+  return { calls, escrow };
+}
+
+/**
+ * `fresh`: the room hands the screen a NEW escrow object on every render, as Task 12's `useEscrow`
+ * returns one (its status object is rebuilt per render), and `refresh()` re-renders the room.
+ */
+function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow; fresh?: boolean } = {}) {
   const e = o.escrow ? { calls: [] as string[], escrow: o.escrow } : escrowFake();
-  const refresh = vi.fn(async () => undefined);
-  const r = render(
+  let current = view;
+  const tree = () => (
     <MemoryRouter>
-      <SellerRefund view={view} escrow={e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
-    </MemoryRouter>,
+      <SellerRefund view={current} escrow={o.fresh ? { ...e.escrow } : e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
+    </MemoryRouter>
   );
+  const refresh = vi.fn(async () => {
+    if (o.fresh) r.rerender(tree());
+  });
+  const r = render(tree());
   const button = (name: string) => [...r.host.querySelectorAll('button')].find((b) => b.textContent?.trim() === name) ?? null;
   /** The room re-read the trade: the same screen with the new view (same escrow, same refresh). */
-  const show = (next: RefundView) =>
-    r.rerender(
-      <MemoryRouter>
-        <SellerRefund view={next} escrow={e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
-      </MemoryRouter>,
-    );
+  const show = (next: RefundView) => {
+    current = next;
+    r.rerender(tree());
+  };
   return { ...r, ...e, refresh, button, show };
 }
 
@@ -113,6 +140,17 @@ describe('SellerRefund: the board copy', () => {
     // The XMR owed after a lost dispute is the trade amount, not the escrow balance.
     expect(host.textContent).toContain("you'll be asked to send mira.k the 1.25 XMR as agreed");
   });
+
+  it("the XMR owed is the amount this device accepts (Task 12's status), not the API's, when the device has one", () => {
+    // The API says 9.99 XMR; the device fixed 1.25 (Task 12 review I3: never the API's amount when the device has its own).
+    const lying = sellerView({ amountAtomic: '9990000000000' });
+    const device = mount(lying, { escrow: escrowFake(1_250_000_000_000n).escrow });
+    expect(device.host.textContent).toContain("you'll be asked to send mira.k the 1.25 XMR as agreed");
+    expect(device.host.textContent).not.toContain('9.99');
+    // No device amount yet (null): the view's amount is shown.
+    const none = mount(lying, { escrow: escrowFake(null).escrow });
+    expect(none.host.textContent).toContain("you'll be asked to send mira.k the 9.99 XMR as agreed");
+  });
 });
 
 describe('SellerRefund: Cancel & get refund', () => {
@@ -164,6 +202,21 @@ describe('SellerRefund: Give 30 more min', () => {
     expect(m.refresh).toHaveBeenCalled();
   });
 
+  it("a failed extend signal is retried without a second extend, although the room hands a new escrow object each render (Task 12's useEscrow does)", async () => {
+    const e = flakyEscrow({ signal: 1 });
+    const m = mount(sellerView(), { escrow: e.escrow, fresh: true });
+    fire(m.button('Give 30 more min')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(requests).toEqual([{ path: EVENTS, body: { type: 'extend' } }]);
+    expect(m.host.querySelector('[role="alert"]')?.textContent).toBe('That did not work. Try again.');
+    expect(m.refresh).toHaveBeenCalledTimes(1);
+    fire(m.button('Give 30 more min')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(requests).toHaveLength(1);
+    expect(e.calls).toEqual(['signal:trade.extend', 'signal:trade.extend']);
+    expect(m.host.querySelector('[role="alert"]')).toBeNull();
+  });
+
   it('is offered after the first extension and hidden after the second', () => {
     expect(mount(sellerView({ extensions: 1 })).button('Give 30 more min')).not.toBeNull();
     const m = mount(sellerView({ extensions: 2 }));
@@ -194,24 +247,6 @@ describe('SellerRefund: Nudge', () => {
 });
 
 describe('SellerRefund: a refund half done when the view flips to refund_requested (review I1)', () => {
-  /** An escrow whose named calls fail the first `times` they are made. */
-  function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
-    const calls: string[] = [];
-    const left = { signal: fail.signal ?? 0, build: fail.build ?? 0 };
-    const maybe = async (k: keyof typeof left, name: string) => {
-      calls.push(name);
-      if (left[k] > 0) {
-        left[k] -= 1;
-        throw new Error(`${k} failed`);
-      }
-    };
-    const escrow: RefundEscrow = {
-      signal: vi.fn((s: string) => maybe('signal', `signal:${s}`)),
-      buildRefund: vi.fn(() => maybe('build', 'build')),
-    };
-    return { calls, escrow };
-  }
-
   it('the signal fails once: once the request is accepted and the view flips, the run resumes and builds exactly once', async () => {
     const e = flakyEscrow({ signal: 1 });
     const m = mount(sellerView(), { escrow: e.escrow });

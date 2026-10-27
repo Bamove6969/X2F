@@ -39,11 +39,14 @@ describe('useEscrow', () => {
     const conf = confirmedFor('buyer');
     render(<Probe out={out} confirmed={conf} />);
     expect(c.start).toHaveBeenCalledWith(CODE, conf);
-    expect(out.v).toMatchObject({ phase: 'idle', error: null, checkWords: null, keepOpen: false });
+    expect(out.v).toMatchObject({ phase: 'idle', error: null, checkWords: null, keepOpen: false, amountAtomic: null, fiatCents: null });
     c.push({ phase: 'error', error: 'participants-mismatch' });
     expect(out.v).toMatchObject({ phase: 'error', error: 'participants-mismatch' });
     c.push({ phase: 'ready', checkWords: ['A1B2', 'C3D4', 'E5F6', '0789'] });
     expect(out.v?.checkWords).toEqual(['A1B2', 'C3D4', 'E5F6', '0789']);
+    // The amount the device accepts (and its fiat total) reach the screens through the hook (review 2026-10-26 I3).
+    c.push({ phase: 'ready', amountAtomic: 1_250_000_000_000n, fiatCents: 41_250n });
+    expect(out.v).toMatchObject({ amountAtomic: 1_250_000_000_000n, fiatCents: 41_250n });
     await out.v!.buyerCancel();
     await out.v!.markPaid(41_250n);
     await out.v!.signal('trade.extend');

@@ -1,5 +1,11 @@
 // TRIPWIRES for what Task 25's screens stand in for until the pieces they plug into are on the
-// main line. Each fails once its piece lands: then do what it says and delete it.
+// main line. (Task 12's escrow runtime is on the line since 2026-10-27 and was checked against
+// refundFlow.ts: the runtime's `build-refund` needs the view to be `refund_requested`
+// (`viewSupports('auto-refund')`) and settles `payoutsFor('auto-refund')` with builder seller and
+// cosigner mod (escrow/policy.ts ROUTE), so the order request-refund → trade.refund-request →
+// buildRefund is the one it expects; `RefundEscrow` is now Task 12's `UseEscrow` and the e2e
+// harness runs the real `useEscrow` over a recorder client; its tripwire is retired.) Each
+// tripwire below fails once its piece lands: then do what it says and delete it.
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -12,8 +18,9 @@ const has = (p: string): boolean => existsSync(ROOT + p);
 describe('Task 25 stand-ins', () => {
   it('NEEDS_TASK_22: SellerRefund and FinalAlert are not registered in the trade room yet', () => {
     // When TradeRoom.tsx lands (wip/lead-p3-task22):
-    // 1. refundSlot.ts: replace the copied types with Task 22's (`TradeView`, `TradeEscrow`,
-    //    `TradeScreenProps` from api/trade.ts, seams.ts and TradeRoom.tsx; `publicName` from api/trade.ts).
+    // 1. refundSlot.ts: replace the copied types with Task 22's (`TradeView`, `TradeScreenProps`
+    //    from api/trade.ts, seams.ts and TradeRoom.tsx; `publicName` from api/trade.ts; `RefundEscrow`
+    //    is already Task 12's `UseEscrow`, which Task 22's `TradeEscrow` is).
     // 2. refundScreens.ts: add `registerRefundScreens(registerTradeScreen);` at top level.
     // 3. screens.ts: replace `// Task 25: import './SellerRefund.js';` with `import './refundScreens.js';`.
     // 4. e2e/refund.spec.ts: drive /trade/:code instead of the harness, and run the 1280x800 parity.
@@ -26,15 +33,6 @@ describe('Task 25 stand-ins', () => {
     // room registers its screens (or have FinalAlert render it directly), and add an e2e step:
     // FinalAlert → I've paid → Yes, I've paid → `mark-paid` posted and the `trade.paid` signal sent.
     expect(has('apps/web/src/screens/trade/PaidConfirmSheet.tsx'), "Task 23 landed: wire PaidConfirmSheet into FinalAlert's I've paid").toBe(false);
-  });
-
-  it('NEEDS_TASK_12: buildRefund and the signals go through the room escrow stand-in', () => {
-    // Task 12 (wip/second-p3-t12) gives `useEscrow().buildRefund()` and `signal(...)`; until it
-    // merges the room's PENDING_ESCROW refuses them, so SellerRefund shows "That did not work. Try
-    // again." after posting request-refund. Once merged, check that build-refund settles
-    // payoutsFor('auto-refund') with builder 'seller' and cosigner 'mod' (runtime.ts) and that
-    // test/refundFlow.test.ts's order matches what the runtime expects.
-    expect(has('apps/web/src/escrow/useEscrow.ts'), 'Task 12 landed: check buildRefund/signal against the runtime').toBe(false);
   });
 
   it("NEEDS_TASK_19: the final-alert seen-receipt route is on Task 19's branch only", () => {
