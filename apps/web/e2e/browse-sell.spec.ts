@@ -1,19 +1,11 @@
 // Sell browse (Task 16): /sell (Main board) and /sell/:methodId (SellOffers board). The API is
 // stubbed with the boards' example data (src/fixtures/boards.ts) in the Task 3/4 shapes that
 // src/screens/browse/api.ts reads (see test/browse-tripwire.test.ts).
-import { readFileSync } from 'node:fs';
-import { expect, test, type Page, type Request } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
+import { CATALOG, stubBrowseApi, type Row } from './browse-stub.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
-
-type Row = { id: string; name: string; group: string; giftCard: boolean; offers: number; bestRate: string | null };
-
-const CATALOG = (
-  JSON.parse(readFileSync(new URL('../../../data/payment-methods.json', import.meta.url), 'utf8')) as {
-    methods: { id: string; name: string; group: string; giftCard?: boolean; legalReview?: string }[];
-  }
-).methods.filter((m) => !m.legalReview);
 
 const EUR_LIVE: Row[] = [{ id: 'SEPA', name: 'SEPA', group: 'Bank transfers', giftCard: false, offers: 3, bestRate: '30500' }];
 
@@ -25,55 +17,14 @@ const EUR_OFFER = {
   rate: '30500',
 };
 
-interface Stub {
-  signedIn?: boolean;
-  offers?: (currency: string) => unknown[];
-}
-
-interface Seen {
-  requests: Request[];
-  suggestions: unknown[];
-}
-
-function methodLists(currency: string, sort: string): { live: Row[]; all: Row[] } {
-  const live = [...(currency === 'USD' ? BOARD_SELL_LIVE_USD : currency === 'EUR' ? EUR_LIVE : [])] as Row[];
-  if (sort === 'rate') live.sort((a, b) => Number(b.bestRate) - Number(a.bestRate) || a.name.localeCompare(b.name, 'en'));
-  if (sort === 'az') live.sort((a, b) => a.name.localeCompare(b.name, 'en'));
-  const byId = new Map(live.map((r) => [r.id, r]));
-  const all = CATALOG.map((m) => byId.get(m.id) ?? { id: m.id, name: m.name, group: m.group, giftCard: m.giftCard === true, offers: 0, bestRate: null }).sort(
-    (a, b) => a.name.localeCompare(b.name, 'en'),
-  );
-  return { live, all };
-}
-
-async function stubApi(page: Page, o: Stub = {}): Promise<Seen> {
-  const seen: Seen = { requests: [], suggestions: [] };
-  page.on('request', (r) => {
-    if (new URL(r.url()).pathname.startsWith('/v1/')) seen.requests.push(r);
+/** The API as the Main and SellOffers boards show it (plus an EUR market); `offers` replaces the cards. */
+function stubApi(page: Page, o: { signedIn?: boolean; offers?: (currency: string) => unknown[] } = {}) {
+  return stubBrowseApi(page, {
+    ...(o.signedIn === undefined ? {} : { signedIn: o.signedIn }),
+    live: { USD: BOARD_SELL_LIVE_USD, EUR: EUR_LIVE },
+    offers: o.offers ?? ((currency) => (currency === 'USD' ? boardSellOffers() : currency === 'EUR' ? [EUR_OFFER] : [])),
+    market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr, EUR: '30400' },
   });
-  await page.route('**/v1/account/me', (r) =>
-    o.signedIn ? r.fulfill({ json: { username: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'unauthenticated' } }),
-  );
-  await page.route('**/v1/methods?*', (r) => {
-    const q = new URL(r.request().url()).searchParams;
-    return r.fulfill({ json: methodLists(q.get('currency') ?? '', q.get('sort') ?? 'buyers') });
-  });
-  await page.route('**/v1/price?*', (r) => {
-    const currency = new URL(r.request().url()).searchParams.get('currency') ?? '';
-    const centsPerXmr = currency === 'EUR' ? '30400' : BOARD_SELL_OFFERS.marketCentsPerXmr;
-    return r.fulfill({ json: { currency, centsPerXmr, exponent: 2, at: new Date().toISOString() } });
-  });
-  await page.route('**/v1/offers?*', (r) => {
-    const q = new URL(r.request().url()).searchParams;
-    const currency = q.get('currency') ?? '';
-    const list = o.offers ? o.offers(currency) : currency === 'USD' ? boardSellOffers() : currency === 'EUR' ? [EUR_OFFER] : [];
-    return r.fulfill({ json: list });
-  });
-  await page.route('**/v1/method-suggestions', async (r) => {
-    seen.suggestions.push(r.request().postDataJSON());
-    return r.fulfill({ status: 202, json: {} });
-  });
-  return seen;
 }
 
 test.describe('/sell (Main board)', () => {

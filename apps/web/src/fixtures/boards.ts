@@ -129,3 +129,104 @@ export function boardSellOffers(now: Date = new Date()) {
     },
   ];
 }
+
+// ---- Buy browse (Task 17): the BuyMain and BuyOffers boards. ----
+
+/**
+ * The live rows of the BuyMain board in USD ("<n> sellers taking USD · from $<rate>"), in its
+ * default "Most sellers" order. Names are the catalog's (data/payment-methods.json), which spells four
+ * of them differently from the board's older list ("ACH bank transfer (US)" for "Bank transfer (ACH)").
+ */
+export const BOARD_BUY_LIVE_USD = [
+  { id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 29, bestRate: '33000' },
+  { id: 'CASH_APP', name: 'Cash App', group: 'Payment apps', giftCard: false, offers: 23, bestRate: '33330' },
+  { id: 'PAY_BY_MAIL', name: 'Cash by mail', group: 'Cash & money orders', giftCard: false, offers: 18, bestRate: '33920' },
+  { id: 'ACH_TRANSFER', name: 'ACH bank transfer (US)', group: 'Bank transfers', giftCard: false, offers: 13, bestRate: '33200' },
+  { id: 'VENMO', name: 'Venmo', group: 'Payment apps', giftCard: false, offers: 10, bestRate: '33420' },
+  { id: 'PAYPAL', name: 'PayPal', group: 'Payment apps', giftCard: false, offers: 8, bestRate: '33770' },
+  { id: 'TRANSFERWISE', name: 'Wise', group: 'Payment apps', giftCard: false, offers: 7, bestRate: '33130' },
+  { id: 'F2F', name: 'Cash in person (face to face)', group: 'Cash & money orders', giftCard: false, offers: 6, bestRate: '33620' },
+  { id: 'AMAZON_GIFT_CARD', name: 'Amazon gift card', group: 'Gift cards & vouchers', giftCard: false, offers: 5, bestRate: '35320' },
+  { id: 'REVOLUT', name: 'Revolut', group: 'Payment apps', giftCard: false, offers: 5, bestRate: '33160' },
+  { id: 'CASH_DEPOSIT', name: 'Cash deposit at bank', group: 'Cash & money orders', giftCard: false, offers: 3, bestRate: '33460' },
+  { id: 'DOMESTIC_WIRE_TRANSFER', name: 'Domestic wire transfer (US)', group: 'Bank transfers', giftCard: false, offers: 3, bestRate: '33080' },
+  { id: 'SWIFT', name: 'International wire (SWIFT)', group: 'Bank transfers', giftCard: false, offers: 3, bestRate: '33060' },
+  { id: 'STRIKE', name: 'Strike', group: 'Payment apps', giftCard: false, offers: 2, bestRate: '33120' },
+  { id: 'US_POSTAL_MONEY_ORDER', name: 'USPS money order', group: 'Cash & money orders', giftCard: false, offers: 2, bestRate: '33570' },
+  { id: 'WESTERN_UNION', name: 'Western Union', group: 'Cash & money orders', giftCard: false, offers: 2, bestRate: '33520' },
+  { id: 'MONEY_GRAM', name: 'MoneyGram', group: 'Cash & money orders', giftCard: false, offers: 1, bestRate: '33520' },
+] as const;
+
+/** BuyOffers: "Buy XMR via Zelle", "29 sellers · USD", "Market price $329.90 / XMR". */
+export const BOARD_BUY_OFFERS = {
+  method: BOARD_METHOD,
+  currency: 'USD',
+  sellers: 29,
+  marketCentsPerXmr: '32990',
+} as const;
+
+/**
+ * The three offer cards of the BuyOffers board, as `GET /v1/offers?side=sell` sends them, in the
+ * board's "Best price" order (lowest first). satoshi_ghost's offer is fixed-price ($330.00, "$0.10
+ * above market" against $329.90). lowtide_rx has 12 trades, so the API would say stage 'building'
+ * and the card shows New (spec 2.3, owner 2026-10-24); the board predates starter limits and shows
+ * no badge there.
+ */
+export function boardBuyOffers(now: Date = new Date()) {
+  return [
+    {
+      id: 'offer-satoshi',
+      poster: {
+        username: 'satoshi_ghost',
+        completedTrades: 340,
+        online: true,
+        lastSeenAt: now.toISOString(),
+        typicalMinutes: 8,
+        positivePct: 99,
+        badges: ['trusted', 'veteran', 'fast', 'pgp'],
+        stage: 'graduated',
+      },
+      rate: '33000',
+      pricing: { mode: 'fixed', centsPerXmr: '33000' },
+      minFiatCents: '5000',
+      maxFiatCents: '150000',
+      minTrades: 0,
+    },
+    {
+      id: 'offer-kettle',
+      poster: {
+        username: 'kettle.moss',
+        completedTrades: 96,
+        online: false,
+        lastSeenAt: new Date(now.getTime() - 40 * 60_000 - 20_000).toISOString(),
+        typicalMinutes: 20,
+        positivePct: 98,
+        badges: ['pgp'],
+        stage: 'graduated',
+      },
+      rate: '33150',
+      pricing: { mode: 'market', marginBps: 50 },
+      minFiatCents: '10000',
+      maxFiatCents: '300000',
+      minTrades: 0,
+    },
+    {
+      id: 'offer-lowtide',
+      poster: {
+        username: 'lowtide_rx',
+        completedTrades: 12,
+        online: true,
+        lastSeenAt: now.toISOString(),
+        typicalMinutes: 30,
+        positivePct: 100,
+        badges: [],
+        stage: 'building',
+      },
+      rate: '33300',
+      pricing: { mode: 'market', marginBps: 90 },
+      minFiatCents: '2000',
+      maxFiatCents: '40000',
+      minTrades: 0,
+    },
+  ];
+}

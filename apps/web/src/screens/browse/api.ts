@@ -206,6 +206,24 @@ export function parseOffers(v: unknown): Offer[] {
 export type MethodSort = 'buyers' | 'rate' | 'az';
 export type OfferSort = 'best' | 'online' | 'trades';
 
+/**
+ * `list` in the order of `sort`, whatever order the API sent (a new array; ties keep the API order).
+ * Best price is what is best for the person browsing: lowest first when buying XMR, highest first
+ * when selling; an offer with no price now goes last.
+ */
+export function sortOffers(list: readonly Offer[], sort: OfferSort, side: Side): Offer[] {
+  const out = [...list];
+  if (sort === 'online') return out.sort((a, b) => Number(b.poster.online) - Number(a.poster.online));
+  if (sort === 'trades') return out.sort((a, b) => b.poster.completedTrades - a.poster.completedTrades);
+  return out.sort((a, b) => {
+    if (a.rate === b.rate) return 0;
+    if (a.rate === null) return 1;
+    if (b.rate === null) return -1;
+    const asc = a.rate < b.rate ? -1 : 1;
+    return side === 'buy' ? asc : -asc;
+  });
+}
+
 export async function fetchMethods(side: Side, currency: string, sort: MethodSort, signal?: AbortSignal): Promise<MethodLists> {
   const q = new URLSearchParams({ side: adSide(side), currency, sort });
   return parseMethodLists(await api(`/v1/methods?${q}`, signal ? { signal } : {}));

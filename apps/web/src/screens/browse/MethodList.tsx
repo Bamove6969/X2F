@@ -7,14 +7,11 @@ import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
 
-// The Main board (/sell; Task 17 reuses it for /buy with side="buy"): the methods with live offers
+// The Main board (/sell) and, with side="buy", the BuyMain board (/buy): the methods with live offers
 // in the chosen currency first, then every other method A–Z, a currency picker, search and Sort.
 
-const SORTS: { id: MethodSort; label: string }[] = [
-  { id: 'buyers', label: 'Most buyers' },
-  { id: 'rate', label: 'Best rate' },
-  { id: 'az', label: 'A–Z' },
-];
+/** The sort ids in the order of `copy.methodSorts`. */
+const SORT_IDS: readonly MethodSort[] = ['buyers', 'rate', 'az'];
 
 // A ready list remembers the side and currency it is for: while another currency loads, the old
 // rows stay hidden rather than read with the new currency's words and symbol. A sort change keeps
@@ -129,7 +126,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
             onChange={(e) => setQuery(e.target.value)}
           />
         </div>
-        <RadioChips label={{ name: 'Sort' }} options={SORTS} value={sort} onChange={setSort}>
+        <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.methodSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
         </RadioChips>
       </header>

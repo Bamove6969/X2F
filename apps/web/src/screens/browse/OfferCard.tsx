@@ -6,7 +6,7 @@ import { formatMinor, type Offer, type OpensAt } from './api.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
 
-// One offer card from the SellOffers board. What the card may offer comes from the API only:
+// One offer card from the SellOffers and BuyOffers boards. What the card may offer comes from the API only:
 // `opensAt` (the viewer's starter limits, spec 2.3) greys the card and removes the take control,
 // and `poster.stage` decides the amber New badge. The card never works out a stage from trade
 // counts or dates.
@@ -64,9 +64,16 @@ function posterLine(offer: Offer, now: Date): string {
   return parts.join(' · ');
 }
 
-function marginLine(offer: Offer, copy: BrowseCopy): { text: string; favourable: boolean } | null {
+function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
   if (offer.rate === null) return null;
-  if (offer.pricing.mode === 'fixed') return { text: 'Fixed price', favourable: false };
+  if (offer.pricing.mode === 'fixed') {
+    // A fixed price reads its difference from the market price now, when there is one.
+    if (market === null) return { text: 'Fixed price', favourable: false };
+    const diff = offer.pricing.centsPerXmr - market;
+    if (diff === 0n) return { text: 'At market', favourable: false };
+    const abs = diff < 0n ? -diff : diff;
+    return { text: `${formatMinor(abs, currency)} ${diff > 0n ? 'above' : 'below'} market`, favourable: copy.favourable(diff > 0n ? 1 : -1) };
+  }
   const bps = offer.pricing.marginBps;
   if (bps === 0) return { text: 'At market', favourable: false };
   const pct = (Math.abs(bps) / 100).toFixed(2).replace(/\.?0+$/, '');
@@ -130,15 +137,17 @@ export interface OfferCardProps {
   /** The one orange Trade on the screen (the first offer that can be taken). */
   primary: boolean;
   now: Date;
+  /** The market price now (minor units per XMR), for a fixed price's difference; null when unknown. */
+  market?: bigint | null;
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
 }
 
-export function OfferCard({ offer, currency, copy, primary, now, onTrade, onMessage, onNudge }: OfferCardProps) {
+export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge }: OfferCardProps) {
   const name = offer.poster.username;
   const closed = offer.opensAt !== undefined;
-  const margin = marginLine(offer, copy);
+  const margin = marginLine(offer, currency, copy, market);
   const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
 

@@ -200,6 +200,14 @@
   text-align: left;
 }
 
+/* The BuyOffers board's line under the cards. */
+.x2f-browse__footer {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
 .x2f-text-button {
   /* A tap target at least 32 px tall on phones; the negative margin keeps the line box as it was. */
   display: inline-block;
