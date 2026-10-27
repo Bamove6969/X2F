@@ -16,12 +16,16 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import sodium from 'libsodium-wrappers';
 import type { Role } from '@x2f/core';
 import {
+  ENVELOPE_KEYS,
   type Envelope,
   type Identity,
   type Participants,
   ProtocolError,
   ReplayGuard,
   generateIdentity,
+  hasExactKeys,
+  isPlainObject,
+  isValidSeq,
   open,
   seal,
 } from '../src/index.js';
@@ -574,5 +578,30 @@ describe('crafting helper sanity', () => {
     const { sig: _s, ...unsigned } = e;
     void _s;
     expect(await code(openAs({ ...e, sig: resign(unsigned, buyer) }, 'seller'))).toBe('ok');
+  });
+});
+
+describe('shape helpers exported for the API-side chat check (Task 20 review)', () => {
+  it('ENVELOPE_KEYS is exactly the key set a sealed envelope has and open() demands', async () => {
+    const e = await sealB();
+    expect([...ENVELOPE_KEYS]).toEqual(Object.keys(e));
+    for (const k of ENVELOPE_KEYS) {
+      const without = Object.fromEntries(Object.entries(e).filter(([key]) => key !== k));
+      expect(await code(openAs(without, 'seller')), `without ${k}`).toBe('bad-signature');
+    }
+    expect(await code(openAs({ ...e, extra: 1 }, 'seller'))).toBe('bad-signature');
+    expect(await code(openAs(e, 'seller'))).toBe('ok');
+  });
+
+  it('isPlainObject, hasExactKeys and isValidSeq are the checks open() applies', () => {
+    expect(isPlainObject({})).toBe(true);
+    expect(isPlainObject(Object.create(null))).toBe(true);
+    for (const x of [null, [], 'x', new Date(), Object.create({ a: 1 })]) expect(isPlainObject(x), String(x)).toBe(false);
+    expect(hasExactKeys({ a: 1, b: 2 }, ['a', 'b'])).toBe(true);
+    expect(hasExactKeys({ a: 1 }, ['a', 'b'])).toBe(false);
+    expect(hasExactKeys({ a: 1, b: 2, c: 3 }, ['a', 'b'])).toBe(false);
+    expect(hasExactKeys({ a: 1, b: 2, [Symbol('s')]: 3 }, ['a', 'b'])).toBe(false);
+    for (const n of [0, 1, Number.MAX_SAFE_INTEGER]) expect(isValidSeq(n)).toBe(true);
+    for (const n of [-0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, '1', null]) expect(isValidSeq(n), String(n)).toBe(false);
   });
 });

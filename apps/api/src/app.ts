@@ -13,6 +13,10 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { tradeRoutes } from './trades/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
+import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
+import type { MarketPrices } from './price/market.js';
+import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -46,6 +50,12 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Plan 3 Task 3: market prices, XMR/USD median × exchange rate, with price health (`main.ts` starts polling). */
+  prices: MarketPrices;
+  /** Plan 3 Task 4 supplies this from the `offers` table; without it `/v1/methods` lists nothing live. */
+  liveOffers?: LiveOfferStats;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -197,8 +207,13 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
+  methodListRoutes(app);
+  priceRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route.
   tradeRoutes(app, options.tradePublish ? { publish: options.tradePublish } : {});
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }
