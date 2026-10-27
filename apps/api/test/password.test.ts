@@ -172,10 +172,26 @@ describe('POST /v1/register/password', () => {
     expect(res.json()).toEqual({ error: 'names-same' });
   });
 
-  it('keeps the two namespaces apart: a display name may equal another account’s login name', async () => {
-    expect((await register('shared.word')).statusCode).toBe(201);
-    const res = await register('someone.el', GOOD, { acceptedTerms: TERMS }, { displayName: 'shared.word' });
-    expect(res.statusCode).toBe(201);
+  it('one namespace (review I1): a login name never equals a display name, nor a display name a login name', async () => {
+    // Alice: display Mira.K. Bob picks login name mira.k: refused before the Argon2 hash (display
+    // names are public, so the cheap refusal tells nobody anything new).
+    expect((await register('alice.private', GOOD, { acceptedTerms: TERMS }, { displayName: 'Mira.K' })).statusCode).toBe(201);
+    const hash = vi.spyOn(argon2, 'hash');
+    const bob = await register('MIRA.K', GOOD, { acceptedTerms: TERMS }, { displayName: 'Bob.Trades' });
+    expect(bob.statusCode).toBe(409);
+    expect(bob.json()).toEqual({ error: 'names-unavailable' });
+    expect(hash).not.toHaveBeenCalled();
+    // Bob: login night.owl. Carol picks display name Night.Owl: refused only by the credential-bound
+    // create (after the hash), as the generic names-unavailable, so no start route can test a login name.
+    expect((await register('night.owl', GOOD, { acceptedTerms: TERMS }, { displayName: 'Bob.Trades' })).statusCode).toBe(201);
+    hash.mockClear();
+    const carol = await register('carol.private', GOOD, { acceptedTerms: TERMS }, { displayName: 'Night.Owl' });
+    expect(carol.statusCode).toBe(409);
+    expect(carol.json()).toEqual({ error: 'names-unavailable' });
+    expect(hash).toHaveBeenCalledTimes(1);
+    hash.mockRestore();
+    expect(await accountRow('carol.private')).toBeUndefined();
+    expect((await deps.db.query("select 1 from accounts where display_key = 'night.owl'")).rows).toEqual([]);
   });
 
   it('F4: refuses a display name that looks like a staff or owner display name', async () => {

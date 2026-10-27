@@ -33,15 +33,21 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
 }
 
 /**
- * 409 `display-name-taken`, before any expensive work. Display names are public, so saying one is
- * taken tells nobody anything new. Login names are never checked here: a taken login name is only
- * found by `createAccount`, at the very end of a sign-up (after the password is hashed, or after
- * the PGP code or the authenticator has proved the key), and is answered with the generic
+ * Before any expensive work: 409 `display-name-taken` for a taken display name, and 409
+ * `names-unavailable` for a login name that is some account's public display name (review I1: the
+ * two names share one namespace, or a private login name would be printed on the site). Display
+ * names are public, so neither answer tells anybody anything new. Login names are never read here:
+ * a taken login name, or a display name that is someone's private login name, is only found by
+ * `createAccount`, at the very end of a sign-up (after the password is hashed, or after the PGP
+ * code or the authenticator has proved the key), and is answered with the generic
  * `names-unavailable`, so there is no cheap way to test whether a private login name exists.
  */
 export async function assertDisplayNameFree(db: Queryable, n: NewNames): Promise<void> {
-  const { rows } = await db.query('select 1 from accounts where display_key = $1', [n.displayKey]);
-  if (rows.length > 0) throw new ApiError(409, 'display-name-taken');
+  const { rows } = await db.query<{ display_key: string }>('select display_key from accounts where display_key in ($1, $2)', [
+    n.displayKey, n.loginKey,
+  ]);
+  if (rows.some((r) => r.display_key === n.displayKey)) throw new ApiError(409, 'display-name-taken');
+  if (rows.length > 0) throw new ApiError(409, 'names-unavailable');
 }
 
 /**
@@ -68,11 +74,15 @@ export function assertTermsAccepted(deps: Pick<Deps, 'config'>, acceptedTerms: u
   return version;
 }
 
+/** The unique constraints a new account's names can hit; `name_keys_pkey` spans both kinds (review I1). */
+const NAME_CONSTRAINTS: ReadonlySet<string> = new Set(['accounts_display_key_key', 'accounts_login_key_key', 'name_keys_pkey']);
+
 /**
  * Inserts an account (inside the caller's transaction): the final, credential-bound step of every
- * sign-up. A taken display or login key → 409 `names-unavailable`, one answer for both, so it
- * never says which one (or that a login name exists). `webauthn_user_id` is 32 random bytes. Terms version
- * and acceptance time are both null when `termsVersion` is null (staff and owner, Plan 4).
+ * sign-up. A taken display or login key, in either namespace (the `name_keys` trigger) → 409
+ * `names-unavailable`, one answer for all, so it never says which one (or that a login name
+ * exists). `webauthn_user_id` is 32 random bytes. Terms version and acceptance time are both null
+ * when `termsVersion` is null (staff and owner, Plan 4).
  */
 export async function createAccount(
   db: Queryable,
@@ -90,7 +100,7 @@ export async function createAccount(
     return rows[0]!.id;
   } catch (e) {
     const err = e as { code?: string; constraint?: string };
-    if (err.code === '23505' && (err.constraint === 'accounts_display_key_key' || err.constraint === 'accounts_login_key_key')) {
+    if (err.code === '23505' && err.constraint !== undefined && NAME_CONSTRAINTS.has(err.constraint)) {
       throw new ApiError(409, 'names-unavailable');
     }
     throw e;

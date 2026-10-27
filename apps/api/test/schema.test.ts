@@ -180,6 +180,64 @@ describe('schema', () => {
     await insertAccount('trader', 'Erin1234', null);
     await insertAccount('trader', 'Fred1234', null);
   });
+
+  it('ties each key to the lower-cased name (review Minor 8)', async () => {
+    const ins = (display: string, displayKey: string, login: string, loginKey: string) =>
+      db.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ($1, $2, $3, $4, 'trader', $5, now())`,
+        [display, displayKey, login, loginKey, randomBytes(32)],
+      );
+    await expect(ins('Gina1234', 'Gina1234', 'gina.login', 'gina.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_display_key_lower' });
+    await expect(ins('Gina1234', 'gina1234', 'GINA.login', 'GINA.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_key_lower' });
+    await ins('Gina1234', 'gina1234', 'GINA.login', 'gina.login');
+  });
+
+  it('one namespace for both names (review I1): a login key never equals any display key and vice versa, under a race too', async () => {
+    await insertAccount('trader', 'Mira.K', 'mira.private');
+    // Bob's login name is Alice's public display name.
+    await expect(insertAccount('trader', 'Bob.Trades', 'MIRA.K')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+    // Carol's display name is Bob's private login name.
+    await insertAccount('trader', 'Bob.Trades', 'night.owl');
+    await expect(insertAccount('trader', 'Night.Owl', 'carol.private')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+    expect((await db.query("select kind from name_keys where key in ('mira.k', 'mira.private', 'bob.trades', 'night.owl') order by key")).rows).toEqual([
+      { kind: 'display' }, { kind: 'display' }, { kind: 'login' }, { kind: 'login' },
+    ]);
+
+    // Two inserts racing: the second waits for the first to commit, then fails.
+    const a = await db.connect();
+    const b = await db.connect();
+    try {
+      await a.query('begin');
+      await b.query('begin');
+      await a.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Race.One', 'race.one', 'race.two', 'race.two', 'trader', $1, now())`,
+        [randomBytes(32)],
+      );
+      const second = b.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Race.Two', 'race.two', 'race.three', 'race.three', 'trader', $1, now())`,
+        [randomBytes(32)],
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      await a.query('commit');
+      await expect(second).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+      await b.query('rollback');
+    } finally {
+      a.release();
+      b.release();
+    }
+    expect((await db.query("select display_key from accounts where display_key like 'race.%'")).rows).toEqual([{ display_key: 'race.one' }]);
+
+    // Renaming keeps the table in step; deleting the account removes its keys.
+    await db.query("update accounts set login_name = 'mira.other', login_key = 'mira.other' where display_key = 'mira.k'");
+    expect((await db.query("select key from name_keys where account_id = (select id from accounts where display_key = 'mira.k') order by key")).rows).toEqual([
+      { key: 'mira.k' }, { key: 'mira.other' },
+    ]);
+    await db.query("delete from accounts where display_key = 'mira.k'");
+    expect((await db.query("select 1 from name_keys where key in ('mira.k', 'mira.other')")).rows).toEqual([]);
+  });
 });
 
 describe('config', () => {
