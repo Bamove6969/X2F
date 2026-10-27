@@ -36,3 +36,8 @@ create trigger sessions_end_push after update of revoked_at on sessions
 -- it (the seen-receipt routes in trades/routes.ts). An open stream or a push service's 201 never
 -- sets it. Null and false both mean "not seen": Task 10 must treat null as false and escalate.
 alter table trades add column final_alert_delivered boolean;
+-- When the first receipt landed (set once, coalesce). A push can be held by the push service for
+-- up to its 15-minute TTL, so the buyer's 15 minutes run from this time, not from final_alert_at:
+-- Task 10 auto-refunds only when now >= final_alert_seen_at + 15 min, and escalates otherwise.
+-- The boolean stays for compatibility (true exactly when this is set).
+alter table trades add column final_alert_seen_at timestamptz;

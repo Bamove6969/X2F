@@ -53,6 +53,9 @@ async function refundable() {
 const delivered = async (code: string) =>
   (await deps.db.query<{ d: boolean | null }>('select final_alert_delivered as d from trades where code = $1', [code])).rows[0]!.d;
 
+const seenAt = async (code: string) =>
+  (await deps.db.query<{ at: Date | null }>('select final_alert_seen_at as at from trades where code = $1', [code])).rows[0]!.at;
+
 const seen = (code: string) => `/v1/trades/${code}/final-alert-seen`;
 const errorOf = (res: { json(): unknown }) => (res.json() as { error?: string }).error;
 
@@ -95,6 +98,38 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
     expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
     expect(await delivered(t.code)).toBe(true);
     expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
+    expect(await delivered(t.code)).toBe(true);
+  });
+
+  it('the receipt records when it landed, once; the trade view shows it (review 2026-10-27, minor 6)', async () => {
+    const { seller, buyer, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    expect(await seenAt(t.code)).toBeNull();
+    const before = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown };
+    expect(before.finalAlertSeenAt).toBeNull();
+    const first = new Date(deps.clock().getTime() + 14 * 60_000); // a push held by the push service for 14 min
+    setNow(first);
+    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
+    expect(await seenAt(t.code)).toEqual(first);
+    // A second receipt (another tab, the service worker) never moves the time: Task 10 counts 15 min from the first.
+    setNow(new Date(first.getTime() + 60_000));
+    expect((await buyer.browser.post(seen(t.code), {})).statusCode).toBe(204);
+    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
+    expect(await seenAt(t.code)).toEqual(first);
+    for (const who of [buyer, seller]) {
+      const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { finalAlertSeenAt: unknown; finalAlertAt: unknown };
+      expect(v.finalAlertSeenAt).toBe(first.toISOString());
+      expect(typeof v.finalAlertAt).toBe('string');
+    }
+  });
+
+  it("the service worker's receipt records the time too", async () => {
+    const { seller, buyer, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    const at = new Date(deps.clock().getTime() + 60_000);
+    setNow(at);
+    expect((await buyer.browser.post('/v1/account/final-alert-seen', {})).statusCode).toBe(204);
+    expect(await seenAt(t.code)).toEqual(at);
     expect(await delivered(t.code)).toBe(true);
   });
 

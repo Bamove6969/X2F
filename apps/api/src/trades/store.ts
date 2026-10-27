@@ -59,6 +59,8 @@ export interface TradeRow {
   paid_at: Date | null;
   confirm_by: Date | null;
   final_alert_at: Date | null;
+  /** Task 19: when the buyer's first seen-receipt for the final alert landed (null = not seen). */
+  final_alert_seen_at: Date | null;
   cancel_proposed_by: 'buyer' | 'seller' | null;
   settling: Trade['settling'];
   settle_from: TradeState | null;

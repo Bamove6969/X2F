@@ -65,7 +65,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     }
   };
 
-  const view = async (req: FastifyRequest, t: Trade, sellerWalletApp: string | null): Promise<TradeView> => {
+  /** The view of `t` (the trade after this request's change, if any) with the row's non-machine columns. */
+  const view = async (req: FastifyRequest, t: Trade, row: TradeRow): Promise<TradeView> => {
     const deps = req.server.deps;
     const me = req.auth.accountId;
     const other = t.buyerId === me ? t.sellerId : t.buyerId;
@@ -73,7 +74,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     return toTradeView(t, me, now, {
       counterparty: await traderSummary(deps.db, other, now),
       profile: profile(t.methodId) ?? null,
-      sellerWalletApp,
+      sellerWalletApp: row.seller_wallet_app,
+      finalAlertSeenAt: row.final_alert_seen_at,
     });
   };
 
@@ -81,15 +83,16 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const row = await tradeFor(req);
     const t = rowToTrade(row);
     if (roleOf(t, req.auth.accountId) === null) throw new ApiError(404, 'not-found');
-    return view(req, t, row.seller_wallet_app);
+    return view(req, t, row);
   });
 
   /**
    * `POST /v1/trades/:code/final-alert-seen` → 204: the buyer's device has shown the final alert
-   * (the web app on the live `refund_requested` event). The only way `final_alert_delivered`
-   * becomes true; a stream being open or a push service answering 201 never does (P3-I13).
-   * Idempotent. An unknown code and someone else's trade get the same 404; the seller gets 409
-   * `wrong-party`; before a refund is requested, 409 `wrong-state`.
+   * (Task 25's FinalAlert, once per finalAlertAt, only while the alert is on screen). The only way
+   * `final_alert_delivered` becomes true; a stream being open or a push service answering 201
+   * never does (P3-I13). `final_alert_seen_at` keeps the first receipt's time (Task 10 counts the
+   * buyer's 15 minutes from it). Idempotent. An unknown code and someone else's trade get the same
+   * 404; the seller gets 409 `wrong-party`; before a refund is requested, 409 `wrong-state`.
    */
   app.post('/v1/trades/:code/final-alert-seen', { preHandler: session }, async (req, reply) => {
     const t = rowToTrade(await tradeFor(req));
@@ -99,10 +102,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     // The state conditions live in the UPDATE, not only in the read above: a mark-paid that
     // commits between the two leaves the (now paid) trade unflagged, and the answer comes from
     // the row count (review 2026-10-27, minor 5).
-    const r = await req.server.deps.db.query(
-      `update trades set final_alert_delivered = true
+    const { db, clock } = req.server.deps;
+    const r = await db.query(
+      `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $3)
         where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null`,
-      [t.code, req.auth.accountId],
+      [t.code, req.auth.accountId, clock()],
     );
     if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
     return reply.code(204).send();
@@ -114,10 +118,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
    * refund is requested. Idempotent; touches no other account's trades.
    */
   app.post('/v1/account/final-alert-seen', { preHandler: session }, async (req, reply) => {
-    await req.server.deps.db.query(
-      `update trades set final_alert_delivered = true
+    const { db, clock } = req.server.deps;
+    await db.query(
+      `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $2)
         where buyer_account_id = $1 and state = 'refund_requested' and final_alert_at is not null and final_alert_delivered is not true`,
-      [req.auth.accountId],
+      [req.auth.accountId, clock()],
     );
     return reply.code(204).send();
   });
@@ -136,6 +141,6 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       if (err instanceof TradeRuleError) throw new ApiError(409, err.code);
       throw err;
     }
-    return view(req, next, row.seller_wallet_app);
+    return view(req, next, row);
   });
 }
