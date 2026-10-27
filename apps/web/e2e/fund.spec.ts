@@ -256,10 +256,27 @@ test.describe('TradeFund (seller, phone)', () => {
     await expect(page.locator('[data-qr], [data-wallet-link], [data-escrow-address]')).toHaveCount(0);
   });
 
-  test('short funding: "Received 1.000000 of 1.250000 XMR, send the rest"', async ({ page }) => {
+  test('short funding this device has seen: the link, QR and copy carry the remainder, never the full amount again', async ({ page }) => {
+    await stub(page, () => sellerView({ receivedAtomic: '1000000000000' }), { ...VERIFIED, receivedAtomic: '1000000000000' });
+    await room(page);
+    await expect(page.getByText('Received 1.000000 of 1.250000 XMR, send the rest')).toBeVisible();
+    await expect(page.locator('[data-wallet-link]')).toHaveAttribute('href', moneroUri(ADDRESS, B.amountAtomic - 1_000_000_000_000n));
+    await page.getByRole('button', { name: 'Use another wallet (QR code or address)' }).click();
+    await expect(page.getByText('Send the rest: 0.250000 XMR')).toBeVisible();
+    await expect(page.locator('[data-qr]')).toBeVisible();
+    expect(await page.content()).not.toContain(`tx_amount=1.25`);
+  });
+
+  test('short funding this device has not seen yet: the address only, no link, QR or amount', async ({ page }) => {
     await stub(page, () => sellerView({ receivedAtomic: '1000000000000' }));
     await room(page);
     await expect(page.getByText('Received 1.000000 of 1.250000 XMR, send the rest')).toBeVisible();
+    await expect(page.getByText('Send the rest: 0.250000 XMR')).toBeVisible();
+    await expect(page.locator('[data-escrow-address]')).toHaveText(ADDRESS);
+    await expect(page.locator('[data-qr], [data-wallet-link]')).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Copy amount' })).toHaveCount(0);
+    await expect(page.locator('[data-primary]')).toHaveText('Copy address');
+    expect(await page.content()).not.toContain('tx_amount');
   });
 
   test('Edge sellers get the Full Sync tip', async ({ page }) => {

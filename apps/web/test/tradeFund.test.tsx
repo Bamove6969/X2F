@@ -314,6 +314,68 @@ describe('funding shows only the address this device verified', () => {
   }
 });
 
+describe('after a short payment the seller funds only the remainder (review 2026-10-27, I1)', () => {
+  const phone = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+  const buttons = (host: HTMLElement) => [...host.querySelectorAll('button')];
+  const footer = (host: HTMLElement) => buttons(host).find((b) => b.textContent?.includes('Use another wallet'));
+
+  it('this device saw 1.0 of 1.25: the link, QR and "Copy amount" carry 0.25, and tx_amount=1.25 appears nowhere', async () => {
+    phone();
+    current = { ...base, receivedAtomic: '1000000000000' };
+    setTradeEscrowHook(() => verified({ receivedAtomic: 1_000_000_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Received 1.000000 of 1.250000 XMR, send the rest');
+    expect(host.querySelector('[data-wallet-link]')?.getAttribute('href')).toBe(moneroUri(ADDRESS, 250_000_000_000n));
+    expect(host.textContent).toContain('0.25 XMR filled in');
+    expect(host.innerHTML).not.toContain('tx_amount=1.25');
+    const copied: string[] = [];
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
+    await act(async () => footer(host)!.click());
+    expect(host.textContent).toContain('Send the rest: 0.250000 XMR');
+    expect(host.textContent).not.toContain('Send exactly this amount');
+    expect(host.querySelector('[data-qr]')).not.toBeNull();
+    expect(host.innerHTML).not.toContain('tx_amount=1.25');
+    await act(async () => buttons(host).find((b) => b.textContent === 'Copy amount')!.click());
+    await flush();
+    expect(copied).toEqual(['0.25']);
+  });
+
+  it('the API says 1.0 arrived but this device has no reading yet: the address and "Send the rest", no link, QR or amount to copy', async () => {
+    phone();
+    current = { ...base, receivedAtomic: '1000000000000' };
+    setTradeEscrowHook(() => verified({ receivedAtomic: null }));
+    const host = await room();
+    expect(host.querySelector('[data-wallet-link]')).toBeNull();
+    expect(host.querySelector('[data-qr]')).toBeNull();
+    expect(host.innerHTML).not.toContain('tx_amount');
+    expect(host.textContent).not.toContain('Open in');
+    expect(host.querySelector('[data-escrow-address]')?.textContent).toBe(ADDRESS);
+    expect(host.textContent).toContain('Send the rest: 0.250000 XMR');
+    expect(buttons(host).find((b) => b.textContent === 'Copy amount')).toBeUndefined();
+    expect(buttons(host).find((b) => b.textContent === 'Copy address')).toBeDefined();
+    expect(host.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+
+  it('this device saw nothing yet while the API says 1.0 arrived: the same, no full-amount link or QR', async () => {
+    phone();
+    current = { ...base, receivedAtomic: '1000000000000' };
+    setTradeEscrowHook(() => verified({ receivedAtomic: 0n }));
+    const host = await room();
+    expect(host.querySelector('[data-wallet-link]')).toBeNull();
+    expect(host.querySelector('[data-qr]')).toBeNull();
+    expect(host.innerHTML).not.toContain('tx_amount');
+    expect(host.querySelector('[data-escrow-address]')?.textContent).toBe(ADDRESS);
+  });
+
+  it('this device saw 1.0 while the API still says 0: the remainder rules (the device reading is the truth)', async () => {
+    setTradeEscrowHook(() => verified({ receivedAtomic: 1_000_000_000_000n }));
+    const host = await room();
+    expect(host.textContent).toContain('Send the rest: 0.250000 XMR');
+    expect(host.innerHTML).not.toContain('tx_amount=1.25');
+    expect(host.querySelector('[data-qr]')).not.toBeNull();
+  });
+});
+
 describe('the buyer before funding', () => {
   it('shows "Waiting for <seller> to fund" and no address, QR or wallet link', async () => {
     current = { ...base, role: 'buyer', funding: null, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };

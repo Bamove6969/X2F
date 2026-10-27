@@ -37,7 +37,7 @@ describe('TRIPWIRES: trade room', () => {
   it('Task 12 (browser escrow runtime) is not merged: useTradeEscrow is still the stand-in', () => {
     expect(
       existsSync(new URL('escrow/useEscrow.ts', web)),
-      'Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived) and deal (its stored confirmed Deal: poster, takeAmountAtomic) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies',
+      'Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived), deal (its stored confirmed Deal: poster, takeAmountAtomic) and receivedAtomic (the balance its tick reads with party.funds()) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies',
     ).toBe(false);
   });
 

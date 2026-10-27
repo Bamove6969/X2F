@@ -49,6 +49,15 @@ export interface TradeEscrow {
    * `escrowAddress`.
    */
   deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint } | null;
+  /**
+   * What THIS device's escrow party has seen arrive at the escrow address (the `balance` Task 12's
+   * runtime reads with `party.funds()` on every tick, confirmed or not), or null until it has a
+   * reading. After a short payment the remainder the seller still sends is worked out from it,
+   * never from the API's `receivedAtomic` (review 2026-10-27, I1): a full-amount link, QR code or
+   * copy on top of a partial payment would overfund the escrow and grow the trade. ADDITION to
+   * Task 12's EscrowStatus, like `escrowAddress`; the tripwire names it.
+   */
+  receivedAtomic: bigint | null;
   error: EscrowErrorCode | null;
   retryable: boolean;
   refusal: EscrowRefusal | null;
@@ -107,12 +116,33 @@ export function expectedFundsAtomic(deal: { poster: 'seller' | 'buyer'; takeAmou
  * check words, its own derived address and its own deal, with no error, and only when the API's
  * address and amount are exactly the device's. The address and amount returned are the device's.
  */
-export function verifiedFunding(e: TradeEscrow, view: FundingFacts): { address: string; fundsAtomic: bigint } | null {
+export function verifiedFunding(e: TradeEscrow, view: FundingFacts): VerifiedFunding | null {
   if (e.phase !== 'ready' || e.error !== null || e.checkWords === null || e.escrowAddress === null || e.deal === null) return null;
   if (view.funding === null || integrityFailed(e, view)) return null;
   const fundsAtomic = expectedFundsAtomic(e.deal);
   if (fundsAtomic === null || fundsAtomic <= 0n) return null;
-  return { address: e.escrowAddress, fundsAtomic };
+  return { address: e.escrowAddress, fundsAtomic, receivedAtomic: e.receivedAtomic };
+}
+
+/** The device's address and amount to fund, and what the device itself has seen arrive (null without a reading). */
+export interface VerifiedFunding {
+  address: string;
+  fundsAtomic: bigint;
+  receivedAtomic: bigint | null;
+}
+
+/**
+ * The amount the wallet link, QR code and "Copy amount" carry right now (review 2026-10-27, I1):
+ * the whole funding while nothing has arrived; the remainder once THIS device has seen part of it;
+ * and null, nothing with an amount at all, while the API reports a short payment this device has
+ * not seen yet (or the device's reading already covers the funding). The API's figure only says
+ * that the payment is short; the remainder is never computed from it.
+ */
+export function amountToSend(v: Pick<VerifiedFunding, 'fundsAtomic' | 'receivedAtomic'>, apiReceivedAtomic: bigint): bigint | null {
+  const mine = v.receivedAtomic;
+  if (mine !== null && mine > 0n) return mine < v.fundsAtomic ? v.fundsAtomic - mine : null;
+  if (apiReceivedAtomic > 0n && apiReceivedAtomic < v.fundsAtomic) return null;
+  return v.fundsAtomic;
 }
 
 const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not wired (Task 12)'));
@@ -122,6 +152,7 @@ export const PENDING_ESCROW: TradeEscrow = {
   phase: 'idle',
   escrowAddress: null,
   deal: null,
+  receivedAtomic: null,
   error: null,
   retryable: false,
   refusal: null,

@@ -11,6 +11,8 @@ declare global {
     __x2fFixtureEscrow?: Partial<Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'refusal' | 'checkWords' | 'keepOpen' | 'escrowAddress'>> & {
       /** The device's deal, with the take amount as a decimal string (bigints don't cross addInitScript). */
       deal?: { poster: 'seller' | 'buyer'; takeAmountAtomic: string };
+      /** What this device has seen arrive, as a decimal string; absent for no reading. */
+      receivedAtomic?: string;
     };
   }
 }
@@ -19,7 +21,12 @@ export function installFixtures(): void {
   document.documentElement.dataset.fixtureMode = 'on';
   const escrow = window.__x2fFixtureEscrow;
   if (!escrow) return;
-  const { deal, ...rest } = escrow;
-  const state: TradeEscrow = { ...PENDING_ESCROW, ...rest, deal: deal ? { poster: deal.poster, takeAmountAtomic: BigInt(deal.takeAmountAtomic) } : null };
+  const { deal, receivedAtomic, ...rest } = escrow;
+  const state: TradeEscrow = {
+    ...PENDING_ESCROW,
+    ...rest,
+    deal: deal ? { poster: deal.poster, takeAmountAtomic: BigInt(deal.takeAmountAtomic) } : null,
+    receivedAtomic: receivedAtomic === undefined ? null : BigInt(receivedAtomic),
+  };
   setTradeEscrowHook(() => state);
 }

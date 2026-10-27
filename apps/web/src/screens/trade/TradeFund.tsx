@@ -7,6 +7,10 @@
  * once per trade, then shows "Waiting for your payment…" (the QR code and copy stay until
  * funded). Once the full amount is seen, the address, QR code, copy buttons and wallet link are
  * replaced by "Escrow funded" and never rendered again for that trade, across reloads.
+ *
+ * After a short payment (review 2026-10-27, I1) the link, QR code and "Copy amount" carry only the
+ * remainder, worked out from what THIS device's escrow has seen arrive (`escrow.receivedAtomic`);
+ * until the device has that reading only the address is shown, with the rest as text.
  */
 import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr, moneroUri } from '@x2f/trade';
@@ -19,9 +23,9 @@ import { HoldButton } from '../../ui/HoldButton.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { exactXmr, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
-import { FundFallback } from './FundFallback.js';
+import { FundFallback, type SendNow } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
-import { verifiedFunding } from './seams.js';
+import { amountToSend, verifiedFunding } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import './trade.css';
 
@@ -157,7 +161,7 @@ function WalletFooter({
   view: TradeView;
   /** Built on this device from the verified address (never the API's link). */
   uri: string;
-  /** The device-verified amount the link carries. */
+  /** The device-verified amount the link carries (the whole funding, or the remainder this device worked out). */
   fundsAtomic: bigint;
   opened: boolean;
   onOpened: () => void;
@@ -227,11 +231,15 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
   const [fallbackShown, setFallbackShown] = useState(false);
   const canFund = !funded && !settingUp && verified !== null;
   // The `monero:` link, QR code and copy text are built here from the device-verified address and
-  // amount only; the API's `funding.uri` is never used.
-  const uri = canFund ? safeUri(verified.address, verified.fundsAtomic) : null;
+  // amount only; the API's `funding.uri` is never used. After a short payment they carry the
+  // remainder this device itself has seen, or nothing at all (address only) until it has (I1).
+  const toSend = canFund ? amountToSend(verified, received) : null;
+  const uri = canFund && toSend !== null ? safeUri(verified.address, toSend) : null;
+  const send: SendNow | null = uri !== null && toSend !== null ? { uri, atomic: toSend, rest: toSend !== verified!.fundsAtomic } : null;
+  const addressOnly = canFund && send === null;
   const fallback =
-    uri !== null && (!phone || opened || fallbackShown) ? (
-      <FundFallback uri={uri} address={verified!.address} sellerFundsAtomic={verified!.fundsAtomic} primary={!phone} />
+    canFund && (addressOnly || !phone || opened || fallbackShown) ? (
+      <FundFallback address={verified!.address} send={send} restAtomic={funds > received ? funds - received : 0n} primary={!phone || addressOnly} />
     ) : null;
 
   return (
@@ -284,11 +292,11 @@ export function TradeFund({ view, escrow, serverClock }: TradeScreenProps) {
         {!settingUp && escrow.checkWords ? <EscrowCheck view={view} words={escrow.checkWords} /> : null}
         {!funded && wallet === 'edge' ? <p className="x2f-muted x2f-tip">{EDGE_TIP}</p> : null}
       </div>
-      {uri !== null && phone ? (
+      {send !== null && phone ? (
         <WalletFooter
           view={view}
-          uri={uri}
-          fundsAtomic={verified!.fundsAtomic}
+          uri={send.uri}
+          fundsAtomic={send.atomic}
           opened={opened}
           onOpened={() => setOpened(true)}
           fallbackShown={fallbackShown}
