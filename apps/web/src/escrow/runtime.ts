@@ -562,7 +562,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     }
 
     tickOnce(): Promise<void> {
-      this.ticking = this.ticking.then(() => this.tick()).catch(() => undefined);
+      // A tick that throws (a save that failed, most likely) left the record's memory copy ahead
+      // of the store: nothing is settled on it. Shown as retryable; retry() reloads the stored record.
+      this.ticking = this.ticking
+        .then(() => this.tick())
+        .catch(() => {
+          if (!this.stopped && !this.error) this.fail('escrow-failed');
+        });
       return this.ticking;
     }
 

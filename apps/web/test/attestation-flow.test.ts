@@ -812,6 +812,27 @@ describe('settling', () => {
     expect(t.hub.sent.filter((x) => x.channel === signals && x.from === 'buyer').length).toBe(sentBefore);
   });
 
+  it('a save that fails in a tick stops the trade (escrow-failed, retryable) instead of settling with an unsaved bound; retry() runs it again', async () => {
+    const t = await ready();
+    // Only the save that would store the release binding fails.
+    const save = t.buyer.store.save.bind(t.buyer.store);
+    t.buyer.store.save = async (r) => {
+      if ((r.releaseBoundAtomic ?? null) !== null) throw new Error('disk full');
+      return save(r);
+    };
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'secured' }); // the buyer's standing co-sign would bind the release
+    expect(await t.buyer.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+    await t.parties.ticks('buyer', 2);
+    expect(t.parties.settles.filter((x) => x.role === 'buyer')).toEqual([]); // nothing handed over on an unsaved bound
+    expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic ?? null).toBeNull();
+    expect((await t.buyer.store.load(CODE))?.failed ?? null).toBeNull();
+    t.buyer.store.save = save;
+    await t.buyer.runtime.retry(CODE);
+    await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    expect((await t.buyer.store.load(CODE))?.releaseBoundAtomic).toBe(AMOUNT);
+  });
+
   it('lapsed with funds: the seller builds the lapse refund automatically and the buyer co-signs it', async () => {
     const t = await ready();
     const part = 400_000_000_000n;
