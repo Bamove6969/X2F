@@ -30,6 +30,7 @@ For every row below:
 | Android, Chrome, the 1.5 s hold then release (Task 22 review I2: Phase 0 checked a plain tap on a link, not the hold) | Cake Wallet | not checked yet | | | | | | |
 | Android, Chrome, the 1.5 s hold then release | Edge | not checked yet | | | | | | |
 | Android, installed home-screen web app | Cake Wallet | not checked yet | | | | | | |
+| iPad with a trackpad: hold 1.5 s and release, then once hold 5 s or longer and release (a mouse-style pointer gets user activation on pointerdown and it expires after about 5 s, so a long hold may open nothing) | Cake Wallet | not checked yet | | | | | | |
 
 Phase 0 (spec line 164): on Android (Firefox, Cake Wallet) a plain `monero:` link opened Cake Wallet
 with the address and amount filled in. That was a tap on a link with a round amount, not the

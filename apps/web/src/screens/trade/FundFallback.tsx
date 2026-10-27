@@ -8,20 +8,26 @@
  * nothing can carry the full amount a second time (review 2026-10-27, I1).
  */
 import { useMemo, useState } from 'react';
-import * as QRCode from 'qrcode';
+import qrcode from 'qrcode-generator';
 import { formatXmr } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
 import { exactXmr } from './fund.js';
 
-/** The QR code as one SVG path of its dark modules, with the standard 4-module quiet zone. */
+/**
+ * The QR code as one SVG path of its dark modules, with the standard 4-module quiet zone. Built
+ * with `qrcode-generator`, the library Task 30's TOTP code uses (screens/settings/Qr.tsx), so the
+ * web app ships one QR library: error-correction level M, the smallest version that fits.
+ */
 export function qrPath(text: string): { size: number; d: string } {
-  const qr = QRCode.create(text, { errorCorrectionLevel: 'M' });
-  const n = qr.modules.size;
+  const qr = qrcode(0, 'M');
+  qr.addData(text);
+  qr.make();
+  const n = qr.getModuleCount();
   const quiet = 4;
   let d = '';
   for (let y = 0; y < n; y++) {
     for (let x = 0; x < n; x++) {
-      if (qr.modules.get(y, x)) d += `M${x + quiet} ${y + quiet}h1v1h-1z`;
+      if (qr.isDark(y, x)) d += `M${x + quiet} ${y + quiet}h1v1h-1z`;
     }
   }
   return { size: n + quiet * 2, d };

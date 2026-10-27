@@ -88,3 +88,25 @@ describe('parseTradeView (review 2026-10-27, Minor 5)', () => {
     });
   }
 });
+
+describe('one QR library in the web app (re-review 2026-10-27, item 4)', () => {
+  it("TradeFund's QR code uses Task 30's qrcode-generator, and qrcode is gone from the dependencies", async () => {
+    const { readFileSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const pkg = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as Record<string, Record<string, string>>;
+    const all = { ...pkg.dependencies, ...pkg.devDependencies };
+    expect(Object.keys(all)).not.toContain('qrcode');
+    expect(Object.keys(all)).not.toContain('@types/qrcode');
+    expect(all['qrcode-generator']).toBeDefined();
+    const src = readFileSync(fileURLToPath(new URL('../src/screens/trade/FundFallback.tsx', import.meta.url)), 'utf8');
+    expect(src).toMatch(/from 'qrcode-generator'/);
+  });
+
+  it('qrPath draws the code with the standard 4-module quiet zone', async () => {
+    const { qrPath } = await import('../src/screens/trade/FundFallback.js');
+    const p = qrPath('monero:4' + 'A'.repeat(94) + '?tx_amount=1.2625');
+    // Version sizes are 17 + 4v modules; plus 8 for the quiet zone.
+    expect((p.size - 8 - 17) % 4).toBe(0);
+    expect(p.d.startsWith('M4 4h1v1h-1z')).toBe(true); // the top-left finder starts at the quiet zone's edge
+  });
+});
