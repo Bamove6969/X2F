@@ -38,12 +38,22 @@ const WALLETS = [
   { id: 'w-edge', app: 'edge', label: 'Edge', address: '4CCCC7HcW0', addressEnd: '7HcW0c', usableFrom: '2026-10-25T00:00:00.000Z', usable: false },
 ];
 
+/** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
+interface TakeBody {
+  amountAtomic: string;
+  walletId: string;
+  centsPerXmr: string;
+  fiatCents: string;
+}
+
 interface Api {
   offers: unknown[];
   price: 'ok' | 'down';
+  /** The market rate /v1/price answers now (the board's $330.00 by default). */
+  rate: string;
   wallets: unknown[];
-  take: (body: { amountAtomic: string; walletId: string }) => { status: number; json: unknown };
-  takes: { amountAtomic: string; walletId: string }[];
+  take: (body: TakeBody) => { status: number; json: unknown };
+  takes: TakeBody[];
 }
 
 let stub: Api;
@@ -59,6 +69,7 @@ beforeEach(() => {
   stub = {
     offers: [GHOST, FIXED, MIRA],
     price: 'ok',
+    rate: '33000',
     wallets: WALLETS,
     takes: [],
     take: () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN' } }),
@@ -69,12 +80,12 @@ beforeEach(() => {
     if (url.pathname === '/v1/methods') return json(200, { live: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' }], all: [] });
     if (url.pathname === '/v1/price') {
       const currency = url.searchParams.get('currency');
-      return stub.price === 'ok' ? json(200, { currency, centsPerXmr: '33000', exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: '33000' }) : json(503, { error: 'price-unavailable' });
+      return stub.price === 'ok' ? json(200, { currency, centsPerXmr: stub.rate, exponent: 2, at: '2026-10-24T00:00:00.000Z', usdCentsPerXmr: stub.rate }) : json(503, { error: 'price-unavailable' });
     }
     if (url.pathname === '/v1/wallets') return session.status === 'signed-in' ? json(200, stub.wallets) : json(401, { error: 'not-authenticated' });
     const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
     if (take && init?.method === 'POST') {
-      const body = JSON.parse(String(init.body)) as { amountAtomic: string; walletId: string };
+      const body = JSON.parse(String(init.body)) as TakeBody;
       stub.takes.push(body);
       const r = stub.take(body);
       return json(r.status, r.json);
@@ -181,6 +192,35 @@ describe('BuyQuote', () => {
     const sent = stub.takes[0]!;
     expect(sent.walletId).toBe('w-cake');
     expect(fiatCents(BigInt(sent.amountAtomic), { currency: 'USD', centsPerXmr: 33_000n })).toBe(41_250n);
+    // The rate the person saw is the rate that locks: the take carries the quoted rate and total
+    // (Task 5 Revision 2026-10-27), so the server locks exactly these or refuses price-changed.
+    expect(sent.centsPerXmr).toBe('33000');
+    expect(sent.fiatCents).toBe('41250');
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('a price-changed refusal re-quotes at the price now and asks for a fresh tap; nothing is taken until then', async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    expect(host.textContent).toContain('$330.00 / XMR');
+    // The feed moved after the quote's last poll: the server refuses the stale rate.
+    stub.rate = '34000';
+    stub.take = (body) => (body.centsPerXmr === stub.rate ? { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN' } } : { status: 409, json: { error: 'price-changed' } });
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.takes[0]!.centsPerXmr).toBe('33000');
+    expect(where(host)).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+    // Re-quoted at the price now, with the same typed amount: $412.50 now buys less XMR.
+    expect(host.textContent).toContain('$340.00 / XMR');
+    expect(host.textContent).not.toContain('$330.00 / XMR');
+    expect(host.textContent).toContain('$412.50 USD');
+    expect(primary(host).disabled).toBe(false);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(2);
+    expect(stub.takes[1]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250' });
     expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
   });
 
@@ -250,15 +290,25 @@ describe('BuyQuote', () => {
   /** A marker as Trade or Add a wallet leaves it, for `offerId` and `text`. */
   const mark = (offerId = 'offer-ghost', text = '412.50') => rememberTake({ offerId, unit: 'fiat', text })!;
 
-  it('back with a matching marker and one usable wallet: the take runs once and opens the trade', async () => {
+  it('back with a matching marker and one usable wallet: the quote is shown again at the price now, the wallet picked, and nothing is taken until a tap', async () => {
     stub.wallets = [WALLETS[0]];
     const nonce = mark();
+    // The feed moved while the person was away (up to 30 minutes): the quote must show the rate now.
+    stub.rate = '34000';
     const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${nonce}`);
     await settle();
-    expect(stub.takes).toHaveLength(1);
-    expect(stub.takes[0]!.walletId).toBe('w-cake');
-    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(stub.takes).toHaveLength(0);
+    expect(where(host)).toBeNull();
     expect(sessionStorage.getItem(PENDING_TAKE_KEY)).toBeNull();
+    expect(host.querySelector('input[value="w-cake"]')).toHaveProperty('checked', true);
+    expect(host.textContent).toContain('$340.00 / XMR');
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("You're back. Check the total, then tap Trade.");
+    expect(primary(host).disabled).toBe(false);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+    expect(stub.takes[0]).toMatchObject({ walletId: 'w-cake', centsPerXmr: '34000', fiatCents: '41250' });
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
   });
 
   it('a crafted link with resume= but no marker in this tab takes nothing: the quote waits, filled in, for a tap', async () => {
@@ -269,6 +319,8 @@ describe('BuyQuote', () => {
       expect(stub.takes).toHaveLength(0);
       expect(where(host)).toBeNull();
       expect(host.querySelector<HTMLInputElement>('#quote-amount')!.value).toBe('412.50');
+      expect(host.querySelector('[role="status"]')).toBeNull();
+      expect(host.querySelector('input[value="w-cake"]')).toHaveProperty('checked', false);
       unmount();
     }
   });
@@ -281,37 +333,44 @@ describe('BuyQuote', () => {
       { nonce: (mark(), 'b'.repeat(32)), url: `${BUY}&amount=412.50&unit=fiat` },
     ];
     for (const c of cases) {
-      const { unmount } = await open(`${c.url}&resume=${c.nonce}`);
+      const { host, unmount } = await open(`${c.url}&resume=${c.nonce}`);
       await settle();
       expect(stub.takes).toHaveLength(0);
       expect(sessionStorage.getItem(PENDING_TAKE_KEY)).toBeNull();
+      expect(host.querySelector('[role="status"]')).toBeNull();
       unmount();
     }
   });
 
-  it('a marker works exactly once: the same link again takes nothing', async () => {
+  it('a marker works exactly once: the same link again is a plain quote (no wallet picked, no welcome back)', async () => {
     stub.wallets = [WALLETS[0]];
     const url = `${BUY}&amount=412.50&unit=fiat&resume=${mark()}`;
-    (await open(url)).unmount();
+    const first = await open(url);
     await settle();
-    expect(stub.takes).toHaveLength(1);
-    await open(url);
+    expect(first.host.querySelector('[role="status"]')).not.toBeNull();
+    first.unmount();
+    const again = await open(url);
     await settle();
-    expect(stub.takes).toHaveLength(1);
-  });
-
-  it('an expired marker takes nothing', async () => {
-    stub.wallets = [WALLETS[0]];
-    const nonce = rememberTake({ offerId: 'offer-ghost', unit: 'fiat', text: '412.50' }, Date.now() - PENDING_TAKE_MS - 1)!;
-    await open(`${BUY}&amount=412.50&unit=fiat&resume=${nonce}`);
-    await settle();
+    expect(again.host.querySelector('[role="status"]')).toBeNull();
+    expect(again.host.querySelector('input[value="w-cake"]')).toHaveProperty('checked', false);
     expect(stub.takes).toHaveLength(0);
   });
 
-  it('back with a marker and several wallets: nothing is taken until the person picks (OD-11)', async () => {
+  it('an expired marker is a plain quote', async () => {
+    stub.wallets = [WALLETS[0]];
+    const nonce = rememberTake({ offerId: 'offer-ghost', unit: 'fiat', text: '412.50' }, Date.now() - PENDING_TAKE_MS - 1)!;
+    const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${nonce}`);
+    await settle();
+    expect(stub.takes).toHaveLength(0);
+    expect(host.querySelector('[role="status"]')).toBeNull();
+  });
+
+  it('back with a marker and several wallets: no wallet is picked for the person (OD-11), nothing is taken', async () => {
     const { host } = await open(`${BUY}&amount=412.50&unit=fiat&resume=${mark()}`);
     await settle();
     expect(stub.takes).toHaveLength(0);
+    expect(host.querySelector('[role="status"]')).not.toBeNull();
+    expect(host.querySelectorAll('input[name="wallet"]:checked')).toHaveLength(0);
     expect(primary(host).disabled).toBe(true);
   });
 
