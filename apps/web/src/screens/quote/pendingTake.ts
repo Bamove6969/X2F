@@ -1,9 +1,12 @@
-// The single-use marker that lets a quote take an offer by itself after a trip away (setup, or Add
-// a wallet). A link alone can never start a trade: `resume=<nonce>` in the URL only counts when
-// this tab holds a marker the person created by tapping Trade (or Add a wallet) on this quote, for
-// the same offer and the same amount they typed, with the same nonce, within PENDING_TAKE_MS. The
-// marker is cleared when it is read, whether or not it matches, so it works at most once. Anything
-// else shows the quote with the amount filled in and waits for a tap.
+// The single-use marker that tells a quote the person is back from a trip away (setup, or Add a
+// wallet) after tapping Trade here. It never takes the offer by itself (lead 2026-10-27: the rate
+// the person confirms must be the one they see, and they may be back up to 30 minutes later): a
+// matching marker re-shows the quote at the price now, picks the one usable wallet when there is
+// exactly one, and says to check the total and tap Trade. `resume=<nonce>` in the URL only counts
+// when this tab holds a marker the person created on this quote, for the same offer and the same
+// amount they typed, with the same nonce, within PENDING_TAKE_MS; it is cleared when it is read,
+// whether or not it matches, so it counts at most once. Anything else is a plain quote with the
+// amount filled in.
 //
 // The amount is matched as typed (text and unit), not as XMR: a fiat amount is re-quoted at the
 // price of the moment, as on any quote.

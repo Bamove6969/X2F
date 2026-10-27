@@ -120,8 +120,18 @@ export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> 
   });
 }
 
+/** What the take sends: the amount, the wallet, and the rate and total the person saw (Task 5 Revision 2026-10-27). */
+export interface TakeRequest {
+  amountAtomic: bigint;
+  walletId: string;
+  /** The quoted rate. The server locks exactly it, or refuses 409 `price-changed` when the market moved past the offer's tolerance. */
+  centsPerXmr: bigint;
+  /** The quoted total, fiatCents(amountAtomic, centsPerXmr), as shown (OD-5). */
+  fiatCents: bigint;
+}
+
 /** `POST /v1/offers/:id/take` (Task 5) → the new trade's code. */
-export async function takeOffer(offerId: string, amountAtomic: bigint, walletId: string): Promise<string> {
-  const o = obj(await api(`/v1/offers/${encodeURIComponent(offerId)}/take`, { method: 'POST', body: { amountAtomic, walletId } }), 'take');
+export async function takeOffer(offerId: string, body: TakeRequest): Promise<string> {
+  const o = obj(await api(`/v1/offers/${encodeURIComponent(offerId)}/take`, { method: 'POST', body }), 'take');
   return str(o, 'code', 'take');
 }

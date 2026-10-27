@@ -7,17 +7,30 @@ import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
+/** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
+interface TakeBody {
+  amountAtomic: string;
+  walletId: string;
+  centsPerXmr: string;
+  fiatCents: string;
+}
+
 interface Stub {
   signedIn: boolean;
   price: 'ok' | 'down';
+  /** The market rate now (the board's $330.00 by default); a test moves it to see a price-changed refusal. */
+  rate?: string;
   offers: unknown[];
   wallets: unknown[];
-  /** What a take answers; by default a new trade, whose fiat total is locked as Task 5 does it. */
-  take?: (body: { amountAtomic: string; walletId: string }) => { status: number; json: unknown };
+  /**
+   * What a take answers; by default as Task 5 does it: a new trade locking the quoted rate when it
+   * is the market rate now (margin 0), else 409 price-changed.
+   */
+  take?: (body: TakeBody) => { status: number; json: unknown };
 }
 
 interface Seen {
-  takes: { offerId: string; amountAtomic: string; walletId: string }[];
+  takes: ({ offerId: string } & TakeBody)[];
   /** The fiat total each stubbed trade stores: fiatCents(amountAtomic, lockedRate) (OD-5). */
   storedFiatCents: bigint[];
 }
@@ -36,20 +49,22 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
   await page.route('**/v1/price?*', (r) => {
     const currency = new URL(r.request().url()).searchParams.get('currency');
     return s.price === 'ok'
-      ? r.fulfill({ json: { currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr } })
+      ? r.fulfill({ json: { currency, centsPerXmr: s.rate ?? B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: s.rate ?? B.marketCentsPerXmr } })
       : r.fulfill({ status: 503, json: { error: 'price-unavailable' } });
   });
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: s.offers }));
   await page.route('**/v1/wallets', (r) => (s.signedIn ? r.fulfill({ json: s.wallets }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } })));
   await page.route('**/v1/offers/*/take', async (r) => {
     const offerId = decodeURIComponent(new URL(r.request().url()).pathname.split('/')[3]!);
-    const body = r.request().postDataJSON() as { amountAtomic: string; walletId: string };
+    const body = r.request().postDataJSON() as TakeBody;
     seen.takes.push({ offerId, ...body });
     if (s.take) {
       const a = s.take(body);
       return r.fulfill({ status: a.status, json: a.json });
     }
-    seen.storedFiatCents.push(fiatCents(BigInt(body.amountAtomic), { currency: B.currency, centsPerXmr: BigInt(B.marketCentsPerXmr) }));
+    const rate = s.rate ?? B.marketCentsPerXmr;
+    if (body.centsPerXmr !== rate) return r.fulfill({ status: 409, json: { error: 'price-changed' } });
+    seen.storedFiatCents.push(fiatCents(BigInt(body.amountAtomic), { currency: B.currency, centsPerXmr: BigInt(rate) }));
     return r.fulfill({ json: { code: B.code } });
   });
   return seen;
@@ -108,7 +123,7 @@ test.describe('BuyQuote', () => {
     await expect(trade(page)).toBeEnabled();
   });
 
-  test('with no wallets the primary goes to Add a wallet, and the take resumes after it', async ({ page }) => {
+  test('with no wallets the primary goes to Add a wallet; back from it the quote is shown again with the new wallet picked, and a tap takes', async ({ page }) => {
     const stub: Stub = { ...base, wallets: [] };
     const seen = await stubApi(page, stub);
     await page.goto(`${BUY}&amount=${B.amount}`);
@@ -119,11 +134,16 @@ test.describe('BuyQuote', () => {
     // Task 29's Add a wallet adds the first wallet (no confirm needed for a first wallet) and goes back.
     stub.wallets = [B.wallets[0]];
     await page.goto(returnTo);
+    await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
+    await expect(page.getByRole('radio', { name: /Cake Wallet/ })).toBeChecked();
+    await expect(page).not.toHaveURL(/resume=/);
+    expect(seen.takes).toHaveLength(0);
+    await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake' }]);
+    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
   });
 
-  test('logged out, Trade goes to /setup/terms, then /trade/<code> after a stubbed setup', async ({ page }) => {
+  test('logged out, Trade goes to /setup/terms; back from a stubbed setup the quote is shown again at the price now, never taken silently', async ({ page }) => {
     const stub: Stub = { ...base, signedIn: false, wallets: [] };
     const seen = await stubApi(page, stub);
     await page.goto(`${BUY}&amount=${B.amount}`);
@@ -133,11 +153,42 @@ test.describe('BuyQuote', () => {
     const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
     expect(seen.takes).toHaveLength(0);
     // The stubbed setup: an account now exists with its first wallet, and setup ends on returnTo.
+    // Setup took a while and the feed moved: the quote the person comes back to shows the rate now.
     stub.signedIn = true;
     stub.wallets = [B.wallets[0]];
+    stub.rate = '34000';
     await page.goto(returnTo);
+    await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
+    await expect(card(page)).toContainText('$340.00 / XMR');
+    await expect(card(page)).toContainText('$412.50 USD');
+    expect(seen.takes).toHaveLength(0);
+    await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
     expect(seen.takes).toHaveLength(1);
+    expect(seen.takes[0]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250' });
+  });
+
+  test("the rate the person sees is the rate that locks: a stale rate is refused price-changed, the quote re-quotes, and the fresh tap locks the new one", async ({ page }) => {
+    const stub: Stub = { ...base };
+    const seen = await stubApi(page, stub);
+    await page.goto(`${BUY}&amount=${B.amount}`);
+    await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+    await expect(card(page)).toContainText('$330.00 / XMR');
+    // The feed moves between the quote's last poll and the tap.
+    stub.rate = '34000';
+    await trade(page).click();
+    await expect(page.getByRole('alert')).toHaveText('The price moved. Check the new total and tap Trade again.');
+    await expect(page).not.toHaveURL(/\/trade\//);
+    expect(seen.takes).toHaveLength(1);
+    expect(seen.takes[0]!.centsPerXmr).toBe('33000');
+    expect(seen.storedFiatCents).toHaveLength(0);
+    await expect(card(page)).toContainText('$340.00 / XMR');
+    await expect(card(page)).toContainText('1.213235 XMR');
+    await expect(card(page)).toContainText('$412.50 USD');
+    await trade(page).click();
+    await expect(page).toHaveURL(`/trade/${B.code}`);
+    expect(seen.takes[1]).toMatchObject({ centsPerXmr: '34000', fiatCents: '41250' });
+    expect(seen.storedFiatCents).toEqual([41_250n]);
   });
 
   test('a crafted resume link takes nothing: the quote is filled in and waits for a tap', async ({ page }) => {
@@ -312,7 +363,7 @@ test.describe('phone sizes: fit and a take by tapping', () => {
       await expectFitsPhone(page);
       await trade(page).tap();
       await expect(page).toHaveURL(`/trade/${B.code}`);
-      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake' }]);
+      expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
     });
 
     test(`BuyQuote at ${vp.width}x${vp.height} with no wallet and "Price unavailable right now" still fits`, async ({ page }) => {

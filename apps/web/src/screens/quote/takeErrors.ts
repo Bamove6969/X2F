@@ -38,6 +38,9 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       return 'Trading is paused for maintenance. Try again soon.';
     case 'price-unavailable':
       return 'Price unavailable right now';
+    case 'price-changed':
+      // The quote re-fetches the price when it sees this refusal (Quote.tsx), so the total is fresh.
+      return 'The price moved. Check the new total and tap Trade again.';
     case 'method-unavailable':
       return 'This payment method is not available.';
     case 'wallet-not-ready':

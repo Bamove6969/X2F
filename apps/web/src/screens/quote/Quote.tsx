@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { formatFiat, formatXmr, posterRole, type Price } from '@x2f/trade';
 import { Button } from '../../ui/Button.js';
@@ -64,13 +64,17 @@ function useLoad<T>(run: ((signal: AbortSignal) => Promise<T>) | null, deps: unk
   return load;
 }
 
-/** The market price for `currency`, asked again every PRICE_REFRESH_MS; null while the feed is down. */
-function useMarket(currency: string): Load<MarketNow | null> {
+/**
+ * The market price for `currency`, asked again every PRICE_REFRESH_MS and on `refresh()` (after a
+ * price-changed refusal); null while the feed is down.
+ */
+function useMarket(currency: string): { market: Load<MarketNow | null>; refresh: () => void } {
   const [tick, setTick] = useState(0);
+  const refresh = useCallback(() => setTick((t) => t + 1), []);
   useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), PRICE_REFRESH_MS);
+    const id = setInterval(refresh, PRICE_REFRESH_MS);
     return () => clearInterval(id);
-  }, []);
+  }, [refresh]);
   const [last, setLast] = useState<Load<MarketNow | null>>({ kind: 'loading' });
   const now = useLoad((signal) => fetchMarket(currency, signal), [currency, tick]);
   useEffect(() => {
@@ -78,7 +82,7 @@ function useMarket(currency: string): Load<MarketNow | null> {
     if (now.kind === 'ready') setLast(now);
     if (now.kind === 'failed') setLast({ kind: 'ready', value: null });
   }, [now]);
-  return last;
+  return { market: last, refresh };
 }
 
 const perXmr = (cents: bigint, currency: string) => `${formatFiat(cents, currency)} / XMR`;
@@ -96,10 +100,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   const [unit, setUnit] = useState<Unit>(params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : copy.defaultUnit);
   const [picked, setPicked] = useState<string | null>(params.get('wallet'));
 
-  const { signedIn, state, take } = useTake(offerId);
+  const { market, refresh: refreshMarket } = useMarket(currency);
+  const { signedIn, state, take } = useTake(offerId, refreshMarket);
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
-  const market = useMarket(currency);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
 
   const o: QuoteOffer | null = offer.kind === 'ready' ? offer.value : null;
@@ -118,10 +122,13 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     if (pickedWallet) next.set('wallet', pickedWallet.id);
     return next;
   }, [currency, text, unit, pickedWallet]);
+  // `resume` is kept until the effect below has read it once (`resumed`), then dropped for good:
+  // a re-render in the same batch (the wallet it picks) must not put it back from stale params.
+  const resumed = useRef(false);
   useEffect(() => {
     const resume = params.get('resume');
     const next = new URLSearchParams(here);
-    if (resume !== null) next.set('resume', resume);
+    if (resume !== null && !resumed.current) next.set('resume', resume);
     if (next.toString() !== params.toString()) setParams(next, { replace: true });
   }, [here, params, setParams]);
 
@@ -139,10 +146,12 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   const backHref = `/${copy.adSide === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
   const addWalletHref = (resume: boolean) => `/wallets?add=1&returnTo=${encodeURIComponent(resume ? resumeHref() : `${path}?${here}`)}`;
 
-  // Back from setup or Add a wallet with `resume=<nonce>`: take the offer the person already tapped
-  // Trade on, once, and only if this tab holds the matching marker (a crafted link never takes).
-  // Only when exactly one wallet can be picked: with more, the person picks (OD-11).
-  const resumed = useRef(false);
+  // Back from setup or Add a wallet with `resume=<nonce>`, and this tab holds the matching marker
+  // (a crafted link is a plain quote): the quote is shown AGAIN, at the price now, for a fresh tap.
+  // Nothing is ever taken without a tap: the person may be back up to 30 minutes later and the rate
+  // they confirm must be the one they see (spec 2.2 step 3). With exactly one usable wallet it is
+  // picked for them; with more, they pick (OD-11).
+  const [back, setBack] = useState(false);
   useEffect(() => {
     const nonce = params.get('resume');
     if (resumed.current || nonce === null || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
@@ -150,21 +159,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     const next = new URLSearchParams(params);
     next.delete('resume');
     setParams(next, { replace: true });
-    // The marker is cleared here, before any take, whether or not it matches.
+    // The marker is cleared here whether or not it matches, so it counts once.
     if (!claimTake(pending, nonce)) return;
-    const only = usable.length === 1 ? usable[0]! : null;
-    if (only === null || q.kind !== 'ok' || o === null) return;
-    setPicked(only.id);
-    take({
-      amountAtomic: q.amountAtomic,
-      walletId: only.id,
-      confirmed: {
-        role: copy.adSide === 'sell' ? 'buyer' : 'seller',
-        ownAddress: only.address,
-        deal: { poster: posterRole(o.side), takeAmountAtomic: q.amountAtomic, currency: o.currency, centsPerXmr: q.rate.centsPerXmr, maxFiatCents: o.maxFiatCents },
-      },
-      resumeHref,
-    });
+    setBack(true);
+    if (usable.length === 1) setPicked(usable[0]!.id);
   });
 
   if (offer.kind === 'loading') return <main className="x2f-quote" data-screen="quote" aria-busy="true" />;
@@ -326,6 +324,11 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
       </main>
 
       <footer className="x2f-quote__footer">
+        {back && refusal === null ? (
+          <p role="status" className="x2f-quote__help">
+            You&apos;re back. Check the total, then tap Trade.
+          </p>
+        ) : null}
         {refusal !== null ? (
           <p role="alert" className="x2f-quote__help x2f-quote__help--bad">
             {refusal}
@@ -339,7 +342,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <Button
             variant="primary"
             disabled={!canTrade}
-            onClick={() => ok && take({ amountAtomic: ok.amountAtomic, walletId: pickedWallet?.id ?? null, confirmed, resumeHref })}
+            onClick={() => ok && take({ quote: { amountAtomic: ok.amountAtomic, centsPerXmr: ok.rate.centsPerXmr, fiatCents: ok.fiatCents }, walletId: pickedWallet?.id ?? null, confirmed, resumeHref })}
           >
             Trade
           </Button>

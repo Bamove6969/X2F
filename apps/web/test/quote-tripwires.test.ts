@@ -23,11 +23,14 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
   });
 
   it('NEEDS_TASK_5: the take route and its starter-limit refusal are guessed', () => {
-    // Guessed: POST /v1/offers/:id/take { amountAtomic: string; walletId } → { code }; refusals 409 with
-    // { error } as in plan Task 5, plus 409 { error: 'starter-limit', stage: 'starter'|'building',
-    // capUsdCents?: string } naming only the caller's own stage (Revision 2026-10-24). Also check that
-    // the trade's stored fiatCents is fiatCents(amountAtomic, lockedRate) (OD-5), which the quote shows.
-    expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer, takeRefusal's codes and the starter-limit fields").toBe(false);
+    // Guessed: POST /v1/offers/:id/take { amountAtomic: string; walletId; centsPerXmr: string; fiatCents:
+    // string } → { code } (plan Task 5 with Revision 2026-10-27: the quoted rate and total travel with the
+    // take; the server locks exactly them or refuses 409 { error: 'price-changed' } when the market moved
+    // past the offer's tolerance, fixed-price offers comparing exactly); the other refusals 409 with { error }
+    // as in plan Task 5, plus 409 { error: 'starter-limit', stage: 'starter'|'building', capUsdCents?: string }
+    // naming only the caller's own stage (Revision 2026-10-24). Also check that the trade's stored fiatCents
+    // is the quoted one (OD-5).
+    expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer's body (centsPerXmr, fiatCents), price-changed, takeRefusal's codes and the starter-limit fields").toBe(false);
   });
 
   it("NEEDS_TASK_12: ConfirmedTrade and Deal in quote/confirmed.ts copy the unmerged escrow runtime's", () => {
