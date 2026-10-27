@@ -452,3 +452,72 @@ describe('a session revoked between requireTrader and attach (security review ME
     expect(s.events.map((e) => (e as { code: string }).code)).toEqual(['X2F-AAAA-AAAA', 'X2F-BBBB-BBBB']);
   });
 });
+
+describe('GET /v1/events never refreshes the session (review 2026-10-27, Important 1)', () => {
+  const HOUR = 3600_000;
+
+  /** An app whose streams end fast, with a trader on the default 12-hour logout timer. */
+  async function shortApp(maxStreamMs: number, loginAt: Date) {
+    const short = await testApp({}, { events: { perAccount: 2, global: 4, heartbeatMs: 1000, maxStreamMs } });
+    short.setNow(loginAt);
+    const id = await seedAccount(short.deps, { username: `Ev_idle_${maxStreamMs}` });
+    const { startSession } = await import('../src/auth/sessions.js');
+    short.app.post('/t/login', async (req, reply) => ({
+      sessionId: await startSession(short.deps, req, reply, {
+        accountId: id, level: 'full', deviceLabel: 'Test', method: 'passkey', firstSession: false,
+      }),
+    }));
+    await short.app.listen({ host: '127.0.0.1', port: 0 });
+    const b = new Browser(short.app);
+    await b.post('/t/login');
+    const session = async () => {
+      const { rows } = await short.deps.db.query<{ last_seen_at: Date; expires_at: Date }>(
+        'select last_seen_at, expires_at from sessions where account_id = $1', [id],
+      );
+      return rows[0]!;
+    };
+    return { ...short, b, session };
+  }
+
+  it('an open stream reconnecting for longer than the inactivity timeout still ends with an expired session', async () => {
+    const start = new Date(T0.getTime() + 500 * DAY);
+    const short = await shortApp(80, start);
+    try {
+      const before = await short.session();
+      // Hour 0 and hour 11: the tab is open and reconnecting, the user touches nothing.
+      for (const hours of [0, 11]) {
+        short.setNow(new Date(start.getTime() + hours * HOUR));
+        const s = await openEvents(short.app, short.b.cookies);
+        expect(s.status, `hour ${hours}`).toBe(200);
+        await s.ended;
+        await until(() => short.app.events.size === 0);
+      }
+      // No stream touched the session: last_seen_at and expires_at are what the login wrote.
+      expect(await short.session()).toEqual(before);
+      // Hour 13: past the 12-hour logout timer, the reconnect is refused and nothing else revives it.
+      short.setNow(new Date(start.getTime() + 13 * HOUR));
+      const s = await openEvents(short.app, short.b.cookies);
+      expect(s.status).toBe(401);
+      expect(s.body).toEqual({ error: 'not-authenticated' });
+      expect((await short.b.get('/v1/account/me')).statusCode).toBe(401);
+    } finally {
+      await short.app.close();
+    }
+  });
+
+  it("a stream ends at the session's idle deadline when that comes before maxStreamMs", async () => {
+    const short = await shortApp(60_000, new Date(T0.getTime() + 501 * DAY));
+    try {
+      const { expires_at } = await short.session();
+      // 150 ms before the deadline the stream opens; it must end at the deadline, not a minute later.
+      short.setNow(new Date(expires_at.getTime() - 150));
+      const s = await openEvents(short.app, short.b.cookies);
+      expect(s.status).toBe(200);
+      const t = Date.now();
+      await Promise.race([s.ended, new Promise((_, fail) => setTimeout(() => fail(new Error('stream outlived the idle deadline')), 2000))]);
+      expect(Date.now() - t).toBeLessThan(1500);
+    } finally {
+      await short.app.close();
+    }
+  });
+});

@@ -7,9 +7,9 @@ export interface EventStreamOptions {
   /** A comment line this often keeps proxies and NATs from dropping an idle stream. */
   heartbeatMs?: number;
   /**
-   * The server ends each stream after this long. The browser reconnects at once, and the new
-   * request runs `requireTrader` again, so a logged-out, disabled or Terms-stale session stops
-   * receiving within this bound.
+   * The server ends each stream after this long (or at the session's own deadline, if sooner).
+   * The browser reconnects at once, and the new request runs `requireTrader` again, so a
+   * logged-out, disabled or Terms-stale session stops receiving within this bound.
    */
   maxStreamMs?: number;
   /**
@@ -28,11 +28,16 @@ const RETRY_MS = 3000;
  * `GET /v1/events` (Task 19): Server-Sent Events for the session's own account only (P3-M9).
  * `requireTrader` (full session, trader, not disabled, current Terms): recovery and held sessions
  * are refused by it. Over the caps → 429 `busy`. Nothing about a stream is logged.
+ *
+ * The check is read-only (`touch: false`): opening or reconnecting a stream is the browser's doing,
+ * not the user's, so it never refreshes `last_seen_at` or `expires_at` (spec 6.3, the logout
+ * timer). A stream also ends at the session's deadline when that is sooner than `maxStreamMs`,
+ * and the reconnect is then refused with 401 (review 2026-10-27, Important 1).
  */
 export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamOptions = {}): void {
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
-  const requireTrader = requireSession({ kinds: ['trader'] });
+  const requireTrader = requireSession({ kinds: ['trader'], touch: false });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
     const raw = reply.raw;
@@ -111,7 +116,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
     heartbeat = setInterval(() => {
       if (!ended && !raw.destroyed) raw.write(':\n\n');
     }, heartbeatMs);
-    lifetime = setTimeout(end, maxStreamMs);
+    lifetime = setTimeout(end, Math.max(0, Math.min(maxStreamMs, req.auth.expiresAt.getTime() - clock().getTime())));
     // The response's 'close' fires when the client goes away (the request's own 'close' fires as
     // soon as its empty body has been read, so it is not used).
     raw.on('close', end);
