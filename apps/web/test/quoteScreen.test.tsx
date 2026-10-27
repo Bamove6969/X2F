@@ -33,9 +33,9 @@ const FIXED = { ...GHOST, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerX
 const MIRA = { ...GHOST, id: 'offer-mira', poster: poster('mira.k') };
 
 const WALLETS = [
-  { id: 'w-cake', app: 'cake', label: 'Cake Wallet', address: '4AAAAk3Fz0', addressEnd: 'k3Fz0a', usableFrom: '2026-10-01T00:00:00.000Z', usable: true },
-  { id: 'w-ledger', app: 'ledger-trezor', label: 'Ledger (via Feather)', address: '4BBBB9QbP0', addressEnd: '9QbP0b', usableFrom: '2026-10-01T00:00:00.000Z', usable: true },
-  { id: 'w-edge', app: 'edge', label: 'Edge', address: '4CCCC7HcW0', addressEnd: '7HcW0c', usableFrom: '2026-10-25T00:00:00.000Z', usable: false },
+  { id: 'w-cake', app: 'cake', label: 'Cake Wallet', address: '4AAAAk3Fz0a', addressEnd: 'DECOY1', usableFrom: '2026-10-01T00:00:00.000Z', usable: true },
+  { id: 'w-ledger', app: 'ledger-trezor', label: 'Ledger (via Feather)', address: '4BBBB9QbP0b', addressEnd: 'DECOY2', usableFrom: '2026-10-01T00:00:00.000Z', usable: true },
+  { id: 'w-edge', app: 'edge', label: 'Edge', address: '4CCCC7HcW0c', addressEnd: 'DECOY3', usableFrom: '2026-10-25T00:00:00.000Z', usable: false },
 ];
 
 /** The take body as Task 5 reads it (Revision 2026-10-27): the amount, the wallet and the quoted rate and total. */
@@ -181,6 +181,8 @@ describe('BuyQuote', () => {
     pick(host, 'w-ledger');
     expect(primary(host).disabled).toBe(false);
     expect(host.textContent).toContain('In Ledger (via Feather), address ending …9QbP0b');
+    // Re-review gap 2: every ending shown is cut from the full address, never the API's addressEnd.
+    expect(host.textContent).not.toContain('DECOY');
   });
 
   it('Trade takes with the quoted amount and the picked wallet, then opens the trade room; the stored total is the quoted one (OD-5)', async () => {
@@ -235,13 +237,13 @@ describe('BuyQuote', () => {
     // and the offer's ceiling. Never built from the API's trade.
     const confirmed = {
       role: 'buyer',
-      ownAddress: '4AAAAk3Fz0',
+      ownAddress: '4AAAAk3Fz0a',
       deal: { poster: 'seller', takeAmountAtomic: 1_250_000_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 150_000n },
     };
     expect(arrivedState).toEqual({ confirmed });
     // Stored before navigating, so a reload of the room (or a tab opened on it) can read it back.
     expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
-    expect(host.textContent).not.toContain('4AAAAk3Fz0');
+    expect(host.textContent).not.toContain('4AAAAk3Fz0a');
   });
 
   it('a market offer with the feed down is disabled with "Price unavailable right now"; a fixed-price offer still quotes', async () => {
@@ -508,7 +510,7 @@ describe('SellQuote', () => {
     // The seller's record: role seller, the buy ad's poster is the buyer, the funding wallet's full address.
     const confirmed = {
       role: 'seller',
-      ownAddress: '4AAAAk3Fz0',
+      ownAddress: '4AAAAk3Fz0a',
       deal: { poster: 'buyer', takeAmountAtomic: 4_545_454_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 150_000n },
     };
     expect(arrivedState).toEqual({ confirmed });

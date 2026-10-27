@@ -1,4 +1,5 @@
 import { Link } from 'react-router';
+import { addressEnd } from '../../ui/addressEnd.js';
 import type { PickWallet } from './api.js';
 import './quote.css';
 
@@ -54,7 +55,7 @@ export function WalletPicker({
             <span className="x2f-quote__wallet-text">
               <span className="x2f-quote__wallet-name">{name}</span>
               <span className="x2f-quote__muted-sm">
-                <span className="x2f-quote__mono">…{w.addressEnd}</span>
+                <span className="x2f-quote__mono">…{addressEnd(w.address)}</span>
                 {app !== undefined && app !== name ? ` · ${app}` : ''}
               </span>
             </span>

@@ -10,8 +10,9 @@ const EVENT = { type: 'accepted' as const, code: 'X2F-7KQ4-M9TD', by: 'mira.K_77
 const ADDR1 = `5${'A'.repeat(88)}a1b2c3`;
 const ADDR2 = `5${'B'.repeat(88)}d4e5f6`;
 const WALLETS: AcceptedWallet[] = [
-  { id: 'w1', app: 'cake', label: 'Cake main', address: ADDR1, addressEnd: 'a1b2c3', usable: true },
-  { id: 'w2', app: 'feather', label: 'Feather', address: ADDR2, addressEnd: 'd4e5f6', usable: true },
+  // addressEnd is a decoy: the sheet must show the ending of the full address it will pay to (re-review gap 2).
+  { id: 'w1', app: 'cake', label: 'Cake main', address: ADDR1, addressEnd: 'DECOY1', usable: true },
+  { id: 'w2', app: 'feather', label: 'Feather', address: ADDR2, addressEnd: 'DECOY2', usable: true },
   { id: 'w3', app: 'edge', label: 'New Edge', address: `5${'C'.repeat(88)}778899`, addressEnd: '778899', usable: false },
 ];
 // The poster's own view of the trade (GET /v1/trades/:code), as the API serializes it: a seller-posted offer.
@@ -198,5 +199,48 @@ describe("AcceptedSheet hands the room the poster's ConfirmedTrade (Task 18 / 22
       deal: { poster: 'seller', takeAmountAtomic: 1n, currency: 'EUR', centsPerXmr: 2n, maxFiatCents: 3n },
     };
     expect(acceptedNavigation(EVENT.code, confirmed)).toEqual(['/trade/X2F-7KQ4-M9TD', { state: { confirmed } }]);
+  });
+});
+
+describe('AcceptedSheet re-review (gaps 1-3)', () => {
+  const renderWith = (o: { view?: AcceptedTradeView; wallets?: AcceptedWallet[]; posted?: string[]; done?: string[] } = {}) =>
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => o.wallets ?? WALLETS} loadTrade={async () => o.view ?? VIEW}
+        submit={async (_c, w) => void o.posted?.push(w)} onDone={(code) => o.done?.push(code)} onClose={() => undefined} />,
+    );
+
+  it('gap 1: the deal line names the side: "You sell" for a seller-posted offer, "You buy" for a buyer-posted one', async () => {
+    renderWith();
+    await flush();
+    expect(sheet().querySelector('[data-part="deal"]')!.textContent).toMatch(/^You sell 1\.250000 XMR/);
+  });
+
+  it('gap 1: a buyer poster sees "You buy"', async () => {
+    renderWith({ view: { ...VIEW, role: 'buyer', poster: 'buyer' } });
+    await flush();
+    expect(sheet().querySelector('[data-part="deal"]')!.textContent).toMatch(/^You buy 1\.250000 XMR/);
+  });
+
+  it("gap 2: each wallet's ending comes from its full address, never from the API's addressEnd", async () => {
+    renderWith();
+    await flush();
+    const ends = [...sheet().querySelectorAll('.x2f-accepted__end')].map((e) => e.textContent);
+    expect(ends).toEqual(['…a1b2c3', '…d4e5f6']);
+    expect(sheet().textContent).not.toContain('DECOY');
+  });
+
+  it('gap 3: a wallet whose address is longer than 256 characters (or empty) is never offered or posted', async () => {
+    const long: AcceptedWallet = { id: 'w9', app: 'cake', label: 'Too long', address: `5${'Z'.repeat(256)}`, addressEnd: 'ZZZZZZ', usable: true };
+    const empty: AcceptedWallet = { id: 'w8', app: 'cake', label: 'Empty', address: '', addressEnd: '', usable: true };
+    const posted: string[] = [];
+    const done: string[] = [];
+    renderWith({ wallets: [long, empty], posted, done });
+    await flush();
+    expect(sheet().querySelector('input[type="radio"]')).toBeNull();
+    expect(sheet().textContent).not.toContain('Too long');
+    expect(button('Add a wallet')).toBeDefined();
+    expect(posted).toEqual([]);
+    expect(done).toEqual([]);
+    expect(readConfirmed(EVENT.code)).toBeNull();
   });
 });

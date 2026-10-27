@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { formatFiat, formatXmr } from '@x2f/trade';
 import { api } from '../api/client.js';
 import type { LiveEvent } from '../api/events.js';
+import { addressEnd, confirmableAddress } from '../ui/addressEnd.js';
 import { storeConfirmed, type ConfirmedTrade } from './quote/confirmed.js';
 import { Button } from '../ui/Button.js';
 import { Sheet } from '../ui/Sheet.js';
@@ -118,7 +119,9 @@ export function AcceptedSheet({
         if (!live) return;
         // No wallet is pre-selected (OD-11, X-2: no default payout wallet; always ask). The
         // button stays disabled until the poster picks one.
-        setWallets(all.filter((w) => w.usable));
+        // A wallet whose address cannot be confirmed (empty, or over 256 characters, the rule
+        // readConfirmed applies) is never offered: it could not become `ownAddress` (gap 3).
+        setWallets(all.filter((w) => w.usable && confirmableAddress(w.address)));
         const d = posterDeal(view);
         setDeal(d);
         setRole(d ? view.role : null);
@@ -138,7 +141,7 @@ export function AcceptedSheet({
 
   const use = async () => {
     const wallet = wallets.find((w) => w.id === picked);
-    if (!wallet || !deal || !role || wallet.address === '') return;
+    if (!wallet || !deal || !role || !confirmableAddress(wallet.address)) return;
     const confirmed: ConfirmedTrade = { role, ownAddress: wallet.address, deal };
     setFailed(false);
     setPhase('sending');
@@ -172,7 +175,7 @@ export function AcceptedSheet({
         <>
           {deal ? (
             <p className="x2f-sheet__body" data-part="deal">
-              {formatXmr(deal.takeAmountAtomic)} XMR at {formatFiat(deal.centsPerXmr, deal.currency)} per XMR, up to{' '}
+              {role === 'seller' ? 'You sell' : 'You buy'} {formatXmr(deal.takeAmountAtomic)} XMR at {formatFiat(deal.centsPerXmr, deal.currency)} per XMR, up to{' '}
               {formatFiat(deal.maxFiatCents, deal.currency)}
             </p>
           ) : null}
@@ -189,7 +192,7 @@ export function AcceptedSheet({
                   onChange={() => setPicked(w.id)}
                 />
                 <span className="x2f-accepted__label">{w.label}</span>
-                <span className="x2f-accepted__end">…{w.addressEnd}</span>
+                <span className="x2f-accepted__end">…{addressEnd(w.address)}</span>
               </label>
             ))}
           </fieldset>
