@@ -252,6 +252,37 @@ describe('schema', () => {
     }
     expect((await db.query("select display_key from accounts where display_key like 'race.%'")).rows).toEqual([{ display_key: 'race.one' }]);
 
+    // Crossing names (re-review 1): T1 (display x, login y) and T2 (display y, login x) both wait on
+    // the same first key, so the loser fails 23505 on name_keys_pkey, never 40P01 (deadlock).
+    for (let round = 0; round < 5; round++) {
+      const t1 = await db.connect();
+      const t2 = await db.connect();
+      try {
+        await t1.query('begin');
+        await t2.query('begin');
+        const ins = (c: pg.PoolClient, display: string, login: string) =>
+          c.query(
+            `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+             values ($1, $1, $2, $2, 'trader', $3, now())`,
+            [display, login, randomBytes(32)],
+          );
+        // Lower keys first and second in each order, so either trigger order would cross.
+        const [x, y] = round % 2 === 0 ? [`cross.a${round}`, `cross.b${round}`] : [`cross.b${round}`, `cross.a${round}`];
+        const r1 = ins(t1, x, y).then(() => 'ok', (e: { code?: string; constraint?: string }) => `${e.code}:${e.constraint ?? ''}`);
+        const r2 = ins(t2, y, x).then(() => 'ok', (e: { code?: string; constraint?: string }) => `${e.code}:${e.constraint ?? ''}`);
+        const first = await Promise.race([r1, r2]);
+        // Whichever finished first commits (or rolls back); the other then resolves.
+        if (first === 'ok') await ((await Promise.race([r1.then(() => t1), r2.then(() => t2)])).query('commit'));
+        const results = [await r1, await r2].sort();
+        expect(results).toEqual(['23505:name_keys_pkey', 'ok']);
+      } finally {
+        await t1.query('rollback').catch(() => undefined);
+        await t2.query('rollback').catch(() => undefined);
+        t1.release();
+        t2.release();
+      }
+    }
+
     // Renaming keeps the table in step; deleting the account removes its keys.
     await db.query("update accounts set login_name = 'mira.other', login_key = 'mira.other' where display_key = 'mira.k'");
     expect((await db.query("select key from name_keys where account_id = (select id from accounts where display_key = 'mira.k') order by key")).rows).toEqual([

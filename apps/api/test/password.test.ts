@@ -5,7 +5,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { loginNameLookup } from '../src/accounts.js';
-import { requireConfirm } from '../src/auth/confirm.js';
+import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { DUMMY_HASH, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
@@ -274,7 +274,10 @@ describe('POST /v1/login/password', () => {
     const first = await login('Legacy.Acct', GOOD);
     expect(first.statusCode).toBe(200);
     const session = cookie(first, SESSION_COOKIE)!;
-    const set = await post('/v1/account/login-name', { loginName: 'legacy.private' }, { [SESSION_COOKIE]: session });
+    // The creating session's onboarding window does not apply: a login session needs a confirm token.
+    const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [id]);
+    const confirmToken = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });
+    const set = await post('/v1/account/login-name', { loginName: 'legacy.private', confirmToken }, { [SESSION_COOKIE]: session });
     expect(set.statusCode).toBe(200);
     // The old name no longer logs in; the new one does.
     expect((await login('Legacy.Acct', GOOD)).json()).toMatchObject({ error: 'credentials-invalid' });

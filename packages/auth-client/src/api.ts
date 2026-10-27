@@ -238,8 +238,8 @@ export interface AuthApi {
   loginWebAuthnStart(b: { loginName?: string; pendingId?: string }): Promise<AuthenticationChallenge>;
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
-  /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once; 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
-  setLoginName(b: { loginName: string }): Promise<{ ok: true }>;
+  /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once, with a `set-login-name` confirm token (`withConfirm`); 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
+  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true }>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
   confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;

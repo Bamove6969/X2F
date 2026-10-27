@@ -3,6 +3,8 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { addAlert } from '../alerts.js';
+import { requireConfirm } from '../auth/confirm.js';
 import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -163,13 +165,15 @@ export function accountRoutes(app: FastifyInstance): void {
 
   /**
    * A pre-009 account sets its private login name, once (review I3). Full session only (a held
-   * recovery session may not change how the account logs in). 400 `login-name-invalid` /
+   * recovery session may not change how the account logs in) and behind a confirm token for
+   * `set-login-name` (re-review 2: a stolen session must not quietly change how the account logs
+   * in); a `login-name-set` alert (without the name) is written in the same transaction. 400 `login-name-invalid` /
    * `names-same`, 409 `login-name-set` when the account already chose its names, 409
    * `names-unavailable` for a name taken in either namespace (the `name_keys` trigger). Each call
    * takes a register-budget token: a taken name answers like a sign-up's, at the same cost
    * (plan-2-review residual (b)); the login name is never echoed.
    */
-  app.post('/v1/account/login-name', { preHandler: requireSession() }, async (req) => {
+  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireConfirm({ kind: 'set-login-name' })] }, async (req) => {
     const d = deps();
     req.server.budgets.register.take();
     const body = req.body;
@@ -184,18 +188,29 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row) throw new ApiError(401, 'not-authenticated');
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
+    const client = await d.db.connect();
     try {
-      const updated = await d.db.query(
-        'update accounts set login_name = $2, login_key = $3, legacy_login_name = false where id = $1 and legacy_login_name',
-        [req.auth.accountId, r.name, r.key],
-      );
-      if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
+      await client.query('begin');
+      try {
+        const updated = await client.query(
+          'update accounts set login_name = $2, login_key = $3, legacy_login_name = false where id = $1 and legacy_login_name',
+          [req.auth.accountId, r.name, r.key],
+        );
+        if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
+        await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
+        await client.query('commit');
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      }
     } catch (e) {
       const err = e as { code?: string; constraint?: string };
       if (err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey')) {
         throw new ApiError(409, 'names-unavailable');
       }
       throw e;
+    } finally {
+      client.release();
     }
     return { ok: true };
   });

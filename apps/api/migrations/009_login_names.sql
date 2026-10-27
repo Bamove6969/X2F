@@ -16,7 +16,9 @@
 -- key and a display name may never equal any account's login key, or a private login name would be
 -- printed on the site under someone else's offers. `name_keys` holds every key of both kinds,
 -- maintained by trigger in the same transaction as the account row, so two racing inserts cannot
--- both pass (the second blocks on the primary key and fails with 23505 `name_keys_pkey`).
+-- both pass (the second blocks on the primary key and fails with 23505 `name_keys_pkey`). The
+-- trigger inserts an account's keys least first, so two accounts with crossing names (display x,
+-- login y and display y, login x) wait on the same key instead of deadlocking (re-review 1).
 alter table accounts rename column username to display_name;
 alter table accounts rename column username_key to display_key;
 alter table accounts rename constraint accounts_username_key_key to accounts_display_key_key;
@@ -50,8 +52,12 @@ begin
   if tg_op = 'UPDATE' then
     delete from name_keys where account_id = old.id;
   end if;
+  -- Least key first (re-review 1: crossing pairs must not deadlock).
+  if new.login_key is not null and new.login_key <> new.display_key and new.login_key < new.display_key then
+    insert into name_keys (key, account_id, kind) values (new.login_key, new.id, 'login');
+  end if;
   insert into name_keys (key, account_id, kind) values (new.display_key, new.id, 'display');
-  if new.login_key is not null and new.login_key <> new.display_key then
+  if new.login_key is not null and new.login_key <> new.display_key and new.login_key > new.display_key then
     insert into name_keys (key, account_id, kind) values (new.login_key, new.id, 'login');
   end if;
   return null;

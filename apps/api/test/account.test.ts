@@ -3,6 +3,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { addAlert } from '../src/alerts.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
 import { startSession } from '../src/auth/sessions.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -119,7 +120,14 @@ describe('GET /v1/account/me', () => {
     const { id: other } = await account();
     const b = await loggedIn(id);
     expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: true });
-    const set = (loginName: unknown) => b.post('/v1/account/login-name', { loginName });
+    // Re-review 2: a stolen session must not quietly change how the account logs in.
+    const bare = await b.post('/v1/account/login-name', { loginName: 'Private.OT1' });
+    expect(bare.statusCode).toBe(403);
+    expect(errorOf(bare)).toBe('confirm-required');
+    const token = () => issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });
+    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-password' }, method: 'password' });
+    expect(errorOf(await b.post('/v1/account/login-name', { loginName: 'Private.OT1', confirmToken: wrong }))).toBe('confirm-invalid');
+    const set = async (loginName: unknown) => b.post('/v1/account/login-name', { loginName, confirmToken: await token() });
     expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
     expect(errorOf(await set('bad name'))).toBe('login-name-invalid');
     expect(errorOf(await set(42))).toBe('login-name-invalid');
@@ -133,6 +141,9 @@ describe('GET /v1/account/me', () => {
     expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: false });
     const { rows } = await deps.db.query('select login_name, login_key, legacy_login_name from accounts where id = $1', [id]);
     expect(rows).toEqual([{ login_name: 'Private.OT1', login_key: 'private.ot1', legacy_login_name: false }]);
+    // One alert, without the name (refusals wrote none).
+    const { rows: alerts } = await deps.db.query("select kind, detail from alerts where account_id = $1 and kind = 'login-name-set'", [id]);
+    expect(alerts).toEqual([{ kind: 'login-name-set', detail: {} }]);
     expect((await deps.db.query('select key, kind from name_keys where account_id = $1 order by key', [id])).rows).toEqual([
       { key: 'old.timer1', kind: 'display' }, { key: 'private.ot1', kind: 'login' },
     ]);
@@ -141,7 +152,9 @@ describe('GET /v1/account/me', () => {
     expect(again.statusCode).toBe(409);
     expect(errorOf(again)).toBe('login-name-set');
     // An account that chose its names at sign-up never needs one.
-    expect(errorOf(await (await loggedIn(other)).post('/v1/account/login-name', { loginName: 'Fresh.OT1' }))).toBe('login-name-set');
+    const ob = await loggedIn(other);
+    const otherToken = await issueConfirmToken(deps, { sessionId: ob.sessionId, accountId: other, action: { kind: 'set-login-name' }, method: 'password' });
+    expect(errorOf(await ob.post('/v1/account/login-name', { loginName: 'Fresh.OT1', confirmToken: otherToken }))).toBe('login-name-set');
   });
 
   it('the login-name route needs a full session', async () => {
