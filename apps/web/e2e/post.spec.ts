@@ -95,9 +95,9 @@ async function fillBoard(page: Page): Promise<void> {
 
 test('parity with PostOffer at 390x844', async ({ page }) => {
   // KNOWN_EXCEPTIONS.PostOffer (parity.ts): the board's "Bank transfer (ACH)" option is the catalog's
-  // "ACH bank transfer (US)", and its "Custom method" option has no counterpart (P3-M3 suggests a
-  // missing method from the browse screens). The board has no pricing choice yet (the plan's
-  // controller step adds Market ± % / Fixed price per XMR to the canvas and re-captures PostOffer.png).
+  // "ACH bank transfer (US)". Its other options (Zelle, Cash App, Cash by mail, Custom method) are
+  // catalog methods the picker offers. The board has no pricing choice yet (the plan's controller
+  // step adds Market ± % / Fixed price per XMR to the canvas and re-captures PostOffer.png).
   await stub(page);
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);

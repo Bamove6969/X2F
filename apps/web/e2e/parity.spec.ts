@@ -316,9 +316,9 @@ test.describe('board texts', () => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
-    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name and its Custom method option.
+    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name.
     const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
-    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)', 'Custom method']);
+    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)']);
     for (const e of post) expect(e.why.length).toBeGreaterThan(10);
     expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');

@@ -79,10 +79,6 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       text: 'Bank transfer (ACH)',
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
     },
-    {
-      text: 'Custom method',
-      why: 'The picker offers the catalog only; a missing method is suggested from the browse screens (P3-M3), so the board\'s "Custom method" option has no counterpart (lead, 2026-10-27).',
-    },
   ],
 };
 
