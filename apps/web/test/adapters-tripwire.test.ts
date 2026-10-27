@@ -28,10 +28,10 @@ describe('Task 12 guesses still stand in for missing modules', () => {
     expect(has('apps/moderation/src/signals.ts'), 'Task 10 signals landed: check the signal payloads in signals.ts').toBe(false);
   });
 
-  it('NEEDS_TASKS_18_19: the take and accept screens must pass the user-confirmed deal to useEscrow', () => {
-    // The first useEscrow(code, confirmed) call for a trade needs what the user saw and confirmed;
-    // once those screens exist they must pass it (and this tripwire goes).
-    expect(has('apps/web/src/screens/quote/useTake.tsx'), 'Task 18 landed: pass ConfirmedTrade from the take').toBe(false);
+  it('NEEDS_TASK_19: the accept sheet must pass the user-confirmed deal to useEscrow', () => {
+    // The first useEscrow(code, confirmed) call for a trade needs what the user saw and confirmed.
+    // Task 18's take does (2026-10-27: quote/useTake.tsx stores it and navigates with it); the
+    // poster's accept sheet must too once it lands (and this tripwire goes).
     expect(has('apps/web/src/screens/AcceptedSheet.tsx'), 'Task 19 landed: pass ConfirmedTrade from the accepted sheet').toBe(false);
   });
 });
