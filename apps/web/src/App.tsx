@@ -1,7 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
-import { api, setNavigator } from './api/client.js';
-import { finalAlertSeen, useLiveEvents, type LiveEvent } from './api/events.js';
+import { setNavigator } from './api/client.js';
+import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet } from './screens/AcceptedSheet.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
@@ -65,12 +65,13 @@ function RouterBridge() {
 /**
  * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
  * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade.
+ * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
+ * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
 function LiveAccepted() {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
   useLiveEvents((e) => {
-    finalAlertSeen(e, (path) => api(path, { method: 'POST' }));
     if (e.type === 'accepted') setAccepted(e);
   });
   if (!accepted) return null;

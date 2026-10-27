@@ -1,6 +1,11 @@
 import { useEffect, useRef } from 'react';
 
-/** The events `GET /v1/events` sends (apps/api/src/events/bus.ts). Names are public display names. */
+/**
+ * The events `GET /v1/events` sends (apps/api/src/events/bus.ts). Names are public display names.
+ * Delivery only: a `trade` event with state `refund_requested` is NOT the buyer's seen-receipt
+ * for the final alert. That receipt is posted by Task 25's `FinalAlert` alone, once per
+ * `finalAlertAt` and only while the alert is on screen (review 2026-10-27, Important 2).
+ */
 export type LiveEvent =
   | { type: 'trade'; code: string; state: string }
   | { type: 'accepted'; code: string; by: string }
@@ -33,15 +38,6 @@ export function parseLiveEvent(raw: string): LiveEvent | null {
     out[f] = value;
   }
   return out as LiveEvent;
-}
-
-/**
- * The final alert's seen-receipt (P3-I13): when the live `refund_requested` event reaches this
- * device, tell the API. The seller gets the same event and a 409, which is ignored.
- */
-export function finalAlertSeen(e: LiveEvent, post: (path: string) => Promise<unknown>): void {
-  if (e.type !== 'trade' || e.state !== 'refund_requested') return;
-  void post(`/v1/trades/${encodeURIComponent(e.code)}/final-alert-seen`).catch(() => undefined);
 }
 
 export interface ConnectOptions {
