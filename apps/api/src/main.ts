@@ -51,7 +51,7 @@ const db = createPool(config.databaseUrl);
 const clock = () => new Date();
 let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind, a.detail, clock());
 // A lost alert is logged once the app's logger exists (the sink only runs after prices.start()).
-let alertLog: { error(obj: { err: unknown }, msg: string): void } | null = null;
+let alertLog: { error(obj: { error: string }, msg: string): void } | null = null;
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),

@@ -45,8 +45,11 @@ export interface MarketOptions {
   clock?: () => Date;
   /** Where price health alerts go (the owner's in-app alerts); a failure here never stops polling. */
   onAlert?: (a: PriceAlert) => void | Promise<void>;
-  /** Where a lost alert is reported: one fixed line with the error only, never the alert's detail. */
-  log?: { error(obj: { err: unknown }, msg: string): void };
+  /**
+   * Where a lost alert is reported: one fixed line with the error's message only (never the error
+   * object, whose pg `detail` can quote row values, and never the alert's detail).
+   */
+  log?: { error(obj: { error: string }, msg: string): void };
 }
 
 export function createMarketPrices(o: MarketOptions): MarketPrices {
@@ -85,7 +88,11 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
     if (sink) {
       for (const a of alerts) {
         // A lost alert cannot be retried without double-sending; the condition stays in health().
-        sending = sending.then(() => sink(a)).catch((err: unknown) => o.log?.error({ err }, 'price alert not delivered'));
+        sending = sending
+          .then(() => sink(a))
+          .catch((err: unknown) =>
+            o.log?.error({ error: err instanceof Error ? err.message : 'unknown' }, 'price alert not delivered'),
+          );
       }
     }
   }

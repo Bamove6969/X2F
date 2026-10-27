@@ -23,12 +23,17 @@ create unique index push_subscriptions_endpoint on push_subscriptions (endpoint)
 create index push_subscriptions_account on push_subscriptions (account_id, created_at);
 create index push_subscriptions_session on push_subscriptions (session_id);
 
--- When a session ends (logout, log out everywhere, disable, revoke), that browser's subscriptions
--- go at once, whichever code path revoked it. An expired session's rows are skipped and deleted
--- by push/send.ts at the next send, and by the cascade when the session row is purged.
+-- When a session is revoked (logout, log out everywhere, password change, method removal,
+-- recovery, disable), that browser's subscriptions go at once, whichever code path revoked it.
+-- So do the account's orphaned rows (session_id null: an owner row whose session expired and was
+-- purged), or a browser the owner logged out of by idling would keep getting pushes after "log out
+-- everywhere" from another browser (round 3). A trader's expired-session rows are deleted by
+-- push/send.ts at the next send and by the purge trigger below when the session row is purged;
+-- an owner's stay, with session_id null, until a revoke, an unsubscribe or a disable.
 create function push_subscriptions_session_ended() returns trigger language plpgsql as $$
 begin
-  delete from push_subscriptions where session_id = new.id;
+  delete from push_subscriptions
+   where session_id = new.id or (session_id is null and account_id = new.account_id);
   return null;
 end
 $$;
@@ -47,6 +52,18 @@ end
 $$;
 create trigger sessions_purge_push before delete on sessions
   for each row execute function push_subscriptions_session_purged();
+
+-- Disabling an account drops its orphaned rows too (its live sessions' rows go with their revoke),
+-- so a disable and re-enable never resumes pushes to a browser nobody is logged in on.
+create function push_subscriptions_account_disabled() returns trigger language plpgsql as $$
+begin
+  delete from push_subscriptions where account_id = new.id and session_id is null;
+  return null;
+end
+$$;
+create trigger accounts_disable_push after update of disabled_at on accounts
+  for each row when (old.disabled_at is null and new.disabled_at is not null)
+  execute function push_subscriptions_account_disabled();
 
 -- The buyer's final alert on request-refund (P3-I13): true only once the buyer's device has shown
 -- it (the seen-receipt routes in trades/routes.ts). An open stream or a push service's 201 never

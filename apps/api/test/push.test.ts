@@ -376,6 +376,34 @@ describe("owner subscriptions belong to the account: an owner who is away still 
     expect(await owners()).toEqual([]);
   });
 
+  it('an orphaned owner row (its session purged) goes on "log out everywhere" from another browser (round 3)', async () => {
+    const a = await owner();
+    await post(a.b, subscription());
+    setNow(new Date(deps.clock().getTime() + 3 * HOUR));
+    const { purgeExpired } = await import('../src/auth/challenges.js');
+    await purgeExpired.run(deps.db, deps.clock());
+    expect(await owners()).toEqual([{ session_id: null }]);
+    const b = await owner();
+    const { endAllSessions } = await import('../src/auth/sessions.js');
+    await endAllSessions({ ...deps, events: app.events }, b.id);
+    expect(await owners()).toEqual([]);
+  });
+
+  it('disabling the account drops its orphaned owner rows (round 3)', async () => {
+    const a = await owner();
+    await post(a.b, subscription());
+    setNow(new Date(deps.clock().getTime() + 3 * HOUR));
+    const { purgeExpired } = await import('../src/auth/challenges.js');
+    await purgeExpired.run(deps.db, deps.clock());
+    expect(await owners()).toEqual([{ session_id: null }]);
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [a.id, deps.clock()]);
+    try {
+      expect(await owners()).toEqual([]);
+    } finally {
+      await deps.db.query('update accounts set disabled_at = null where id = $1', [a.id]);
+    }
+  });
+
   it("a trader's subscription still goes with its session when the session row is purged", async () => {
     const t = await trader();
     await post(t.b, subscription());

@@ -438,7 +438,7 @@ describe('createMarketPrices', () => {
     const lines: Array<[Record<string, unknown>, string]> = [];
     const prices = createMarketPrices({
       xmr, fx, clock: c.clock,
-      onAlert: () => Promise.reject(new Error('db down EUR')),
+      onAlert: () => Promise.reject(Object.assign(new Error('db down'), { detail: 'Key (account_id)=(secret-owner-id)' })),
       log: { error: (obj, msg) => void lines.push([obj, msg]) },
     });
     await prices.poll();
@@ -446,8 +446,10 @@ describe('createMarketPrices', () => {
     expect(lines.length).toBeGreaterThan(0);
     for (const [obj, msg] of lines) {
       expect(msg).toBe('price alert not delivered');
-      expect(Object.keys(obj)).toEqual(['err']);
+      // Only the message, never the error object: a pg `detail` must not reach the logs (round 3).
+      expect(obj).toEqual({ error: 'db down' });
     }
+    expect(JSON.stringify(lines)).not.toContain('secret-owner-id');
   });
 });
 

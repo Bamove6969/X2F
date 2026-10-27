@@ -61,8 +61,11 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
  * drops that subscription of the caller's, with no body all of them → 204. Traders and the owner
  * (the owner's price-health push, spec 11.6; staff in a later plan); full sessions only.
  * No answer ever repeats an endpoint or a key, and none is logged (the request body is redacted
- * from every log line by buildApi). A subscription belongs to the session that posted it and goes
- * when that session ends (migration 105's trigger; push/send.ts skips expired sessions).
+ * from every log line by buildApi). A trader's subscription belongs to the session that posted it:
+ * it goes when that session is revoked or expires (migration 105's triggers; push/send.ts deletes
+ * expired-session rows). An owner's belongs to the account: it outlives an idle expiry (session_id
+ * null once the session row is purged) and goes on any revoke of the account's sessions, an
+ * unsubscribe, or a disable.
  */
 export function pushRoutes(app: FastifyInstance): void {
   const subscriber = requireSession({ kinds: ['trader', 'owner'] });
