@@ -63,9 +63,9 @@ export function AcceptedSheet({
     load.current().then(
       (all) => {
         if (!live) return;
-        const usable = all.filter((w) => w.usable);
-        setWallets(usable);
-        setPicked(usable[0]?.id ?? null);
+        // No wallet is pre-selected (OD-11, X-2: no default payout wallet; always ask). The
+        // button stays disabled until the poster picks one.
+        setWallets(all.filter((w) => w.usable));
         setPhase('pick');
       },
       () => {

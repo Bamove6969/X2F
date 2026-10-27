@@ -29,6 +29,18 @@ describe('AcceptedSheet', () => {
     expect(sheet().querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
+  it('pre-selects no wallet (OD-11, no default payout wallet): Use this wallet is disabled until a radio is chosen', async () => {
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    await flush();
+    const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
+    expect(options.map((o) => o.checked)).toEqual([false, false]);
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(true);
+    fire(options[0]!, new MouseEvent('click', { bubbles: true }));
+    await flush();
+    expect(options[0]!.checked).toBe(true);
+    expect((button('Use this wallet') as HTMLButtonElement).disabled).toBe(false);
+  });
+
   it('posts the picked wallet for this trade and moves on to Setting up escrow', async () => {
     const posted: Array<[string, string]> = [];
     const done: string[] = [];
@@ -80,6 +92,7 @@ describe('AcceptedSheet', () => {
       />,
     );
     await flush();
+    fire(sheet().querySelector('input[value="w1"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
     await act(async () => {
       button('Use this wallet').click();
     });
