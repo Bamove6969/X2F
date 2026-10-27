@@ -553,11 +553,23 @@ describe('review 2026-10-27 minors', () => {
     noFundingTraces(host);
   });
 
-  it("Minor 2: this device's own reading covering the funding sets the mark, whatever the API says", async () => {
-    setTradeEscrowHook(() => verified({ receivedAtomic: 1_250_000_000_000n }));
+  it("Minor 2: this device's own 0-conf reading shows \"Escrow funded\" but sets no mark; when that reading goes, so does the screen", async () => {
+    setTradeEscrowHook(() => verified({ receivedAtomic: 1_250_000_000_000n, confirmedAtomic: 0n }));
     let host = await room();
     expect(host.textContent).toContain('Escrow funded');
     noFundingTraces(host);
+    expect(hasFundMark(CODE, 'funded')).toBe(false);
+    setTradeEscrowHook(() => verified({ receivedAtomic: 0n, confirmedAtomic: 0n }));
+    host = await room();
+    expect(host.textContent).not.toContain('Escrow funded');
+    expect(host.querySelector('[data-escrow-address]')?.textContent).toBe(ADDRESS);
+  });
+
+  it("Minor 2: this device's CONFIRMED balance covering the funding sets the mark, whatever the API says", async () => {
+    setTradeEscrowHook(() => verified({ receivedAtomic: 1_250_000_000_000n, confirmedAtomic: 1_250_000_000_000n }));
+    let host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    expect(hasFundMark(CODE, 'funded')).toBe(true);
     setTradeEscrowHook(() => verified());
     host = await room();
     expect(host.textContent).toContain('Escrow funded');

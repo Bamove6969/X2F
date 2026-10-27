@@ -76,6 +76,13 @@ export interface TradeEscrow {
    * Task 12's EscrowStatus, like `escrowAddress`; the tripwire names it.
    */
   receivedAtomic: bigint | null;
+  /**
+   * The part of `receivedAtomic` with at least one confirmation (from the `incoming` list Task 12's
+   * `party.funds()` returns), or null until there is a reading. Only this may set TradeFund's
+   * `funded` mark for good from the device (re-review 2026-10-27, Minor 2): a 0-conf tx can be
+   * dropped. ADDITION to Task 12's EscrowStatus; the tripwire names it.
+   */
+  confirmedAtomic: bigint | null;
   error: EscrowErrorCode | null;
   retryable: boolean;
   refusal: EscrowRefusal | null;
@@ -160,6 +167,9 @@ export interface VerifiedFunding {
  */
 export function amountToSend(v: Pick<VerifiedFunding, 'fundsAtomic' | 'receivedAtomic'>, apiReceivedAtomic: bigint): bigint | null {
   const mine = v.receivedAtomic;
+  // The API has seen more than this device: its reading lags, and a remainder from it would ask
+  // for too much. Show the address only until the device catches up (re-review 2026-10-27).
+  if (mine !== null && apiReceivedAtomic > mine) return null;
   if (mine !== null && mine > 0n) return mine < v.fundsAtomic ? v.fundsAtomic - mine : null;
   if (apiReceivedAtomic > 0n && apiReceivedAtomic < v.fundsAtomic) return null;
   return v.fundsAtomic;
@@ -173,6 +183,7 @@ export const PENDING_ESCROW: TradeEscrow = {
   escrowAddress: null,
   deal: null,
   receivedAtomic: null,
+  confirmedAtomic: null,
   error: null,
   retryable: false,
   refusal: null,

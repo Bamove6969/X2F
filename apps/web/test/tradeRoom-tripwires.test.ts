@@ -1,33 +1,40 @@
 // Tripwires for the trade room's seams (src/screens/trade/seams.ts, src/api/trade.ts). Each fails
 // the day the piece it waits for lands, and says what to change.
-import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const web = new URL('../src/', import.meta.url);
 const api = new URL('../../api/src/', import.meta.url);
-const repo = new URL('../../../', import.meta.url);
 
-/** The file as `origin/<branch>` has it (when that ref is fetched here) and as this tree has it (once merged). */
-function sourcesOf(branch: string, path: string): [string, string][] {
-  const out: [string, string][] = [];
-  try {
-    out.push([`origin/${branch}:${path}`, execFileSync('git', ['show', `origin/${branch}:${path}`], { cwd: fileURLToPath(repo), encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })]);
-  } catch {
-    // The branch is not fetched here (or has no such file): only the local copy can be checked.
+/** Every .ts/.tsx file under a directory. */
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const name of readdirSync(dir)) {
+    const p = join(dir, name);
+    if (statSync(p).isDirectory()) out.push(...sourceFiles(p));
+    else if (/\.tsx?$/.test(name)) out.push(p);
   }
-  const local = new URL(path, repo);
-  if (existsSync(local)) out.push([path, readFileSync(local, 'utf8')]);
   return out;
 }
 
-/** Every `navigate(...)` call to a /trade/ path whose options carry no `state: { confirmed ... }`. */
-function tradeNavigationsWithoutConfirmed(src: string): string[] {
+/**
+ * Every navigation to a literal /trade/ path that carries no `confirmed` in its history state:
+ * `navigate('/trade/…')` / `navigate(`/trade/${code}`)` without `state: { confirmed … }`, and
+ * `<Navigate to="/trade/…" />` / `to={`/trade/${code}`}` without `state={{ confirmed … }}`.
+ * NOT caught: a path computed elsewhere and passed in a variable (`navigate(href)`), or a
+ * `<Link to>`; review those by hand.
+ */
+export function tradeNavigationsWithoutConfirmed(src: string): string[] {
   const out: string[] = [];
-  for (const m of src.matchAll(/navigate\(([\s\S]*?)\);/g)) {
+  for (const m of src.matchAll(/\bnavigate\(([\s\S]*?)\);/g)) {
     const args = m[1]!;
     if (args.includes('/trade/') && !/state:\s*\{[^}]*\bconfirmed\b/.test(args)) out.push(m[0].replace(/\s+/g, ' '));
+  }
+  for (const m of src.matchAll(/<Navigate\b([\s\S]*?)\/?>/g)) {
+    const attrs = m[1]!;
+    if (/\bto=\{?\s*["'`][^"'`]*\/trade\//.test(attrs) && !/state=\{\{[^}]*\bconfirmed\b/.test(attrs)) out.push(m[0].replace(/\s+/g, ' '));
   }
   return out;
 }
@@ -63,37 +70,30 @@ describe('TRIPWIRES: trade room', () => {
   it('Task 12 (browser escrow runtime) is not merged: useTradeEscrow is still the stand-in', () => {
     expect(
       existsSync(new URL('escrow/useEscrow.ts', web)),
-      'Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived), deal (its stored confirmed Deal: poster, takeAmountAtomic) and receivedAtomic (the balance its tick reads with party.funds()) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies',
+      "Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived), deal (its stored confirmed Deal: poster, takeAmountAtomic), receivedAtomic (the balance its tick reads with party.funds()) and confirmedAtomic (the part of that balance with 1+ confirmations, from funds().incoming; the only device reading that may set TradeFund's funded mark) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies",
     ).toBe(false);
   });
 
   it('Task 19 (live events) is not merged: the room only polls', () => {
     expect(
       existsSync(new URL('api/events.ts', web)),
-      'Task 19 merged: fan the room out from Task 19\'s single /v1/events connection (LiveAccepted), gated by isTrader: setLiveSource((on) => <subscribe to that connection, trade events only>); never open a second EventSource',
+      "Task 19 merged: fan the room out from Task 19's single /v1/events connection (LiveAccepted), gated by isTrader: setLiveSource((on) => <subscribe to that connection, trade events only>); never open a second EventSource",
     ).toBe(false);
   });
 
   // Review 2026-10-27, I4: Task 12 fails the first start of a trade with `not-confirmed` unless the
-  // room gets `location.state.confirmed` (seams.ts ConfirmedTrade). These FAIL while the callers
-  // (Task 18's take, Task 19's accepted sheet) navigate to /trade/ without it: a merge of 12, 18,
-  // 19 and 22 as they stand would stop every new trade at "Open this trade from the device you
-  // started it on". Each reads the branch copy (git show) and the local copy once merged.
-  for (const [task, branch, path] of [
-    ['Task 18 (take)', 'wip/lead-p3-task18', 'apps/web/src/screens/quote/useTake.tsx'],
-    ['Task 19 (accepted sheet, LiveAccepted)', 'wip/lead-p3-task19', 'apps/web/src/App.tsx'],
-    ['Task 19 (accepted sheet)', 'wip/lead-p3-task19', 'apps/web/src/screens/AcceptedSheet.tsx'],
-  ] as const) {
-    it(`${task} navigates to /trade/ only with state: { confirmed }`, (ctx) => {
-      const copies = sourcesOf(branch, path);
-      if (copies.length === 0) ctx.skip();
-      const offenders = copies.flatMap(([where, src]) => tradeNavigationsWithoutConfirmed(src).map((call) => `${where}: ${call}`));
-      expect(
-        offenders,
-        `${task} must navigate with { state: { confirmed } } (ConfirmedTrade: { role, ownAddress, deal }), and because history state does not survive opening the trade from a push, start the escrow (or persist confirmed through Task 12's store) before navigating`,
-      ).toEqual([]);
-    });
-  }
+  // room gets `location.state.confirmed` (seams.ts ConfirmedTrade). This scans THIS tree only and
+  // fails the moment a file navigating to /trade/ without it lands (Task 18's take, Task 19's
+  // accepted sheet, or anything else). Computed paths (`navigate(href)`) and `<Link to>` are not
+  // caught. The state of the other branches is in docs/coordination.md, not here.
+  it('nothing in apps/web/src navigates to /trade/ without state: { confirmed }', () => {
+    const root = fileURLToPath(web);
+    const offenders = sourceFiles(root).flatMap((f) => tradeNavigationsWithoutConfirmed(readFileSync(f, 'utf8')).map((call) => `${relative(root, f)}: ${call}`));
+    expect(
+      offenders,
+      'navigate with { state: { confirmed } } (ConfirmedTrade: { role, ownAddress, deal }); and because history state does not survive opening the trade from a push, start the escrow (or persist confirmed through Task 12’s store) before navigating',
+    ).toEqual([]);
+  });
 
   it('FU-A (display names) is not merged: the API still calls the public name `username`', () => {
     const summary = fields(new URL('trades/view.ts', api), 'TraderSummary');
@@ -117,6 +117,20 @@ describe('TRIPWIRES: trade room', () => {
       wired,
       'the trade view now carries a profile: it must be the catalog entry merged with the profile ({ ...getMethod(id), ...getProfile(id) }) so methodOf in src/api/trade.ts finds name, giftCard and whatItIs; then retire this test',
     ).toBe(false);
+  });
+});
+
+describe('the /trade/ navigation check itself', () => {
+  it('catches navigate() and <Navigate to> without confirmed, and passes them with it', () => {
+    // Task 19's LiveAccepted as it stands on wip/lead-p3-task19 (App.tsx:84).
+    expect(tradeNavigationsWithoutConfirmed('void navigate(`/trade/${encodeURIComponent(code)}`);')).toHaveLength(1);
+    expect(tradeNavigationsWithoutConfirmed("navigate('/trade/ABC', { replace: true });")).toHaveLength(1);
+    expect(tradeNavigationsWithoutConfirmed('<Navigate to={`/trade/${code}`} replace />')).toHaveLength(1);
+    expect(tradeNavigationsWithoutConfirmed('<Navigate to="/trade/ABC" />')).toHaveLength(1);
+    // Task 18's take as it stands on wip/lead-p3-task18 (useTake.tsx:71).
+    expect(tradeNavigationsWithoutConfirmed('void navigate(`/trade/${encodeURIComponent(code)}`, { state: { confirmed } });')).toEqual([]);
+    expect(tradeNavigationsWithoutConfirmed('<Navigate to={`/trade/${code}`} state={{ confirmed }} replace />')).toEqual([]);
+    expect(tradeNavigationsWithoutConfirmed("navigate('/sell');")).toEqual([]);
   });
 });
 

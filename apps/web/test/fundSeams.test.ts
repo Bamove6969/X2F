@@ -1,6 +1,7 @@
 // Pure checks behind TradeFund (Task 22): the integrity guard, the amount to send, the view parser.
 import { describe, expect, it } from 'vitest';
 import { parseTradeView, TradeShapeError } from '../src/api/trade.js';
+import { fundedForGood } from '../src/screens/trade/fund.js';
 import { amountToSend, integrityFailed } from '../src/screens/trade/seams.js';
 
 const ADDRESS = '4' + 'A'.repeat(94);
@@ -29,6 +30,28 @@ describe('amountToSend', () => {
     expect(amountToSend({ fundsAtomic: funds, receivedAtomic: null }, 1_000_000_000_000n)).toBeNull();
     expect(amountToSend({ fundsAtomic: funds, receivedAtomic: 0n }, 1_000_000_000_000n)).toBeNull();
     expect(amountToSend({ fundsAtomic: funds, receivedAtomic: funds }, 0n)).toBeNull();
+  });
+  it('is nothing while the API has seen MORE than this device (a lagging reading never asks for too much; re-review 2026-10-27)', () => {
+    expect(amountToSend({ fundsAtomic: funds, receivedAtomic: 500_000_000_000n }, 1_000_000_000_000n)).toBeNull();
+    expect(amountToSend({ fundsAtomic: funds, receivedAtomic: 500_000_000_000n }, funds)).toBeNull();
+    // The API behind the device is fine: the device's reading rules.
+    expect(amountToSend({ fundsAtomic: funds, receivedAtomic: 1_000_000_000_000n }, 500_000_000_000n)).toBe(250_000_000_000n);
+  });
+});
+
+describe('fundedForGood (re-review 2026-10-27, Minor 2)', () => {
+  const view = (over: Record<string, unknown> = {}) =>
+    ({ state: 'funding', receivedAtomic: '0', confirmations: 0, amountAtomic: '1250000000000', funding: { sellerFundsAtomic: '1250000000000', escrowAddress: null, uri: null, walletApp: null }, ...over }) as Parameters<typeof fundedForGood>[0];
+  const funds = 1_250_000_000_000n;
+  it("never from this device's 0-conf reading", () => {
+    expect(fundedForGood(view(), { confirmedAtomic: 0n, fundsAtomic: funds })).toBe(false);
+    expect(fundedForGood(view(), { confirmedAtomic: null, fundsAtomic: funds })).toBe(false);
+  });
+  it('from a confirmed device balance, API confirmations >= 1, or a state past funding', () => {
+    expect(fundedForGood(view(), { confirmedAtomic: funds, fundsAtomic: funds })).toBe(true);
+    expect(fundedForGood(view({ receivedAtomic: '1250000000000', confirmations: 1 }), { confirmedAtomic: null, fundsAtomic: null })).toBe(true);
+    expect(fundedForGood(view({ receivedAtomic: '1250000000000', confirmations: 0 }), { confirmedAtomic: null, fundsAtomic: null })).toBe(false);
+    expect(fundedForGood(view({ state: 'securing', funding: null }), { confirmedAtomic: null, fundsAtomic: null })).toBe(true);
   });
 });
 

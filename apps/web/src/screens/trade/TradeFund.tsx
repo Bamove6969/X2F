@@ -236,12 +236,13 @@ function safeUri(address: string, funds: bigint): string | null {
 }
 
 export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenProps) {
-  // "Escrow funded" shows as soon as the API or this device sees the full amount; the mark that
-  // keeps it so across reloads is set only by this device's own reading or 1+ confirmations
-  // (Minor 2), so an API 0-conf tx that disappears takes the screen back to funding.
+  // "Escrow funded" shows as soon as the API or this device sees the full amount, confirmed or
+  // not; the mark that keeps it so across reloads is set only from confirmed coins (Minor 2), so a
+  // 0-conf tx that disappears, on either reading, takes the screen back to funding.
   const deviceFunds = escrow.deal ? planOf(escrow.deal)?.sellerFundsAtomic ?? null : null;
-  const markNow = fundedForGood(view, { receivedAtomic: escrow.receivedAtomic, fundsAtomic: deviceFunds });
-  const fundedNow = markNow || isFunded(view);
+  const markNow = fundedForGood(view, { confirmedAtomic: escrow.confirmedAtomic, fundsAtomic: deviceFunds });
+  const deviceSeesAll = escrow.receivedAtomic !== null && deviceFunds !== null && deviceFunds > 0n && escrow.receivedAtomic >= deviceFunds;
+  const fundedNow = markNow || deviceSeesAll || isFunded(view);
   const funded = fundedNow || hasFundMark(view.code, 'funded');
   useEffect(() => {
     if (markNow) setFundMark(view.code, 'funded');

@@ -42,16 +42,17 @@ export function isFunded(view: Pick<TradeView, 'state' | 'receivedAtomic' | 'fun
 }
 
 /**
- * Whether the `funded` mark may be set for good (review 2026-10-27, Minor 2): only from this
- * device's own escrow reading covering the funding, or from the API with at least one
- * confirmation (or a state past funding). An API 0-conf reading shows "Escrow funded" for now but
- * sets no mark, so when that tx disappears and the API goes back to `funding`, the screen follows.
+ * Whether the `funded` mark may be set for good (review 2026-10-27, Minor 2; re-review): only
+ * from CONFIRMED coins: this device's confirmed balance (Task 12's `confirmedAtomic`) covering the
+ * funding, the API with at least one confirmation, or a state past funding. A 0-conf reading,
+ * the device's or the API's, shows "Escrow funded" for now but sets no mark, so when that tx
+ * disappears the screen follows back to funding.
  */
 export function fundedForGood(
   view: Pick<TradeView, 'state' | 'receivedAtomic' | 'funding' | 'amountAtomic' | 'confirmations'>,
-  device: { receivedAtomic: bigint | null; fundsAtomic: bigint | null },
+  device: { confirmedAtomic: bigint | null; fundsAtomic: bigint | null },
 ): boolean {
-  if (device.receivedAtomic !== null && device.fundsAtomic !== null && device.fundsAtomic > 0n && device.receivedAtomic >= device.fundsAtomic) return true;
+  if (device.confirmedAtomic !== null && device.fundsAtomic !== null && device.fundsAtomic > 0n && device.confirmedAtomic >= device.fundsAtomic) return true;
   if (!isFunded(view)) return false;
   return view.confirmations >= 1 || (view.state !== 'setup' && view.state !== 'funding');
 }
