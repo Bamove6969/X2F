@@ -334,6 +334,56 @@ describe('a subscription lives only as long as the session that posted it (revie
   });
 });
 
+describe("owner subscriptions belong to the account: an owner who is away still gets the push (re-review I3)", () => {
+  const HOUR = 3600_000;
+  const owners = async () => {
+    const { rows } = await deps.db.query<{ session_id: string | null }>(
+      "select p.session_id from push_subscriptions p join accounts a on a.id = p.account_id where a.kind = 'owner'",
+    );
+    return rows;
+  };
+
+  it('subscribe, let the owner session idle out (2 h), fire market-prices-paused: one push is sent', async () => {
+    const o = await owner();
+    await post(o.b, subscription());
+    setNow(new Date(deps.clock().getTime() + 3 * HOUR));
+    // The owner's session has idled out: the owner is away.
+    expect((await o.b.get('/v1/account/push')).statusCode).toBe(401);
+    await pushOwnerAlert({ db: deps.db, push: app.push }, 'market-prices-paused');
+    expect(calls.map((c) => c.payload)).toEqual(['Something needs your attention']);
+    // The expired session row being purged keeps the subscription (session_id goes null).
+    const { purgeExpired } = await import('../src/auth/challenges.js');
+    await purgeExpired.run(deps.db, deps.clock());
+    expect(await owners()).toEqual([{ session_id: null }]);
+    calls.length = 0;
+    await pushOwnerAlert({ db: deps.db, push: app.push }, 'market-prices-paused');
+    expect(calls).toHaveLength(1);
+    // Unsubscribe from a new session drops it.
+    const back = await owner();
+    expect((await del(back.b)).statusCode).toBe(204);
+    expect(await owners()).toEqual([]);
+  });
+
+  it("an owner's explicit logout and endAllSessions still drop that browser's subscription", async () => {
+    const o = await owner();
+    await post(o.b, subscription());
+    expect((await o.b.post('/v1/logout', {})).statusCode).toBe(200);
+    expect(await owners()).toEqual([]);
+    const o2 = await owner();
+    await post(o2.b, subscription());
+    const { endAllSessions } = await import('../src/auth/sessions.js');
+    await endAllSessions({ ...deps, events: app.events }, o2.id);
+    expect(await owners()).toEqual([]);
+  });
+
+  it("a trader's subscription still goes with its session when the session row is purged", async () => {
+    const t = await trader();
+    await post(t.b, subscription());
+    await deps.db.query('delete from sessions where account_id = $1', [t.id]);
+    expect(await stored(t.id)).toEqual([]);
+  });
+});
+
 describe('DELETE /v1/account/push', () => {
   it("with an endpoint removes that subscription, and never another account's", async () => {
     const a = await trader();

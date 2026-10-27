@@ -97,12 +97,15 @@ export const webPushTransport: PushTransport = makeWebPushTransport();
  * dropped the subscription: the row is deleted. Anything else is logged as its status only.
  */
 export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind): Promise<boolean> {
-  // A subscription whose session has ended (expired; a revoked one is already deleted by the
-  // trigger) is never sent to: it is deleted here.
+  // A trader's subscription whose session has ended (expired; a revoked one is already deleted by
+  // the trigger) is never sent to: it is deleted here. The owner's belong to the account and are
+  // exempt: an owner whose session idled out is away, which is when the price-health push matters
+  // (re-review I3); only an explicit logout, endAllSessions or unsubscribe removes them.
   const now = deps.clock();
   await deps.db.query(
-    `delete from push_subscriptions p using sessions s
-      where p.account_id = $1 and s.id = p.session_id and (s.revoked_at is not null or s.expires_at <= $2)`,
+    `delete from push_subscriptions p using sessions s, accounts a
+      where p.account_id = $1 and s.id = p.session_id and a.id = p.account_id and a.kind <> 'owner'
+        and (s.revoked_at is not null or s.expires_at <= $2)`,
     [accountId, now],
   );
   const { rows } = await deps.db.query<{ id: string; endpoint: string; p256dh: string; auth: string }>(

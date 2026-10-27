@@ -50,11 +50,14 @@ const db = createPool(config.databaseUrl);
 // over Tor is a Plan 6 follow-up, see docs/coordination.md).
 const clock = () => new Date();
 let onAlert: (a: PriceAlert) => Promise<void> = (a) => addOwnerAlert(db, a.kind, a.detail, clock());
+// A lost alert is logged once the app's logger exists (the sink only runs after prices.start()).
+let alertLog: { error(obj: { err: unknown }, msg: string): void } | null = null;
 const prices = createMarketPrices({
   xmr: createPriceFeed(priceSources(config.priceSources), { ...PRICE_FEED_DEFAULTS, clock }),
   fx: createFxRates(fxSources(config.fxSources), { clock, settings: () => loadFxSettings(db) }),
   clock,
   onAlert: (a) => onAlert(a),
+  log: { error: (obj, msg) => alertLog?.error(obj, msg) },
 });
 const deps: Deps = {
   config,
@@ -75,6 +78,7 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 const app = await buildApi(deps);
 onAlert = ownerAlertSink({ db, clock, push: app.push });
+alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });

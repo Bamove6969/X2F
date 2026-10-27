@@ -5,8 +5,12 @@
 create table push_subscriptions (
   id uuid primary key default gen_random_uuid(),
   account_id uuid not null references accounts (id) on delete cascade,
-  -- The session that posted it: a subscription lives only as long as that browser's session.
-  session_id uuid not null references sessions (id) on delete cascade,
+  -- The session that posted it. A trader's subscription lives only as long as that browser's
+  -- session (deleted with it, below). The owner's belongs to the account: it outlives an idle
+  -- expiry (the owner is away, and the price-health push must still reach them; re-review I3), so
+  -- purging the expired session row only nulls this column. An explicit logout, endAllSessions or
+  -- DELETE /v1/account/push still removes it.
+  session_id uuid references sessions (id) on delete set null,
   endpoint text not null check (char_length(endpoint) <= 1024),
   -- base64url: the browser's P-256 public key (65 bytes) and auth secret (16 bytes).
   p256dh text not null check (char_length(p256dh) = 87),
@@ -31,6 +35,18 @@ $$;
 create trigger sessions_end_push after update of revoked_at on sessions
   for each row when (old.revoked_at is null and new.revoked_at is not null)
   execute function push_subscriptions_session_ended();
+
+-- A purged (expired) session row takes its non-owner subscriptions with it; the owner's keep
+-- going with session_id null (the foreign key's `on delete set null`).
+create function push_subscriptions_session_purged() returns trigger language plpgsql as $$
+begin
+  delete from push_subscriptions p using accounts a
+   where p.session_id = old.id and a.id = p.account_id and a.kind <> 'owner';
+  return old;
+end
+$$;
+create trigger sessions_purge_push before delete on sessions
+  for each row execute function push_subscriptions_session_purged();
 
 -- The buyer's final alert on request-refund (P3-I13): true only once the buyer's device has shown
 -- it (the seen-receipt routes in trades/routes.ts). An open stream or a push service's 201 never
