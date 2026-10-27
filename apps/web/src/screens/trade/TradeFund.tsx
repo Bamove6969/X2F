@@ -13,7 +13,7 @@
  * until the device has that reading only the address is shown, with the rest as text.
  */
 import { useEffect, useRef, useState } from 'react';
-import { formatFiat, formatXmr, moneroUri } from '@x2f/trade';
+import { escrowPlan, formatFiat, formatXmr, moneroUri } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
 import { Amount } from '../../ui/Amount.js';
 import { Button } from '../../ui/Button.js';
@@ -22,10 +22,10 @@ import { EscrowDots } from '../../ui/EscrowDots.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { exactXmr, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
+import { exactXmr, fundedForGood, hasFundMark, isFunded, isPhoneDevice, setFundMark, walletName } from './fund.js';
 import { FundFallback, type SendNow } from './FundFallback.js';
 import { IntegrityFailed, Name, EscrowCheck, SetupStatus } from './SetupStatus.js';
-import { amountToSend, verifiedFunding } from './seams.js';
+import { amountToSend, verifiedFunding, type TradeEscrow } from './seams.js';
 import { registerTradeScreen, setIntegrityScreen, type TradeScreenProps } from './TradeRoom.js';
 import './trade.css';
 
@@ -58,9 +58,9 @@ function Header({ view, selling }: { view: TradeView; selling: boolean }) {
   );
 }
 
-function Row({ label, value, total = false }: { label: string; value?: string; total?: boolean }) {
+function Row({ label, value, total = false, check }: { label: string; value?: string; total?: boolean; check?: string }) {
   return (
-    <div className="x2f-quote-row" data-total={total ? 'true' : 'false'}>
+    <div className="x2f-quote-row" data-total={total ? 'true' : 'false'} data-fee-check={check}>
       <span className="x2f-quote-row__label">{label}</span>
       {value === undefined ? null : <span className="x2f-mono">{value}</span>}
     </div>
@@ -123,19 +123,36 @@ function HowEscrow({ view }: { view: TradeView }) {
   );
 }
 
-/** The seller's quote card (board "Quote"): what goes into escrow, the locked rate, the fees and the fiat total. */
-function SellerQuote({ view }: { view: TradeView }) {
-  const funds = sellerFundsOf(view);
+/** escrowPlan over this device's deal, or null for a deal it refuses. */
+function planOf(deal: TradeEscrow['deal']): { sellerFundsAtomic: bigint; feeAtomic: bigint } | null {
+  if (!deal) return null;
+  try {
+    return escrowPlan({ amountAtomic: deal.takeAmountAtomic, poster: deal.poster });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The seller's quote card (board "Quote"): what goes into escrow, the locked rate, the fees and
+ * the fiat total. The amount and the fee line come from this device's `escrowPlan(deal)` once the
+ * deal is known; the API's fee is only compared with it (`data-fee-check`; review 2026-10-27,
+ * Minor 1). Before the deal is known the amount is the API's, for display, and no fee line shows.
+ */
+function SellerQuote({ view, deal }: { view: TradeView; deal: TradeEscrow['deal'] }) {
+  const plan = planOf(deal);
+  const funds = plan?.sellerFundsAtomic ?? sellerFundsOf(view);
   const rate = `${formatFiat(BigInt(view.lockedRate.centsPerXmr), view.lockedRate.currency)} / XMR`;
+  const feeCheck = plan && view.fee ? (BigInt(view.fee.atomic) === plan.feeAtomic ? 'ok' : 'differs') : 'unchecked';
   return (
     <section className="x2f-quote" aria-label="Quote">
       <div className="x2f-quote__head">
-        <span className="x2f-label">You send to escrow</span>
+        <span className="x2f-trade-label">You send to escrow</span>
         <Amount xmr={formatXmr(funds)} />
       </div>
       <div className="x2f-quote__rows">
         <Row label="Rate (locked when the trade started)" value={rate} />
-        {view.poster === 'seller' && view.fee ? <Row label="Includes X2F fee (1%, your ad)" value={`${formatXmr(BigInt(view.fee.atomic))} XMR`} /> : null}
+        {plan && deal?.poster === 'seller' ? <Row label="Includes X2F fee (1%, your ad)" value={`${formatXmr(plan.feeAtomic)} XMR`} check={feeCheck} /> : null}
         <Row label="Network fee · set in your wallet" />
         <div className="x2f-quote__rule" />
         <Row label="You receive" value={fiat(view, view.fiatCents)} total />
@@ -219,17 +236,22 @@ function safeUri(address: string, funds: bigint): string | null {
 }
 
 export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenProps) {
-  const fundedNow = isFunded(view);
+  // "Escrow funded" shows as soon as the API or this device sees the full amount; the mark that
+  // keeps it so across reloads is set only by this device's own reading or 1+ confirmations
+  // (Minor 2), so an API 0-conf tx that disappears takes the screen back to funding.
+  const deviceFunds = escrow.deal ? planOf(escrow.deal)?.sellerFundsAtomic ?? null : null;
+  const markNow = fundedForGood(view, { receivedAtomic: escrow.receivedAtomic, fundsAtomic: deviceFunds });
+  const fundedNow = markNow || isFunded(view);
   const funded = fundedNow || hasFundMark(view.code, 'funded');
   useEffect(() => {
-    if (fundedNow) setFundMark(view.code, 'funded');
-  }, [fundedNow, view.code]);
+    if (markNow) setFundMark(view.code, 'funded');
+  }, [markNow, view.code]);
   const phone = isPhoneDevice(navigator.userAgent, navigator.maxTouchPoints);
   // The only address this screen ever shows or links: the one this device derived and verified
   // (check words ready, no error, the API's address equal to it). Until then it shows setup progress.
   const verified = verifiedFunding(escrow, view);
   const settingUp = view.state === 'setup' || verified === null;
-  const funds = sellerFundsOf(view);
+  const funds = verified?.fundsAtomic ?? deviceFunds ?? sellerFundsOf(view);
   const received = BigInt(view.receivedAtomic);
   const wallet = view.funding?.walletApp ?? null;
   const [opened, setOpened] = useState(() => hasFundMark(view.code, 'opened'));
@@ -255,7 +277,15 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
           <div className="x2f-trade-chip-row">
             <StatusChip tone="escrow" icon="shield-check" label="Escrow funded" />
           </div>
-        ) : settingUp ? null : (
+        ) : settingUp ? (
+          // The 30-minute funding clock runs from `funding` even while this device is still setting up (Minor 3).
+          view.state === 'funding' && view.fundBy ? (
+            <div className="x2f-trade-chip-row">
+              <StatusChip tone="caution" icon="clock" label="Time to fund" />
+              <Countdown deadline={view.fundBy} serverClock={serverClock} />
+            </div>
+          ) : null
+        ) : (
           <div className="x2f-trade-chip-row">
             <StatusChip tone="caution" icon="clock" label="Waiting for you to fund" />
             {view.fundBy ? <Countdown deadline={view.fundBy} serverClock={serverClock} /> : null}
@@ -292,7 +322,7 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
         ) : null}
         <GiftCard view={view} />
         {fallback}
-        <SellerQuote view={view} />
+        <SellerQuote view={view} deal={escrow.deal} />
         {settingUp && !funded ? null : <HowEscrow view={view} />}
         {!settingUp && escrow.checkWords ? <EscrowCheck view={view} words={escrow.checkWords} /> : null}
         {!funded && wallet === 'edge' ? <p className="x2f-muted x2f-tip">{EDGE_TIP}</p> : null}
@@ -338,7 +368,7 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
         <GiftCard view={view} />
         <section className="x2f-quote" aria-label="Quote">
           <div className="x2f-quote__head">
-            <span className="x2f-label">You get</span>
+            <span className="x2f-trade-label">You get</span>
             <Amount xmr={formatXmr(BigInt(view.amountAtomic) - (view.poster === 'buyer' && view.fee ? BigInt(view.fee.atomic) : 0n))} />
           </div>
           <div className="x2f-quote__rows">

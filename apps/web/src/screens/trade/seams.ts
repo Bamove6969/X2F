@@ -99,11 +99,13 @@ export function integrityFailed(e: Pick<TradeEscrow, 'error' | 'escrowAddress' |
   if (e.error === 'participants-mismatch' || e.error === 'deal-mismatch') return true;
   const theirs = view?.funding?.escrowAddress ?? null;
   if (theirs !== null && e.escrowAddress !== null && theirs !== e.escrowAddress) return true;
-  // The amount to fund: the API's must be exactly what this device works out from its own deal.
-  if (view?.funding && e.deal) {
-    const mine = expectedFundsAtomic(e.deal);
-    if (mine === null || view.poster !== e.deal.poster || !/^[0-9]{1,30}$/.test(view.funding.sellerFundsAtomic) || BigInt(view.funding.sellerFundsAtomic) !== mine) {
-      return true;
+  // The amount to fund must be a plain amount whatever this device knows yet (Minor 5), and,
+  // once the device has its deal, exactly what it works out from that deal.
+  if (view?.funding) {
+    if (!/^[0-9]{1,30}$/.test(view.funding.sellerFundsAtomic)) return true;
+    if (e.deal) {
+      const mine = expectedFundsAtomic(e.deal);
+      if (mine === null || view.poster !== e.deal.poster || BigInt(view.funding.sellerFundsAtomic) !== mine) return true;
     }
   }
   return false;

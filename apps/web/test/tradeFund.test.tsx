@@ -6,7 +6,11 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { moneroUri } from '@x2f/trade';
 import type { TradeView } from '../src/api/trade.js';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { hasFundMark, resetFundMarks } from '../src/screens/trade/fund.js';
+import { qrPath } from '../src/screens/trade/FundFallback.js';
 import { PENDING_ESCROW, setLiveSource, setTradeEscrowHook, type TradeEscrow, type TradeLiveEvent } from '../src/screens/trade/seams.js';
 import { TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
@@ -169,8 +173,8 @@ describe('TradeFund (seller)', () => {
     );
   });
 
-  it('once the full amount is seen it shows "Escrow funded" and no address, and keeps it so on a stale view', async () => {
-    current = { ...base, receivedAtomic: '1250000000000' };
+  it('once the full amount is seen (1+ confirmations) it shows "Escrow funded" and no address, and keeps it so on a stale view', async () => {
+    current = { ...base, receivedAtomic: '1250000000000', confirmations: 1 };
     let host = await room();
     expect(host.textContent).toContain('Escrow funded');
     noFundingTraces(host);
@@ -504,6 +508,111 @@ describe('after a short payment the seller funds only the remainder (review 2026
     expect(host.textContent).toContain('Send the rest: 0.250000 XMR');
     expect(host.innerHTML).not.toContain('tx_amount=1.25');
     expect(host.querySelector('[data-qr]')).not.toBeNull();
+  });
+});
+
+describe('review 2026-10-27 minors', () => {
+  const phone = () => vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+
+  it("Minor 1: the fee line is this device's escrowPlan figure, whatever fee the API sends", async () => {
+    current = { ...base, poster: 'seller', fee: { atomic: '1' }, funding: { ...base.funding!, sellerFundsAtomic: '1262500000000' } };
+    setTradeEscrowHook(() => verified({ deal: POSTER_DEAL }));
+    const host = await room();
+    const row = [...host.querySelectorAll('.x2f-quote-row')].find((r) => r.textContent?.includes('X2F fee'))!;
+    expect(row.textContent).toContain('0.012500 XMR');
+    expect(row.textContent).not.toContain('0.000000000001');
+    expect(row.getAttribute('data-fee-check')).toBe('differs');
+  });
+
+  it('Minor 1: with the API fee equal to the device figure the cross-check is ok', async () => {
+    current = { ...base, poster: 'seller', fee: { atomic: '12500000000' }, funding: { ...base.funding!, sellerFundsAtomic: '1262500000000' } };
+    setTradeEscrowHook(() => verified({ deal: POSTER_DEAL }));
+    const host = await room();
+    const row = [...host.querySelectorAll('.x2f-quote-row')].find((r) => r.textContent?.includes('X2F fee'))!;
+    expect(row.getAttribute('data-fee-check')).toBe('ok');
+  });
+
+  it('Minor 2: an API 0-conf full payment shows "Escrow funded" but sets no mark; when the API goes back to funding, so does the screen', async () => {
+    current = { ...base, receivedAtomic: '1250000000000', confirmations: 0 };
+    let host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    noFundingTraces(host);
+    current = { ...base, receivedAtomic: '0' };
+    host = await room();
+    expect(host.textContent).not.toContain('Escrow funded');
+    expect(host.querySelector('[data-escrow-address]')?.textContent).toBe(ADDRESS);
+  });
+
+  it('Minor 2: with confirmations >= 1 the mark is set and survives a stale view', async () => {
+    current = { ...base, receivedAtomic: '1250000000000', confirmations: 1 };
+    let host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    current = base;
+    host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    noFundingTraces(host);
+  });
+
+  it("Minor 2: this device's own reading covering the funding sets the mark, whatever the API says", async () => {
+    setTradeEscrowHook(() => verified({ receivedAtomic: 1_250_000_000_000n }));
+    let host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    noFundingTraces(host);
+    setTradeEscrowHook(() => verified());
+    host = await room();
+    expect(host.textContent).toContain('Escrow funded');
+    noFundingTraces(host);
+  });
+
+  it('Minor 3: while the API is in funding but this device is still setting up, the fundBy countdown shows', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'setting-up', keepOpen: true }));
+    const host = await room();
+    expect(host.textContent).toContain('Setting up escrow');
+    expect(host.querySelector('[role="timer"]')).not.toBeNull();
+  });
+
+  it('Minor 3: in setup (no fundBy yet) there is no countdown', async () => {
+    current = { ...base, state: 'setup', funding: { ...base.funding!, escrowAddress: null, uri: null }, fundBy: null };
+    setTradeEscrowHook(() => escrow({ phase: 'setting-up', keepOpen: true }));
+    const host = await room();
+    expect(host.querySelector('[role="timer"]')).toBeNull();
+  });
+
+  for (const [name, bad] of [
+    ['a non-digit receivedAtomic', { receivedAtomic: '12e3' }],
+    ['an overlong amountAtomic', { amountAtomic: '9'.repeat(31) }],
+    ['a negative fiatCents', { fiatCents: '-1' }],
+    ['a malformed funding amount', { funding: { ...base.funding!, sellerFundsAtomic: '1.25' } }],
+    ['a malformed fee', { poster: 'seller', fee: { atomic: 'x' } }],
+    ['a malformed rate', { lockedRate: { currency: 'USD', centsPerXmr: '' } }],
+  ] as [string, Partial<TradeView>][]) {
+    it(`Minor 5: ${name} is refused before any BigInt(): the room says it could not load, nothing blank, nothing thrown`, async () => {
+      current = { ...base, ...bad } as TradeView;
+      const host = await room();
+      expect(host.textContent).toContain("Couldn't load this trade.");
+      noFundingTraces(host);
+    });
+  }
+
+  it('Minor 6: the rendered QR code encodes exactly the wallet link (phone) and moneroUri(address, funds) (desktop)', async () => {
+    phone();
+    let host = await room();
+    const href = host.querySelector('[data-wallet-link]')!.getAttribute('href')!;
+    await act(async () => [...host.querySelectorAll('button')].find((b) => b.textContent?.includes('Use another wallet'))!.click());
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(href).d);
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (X11; Linux x86_64)', maxTouchPoints: 0 });
+    host = await room();
+    expect(host.querySelector('[data-wallet-link]')).toBeNull();
+    expect(host.querySelector('[data-qr] path')!.getAttribute('d')).toBe(qrPath(moneroUri(ADDRESS, 1_250_000_000_000n)).d);
+  });
+
+  it("Minor 8: Task 22 no longer restyles the global .x2f-label (Task 30's form labels keep their style); its labels are .x2f-trade-label", async () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/trade.css'), 'utf8');
+    expect(css).not.toMatch(/(^|[^-\w])\.x2f-label\b/m);
+    expect(css).toMatch(/\.x2f-trade-label\s*\{/);
+    const host = await room();
+    expect(host.querySelector('.x2f-trade-label')?.textContent).toBe('You send to escrow');
+    expect(host.querySelector('.x2f-label')).toBeNull();
   });
 });
 

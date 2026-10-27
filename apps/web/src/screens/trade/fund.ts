@@ -34,11 +34,26 @@ export function exactXmr(atomic: bigint): string {
   return frac === '' ? whole.toString() : `${whole}.${frac}`;
 }
 
-/** The seller's escrow is funded: the full amount is seen (any confirmations), or the trade is past funding. */
+/** The API says the escrow is funded: the full amount is seen (any confirmations), or the trade is past funding. */
 export function isFunded(view: Pick<TradeView, 'state' | 'receivedAtomic' | 'funding' | 'amountAtomic'>): boolean {
   if (view.state !== 'setup' && view.state !== 'funding') return true;
   const target = view.funding ? BigInt(view.funding.sellerFundsAtomic) : null;
   return target !== null && BigInt(view.receivedAtomic) >= target;
+}
+
+/**
+ * Whether the `funded` mark may be set for good (review 2026-10-27, Minor 2): only from this
+ * device's own escrow reading covering the funding, or from the API with at least one
+ * confirmation (or a state past funding). An API 0-conf reading shows "Escrow funded" for now but
+ * sets no mark, so when that tx disappears and the API goes back to `funding`, the screen follows.
+ */
+export function fundedForGood(
+  view: Pick<TradeView, 'state' | 'receivedAtomic' | 'funding' | 'amountAtomic' | 'confirmations'>,
+  device: { receivedAtomic: bigint | null; fundsAtomic: bigint | null },
+): boolean {
+  if (device.receivedAtomic !== null && device.fundsAtomic !== null && device.fundsAtomic > 0n && device.receivedAtomic >= device.fundsAtomic) return true;
+  if (!isFunded(view)) return false;
+  return view.confirmations >= 1 || (view.state !== 'setup' && view.state !== 'funding');
 }
 
 /**

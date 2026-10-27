@@ -101,9 +101,48 @@ export interface TradeView {
   serverNow: string;
 }
 
-/** GET /v1/trades/:code (404 for anyone but its two traders). */
-export function getTrade(code: string, signal?: AbortSignal): Promise<TradeView> {
-  return api<TradeView>(`/v1/trades/${encodeURIComponent(code)}`, signal ? { signal } : {});
+/** A trade view whose amounts are not plain digit strings: never parsed, never rendered. */
+export class TradeShapeError extends Error {
+  constructor(public readonly field: string) {
+    super(`trade view: ${field} is not a plain amount`);
+    this.name = 'TradeShapeError';
+  }
+}
+
+/** A plain non-negative decimal of at most 30 digits: the only thing `BigInt()` is ever given from the API. */
+const AMOUNT = /^[0-9]{1,30}$/;
+
+const amount = (v: unknown, field: string): void => {
+  if (typeof v !== 'string' || !AMOUNT.test(v)) throw new TradeShapeError(field);
+};
+
+/**
+ * Checks every bigint string of a trade view BEFORE any screen calls `BigInt()` on it (review
+ * 2026-10-27, Minor 5): a malformed one would otherwise throw during render and blank the room.
+ * Returns the same object; throws TradeShapeError, which the room shows as "could not load".
+ */
+export function parseTradeView(raw: unknown): TradeView {
+  if (raw === null || typeof raw !== 'object') throw new TradeShapeError('body');
+  const v = raw as Record<string, unknown>;
+  amount(v.amountAtomic, 'amountAtomic');
+  amount(v.fiatCents, 'fiatCents');
+  amount(v.maxFiatCents, 'maxFiatCents');
+  amount(v.receivedAtomic, 'receivedAtomic');
+  const rate = v.lockedRate as Record<string, unknown> | null | undefined;
+  amount(rate?.centsPerXmr, 'lockedRate.centsPerXmr');
+  if (v.grown !== null && v.grown !== undefined) {
+    const g = v.grown as Record<string, unknown>;
+    amount(g.fromAtomic, 'grown.fromAtomic');
+    amount(g.fromFiatCents, 'grown.fromFiatCents');
+  }
+  if (v.funding !== null && v.funding !== undefined) amount((v.funding as Record<string, unknown>).sellerFundsAtomic, 'funding.sellerFundsAtomic');
+  if (v.fee !== undefined && v.fee !== null) amount((v.fee as Record<string, unknown>).atomic, 'fee.atomic');
+  return raw as TradeView;
+}
+
+/** GET /v1/trades/:code (404 for anyone but its two traders); the amounts are checked before anything reads them. */
+export async function getTrade(code: string, signal?: AbortSignal): Promise<TradeView> {
+  return parseTradeView(await api<unknown>(`/v1/trades/${encodeURIComponent(code)}`, signal ? { signal } : {}));
 }
 
 /**

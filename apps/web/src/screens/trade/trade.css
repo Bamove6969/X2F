@@ -73,7 +73,7 @@
   line-height: var(--x2f-body-line);
 }
 
-.x2f-label {
+.x2f-trade-label {
   font-size: var(--x2f-label-size);
   line-height: var(--x2f-label-line);
   font-weight: var(--x2f-label-weight);
