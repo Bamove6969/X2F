@@ -43,15 +43,6 @@ const SHAPES = {
     </>
   ),
   bolt: <path d="M13 3L5 13h6l-1 8 8-10h-6z" />,
-  // The nudge bell (SellerRefund board "Nudge mira.k").
-  bell: (
-    <>
-      <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
-      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
-      <path d="M2 4l2 2" />
-      <path d="M22 4l-2 2" />
-    </>
-  ),
   star: <path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" />,
   'security-key': (
     <>
@@ -78,6 +69,15 @@ const SHAPES = {
     <>
       <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+    </>
+  ),
+  // The ringing bell (SellerRefund board "Nudge mira.k").
+  'bell-ring': (
+    <>
+      <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />
+      <path d="M10.3 21a1.94 1.94 0 003.4 0" />
+      <path d="M2 4l2 2" />
+      <path d="M22 4l-2 2" />
     </>
   ),
   external: (

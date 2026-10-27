@@ -69,9 +69,9 @@ async function parity(page: Page, board: string, viewport?: '1280x800'): Promise
 }
 
 test('parity with SellerRefund at 390x844', async ({ page }) => {
-  // TRIPWIRE (Task 15): the parity harness and the board references are not on the main line yet.
-  // This skips until both are present. When it first runs: the board's header "Chat" link is
-  // Task 20's (chat) and is not in the screen yet; add it to KNOWN_EXCEPTIONS or wire the link.
+  // The harness and the reference are on the main line (Task 15); the skip stays as a guard for a
+  // branch that lacks them. The board's header "Chat" link is rendered (it points at the room's
+  // chat anchor until Task 20's chat screen lands; lead decision 2026-10-27).
   const why = !existsSync(HARNESS) ? 'Task 15 parity harness (apps/web/e2e/parity.ts) is not on this branch yet' : !existsSync(REF) ? 'design/x2f-app/refs/SellerRefund.png is absent' : null;
   test.skip(why !== null, why ?? '');
   await stubTrade(page, sellerView());

@@ -187,3 +187,14 @@
 .x2f-refund [data-username] {
   text-transform: none;
 }
+
+/* The header's Chat link (board: 44 px tall, 8 px side padding, 15 px, ink). */
+.x2f-refund__chat {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  font-size: 15px;
+  color: var(--x2f-ink);
+  text-decoration: none;
+}

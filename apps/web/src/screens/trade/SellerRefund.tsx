@@ -13,8 +13,12 @@
  * The room shows it only once `payBy` has passed by the server clock (`sellerRefundOpen`), and
  * every button asks the @x2f/trade machine again on the server clock (refundRules.ts). After the
  * request the seller sees the final alert running, with its countdown.
+ *
+ * The header's Chat link is the board's; the chat screen is Task 20's, so it points at the room's
+ * chat anchor for now.
  */
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
@@ -51,6 +55,11 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
       code={view.code}
       method={methodOf(view)}
       backTo="/sell"
+      action={
+        <Link to={`/trade/${encodeURIComponent(view.code)}#chat`} className="x2f-refund__chat">
+          Chat
+        </Link>
+      }
     />
   );
 }
@@ -161,7 +170,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             </Button>
           ) : null}
           <Button variant="secondary" className="x2f-refund__nudge" onClick={() => void onNudge()}>
-            <Icon name="bell" size={20} />
+            <Icon name="bell-ring" size={20} />
             Nudge <Name name={name} />
           </Button>
         </div>
