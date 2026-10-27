@@ -26,9 +26,12 @@ self.addEventListener('push', (event) => {
     text = '';
   }
   const body = text === NUDGE ? NUDGE : text === ALERT ? ALERT : TRADE;
+  // One tag per kind: replacing a same-tag notification skips the alert steps (no sound or
+  // vibration), so a trade push must never land on an unread nudge's tag and go silent.
+  const tag = body === NUDGE ? 'x2f-nudge' : body === ALERT ? 'x2f-alert' : 'x2f-trade';
   event.waitUntil(
     (async () => {
-      await self.registration.showNotification('X2F', { body, tag: 'x2f' });
+      await self.registration.showNotification('X2F', { body, tag });
       // The seen-receipt (P3-I13): only a shown trade push counts. A failure leaves the trade's
       // final_alert_delivered unset, which moderation treats as not seen.
       if (body === TRADE) {

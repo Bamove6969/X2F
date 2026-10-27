@@ -109,6 +109,17 @@ describe('sw.js push', () => {
     },
   );
 
+  it('a trade push has its own tag, so it never silently replaces a nudge in the tray (review 2026-10-27, minor 7)', async () => {
+    // Replacing a same-tag notification skips the alert steps (no sound, no vibration) under the
+    // Notifications standard, which would make a shown-but-silent final alert.
+    await h.dispatch('push', pushWith(NUDGE));
+    await h.dispatch('push', pushWith(TRADE));
+    await h.dispatch('push', pushWith(ALERT));
+    const tags = h.shown.map((n) => n.options.tag);
+    expect(tags.every((tag) => typeof tag === 'string' && tag.length > 0)).toBe(true);
+    expect(new Set(tags).size).toBe(3);
+  });
+
   it('carries no data, image or link beyond /', async () => {
     await h.dispatch('push', pushWith(NUDGE));
     const opts = h.shown[0]!.options;
