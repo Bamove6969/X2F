@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { PushCall, PushTransport } from '../src/push/send.js';
+import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -125,6 +126,29 @@ describe('final alert: only the seen-receipt sets final_alert_delivered (P3-I13)
       expect(res.statusCode).toBe(404);
       expect(res.json()).toEqual({ error: 'not-found' });
     }
+    expect(await delivered(t.code)).toBeNull();
+  });
+
+  it('a mark-paid committing between the receipt\'s read and its write leaves the trade unflagged (review 2026-10-27, minor 5)', async () => {
+    const { seller, buyer, t } = await refundable();
+    await seller.browser.post(`/v1/trades/${t.code}/events`, { type: 'request-refund' });
+    // Right after the route has read the trade (still refund_requested), the buyer's mark-paid commits.
+    const real = deps.db.query.bind(deps.db);
+    let raced = false;
+    vi.spyOn(deps.db, 'query').mockImplementation((async (text: unknown, params?: unknown[]) => {
+      const r = await real(text as string, params);
+      if (!raced && typeof text === 'string' && text.startsWith('select * from trades where code') && params?.[0] === t.code) {
+        raced = true;
+        await applyEvent({ db: deps.db, clock: deps.clock }, t.code, { type: 'mark-paid', fiatCents: t.fiatCents }, 'buyer');
+      }
+      return r;
+    }) as never);
+    const res = await buyer.browser.post(seen(t.code), {});
+    vi.restoreAllMocks();
+    expect(raced).toBe(true);
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('paid');
+    expect(res.statusCode).toBe(409);
+    expect(errorOf(res)).toBe('wrong-state');
     expect(await delivered(t.code)).toBeNull();
   });
 

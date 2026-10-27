@@ -96,8 +96,15 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const role = roleOf(t, req.auth.accountId);
     if (role === null) throw new ApiError(404, 'not-found');
     if (role !== 'buyer') throw new ApiError(409, 'wrong-party');
-    if (t.finalAlertAt === null) throw new ApiError(409, 'wrong-state');
-    await req.server.deps.db.query('update trades set final_alert_delivered = true where code = $1', [t.code]);
+    // The state conditions live in the UPDATE, not only in the read above: a mark-paid that
+    // commits between the two leaves the (now paid) trade unflagged, and the answer comes from
+    // the row count (review 2026-10-27, minor 5).
+    const r = await req.server.deps.db.query(
+      `update trades set final_alert_delivered = true
+        where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null`,
+      [t.code, req.auth.accountId],
+    );
+    if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
     return reply.code(204).send();
   });
 
