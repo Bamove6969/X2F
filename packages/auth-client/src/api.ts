@@ -219,9 +219,9 @@ export interface AuthApi {
   registerPgpStart(b: { displayName: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
   registerPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; acceptedTerms: string }): Promise<{ displayName: string }>;
   /**
-   * PGP login needs no name: `key` is the person's armored public key (preferred: an unknown key's
-   * decoy then goes to that key too) or its fingerprint. `pendingId`: the second step of a staff or
-   * owner login.
+   * PGP login needs no name: `key` is the person's whole armored public key (an unknown key's decoy
+   * goes to that key too). A fingerprint, or anything else, is 400 `key-unreadable`, the same for
+   * every key. `pendingId`: the second step of a staff or owner login.
    */
   loginPgpStart(b: { key: string; pendingId?: string }): Promise<PgpChallenge>;
   loginPgpFinish(b: { challengeId: string; code: string; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
