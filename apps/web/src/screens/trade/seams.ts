@@ -1,101 +1,35 @@
 /**
- * Seams for two pieces the trade room needs that are not merged yet. Each has a stand-in so the
- * room builds and runs now, and a tripwire in test/tradeRoom-tripwires.test.ts that fails the
- * day the real piece lands, naming the line to change.
+ * The trade room's seams to the escrow runtime and the live events.
  *
- * - Task 12 (browser escrow runtime, wip/second-p3-t12): `apps/web/src/escrow/useEscrow.ts`.
- *   `TradeEscrow` below copies its `UseEscrow` shape exactly; once merged, `useTradeEscrow`
- *   becomes `useEscrow` (and the copied types become re-exports).
- * - Task 19 (live events, wip/lead-p3-task19): `apps/web/src/api/events.ts`. Once merged,
- *   `useTradeLive` subscribes through its `useLiveEvents`.
+ * - Task 12 (browser escrow runtime, on the main line): `useTradeEscrow` is its
+ *   `useEscrow(code, confirmed)` (apps/web/src/escrow/useEscrow.ts); the types are its own,
+ *   re-exported from escrow/runtime.ts and escrow/policy.ts (as quote/confirmed.ts does).
+ * - Task 19 (live events, on the main line): App.tsx's `LiveAccepted` fans its single
+ *   `/v1/events` connection out to the room through `setLiveSource` (`liveFanOut` below).
  *
  * Tests (and the board fixtures) install fakes with `setTradeEscrowHook` / `setLiveSource`.
  */
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { escrowPlan } from '@x2f/trade';
+import type { Deal } from '../../escrow/policy.js';
+import type { ConfirmedTrade, EscrowErrorCode, EscrowPhase, EscrowRefusal } from '../../escrow/runtime.js';
+import type { UserSignal } from '../../escrow/signals.js';
+import { useEscrow, type UseEscrow } from '../../escrow/useEscrow.js';
 
-// ---- Task 12: copied from wip/second-p3-t12 apps/web/src/escrow/runtime.ts (types only) ----
-
-export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'settled-without-device' | 'error';
-export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'not-confirmed' | 'escrow-failed' | 'unsupported-browser';
-export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted' | 'view-mismatch';
-export type UserSignal = 'trade.paid' | 'trade.cancel' | 'trade.extend' | 'trade.refund-request';
-
-/** Task 12's `Deal` (wip/lead-p3-task12-fixes apps/web/src/escrow/policy.ts): what both sides sign in trade.terms, fixed at take. */
-export interface ConfirmedDeal {
-  poster: 'seller' | 'buyer';
-  takeAmountAtomic: bigint;
-  currency: string;
-  centsPerXmr: bigint;
-  maxFiatCents: bigint;
-}
+export type { ConfirmedTrade, Deal, EscrowErrorCode, EscrowPhase, EscrowRefusal, UserSignal };
 
 /**
- * Task 12's `ConfirmedTrade` (runtime.ts): what the user saw and confirmed on the take or accept
- * screen (Tasks 18/19), their role, their own address (buyer payout / seller refund) and the deal.
- * It is the only source of what this device signs; the first start of a trade on a device without
- * it fails with `not-confirmed` (runtime.ts:405-406). Tasks 18/19 navigate to `/trade/:code` with
- * `{ state: { confirmed } }` and the room passes it through (review 2026-10-27, I4; the tripwire
- * in test/tradeRoom-tripwires.test.ts watches their navigations). History state does not survive
- * opening the trade from a push notification, so those tasks should start the escrow, or persist
- * `confirmed` through Task 12's store, before navigating.
+ * The room's one escrow handle per trade: Task 12's `UseEscrow`. TradeFund reads its funding
+ * facts from it: `escrowAddress` (the only address ever shown or put in a `monero:` link or QR
+ * code; the API's is only compared with it), `deal` (the funding amount is worked out from it,
+ * never taken from the API), `receivedAtomic` (after a short payment the remainder comes from it,
+ * never from the API's `receivedAtomic`, review 2026-10-27 I1) and `confirmedAtomic` (the only
+ * device reading that may set the `funded` mark for good; a 0-conf tx can be dropped).
+ * `confirmed` (`{ role, ownAddress, deal }`) is needed the first time a trade starts on a device
+ * (else `not-confirmed`); the room passes `location.state.confirmed`, else the copy the quote or
+ * the accept sheet stored (quote/confirmed.ts `readConfirmed`).
  */
-export interface ConfirmedTrade {
-  role: 'buyer' | 'seller';
-  ownAddress: string;
-  deal: ConfirmedDeal;
-}
-
-/**
- * `UseEscrow` from wip/second-p3-t12 apps/web/src/escrow/useEscrow.ts, field for field, plus
- * `escrowAddress` (see below), which Task 12 must add before it merges.
- */
-export interface TradeEscrow {
-  phase: EscrowPhase;
-  /**
-   * The multisig address THIS device derived (`party.ready()` in Task 12's runtime, the address
-   * its check words are computed from), or null until then. The only address TradeFund ever shows
-   * or puts in a `monero:` link or QR code; the API's `funding.escrowAddress` is only compared with
-   * it. ADDITION to Task 12's UseEscrow (it is not in EscrowStatus yet); the tripwire in
-   * test/tradeRoom-tripwires.test.ts names it.
-   */
-  escrowAddress: string | null;
-  /**
-   * The deal THIS device confirmed on the take or accept screen (Task 12's stored `Deal`: who
-   * posted and the amount at take), or null until the runtime has it. The funding amount is
-   * worked out from it, never taken from the API. ADDITION to Task 12's UseEscrow, like
-   * `escrowAddress`.
-   */
-  deal: { poster: 'seller' | 'buyer'; takeAmountAtomic: bigint } | null;
-  /**
-   * What THIS device's escrow party has seen arrive at the escrow address (the `balance` Task 12's
-   * runtime reads with `party.funds()` on every tick, confirmed or not), or null until it has a
-   * reading. After a short payment the remainder the seller still sends is worked out from it,
-   * never from the API's `receivedAtomic` (review 2026-10-27, I1): a full-amount link, QR code or
-   * copy on top of a partial payment would overfund the escrow and grow the trade. ADDITION to
-   * Task 12's EscrowStatus, like `escrowAddress`; the tripwire names it.
-   */
-  receivedAtomic: bigint | null;
-  /**
-   * The part of `receivedAtomic` with at least one confirmation (from the `incoming` list Task 12's
-   * `party.funds()` returns), or null until there is a reading. Only this may set TradeFund's
-   * `funded` mark for good from the device (re-review 2026-10-27, Minor 2): a 0-conf tx can be
-   * dropped. ADDITION to Task 12's EscrowStatus; the tripwire names it.
-   */
-  confirmedAtomic: bigint | null;
-  error: EscrowErrorCode | null;
-  retryable: boolean;
-  refusal: EscrowRefusal | null;
-  checkWords: string[] | null;
-  keepOpen: boolean;
-  release(): Promise<void>;
-  buildRefund(): Promise<void>;
-  buyerCancel(): Promise<void>;
-  proposeCancelSign(): Promise<void>;
-  markPaid(fiatCents: bigint): Promise<void>;
-  retry(): void;
-  signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
-}
+export type TradeEscrow = UseEscrow;
 
 /**
  * Integrity failures: the trade must not be funded or settled from this device (SetupStatus
@@ -175,15 +109,17 @@ export function amountToSend(v: Pick<VerifiedFunding, 'fundsAtomic' | 'receivedA
   return v.fundsAtomic;
 }
 
-const notYet = (): Promise<void> => Promise.reject(new Error('escrow runtime not wired (Task 12)'));
+const notYet = (): Promise<void> => Promise.reject(new Error('no escrow runtime in this fake'));
 
-/** The stand-in until Task 12 merges: idle, no check words, every action refused. */
+/** An idle handle with every action refused: the base for test fakes and the board fixtures. */
 export const PENDING_ESCROW: TradeEscrow = {
   phase: 'idle',
   escrowAddress: null,
   deal: null,
   receivedAtomic: null,
   confirmedAtomic: null,
+  amountAtomic: null,
+  fiatCents: null,
   error: null,
   retryable: false,
   refusal: null,
@@ -200,14 +136,14 @@ export const PENDING_ESCROW: TradeEscrow = {
 
 export type TradeEscrowHook = (code: string, confirmed?: ConfirmedTrade) => TradeEscrow;
 
-let escrowHook: TradeEscrowHook = () => PENDING_ESCROW;
+let escrowHook: TradeEscrowHook = useEscrow;
 
-/** Sets the hook the room calls once per trade (Task 12's `useEscrow`, or a test fake); null restores the stand-in. */
+/** Replaces the hook the room calls once per trade (a test fake, or the board fixtures); null restores Task 12's `useEscrow`. Set it before the room mounts. */
 export function setTradeEscrowHook(h: TradeEscrowHook | null): void {
-  escrowHook = h ?? (() => PENDING_ESCROW);
+  escrowHook = h ?? useEscrow;
 }
 
-/** The room's one escrow handle per trade. Must be called unconditionally, like any hook. */
+/** The room's one escrow handle per trade (Task 12's `useEscrow`). Must be called unconditionally, like any hook. */
 export function useTradeEscrow(code: string, confirmed?: ConfirmedTrade): TradeEscrow {
   return escrowHook(code, confirmed);
 }

@@ -67,12 +67,9 @@ function fields(file: URL, name: string): string[] {
 }
 
 describe('TRIPWIRES: trade room', () => {
-  it('Task 12 (browser escrow runtime) is not merged: useTradeEscrow is still the stand-in', () => {
-    expect(
-      existsSync(new URL('escrow/useEscrow.ts', web)),
-      "Task 12 merged: Task 12 must expose escrowAddress (the address party.ready() derived), deal (its stored confirmed Deal: poster, takeAmountAtomic), receivedAtomic (the balance its tick reads with party.funds()) and confirmedAtomic (the part of that balance with 1+ confirmations, from funds().incoming; the only device reading that may set TradeFund's funded mark) in EscrowStatus/UseEscrow; then in src/screens/trade/seams.ts make useTradeEscrow call useEscrow(code, confirmed) and re-export its types instead of the copies",
-    ).toBe(false);
-  });
+  // Task 12's tripwire retired 2026-10-27 (Task 22 landing): EscrowStatus/UseEscrow carry
+  // escrowAddress, deal, receivedAtomic and confirmedAtomic, and seams.ts's useTradeEscrow is
+  // useEscrow(code, confirmed) with Task 12's own types.
 
   it('Task 19 (live events) is not merged: the room only polls', () => {
     expect(

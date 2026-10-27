@@ -21,8 +21,9 @@ const ADDRESS = '4' + 'A'.repeat(94);
 const URI = `monero:${ADDRESS}?tx_amount=1.25`;
 const ATTACKER = '4' + 'B'.repeat(94);
 const WORDS = ['amber', 'canal', 'violin', 'oxygen'];
-const TAKER_DEAL = { poster: 'buyer' as const, takeAmountAtomic: 1_250_000_000_000n };
-const POSTER_DEAL = { poster: 'seller' as const, takeAmountAtomic: 1_250_000_000_000n };
+const DEAL_TERMS = { currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 50_000n };
+const TAKER_DEAL = { poster: 'buyer' as const, takeAmountAtomic: 1_250_000_000_000n, ...DEAL_TERMS };
+const POSTER_DEAL = { poster: 'seller' as const, takeAmountAtomic: 1_250_000_000_000n, ...DEAL_TERMS };
 const verified = (over: Partial<TradeEscrow> = {}) => escrow({ phase: 'ready', checkWords: WORDS, escrowAddress: ADDRESS, deal: TAKER_DEAL, ...over });
 
 const base: TradeView = {

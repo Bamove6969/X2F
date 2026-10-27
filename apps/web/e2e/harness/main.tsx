@@ -51,6 +51,10 @@ const READY: EscrowStatus = {
   role: screen === 'final-alert' ? 'buyer' : 'seller',
   amountAtomic: BigInt(board.amountAtomic),
   fiatCents: BigInt(board.fiatCents),
+  escrowAddress: null,
+  deal: null,
+  receivedAtomic: null,
+  confirmedAtomic: null,
 };
 const subscribers = new Set<(s: EscrowStatus) => void>();
 setEscrowClient({

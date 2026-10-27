@@ -3,6 +3,7 @@
  * The page sees only status (phase, error, check words, keepOpen) and asks for actions.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { Deal } from './policy.js';
 import type { ConfirmedTrade, EscrowAction, EscrowErrorCode, EscrowPhase, EscrowRefusal, EscrowStatus } from './runtime.js';
 import type { UserSignal } from './signals.js';
 import type { FromWorker, ToWorker } from './worker.js';
@@ -79,6 +80,14 @@ export interface UseEscrow {
   /** `EscrowStatus.amountAtomic` / `fiatCents`: the trade amount this device accepts now and its fiat total; the screens show these, never the API's. */
   amountAtomic: bigint | null;
   fiatCents: bigint | null;
+  /** `EscrowStatus.escrowAddress`: the address this device's party derived (null until set up); the only one the funding screen shows. */
+  escrowAddress: string | null;
+  /** `EscrowStatus.deal`: the deal this device stored from what the user confirmed. */
+  deal: Deal | null;
+  /** `EscrowStatus.receivedAtomic`: the escrow `balance` from this device's own last `funds()` reading. */
+  receivedAtomic: bigint | null;
+  /** `EscrowStatus.confirmedAtomic`: the 1+-confirmation part of what arrived, from the same reading (see EscrowStatus). */
+  confirmedAtomic: bigint | null;
   release(): Promise<void>;
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
@@ -93,7 +102,7 @@ export interface UseEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -119,6 +128,10 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     keepOpen: status.keepOpen,
     amountAtomic: status.amountAtomic,
     fiatCents: status.fiatCents,
+    escrowAddress: status.escrowAddress,
+    deal: status.deal,
+    receivedAtomic: status.receivedAtomic,
+    confirmedAtomic: status.confirmedAtomic,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),
