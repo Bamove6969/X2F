@@ -1,0 +1,38 @@
+/* AcceptedSheet (Task 19). No board yet: built from the UI kit's sheet and tokens. */
+.x2f-accepted__wallets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.x2f-accepted__legend {
+  margin-bottom: var(--x2f-space-2);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-accepted__wallet {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  min-height: 48px;
+  padding: var(--x2f-space-2) var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-accepted__label {
+  flex: 1;
+}
+
+.x2f-accepted__end {
+  font-family: var(--x2f-address-family);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-accepted__error {
+  margin: 0;
+  color: var(--x2f-ink);
+}

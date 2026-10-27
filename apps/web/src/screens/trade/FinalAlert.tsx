@@ -42,7 +42,7 @@ function useSeenReceipt(code: string, finalAlertAt: string | null): void {
     const send = () => {
       if (document.visibilityState !== 'visible' || sent.current === finalAlertAt) return;
       sent.current = finalAlertAt;
-      // Idempotent on the API; a failure is retried by the next visibility change or by Task 19's live-event receipt.
+      // Idempotent on the API; a failure is retried by the next visibility change.
       api(`/v1/trades/${encodeURIComponent(code)}/final-alert-seen`, { method: 'POST' }).catch(() => {
         if (sent.current === finalAlertAt) sent.current = null;
       });

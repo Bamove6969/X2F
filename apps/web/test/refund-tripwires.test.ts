@@ -34,13 +34,8 @@ describe('Task 25 stand-ins', () => {
     // FinalAlert → I've paid → Yes, I've paid → `mark-paid` posted and the `trade.paid` signal sent.
     expect(has('apps/web/src/screens/trade/PaidConfirmSheet.tsx'), "Task 23 landed: wire PaidConfirmSheet into FinalAlert's I've paid").toBe(false);
   });
-
-  it("NEEDS_TASK_19: the final-alert seen-receipt route is on Task 19's branch only", () => {
-    // FinalAlert posts POST /v1/trades/:code/final-alert-seen (wip/lead-p3-task19
-    // apps/api/src/trades/routes.ts). Once merged, confirm the path and the 204/409 answers.
-    const routes = readFileSync(ROOT + 'apps/api/src/trades/routes.ts', 'utf8');
-    expect(routes.includes('final-alert-seen'), 'Task 19 landed: check the seen-receipt route FinalAlert posts').toBe(false);
-  });
+  // NEEDS_TASK_19 retired 2026-10-27: POST /v1/trades/:code/final-alert-seen is on the line (204; 409
+  // wrong-party / wrong-state, swallowed by FinalAlert and retried on the next visibility change).
 });
 
 describe('the slots Task 25 registers', () => {

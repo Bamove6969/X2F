@@ -103,7 +103,7 @@ export interface PickWallet {
   label: string;
   /**
    * The full address, kept only to become `ownAddress` in the confirmed record the take hands the
-   * trade room (confirmed.ts); the screen shows `addressEnd`.
+   * trade room (confirmed.ts); the screen shows its last 6 characters (ui/addressEnd.ts), not `addressEnd`.
    */
   address: string;
   addressEnd: string;

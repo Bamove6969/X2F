@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { buildApi, type BuildOptions, type Deps } from '../../src/app.js';
@@ -10,6 +10,13 @@ import type { Config, Keyring } from '../../src/config.js';
 import { testDb } from './db.js';
 import { captureLogs } from './logs.js';
 
+/** A fresh VAPID key pair (P-256), base64url as web-push expects (Task 19). */
+function vapidKeys(): { vapidPublic: string; vapidPrivate: string } {
+  const ecdh = createECDH('prime256v1');
+  ecdh.generateKeys();
+  return { vapidPublic: ecdh.getPublicKey().toString('base64url'), vapidPrivate: Buffer.concat([Buffer.alloc(32), ecdh.getPrivateKey()]).subarray(-32).toString('base64url') };
+}
+
 /** A one-key ring of fresh random bytes under `id`. */
 export function testRing(id = 1): Keyring {
   return { current: id, keys: new Map([[id, new Uint8Array(randomBytes(32))]]) };
@@ -17,6 +24,7 @@ export function testRing(id = 1): Keyring {
 
 export function testConfig(over: Partial<Config> = {}): Config {
   return {
+    ...vapidKeys(),
     siteName: 'X2F',
     origins: ['https://x2f.test'],
     rpId: 'x2f.test',

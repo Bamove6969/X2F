@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import { chmod, copyFile, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -10,6 +10,9 @@ import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
+import { VAPID_ENV } from './helpers/vapid.js';
+
+const VAPID = VAPID_ENV;
 
 const FULL_ENV = {
   X2F_ORIGINS: 'https://x2f.test,http://x2fexample.onion',
@@ -24,6 +27,8 @@ const FULL_ENV = {
   X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 1).toString('base64')}`,
   X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 2).toString('base64')}`,
   X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 3).toString('base64')}`,
+  // Task 19: a VAPID pair, base64url: the P-256 public point (65 bytes) and private scalar (32 bytes).
+  ...VAPID,
 };
 const k32 = (fill: number) => Buffer.alloc(32, fill).toString('base64');
 
@@ -34,7 +39,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -79,7 +84,7 @@ describe('migrations', () => {
 
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
-        '104_trade_retention.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
@@ -158,6 +163,15 @@ describe('config', () => {
     expect(c.pgpSigningKeyPath).toBe('/srv/x2f/signing.asc');
     expect(c.pgpSigningFingerprint).toBe('a'.repeat(40));
     expect(loadConfig({ ...FULL_ENV, X2F_PGP_SIGNING_FINGERPRINT: 'b'.repeat(64) }).pgpSigningFingerprint).toBe('b'.repeat(64));
+    expect(c.vapidPublic).toBe(FULL_ENV.X2F_VAPID_PUBLIC);
+    expect(c.vapidPrivate).toBe(FULL_ENV.X2F_VAPID_PRIVATE);
+  });
+
+  it('needs both VAPID keys (Task 19)', () => {
+    const { X2F_VAPID_PUBLIC: _p, ...noPublic } = FULL_ENV;
+    expect(() => loadConfig(noPublic)).toThrow(/X2F_VAPID_PUBLIC/);
+    const { X2F_VAPID_PRIVATE: _k, ...noPrivate } = FULL_ENV;
+    expect(() => loadConfig(noPrivate)).toThrow(/X2F_VAPID_PRIVATE/);
   });
 
   it.each([
@@ -172,6 +186,12 @@ describe('config', () => {
     ['X2F_ORIGINS', 'https://x2f.test/'],
     ['X2F_ORIGINS', 'x2f.test'],
     ['DATABASE_URL', 'mysql://x'],
+    ['X2F_VAPID_PUBLIC', Buffer.alloc(65, 4).toString('base64')],
+    ['X2F_VAPID_PUBLIC', Buffer.concat([Buffer.from([2]), Buffer.alloc(64, 9)]).toString('base64url')],
+    ['X2F_VAPID_PUBLIC', Buffer.alloc(33, 4).toString('base64url')],
+    ['X2F_VAPID_PRIVATE', Buffer.alloc(31, 5).toString('base64url')],
+    ['X2F_VAPID_PRIVATE', 'not base64url!'],
+    ['X2F_VAPID_PUBLIC', (() => { const e = createECDH('prime256v1'); e.generateKeys(); return e.getPublicKey().toString('base64url'); })()],
   ])('refuses malformed %s', (name, value) => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
   });

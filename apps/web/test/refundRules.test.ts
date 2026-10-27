@@ -52,7 +52,7 @@ function secured(): Trade {
 
 /** The view one side gets, at server time `now`. */
 const viewOf = (t: Trade, who: 'seller' | 'buyer', now: Date) =>
-  toTradeView(t, who === 'seller' ? SELLER : BUYER, now, { counterparty: PEER, profile: null, sellerWalletApp: null });
+  toTradeView(t, who === 'seller' ? SELLER : BUYER, now, { counterparty: PEER, profile: null, sellerWalletApp: null, finalAlertSeenAt: null });
 
 /** The machine's own answer: null when it accepts the event, else its rule code. */
 function machine(t: Trade, e: TradeEvent, by: 'seller' | 'buyer', now: Date): string | null {

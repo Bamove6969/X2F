@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { posterRole, type Price } from '@x2f/trade';
+import { addressEnd } from '../../ui/addressEnd.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
@@ -221,7 +222,8 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   let walletLine: ReactNode = copy.noWalletLine;
   if (signedIn === false) walletLine = copy.signedOutWalletLine;
-  else if (pickedWallet) walletLine = copy.walletLine(walletName(pickedWallet), `…${pickedWallet.addressEnd}`);
+  // The ending is cut from the full address the take will confirm, never the API's addressEnd (Task 19 re-review, gap 2).
+  else if (pickedWallet) walletLine = copy.walletLine(walletName(pickedWallet), `…${addressEnd(pickedWallet.address)}`);
 
   return (
     <div className="x2f-quote" data-screen="quote">
