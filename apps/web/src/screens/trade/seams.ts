@@ -18,15 +18,33 @@ import { escrowPlan } from '@x2f/trade';
 
 export type EscrowPhase = 'idle' | 'registering' | 'verifying' | 'setting-up' | 'ready' | 'signing' | 'done' | 'settled-without-device' | 'error';
 export type EscrowErrorCode = 'participants-mismatch' | 'deal-mismatch' | 'not-confirmed' | 'escrow-failed' | 'unsupported-browser';
-export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted';
+export type EscrowRefusal = 'amount-out-of-range' | 'amount-changed' | 'paid-amount-refused' | 'paid-amount-waiting' | 'amount-unknown' | 'attempts-exhausted' | 'view-mismatch';
 export type UserSignal = 'trade.paid' | 'trade.cancel' | 'trade.extend' | 'trade.refund-request';
 
+/** Task 12's `Deal` (wip/lead-p3-task12-fixes apps/web/src/escrow/policy.ts): what both sides sign in trade.terms, fixed at take. */
+export interface ConfirmedDeal {
+  poster: 'seller' | 'buyer';
+  takeAmountAtomic: bigint;
+  currency: string;
+  centsPerXmr: bigint;
+  maxFiatCents: bigint;
+}
+
 /**
- * What the user confirmed on the take or accept screen (Tasks 18/19), handed to the escrow the
- * first time a trade starts on this device. Opaque to the room: Tasks 18/19 navigate to
- * `/trade/:code` with `{ state: { confirmed } }` and the room passes it through.
+ * Task 12's `ConfirmedTrade` (runtime.ts): what the user saw and confirmed on the take or accept
+ * screen (Tasks 18/19), their role, their own address (buyer payout / seller refund) and the deal.
+ * It is the only source of what this device signs; the first start of a trade on a device without
+ * it fails with `not-confirmed` (runtime.ts:405-406). Tasks 18/19 navigate to `/trade/:code` with
+ * `{ state: { confirmed } }` and the room passes it through (review 2026-10-27, I4; the tripwire
+ * in test/tradeRoom-tripwires.test.ts watches their navigations). History state does not survive
+ * opening the trade from a push notification, so those tasks should start the escrow, or persist
+ * `confirmed` through Task 12's store, before navigating.
  */
-export type ConfirmedTrade = unknown;
+export interface ConfirmedTrade {
+  role: 'buyer' | 'seller';
+  ownAddress: string;
+  deal: ConfirmedDeal;
+}
 
 /**
  * `UseEscrow` from wip/second-p3-t12 apps/web/src/escrow/useEscrow.ts, field for field, plus
