@@ -12,7 +12,7 @@
  * parties signing from the same saved nonces would leak the key share (R26).
  */
 import { normalizeTradeCode, type Role } from '@x2f/core';
-import { PartyError, type EscrowEngine, type Outcome, type PartyArgs, type PartyHandle, type Payout, type Transport } from '@x2f/escrow';
+import { EscrowError, PartyError, TransportClosedError, type EscrowEngine, type Outcome, type PartyArgs, type PartyHandle, type Payout, type Transport } from '@x2f/escrow';
 import type { Identity, Participants } from '@x2f/protocol';
 import { channelFor, fiatCents, type SettleKind, type TradeState } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
@@ -251,6 +251,12 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
     private ticking: Promise<void> = Promise.resolve();
     /** Device clock when the escrow was first seen emptied while this device's settle was still open. */
     private emptiedWhileSettling: number | null = null;
+    /**
+     * The party's relay connection ended for good (the relay closes a trade's channels when the
+     * trade ends, Task 7: 4404; or refused this role). Judged in tick against the view: expected
+     * once the trade is closed, a retryable failure while it is open.
+     */
+    private relayClosed = false;
     readonly finished: Promise<void>;
     private finish!: () => void;
     acquired!: Promise<void>;
@@ -494,9 +500,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           this.refresh();
           this.poke();
         },
-        (e: unknown) => {
-          if (!this.stopped) this.fail('escrow-failed', { integrity: integrityError(e) });
-        },
+        (e: unknown) => this.partyFailed(e),
       );
 
       // A stored outcome goes back to the party first (through the policy, over its own sum),
@@ -698,9 +702,20 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
             return;
           }
           if (e instanceof PartyError && e.code === 'stopped') return;
-          if (!this.stopped) this.fail('escrow-failed', { integrity: integrityError(e) });
+          this.partyFailed(e);
         },
       );
+    }
+
+    /** A ready() or settle() rejection: the relay's close is judged by tick; anything else stops the trade. */
+    private partyFailed(e: unknown): void {
+      if (this.stopped) return;
+      if (e instanceof TransportClosedError) {
+        this.relayClosed = true;
+        this.poke();
+        return;
+      }
+      this.fail('escrow-failed', { integrity: integrityError(e) });
     }
 
     private refresh(): void {
@@ -736,11 +751,22 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       await this.loadView();
       const v = this.view;
       if (!v) return;
+      const closed = CLOSED.includes(v.state);
+      // The relay dropped an open trade: nothing can be settled until retry() reconnects. Once the
+      // trade is closed the relay's close is expected (Task 7) and the after-close rules run below.
+      if (this.relayClosed && !closed && !this.error) return this.fail('escrow-failed');
+      // The balance comes from the party's own wallet, which it keeps reading after the relay closed
+      // the trade (the least invasive way to read it without a live party: no second wallet session
+      // on the same keys; see PartyHandle.funds). A rejection is the party's own failure, except a
+      // daemon that is briefly unreachable (read again next tick) and stop().
       let f: Awaited<ReturnType<PartyHandle['funds']>>;
       try {
         f = await this.party.funds();
-      } catch {
-        return this.refresh();
+      } catch (e) {
+        if (e instanceof PartyError && e.code === 'stopped') return this.refresh();
+        if (e instanceof EscrowError && e.code === 'daemon-unavailable') return this.refresh();
+        if (!this.error || this.retryable) this.fail('escrow-failed', { integrity: integrityError(e) });
+        return;
       }
       const r = this.rec;
       let changed = false;
@@ -750,7 +776,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         await this.persist();
       }
 
-      if (CLOSED.includes(v.state)) {
+      if (closed) {
+        // No setup can finish over a closed relay, and none is needed: the after-close verdict is shown.
+        if (this.relayClosed) this.isReady = true;
         if (await this.afterClose(f, v)) return;
       }
       if ((r.theirDeal && !sameDeal(r.deal, r.theirDeal)) || !this.theirAddressAttested() || !viewMatches(v, r.role, r.deal)) {

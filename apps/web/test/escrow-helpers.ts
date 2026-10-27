@@ -1,6 +1,6 @@
 // Stubs for the escrow runtime tests: an in-memory API and relay, a spy party, and a test mod key.
 import type { Role } from '@x2f/core';
-import type { EscrowEngine, Incoming, Outcome, PartyArgs, PartyHandle, Transport } from '@x2f/escrow';
+import { TransportClosedError, type EscrowEngine, type Incoming, type Outcome, type PartyArgs, type PartyHandle, type Transport } from '@x2f/escrow';
 import { canonicalJson, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
@@ -123,6 +123,19 @@ export class Parties {
   committed = new Map<Role, string>();
   /** When set for a role, that role's next ready() rejects with it (once). */
   readyError: Partial<Record<Role, unknown>> = {};
+  /** When set for a role, every funds() of that role rejects with it until cleared (a dead party). */
+  fundsError: Partial<Record<Role, unknown>> = {};
+  /**
+   * The relay closed the trade for this role (close code, e.g. 4404 at trade end): settles reject
+   * with TransportClosedError, a new party's ready() rejects with it, and funds() keeps reading,
+   * which is the party contract (packages/escrow/test/funds-after-relay.test.ts).
+   */
+  relayClosed: Partial<Record<Role, number>> = {};
+  closeRelay(role: Role, code = 4404): void {
+    this.relayClosed[role] = code;
+    for (const p of this.pending.filter((x) => x.role === role)) p.reject(new TransportClosedError(code));
+    this.pending = this.pending.filter((x) => x.role !== role);
+  }
   runParty = (args: PartyArgs): PartyHandle => {
     this.calls.push({ role: args.role, args });
     // Saved like a real party's first save; a run stopped at once refuses it (no writes after stop).
@@ -134,10 +147,14 @@ export class Parties {
           delete this.readyError[args.role];
           throw e;
         }
+        const closed = this.relayClosed[args.role];
+        if (closed !== undefined) throw new TransportClosedError(closed);
         return ESCROW_ADDRESS;
       },
       settle: (o) => {
         this.settles.push({ role: args.role, o });
+        const closed = this.relayClosed[args.role];
+        if (closed !== undefined) return Promise.reject(new TransportClosedError(closed));
         return new Promise((resolve, reject) => this.pending.push({ role: args.role, o, resolve, reject }));
       },
       funds: async () => {
@@ -147,6 +164,8 @@ export class Parties {
           if (w.role === args.role && n >= w.want) setTimeout(w.resolve, 0); // after this tick has used the reading
           else this.tickWaiters.push(w);
         }
+        const err = this.fundsError[args.role];
+        if (err !== undefined) throw err;
         return f;
       },
       stop: async () => {

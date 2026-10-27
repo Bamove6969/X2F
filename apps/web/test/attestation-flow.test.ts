@@ -1,5 +1,5 @@
 import { ROLES } from '@x2f/core';
-import { PartyError } from '@x2f/escrow';
+import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { seal, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan, fiatCents } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -1273,4 +1273,89 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     expect(await again.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
   });
 
+  // ── A dead party and the relay's close of the trade (review 2026-10-26, Important 1) ──
+
+  it('a party whose funds() fails: shown as escrow-failed and retryable; an integrity failure is kept; a daemon hiccup is neither', async () => {
+    const t = await released();
+    t.state.view = tradeView({ state: 'released' });
+    // A daemon that is briefly unreachable: read again next tick, nothing shown.
+    t.parties.fundsError.seller = new EscrowError('daemon-unavailable');
+    await t.parties.ticks('seller', 3);
+    expect(t.seller.last()).toMatchObject({ phase: 'done', error: null });
+    // The party died for a reason that is not an integrity failure: visible and retryable.
+    t.parties.fundsError.seller = new PartyError('bad-state', 'unknown saved state version');
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+    expect((await t.seller.store.load(CODE))?.failed ?? null).toBeNull();
+    delete t.parties.fundsError.seller;
+    await t.seller.runtime.retry(CODE);
+    expect(await t.seller.status((s) => s.phase !== 'error' && s.phase !== 'idle')).toMatchObject({ error: null });
+    // An integrity failure from the party is kept and not retryable.
+    t.parties.fundsError.seller = new PartyError('equivocation', 'two different copies');
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    await until(async () => (await t.seller.store.load(CODE))?.failed === 'escrow-failed');
+  });
+
+  it('relay closed (4404) at trade end while this device’s own settle is still open: no error at once, settled elsewhere after the grace, the store is kept', async () => {
+    const t = await released({ settle: false, settledElsewhereMs: 60_000 });
+    t.parties.closeRelay('seller'); // the seller's open settle rejects with the transport's close
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = empty();
+    await t.parties.ticks('seller', 3);
+    // Not an error yet: the trade is closed, so a closed relay is expected; the after-close rules decide.
+    expect(t.seller.last()).toMatchObject({ phase: 'signing', error: null });
+    expect(await t.seller.store.load(CODE)).toMatchObject({ closedSeenAt: expect.any(Number) });
+    t.advance(60_000);
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: false });
+    await until(async () => (await t.seller.store.load(CODE))?.failed === 'escrow-failed');
+    t.advance(60 * DAY);
+    await t.parties.ticks('seller', 3);
+    expect(await t.seller.store.load(CODE)).not.toBeNull();
+  });
+
+  it('relay closed (4404) at trade end, own settle done: settleSeenAt is recorded and the records go after 30 days', async () => {
+    const t = await released();
+    t.parties.closeRelay('seller');
+    t.parties.closeRelay('buyer');
+    t.state.view = tradeView({ state: 'released' });
+    t.parties.funds = empty();
+    await until(async () => (await t.seller.store.load(CODE))?.settleSeenAt != null);
+    expect(t.seller.last()).toMatchObject({ phase: 'done', error: null });
+    t.advance(30 * DAY);
+    await until(async () => (await t.seller.store.load(CODE)) === null);
+    expect(await t.seller.store.password(CODE)).toBeNull();
+  });
+
+  it('a device that comes back after the relay closed the trade (ready() rejects with the close): the after-close rules still run', async () => {
+    let clock = Date.parse('2026-10-24T12:00:00.000Z');
+    const t = await setup();
+    const seller = await t.mk('seller', { now: () => clock });
+    const buyer = await t.mk('buyer');
+    await seller.runtime.start(CODE);
+    await buyer.runtime.start(CODE);
+    await until(async () => (await seller.store.load(CODE))?.theirDeal != null);
+    t.state.view = tradeView({ state: 'secured' });
+    t.parties.funds = funded();
+    await t.parties.ticks('seller', 2);
+    await seller.runtime.stopAll();
+    // Meanwhile the buyer cancelled, the escrow was refunded without the seller, and the relay closed the trade.
+    t.parties.closeRelay('seller');
+    t.state.view = tradeView({ state: 'refunded', settling: 'buyer-cancel' });
+    t.parties.funds = empty();
+    const again = await t.mk('seller', { idb: seller.idb, now: () => clock });
+    await again.runtime.resumeAll();
+    expect(await again.status((s) => s.phase === 'settled-without-device')).toMatchObject({ error: null, retryable: false });
+    expect(again.statuses.some((s) => s.phase === 'error')).toBe(false);
+    clock += 30 * DAY;
+    await until(async () => (await again.store.load(CODE)) === null);
+  });
+
+  it('relay closed while the trade is still open: escrow-failed and retryable; retry() runs the party again', async () => {
+    const t = await released({ settle: false }); // view: paid, the seller's settle is open
+    t.parties.closeRelay('seller');
+    expect(await t.seller.status((s) => s.phase === 'error')).toMatchObject({ error: 'escrow-failed', retryable: true });
+    expect((await t.seller.store.load(CODE))?.failed ?? null).toBeNull();
+    delete t.parties.relayClosed.seller;
+    await t.seller.runtime.retry(CODE);
+    expect(await t.seller.status((s) => s.phase === 'signing')).toMatchObject({ error: null });
+  });
 });
