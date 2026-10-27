@@ -218,10 +218,20 @@ test.describe('TradeFund (seller, phone)', () => {
     await expect(page.locator('[role="timer"]')).toHaveText('28:42');
   });
 
-  test('the hold opens the wallet once; a second hold, and a reload, do nothing more', async ({ page }) => {
+  test('the hold opens the wallet on the release, once; a second hold, and a reload, do nothing more', async ({ page }) => {
     const opened = await recordWalletOpens(page);
     await stub(page, () => sellerView());
     await room(page);
+    // While the finger is still down past 1.5 s nothing has opened: the release performs it (review I2).
+    const button = page.locator('button.x2f-hold');
+    const box = (await button.boundingBox())!;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await expect(button).toContainText('Release to open');
+    expect(await opened()).toEqual([]);
+    await page.mouse.up();
+    expect(await opened()).toEqual([moneroUri(ADDRESS, B.amountAtomic)]);
+    await expect(page.locator('[data-primary]')).toContainText('Waiting for your payment…');
     await hold(page);
     await expect(page.locator('[data-primary]')).toContainText('Waiting for your payment…');
     expect(await opened()).toEqual([moneroUri(ADDRESS, B.amountAtomic)]);

@@ -6,11 +6,11 @@ import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { moneroUri } from '@x2f/trade';
 import type { TradeView } from '../src/api/trade.js';
-import { resetFundMarks } from '../src/screens/trade/fund.js';
+import { hasFundMark, resetFundMarks } from '../src/screens/trade/fund.js';
 import { PENDING_ESCROW, setLiveSource, setTradeEscrowHook, type TradeEscrow, type TradeLiveEvent } from '../src/screens/trade/seams.js';
 import { TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
-import { render } from './render.js';
+import { advance, pointer, render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const ADDRESS = '4' + 'A'.repeat(94);
@@ -312,6 +312,67 @@ describe('funding shows only the address this device verified', () => {
       expect(host.textContent).not.toContain('Open in');
     });
   }
+});
+
+describe('the hold opens the wallet on the release, inside the pointerup (review 2026-10-27, I2)', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('touch-style: pointerdown, 1.5 s pass (nothing opens, "Release to open"), pointerup clicks the link once', async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    const host = await room();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const link = host.querySelector<HTMLAnchorElement>('[data-wallet-link]')!;
+    const clicks: string[] = [];
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      clicks.push(e.type);
+    });
+    const button = host.querySelector<HTMLButtonElement>('button.x2f-hold')!;
+    expect(button.textContent).toContain('Open in Cake Wallet');
+    pointer(button, 'pointerdown');
+    advance(1500, vi);
+    expect(clicks).toEqual([]);
+    expect(button.textContent).toContain('Release to open');
+    expect(button.textContent).toContain('Open in Cake Wallet');
+    advance(10_000, vi);
+    expect(clicks).toEqual([]);
+    let clickedWithinPointerup = false;
+    const probe = () => {
+      clickedWithinPointerup = clicks.length === 1;
+    };
+    document.addEventListener('pointerup', probe);
+    pointer(button, 'pointerup');
+    document.removeEventListener('pointerup', probe);
+    expect(clicks).toEqual(['click']);
+    expect(clickedWithinPointerup).toBe(true);
+    expect(button.textContent).toContain('Waiting for your payment…');
+    expect(hasFundMark(CODE, 'opened')).toBe(true);
+    // Once per trade: a second hold and release does nothing more.
+    pointer(button, 'pointerdown');
+    advance(1500, vi);
+    pointer(button, 'pointerup');
+    expect(clicks).toEqual(['click']);
+  });
+
+  it('a release before 1.5 s opens nothing and leaves the hold available', async () => {
+    vi.stubGlobal('navigator', { ...navigator, userAgent: 'Mozilla/5.0 (Linux; Android 14)', maxTouchPoints: 5 });
+    const host = await room();
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date'] });
+    const link = host.querySelector<HTMLAnchorElement>('[data-wallet-link]')!;
+    let clicks = 0;
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      clicks++;
+    });
+    const button = host.querySelector<HTMLButtonElement>('button.x2f-hold')!;
+    pointer(button, 'pointerdown');
+    advance(1000, vi);
+    pointer(button, 'pointerup');
+    expect(clicks).toBe(0);
+    expect(hasFundMark(CODE, 'opened')).toBe(false);
+    expect(button.textContent).toContain('Open in Cake Wallet');
+    expect(button.textContent).toContain('Press and hold');
+  });
 });
 
 describe('after a short payment the seller funds only the remainder (review 2026-10-27, I1)', () => {

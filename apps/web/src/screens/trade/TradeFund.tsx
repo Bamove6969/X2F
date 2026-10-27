@@ -171,6 +171,9 @@ function WalletFooter({
   const f = view.funding!;
   const wallet = walletName(f.walletApp);
   const link = useRef<HTMLAnchorElement>(null);
+  // Runs synchronously inside the hold's release event (HoldButton `completeOn: 'release'`): on a
+  // phone the browser grants user activation on the release, and opening a wallet app needs it
+  // (review 2026-10-27, I2). Never from a timer.
   const open = () => {
     // Once per trade on this device, whatever re-renders or reloads happened since.
     if (hasFundMark(view.code, 'opened')) return;
@@ -186,6 +189,8 @@ function WalletFooter({
       <HoldButton
         label={opened ? 'Waiting for your payment…' : `Open in ${wallet}`}
         holdingLabel="Keep holding…"
+        completeOn="release"
+        releaseLabel="Release to open"
         caption={opened ? `Opened ${wallet}` : 'Press and hold'}
         done={opened}
         onComplete={open}
