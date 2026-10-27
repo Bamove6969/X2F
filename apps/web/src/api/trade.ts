@@ -94,6 +94,8 @@ export interface TradeView {
   paidAt: string | null;
   confirmBy: string | null;
   finalAlertAt: string | null;
+  /** When the buyer's device posted the final-alert seen-receipt (Task 25's FinalAlert); sent to the buyer only, null for the seller. */
+  finalAlertSeenAt: string | null;
   settleBy: string | null;
   pausedAt: string | null;
   closedAt: string | null;

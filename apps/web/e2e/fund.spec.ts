@@ -92,6 +92,7 @@ function sellerView(over: View = {}): View {
     paidAt: null,
     confirmBy: null,
     finalAlertAt: null,
+    finalAlertSeenAt: null,
     settleBy: null,
     pausedAt: null,
     closedAt: null,
