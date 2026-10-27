@@ -97,9 +97,8 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const [nudge, setNudge] = useState<string | null>(null);
 
   const deps = useFlowDeps(view.code, escrow);
-  // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it;
-  // one extension run per extension (the second extension is a new run).
-  const refund = refundRun(view.code, deps);
+  // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it; it
+  // is created at the tap (see refundRun). One extension run per extension (the second is a new run).
   const extend = useMemo(() => extendSteps(deps), [deps, view.extensions]);
 
   const go = async (which: 'refund' | 'extend', run: Steps) => {
@@ -163,7 +162,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             {TRY_AGAIN}
           </p>
         ) : null}
-        <Button variant="primary" disabled={!mayRefund} onClick={() => void go('refund', refund)}>
+        <Button variant="primary" disabled={!mayRefund} onClick={() => void go('refund', refundRun(view.code, deps))}>
           Cancel &amp; get refund
         </Button>
         <div className="x2f-refund__row">

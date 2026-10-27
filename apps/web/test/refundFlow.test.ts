@@ -74,6 +74,15 @@ describe('Give 30 more min', () => {
 });
 
 describe('steps', () => {
+  it('reports started once called, even when the first step failed', async () => {
+    const f = fakes({ post: 1 });
+    const run = cancelAndRefundSteps(f);
+    expect(run.started()).toBe(false);
+    await expect(run()).rejects.toThrow('post failed');
+    expect(run.started()).toBe(true);
+    expect(run.done()).toBe(false);
+  });
+
   it('reports done once every step has run', async () => {
     const run = steps([async () => undefined]);
     expect(run.done()).toBe(false);
@@ -95,6 +104,14 @@ describe('refundRun: the one Cancel & get refund run per trade, kept across remo
     expect(refundRun('T-1', f)).toBe(run);
     await refundRun('T-1', f)();
     expect(f.calls).toEqual(['post:request-refund', 'signal:trade.refund-request', 'build']);
+  });
+
+  it('a run that was created but never called is not pending (review item 8: a second device, or a lost response, must not post step 0 again)', () => {
+    const f = fakes();
+    const run = refundRun('T-1', f);
+    expect(run.started()).toBe(false);
+    expect(pendingRefundRun('T-1')).toBeNull();
+    expect(f.calls).toEqual([]);
   });
 
   it('a run that failed half-way is pending; a finished or unknown trade has none', async () => {

@@ -25,12 +25,15 @@ export type Step = () => Promise<unknown>;
 
 export interface Steps {
   (): Promise<void>;
+  /** True once the run was called at all (even if its first step failed). */
+  started(): boolean;
   done(): boolean;
 }
 
 /** Runs `list` in order, each step once; a failed step is retried by the next call. */
 export function steps(list: readonly Step[]): Steps {
   let next = 0;
+  let started = false;
   let running: Promise<void> | null = null;
   const go = async (): Promise<void> => {
     while (next < list.length) {
@@ -39,6 +42,7 @@ export function steps(list: readonly Step[]): Steps {
     }
   };
   const run = (() => {
+    started = true;
     if (running === null) {
       const p = go().finally(() => {
         if (running === p) running = null;
@@ -47,6 +51,7 @@ export function steps(list: readonly Step[]): Steps {
     }
     return running;
   }) as Steps;
+  run.started = () => started;
   run.done = () => next >= list.length;
   return run;
 }
@@ -77,7 +82,10 @@ const refundRuns = new Map<string, RefundRunEntry>();
  * The one Cancel & get refund run for `code`, created on the first call and returned again for the
  * life of the page, done or not: a done run is a no-op, so a second tap that lands after the run
  * finished but before the room re-read the trade posts nothing (a trade is refunded once). Each call
- * records `deps` as the ones the run uses from now on. Tests call `forgetRefundRuns()` between trades.
+ * records `deps` as the ones the run uses from now on. Call it at the tap, not at render: a run that
+ * was created but never started is not pending (review item 8), so a refund requested from another
+ * device, or one whose response was lost, is not re-posted from step 0 by the refund_requested view.
+ * Tests call `forgetRefundRuns()` between trades.
  */
 export function refundRun(code: string, deps: RefundFlowDeps): Steps {
   let entry = refundRuns.get(code);
@@ -94,10 +102,10 @@ export function refundRun(code: string, deps: RefundFlowDeps): Steps {
   return entry.steps;
 }
 
-/** The run for `code` if one was started on this page and has not finished; `deps` (when given) are recorded as above. */
+/** The run for `code` if it was started on this page (called at least once) and has not finished; `deps` (when given) are recorded as above. */
 export function pendingRefundRun(code: string, deps?: RefundFlowDeps): Steps | null {
   const entry = refundRuns.get(code);
-  if (entry === undefined || entry.steps.done()) return null;
+  if (entry === undefined || !entry.steps.started() || entry.steps.done()) return null;
   if (deps !== undefined) entry.deps = deps;
   return entry.steps;
 }

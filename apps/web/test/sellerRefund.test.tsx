@@ -251,6 +251,17 @@ describe('SellerRefund: a refund half done when the view flips to refund_request
     expect(m.button('Retry')).toBeNull();
   });
 
+  it('the seller cancelled on another device: this screen was rendered but never tapped, so the flip to refund_requested posts nothing (review item 8)', async () => {
+    const m = mount(sellerView());
+    expect(m.button('Cancel & get refund')).not.toBeNull();
+    m.show(sellerRequestedView());
+    await settle();
+    expect(requests).toEqual([]);
+    expect(m.calls).toEqual([]);
+    expect(m.host.querySelector('[role="alert"]')).toBeNull();
+    expect(m.button('Retry')).toBeNull();
+  });
+
   it('a fresh refund_requested view with no run on this device (a reload) resumes nothing', async () => {
     const m = mount(sellerRequestedView());
     await settle();
