@@ -2,7 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
-import { AcceptedSheet } from './screens/AcceptedSheet.js';
+import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -79,9 +79,10 @@ function LiveAccepted() {
     <AcceptedSheet
       key={accepted.code}
       event={accepted}
-      onDone={(code) => {
+      onDone={(code, confirmed) => {
         setAccepted(null);
-        void navigate(`/trade/${encodeURIComponent(code)}`);
+        // The room gets the poster's ConfirmedTrade as router state (also stored by the sheet).
+        void navigate(...acceptedNavigation(code, confirmed));
       }}
       onClose={() => setAccepted(null)}
     />

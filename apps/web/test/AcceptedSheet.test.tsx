@@ -1,25 +1,38 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
-import { describe, expect, it } from 'vitest';
-import { AcceptedSheet, type AcceptedWallet } from '../src/screens/AcceptedSheet.js';
+import { beforeEach, describe, expect, it } from 'vitest';
+import { AcceptedSheet, acceptedNavigation, type AcceptedTradeView, type AcceptedWallet } from '../src/screens/AcceptedSheet.js';
+import { confirmedKey, readConfirmed, type ConfirmedTrade } from '../src/screens/quote/confirmed.js';
 import { fire, render } from './render.js';
 
 // Fixtures (test-only): an accepted event and the poster's wallets as GET /v1/wallets returns them.
 const EVENT = { type: 'accepted' as const, code: 'X2F-7KQ4-M9TD', by: 'mira.K_77' };
+const ADDR1 = `5${'A'.repeat(88)}a1b2c3`;
+const ADDR2 = `5${'B'.repeat(88)}d4e5f6`;
 const WALLETS: AcceptedWallet[] = [
-  { id: 'w1', app: 'cake', label: 'Cake main', addressEnd: 'a1b2c3', usable: true },
-  { id: 'w2', app: 'feather', label: 'Feather', addressEnd: 'd4e5f6', usable: true },
-  { id: 'w3', app: 'edge', label: 'New Edge', addressEnd: '778899', usable: false },
+  { id: 'w1', app: 'cake', label: 'Cake main', address: ADDR1, addressEnd: 'a1b2c3', usable: true },
+  { id: 'w2', app: 'feather', label: 'Feather', address: ADDR2, addressEnd: 'd4e5f6', usable: true },
+  { id: 'w3', app: 'edge', label: 'New Edge', address: `5${'C'.repeat(88)}778899`, addressEnd: '778899', usable: false },
 ];
+// The poster's own view of the trade (GET /v1/trades/:code), as the API serializes it: a seller-posted offer.
+const VIEW: AcceptedTradeView = {
+  role: 'seller', poster: 'seller', amountAtomic: '1250000000000', grown: null,
+  lockedRate: { currency: 'EUR', centsPerXmr: '15000' }, maxFiatCents: '20000',
+};
+const loadView = async () => VIEW;
 
 const flush = () => act(async () => undefined);
 const sheet = () => document.querySelector('[role="dialog"]') as HTMLElement;
 const button = (text: string) =>
   [...sheet().querySelectorAll<HTMLElement>('button, a')].find((b) => b.textContent === text) as HTMLElement;
 
+beforeEach(() => {
+  sessionStorage.clear();
+});
+
 describe('AcceptedSheet', () => {
   it('names the taker by display name exactly as set, and lists only usable wallets', async () => {
-    render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
     await flush();
     expect(sheet().querySelector('h2')!.textContent).toBe('mira.K_77 accepted your offer');
     const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
@@ -30,7 +43,7 @@ describe('AcceptedSheet', () => {
   });
 
   it('pre-selects no wallet (OD-11, no default payout wallet): Use this wallet is disabled until a radio is chosen', async () => {
-    render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
+    render(<AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />);
     await flush();
     const options = [...sheet().querySelectorAll('input[type="radio"]')] as HTMLInputElement[];
     expect(options.map((o) => o.checked)).toEqual([false, false]);
@@ -47,7 +60,7 @@ describe('AcceptedSheet', () => {
     render(
       <AcceptedSheet
         event={EVENT}
-        loadWallets={async () => WALLETS}
+        loadWallets={async () => WALLETS} loadTrade={loadView}
         submit={async (code, walletId) => void posted.push([code, walletId])}
         onDone={(code) => done.push(code)}
         onClose={() => undefined}
@@ -67,7 +80,7 @@ describe('AcceptedSheet', () => {
 
   it('offers Add a wallet, returning to this trade, when no wallet is usable', async () => {
     render(
-      <AcceptedSheet event={EVENT} loadWallets={async () => [WALLETS[2]!]} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />,
+      <AcceptedSheet event={EVENT} loadWallets={async () => [WALLETS[2]!]} loadTrade={loadView} submit={async () => undefined} onDone={() => undefined} onClose={() => undefined} />,
     );
     await flush();
     const add = button('Add a wallet');
@@ -82,7 +95,7 @@ describe('AcceptedSheet', () => {
     render(
       <AcceptedSheet
         event={EVENT}
-        loadWallets={async () => WALLETS}
+        loadWallets={async () => WALLETS} loadTrade={loadView}
         submit={async () => {
           tries++;
           if (tries === 1) throw new Error('wrong-state');
@@ -104,5 +117,86 @@ describe('AcceptedSheet', () => {
     await flush();
     expect(tries).toBe(2);
     expect(sheet().textContent).toContain('Setting up escrow');
+  });
+});
+
+describe("AcceptedSheet hands the room the poster's ConfirmedTrade (Task 18 / 22 seam)", () => {
+  it('the record handed on and stored equals what the sheet showed, with the picked full address never rendered', async () => {
+    const done: Array<[string, ConfirmedTrade]> = [];
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadView} submit={async () => undefined}
+        onDone={(code, confirmed) => done.push([code, confirmed])} onClose={() => undefined} />,
+    );
+    await flush();
+    const deal = sheet().querySelector('[data-part="deal"]')!;
+    expect(deal.textContent).toContain('1.250000 XMR');
+    expect(deal.textContent).toContain('€150.00');
+    expect(deal.textContent).toContain('€200.00');
+    fire(sheet().querySelector('input[value="w2"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      button('Use this wallet').click();
+    });
+    await flush();
+    const expected: ConfirmedTrade = {
+      role: 'seller', ownAddress: ADDR2,
+      deal: { poster: 'seller', takeAmountAtomic: 1_250_000_000_000n, currency: 'EUR', centsPerXmr: 15000n, maxFiatCents: 20000n },
+    };
+    expect(done).toEqual([[EVENT.code, expected]]);
+    expect(readConfirmed(EVENT.code)).toEqual(expected);
+    expect(JSON.parse(sessionStorage.getItem(confirmedKey(EVENT.code))!).deal.takeAmountAtomic).toBe('1250000000000');
+    expect(document.body.innerHTML).not.toContain(ADDR2);
+    expect(document.body.innerHTML).not.toContain(ADDR1);
+  });
+
+  it('takes the amount at take when the trade has grown since', async () => {
+    const done: ConfirmedTrade[] = [];
+    const grown = { ...VIEW, amountAtomic: '2000000000000', grown: { at: '2026-10-27T10:00:00Z', fromAtomic: '1250000000000', fromFiatCents: '18750' } };
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={async () => grown} submit={async () => undefined}
+        onDone={(_c, confirmed) => done.push(confirmed)} onClose={() => undefined} />,
+    );
+    await flush();
+    fire(sheet().querySelector('input[value="w1"]') as HTMLInputElement, new MouseEvent('click', { bubbles: true }));
+    await act(async () => {
+      button('Use this wallet').click();
+    });
+    await flush();
+    expect(done[0]!.deal.takeAmountAtomic).toBe(1_250_000_000_000n);
+  });
+
+  it.each([
+    ['the trade cannot be loaded', async (): Promise<AcceptedTradeView> => { throw new Error('offline'); }],
+    ['the viewer is not the poster', async () => ({ ...VIEW, role: 'buyer' as const })],
+    ['the view is malformed', async () => ({ ...VIEW, lockedRate: { currency: 'EUR', centsPerXmr: 'lots' } })],
+  ])('no navigation and no record when %s', async (_why, loadTrade) => {
+    const done: string[] = [];
+    const posted: string[] = [];
+    render(
+      <AcceptedSheet event={EVENT} loadWallets={async () => WALLETS} loadTrade={loadTrade} submit={async (_c, w) => void posted.push(w)}
+        onDone={(code) => done.push(code)} onClose={() => undefined} />,
+    );
+    await flush();
+    const radio = sheet().querySelector('input[value="w1"]') as HTMLInputElement | null;
+    if (radio) fire(radio, new MouseEvent('click', { bubbles: true }));
+    const use = button('Use this wallet') as HTMLButtonElement | undefined;
+    if (use) {
+      expect(use.disabled).toBe(true);
+      await act(async () => {
+        use.click();
+      });
+    }
+    await flush();
+    expect(sheet().querySelector('[role="alert"]')).not.toBeNull();
+    expect(posted).toEqual([]);
+    expect(done).toEqual([]);
+    expect(readConfirmed(EVENT.code)).toBeNull();
+  });
+
+  it('acceptedNavigation goes to the trade room with { state: { confirmed } }', () => {
+    const confirmed: ConfirmedTrade = {
+      role: 'seller', ownAddress: ADDR1,
+      deal: { poster: 'seller', takeAmountAtomic: 1n, currency: 'EUR', centsPerXmr: 2n, maxFiatCents: 3n },
+    };
+    expect(acceptedNavigation(EVENT.code, confirmed)).toEqual(['/trade/X2F-7KQ4-M9TD', { state: { confirmed } }]);
   });
 });
