@@ -122,3 +122,12 @@ Not needed: agy, desktop-commander.
 - PGP revocation paste UI plus its small API route (coordination.md 2026-10-24) is absent on both sides: a ticket for the lead.
 - Methods → Add a PGP key has no "Send a new message" after an expired code (M5 reached login only).
 - 2026-10-27 lead: **Task 30 merged** (`wip/t3-p3-task30` @56b3b65; re-review APPROVED: TOTP code required before Confirm, hold surfaced after backup login and as a Security banner, `refusalText` with honest wait sentences and named PGP refusals, SecurityKeyLogin honours `needs`, last-method pre-check). Clashes with Task 16/17 (App.tsx imports, apps/web deps, lockfile) resolved by union; lockfile regenerated with the pinned npm (only qrcode-generator added). On the merge result apps/web typecheck clean, 19 files / 265 vitest green. Reviewer notes: Devices.tsx:31 and the logout-timer catch can never see `recovery-hold` (those routes refuse recovery sessions first), so the round-one listing of them was wrong; `void afterLogin()` in BackupLogin's Continue has no catch (navigate only); the staff second-step sentence is clunky. Task 30 follow-ups 5, 6, 8, 9 stand; the FU-A tripwires in task30-tripwires.test.ts will fail tsc when FU-A lands, as designed.
+
+## Task 25 (review 2026-10-27, `docs/superpowers/reviews/2026-10-27-p3-task25.md`; fix round on `wip/lead-p3-task25`)
+- Task 22 merge note: add the seller × refund_requested slot (refundScreens.ts:30) to TradeRoom.tsx's ownership list; Tasks 23/24 do not claim it.
+- Task 25 follow-ups:
+  - No confirm sheet on Cancel & get refund (lead decision: not required; the warning is on screen and the buyer has 15 minutes).
+  - The top-level `@x2f/escrow` import in `apps/web/test/refundRules.test.ts` loads monero-ts into the web vitest run (watch memory; an `./autoRefund` sub-path export of `@x2f/escrow` later).
+  - The e2e harness (`apps/web/e2e/harness/serve.ts`) builds the web a second time per e2e run, until Task 22 lands and removes it.
+  - A reload between request-refund being accepted and the tx set being built loses the run's cursor (`refundFlow.ts` keeps it for the life of the page); persist it in Task 12's escrow store so the refund_requested view can resume after a reload.
+  - The header's Chat link on SellerRefund points at `/trade/<code>#chat` until Task 20's chat screen lands (lead decision 2026-10-27).
