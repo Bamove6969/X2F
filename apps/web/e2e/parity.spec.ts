@@ -207,6 +207,15 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['Far down'])).toEqual([]);
   });
 
+  test('text below the fold inside an inner scroll container still counts as shown', async ({ page }) => {
+    // An app shell that scrolls in <main>, so the document itself is one viewport tall.
+    await page.setContent(
+      '<style>html,body{height:100%;margin:0;overflow:hidden}</style>' +
+        '<main style="height:100%;overflow:auto"><h1>How do you want to log in?</h1><div style="height:3000px"></div><button>New to PGP?</button></main>',
+    );
+    expect(await missingTexts(page, ['New to PGP?'])).toEqual([]);
+  });
+
   test("a select's options are shown with their select, and are not part of the label's text", async ({ page }) => {
     await page.setContent(
       '<label>Currency<select><option>USD</option><option>EUR</option></select></label>' +

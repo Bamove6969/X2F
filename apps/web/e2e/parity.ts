@@ -257,8 +257,10 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
   for (const m of masks) await m.evaluateAll((els, attr) => els.forEach((e) => e.setAttribute(attr, '')), MASK_ATTR);
   const { shown, standalone } = await page.evaluate(
     ({ sel, mask }) => {
-      // Shown to a sighted person: rendered, and at least 2x2 px inside the document, so screen-reader
-      // only text (1 px clip), a 0x0 box or text moved off the page does not count.
+      // Shown to a sighted person: rendered, at least 2x2 px, and not moved off the left or top of the
+      // page, so screen-reader-only text (1 px clip), a 0x0 box or text at left:-9999px does not
+      // count. The position is summed along offsetParent, which ignores every scroll position, so
+      // text further down inside a scrolling container (an app shell scrolling in <main>) still counts.
       const visible = (el: Element): boolean => {
         // An <option> has no box of its own in a closed select; it is shown when its select is.
         if (el.matches('option, optgroup')) {
@@ -268,10 +270,14 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
         const r = el.getBoundingClientRect();
         if (r.width < 2 || r.height < 2) return false;
-        const doc = document.documentElement;
-        const left = r.left + window.scrollX;
-        const top = r.top + window.scrollY;
-        return left + r.width > 0 && top + r.height > 0 && left < doc.scrollWidth && top < doc.scrollHeight;
+        if (!(el instanceof HTMLElement)) return true; // SVG has no offsetParent chain
+        let left = 0;
+        let top = 0;
+        for (let n = el as HTMLElement | null; n !== null; n = n.offsetParent as HTMLElement | null) {
+          left += n.offsetLeft;
+          top += n.offsetTop;
+        }
+        return left + r.width > 0 && top + r.height > 0;
       };
       // The outermost visible masked elements, each with an id.
       const ids = new Map<Element, number>();
