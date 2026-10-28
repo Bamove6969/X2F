@@ -334,7 +334,7 @@ export function Wallets() {
       // that waits would send the take straight back here (no-wallet again), so the screen stays,
       // shows the wait, and Back returns to returnTo.
       if (addMode && saved.every((w) => w.usable)) {
-        navigate(returnTo);
+        navigate(returnTo, { replace: true });
         return;
       }
       setWallets((prev) => [...(prev ?? []), ...saved]);

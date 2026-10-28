@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Task 29: the Your wallets screen against a stubbed API (FU-B's wallet routes, Task 30's confirm).
 import { act } from 'react';
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
+import { MemoryRouter, Route, Routes, useLocation, useNavigationType } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
 import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
@@ -91,9 +91,11 @@ async function settle(): Promise<void> {
 }
 
 let where = '';
+let how = '';
 function Where() {
   const loc = useLocation();
   where = loc.pathname + loc.search;
+  how = useNavigationType();
   return null;
 }
 
@@ -198,6 +200,8 @@ describe('Your wallets', () => {
       type('#wallet-address', ADDR_C);
       await click('Save wallet');
       expect(where).toBe('/buy');
+      // Replaced, so the browser's Back does not reopen Add a wallet (round 2, M4).
+      expect(how).toBe('REPLACE');
     });
   });
 
