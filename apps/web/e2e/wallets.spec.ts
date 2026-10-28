@@ -1,11 +1,6 @@
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { expectParity } from './parity.js';
 import { takeableWallets, type WalletRule, type WalletView } from '../src/screens/wallets-model.js';
-
-const repo = fileURLToPath(new URL('../../..', import.meta.url));
-const parityHarness = fileURLToPath(new URL('./parity.ts', import.meta.url));
-const walletRef = `${repo}design/x2f-app/refs/Wallet.png`;
 
 /** A 95-character standard address ending in `end` (the API's `addressEnd` is its last 6 characters). */
 const address = (seed: string, end: string) => `4${seed.repeat(95).slice(0, 88)}${end}`;
@@ -377,15 +372,12 @@ test('the Save footer stays pinned on a 390x844 phone while the add form scrolls
 });
 
 test('parity with the Wallet board', async ({ page }) => {
-  test.skip(
-    !existsSync(parityHarness) || !existsSync(walletRef),
-    'Task 15 parity harness / reference PNGs are not on this branch yet',
-  );
+  // The board's state: two linked wallets, the add form open on Edge, one escrow key on this device.
   await stub(page, [READY, WAITING]);
   await page.goto('/wallets');
-  const specifier = parityHarness;
-  const { expectParity } = (await import(specifier)) as {
-    expectParity: (p: Page, board: string, o?: unknown) => Promise<void>;
-  };
+  await openTrade(page, CODE);
+  await expect(page.getByText(CODE)).toBeVisible();
+  await startAdding(page);
+  await page.getByRole('radio', { name: 'Edge', exact: true }).click();
   await expectParity(page, 'Wallet');
 });

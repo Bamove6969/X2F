@@ -88,6 +88,12 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
     { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
   ],
+  Wallet: [
+    {
+      text: "Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works at once; with a password or authenticator code it waits 24 hours before it can be paid.",
+      why: 'Superseded by spec 6.3 "Wallet rules refined" (owner 2026-10-24): the first wallet never waits and a batch shares one wait, so the note under the form follows the account\'s own GET /v1/wallets/rule (ruleNote in screens/wallets-model.ts) instead of one fixed sentence (Task 29).',
+    },
+  ],
 };
 
 /**
