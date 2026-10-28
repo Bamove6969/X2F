@@ -17,19 +17,24 @@ export const EXPLORER_TX = 'https://xmrchain.net/tx/';
  * they funded. The rating cards are Plan 5 (`reviewSlot`).
  *
  * The amounts are the ones THIS device accepted (`escrow.amountAtomic`, review 2026-10-27 I3). The
- * device may have forgotten a finished trade, so once the trade is settled the API's amount is
- * the fallback: nothing is signed from this screen. The buyer sees it from `settling` on; until
+ * device may have forgotten a finished trade, so once the trade is `released` (and only then) the
+ * API's amount is the fallback, when it is a plain positive amount: nothing is signed from this
+ * screen. Before that, with no device amount, the words name no amount (round-2 Minor 1). The buyer sees it from `settling` on; until
  * their own device has co-signed (`escrow.phase` `done`) it says the device is adding its
  * signature, and shows a Task 12 refusal or a stopped escrow instead of "is yours" (I2).
  */
 export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; escrow: ReleaseEscrow; reviewSlot?: ReactNode }) {
   const live = useConfirmations(trade);
   const other = publicName(trade.counterparty);
+  const settled = trade.state === 'released';
+  const plain = (v: string) => /^[0-9]{1,30}$/.test(v);
   const a =
     amounts(trade, escrow) ??
-    amounts(trade, { amountAtomic: BigInt(trade.amountAtomic), fiatCents: BigInt(trade.fiatCents) })!;
+    (settled && plain(trade.amountAtomic) && plain(trade.fiatCents)
+      ? amounts(trade, { amountAtomic: BigInt(trade.amountAtomic), fiatCents: BigInt(trade.fiatCents) })
+      : null);
+  const amountText = a?.amount ?? 'the XMR';
   const buyer = trade.role === 'buyer';
-  const settled = trade.state === 'released';
   const cosigned = settled || escrow.phase === 'done' || escrow.phase === 'settled-without-device';
   const problem = cosigned ? null : escrow.phase === 'error' || escrow.error !== null ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, other) : null;
   const target = live?.target ?? 10;
@@ -44,7 +49,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
         {buyer && !cosigned ? (
           <>
             <h1 className="x2f-released__title">
-              <span data-username="">{other}</span> released {a.amount} to you
+              <span data-username="">{other}</span> released {amountText} to you
             </h1>
             {problem !== null ? (
               <p role="alert" className="x2f-release__error">
@@ -56,7 +61,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
           </>
         ) : buyer ? (
           <>
-            <h1 className="x2f-released__title">{a.buyerReceives} is yours</h1>
+            <h1 className="x2f-released__title">{a?.buyerReceives ?? 'The XMR'} is yours</h1>
             <p className="x2f-released__where">
               Released by you and <span data-username="">{other}</span>.{' '}
               {live?.payoutEnd !== undefined ? (
@@ -71,7 +76,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
         ) : (
           <>
             <h1 className="x2f-released__title">
-              {a.amount} is on its way to <span data-username="">{other}</span>
+              {a?.amount ?? 'The XMR'} is on its way to <span data-username="">{other}</span>
             </h1>
             <p className="x2f-released__where">
               Both signatures sent. <span data-username="">{other}</span> will be asked to rate the trade.
@@ -79,7 +84,7 @@ export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; e
           </>
         )}
 
-        {a.fee !== null ? (
+        {a !== null && a.fee !== null ? (
           <dl aria-label={buyer ? 'What you receive' : 'What you sent'} className="x2f-released__sums">
             <div>
               <dt>Trade amount</dt>

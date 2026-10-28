@@ -555,6 +555,23 @@ describe('Released for a buyer who opens the room while the release settles (I2)
     expect(r.text()).not.toContain('is yours');
   });
 
+  it('in settling with no device amount, names no amount: the API\'s is the fallback only once released (round 2 Minor 1)', () => {
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release', amountAtomic: '9990000000000' }), escrowStub([], { phase: 'setting-up', amountAtomic: null, fiatCents: null }));
+    expect(r.host.querySelector('h1')!.textContent).toBe('satoshi_ghost released the XMR to you');
+    expect(r.text()).not.toContain('9.990000');
+  });
+
+  it('a malformed or zero API amount never crashes the released screen (round 2 Minor 1)', async () => {
+    answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
+    for (const bad of ['0', 'abc']) {
+      const r = released(trade({ ...BUYER, ...RELEASED, amountAtomic: bad }), escrowStub([], { phase: 'done', amountAtomic: null, fiatCents: null }));
+      await flush();
+      expect(r.host.querySelector('h1')!.textContent).toBe('The XMR is yours');
+      expect(r.host.querySelector('dl')).toBeNull();
+      r.unmount();
+    }
+  });
+
   it('in settling, shows a Task 12 refusal instead of the released words', () => {
     const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { refusal: 'amount-unknown', amountAtomic: null, fiatCents: null }));
     expect(r.host.querySelector('[role=alert]')!.textContent).toBe('This device doesn’t know the trade amount, so it won’t sign a release. Open a dispute.');
