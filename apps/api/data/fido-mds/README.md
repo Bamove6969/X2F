@@ -20,9 +20,10 @@ allowlists from this file: only lines of the form ``- `<aaguid>` ...`` under "Ow
 
 ## Extraction
 
-Every BLOB entry with an AAGUID whose status reports contain none of `NOT_FIDO_CERTIFIED`,
-`REVOKED` or any `*_COMPROMISE` / `USER_VERIFICATION_BYPASS` status (so preview and
-release-candidate models are left out), and that is one of:
+Every BLOB entry with an AAGUID none of whose status reports, past or present, is
+`NOT_FIDO_CERTIFIED`, `REVOKED`, `USER_VERIFICATION_BYPASS` or any `*_COMPROMISE` status (so
+preview and release-candidate models are left out, and so is a model that was ever revoked or
+compromised, even if a later report certifies it again), and that is one of:
 
 - **YubiKey 5:** every attestation root certificate is Yubico's and `metadataStatement.description`
   starts with `YubiKey 5 ` (5 Series, 5 FIPS, 5 CCN, any firmware);
@@ -51,9 +52,22 @@ once when FIDO publishes a status change (revocation, compromise) for an allowli
 that date on, the API writes a warning line to stderr at every start until the snapshot is
 refreshed; it keeps running on the old snapshot.
 
-To refresh: download the BLOB, verify it the same way, re-run the extraction, update this file
-(date, serial, `nextUpdate`, SHA-256, both allowlists) and review the diff of the statements' root
-certificates.
+### How to refresh
+
+1. Download the BLOB by hand into a new, empty folder outside the repo, e.g.
+   `curl -sSL -o /tmp/mds/blob.jwt https://mds3.fidoalliance.org/`. Expect a serial `no` above the
+   one recorded here.
+2. Run `npm run refresh -w @x2f/fido-mds -- /tmp/mds/blob.jwt "$PWD/apps/api/data/fido-mds"` from
+   the repo root (`tools/fido-mds/refresh.ts`). It verifies the BLOB with `verifyMDSBlob` (chain
+   to the FIDO MDS root and JWT signature; it stops on failure), applies the rules under
+   "Extraction", writes the statements, deletes statements no longer kept, and rewrites the serial,
+   `nextUpdate` and SHA-256 lines and both allowlists below. Run on the BLOB recorded above, it
+   reproduces this folder byte for byte.
+3. Update the "Fetched" line by hand. If FIDO still serves the same serial after `nextUpdate`, say
+   so there ("checked YYYY-MM-DD, still serial N") and leave the warning in place.
+4. Review `git diff`: allowlist lines added or dropped, and every change to a statement's
+   `attestationRootCertificates`. Run the API's attestation tests (`apps/api/test/attestation.test.ts`).
+   Do not commit the BLOB or the decoded payload.
 
 ## Owner allowlist
 
