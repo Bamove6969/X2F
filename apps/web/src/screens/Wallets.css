@@ -7,7 +7,8 @@
 .x2f-wallets {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  /* Exactly the screen's height, so the footer stays pinned and __main scrolls (390x844 board). */
+  height: 100dvh;
   background: var(--x2f-ground);
   color: var(--x2f-ink);
 }

@@ -358,6 +358,24 @@ test('labels: neutral names are suggested and the screen warns against naming wh
   expect(s.posts[0]).toMatchObject({ wallets: [{ label: 'Wallet 2' }] });
 });
 
+test('the Save footer stays pinned on a 390x844 phone while the add form scrolls (review item 8)', async ({ page }) => {
+  await stub(page, [READY, WAITING]);
+  await page.goto('/wallets');
+  await openTrade(page, CODE);
+  await startAdding(page);
+  await page.getByRole('radio', { name: 'Edge', exact: true }).click();
+  await fillWallet(page, address('C', 'AAAAA1'), 'Wallet 3');
+  await page.getByRole('button', { name: 'Add another' }).click();
+  await fillWallet(page, address('D', 'BBBBB2'), 'Wallet 4');
+  const save = page.getByRole('button', { name: 'Save 2 wallets' });
+  const box = await save.boundingBox();
+  expect(box).not.toBeNull();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(844);
+  // The page itself does not scroll: the list and form scroll inside the screen.
+  const scroll = await page.evaluate(() => ({ doc: document.documentElement.scrollHeight, view: window.innerHeight }));
+  expect(scroll.doc).toBeLessThanOrEqual(scroll.view);
+});
+
 test('parity with the Wallet board', async ({ page }) => {
   test.skip(
     !existsSync(parityHarness) || !existsSync(walletRef),
