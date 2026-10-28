@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOARD, SERVER_NOW, buyerAlertView } from '../e2e/harness/refundViews.js';
+import { BOARD, SERVER_NOW, buyerAlertView } from '../e2e/refundViews.js';
 import { FinalAlert, setFinalAlertPaidSheet, type PaidSheetProps } from '../src/screens/trade/FinalAlert.js';
 import type { RefundView } from '../src/screens/trade/refundSlot.js';
 import { advance, fire, render } from './render.js';
