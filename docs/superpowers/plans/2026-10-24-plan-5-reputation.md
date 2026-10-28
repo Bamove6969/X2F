@@ -745,3 +745,11 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 18. **PGP fingerprint in the exported record.** It links the X2F name to the PGP key, and through it often to an email address. Make it opt-in at export and never in the public copy? (P5-A35)
 19. **Automatic proof check on the moderator's screen.** It needs WebAssembly allowed on the staff site, which widens that site's attack surface. Allow it, or show moderators the blurred image without the check? (P5-A36)
 20. **(For the lead) Who adds display names?** No plan yet adds the display name / login name split (spec 6.1). Plan 5 cannot start its profile and review screens without it.
+
+## Revision 2026-10-28 (lead, from the owner's decisions of 2026-10-27)
+
+Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
+- **Proofs follow the self-delete schedule.** Task 14's `purgeProofs` keeps its 90-day and dispute rules, and Plan 7 Task 3 additionally hides and destroys a side's own proofs and evidence on that side's self-delete schedule (`trade_proofs.uploader_role` is the key, so keep that column exactly as drafted). A proof is never removed while a dispute is open.
+- **P5-A29 (the buyer keeps the unblurred original on the device)** shortens with self-delete: the copy is deleted from IndexedDB at the buyer's own destroy time (Plan 7 Task 4 `localPurge`), but never while a dispute is open.
+- **Whole-trade delete keeps reviews working.** A review references the bare trade record that Plan 7 keeps (P7-A6); Task 3 must not join reviews to anything a whole-trade delete removes (method, amounts).
+- **"Delete my own account"** is an undecided comparison gap (Plan 7 "Owner questions"); if approved, it is a new task here after Task 12 (reviews then show "Deleted user").
