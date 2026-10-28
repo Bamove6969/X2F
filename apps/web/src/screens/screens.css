@@ -1,0 +1,221 @@
+/*
+ * Styles for the auth and settings screens (Task 30). Colours are design tokens only; there are no
+ * inline styles, because the CSP has no 'unsafe-inline' for styles. Phone-first: a single column
+ * with a comfortable gutter.
+ */
+
+.x2f-screen {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  max-width: 480px;
+  margin: 0 auto;
+  padding: var(--x2f-space-6) var(--x2f-space-4);
+}
+
+.x2f-screen__title {
+  margin: 0;
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+}
+
+.x2f-screen__foot {
+  margin: 0;
+  text-align: center;
+}
+
+.x2f-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+  align-items: center;
+}
+
+.x2f-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-label {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px var(--x2f-space-2);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.x2f-input:focus-visible {
+  outline: 2px solid var(--x2f-monero-ink);
+  outline-offset: 1px;
+}
+
+.x2f-textarea {
+  resize: vertical;
+  font-family: var(--x2f-font-mono);
+  font-size: 13px;
+}
+
+.x2f-select {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 12px var(--x2f-space-2);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.x2f-pre {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: var(--x2f-space-2);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-mono);
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.x2f-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--x2f-danger);
+}
+
+.x2f-secret {
+  margin: 0;
+  padding: var(--x2f-space-2);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  font-family: var(--x2f-font-mono);
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  word-break: break-all;
+}
+
+/* Cards group the sections of the Security screen. */
+.x2f-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-card__title {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: var(--x2f-title-weight);
+}
+
+.x2f-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.x2f-list__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-2) 0;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-list__label {
+  min-width: 0;
+  word-break: break-word;
+}
+
+.x2f-list__time {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-list__row[data-unseen='true'] .x2f-list__label {
+  font-weight: 600;
+}
+
+.x2f-segmented {
+  display: flex;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-segmented__on {
+  border-color: var(--x2f-monero-ink);
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-codes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--x2f-space-1);
+  margin: 0;
+  padding: var(--x2f-space-2);
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+  list-style: none;
+}
+
+.x2f-codes__item {
+  font-family: var(--x2f-font-mono);
+  font-size: 14px;
+  letter-spacing: 0.04em;
+}
+
+/* QR code: dark modules on a light ground, drawn as SVG rects (CSP-safe, no data: URI). */
+.x2f-qr {
+  width: min(220px, 70vw);
+  height: auto;
+  border-radius: var(--x2f-radius-sm);
+}
+
+.x2f-qr__bg {
+  fill: #ffffff;
+}
+
+.x2f-qr__cell {
+  fill: #000000;
+}

@@ -13,14 +13,18 @@ export default defineConfig({
   fullyParallel: false,
   forbidOnly: true,
   retries: 0,
-  reporter: 'list',
-  // Board references for expectParity's reported pixel diff (parity.ts). They come only from
-  // tools/parity/capture-refs.ts: a missing reference is reported, never written.
-  snapshotPathTemplate: `${repo}design/x2f-app/refs/{arg}{ext}`,
+  // list prints expectParity's "parity-pixels" lines; the HTML report (gitignored) keeps the
+  // reference and page images it attaches on a difference.
+  reporter: [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+  // expectParity compares pixels itself (parity.ts) and never calls toHaveScreenshot, so no snapshot
+  // path is configured. 'none' stays as a guard: nothing may ever write a reference except
+  // tools/parity/capture-refs.ts.
   updateSnapshots: 'none',
   use: {
     baseURL: `http://127.0.0.1:${PORT}`,
     viewport: { width: 390, height: 844 },
+    // The night theme, as tools/parity/capture-refs.ts shoots the references.
+    colorScheme: 'dark',
     serviceWorkers: 'block',
   },
   projects: [{ name: 'chromium', use: { browserName: 'chromium', ...(executablePath ? { launchOptions: { executablePath } } : {}) } }],

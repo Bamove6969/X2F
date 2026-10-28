@@ -33,6 +33,25 @@ test.describe('expectParity: blocking checks', () => {
     expect(pixels[0]!.description).toMatch(/^Review 390x844: reported, not blocking: [\d.]+% of pixels differ from refs\/Review\.png$/);
   });
 
+  test('the pixel result is printed, so the list reporter shows it for a passing test', async ({ page }) => {
+    await pageWithBoardTexts(page, 'Review');
+    const printed: string[] = [];
+    const log = console.log;
+    console.log = (...a: unknown[]) => {
+      printed.push(a.map(String).join(' '));
+    };
+    try {
+      await expectParity(page, 'Review');
+    } finally {
+      console.log = log;
+    }
+    expect(printed.filter((l) => l.startsWith('parity-pixels '))).toEqual([expect.stringMatching(/^parity-pixels Review 390x844: reported, not blocking: [\d.]+% of pixels differ/)]);
+  });
+
+  test('pages are compared in the dark colour scheme the references were shot in', async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia('(prefers-color-scheme: dark)').matches)).toBe(true);
+  });
+
   test('a hidden extra [data-primary] does not count', async ({ page }) => {
     await pageWithBoardTexts(page, 'Review', '<button data-primary>Go</button><button data-primary style="display:none">Hidden</button>');
     await expectParity(page, 'Review');
@@ -55,6 +74,13 @@ test.describe('expectParity: blocking checks', () => {
   test('fails a page with no [data-primary]', async ({ page }) => {
     await pageWithBoardTexts(page, 'Review', '');
     await expect(expectParity(page, 'Review')).rejects.toThrow(/exactly one \[data-primary\], found 0/);
+  });
+
+  test('a board with no primary action: { primary: false } requires no [data-primary] at all', async ({ page }) => {
+    await pageWithBoardTexts(page, 'Review', '');
+    await expectParity(page, 'Review', { primary: false });
+    await pageWithBoardTexts(page, 'Review', '<button data-primary>Go</button>');
+    await expect(expectParity(page, 'Review', { primary: false })).rejects.toThrow(/no \[data-primary\] on a board without a primary action, found 1/);
   });
 
   test('fails a page that scrolls sideways', async ({ page }) => {
@@ -101,8 +127,21 @@ test.describe('expectParity: blocking checks', () => {
     // Real copy that happens to contain a digit cannot hide behind a mask.
     expect(await missingTexts(page, ['1.237500 XMR is yours'], m)).toEqual(['1.237500 XMR is yours']);
     expect(await missingTexts(page, ['Trade K7M2-9QXA-4FTR-8WPN · Zelle'], m)).toEqual(['Trade K7M2-9QXA-4FTR-8WPN · Zelle']);
-    // A value-shaped amount or timer is still covered.
-    expect(await missingTexts(page, ['$412.50'], m)).toEqual([]);
+    // A lone mask covers only a value of its own kind: a masked clock is not a missing amount.
+    expect(await missingTexts(page, ['$412.50'], m)).toEqual(['$412.50']);
+    expect(await missingTexts(page, ['10:00'], m)).toEqual([]);
+  });
+
+  test('a lone mask stands in only for a board value of the same kind (time, money, code)', async ({ page }) => {
+    await page.setContent('<p><span data-mask="clock">28:12</span></p><p><span data-mask="amount">$398.10</span></p><p><span data-mask="code">K7M2-9QXA-4FTR-8WPN</span></p>');
+    expect(await missingTexts(page, ['$412.50', '62 min', 'AB12-CD34-EF56-GH78'])).toEqual([]);
+    await page.setContent('<p><span data-mask="clock">28:12</span></p>');
+    expect(await missingTexts(page, ['$412.50'])).toEqual(['$412.50']);
+    expect(await missingTexts(page, ['1.250000 XMR'])).toEqual(['1.250000 XMR']);
+    expect(await missingTexts(page, ['AB12-CD34-EF56-GH78'])).toEqual(['AB12-CD34-EF56-GH78']);
+    await page.setContent('<p><span data-mask="amount">1.250000 XMR</span></p>');
+    expect(await missingTexts(page, ['$412.50'])).toEqual([]);
+    expect(await missingTexts(page, ['28:42'])).toEqual(['28:42']);
   });
 
   test('one masked pattern cannot stand in for two different board texts', async ({ page }) => {
@@ -127,7 +166,7 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['You pay · 1 h left', 'You pay · 2 h left'])).toEqual(['You pay · 2 h left']);
     // A mask used on its own for a value cannot also fill the sentence around it.
     await page.setContent('<div id="root"><ul><li><div><span data-mask>10</span></div><p> min to fund escrow</p></li></ul></div>');
-    expect(await missingTexts(page, ['28:12', '10 min to fund escrow'])).toEqual(['10 min to fund escrow']);
+    expect(await missingTexts(page, ['12', '10 min to fund escrow'])).toEqual(['10 min to fund escrow']);
   });
 
   test('a board placeholder text consumes the page sentence it matched', async ({ page }) => {
@@ -144,6 +183,36 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, [t])).toEqual([]);
     await page.setContent('<p>Invite link for a new moderator. It works twice.</p>');
     expect(await missingTexts(page, [t])).toEqual([t]);
+  });
+
+  test('visually hidden text does not count as shown (sr-only clip, 0x0, off-screen)', async ({ page }) => {
+    await page.setContent(
+      '<style>.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}</style>' +
+        '<p class="sr">Only for screen readers</p>' +
+        '<p style="width:0;height:0;overflow:hidden;margin:0">Zero size</p>' +
+        '<p style="position:absolute;left:-9999px">Off to the left</p>' +
+        '<p style="position:absolute;top:-9999px">Off the top</p>' +
+        '<p>Shown</p>',
+    );
+    expect(await missingTexts(page, ['Only for screen readers', 'Zero size', 'Off to the left', 'Off the top', 'Shown'])).toEqual([
+      'Only for screen readers',
+      'Zero size',
+      'Off to the left',
+      'Off the top',
+    ]);
+  });
+
+  test('text below the fold still counts as shown', async ({ page }) => {
+    await page.setContent('<div style="height:3000px"></div><p>Far down</p>');
+    expect(await missingTexts(page, ['Far down'])).toEqual([]);
+  });
+
+  test("a select's options are shown with their select, and are not part of the label's text", async ({ page }) => {
+    await page.setContent(
+      '<label>Currency<select><option>USD</option><option>EUR</option></select></label>' +
+        '<label style="display:none">Sort<select><option>Best</option></select></label>',
+    );
+    expect(await missingTexts(page, ['Currency', 'USD', 'EUR', 'Currency USDEUR', 'Best'])).toEqual(['Currency USDEUR', 'Best']);
   });
 
   test('text in a hidden element does not count as shown', async ({ page }) => {
@@ -212,6 +281,31 @@ test.describe('board texts', () => {
       await expect(expectParity(page, 'Empty', { boardsDir: dir })).rejects.toThrow(/no board texts read for Empty/);
     });
 
+    test('text the board itself hides visually (a screen-reader-only label) is not required', async ({ page }) => {
+      await writeFile(
+        join(dir, 'Labels.dc.html'),
+        '<!doctype html><html><body><x-dc>' +
+          '<label for="cur" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Currency</label>' +
+          '<span style="position:absolute;width:1px;height:1px;clip:rect(0 0 0 0)">Clipped</span>' +
+          '<p style="width: 1px">Narrow but shown</p><p>USD</p>' +
+          '</x-dc></body></html>',
+      );
+      expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
+      // The same under the app's CSP (no inline styles), where the parsed board's CSSOM stays empty.
+      await page.setContent(`<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'"></head><body></body></html>`);
+      expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
+    });
+
+    test("a select's options are board texts of their own, not part of the label around the select", async ({ page }) => {
+      await writeFile(
+        join(dir, 'Picker.dc.html'),
+        '<!doctype html><html><body><x-dc>' +
+          '<label for="c">Currency\n  <select id="c"><option>USD</option><option>EUR</option></select>\n</label>' +
+          '</x-dc></body></html>',
+      );
+      expect(await boardTexts(page, 'Picker', { boardsDir: dir })).toEqual(['Currency', 'USD', 'EUR']);
+    });
+
     test('a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception)', async ({ page }) => {
       await writeFile(join(dir, 'Desktop.dc.html'), '<!doctype html><html><body><x-dc><p>Escrow funded</p></x-dc></body></html>');
       await expect(boardTexts(page, 'Desktop', { boardsDir: dir })).rejects.toThrow(/KNOWN_EXCEPTIONS\[Desktop\] lists "You pay · 62 min left".*stale/);
@@ -222,6 +316,11 @@ test.describe('board texts', () => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
+    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name.
+    const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
+    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)']);
+    for (const e of post) expect(e.why.length).toBeGreaterThan(10);
+    expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');
     for (const e of desktop) expect(texts).not.toContain(e.text);
     expect(texts).toContain('Escrow funded');
@@ -344,6 +443,19 @@ test.describe('capture-refs', () => {
     // PNG IHDR: width and height are big-endian at bytes 16 and 20.
     expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([200, 120]);
     await expect(readFile(join(dir, 'refs', 'Other.png'))).rejects.toThrow();
+  });
+
+  test('records each reference in refs/manifest.json with its board hash and size, keeping other entries', async () => {
+    await writeFile(join(dir, 'support.js'), '');
+    await mkdir(join(dir, 'refs'));
+    const kept = { sha256: 'a'.repeat(64), w: 100, h: 100 };
+    await writeFile(join(dir, 'refs', 'manifest.json'), JSON.stringify({ Other: kept }));
+    const r = await capture(`--boards-dir=${dir}`, `--out-dir=${join(dir, 'refs')}`, 'Tiny');
+    expect(r.code, r.out).toBe(0);
+    const manifest = JSON.parse(await readFile(join(dir, 'refs', 'manifest.json'), 'utf8')) as Record<string, unknown>;
+    const { createHash } = await import('node:crypto');
+    const sha256 = createHash('sha256').update(await readFile(join(dir, 'Tiny.dc.html'))).digest('hex');
+    expect(manifest).toEqual({ Other: kept, Tiny: { sha256, w: 200, h: 120 } });
   });
 
   test('fails when the runtime leaves a {{…}} placeholder in the body, writing no references', async () => {

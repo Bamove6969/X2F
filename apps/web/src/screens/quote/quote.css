@@ -1,0 +1,322 @@
+/*
+ * BuyQuote board (design/x2f-app/BuyQuote.dc.html) measurements; colours are design tokens only.
+ * No inline styles: the CSP has no 'unsafe-inline' for styles.
+ */
+.x2f-quote {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__header {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-quote__head-text {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-quote__title {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.x2f-quote__chat {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.x2f-quote__chat:disabled {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__main {
+  flex-grow: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+}
+
+.x2f-quote__amount {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-quote__amount-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.x2f-quote__label {
+  padding: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__switch,
+.x2f-quote__max {
+  min-height: 44px;
+  padding: 0 var(--x2f-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.x2f-quote__box {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  height: 56px;
+  padding: 0 14px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-quote__box[data-bad] {
+  border-color: var(--x2f-danger);
+}
+
+.x2f-quote__box input {
+  flex-grow: 1;
+  min-width: 0;
+  height: 52px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: var(--x2f-font-mono);
+  font-size: 24px;
+}
+
+.x2f-quote__sign {
+  font-family: var(--x2f-font-mono);
+  font-size: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__unit {
+  font-size: 15px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__help {
+  margin: 0;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__help--bad {
+  color: var(--x2f-danger);
+}
+
+.x2f-quote__wallets {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.x2f-quote__wallets > legend {
+  padding-bottom: var(--x2f-space-2);
+}
+
+.x2f-quote__wallet {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: var(--x2f-space-2) 14px;
+  border: 2px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+  cursor: pointer;
+}
+
+.x2f-quote__wallet[data-on] {
+  border-color: var(--x2f-monero);
+  background: var(--x2f-surface);
+}
+
+/*
+ * The radio's hit box is 32x32 (the phone rule's minimum, e2e/phone.ts MIN_TAP) while the ring it
+ * draws stays the board's 20px, centred where the native 20px control sat (the -6px margin absorbs
+ * the extra), so the row's layout and the parity shot are unchanged.
+ */
+.x2f-quote__wallet input {
+  appearance: none;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  width: 32px;
+  height: 32px;
+  margin: -6px;
+  border: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, transparent calc(100% - 2px), var(--x2f-ink-muted) calc(100% - 2px)) center / 20px 20px no-repeat;
+  cursor: pointer;
+}
+
+.x2f-quote__wallet input:checked {
+  background-image: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-monero) calc(100% - 2px));
+}
+
+.x2f-quote__wallet input:focus-visible {
+  outline: 2px solid var(--x2f-monero);
+  outline-offset: 2px;
+}
+
+.x2f-quote__wallet-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-quote__wallet-name {
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.x2f-quote__add {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  font-size: 15px;
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-quote__card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-quote__figure {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+}
+
+.x2f-quote__xmr {
+  font-family: var(--x2f-font-mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.x2f-quote__xmr-unit {
+  font-size: 18px;
+  color: var(--x2f-monero-ink);
+}
+
+.x2f-quote__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  font-size: 14px;
+}
+
+.x2f-quote__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-quote__row > :last-child {
+  text-align: right;
+}
+
+.x2f-quote__row--total {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-quote__rule {
+  height: 1px;
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-quote__muted {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__muted-sm {
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+  overflow-wrap: anywhere;
+}
+
+.x2f-quote__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-quote__fine {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__fine--center {
+  font-size: 12px;
+  line-height: 16px;
+  text-align: center;
+}
+
+.x2f-quote__note {
+  margin: 0;
+  padding: var(--x2f-space-4);
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-quote__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+/* Windows high contrast drops gradient drawings: fall back to the native radio. */
+@media (forced-colors: active) {
+  .x2f-quote__wallet input {
+    appearance: auto;
+    width: 20px;
+    height: 20px;
+    margin: 0;
+  }
+}

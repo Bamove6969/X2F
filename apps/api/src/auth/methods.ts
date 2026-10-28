@@ -362,6 +362,8 @@ export async function removeMethod(deps: Pick<Deps, 'db' | 'config' | 'clock'>, 
       const count = ended.rowCount ?? 0;
       if (count > 0) await addAlert(client, accountId, 'sessions-ended', { count, reason: 'login-method-removed' }, now);
       await client.query('commit');
+      // The other sessions are revoked: end their live streams now, not at the stream lifetime.
+      req.server.events.closeAccount(accountId, req.auth.sessionId);
     } catch (e) {
       await client.query('rollback');
       throw e;
