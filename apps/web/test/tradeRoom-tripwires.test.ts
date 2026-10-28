@@ -1,6 +1,6 @@
 // Tripwires for the trade room's seams (src/screens/trade/seams.ts, src/api/trade.ts). Each fails
 // the day the piece it waits for lands, and says what to change.
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -71,11 +71,15 @@ describe('TRIPWIRES: trade room', () => {
   // escrowAddress, deal, receivedAtomic and confirmedAtomic, and seams.ts's useTradeEscrow is
   // useEscrow(code, confirmed) with Task 12's own types.
 
-  it('Task 19 (live events) is not merged: the room only polls', () => {
-    expect(
-      existsSync(new URL('api/events.ts', web)),
-      "Task 19 merged: fan the room out from Task 19's single /v1/events connection (LiveAccepted), gated by isTrader: setLiveSource((on) => <subscribe to that connection, trade events only>); never open a second EventSource",
-    ).toBe(false);
+  // Task 19's tripwire retired 2026-10-28 (Task 22 landing): App.tsx's LiveAccepted (traders
+  // only) sets seams.ts liveFanOut as the room's live source and forwards each trade event to it.
+  it("the room's live events come from Task 19's single connection (no second EventSource)", () => {
+    const app = readFileSync(new URL('App.tsx', web), 'utf8');
+    expect(app).toContain('setLiveSource(liveFanOut.source)');
+    expect(app).toContain('liveFanOut.emit(e)');
+    const root = fileURLToPath(web);
+    const opens = sourceFiles(root).filter((f) => /new\s+(Source|EventSource)\(|connectEvents\(/.test(readFileSync(f, 'utf8')));
+    expect(opens.map((f) => relative(root, f)).sort()).toEqual(['api/events.ts']);
   });
 
   // Review 2026-10-27, I4: Task 12 fails the first start of a trade with `not-confirmed` unless the

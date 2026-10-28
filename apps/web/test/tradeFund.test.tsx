@@ -11,7 +11,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { hasFundMark, resetFundMarks } from '../src/screens/trade/fund.js';
 import { qrPath } from '../src/screens/trade/FundFallback.js';
-import { PENDING_ESCROW, setLiveSource, setTradeEscrowHook, type TradeEscrow, type TradeLiveEvent } from '../src/screens/trade/seams.js';
+import { liveFanOut, PENDING_ESCROW, setLiveSource, setTradeEscrowHook, type TradeEscrow, type TradeLiveEvent } from '../src/screens/trade/seams.js';
 import { TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
 import { advance, pointer, render } from './render.js';
@@ -664,6 +664,20 @@ describe('the room shell', () => {
     await flush();
     expect(calls()).toBe(before + 1);
     expect(host.textContent).toContain('Escrow funded');
+  });
+
+  it("through Task 19's fan-out (liveFanOut), a trade event re-reads the trade; after the source is removed it does not", async () => {
+    setLiveSource(liveFanOut.source);
+    await room();
+    const calls = () => vi.mocked(fetch).mock.calls.length;
+    const before = calls();
+    await act(async () => liveFanOut.emit({ type: 'trade', code: CODE, state: 'funding' }));
+    await flush();
+    expect(calls()).toBe(before + 1);
+    await act(async () => setLiveSource(null));
+    await act(async () => liveFanOut.emit({ type: 'trade', code: CODE, state: 'funding' }));
+    await flush();
+    expect(calls()).toBe(before + 1);
   });
 
   it('a state with no screen yet shows a plain status card', async () => {

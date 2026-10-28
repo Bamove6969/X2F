@@ -93,7 +93,15 @@ export function workerConfig(env: Record<string, string | undefined>): RuntimeDe
 const scope = globalThis as unknown as { WorkerGlobalScope?: unknown; postMessage?: unknown };
 if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage === 'function') {
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
-    const { network, ...config } = workerConfig(import.meta.env as unknown as Record<string, string | undefined>);
+    // Each key is named, so the build inlines only these five and never the whole env object
+    // (which would carry VITE_FIXTURES and any other VITE_ variable into the production worker).
+    const { network, ...config } = workerConfig({
+      VITE_MONERO_NETWORK: import.meta.env.VITE_MONERO_NETWORK as string | undefined,
+      VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined,
+      VITE_FEE_WALLET: import.meta.env.VITE_FEE_WALLET as string | undefined,
+      VITE_RELAY_URL: import.meta.env.VITE_RELAY_URL as string | undefined,
+      VITE_NODE_PROXY_URL: import.meta.env.VITE_NODE_PROXY_URL as string | undefined,
+    });
     return createEscrowRuntime({
       api: httpEscrowApi(),
       store: await openEscrowStore(),

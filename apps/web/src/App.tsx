@@ -20,6 +20,7 @@ import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
+import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
 const WIDE = '(min-width: 1024px)';
@@ -84,15 +85,23 @@ function RouterBridge() {
 
 /**
  * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
- * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade.
+ * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade, and
+ * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut).
  * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
  * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
 function LiveAccepted() {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
+  // The trade room listens on this same connection (seams.ts liveFanOut); without a trader
+  // session there is no live source and the room only polls.
+  useEffect(() => {
+    setLiveSource(liveFanOut.source);
+    return () => setLiveSource(null);
+  }, []);
   useLiveEvents((e) => {
     if (e.type === 'accepted') setAccepted(e);
+    else if (e.type === 'trade') liveFanOut.emit(e);
   });
   if (!accepted) return null;
   return (

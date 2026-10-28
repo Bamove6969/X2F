@@ -5,7 +5,8 @@
  *   `useEscrow(code, confirmed)` (apps/web/src/escrow/useEscrow.ts); the types are its own,
  *   re-exported from escrow/runtime.ts and escrow/policy.ts (as quote/confirmed.ts does).
  * - Task 19 (live events, on the main line): App.tsx's `LiveAccepted` fans its single
- *   `/v1/events` connection out to the room through `setLiveSource` (`liveFanOut` below).
+ *   `/v1/events` connection out to the room: it sets `liveFanOut.source` with `setLiveSource`
+ *   and passes each `trade` event to `liveFanOut.emit`.
  *
  * Tests (and the board fixtures) install fakes with `setTradeEscrowHook` / `setLiveSource`.
  */
@@ -168,6 +169,25 @@ export function setLiveSource(s: LiveSource | null): void {
   liveSource = s;
   for (const cb of liveSubs) cb();
 }
+
+const fanOutListeners = new Set<(e: TradeLiveEvent) => void>();
+
+/**
+ * Task 19's single `/v1/events` connection, fanned out to the room. App.tsx's `LiveAccepted`
+ * (mounted only for a trader) sets `liveFanOut.source` as the live source while it is mounted and
+ * hands every `trade` event to `liveFanOut.emit`; the room never opens a second EventSource.
+ */
+export const liveFanOut: { source: LiveSource; emit(e: TradeLiveEvent): void } = {
+  source(onEvent) {
+    fanOutListeners.add(onEvent);
+    return () => {
+      fanOutListeners.delete(onEvent);
+    };
+  },
+  emit(e) {
+    for (const l of [...fanOutListeners]) l(e);
+  },
+};
 
 /** How often the room re-reads the trade with no live event (and always, as a backstop). */
 export const POLL_MS = 15_000;
