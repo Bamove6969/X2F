@@ -7,9 +7,8 @@
  * - `payMethodOf`: Task 22's `methodOf` plus the method's `fields` (Task 3's MethodProfile).
  * - `usePaymentDetails`: the seller's own payment details for the method's fields ("Zelle to
  *   <id>"). No API carries them yet. GAP for the lead.
- * - `usePaidAck`: whether the moderation service acknowledged this device's `trade.paid`
- *   (`trade.ack { of: 'trade.paid' }`). Task 12's EscrowStatus does not expose acks yet, so
- *   "Marked as paid" waits for a source to be installed. GAP for Task 12.
+ * - "Marked as paid" reads `escrow.paidRecorded` (Task 12's EscrowStatus, added for Task 23's
+ *   review I3): no moderator ack of `trade.paid` exists anywhere yet (signals.ts GUESS).
  * - `TradeChat`: Task 20's `ChatPanel` for the trade (desktop aside, phone Chat sheet).
  */
 import { useEffect, useState, useSyncExternalStore, type ComponentType } from 'react';
@@ -88,37 +87,6 @@ export function usePaymentDetails(code: string): PaymentDetail[] | null {
     return detailsSource(code, setD);
   }, [code]);
   return d;
-}
-
-// ---- The moderator's ack of trade.paid ----
-
-export type PaidAckSource = (code: string, onAck: () => void) => () => void;
-
-let ackSource: PaidAckSource | null = null;
-const ackSubs = new Set<() => void>();
-
-/** Installs the source of `trade.ack { of: 'trade.paid' }` (Task 12, or a test fake); null removes it. */
-export function setPaidAckSource(s: PaidAckSource | null): void {
-  ackSource = s;
-  for (const cb of ackSubs) cb();
-}
-
-/** True once the moderation service acknowledged this trade's `trade.paid`. */
-export function usePaidAck(code: string): boolean {
-  const source = useSyncExternalStore(
-    (notify) => {
-      ackSubs.add(notify);
-      return () => ackSubs.delete(notify);
-    },
-    () => ackSource,
-  );
-  const [acked, setAcked] = useState(false);
-  useEffect(() => {
-    setAcked(false);
-    if (!source) return;
-    return source(code, () => setAcked(true));
-  }, [source, code]);
-  return acked;
 }
 
 // ---- The trade chat (Task 20) ----

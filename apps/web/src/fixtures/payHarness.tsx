@@ -8,7 +8,7 @@ import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 
 import { useParams } from 'react-router';
 import { api, serverClock } from '../api/client.js';
 import { TASK23_SLOTS } from '../screens/trade/BuyerPay.js';
-import { setPaidAckSource, setPaymentDetailsSource, setTradeChat, type TradeChatProps } from '../screens/trade/paySeams.js';
+import { setPaymentDetailsSource, setTradeChat, type TradeChatProps } from '../screens/trade/paySeams.js';
 import type { TradeEscrow, TradeView } from '../screens/trade/payTypes.js';
 import { PENDING_ESCROW } from '../screens/trade/seams.js';
 import { DesktopShell } from '../ui/DesktopShell.js';
@@ -109,10 +109,6 @@ export function PayHarness() {
       return () => undefined;
     });
     setTradeChat(BoardChat);
-    setPaidAckSource((_c, on) => {
-      acks.add(on);
-      return () => acks.delete(on);
-    });
     void refresh();
   }, [refresh]);
   const clock = useMemo(() => (view ? serverClock(view.serverNow) : () => new Date()), [view?.serverNow]);

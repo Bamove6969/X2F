@@ -16,7 +16,6 @@
  */
 import { useState, type CSSProperties, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { formatFiat, formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
@@ -26,10 +25,9 @@ import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
-import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
-import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip, type PayBlock } from './payModel.js';
-import { errorSentence } from './SetupStatus.js';
-import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaidAck, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
+import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
+import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
@@ -53,41 +51,9 @@ const REFUSALS: Record<string, string> = {
 };
 
 /** A refusal as one plain sentence (never the raw code). */
-function refusalText(e: unknown): string {
+function apiRefusalText(e: unknown): string {
   if (e instanceof ApiCallError) return REFUSALS[e.code] ?? "That didn't go through. Try again.";
   return "That didn't go through. Check your connection and try again.";
-}
-
-/** The sum to pay as THIS device works it out (Task 12's `escrow.fiatCents`), never the API's; null when the device has none (review I1). */
-interface DeviceTotal {
-  cents: bigint;
-  text: string;
-  currency: string;
-}
-
-function deviceTotal(view: TradeView, escrow: Pick<TradeEscrow, 'fiatCents' | 'deal'>): DeviceTotal | null {
-  if (escrow.fiatCents === null) return null;
-  const currency = escrow.deal?.currency ?? view.lockedRate.currency;
-  return { cents: escrow.fiatCents, text: formatFiat(escrow.fiatCents, currency), currency };
-}
-
-/** The locked rate from the deal this device stored ("$330.00 / XMR"), or null before it has one. */
-function deviceRate(escrow: Pick<TradeEscrow, 'deal'>): string | null {
-  return escrow.deal ? `${formatFiat(escrow.deal.centsPerXmr, escrow.deal.currency)} / XMR` : null;
-}
-
-/** Why I've paid waits, in words (payModel.ts `payBlock`). */
-function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'retryable'>): string {
-  switch (b) {
-    case 'escrow-stopped':
-      return `${errorSentence(escrow) ?? 'The escrow stopped on this device.'} Don't send any money until it runs again.`;
-    case 'escrow-not-ready':
-      return "Your device is still checking the escrow. Keep this page open, and don't send any money yet.";
-    case 'no-amount':
-      return "Your device can't confirm the trade amount. Don't send any money yet. Ask in the chat, or open a dispute if it doesn't clear.";
-    case 'amount-differs':
-      return "Your device is checking the new total. Don't send any money yet.";
-  }
 }
 
 /** Posts a trade event, then runs the escrow step, then re-reads the trade; one at a time. */
@@ -102,7 +68,7 @@ function useTradeAction(p: TradeScreenProps) {
       try {
         await postPayEvent(p.view.code, e);
       } catch (err) {
-        setError(refusalText(err));
+        setError(apiRefusalText(err));
         return false;
       }
       if (escrowStep) {
@@ -378,58 +344,52 @@ function WideRoom({ view, method, title, chip, children }: { view: TradeView; me
 
 // ---- BuyerPay ----
 
+/**
+ * The escrow's other refusals, in words (review I2: shown, never silent). `amount-out-of-range`
+ * is the "no total" note before paid; `amount-unknown` is the Finish card; the seller-only ones
+ * never reach the buyer.
+ */
+function refusalText(r: TradeEscrow['refusal']): string | null {
+  switch (r) {
+    case 'amount-changed':
+      return "The trade's amount changed on the server after you paid. Your device settles only the amount you paid. Open a dispute if this doesn't clear.";
+    case 'view-mismatch':
+      return "The trade's details on the server don't match what you agreed to. Don't send any money. Open a dispute if this doesn't clear.";
+    case 'attempts-exhausted':
+      return "Your device couldn't settle this trade. Open a dispute.";
+    default:
+      return null;
+  }
+}
+
 export function BuyerPay(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
   const chip = escrowChip(view);
-  const acked = usePaidAck(view.code);
   const action = useTradeAction(p);
   const [paySheet, setPaySheet] = useState(false);
-  const [grew, setGrew] = useState(false);
   const [cancelSheet, setCancelSheet] = useState(false);
-  const [unsent, setUnsent] = useState<bigint | null>(null);
-  const [retrying, setRetrying] = useState(false);
+  const [finishing, setFinishing] = useState(false);
+  const [finishError, setFinishError] = useState<string | null>(null);
   const cancelMode = buyerCancelMode(view);
   const paid = view.state === 'paid';
   const total = deviceTotal(view, escrow);
   const block = payBlock(view, escrow);
+  // Paid on the server, but this device never recorded the tap (a reload, another tab, a lost
+  // answer, a refused markPaid): the runtime says `amount-unknown` (review I2).
+  const needsFinish = paid && escrow.refusal === 'amount-unknown';
+  const finishOk = escrow.error === null && escrow.fiatCents !== null && escrow.fiatCents === BigInt(view.fiatCents);
 
-  const onYes = async (fiatCents: bigint): Promise<YesResult> => {
-    // Only the device's own total, and only while the API shows the same one (review I1).
-    if (payBlock(view, escrow) !== null || escrow.fiatCents !== fiatCents) return { ok: false, reason: 'error', message: "Your device can't confirm this total. Don't send any money yet." };
+  const finish = async () => {
+    if (!finishOk || finishing || escrow.fiatCents === null) return;
+    setFinishing(true);
+    setFinishError(null);
     try {
-      await postPayEvent(view.code, { type: 'mark-paid', fiatCents });
-    } catch (e) {
-      if (e instanceof ApiCallError && e.status === 409 && e.code === 'total-changed') {
-        // The trade grew while the sheet was open: nothing is sent; re-read and ask again.
-        setGrew(true);
-        await p.refresh();
-        return { ok: false, reason: 'total-changed' };
-      }
-      return { ok: false, reason: 'error', message: refusalText(e) };
-    }
-    setPaySheet(false);
-    setGrew(false);
-    try {
-      await escrow.markPaid(fiatCents);
-      setUnsent(null);
+      await escrow.markPaid(escrow.fiatCents);
     } catch {
-      setUnsent(fiatCents);
-    }
-    await p.refresh();
-    return { ok: true };
-  };
-
-  const retrySignal = async () => {
-    if (unsent === null || retrying) return;
-    setRetrying(true);
-    try {
-      await escrow.markPaid(unsent);
-      setUnsent(null);
-    } catch {
-      // Still not sent: the message stays.
+      setFinishError("Your device couldn't record it. Try again.");
     } finally {
-      setRetrying(false);
+      setFinishing(false);
     }
   };
 
@@ -442,21 +402,19 @@ export function BuyerPay(p: TradeScreenProps) {
     else void cancelNow();
   };
 
-  const primary = paid ? (
-    <Button variant="primary" disabled aria-live="polite">
-      {acked ? 'Marked as paid' : 'Marking as paid…'}
-    </Button>
-  ) : (
+  const primary = !paid ? (
     <Button variant="primary" disabled={block !== null} onClick={() => block === null && setPaySheet(true)}>
       I've paid
     </Button>
+  ) : needsFinish ? (
+    <Button variant="primary" disabled={!finishOk || finishing} aria-busy={finishing || undefined} onClick={() => void finish()}>
+      Finish marking as paid
+    </Button>
+  ) : (
+    <Button variant="primary" disabled aria-live="polite">
+      {escrow.paidRecorded ? 'Marked as paid' : 'Marking as paid…'}
+    </Button>
   );
-  const blockNote =
-    !paid && block !== null ? (
-      <p className="x2f-room__error" role="status" data-pay-block={block}>
-        {payBlockText(block, escrow)}
-      </p>
-    ) : null;
   const cancel =
     cancelMode === 'none' ? null : (
       <Button variant="quiet" disabled={action.busy} onClick={onCancel}>
@@ -468,20 +426,37 @@ export function BuyerPay(p: TradeScreenProps) {
       Open dispute
     </Link>
   );
+  const refusal = refusalText(escrow.refusal);
   const notices = (
     <>
       {showProposal(view) ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}
-      {paid && unsent !== null ? (
-        <p className="x2f-room__error" role="alert">
-          Couldn't tell the escrow you paid. Try again.{' '}
-          <Button variant="secondary" disabled={retrying} onClick={() => void retrySignal()}>
-            Try again
-          </Button>
+      {escrow.error !== null ? (
+        <div className="x2f-room__error" role="alert" data-pay-block="escrow-stopped">
+          <p>{stoppedText(escrow)}</p>
+          {escrow.retryable ? (
+            <Button variant="secondary" onClick={() => escrow.retry()}>
+              Try again
+            </Button>
+          ) : null}
+        </div>
+      ) : !paid && block !== null ? (
+        <p className="x2f-room__error" role="status" data-pay-block={block}>
+          {payBlockText(block, escrow)}
         </p>
       ) : null}
-      {blockNote}
+      {needsFinish ? (
+        <p className="x2f-room__error" role="alert" data-paid-unrecorded="">
+          Your device hasn't recorded your payment. Tap to finish.
+          {finishOk ? null : " Your device can't confirm the total the trade shows. Don't pay again. Ask in the chat, or open a dispute if it doesn't clear."}
+          {finishError !== null ? ` ${finishError}` : null}
+        </p>
+      ) : refusal !== null && escrow.error === null ? (
+        <p className="x2f-room__error" role="status" data-escrow-refusal={escrow.refusal ?? undefined}>
+          {refusal}
+        </p>
+      ) : null}
       {action.error !== null && !cancelSheet ? (
         <p className="x2f-room__error" role="alert">
           {action.error}
@@ -491,19 +466,7 @@ export function BuyerPay(p: TradeScreenProps) {
   );
   const sheets = (
     <>
-      <PaidConfirmSheet
-        open={paySheet && total !== null}
-        fiatCents={total?.cents ?? 0n}
-        fiatText={total?.text ?? ''}
-        methodName={method.name}
-        code={view.code}
-        grewTo={grew && escrow.amountAtomic !== null ? formatXmr(escrow.amountAtomic) : null}
-        onYes={onYes}
-        onNotYet={() => {
-          setPaySheet(false);
-          setGrew(false);
-        }}
-      />
+      <PaidFlowSheet view={view} escrow={escrow} refresh={p.refresh} open={paySheet && !paid} onClose={() => setPaySheet(false)} />
       <CancelSheet open={cancelSheet} busy={action.busy} error={cancelSheet ? action.error : null} onConfirm={() => void cancelNow()} onClose={() => setCancelSheet(false)} />
     </>
   );

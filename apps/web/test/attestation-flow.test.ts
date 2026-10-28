@@ -537,6 +537,19 @@ describe('settling', () => {
       await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
     });
 
+    it('paidRecorded: false while the buyer knows of paid only from the API, true once its own tap fixed the amount (Task 23 review I2, I3)', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      expect(await t.buyer.status((x) => x.phase === 'ready')).toMatchObject({ paidRecorded: false });
+      t.state.view = tradeView({ state: 'paid', paidAt });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ paidRecorded: false });
+      await pay(t.buyer);
+      expect(await t.buyer.status((x) => x.paidRecorded)).toMatchObject({ refusal: null, error: null });
+      // The seller never reports it.
+      expect(await t.seller.status(() => true)).toMatchObject({ paidRecorded: false });
+    });
+
     it('a release handed over before paid binds its amount: another amount is refused at the tap and for any release', async () => {
       const t = await ready();
       t.parties.funds = funded();

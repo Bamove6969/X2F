@@ -98,6 +98,13 @@ export interface EscrowStatus {
   /** The deal this device stored from what the user confirmed (never the API's), or null before the record exists. */
   deal: Deal | null;
   /**
+   * Buyer only: this device recorded the buyer's own "I've paid" (the tap fixed the amount, saved
+   * before `trade.paid` left). False for the seller, and for a buyer that knows of paid only from
+   * the API (then `refusal` is `amount-unknown`, and the tap must be finished on this device).
+   * "Marked as paid" reads this (Task 23 review 2026-10-27, I2/I3; there is no ack of trade.paid).
+   */
+  paidRecorded: boolean;
+  /**
    * The escrow `balance` exactly as this device's party read it with `funds()` on the last tick
    * (the wallet's own figure), or null until the first reading. Before any settlement it is what
    * has arrived; after one it falls to what is left.
@@ -326,6 +333,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         fiatCents: amountAtomic === null ? null : fiatCents(amountAtomic, { currency: this.rec.deal.currency, centsPerXmr: this.rec.deal.centsPerXmr }),
         escrowAddress: this.address,
         deal: (this.rec as EscrowRecord | undefined)?.deal ?? null,
+        paidRecorded: this.rec?.role === 'buyer' && this.rec.paidSeen === true && (this.rec.acceptedAtomic ?? null) !== null,
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
       };

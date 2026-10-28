@@ -3,7 +3,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
-import { GIFT_CARD_WARNING, setPaidAckSource, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
+import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
 
@@ -81,6 +81,7 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
     fiatCents: 41_250n,
     receivedAtomic: null,
     confirmedAtomic: null,
+    paidRecorded: false,
     error: null,
     retryable: false,
     refusal: null,
@@ -115,7 +116,6 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  setPaidAckSource(null);
   setTradeChat(null);
   setPaymentDetailsSource(null);
 });
@@ -295,36 +295,53 @@ describe("I've paid and PaidConfirmSheet", () => {
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
   });
 
-  it('paid: "Marked as paid" only after the moderator\'s trade.ack', async () => {
-    let ack: (() => void) | null = null;
-    setPaidAckSource((code, on) => {
-      expect(code).toBe(CODE);
-      ack = on;
-      return () => undefined;
-    });
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }) }));
-    expect(text()).not.toContain('Marked as paid');
-    await act(async () => ack!());
+  it('paid: "Marked as paid" once this device recorded the tap (escrow.paidRecorded)', () => {
+    const paidView = tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) });
+    const r = mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: false }) }));
+    expect(text()).toContain('Marking as paid…');
+    r.unmount();
+    mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(text()).toContain('Marked as paid');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 
-  it('paid but the signal never left (the device refused it): Try again sends only trade.paid', async () => {
-    const escrow = fakeEscrow({ markPaid: vi.fn(async () => Promise.reject(new Error('no signals yet'))) });
-    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid' }) });
-    const p = props({ view: tradeView(SECURED), escrow });
-    const r = mount(p);
+  it('paid, but this device never recorded it (a reload, another tab, a lost response): Finish sends only trade.paid, with the device total', async () => {
+    const escrow = fakeEscrow({ refusal: 'amount-unknown' });
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow }));
+    expect(text()).toContain("Your device hasn't recorded your payment. Tap to finish.");
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+    await click(byText('Finish marking as paid', 'button'));
+    await flush();
+    expect(calls).toEqual(['escrow:markPaid(41250)']);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("Finish is refused, and says why, when the device's total is not the trade's", async () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), fiatCents: '43313' }), escrow: fakeEscrow({ refusal: 'amount-unknown' }) }));
+    const finish = byText('Finish marking as paid', 'button') as HTMLButtonElement;
+    expect(finish.disabled).toBe(true);
+    expect(text()).toContain("Your device can't confirm the total the trade shows.");
+    await click(finish);
+    expect(calls).toEqual([]);
+  });
+
+  it('a lost mark-paid response: the retry gets 409 wrong-state, the sheet closes and the trade is re-read', async () => {
+    answer = () => ({ status: 409, json: { error: 'wrong-state' } });
+    mount(props({ view: tradeView(SECURED) }));
     await click(byText("I've paid", 'button'));
     await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
     await click(byText("Yes, I've paid", 'button'));
     await flush();
-    r.rerender({ ...p, view: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
-    expect(text()).toContain("Couldn't tell the escrow you paid. Try again.");
-    (escrow.markPaid as ReturnType<typeof vi.fn>).mockImplementation(async (c: bigint) => void calls.push(`escrow:markPaid(${c})`));
-    calls = [];
+    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
+    expect(dialog()).toBeNull();
+  });
+
+  it('a stopped escrow says why in words, with Try again when it can run again', async () => {
+    const escrow = fakeEscrow({ phase: 'error', error: 'escrow-failed', retryable: true });
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow }));
+    expect(text()).toContain('Check your connection and try again.');
     await click(byText('Try again', 'button'));
-    await flush();
-    expect(calls).toEqual(['escrow:markPaid(41250)']);
+    expect(escrow.retry).toHaveBeenCalledOnce();
   });
 });
 

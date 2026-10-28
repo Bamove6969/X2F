@@ -9,14 +9,6 @@ const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const has = (p: string) => existsSync(`${SRC}${p}`);
 
 describe('Task 23 tripwires', () => {
-  it("Task 12's escrow runtime exposes the moderator's ack of trade.paid", () => {
-    // Task 12 (wip/second-p3-t12) EscrowStatus has no ack field yet, so "Marked as paid" waits for
-    // `setPaidAckSource` (paySeams.ts). Once Task 12 merges, install a source from its status.
-    if (!has('escrow/useEscrow.ts')) return;
-    const app = [has('App.tsx') ? readFileSync(`${SRC}App.tsx`, 'utf8') : '', has('main.tsx') ? readFileSync(`${SRC}main.tsx`, 'utf8') : ''].join('\n');
-    expect(app.includes('setPaidAckSource'), 'Task 12 merged: install setPaidAckSource from the escrow status (trade.ack of trade.paid)').toBe(true);
-  });
-
   it("Task 20's ChatPanel is installed as the trade chat", () => {
     if (!has('chat/ChatPanel.tsx')) return;
     const app = [has('App.tsx') ? readFileSync(`${SRC}App.tsx`, 'utf8') : '', has('main.tsx') ? readFileSync(`${SRC}main.tsx`, 'utf8') : ''].join('\n');
