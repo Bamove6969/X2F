@@ -10,6 +10,8 @@ import {
   internalSignedBytes,
   verifyAttestation,
   type Attestation,
+  type AttestedTerms,
+  type ConfirmedDeal,
   type ModPartyArgs,
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
@@ -30,6 +32,14 @@ import { MOD_TEMPLATE_DB } from './setup/postgres.js';
 const API = 'http://api-internal.test';
 const RELAY = 'http://relay-admin.test';
 const NOW = new Date('2026-10-24T12:00:00Z');
+/** The trade record's terms, as the API's work list hands them over (lead answer 4). */
+const TERMS: AttestedTerms = {
+  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  buyerPayout: '4'.padEnd(95, 'B'),
+  sellerRefund: '8'.padEnd(95, 'S'),
+};
+const DEAL: ConfirmedDeal = { poster: 'seller', takeAmountAtomic: 250_000_000_000n, currency: 'USD', centsPerXmr: 16_250n, maxFiatCents: 100_000n };
+const ownAddress = (role: 'buyer' | 'seller'): string => (role === 'buyer' ? TERMS.buyerPayout : TERMS.sellerRefund);
 
 let db: pg.Pool;
 let dbName: string;
@@ -133,7 +143,7 @@ describe('attesting a trade', () => {
     const code = newTradeCode();
     const buyer = await trader(code, 'buyer');
     const seller = await trader(code, 'seller');
-    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg } }]);
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
     const mod = await moderation(net.fetch);
     expect(await mod.tick()).toEqual([code]);
     expect(net.refused).toEqual([]);
@@ -142,14 +152,14 @@ describe('attesting a trade', () => {
     expect(report).toBeDefined();
     for (const [role, t] of [['buyer', buyer], ['seller', seller]] as const) {
       await expect(
-        verifyAttestation(report.attestation, report.sig, modSign.public, { trade: code, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic }),
+        verifyAttestation(report.attestation, report.sig, modSign.public, { trade: code, role, signPublic: t.id.signPublic, boxPublic: t.id.boxPublic, deal: DEAL, ownAddress: ownAddress(role) }),
       ).resolves.toBeUndefined();
     }
     const channels = net.registered.map((r) => r.channel);
     expect(channels).toContain(await channelFor(code, 'escrow'));
     expect(channels).toContain(await channelFor(code, 'signals'));
     // Posting again after a restart re-sends the SAME attestation, never a new mod identity.
-    const again = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg } }]);
+    const again = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
     await (await moderation(again.fetch)).tick();
     expect(again.reports[0]).toEqual(report);
     await mod.stop();
@@ -160,7 +170,7 @@ describe('attesting a trade', () => {
     const buyer = await trader(code, 'buyer');
     const seller = await trader(code, 'seller');
     const forged = { ...seller.reg, proof: sodium.to_hex(sodium.randombytes_buf(64)) };
-    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: forged } }]);
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: forged }, terms: TERMS }]);
     expect(await (await moderation(net.fetch)).tick()).toEqual([]);
     expect(net.reports).toHaveLength(0);
     expect(net.registered).toHaveLength(0);
@@ -169,6 +179,34 @@ describe('attesting a trade', () => {
     expect(net.refused).toEqual([]);
     const { rows } = await db.query('select 1 from signed_terms where trade = $1', [code]);
     expect(rows).toHaveLength(0);
+  });
+
+  it('signs the terms from the work item, and both traders refuse an attestation whose deal or own address differs', async () => {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+    expect(await (await moderation(net.fetch)).tick()).toEqual([code]);
+    const report = net.reports.find((r) => r.attestation.trade === code)!;
+    expect(report.attestation.terms).toEqual(TERMS);
+    const me = { trade: code, role: 'buyer' as const, signPublic: buyer.id.signPublic, boxPublic: buyer.id.boxPublic };
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: { ...DEAL, centsPerXmr: 1n }, ownAddress: TERMS.buyerPayout }))
+      .rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(report.attestation, report.sig, modSign.public, { ...me, deal: DEAL, ownAddress: TERMS.sellerRefund }))
+      .rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('refuses work with missing or malformed terms (bad-work) and signs nothing', async () => {
+    const bad: unknown[] = [undefined, null, { ...TERMS, buyerPayout: '' }, { ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '01' } }, { ...TERMS, extra: 1 }];
+    for (const terms of bad) {
+      const code = newTradeCode();
+      const buyer = await trader(code, 'buyer');
+      const seller = await trader(code, 'seller');
+      const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms } as unknown as WorkItem]);
+      expect(await (await moderation(net.fetch)).tick()).toEqual([]);
+      expect(net.reports).toHaveLength(0);
+      expect(net.refusals).toEqual([{ trade: code, reason: 'bad-work' }]);
+    }
   });
 
   it('101 refused trades at the front of the work list do not stall a fresh trade (I1)', async () => {
@@ -180,14 +218,14 @@ describe('attesting a trade', () => {
       const code = newTradeCode();
       const t = await trader(code, 'buyer');
       const seller = { ...t.reg, proof: sodium.to_hex(sodium.crypto_sign_detached(identityProofBytes(code, 'seller', t.id.signPublic, t.id.boxPublic), t.id.signSecret)) };
-      items.push({ trade: code, participants: { buyer: t.reg, seller }, done: false });
+      items.push({ trade: code, participants: { buyer: t.reg, seller }, terms: TERMS, done: false });
     }
     const fresh = newTradeCode();
     const buyer = await trader(fresh, 'buyer');
     const seller = await trader(fresh, 'seller');
-    items.push({ trade: fresh, participants: { buyer: buyer.reg, seller: seller.reg }, done: false });
+    items.push({ trade: fresh, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS, done: false });
 
-    const net = fakeNetwork(() => items.filter((w) => !w.done).slice(0, 100).map(({ trade, participants }) => ({ trade, participants })));
+    const net = fakeNetwork(() => items.filter((w) => !w.done).slice(0, 100).map(({ trade, participants, terms }) => ({ trade, participants, terms })));
     const markDone = () => {
       for (const r of net.refusals) items.find((w) => w.trade === r.trade)!.done = true;
       for (const r of net.reports) items.find((w) => w.trade === r.attestation.trade)!.done = true;
@@ -212,14 +250,14 @@ describe('attesting a trade', () => {
     // stores it in place of the real buyer's.
     const apiBuyer = await trader(code, 'buyer');
     const apiKeys = new Set([apiBuyer.id.signPublic]);
-    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: apiBuyer.reg, seller: seller.reg } }]);
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: apiBuyer.reg, seller: seller.reg }, terms: TERMS }]);
     await (await moderation(net.fetch)).tick();
 
     const report = net.reports.find((r) => r.attestation.trade === code)!;
     // The real buyer checks its own slot: setup aborts.
     await expect(
       verifyAttestation(report.attestation, report.sig, modSign.public, {
-        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic,
+        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout,
       }),
     ).rejects.toMatchObject({ code: 'not-me' });
 
@@ -242,12 +280,13 @@ describe('attesting a trade', () => {
         mod: { signPublic: apiMod.signPublic, boxPublic: apiMod.boxPublic },
       },
       issuedAt: NOW.toISOString(),
+      terms: TERMS,
     };
     const apiKey = sodium.crypto_sign_keypair();
     const forgedSig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(forged), apiKey.privateKey));
     await expect(
       verifyAttestation(forged, forgedSig, modSign.public, {
-        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic,
+        trade: code, role: 'buyer', signPublic: realBuyer.id.signPublic, boxPublic: realBuyer.id.boxPublic, deal: DEAL, ownAddress: TERMS.buyerPayout,
       }),
     ).rejects.toMatchObject({ code: 'bad-signature' });
 
@@ -262,7 +301,7 @@ describe('R27: the escrow wallet password', () => {
     const codes = [newTradeCode(), newTradeCode()];
     const items: WorkItem[] = [];
     for (const code of codes) {
-      items.push({ trade: code, participants: { buyer: (await trader(code, 'buyer')).reg, seller: (await trader(code, 'seller')).reg } });
+      items.push({ trade: code, participants: { buyer: (await trader(code, 'buyer')).reg, seller: (await trader(code, 'seller')).reg }, terms: TERMS });
     }
     const passed: ModPartyArgs[] = [];
     const net = fakeNetwork(() => items);
