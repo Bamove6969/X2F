@@ -87,7 +87,7 @@
   font-variant-numeric: tabular-nums;
 }
 
-.x2f-quote {
+.x2f-trade-quote {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-4);
@@ -96,13 +96,13 @@
   background: var(--x2f-surface);
 }
 
-.x2f-quote__head {
+.x2f-trade-quote__head {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-1);
 }
 
-.x2f-quote__rows {
+.x2f-trade-quote__rows {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-2);
@@ -129,7 +129,7 @@
   color: var(--x2f-ink);
 }
 
-.x2f-quote__rule {
+.x2f-trade-quote__rule {
   height: 1px;
   background: var(--x2f-surface-raised);
 }
@@ -271,18 +271,18 @@
   text-align: center;
 }
 
-.x2f-qr {
+.x2f-fund-qr {
   width: min(240px, 70vw);
   height: auto;
   border-radius: var(--x2f-radius-sm);
 }
 
 /* A QR code is always dark on light, whatever the theme, so every wallet can scan it. */
-.x2f-qr__light {
+.x2f-fund-qr__light {
   fill: #ffffff;
 }
 
-.x2f-qr__dark {
+.x2f-fund-qr__dark {
   fill: #000000;
 }
 

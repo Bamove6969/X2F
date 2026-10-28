@@ -79,15 +79,15 @@ export function FundFallback({
       </p>
       {qr === null ? null : (
         <svg
-          className="x2f-qr"
+          className="x2f-fund-qr"
           viewBox={`0 0 ${qr.size} ${qr.size}`}
           role="img"
           aria-label="QR code with the escrow address and amount"
           data-qr=""
           shapeRendering="crispEdges"
         >
-          <rect className="x2f-qr__light" width={qr.size} height={qr.size} />
-          <path className="x2f-qr__dark" d={qr.d} />
+          <rect className="x2f-fund-qr__light" width={qr.size} height={qr.size} />
+          <path className="x2f-fund-qr__dark" d={qr.d} />
         </svg>
       )}
       <p className="x2f-fund-address x2f-mono" data-escrow-address="">
