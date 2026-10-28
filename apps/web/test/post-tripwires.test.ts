@@ -1,7 +1,9 @@
 // TRIPWIRES for the API shapes PostOffer (Task 21) assumes before the API tasks are on the main
 // line. (Task 3's GET /v1/methods and GET /v1/price are on the line since 2026-10-26 and were checked
 // against src/screens/post/api.ts on 2026-10-27: same fields, string bigints, 503 price-unavailable,
-// and the 39 two-decimal currencies of CURRENCY_EXPONENTS match the parsers; its tripwire is retired.)
+// and the 39 two-decimal currencies of CURRENCY_EXPONENTS match the parsers; its tripwire is retired.
+// Task 28's setup follows returnTo back to /post from Welcome's Start trading, with the draft
+// restored: e2e post.spec.ts walks that through the real Welcome; its tripwire is retired too.)
 // src/screens/post/api.ts parses each response strictly, so a renamed or missing field also fails
 // loudly at run time. Each tripwire fails once the real module lands: then check the real shape
 // against src/screens/post/{api,offerForm}.ts and the stubs in e2e/post.spec.ts, fix any
@@ -24,11 +26,5 @@ describe('Task 21 guesses still stand in for missing API routes', () => {
     // trading-hold, trading-paused, method-unavailable; no-wallet goes to Add a wallet (client.ts);
     // 401 not-authenticated goes to setup.
     expect(has('apps/api/src/offers/routes.ts'), 'Task 4 offers landed: check validate() and the POST stubs against it').toBe(false);
-  });
-
-  it('NEEDS_TASK_28: logged out, PostOffer sends the user to /setup?returnTo=…', () => {
-    // Task 28 (onboarding) must follow `returnTo` back to /post when setup finishes; the draft waits in
-    // sessionStorage (x2f.post-draft) until then.
-    expect(has('apps/web/src/screens/setup'), 'Task 28 setup landed: check it follows returnTo to /post').toBe(false);
   });
 });

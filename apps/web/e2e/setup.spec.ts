@@ -4,8 +4,6 @@
 // phone size (390x844) and at a small Android size (360x800) (owner 2026-10-25: mobile ready at
 // launch). The API is stubbed per test with page.route, in FU-A's shapes (display name + private
 // login name), which the lead's FU-A branch defines and the main line does not have yet.
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import * as openpgp from 'openpgp';
 import { expectParity, type ParityViewport } from './parity.js';
@@ -362,6 +360,14 @@ test('a step opened without the earlier ones goes back to the Terms', async ({ p
   await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
 });
 
+test('someone who already has an account goes from the Terms to Log in, keeping returnTo', async ({ page }) => {
+  await stubApi(page);
+  await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
+  await page.getByRole('link', { name: 'Log in' }).click();
+  await expect(page).toHaveURL(/\/login\?returnTo=%2Fpost$/);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
+});
+
 test('raising the Terms version sends a logged-in trader to /terms and back to the same screen', async ({ page }) => {
   let accepted: unknown = null;
   let version = '2026-10-17';
@@ -440,16 +446,16 @@ test('a signed-in trader with no wallet who opens /setup lands on Link a wallet 
   expect(s.requests.filter((r) => r.includes('/v1/confirm/'))).toEqual([]);
 });
 
-// SetupTerms is on the canvas (Getting started, screen 0) but not mirrored in design/x2f-app/ yet
-// (plan Task 28: a controller step mirrors it and captures refs/SetupTerms.png). Until then the
-// board parity is skipped with that reason and the phone-layout rules are checked on their own.
-const TERMS_BOARD = fileURLToPath(new URL('../../../design/x2f-app/SetupTerms.dc.html', import.meta.url));
+// SetupTerms (Getting started, screen 0) is mirrored in design/x2f-app/ with refs/SetupTerms.png
+// since 2026-10-26. Its "[TERMS TEXT: …]" placeholders and "[DATE]" are KNOWN_EXCEPTIONS.SetupTerms.
 for (const v of PHONES) {
   test(`the Terms screen matches SetupTerms at ${v}`, async ({ page }) => {
-    test.skip(!existsSync(TERMS_BOARD), 'SetupTerms is not mirrored in design/x2f-app/ yet (controller step, plan Task 28)');
     await setViewport(page, v);
     await stubApi(page);
     await page.goto('/setup');
+    // The screen renders once the session check answers (signed out): wait for it, not a race.
+    await expect(page.locator('[data-part="terms-accept"]')).toBeVisible();
+    await expect(page.locator('[data-part="terms-text"]')).toContainText('End of Terms. Version 2026-10-17.');
     await expectParity(page, 'SetupTerms', { viewport: v });
   });
 

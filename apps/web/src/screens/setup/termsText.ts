@@ -1,22 +1,38 @@
 /**
- * The Terms of Service text shown in the Terms screen's scroll box. The final text waits for the
- * lawyer (plan Task 28, Revision 2026-10-15 "Terms board"); this draft states the product's own
- * rules from the spec so the screen can be built and tested. The server only knows the version
- * (`GET /v1/terms`); whoever publishes new Terms changes this text and the server's version together.
+ * The Terms of Service text shown in the Terms screen's scroll box, under the SetupTerms board's
+ * headings. The final text waits for the lawyer (plan Task 28, Revision 2026-10-15 "Terms board").
+ * Where the board has a "[TERMS TEXT: …]" placeholder, this draft states the product's own rules
+ * from the spec instead (KNOWN_EXCEPTIONS.SetupTerms in e2e/parity.ts), so the screen says
+ * something true; the board's own sentences (the key points, section 7) are kept word for word.
+ * The server only knows the version (`GET /v1/terms`); whoever publishes new Terms changes this
+ * text and the server's version together.
  */
 export interface TermsSection {
   heading: string;
   paragraphs: string[];
 }
 
-export const TERMS_DRAFT_NOTE = 'Draft for review. The final Terms of Service replace this text before launch.';
+/** The board's note above the text, until the lawyer's text replaces the draft. */
+export const TERMS_DRAFT_NOTE = "[Placeholder: the final text comes from X2F's lawyer.]";
+
+/** The board's key points, shown above the full text. */
+export const KEY_POINTS: readonly string[] = [
+  'X2F never holds your coins.',
+  'If you post an ad, you pay a 1% fee when the trade completes.',
+  'Moderators can read your trade chat only if a dispute is opened.',
+  'Dispute records are kept for 30 days.',
+  'No IP addresses are logged.',
+  'We answer lawful warrants with the little we have.',
+];
+
+/** The heading of the section the tick box's "Privacy Policy" points at. */
+export const PRIVACY_HEADING = '6. Privacy and data';
 
 export const TERMS: TermsSection[] = [
   {
     heading: '1. What X2F is',
     paragraphs: [
       'X2F is a place where people trade Monero (XMR) for cash, bank transfers and payment apps with each other. X2F is a facilitator. It is not a party to your trades, it is not a bank or an exchange, and it never holds your coins.',
-      'Your coins stay in your own wallet, except while they are locked in a trade’s 2-of-3 escrow. X2F holds one of the three escrow keys and can never move coins on its own.',
     ],
   },
   {
@@ -28,10 +44,11 @@ export const TERMS: TermsSection[] = [
     ],
   },
   {
-    heading: '3. Trading',
+    heading: '3. Trades and escrow',
     paragraphs: [
+      'Your coins stay in your own wallet, except while they are locked in a trade’s 2-of-3 escrow. X2F holds one of the three escrow keys and can never move coins on its own.',
       'You decide whom you trade with and on what terms. Read the other trader’s terms before you take an offer.',
-      'Only the seller funds the escrow. The buyer pays the fiat exactly as the trade says and marks it paid. The seller confirms the payment and releases the XMR.',
+      'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays the fiat exactly as the trade says and marks it paid. The seller confirms the payment and releases the XMR. A release cannot be undone.',
       'Never release coins before you have checked that the money has arrived in your own account. A screenshot is not a payment.',
       'Each trade has timers. When a timer runs out, the trade moves on as the trade screen explains, for example a refund to the seller when the buyer does not pay in time.',
     ],
@@ -44,15 +61,28 @@ export const TERMS: TermsSection[] = [
     ],
   },
   {
-    heading: '5. Disputes',
+    heading: '5. Disputes and moderators',
     paragraphs: [
       'If something goes wrong, either side can open a dispute within the times the trade screen shows. A moderator then reads the trade and its chat, asks for evidence and decides where the escrow goes.',
-      'Chats are encrypted. If a dispute is opened, a moderator can read that trade’s conversation.',
+      'Chats are encrypted. If a dispute is opened, a moderator can read that trade’s conversation, and every read is logged.',
       'You can appeal a decision once, within the window shown with the decision.',
     ],
   },
   {
-    heading: '6. What you must not do',
+    heading: PRIVACY_HEADING,
+    paragraphs: [
+      'X2F keeps only what a trade needs, and deletes it after a set time. X2F does not track you, does not use analytics and removes location and device details from uploads.',
+      'No IP addresses are logged, even in disputes. Dispute records are kept for 30 days after the dispute closes, then deleted.',
+    ],
+  },
+  {
+    heading: '7. Police and government requests',
+    paragraphs: [
+      "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
+    ],
+  },
+  {
+    heading: '8. Prohibited use',
     paragraphs: [
       'Do not use X2F for money from crime, to hide where money came from, or to break the law where you live.',
       'Do not cheat, threaten or mislead other traders, and do not ask them to trade outside X2F.',
@@ -61,21 +91,10 @@ export const TERMS: TermsSection[] = [
     ],
   },
   {
-    heading: '7. Privacy',
-    paragraphs: [
-      'X2F keeps only what a trade needs, and deletes it after a set time. X2F does not track you, does not use analytics and removes location and device details from uploads.',
-    ],
-  },
-  {
-    heading: '8. Changes to these Terms',
-    paragraphs: [
-      'When these Terms change, X2F shows them again at your next login, and trading waits until you accept the new version.',
-    ],
-  },
-  {
-    heading: '9. No guarantee',
+    heading: '9. Liability, changes and law',
     paragraphs: [
       'X2F is provided as it is. Trading carries risk, including the risk that the other trader acts in bad faith and that the price of Monero changes. Take care, and only trade what you can afford to lose.',
+      'When these Terms change, X2F shows them again at your next login, and trading waits until you accept the new version.',
     ],
   },
 ];

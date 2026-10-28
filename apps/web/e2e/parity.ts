@@ -68,6 +68,44 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  SetupTerms: [
+    {
+      text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: eligibility, one person per account, keeping your login keys safe.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: how 2-of-3 escrow works, funding is a commitment, releases can\'t be undone.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: when moderators can read chats, rulings, appeals, trading holds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: no IP logging; dispute records 30 days; anonymized training copies 6 months.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: changes to these terms are shown at your next login.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
+      why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
+    },
+    {
+      text: 'End of Terms. Version [DATE].',
+      why: 'The page shows the real version from GET /v1/terms in place of [DATE] (Task 28).',
+    },
+  ],
   SetupPgpKey: [
     {
       text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',

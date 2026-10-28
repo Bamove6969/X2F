@@ -523,6 +523,31 @@
 }
 
 /* Terms (screen 0). */
+.x2f-terms__points {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 12px 14px 12px 32px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-terms__hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.x2f-check .x2f-setup__textbutton {
+  font-size: inherit;
+  line-height: inherit;
+}
+
 .x2f-terms {
   flex: 1 1 auto;
   min-height: 140px;

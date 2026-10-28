@@ -5,7 +5,10 @@
 // parseOffers; those tripwires are retired. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the room's fallback to readConfirmed(code) when history
-// state is empty is Task 22's to wire, recorded in docs/coordination.md.) Each one below fails once the named module lands: then
+// state is empty is Task 22's to wire, recorded in docs/coordination.md. Task 28's setup is on the
+// branch since 2026-10-28: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
+// trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
+// re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome.) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
@@ -34,18 +37,6 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     // naming only the caller's own stage (Revision 2026-10-24). Also check that the trade's stored fiatCents
     // is the quoted one (OD-5).
     expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer's body (centsPerXmr, fiatCents), price-changed, takeRefusal's codes and the starter-limit fields").toBe(false);
-  });
-
-  it("NEEDS_TASK_28: setup does not yet come back to the quote with `resume=<nonce>` and this tab's pending-take marker", () => {
-    // useTake sends a logged-out Trade to /setup/terms?returnTo=<quote with resume=<nonce>> after
-    // writing the single-use pending-take marker to this tab's sessionStorage (pendingTake.ts). Setup
-    // must end on returnTo IN THE SAME TAB (the marker is per tab; a new tab or window is a plain
-    // quote) with a fresh session (useSession reads /v1/account/me once per page load today). Back on
-    // the quote, a matching marker re-shows the quote at the price now and asks for a tap; it never takes.
-    expect(
-      has('apps/web/src/screens/setup/SetupFlow.tsx'),
-      'Task 28 landed: check Start trading → returnTo in the same tab re-shows the quote with "You\'re back" (e2e quote.spec.ts)',
-    ).toBe(false);
   });
 
   it('NEEDS_TASK_29: the wallet names and the usable filter mirror the unmerged wallets model', () => {

@@ -296,7 +296,13 @@ test('logged out, Post offer goes to setup and comes back with the form intact',
   expect(posts.length).toBeLessThanOrEqual(1);
   const back = new URL(page.url()).searchParams.get('returnTo')!;
   expect(back.startsWith('/post')).toBe(true);
-  await page.goto(back);
+  // Setup's own steps are setup.spec's: here the account exists with its first wallet and Welcome's
+  // Start trading follows returnTo back to /post in this tab (the draft waits in sessionStorage).
+  await page.route('**/v1/account/me', json({ ...ME, methods: ['pgp'] }));
+  await page.route('**/v1/wallets', json([{ id: 'w1', app: 'cake', label: 'Wallet 1', addressEnd: 'k3Fz', usable: true }]));
+  await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(back)}`);
+  await page.click('[data-part="start-trading"]');
+  await expect(page).toHaveURL(back);
   await expect(f(page).currency).toHaveValue('GBP');
   await expect(f(page).fixedMode).toBeChecked();
   await expect(f(page).fixed).toHaveValue('270');
