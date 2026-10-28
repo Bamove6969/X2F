@@ -275,9 +275,26 @@ test.describe('SellerConfirm', () => {
     expect(await escrowCalls(page)).toEqual(['release', 'release']);
   });
 
-  test('opened in settling on a ready device that has not signed (reload after the POST): signs once (I1)', async ({ page }) => {
+  test('opened in settling after THIS device asked (reload after the POST): signs once without a new hold (I1)', async ({ page }) => {
+    const posts = await stub(page, { trade: view({ state: 'settling', settling: 'release', settleBy: '2026-10-25T12:15:00.000Z' }) });
+    // The marker SellerConfirm writes before release-started (release/marker.ts), as a reload finds it.
+    await page.addInitScript((code) => localStorage.setItem(`x2f.release-asked:${code}`, String(Date.now())), CODE);
+    await open(page);
+    await expect(hold(page)).toHaveAttribute('data-done', 'true');
+    expect(await escrowCalls(page)).toEqual(['release']);
+    expect(posts).toHaveLength(0);
+  });
+
+  test('opened in settling that this device never asked for: signs nothing until the box and the hold (round 2 I1)', async ({ page }) => {
     const posts = await stub(page, { trade: view({ state: 'settling', settling: 'release', settleBy: '2026-10-25T12:15:00.000Z' }) });
     await open(page);
+    await expect(page.getByText('X2F shows a release under way that wasn’t started on this device. Check your bank account first.', { exact: true })).toBeVisible();
+    await page.waitForTimeout(500);
+    expect(await escrowCalls(page)).toEqual([]);
+    await expect(hold(page)).toBeDisabled();
+    await box(page).check();
+    await expect(hold(page)).toBeEnabled();
+    await holdFor(page, 1700);
     await expect(hold(page)).toHaveAttribute('data-done', 'true');
     expect(await escrowCalls(page)).toEqual(['release']);
     expect(posts).toHaveLength(0);

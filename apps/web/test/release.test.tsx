@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Released } from '../src/screens/trade/Released.js';
 import { SellerConfirm } from '../src/screens/trade/SellerConfirm.js';
 import type { TradeView, TraderSummary } from '../src/api/trade.js';
+import { RELEASE_ASKED_MAX_MS, markReleaseAsked, releaseAsked } from '../src/screens/trade/release/marker.js';
 import { ReleaseRoomScreen, releaseScreenOf } from '../src/screens/trade/release/slots.js';
 import type { ReleaseEscrow, ReleaseTrade } from '../src/screens/trade/release/view.js';
 import '../src/screens/trade/screens.js';
@@ -66,6 +67,7 @@ let calls: Call[];
 let answer: (c: Call) => { status: number; body: unknown };
 
 beforeEach(() => {
+  localStorage.clear();
   calls = [];
   answer = () => ({ status: 200, body: {} });
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -218,7 +220,8 @@ describe('SellerConfirm', () => {
     expect(s.escrow.release).not.toHaveBeenCalled();
   });
 
-  it('a remount in settling with a ready device signs the release again, once (I1: reload after the POST)', async () => {
+  it('a remount in settling with a ready device signs the release again, once, when THIS device asked (I1: reload after the POST)', async () => {
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
     const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
     await flush();
     expect(s.escrow.release).toHaveBeenCalledTimes(1);
@@ -229,6 +232,7 @@ describe('SellerConfirm', () => {
   });
 
   it('waits for the device to be ready before signing again in settling', async () => {
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
     const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'setting-up' }));
     await flush();
     expect(s.escrow.release).not.toHaveBeenCalled();
@@ -257,7 +261,78 @@ describe('SellerConfirm', () => {
     expect(s.host.querySelector('[role=alert]')).toBeNull();
   });
 
+  it('the API alone says the release is settling (no ask on this device): signs nothing until the box and the hold (round 2 I1)', async () => {
+    vi.useFakeTimers();
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
+    await flush();
+    expect(s.escrow.release).not.toHaveBeenCalled();
+    expect(s.text()).toContain('X2F shows a release under way that wasn’t started on this device. Check your bank account first.');
+    expect(s.text()).not.toContain('Both signatures sent');
+    expect(s.box().checked).toBe(false);
+    expect(s.hold().disabled).toBe(true);
+    expect(s.hold().textContent).toContain('Hold to finish the release of 1.250000 XMR to mira.k');
+    // The seller may still report the payment missing.
+    expect(s.text()).toContain('Payment not received');
+    act(() => s.box().click());
+    expect(s.hold().disabled).toBe(false);
+    pointer(s.hold(), 'pointerdown');
+    advance(1499, vi);
+    expect(s.escrow.release).not.toHaveBeenCalled();
+    advance(1, vi);
+    await flush();
+    expect(s.escrow.release).toHaveBeenCalledTimes(1);
+    // No second release-started: the API is already settling.
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(0);
+    expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(true);
+  });
+
+  it('writes the marker before release-started; a refused POST clears it, so a later settling view signs nothing (round 2 I1)', async () => {
+    vi.useFakeTimers();
+    let markedAtPost: boolean | null = null;
+    answer = () => {
+      markedAtPost = releaseAsked('K7M2-9QXA-4FTR-8WPN');
+      return { status: 409, body: { error: 'not-releasable' } };
+    };
+    const s = sellerConfirm(trade());
+    act(() => s.box().click());
+    pointer(s.hold(), 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(markedAtPost).toBe(true);
+    expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(false);
+    s.update(trade({ state: 'settling', settling: 'release' }));
+    await flush();
+    expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
+  it('a marker older than the settle window is not used (round 2 I1)', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-10-25T12:00:00Z'));
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
+    vi.setSystemTime(new Date(Date.parse('2026-10-25T12:00:00Z') + RELEASE_ASKED_MAX_MS + 1));
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
+    await flush();
+    expect(s.escrow.release).not.toHaveBeenCalled();
+    expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(false);
+  });
+
+  it('clears the marker once this device has signed', async () => {
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
+    sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'done' }));
+    await flush();
+    expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(false);
+  });
+
+  it('settling on a device whose escrow is not set up: says to open the trade on the device it was set up on (round 2 Minor 2)', async () => {
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'idle' }));
+    await flush();
+    expect(s.text()).toContain('This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.');
+    expect(s.hold().disabled).toBe(true);
+    expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
   it('when release() throws, offers to finish the release on this device (I1)', async () => {
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
     const escrow = escrowStub();
     escrow.release.mockRejectedValueOnce(new Error('escrow not running'));
     const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrow);
