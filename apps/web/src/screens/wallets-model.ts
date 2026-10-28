@@ -5,6 +5,9 @@ import type { Wallet, WalletApp, WalletDraft, WalletRule } from '@x2f/auth-clien
 
 export type { WalletApp, WalletDraft, WalletRule };
 
+/** The most wallets one add may carry: the API's own limit, re-exported by @x2f/auth-client. */
+export { MAX_WALLET_BATCH } from '@x2f/auth-client';
+
 /** The wallet apps a person can pick when adding a wallet (spec 6.4); same codes and order as the API. */
 export const WALLET_APPS = ['cake', 'edge', 'feather', 'monerujo', 'stack', 'monero-gui-cli', 'ledger-trezor', 'other'] as const satisfies readonly WalletApp[];
 
@@ -43,9 +46,6 @@ export type WalletTone = 'ready' | 'waiting';
 export function walletStatus(w: WalletView): { label: string; tone: WalletTone } {
   return w.usable ? { label: 'Ready', tone: 'ready' } : { label: 'Waiting', tone: 'waiting' };
 }
-
-/** The most wallets one add may carry: `MAX_WALLET_BATCH` in @x2f/accounts (pinned by test/wallets-model.test.ts). */
-export const MAX_WALLET_BATCH = 10;
 
 const METHOD_NAMES: Record<WalletRule['strongMethods'][number], string> = {
   pgp: 'a PGP key',

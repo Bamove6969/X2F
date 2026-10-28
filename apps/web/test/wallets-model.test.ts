@@ -1,4 +1,5 @@
-import { MAX_WALLET_BATCH as API_MAX } from '@x2f/accounts';
+import { readFileSync } from 'node:fs';
+import { MAX_WALLET_BATCH as API_MAX } from '@x2f/auth-client';
 import { describe, expect, it } from 'vitest';
 import { MAX_WALLET_BATCH, nameSuggestions, ruleNote, takeableWallets, type WalletView } from '../src/screens/wallets-model.js';
 
@@ -9,6 +10,11 @@ const wallet = (id: string, usable: boolean): WalletView => ({
 describe('wallets model', () => {
   it('the batch limit matches the API', () => {
     expect(MAX_WALLET_BATCH).toBe(API_MAX);
+  });
+
+  it('the web app takes the limit from @x2f/auth-client, not a direct @x2f/accounts dependency', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { dependencies: Record<string, string> };
+    expect(Object.keys(pkg.dependencies)).not.toContain('@x2f/accounts');
   });
 
   it('the take picker never offers a waiting wallet', () => {
