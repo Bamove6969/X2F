@@ -94,6 +94,12 @@ export interface TradeView {
   paidAt: string | null;
   confirmBy: string | null;
   finalAlertAt: string | null;
+  /**
+   * When the buyer's first seen-receipt for the final alert landed (Task 19); null = not seen. Task
+   * 10 counts 15 min from it. Shown to the buyer only: the seller always gets null, so they never
+   * learn whether or when the buyer looked (Task 19 re-review, item 5).
+   */
+  finalAlertSeenAt: string | null;
   settleBy: string | null;
   pausedAt: string | null;
   closedAt: string | null;
@@ -107,6 +113,8 @@ export interface ViewContext {
   /** Task 3's method profile for `t.methodId` (null until Task 3 wires `getProfile`). */
   profile: unknown;
   sellerWalletApp: string | null;
+  /** `trades.final_alert_seen_at` (not a machine field). */
+  finalAlertSeenAt: Date | null;
 }
 
 /**
@@ -159,6 +167,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     paidAt: iso(t.paidAt),
     confirmBy: iso(t.confirmBy),
     finalAlertAt: iso(t.finalAlertAt),
+    finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
     settleBy: iso(t.settleBy),
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),

@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
+import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
 
@@ -26,6 +27,8 @@ export interface AuthContext {
   kind: AccountKind;
   level: SessionLevel;
   onboardingUntil: Date | null;
+  /** When the session expires if nothing touches it again (the stored deadline or the idle rule, whichever is sooner). */
+  expiresAt: Date;
 }
 
 declare module 'fastify' {
@@ -102,6 +105,8 @@ export async function startSession(
 
   const client = await deps.db.connect();
   let sessionId: string;
+  /** The session this browser's cookie named, revoked by this login (its streams end too). */
+  let replaced: { id: string; account_id: string } | null = null;
   let absoluteMs: number;
   let expiresAt: Date;
   try {
@@ -117,9 +122,11 @@ export async function startSession(
       absoluteMs = policy.absoluteMs;
       expiresAt = deadline(now, now, policy);
       if (presented) {
-        await client.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [
-          tokenHash(presented), now,
-        ]);
+        const old = await client.query<{ id: string; account_id: string }>(
+          'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
+          [tokenHash(presented), now],
+        );
+        replaced = old.rows[0] ?? null;
       }
       const { rows } = await client.query<{ id: string }>(
         `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until)
@@ -151,6 +158,7 @@ export async function startSession(
   } finally {
     client.release();
   }
+  if (replaced) req.server.events.closeSession(replaced.account_id, replaced.id);
 
   void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(absoluteMs / 1000) });
   return sessionId;
@@ -178,7 +186,9 @@ interface SessionRow {
  * (checked on every request); 403 `recovery-session` unless `allowRecovery`; 403
  * `wrong-account-kind` when `kinds` excludes the account; 403 `terms-required` `{ version }` for a
  * trader on a stale Terms version unless `allowStaleTerms` (R10: only logout, me, terms, methods
- * and sessions routes set it). Touches `last_seen_at`.
+ * and sessions routes set it). Touches `last_seen_at` (and moves `expires_at`) unless `touch: false`:
+ * a long-lived or self-reconnecting request such as `GET /v1/events` must never count as activity,
+ * or an open tab would keep an idle session alive past its logout timer (review 2026-10-27, I1).
  *
  * The 24-hour hold of a TOTP backup login fails closed (Task 9, P2-I1): a recovery session whose
  * `hold_until` is still ahead gets 403 `recovery-hold` `{ holdUntil }` on every recovery-allowed
@@ -187,7 +197,7 @@ interface SessionRow {
  * a per-route check; at exactly `hold_until` the session passes.
  */
 export function requireSession(
-  opts: { allowRecovery?: boolean; allowHeld?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean } = {},
+  opts: { allowRecovery?: boolean; allowHeld?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean; touch?: boolean } = {},
 ): preHandlerAsyncHookHandler {
   return async function (req: FastifyRequest) {
     const deps = req.server.deps;
@@ -223,7 +233,9 @@ export function requireSession(
     }
     // expires_at is the idle deadline capped by the absolute one (created_at + absolute), so
     // purgeExpired removes idle sessions too.
-    if (row.kind === 'trader' && row.level === 'full') {
+    if (opts.touch === false) {
+      // Read-only check: the request is not the user's activity.
+    } else if (row.kind === 'trader' && row.level === 'full') {
       // The logout timer can change while this request runs (PUT /v1/account/security/logout-timer
       // moves every session's deadline in its transaction). The idle hours are read again here,
       // under a share lock, so this touch never writes back a deadline from the timer read above:
@@ -248,6 +260,9 @@ export function requireSession(
       kind: row.kind,
       level: row.level,
       onboardingUntil: row.onboarding_until,
+      // The deadline as the row had it (an untouched request did not move it); the idle rule above
+      // may be stricter than the stored deadline after a logout-timer change, so take the earlier.
+      expiresAt: new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
     };
   };
 }
@@ -258,26 +273,47 @@ export async function assertNotDisabled(db: Queryable, accountId: string): Promi
   if (rows[0]?.disabled_at != null) throw new ApiError(403, 'account-disabled');
 }
 
-/** Revokes one session; returns how many were live. */
-export async function endSession(deps: Pick<Deps, 'db' | 'clock'>, sessionId: string): Promise<number> {
-  const r = await deps.db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [sessionId, deps.clock()]);
+/**
+ * Ending sessions must end their live streams too, so the bus is required (pass `app.events`):
+ * a caller cannot forget it and leave a revoked session streaming.
+ *
+ * Call with the pool, or call closeAccount after commit. The streams are ended at once, so with
+ * `db` a client inside a transaction a rollback would leave the sessions live with their streams
+ * gone, and a stream opened before the commit (the session still looks live) would outlive the
+ * revocation. In a transaction, pass a no-op bus and call `app.events.closeAccount` (or
+ * `closeSession`) once it has committed.
+ */
+type EndDeps = Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeAccount' | 'closeSession'> };
+
+/** Revokes one session and ends its streams; returns how many were live. */
+export async function endSession(deps: EndDeps, sessionId: string): Promise<number> {
+  const r = await deps.db.query<{ account_id: string }>(
+    'update sessions set revoked_at = $2 where id = $1 and revoked_at is null returning account_id',
+    [sessionId, deps.clock()],
+  );
+  for (const row of r.rows) deps.events.closeSession(row.account_id, sessionId);
   return r.rowCount ?? 0;
 }
 
 /** Revokes every session of the account except `keepSessionId` (after a password change or method removal). */
-export async function endOtherSessions(deps: Pick<Deps, 'db' | 'clock'>, accountId: string, keepSessionId: string): Promise<number> {
+export async function endOtherSessions(deps: EndDeps, accountId: string, keepSessionId: string): Promise<number> {
   const r = await deps.db.query(
     'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
     [accountId, keepSessionId, deps.clock()],
   );
+  deps.events.closeAccount(accountId, keepSessionId);
   return r.rowCount ?? 0;
 }
 
-/** Revokes every session of the account (Plan 4 uses it when switching staff off). */
-export async function endAllSessions(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<number> {
+/**
+ * Revokes every session of the account and ends all its streams (log out everywhere; Plan 4 uses
+ * it when disabling an account or switching staff off: pass `events: app.events`).
+ */
+export async function endAllSessions(deps: EndDeps, accountId: string): Promise<number> {
   const r = await deps.db.query('update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null', [
     accountId, deps.clock(),
   ]);
+  deps.events.closeAccount(accountId);
   return r.rowCount ?? 0;
 }
 
@@ -291,7 +327,11 @@ export function logoutRoute(app: FastifyInstance): void {
     const token = presentedToken(req);
     if (token) {
       const { db, clock } = req.server.deps;
-      await db.query('update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null', [tokenHash(token), clock()]);
+      const r = await db.query<{ id: string; account_id: string }>(
+        'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
+        [tokenHash(token), clock()],
+      );
+      for (const row of r.rows) req.server.events.closeSession(row.account_id, row.id);
     }
     void reply.clearCookie(SESSION_COOKIE, COOKIE_ATTRS);
     return { ok: true };

@@ -216,6 +216,14 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['New to PGP?'])).toEqual([]);
   });
 
+  test("a select's options are shown with their select, and are not part of the label's text", async ({ page }) => {
+    await page.setContent(
+      '<label>Currency<select><option>USD</option><option>EUR</option></select></label>' +
+        '<label style="display:none">Sort<select><option>Best</option></select></label>',
+    );
+    expect(await missingTexts(page, ['Currency', 'USD', 'EUR', 'Currency USDEUR', 'Best'])).toEqual(['Currency USDEUR', 'Best']);
+  });
+
   test('text in a hidden element does not count as shown', async ({ page }) => {
     await page.setContent('<p style="display:none">Escrow funded</p><p style="visibility:hidden">Released</p>');
     expect(await missingTexts(page, ['Escrow funded', 'Released'])).toEqual(['Escrow funded', 'Released']);
@@ -297,6 +305,16 @@ test.describe('board texts', () => {
       expect(await boardTexts(page, 'Labels', { boardsDir: dir })).toEqual(['Narrow but shown', 'USD']);
     });
 
+    test("a select's options are board texts of their own, not part of the label around the select", async ({ page }) => {
+      await writeFile(
+        join(dir, 'Picker.dc.html'),
+        '<!doctype html><html><body><x-dc>' +
+          '<label for="c">Currency\n  <select id="c"><option>USD</option><option>EUR</option></select>\n</label>' +
+          '</x-dc></body></html>',
+      );
+      expect(await boardTexts(page, 'Picker', { boardsDir: dir })).toEqual(['Currency', 'USD', 'EUR']);
+    });
+
     test('a KNOWN_EXCEPTIONS text no longer on the board throws (a stale exception)', async ({ page }) => {
       await writeFile(join(dir, 'Desktop.dc.html'), '<!doctype html><html><body><x-dc><p>Escrow funded</p></x-dc></body></html>');
       await expect(boardTexts(page, 'Desktop', { boardsDir: dir })).rejects.toThrow(/KNOWN_EXCEPTIONS\[Desktop\] lists "You pay · 62 min left".*stale/);
@@ -307,6 +325,11 @@ test.describe('board texts', () => {
     const desktop = KNOWN_EXCEPTIONS.Desktop ?? [];
     expect(desktop.map((e) => e.text)).toContain('You pay · 62 min left');
     for (const e of desktop) expect(e.why.length).toBeGreaterThan(10);
+    // PostOffer (Task 21 review, lead 2026-10-27): the board's ACH name.
+    const post = KNOWN_EXCEPTIONS.PostOffer ?? [];
+    expect(post.map((e) => e.text)).toEqual(['Bank transfer (ACH)']);
+    for (const e of post) expect(e.why.length).toBeGreaterThan(10);
+    expect(await boardTexts(page, 'PostOffer')).not.toContain('Bank transfer (ACH)');
     const texts = await boardTexts(page, 'Desktop');
     for (const e of desktop) expect(texts).not.toContain(e.text);
     expect(texts).toContain('Escrow funded');
