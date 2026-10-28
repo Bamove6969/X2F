@@ -206,8 +206,10 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
     destination = { app, end: r.destination.addressEnd.slice(-4), tail: waiting ? ', once the appeal window closes.' : '.' };
   }
   const loser = loserOf(r.outcome);
-  // Dispute records are deleted 30 days after the dispute closes (spec 4.1; purgeDisputes). COPY-UNSIGNED
-  let footer = 'This ruling and its evidence are deleted 30 days after the dispute closes.';
+  // The board's line, true today: nothing deletes dispute records yet. How long they are kept after
+  // the dispute closes is pending the owner's Plan 7 Q1 (Plan 4 Task 23 builds the purge); change
+  // this line with it. COPY-UNSIGNED (pending owner Q1)
+  let footer = 'This ruling and its evidence are kept with the trade.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
   return { label, title, destination, footer };
 }

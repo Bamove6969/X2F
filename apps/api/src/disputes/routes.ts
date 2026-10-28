@@ -8,6 +8,7 @@ import { ApiError } from '../errors.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
+import { NEXT_SEQ } from './store.js';
 
 /**
  * Trader-side disputes (Plan 3 Task 27; spec 2.3, 6.6). Plan 3 opens disputes and takes appeals;
@@ -55,6 +56,7 @@ export interface DisputeView {
 }
 
 interface DisputeRow {
+  seq: number;
   opened_by: Party | 'system';
   reason: DisputeReason;
   opened_at: Date;
@@ -119,10 +121,11 @@ function paidSide(outcome: RulingOutcome): Party | null {
 }
 
 async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: string, now: Date): Promise<DisputeView | null> {
-  const d = (await q.query<DisputeRow>('select * from disputes where code = $1', [row.code])).rows[0];
+  // The current dispute is the trade's latest (highest seq); earlier ones are kept but not shown.
+  const d = (await q.query<DisputeRow>('select * from disputes where code = $1 order by seq desc limit 1', [row.code])).rows[0];
   if (!d) return null;
-  const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 order by round desc limit 1', [row.code])).rows[0];
-  const a = (await q.query<{ by: Party; at: Date }>('select by, at from dispute_appeals where code = $1', [row.code])).rows[0];
+  const r = (await q.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
+  const a = (await q.query<{ by: Party; at: Date }>('select by, at from dispute_appeals where code = $1 and seq = $2', [row.code, d.seq])).rows[0];
 
   let ruling: DisputeView['ruling'] = null;
   if (r) {
@@ -202,7 +205,9 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
 
   // Opens the dispute: the trade's `open-dispute` (the state machine decides when it is allowed:
   // the buyer only after the seller's confirm window, a refunded trade only by the buyer within
-  // 90 days) and the dispute row, in one transaction.
+  // 90 days) and the dispute row, in one transaction. A trade opens at most one dispute: once its
+  // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
+  // purge of old dispute rows can never re-open a decided case.
   app.post('/v1/trades/:code/dispute', { preHandler: trader }, async (req) => {
     const b = bodyOf(req, ['reason', 'note']);
     if (!isReason(b.reason)) throw new ApiError(400, 'bad-request');
@@ -213,18 +218,17 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const deps = req.server.deps;
     try {
       await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, { type: 'open-dispute' }, side, async (client, prev, _next, now) => {
-        const { rowCount } = await client.query(
-          `insert into disputes (code, opened_by, reason, note, opened_at, after_refund) values ($1, $2, $3, $4, $5, $6)
-           on conflict (code) do nothing`,
+        if (prev.dispute !== null) throw new ApiError(409, 'dispute-exists');
+        await client.query(
+          `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund) values ($1, ${NEXT_SEQ}, $2, $3, $4, $5, $6)`,
           [row.code, side, reason, note, now, prev.state === 'refunded'],
         );
-        if (rowCount !== 1) throw new ApiError(409, 'dispute-exists');
       });
     } catch (err) {
       if (err instanceof TradeRuleError) {
-        // A trade already in dispute refuses open-dispute as wrong-state; say why.
-        const exists = (await deps.db.query('select 1 from disputes where code = $1', [row.code])).rowCount === 1;
-        throw new ApiError(409, exists ? 'dispute-exists' : err.code);
+        // A trade already in dispute (or that had one) refuses open-dispute as wrong-state; say why.
+        const had = (await deps.db.query<{ dispute_by: string | null }>('select dispute_by from trades where code = $1', [row.code])).rows[0];
+        throw new ApiError(409, had?.dispute_by != null ? 'dispute-exists' : err.code);
       }
       throw err;
     }
@@ -241,20 +245,24 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
     const { row, side } = await participant(req);
     const deps = req.server.deps;
     await inTransaction(deps.db, async (client) => {
-      const d = (await client.query<{ status: string }>('select status from disputes where code = $1 for update', [row.code])).rows[0];
+      // The current dispute (highest seq), locked; an earlier dispute is never appealed again.
+      const d = (await client.query<{ seq: number; status: string }>(
+        'select seq, status from disputes where code = $1 order by seq desc limit 1 for update',
+        [row.code],
+      )).rows[0];
       // Only a published first-round ruling can be appealed (never an open, appealed, final or closed case).
       if (!d || d.status !== 'ruled') throw new ApiError(409, 'wrong-state');
       const now = deps.clock();
-      const r = (await client.query<RulingRow>('select * from dispute_rulings where code = $1 order by round desc limit 1', [row.code])).rows[0];
+      const r = (await client.query<RulingRow>('select * from dispute_rulings where code = $1 and seq = $2 order by round desc limit 1', [row.code, d.seq])).rows[0];
       if (!r || r.round !== 1 || r.appeal_until === null) throw new ApiError(409, 'wrong-state');
       if (now.getTime() >= r.appeal_until.getTime()) throw new ApiError(409, 'too-late');
       const { rowCount } = await client.query(
-        'insert into dispute_appeals (code, by, why, at) values ($1, $2, $3, $4) on conflict (code) do nothing',
-        [row.code, side, why, now],
+        'insert into dispute_appeals (code, seq, by, why, at) values ($1, $2, $3, $4, $5) on conflict (code, seq) do nothing',
+        [row.code, d.seq, side, why, now],
       );
       if (rowCount !== 1) throw new ApiError(409, 'wrong-state');
       // Guarded transition: ruled -> appealed only (the row is locked above; the guard keeps it so).
-      const moved = await client.query(`update disputes set status = 'appealed' where code = $1 and status = 'ruled'`, [row.code]);
+      const moved = await client.query(`update disputes set status = 'appealed' where code = $1 and seq = $2 and status = 'ruled'`, [row.code, d.seq]);
       if (moved.rowCount !== 1) throw new ApiError(409, 'wrong-state');
     });
     return loadView(deps.db, row, side, req.auth.accountId, deps.clock());

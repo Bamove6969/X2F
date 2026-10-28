@@ -104,10 +104,6 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
   ],
   DisputeRuling: [
-    {
-      text: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
-      why: 'Dispute records are deleted 30 days after the dispute closes (spec 4.1; Task 27 fix round I2), so the app says that; the board line is an owner copy question.',
-    },
     { text: 'Open · 47 h 58 min left', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
     { text: '47 h 58 min', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
   ],

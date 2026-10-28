@@ -41,6 +41,18 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(/'mod'|rulingAllowsCosign/.test(runtime), 'the runtime settles mod-built sets: gate them with rulingAllowsCosign').toBe(false);
   });
 
+  it('NEEDS_PLAN_4_TASK_23: dispute retention is Plan 4 Task 23\'s, waiting on the owner\'s Plan 7 Q1', () => {
+    // Task 27 deletes no dispute record: 108/110 keep every dispute per (code, seq) with `closed_at`,
+    // the foreign keys have no cascade (deleting a trade with a dispute is refused), and the ruling
+    // footer says "kept with the trade" (COPY-UNSIGNED, pending Q1). When Task 23 adds its purge:
+    // keep the bare record (who opened it, the ruling's outcome or loser, opened_at, closed_at) that
+    // Task 4's stage and Plan 5's reputation need; run as x2f_purge; delete appeals and rulings
+    // before their dispute; never clear trades.dispute_by (POST …/dispute refuses a second dispute
+    // on it); and change the footer line in screens/dispute/rules.ts to the owner's keep time.
+    const jobs = readFileSync(ROOT + 'apps/api/src/retentionJobs.ts', 'utf8');
+    expect(has('apps/api/src/disputes/purge.ts') || /purgeClosedDisputes|DISPUTE_KEEP_DAYS/.test(jobs), 'Plan 4 Task 23 landed: check the bare record and the footer').toBe(false);
+  });
+
   it('NEEDS_PLAN_5: evidence upload and the unblurred copy wait for the on-device proof pipeline', () => {
     // EvidenceUpload, UnblurredRequest and tradeProofs in screens/dispute/seams.tsx are stand-ins
     // (no file input at all). Plan 5 Tasks 13-15 replace them (strip metadata, blur, check, seal).

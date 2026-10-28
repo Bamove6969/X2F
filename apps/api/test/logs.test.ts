@@ -60,8 +60,8 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
     expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'private to the moderator' })).statusCode).toBe(200);
     for (const who of [seller, buyer, third]) await who.browser.get(`${durl}/dispute`);
     await deps.db.query(
-      `insert into dispute_rulings (code, round, outcome, reason, moderator_name, ruled_at, appeal_until)
-       values ($1, 1, 'release-to-buyer', 'Paid.', 'sarah.v', now(), now() + interval '2 days')`,
+      `insert into dispute_rulings (code, seq, round, outcome, reason, moderator_name, ruled_at, appeal_until)
+       values ($1, 1, 1, 'release-to-buyer', 'Paid.', 'sarah.v', now(), now() + interval '2 days')`,
       [second.trade.code],
     );
     await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [second.trade.code]);

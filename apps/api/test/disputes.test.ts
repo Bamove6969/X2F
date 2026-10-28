@@ -41,9 +41,16 @@ async function tradeIn(state: Parameters<typeof driveTo>[2]) {
   return { seller, buyer, t, sides };
 }
 
+/** The trade's current dispute (its highest `seq`). */
 async function disputeRow(code: string) {
-  const { rows } = await deps.db.query('select * from disputes where code = $1', [code]);
+  const { rows } = await deps.db.query('select * from disputes where code = $1 order by seq desc limit 1', [code]);
   return rows[0] as Record<string, unknown> | undefined;
+}
+
+/** Every dispute the trade has had, oldest first. */
+async function disputeRows(code: string) {
+  const { rows } = await deps.db.query('select * from disputes where code = $1 order by seq', [code]);
+  return rows as Record<string, unknown>[];
 }
 
 async function eventTypes(code: string): Promise<string[]> {
@@ -51,14 +58,15 @@ async function eventTypes(code: string): Promise<string[]> {
   return rows.map((r) => r.t);
 }
 
-/** What Plan 4 writes when a moderator rules (its staff routes are not built yet). */
+/** What Plan 4 writes when a moderator rules on the trade's current dispute (its staff routes are not built yet). */
 async function rule(code: string, o: { outcome: string; round?: 1 | 2; ruledAt: Date; appealUntil: Date | null; evidence?: unknown }) {
+  const current = `(select max(seq) from disputes where code = $1)`;
   await deps.db.query(
-    `insert into dispute_rulings (code, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
-     values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+    `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
+     values ($1, ${current}, $2, $3, $4, $5, $6, $7, $8)`,
     [code, o.round ?? 1, o.outcome, 'The payment is in the seller\'s activity.', JSON.stringify(o.evidence ?? ['The trade chat']), 'sarah.v', o.ruledAt, o.appealUntil],
   );
-  await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [code]);
+  await deps.db.query(`update disputes set status = $2 where code = $1 and seq = ${current}`, [code, (o.round ?? 1) === 2 ? 'final' : 'ruled']);
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
@@ -300,6 +308,8 @@ describe('POST /v1/trades/:code/appeal', () => {
     const other = await trader();
     expect((await other.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(404);
     await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
+    // Even with the status left at 'ruled', a round-2 ruling has no appeal.
+    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [t.code]);
     expect(errorOf(await buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' }))).toBe('wrong-state');
   });
 });
@@ -328,20 +338,126 @@ describe('a dispute the system escalates (late funds, a lapse nobody refunded)',
     expect(res.json()).toMatchObject({ status: 'appealed', appeal: { by: 'seller' } });
   });
 
-  it('a trade disputed and settled before shows the new dispute, never the old one as current', async () => {
-    const { buyer, t } = await tradeIn('secured');
+  it('a re-escalation opens a new dispute and keeps every earlier dispute, ruling, appeal and note as they were', async () => {
+    // The reviewer's probe: a buyer's dispute gets a final round-2 ruling, the trade is released,
+    // then late funds escalate it (twice). Nothing of the earlier disputes is deleted or wiped.
+    const { buyer, seller, t } = await tradeIn('secured');
     await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'the first one' });
     await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
-    await buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' });
+    expect((await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(200);
+    await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
     await applyEvent(deps, t.code, { type: 'settled', kind: 'release', txHash: 'ef'.repeat(32) }, 'system');
-    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [t.code, at(2 * 60 * MIN)]);
     setNow(at(3 * 60 * MIN));
-    await relogin(buyer);
+    await relogin(buyer, seller);
     expect((await applyEvent(deps, t.code, { type: 'escalate' }, 'system')).state).toBe('disputed');
+
+    const all = await disputeRows(t.code);
+    expect(all).toHaveLength(2);
+    expect(all[0]).toMatchObject({ seq: 1, opened_by: 'buyer', reason: 'paid', note: 'the first one', status: 'final' });
+    expect(all[1]).toMatchObject({ seq: 2, opened_by: 'system', reason: 'escalated', note: '', status: 'open', closed_at: null });
+    const rulings = await deps.db.query('select seq, round, outcome from dispute_rulings where code = $1 order by seq, round', [t.code]);
+    expect(rulings.rows).toEqual([{ seq: 1, round: 1, outcome: 'release-to-buyer' }, { seq: 1, round: 2, outcome: 'release-to-buyer' }]);
+    const appeals = await deps.db.query('select seq, by, why from dispute_appeals where code = $1', [t.code]);
+    expect(appeals.rows).toEqual([{ seq: 1, by: 'seller', why: 'Please look again at this.' }]);
+
+    // GET shows the new dispute as current, with none of the earlier one's ruling or appeal.
     const res = await buyer.browser.get(dispute(t.code));
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ openedBy: 'system', reason: 'escalated', status: 'open', ruling: null, appeal: null, moderator: null });
-    expect(await disputeRow(t.code)).toMatchObject({ note: '', closed_at: null });
+
+    // The new dispute is ruled and appealed on its own: the earlier appeal does not block it.
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(4 * 60 * MIN), appealUntil: at(52 * 60 * MIN) });
+    setNow(at(5 * 60 * MIN));
+    await relogin(seller);
+    expect((await seller.browser.post(appeal(t.code), { why: 'The late deposit is mine.' })).json()).toMatchObject({ status: 'appealed', appeal: { by: 'seller' } });
+    await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(6 * 60 * MIN), appealUntil: null });
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'release', txHash: 'aa'.repeat(32) }, 'system');
+    expect((await applyEvent(deps, t.code, { type: 'escalate' }, 'system')).state).toBe('disputed');
+    expect((await disputeRows(t.code)).map((d) => [d.seq, d.status])).toEqual([[1, 'final'], [2, 'final'], [3, 'open']]);
+    const counts = await deps.db.query<{ r: number; a: number }>(
+      'select (select count(*)::int from dispute_rulings where code = $1) as r, (select count(*)::int from dispute_appeals where code = $1) as a',
+      [t.code],
+    );
+    expect(counts.rows[0]).toEqual({ r: 4, a: 2 });
+  });
+
+  it('rolls the escalation back when its dispute row cannot be written: the trade stays as it was, no event', async () => {
+    const { t } = await tradeIn('released');
+    setNow(at(3 * 60 * MIN));
+    const before = await eventTypes(t.code);
+    // A test-only trigger makes the dispute insert fail for this one trade.
+    await deps.db.query(`create function t27_refuse() returns trigger language plpgsql as $$
+      begin if new.code = '${t.code}' then raise exception 't27 probe'; end if; return new; end $$`);
+    await deps.db.query('create trigger t27_refuse before insert on disputes for each row execute function t27_refuse()');
+    try {
+      await expect(applyEvent(deps, t.code, { type: 'escalate' }, 'system')).rejects.toThrow('t27 probe');
+    } finally {
+      await deps.db.query('drop trigger t27_refuse on disputes');
+      await deps.db.query('drop function t27_refuse()');
+    }
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('released');
+    expect(await eventTypes(t.code)).toEqual(before);
+    expect(await disputeRows(t.code)).toEqual([]);
+  });
+});
+
+describe('one dispute per trade opening, whatever the dispute rows say', () => {
+  it('refuses a second dispute on a refunded trade that had one, even once its rows are gone', async () => {
+    // The reviewer's probe: the buyer disputes, the final ruling is refund-to-seller, the trade
+    // settles to refunded and the dispute closes. Inside the 90-day window the buyer may not
+    // re-open the decided case, before or after any purge of the dispute rows.
+    const { buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    await rule(t.code, { outcome: 'refund-to-seller', round: 2, ruledAt: at(60 * MIN), appealUntil: null });
+    expect((await applyEvent(deps, t.code, { type: 'settled', kind: 'mutual-cancel', txHash: 'bc'.repeat(32) }, 'system')).state).toBe('refunded');
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [t.code, at(2 * 60 * MIN)]);
+    setNow(at(10 * DAY));
+    await relogin(buyer);
+    const first = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(first.statusCode).toBe(409);
+    expect(errorOf(first)).toBe('dispute-exists');
+
+    // As a purge would (Plan 4 Task 23): the rows go, the trade's dispute field stays.
+    await deps.db.query('delete from dispute_appeals where code = $1', [t.code]);
+    await deps.db.query('delete from dispute_rulings where code = $1', [t.code]);
+    await deps.db.query('delete from disputes where code = $1', [t.code]);
+    setNow(at(31 * DAY));
+    await relogin(buyer);
+    const again = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toBe('dispute-exists');
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('refunded');
+    expect(await disputeRows(t.code)).toEqual([]);
+  });
+});
+
+describe('dispute records (108, 110)', () => {
+  it('closed and closed_at go together', async () => {
+    const { buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    await expect(deps.db.query(`update disputes set status = 'closed' where code = $1`, [t.code])).rejects.toMatchObject({ code: '23514' });
+    await expect(deps.db.query(`update disputes set closed_at = now() where code = $1`, [t.code])).rejects.toMatchObject({ code: '23514' });
+  });
+
+  it('a trade with a dispute cannot be deleted until its dispute records are handled (no cascade)', async () => {
+    const { buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
+    const client = await deps.db.connect();
+    try {
+      await client.query('begin');
+      await client.query('set local role x2f_purge');
+      await client.query('delete from trade_events where code = $1', [t.code]);
+      await client.query('reset role');
+      await expect(client.query('delete from trades where code = $1', [t.code])).rejects.toMatchObject({ code: '23503' });
+      await client.query('rollback');
+      await client.query('begin');
+      // Nor can a dispute be deleted from under its ruling.
+      await expect(client.query('delete from disputes where code = $1', [t.code])).rejects.toMatchObject({ code: '23503' });
+      await client.query('rollback');
+    } finally {
+      client.release();
+    }
   });
 });
 
