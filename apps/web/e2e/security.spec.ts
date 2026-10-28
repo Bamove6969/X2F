@@ -6,7 +6,7 @@ import { expect, test, type Page, type Route } from '@playwright/test';
 type Overview = Record<string, unknown>;
 function overview(over: Overview = {}): Overview {
   return {
-    username: 'nightowl',
+    displayName: 'nightowl',
     kind: 'trader',
     level: 'full',
     holdUntil: null,

@@ -1,16 +1,11 @@
 /**
- * The sign-up calls of Getting started (spec 6.1, Plan 2 register routes). Every register call
+ * The sign-up calls of Getting started (spec 6.1, Plan 2 register routes with FU-A's names). Every
+ * register call takes the public `displayName` and the private `loginName` (they must differ) and
  * carries the Terms version the person accepted on the first screen (`acceptedTerms`, Plan 2 R10).
- *
- * FU-A shapes (owner, 2026-10-23; the lead's wip/lead-p2-fua, not on the main line yet): sign-up
- * takes the public `displayName` and the private `loginName`, and answers `{ displayName }`. The
- * starts go through the raw client with those shapes until FU-A's typed client lands;
- * `task28-tripwires.test.ts` fails then, the signal to switch them to `authApi`. The finishes have
- * the same request shape on both, so they already use the typed client.
+ * All of them go through the typed client (`authApi`).
  */
-import { startRegistration } from '@simplewebauthn/browser';
-import { AuthApiError, type PgpChallenge, type RegistrationChallenge, type WebAuthnKind } from '@x2f/auth-client';
-import { ApiCallError, api } from '../../api/client.js';
+import { AuthApiError, registerWithWebAuthn, type PgpChallenge, type WebAuthnKind } from '@x2f/auth-client';
+import { ApiCallError } from '../../api/client.js';
 import { authApi, deviceLabel } from '../auth/authApi.js';
 
 export interface Names {
@@ -21,14 +16,11 @@ export interface Names {
 export type RegisterPgpStart = PgpChallenge & { fingerprint: string };
 
 export function registerPassword(names: Names, password: string, acceptedTerms: string): Promise<{ displayName: string }> {
-  return api('/v1/register/password', {
-    method: 'POST',
-    body: { displayName: names.displayName, loginName: names.loginName, password, deviceLabel: deviceLabel(), acceptedTerms },
-  });
+  return authApi.registerPassword({ displayName: names.displayName, loginName: names.loginName, password, deviceLabel: deviceLabel(), acceptedTerms });
 }
 
 export function registerPgpStart(names: Names, publicKey: string): Promise<RegisterPgpStart> {
-  return api('/v1/register/pgp/start', { method: 'POST', body: { displayName: names.displayName, loginName: names.loginName, publicKey } });
+  return authApi.registerPgpStart({ displayName: names.displayName, loginName: names.loginName, publicKey });
 }
 
 export async function registerPgpFinish(challengeId: string, code: string, acceptedTerms: string): Promise<void> {
@@ -37,12 +29,7 @@ export async function registerPgpFinish(challengeId: string, code: string, accep
 
 /** A passkey or security key: the browser's ceremony between the start and the finish. */
 export async function registerWebAuthn(names: Names, kind: WebAuthnKind, acceptedTerms: string): Promise<void> {
-  const { challengeId, options } = await api<RegistrationChallenge>('/v1/register/webauthn/start', {
-    method: 'POST',
-    body: { displayName: names.displayName, loginName: names.loginName, kind },
-  });
-  const response = await startRegistration({ optionsJSON: options });
-  await authApi.registerWebAuthnFinish({ challengeId, response, deviceLabel: deviceLabel(), acceptedTerms });
+  await registerWithWebAuthn(authApi, { displayName: names.displayName, loginName: names.loginName }, kind, deviceLabel(), acceptedTerms);
 }
 
 /** The API's error code from either client, or `null` for anything else (a network failure, a cancelled ceremony). */
@@ -51,14 +38,11 @@ export function errorCode(e: unknown): string | null {
   return null;
 }
 
-/** Codes that mean the names must change: the person goes back to the names screen. */
+/** Codes that mean the names must change (FU-A's register refusals): back to the names screen. */
 const NAME_ERRORS: Record<string, string> = {
   'display-name-taken': 'That username is taken. Pick another.',
-  'username-taken': 'That username is taken. Pick another.',
   'display-name-reserved': 'That username is kept for X2F. Pick another.',
-  'username-reserved': 'That username is kept for X2F. Pick another.',
   'display-name-invalid': 'That username cannot be used. Pick another.',
-  'username-invalid': 'That username cannot be used. Pick another.',
   'login-name-invalid': 'That login name cannot be used. Pick another.',
   'names-unavailable': 'Those names cannot be used. Pick others.',
   'names-same': 'Your login name must be different from your username.',

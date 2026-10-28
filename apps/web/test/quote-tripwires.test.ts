@@ -21,11 +21,11 @@ const has = (p: string): boolean => existsSync(ROOT + p);
 describe('Task 18 guesses still stand in for missing tasks', () => {
   it('NEEDS_TASK_4: the offer card the quote reads is guessed', () => {
     // Guessed (plan Task 4 + Revision 2026-10-24, as Task 16 reads it): GET /v1/offers?side&method&currency&sort
-    // → [{ id; poster: { username (the public display name); stage: 'starter'|'building'|'graduated'; … };
+    // → [{ id; poster: { displayName (the public display name); stage: 'starter'|'building'|'graduated'; … };
     // pricing: { mode: 'market'; marginBps } | { mode: 'fixed'; centsPerXmr: string }; minFiatCents: string;
     // maxFiatCents: string; minTrades: number; opensAt?: 'building'|'graduated' }]. There is no single-offer
     // route, so the quote finds its offer in that list.
-    expect(has('apps/api/src/offers/routes.ts'), 'Task 4 landed: check quoteOffer and browse parseOffers (poster.username is the display name, stage, opensAt, bigint strings)').toBe(false);
+    expect(has('apps/api/src/offers/routes.ts'), 'Task 4 landed: check quoteOffer and browse parseOffers (poster.displayName, stage, opensAt, bigint strings)').toBe(false);
   });
 
   it('NEEDS_TASK_5: the take route and its starter-limit refusal are guessed', () => {

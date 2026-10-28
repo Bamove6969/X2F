@@ -7,11 +7,8 @@ import { ApiCallError, api } from '../api/client.js';
  * the app's API client, so a stale-Terms session lands on the Terms screen (R10) on the first call
  * of a page load. One request per page load is shared by every screen; `refreshSession()` drops it
  * (after a sign-up, a login or accepting new Terms) so the next `useSession` asks again.
- *
- * FU-A (the lead's wip/lead-p2-fua, not on the main line yet) renames `username` to the public
- * `displayName`; `displayNameOf` reads either until it lands (task28-tripwires.test.ts).
  */
-export type Me = Omit<AccountOverview, 'username'> & { username?: string; displayName?: string };
+export type Me = AccountOverview;
 
 export type Session =
   | { status: 'loading' }
@@ -39,9 +36,9 @@ export function refreshSession(): void {
   for (const l of [...listeners]) l();
 }
 
-/** The public display name exactly as stored (FU-A `displayName`, else the main line's `username`). */
-export function displayNameOf(me: { displayName?: string; username?: string }): string {
-  return me.displayName ?? me.username ?? '';
+/** The public display name exactly as stored (FU-A `displayName`); '' when the answer has none. */
+export function displayNameOf(me: { displayName?: string }): string {
+  return me.displayName ?? '';
 }
 
 export function useSession(): Session {

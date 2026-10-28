@@ -1,4 +1,13 @@
-export { type AccountKind, type UsernameCheck, checkUsername } from './username.js';
+export {
+  type AccountKind,
+  type NameCheck,
+  type NameRefusal,
+  type NamesCheck,
+  checkDisplayName,
+  checkLoginName,
+  checkNames,
+  lookAlikeKey,
+} from './username.js';
 export {
   type PasswordCheck,
   type PasswordRule,
@@ -17,6 +26,7 @@ export {
   challengeText,
   encryptChallenge,
   inspectPublicKey,
+  pastedRecipientStillValid,
 } from './pgp.js';
 export {
   type ConfirmAction,

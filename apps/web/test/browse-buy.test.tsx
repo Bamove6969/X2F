@@ -11,7 +11,7 @@ import { render } from './render.js';
 const NOW = new Date('2026-10-25T12:00:00Z');
 const MARKET = 32990n;
 const buyOffers = (): Offer[] => parseOffers(boardBuyOffers(NOW));
-const byName = (name: string): Offer => buyOffers().find((o) => o.poster.username === name)!;
+const byName = (name: string): Offer => buyOffers().find((o) => o.poster.displayName === name)!;
 
 function card(offer: Offer, o: { market?: bigint | null; primary?: boolean; copy?: typeof BUY_COPY } = {}) {
   return render(
@@ -102,7 +102,7 @@ describe('OfferCard on the buy side', () => {
 });
 
 describe('sortOffers keeps the chosen order whatever order the API sent', () => {
-  const names = (list: Offer[]) => list.map((o) => o.poster.username);
+  const names = (list: Offer[]) => list.map((o) => o.poster.displayName);
 
   it('Best price on the buy side: lowest rate first', () => {
     const [s, k, l] = buyOffers();

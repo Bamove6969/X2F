@@ -8,7 +8,7 @@
  * failed key tap (`webauthn-failed`) — and stays on the screen as an error there.
  */
 import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
-import { api, goLogin } from '../../api/client.js';
+import { goLogin } from '../../api/client.js';
 
 /** Reads the error code of a 401 without consuming the body the client still has to read. */
 async function sessionGone(res: Response): Promise<boolean> {
@@ -37,22 +37,22 @@ export function deviceLabel(): string {
 }
 
 /*
- * FU-A shapes (owner, 2026-10-23; the lead's wip/lead-p2-fua, not on the main line yet). PGP login
- * takes the pasted key alone (`{ key }`, never a login name), and password login takes the private
- * `loginName`; the server answers every password miss with 401 `credentials-invalid` and this
- * browser's `misses` count. These go through the raw client, which keeps every field of an error,
- * until FU-A's typed client lands; `task30-tripwires.test.ts` fails then, the signal to switch.
+ * FU-A shapes (owner, 2026-10-23; on the main line since 2026-10-27). PGP login takes the pasted
+ * key alone (`{ key }`, never a login name), and password login takes the private `loginName`; the
+ * server answers every password miss with 401 `credentials-invalid` and this browser's `misses`
+ * count (`AuthApiError.misses`). These went through the raw client until FU-A's typed client
+ * landed; `task30-tripwires.test.ts` fired on that merge and was retired.
  */
 export function pgpLoginStart(key: string, o: { pendingId?: string } = {}): Promise<PgpChallenge> {
-  return api<PgpChallenge>('/v1/login/pgp/start', { method: 'POST', body: { key, ...o } });
+  return authApi.loginPgpStart({ key, ...o });
 }
 
 export function pgpLoginFinish(challengeId: string, code: string): Promise<LoginResult> {
-  return api<LoginResult>('/v1/login/pgp/finish', { method: 'POST', body: { challengeId, code, deviceLabel: deviceLabel() } });
+  return authApi.loginPgpFinish({ challengeId, code, deviceLabel: deviceLabel() });
 }
 
 export function passwordLogin(loginName: string, password: string): Promise<PasswordLoginResult> {
-  return api<PasswordLoginResult>('/v1/login/password', { method: 'POST', body: { loginName, password, deviceLabel: deviceLabel() } });
+  return authApi.loginPassword({ loginName, password, deviceLabel: deviceLabel() });
 }
 
 /**

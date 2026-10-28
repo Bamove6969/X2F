@@ -3,9 +3,10 @@
 // trading back to `returnTo`. Every Setup board is checked with the parity harness at the board's
 // phone size (390x844) and at a small Android size (360x800) (owner 2026-10-25: mobile ready at
 // launch). The API is stubbed per test with page.route, in FU-A's shapes (display name + private
-// login name), which the lead's FU-A branch defines and the main line does not have yet.
+// login name), as FU-A's API defines them (on the main line since 2026-10-28).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import * as openpgp from 'openpgp';
+import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { expectParity, type ParityViewport } from './parity.js';
 
 const PHONES = ['390x844', '360x800'] as const satisfies readonly ParityViewport[];
@@ -358,6 +359,69 @@ test('a step opened without the earlier ones goes back to the Terms', async ({ p
   await page.goto(`/setup/password?returnTo=${encodeURIComponent('/post')}`);
   await expect(page).toHaveURL(/\/setup\?returnTo=%2Fpost$/);
   await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
+});
+
+// Plan 3 Revision 2026-10-28 (no guest buying): a visitor's Trade tap must stay a short trip. From
+// the quote, the shortest route (Terms, names, a login method, the first wallet) comes back to the
+// same quote with the amount kept, through no more screens than the Setup boards, each one reached
+// by a single tap of its own button (no dead end). Any step added later must keep this green.
+test('a visitor who taps Trade comes back to the same quote, amount kept, through no more than the Setup boards', async ({ page }) => {
+  const s = await stubApi(page);
+  const takes: unknown[] = [];
+  await page.route('**/v1/methods?*', json({ live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] }));
+  await page.route('**/v1/price?*', json({ currency: B.currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr }));
+  await page.route('**/v1/offers?*', json([B.offer]));
+  await page.route('**/v1/offers/*/take', (r) => {
+    takes.push(r.request().postDataJSON());
+    return json({ code: B.code })(r);
+  });
+
+  const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;
+  await page.goto(quote);
+  await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
+  await page.locator('[data-primary]').click();
+
+  // Every screen on the way, in order: one tap of its primary action moves on.
+  const seen: string[] = [];
+  const at = async (screen: string) => {
+    await expect(page.locator(`[data-screen="${screen}"]`)).toBeVisible();
+    seen.push(screen);
+  };
+  await at('setup-terms');
+  await acceptTerms(page);
+  await at('setup-name');
+  await pickNames(page, 'lumen.k', 'lumen-login-7');
+  await at('setup-login');
+  await page.click('[data-part="method-continue"]');
+  await at('setup-pgp-key');
+  await page.fill('#pub', realKey);
+  await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+  await page.click('[data-part="key-continue"]');
+  await at('setup-pgp-code');
+  await page.fill('#phrase', '1234-5678-9ABC');
+  await page.click('[data-part="pgp-verify"]');
+  await page.click('[data-part="pgp-continue"]');
+  await at('setup-backup');
+  await page.click('[data-part="backup-skip"]');
+  await at('setup-wallet');
+  await page.fill('#addr', ADDRESS);
+  await page.click('[data-part="wallet-finish"]');
+  await at('setup-welcome');
+  await page.click('[data-part="start-trading"]');
+
+  // Back on the same quote in this tab, the amount kept, asking for a fresh tap; nothing taken yet.
+  await expect(page.locator('[data-screen="quote"]')).toBeVisible();
+  const back = new URL(page.url());
+  expect(back.pathname).toBe(`/buy/${B.method.id}/${B.offer.id}`);
+  await expect(page.locator('#quote-amount')).toHaveValue(B.amount);
+  await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
+  expect(takes).toEqual([]);
+
+  // No more screens than the Setup boards (SetupPassword is the other branch of the login step).
+  const SETUP_BOARDS = ['SetupTerms', 'SetupUsername', 'SetupLogin', 'SetupPgpKey', 'SetupPgpChallenge', 'SetupPassword', 'SetupBackup', 'SetupWallet', 'SetupWelcome'];
+  expect(seen.length).toBeLessThanOrEqual(SETUP_BOARDS.length - 1);
+  expect(seen).toEqual(['setup-terms', 'setup-name', 'setup-login', 'setup-pgp-key', 'setup-pgp-code', 'setup-backup', 'setup-wallet', 'setup-welcome']);
+  expect(s.registered).toBe(true);
 });
 
 test('someone who already has an account goes from the Terms to Log in, keeping returnTo', async ({ page }) => {

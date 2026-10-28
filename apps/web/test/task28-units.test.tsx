@@ -3,7 +3,7 @@
 // register-error mapping, the step paths (returnTo always through safeReturnTo), and the Terms text
 // and copy rules.
 import { describe, expect, it } from 'vitest';
-import type { Wallet } from '@x2f/auth-client';
+import { AuthApiError, type Wallet } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
@@ -70,10 +70,11 @@ describe('groupFingerprint', () => {
 });
 
 describe('register errors', () => {
-  it('maps the name refusals (FU-A and the main line) and nothing else', () => {
-    expect(nameError(new ApiCallError(409, 'display-name-taken'))).toBe('That username is taken. Pick another.');
-    expect(nameError(new ApiCallError(409, 'username-taken'))).toBe('That username is taken. Pick another.');
-    expect(nameError(new ApiCallError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
+  it("maps FU-A's name refusals from the typed client and nothing else", () => {
+    expect(nameError(new AuthApiError(409, 'display-name-taken'))).toBe('That username is taken. Pick another.');
+    expect(nameError(new AuthApiError(400, 'names-same'))).toBe('Your login name must be different from your username.');
+    expect(nameError(new AuthApiError(409, 'names-unavailable'))).toBe('Those names cannot be used. Pick others.');
+    expect(nameError(new ApiCallError(409, 'username-taken'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'password-weak'))).toBeNull();
     expect(nameError(new TypeError('network'))).toBeNull();
     expect(nameError(new ApiCallError(400, 'constructor'))).toBeNull();
