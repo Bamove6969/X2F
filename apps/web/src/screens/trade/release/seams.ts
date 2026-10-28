@@ -1,54 +1,53 @@
 import { useEffect, useState } from 'react';
 import { ApiCallError, api } from '../../../api/client.js';
-import type { Confirmations, ReleaseEscrow } from './view.js';
-
-/**
- * SEAM (Task 12, wip/second-p3-t12, not on the main line yet): the escrow handle for a release.
- * Task 12's `useEscrow(code)` (apps/web/src/escrow/useEscrow.ts) returns `release()`, which has
- * the seller's app build and sign the release and the buyer's app co-sign it through
- * `cosignPolicy`. Until it lands there is no escrow runtime in the browser, so `release()` here
- * is refused, as Task 22's `PENDING_ESCROW` refuses it (SellerConfirm then says the release did
- * not finish on this device); the API's `release-started` is still posted first. Tripwire:
- * apps/web/test/release-tripwires.test.ts fails once useEscrow.ts exists; then return
- * `useEscrow(code)` here and delete this stand-in.
- */
-export function useReleaseEscrow(_code: string): ReleaseEscrow {
-  return NO_ESCROW_RUNTIME;
-}
-
-const NO_ESCROW_RUNTIME: ReleaseEscrow = { release: () => Promise.reject(new Error('escrow runtime not wired (Task 12)')) };
+import type { Confirmations, ReleaseTrade } from './view.js';
 
 /** How often the released screen asks for confirmations (each answer is cached by the API for 10 s). */
 export const CONFIRMATIONS_POLL_MS = 15_000;
+/** After this many answers in a row with no count (no node configured, or the node is down), the asks back off. */
+export const NO_COUNT_BEFORE_BACKOFF = 3;
+/** The longest wait between asks while backing off. */
+export const CONFIRMATIONS_MAX_POLL_MS = 240_000;
 
 /**
  * The released screen's live confirmations from X2F's own node (`GET
- * /v1/trades/:code/confirmations`), asked now and every CONFIRMATIONS_POLL_MS until the count
- * reaches its target (10). A refusal (the trade has no settlement tx yet) stops asking; a network
- * failure keeps the last answer and tries again on the next tick.
+ * /v1/trades/:code/confirmations`). It asks only once the trade is `released` with a settlement
+ * tx (before that the API answers 409), and asks again whenever the trade's state or tx changes:
+ * the same Released element stays mounted from `settling` to `released`, in the interim route
+ * and in Task 22's TradeRoom alike (review 2026-10-27, I2). Then every CONFIRMATIONS_POLL_MS until
+ * the count reaches its target (10). A 409 is "not yet" (asked again on the next tick); any other
+ * 4xx (signed out, not a participant) stops. After NO_COUNT_BEFORE_BACKOFF answers with no count
+ * the wait doubles each time, up to CONFIRMATIONS_MAX_POLL_MS (Minor 3).
  */
-export function useConfirmations(code: string): Confirmations | null {
+export function useConfirmations(t: Pick<ReleaseTrade, 'code' | 'state' | 'txHash'>): Confirmations | null {
   const [got, setGot] = useState<Confirmations | null>(null);
+  const { code, state, txHash } = t;
+  const ready = state === 'released' && txHash !== null;
   useEffect(() => {
+    if (!ready) return;
     let stopped = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+    let noCount = 0;
     const ask = async () => {
       let next: Confirmations | null = null;
       try {
         next = await api<Confirmations>(`/v1/trades/${encodeURIComponent(code)}/confirmations`);
       } catch (err) {
-        if (err instanceof ApiCallError && err.status >= 400 && err.status < 500) stopped = true;
+        if (err instanceof ApiCallError && err.status >= 400 && err.status < 500 && err.status !== 409) stopped = true;
       }
       if (stopped) return;
       if (next !== null) setGot(next);
       if (next !== null && next.confirmations !== null && next.confirmations >= next.target) return;
-      timer = setTimeout(() => void ask(), CONFIRMATIONS_POLL_MS);
+      noCount = next !== null && next.confirmations === null ? noCount + 1 : 0;
+      const over = noCount - NO_COUNT_BEFORE_BACKOFF;
+      const wait = over > 0 ? Math.min(CONFIRMATIONS_POLL_MS * 2 ** over, CONFIRMATIONS_MAX_POLL_MS) : CONFIRMATIONS_POLL_MS;
+      timer = setTimeout(() => void ask(), wait);
     };
     void ask();
     return () => {
       stopped = true;
       if (timer !== null) clearTimeout(timer);
     };
-  }, [code]);
+  }, [code, ready, txHash]);
   return got;
 }

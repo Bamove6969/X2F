@@ -70,20 +70,34 @@ const flush = async () => {
   for (let i = 0; i < 5; i++) await act(async () => undefined);
 };
 
-function escrowStub(order: string[] = []): ReleaseEscrow & { release: ReturnType<typeof vi.fn> } {
-  return { release: vi.fn(async () => void order.push('release()')) };
+type StubEscrow = ReleaseEscrow & { release: ReturnType<typeof vi.fn> };
+
+/** Task 12's UseEscrow as the room hands it: a ready device that accepts the board's 1.25 XMR / $412.50. */
+function escrowStub(order: string[] = [], over: Partial<ReleaseEscrow> = {}): StubEscrow {
+  return {
+    phase: 'ready',
+    error: null,
+    refusal: null,
+    keepOpen: false,
+    amountAtomic: 1_250_000_000_000n,
+    fiatCents: 41_250n,
+    ...over,
+    release: vi.fn(async () => void order.push('release()')),
+  };
 }
 
 function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()) {
-  const r = render(
+  const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
-      <SellerConfirm trade={t} method={ZELLE} escrow={escrow} onTrade={onTrade} />
-    </MemoryRouter>,
+      <SellerConfirm trade={tr} method={ZELLE} escrow={e} onTrade={onTrade} />
+    </MemoryRouter>
   );
+  const r = render(ui(t, escrow));
   const hold = () => r.host.querySelector<HTMLButtonElement>('button[data-primary]')!;
   const box = () => r.host.querySelector<HTMLInputElement>('input[type=checkbox]')!;
   const text = () => (r.host.textContent ?? '').replace(/\s+/g, ' ');
-  return { ...r, hold, box, text, escrow, onTrade };
+  const button = (label: string) => [...r.host.querySelectorAll('button')].find((b) => b.textContent === label) ?? null;
+  return { ...r, hold, box, text, button, escrow, onTrade, update: (tr: ReleaseTrade, e: ReleaseEscrow = escrow) => r.rerender(ui(tr, e)) };
 }
 
 describe('SellerConfirm', () => {
@@ -169,14 +183,143 @@ describe('SellerConfirm', () => {
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(2);
   });
 
-  it('shows the released look while the release is being signed', () => {
-    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
+  it('shows the released look once this device has signed (escrow phase done)', () => {
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'done' }));
     expect(s.hold().disabled).toBe(true);
     expect(s.hold().dataset.done).toBe('true');
     expect(s.hold().textContent).toContain('Released');
     expect(s.hold().textContent).toContain('1.250000 XMR is on its way to mira.k');
     expect(s.text()).toContain('Both signatures sent. mira.k will be asked to rate the trade.');
     expect(s.text()).not.toContain('Payment not received');
+    expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
+  it('while this device signs, says so and that the page must stay open, not "Both signatures sent" (I1)', () => {
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(s.hold().disabled).toBe(true);
+    expect(s.hold().dataset.done).not.toBe('true');
+    expect(s.hold().textContent).toContain('Signing…');
+    expect(s.text()).not.toContain('Both signatures sent');
+    expect(s.text()).toContain('Signing the release on this device. Keep this page open.');
+    expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
+  it('a remount in settling with a ready device signs the release again, once (I1: reload after the POST)', async () => {
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
+    await flush();
+    expect(s.escrow.release).toHaveBeenCalledTimes(1);
+    expect(s.text()).not.toContain('Both signatures sent');
+    s.update(trade({ state: 'settling', settling: 'release' }), { ...s.escrow });
+    await flush();
+    expect(s.escrow.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('waits for the device to be ready before signing again in settling', async () => {
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'setting-up' }));
+    await flush();
+    expect(s.escrow.release).not.toHaveBeenCalled();
+    expect(s.text()).not.toContain('Both signatures sent');
+    s.update(trade({ state: 'settling', settling: 'release' }), { ...s.escrow, phase: 'ready' });
+    await flush();
+    expect(s.escrow.release).toHaveBeenCalledTimes(1);
+  });
+
+  it('a lost release-started response, then a settling view, still leads to release() (I1)', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('network');
+    });
+    const s = sellerConfirm(trade());
+    act(() => s.box().click());
+    pointer(s.hold(), 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The release didn’t start. Try again.');
+    expect(s.escrow.release).not.toHaveBeenCalled();
+    // The POST was applied after all: the room's next read shows the release settling.
+    s.update(trade({ state: 'settling', settling: 'release' }));
+    await flush();
+    expect(s.escrow.release).toHaveBeenCalledTimes(1);
+    expect(s.host.querySelector('[role=alert]')).toBeNull();
+  });
+
+  it('when release() throws, offers to finish the release on this device (I1)', async () => {
+    const escrow = escrowStub();
+    escrow.release.mockRejectedValueOnce(new Error('escrow not running'));
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrow);
+    await flush();
+    expect(escrow.release).toHaveBeenCalledTimes(1);
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The release didn’t finish on this device. Keep this page open.');
+    expect(s.text()).not.toContain('Both signatures sent');
+    act(() => s.button('Finish the release on this device')!.click());
+    await flush();
+    expect(escrow.release).toHaveBeenCalledTimes(2);
+  });
+
+  it('after release-started and before the room refreshes, the hold shows the release under way (Minor 11)', async () => {
+    vi.useFakeTimers();
+    answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
+    const escrow = escrowStub();
+    escrow.release.mockImplementation(() => new Promise<void>(() => undefined));
+    const s = sellerConfirm(trade(), escrow);
+    act(() => s.box().click());
+    pointer(s.hold(), 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(escrow.release).toHaveBeenCalledTimes(1);
+    expect(s.hold().disabled).toBe(true);
+    expect(s.hold().textContent).toContain('Signing…');
+    expect(s.text()).not.toContain('Payment not received');
+  });
+
+  it('shows the amount and fiat total this device accepts, never the API view\'s (I3)', () => {
+    // The API understates the trade to the seller; the device holds the buyer's signed amount.
+    const s = sellerConfirm(
+      trade({ amountAtomic: '1000000000000', fiatCents: '33000' }),
+      escrowStub([], { amountAtomic: 1_250_000_000_000n, fiatCents: 41_250n }),
+    );
+    expect(s.host.querySelector('h1')!.textContent).toBe('Check your bank account for $412.50 sent via Zelle');
+    expect(s.text()).toContain('I checked my bank account myself and the $412.50 from Zelle is there.');
+    act(() => s.box().click());
+    expect(s.hold().textContent).toContain('Hold to release 1.250000 XMR to mira.k');
+    expect(s.text()).not.toContain('$330.00');
+    expect(s.text()).not.toContain('1.000000 XMR');
+  });
+
+  it('keeps the hold locked, with words, while the device has no amount (I3)', () => {
+    const s = sellerConfirm(trade(), escrowStub([], { amountAtomic: null, fiatCents: null }));
+    act(() => s.box().click());
+    expect(s.hold().disabled).toBe(true);
+    expect(s.text()).toContain('Waiting for this device to confirm the trade amount.');
+    expect(s.text()).not.toContain('Press and hold');
+    expect(s.text()).not.toContain('$412.50');
+  });
+
+  it('keeps the hold locked and says why under a Task 12 refusal (I3)', () => {
+    const s = sellerConfirm(trade(), escrowStub([], { refusal: 'paid-amount-refused' }));
+    act(() => s.box().click());
+    expect(s.hold().disabled).toBe(true);
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe(
+      'The amount mira.k marked as paid doesn’t fit this trade. This device won’t sign a release. Open a dispute.',
+    );
+    expect(s.text()).not.toContain('Press and hold');
+  });
+
+  it('keeps the hold locked while the device escrow has stopped (I3)', () => {
+    const s = sellerConfirm(trade(), escrowStub([], { phase: 'error', error: 'escrow-failed' }));
+    act(() => s.box().click());
+    expect(s.hold().disabled).toBe(true);
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The escrow stopped on this device, so it can’t sign a release. Reload the page; if it stays, open a dispute.');
+  });
+
+  it('ticked but not releasable with no estimate: waits for the escrow to unlock, no hold hint (Minor 10)', () => {
+    const s = sellerConfirm(trade({ releasable: false, releasableEtaMin: null }));
+    act(() => s.box().click());
+    expect(s.hold().disabled).toBe(true);
+    expect(s.hold().textContent).toContain('Waiting for the escrow to unlock');
+    expect(s.text()).not.toContain('Payment received Hold');
+    expect(s.text()).not.toContain('Press and hold');
+    expect(s.text()).toContain('The XMR in escrow needs more confirmations before it can be released.');
   });
 
   it('sends "Payment not received" and "Open dispute" to the dispute screen', () => {
@@ -192,13 +335,14 @@ describe('SellerConfirm', () => {
   });
 });
 
-function released(t: ReleaseTrade) {
-  const r = render(
+function released(t: ReleaseTrade, escrow: ReleaseEscrow = escrowStub([], { phase: 'done' })) {
+  const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
-      <Released trade={t} />
-    </MemoryRouter>,
+      <Released trade={tr} escrow={e} />
+    </MemoryRouter>
   );
-  return { ...r, text: () => (r.host.textContent ?? '').replace(/\s+/g, ' ') };
+  const r = render(ui(t, escrow));
+  return { ...r, text: () => (r.host.textContent ?? '').replace(/\s+/g, ' '), update: (tr: ReleaseTrade, e: ReleaseEscrow = escrow) => r.rerender(ui(tr, e)) };
 }
 
 const RELEASED = { state: 'released' as const, settling: null, txHash: TX };
@@ -223,7 +367,8 @@ describe('Released', () => {
     await flush();
     expect(r.host.querySelector('h1')!.textContent).toBe('1.250000 XMR is yours');
     expect(r.host.querySelector('dl')).toBeNull();
-    expect(r.text()).not.toMatch(/fee/i);
+    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's.
+    expect(r.text()).not.toMatch(/X2F fee|1%/i);
     expect(r.text()).toContain('0 of 10');
   });
 
@@ -285,6 +430,94 @@ describe('Released', () => {
   });
 });
 
+describe('Released for a buyer who opens the room while the release settles (I2)', () => {
+  const BUYER = { role: 'buyer' as const, poster: 'seller' as const, fee: undefined, counterparty: { username: 'satoshi_ghost' } };
+
+  it('asks nothing while settling, then starts counting when the trade reaches released, on the same mount', async () => {
+    answer = () => ({ status: 200, body: { confirmations: 1, target: 10, payoutEnd: 'Qwk3Fz' } });
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing' }));
+    await flush();
+    expect(calls).toHaveLength(0);
+    expect(r.text()).toContain('Checking…');
+    r.update(trade({ ...BUYER, ...RELEASED }), escrowStub([], { phase: 'done' }));
+    await flush();
+    expect(calls.map((c) => c.url)).toEqual(['/v1/trades/K7M2-9QXA-4FTR-8WPN/confirmations']);
+    expect(r.text()).toContain('1 of 10');
+    expect(r.text()).toContain('ending …Qwk3Fz');
+  });
+
+  it('treats a 409 as "not yet" and asks again on the next tick', async () => {
+    vi.useFakeTimers();
+    let n = 0;
+    answer = () => (n++ === 0 ? { status: 409, body: { error: 'wrong-state' } } : { status: 200, body: { confirmations: 0, target: 10 } });
+    const r = released(trade({ ...BUYER, ...RELEASED }));
+    await flush();
+    expect(r.text()).toContain('Checking…');
+    advance(15_000, vi);
+    await flush();
+    expect(r.text()).toContain('0 of 10');
+    expect(calls).toHaveLength(2);
+  });
+
+  it('in settling, says the buyer\'s device is still co-signing, not "is yours"', () => {
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'signing', keepOpen: true }));
+    expect(r.host.querySelector('h1')!.textContent).toBe('satoshi_ghost released 1.250000 XMR to you');
+    expect(r.text()).toContain('Your device is adding its signature. Keep this page open.');
+    expect(r.text()).not.toContain('is yours');
+  });
+
+  it('in settling, shows a Task 12 refusal instead of the released words', () => {
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { refusal: 'amount-unknown', amountAtomic: null, fiatCents: null }));
+    expect(r.host.querySelector('[role=alert]')!.textContent).toBe('This device doesn’t know the trade amount, so it won’t sign a release. Open a dispute.');
+    expect(r.text()).not.toContain('is yours');
+  });
+
+  it('in settling, shows a stopped escrow', () => {
+    const r = released(trade({ ...BUYER, state: 'settling', settling: 'release' }), escrowStub([], { phase: 'error', error: 'escrow-failed' }));
+    expect(r.host.querySelector('[role=alert]')!.textContent).toContain('The escrow stopped on this device');
+  });
+});
+
+describe('Released, more', () => {
+  it('shows the amount this device accepted over the API view\'s (I3)', async () => {
+    answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
+    const r = released(trade({ ...RELEASED, amountAtomic: '1000000000000' }), escrowStub([], { phase: 'done', amountAtomic: 1_250_000_000_000n }));
+    await flush();
+    expect(r.host.querySelector('h1')!.textContent).toBe('1.250000 XMR is on its way to mira.k');
+  });
+
+  it('labels the buyer\'s sum as before the network fee (Minor 4)', async () => {
+    answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
+    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: { username: 'satoshi_ghost' } }));
+    await flush();
+    expect(r.text()).toContain('Before the Monero network fee, which comes off your payout.');
+  });
+
+  it('links the explorer only for a well-formed tx hash (Minor 6)', async () => {
+    answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
+    for (const bad of ['AB'.repeat(32), 'ab'.repeat(31), `${'ab'.repeat(32)}/../x`, '']) {
+      const r = released(trade({ ...RELEASED, txHash: bad }));
+      await flush();
+      expect([...r.host.querySelectorAll('a')].some((a) => (a.getAttribute('href') ?? '').includes('xmrchain'))).toBe(false);
+      r.unmount();
+    }
+  });
+
+  it('backs off when the node has no count, instead of asking every 15 s for ever (Minor 3)', async () => {
+    vi.useFakeTimers();
+    answer = () => ({ status: 200, body: { confirmations: null, target: 10 } });
+    released(trade({ ...RELEASED }));
+    await flush();
+    for (let i = 0; i < 40; i++) {
+      advance(15_000, vi);
+      await flush();
+    }
+    // 10 minutes at 15 s would be 41 asks; with the back-off it is far fewer.
+    expect(calls.length).toBeGreaterThan(3);
+    expect(calls.length).toBeLessThan(12);
+  });
+});
+
 describe('releaseScreenOf (the slot Task 22 registers in TradeRoom)', () => {
   it('maps role and state to the screen', () => {
     expect(releaseScreenOf(trade({ state: 'paid' }))).toBe('seller-confirm');
@@ -335,10 +568,11 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     expect(refresh).toHaveBeenCalled();
   });
 
-  it('says so when the device could not sign (the Task 12 stand-in refuses)', async () => {
+  it('says so when the device could not sign (Task 12 refuses the act)', async () => {
     vi.useFakeTimers();
     answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
-    const escrow = { release: vi.fn(() => Promise.reject(new Error('escrow runtime not wired (Task 12)'))) };
+    const escrow = escrowStub();
+    escrow.release.mockRejectedValue(new Error('escrow action refused'));
     const s = sellerConfirm(trade(), escrow);
     act(() => s.box().click());
     pointer(s.hold(), 'pointerdown');

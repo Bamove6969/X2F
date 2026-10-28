@@ -46,7 +46,7 @@ function ChatLink({ code }: { code: string }) {
 /** SellerConfirm or Released for the room's view; nothing for a state that is not Task 24's. */
 export function ReleaseRoomScreen({ view, escrow, refresh, serverClock }: ReleaseRoomProps) {
   const screen = releaseScreenOf(view);
-  if (screen === 'released') return <Released trade={view} />;
+  if (screen === 'released') return <Released trade={view} escrow={escrow} />;
   if (screen === 'seller-confirm') {
     return (
       <SellerConfirm

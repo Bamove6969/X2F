@@ -3,7 +3,7 @@ import { EscrowDots } from '../../ui/EscrowDots.js';
 import { ExternalLink } from '../../ui/ExternalLink.js';
 import { Icon } from '../../ui/icons.js';
 import { useConfirmations } from './release/seams.js';
-import { amounts, publicName, type ReleaseTrade } from './release/view.js';
+import { ESCROW_STOPPED, amounts, isTxHash, publicName, refusalCopy, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
 /** The public explorer the board links to; it gets the tx hash and nothing else (no referrer). */
@@ -15,12 +15,23 @@ export const EXPLORER_TX = 'https://xmrchain.net/tx/';
  * note. Only the ad poster sees the X2F fee (Global Constraints): a poster buyer gets the board's
  * Trade amount / "X2F fee (1%, your ad) −0.012500 XMR" / You receive; a poster seller the amount
  * they funded. The rating cards are Plan 5 (`reviewSlot`).
+ *
+ * The amounts are the ones THIS device accepted (`escrow.amountAtomic`, review 2026-10-27 I3). The
+ * device may have forgotten a finished trade, so once the trade is settled the API's amount is
+ * the fallback: nothing is signed from this screen. The buyer sees it from `settling` on; until
+ * their own device has co-signed (`escrow.phase` `done`) it says the device is adding its
+ * signature, and shows a Task 12 refusal or a stopped escrow instead of "is yours" (I2).
  */
-export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlot?: ReactNode }) {
-  const live = useConfirmations(trade.code);
+export function Released({ trade, escrow, reviewSlot }: { trade: ReleaseTrade; escrow: ReleaseEscrow; reviewSlot?: ReactNode }) {
+  const live = useConfirmations(trade);
   const other = publicName(trade.counterparty);
-  const a = amounts(trade);
+  const a =
+    amounts(trade, escrow) ??
+    amounts(trade, { amountAtomic: BigInt(trade.amountAtomic), fiatCents: BigInt(trade.fiatCents) })!;
   const buyer = trade.role === 'buyer';
+  const settled = trade.state === 'released';
+  const cosigned = settled || escrow.phase === 'done' || escrow.phase === 'settled-without-device';
+  const problem = cosigned ? null : escrow.phase === 'error' || escrow.error !== null ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, other) : null;
   const target = live?.target ?? 10;
   const count = live?.confirmations ?? null;
   const shown = count === null ? null : Math.min(count, target);
@@ -29,8 +40,21 @@ export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlo
     <div className="x2f-release" data-screen="released">
       <section aria-label="Trade complete" className="x2f-released">
         <EscrowDots filled={[true, true, false]} tone="escrow" />
-        <span className="x2f-released__label">Released</span>
-        {buyer ? (
+        <span className="x2f-released__label">{cosigned ? 'Released' : 'Releasing'}</span>
+        {buyer && !cosigned ? (
+          <>
+            <h1 className="x2f-released__title">
+              <span data-username="">{other}</span> released {a.amount} to you
+            </h1>
+            {problem !== null ? (
+              <p role="alert" className="x2f-release__error">
+                {problem}
+              </p>
+            ) : (
+              <p className="x2f-released__where">Your device is adding its signature. Keep this page open.</p>
+            )}
+          </>
+        ) : buyer ? (
           <>
             <h1 className="x2f-released__title">{a.buyerReceives} is yours</h1>
             <p className="x2f-released__where">
@@ -72,6 +96,7 @@ export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlo
             </div>
           </dl>
         ) : null}
+        {buyer ? <span className="x2f-released__note">Before the Monero network fee, which comes off your payout.</span> : null}
 
         <div className="x2f-released__confirm">
           <div className="x2f-released__confirm-row">
@@ -90,7 +115,7 @@ export function Released({ trade, reviewSlot }: { trade: ReleaseTrade; reviewSlo
           >
             <span style={{ '--x2f-confirmed': `${shown === null ? 0 : (shown / target) * 100}%` } as CSSProperties} />
           </div>
-          {trade.txHash !== null ? (
+          {isTxHash(trade.txHash) ? (
             <ExternalLink href={`${EXPLORER_TX}${trade.txHash}`}>
               View on the Monero blockchain
               <Icon name="external" size={14} />

@@ -1,18 +1,27 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { api, useServerClock } from '../../api/client.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { amounts, publicName, firstPerson, profileCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
+import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
 /**
  * SellerConfirm (board SellerConfirm.dc.html; spec 2.2 steps 8-9): the buyer has marked paid; the
  * seller checks their own account, ticks the box and presses and holds to release. The hold is
- * locked until the box is ticked and while the escrow is not releasable ("Releasable in N min").
- * A full hold posts `release-started`, then calls `escrow.release()`; the buyer's app co-signs.
+ * locked until the box is ticked, while the escrow is not releasable ("Releasable in N min"), and
+ * while this device has no accepted amount, a Task 12 refusal or a stopped escrow. A full hold
+ * posts `release-started`, then calls `escrow.release()`; the buyer's app co-signs.
+ *
+ * Every amount and fiat total shown is the one THIS device accepts (`escrow.amountAtomic` /
+ * `fiatCents`), the amount its release is bound to; the API's is never shown (review 2026-10-27,
+ * I3). The "released" look comes from the device (`escrow.phase` `done`), never from the API's
+ * `settling` alone (I1): while the API says the release is settling and the device has not
+ * signed (a lost POST answer, a reload between the POST and `release()`, an `act` that threw), the
+ * screen calls `release()` again once the device is ready (Task 12's runtime accepts it while the
+ * view is settling a release), and offers "Finish the release on this device" if that fails.
  * The smart proof card is Plan 5 (`proofSlot`, masked on the board comparison).
  */
 export function SellerConfirm({
@@ -41,16 +50,42 @@ export function SellerConfirm({
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState<'start' | 'sign' | null>(null);
+  /** The API took `release-started` on this mount (its answer reached us), before the room refreshes (Minor 11). */
+  const [started, setStarted] = useState(false);
   // A new key gives a fresh HoldButton after a failed attempt (it fires onComplete once per mount).
   const [attempt, setAttempt] = useState(0);
+  /** `release()` was asked for on this mount: the automatic resume runs at most once. */
+  const asked = useRef(false);
 
   const buyer = publicName(trade.counterparty);
-  const { amount, fiat } = amounts(trade);
+  const sums = amounts(trade, escrow);
+  const amount = sums?.amount ?? 'the XMR';
   const { place, checkPrompt } = profileCopy(trade.profile);
-  const done = trade.state === 'settling' && trade.settling === 'release';
-  const waiting = !trade.releasable && !done;
+  const apiReleasing = trade.state === 'settling' && trade.settling === 'release';
+  const releasing = apiReleasing || started;
+  const signed = escrow.phase === 'done' || escrow.phase === 'settled-without-device';
+  const done = releasing && signed;
+  const signing = releasing && !signed && (escrow.phase === 'signing' || busy);
+  const stopped = escrow.phase === 'error' || escrow.error !== null;
+  const blocked = sums === null || escrow.refusal !== null || stopped;
+  const notReleasable = !trade.releasable && !releasing;
+
+  const sign = async () => {
+    asked.current = true;
+    setBusy(true);
+    setFailed(null);
+    try {
+      await escrow.release();
+    } catch {
+      // Nothing was handed to the device's party (the runtime refused the act): say so and offer it again.
+      setFailed('sign');
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const release = async () => {
+    asked.current = true;
     setBusy(true);
     setFailed(null);
     let next: ReleaseTrade;
@@ -60,29 +95,54 @@ export function SellerConfirm({
         body: { type: 'release-started' },
       });
     } catch {
-      // Refused or unreachable: nothing was signed, and the seller can hold again.
+      // Refused or unreachable. If the API did apply it (a lost answer), the room's next read
+      // shows the release settling and the resume below signs it.
+      asked.current = false;
       setFailed('start');
       setAttempt((n) => n + 1);
       setBusy(false);
       return;
     }
+    setStarted(true);
     onTrade(next);
-    try {
-      await escrow.release();
-    } catch {
-      // The trade is settling; the escrow runtime keeps the attempt and retries (Task 12).
-      setFailed('sign');
-    } finally {
-      setBusy(false);
-    }
+    await sign();
   };
 
-  const caption = done ? 'Released' : waiting && trade.releasableEtaMin !== null ? `Releasable in ${trade.releasableEtaMin} min` : 'Payment received';
+  // I1: the API says the release is settling, the device is ready and has not signed, and nothing
+  // was asked on this mount: sign it now (reload, lost POST answer). Once per mount.
+  useEffect(() => {
+    if (!apiReleasing || asked.current || busy) return;
+    if (escrow.phase !== 'ready' || escrow.refusal !== null || escrow.error !== null) return;
+    void sign();
+  }, [apiReleasing, busy, escrow.phase, escrow.refusal, escrow.error]);
+
+  const problem = stopped ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, buyer) : null;
+
+  const caption = done
+    ? 'Released'
+    : releasing
+      ? 'Signing…'
+      : notReleasable
+        ? trade.releasableEtaMin !== null
+          ? `Releasable in ${trade.releasableEtaMin} min`
+          : 'Waiting for the escrow to unlock'
+        : 'Payment received';
   const hint = done
     ? `Both signatures sent. ${buyer} will be asked to rate the trade.`
-    : checked
-      ? 'Press and hold for 1.5 seconds. Once released, the XMR can’t be taken back.'
-      : 'Tick the box above to unlock this release button.';
+    : releasing
+      ? signing || escrow.keepOpen
+        ? 'Signing the release on this device. Keep this page open.'
+        : 'The release isn’t signed on this device yet. Keep this page open.'
+      : !checked
+        ? 'Tick the box above to unlock this release button.'
+        : sums === null && problem === null
+          ? 'Waiting for this device to confirm the trade amount.'
+          : blocked
+            ? null
+            : notReleasable
+              ? 'The XMR in escrow needs more confirmations before it can be released.'
+              : 'Press and hold for 1.5 seconds. Once released, the XMR can’t be taken back.';
+  const fiat = sums?.fiat ?? 'the payment';
 
   return (
     <div className="x2f-release" data-screen="seller-confirm">
@@ -106,7 +166,7 @@ export function SellerConfirm({
               <span data-username="">{buyer}</span>: Payment sent
             </span>
           </span>
-          {trade.confirmBy !== null && !done ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} /> : null}
+          {trade.confirmBy !== null && !releasing ? <ConfirmWindow deadline={trade.confirmBy} clock={clock} buyer={buyer} place={place} /> : null}
         </div>
 
         <h1 className="x2f-release__title">
@@ -124,8 +184,8 @@ export function SellerConfirm({
           <label className="x2f-release__check">
             <input
               type="checkbox"
-              checked={checked || done}
-              disabled={done || busy}
+              checked={checked || releasing}
+              disabled={releasing || busy}
               onChange={(e) => setChecked(e.currentTarget.checked)}
             />
             <span>
@@ -138,21 +198,36 @@ export function SellerConfirm({
       <footer className="x2f-release__footer">
         <HoldButton
           key={attempt}
-          disabled={!checked || waiting || busy}
+          disabled={!checked || notReleasable || busy || blocked || releasing}
           done={done}
           onComplete={() => void release()}
           caption={caption}
           holdingLabel="Keep holding…"
-          label={done ? `${amount} is on its way to ${buyer}` : `Hold to release ${amount} to ${buyer}`}
-          accessibleLabel={done ? `Released ${amount} to ${buyer}` : `Press and hold for 1.5 seconds to release ${amount} to ${buyer}`}
+          label={done ? `${amount} is on its way to ${buyer}` : releasing ? `Releasing ${amount} to ${buyer}` : `Hold to release ${amount} to ${buyer}`}
+          accessibleLabel={
+            done
+              ? `Released ${amount} to ${buyer}`
+              : releasing
+                ? `Releasing ${amount} to ${buyer}`
+                : `Press and hold for 1.5 seconds to release ${amount} to ${buyer}`
+          }
         />
-        <span className="x2f-release__hint">{hint}</span>
-        {failed !== null ? (
+        {hint !== null ? <span className="x2f-release__hint">{hint}</span> : null}
+        {problem !== null && !done ? (
+          <span role="alert" className="x2f-release__error">
+            {problem}
+          </span>
+        ) : failed !== null && !done ? (
           <span role="alert" className="x2f-release__error">
             {failed === 'start' ? 'The release didn’t start. Try again.' : 'The release didn’t finish on this device. Keep this page open.'}
           </span>
         ) : null}
-        {done ? null : (
+        {releasing && !done && !busy && failed === 'sign' && escrow.phase === 'ready' && escrow.refusal === null ? (
+          <button type="button" className="x2f-button x2f-button--quiet" onClick={() => void sign()}>
+            Finish the release on this device
+          </button>
+        ) : null}
+        {releasing ? null : (
           <div className="x2f-release__actions">
             <Link className="x2f-button x2f-button--quiet" to={`/trade/${trade.code}/dispute`}>
               Payment not received
