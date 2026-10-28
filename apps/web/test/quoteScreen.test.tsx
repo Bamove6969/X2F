@@ -17,8 +17,8 @@ vi.mock('../src/session/useSession.js', () => ({
   useSession: () => (session.status === 'signed-in' ? { status: 'signed-in', me: {} } : { status: session.status }),
 }));
 
-const poster = (username: string) => ({
-  username,
+const poster = (displayName: string) => ({
+  displayName,
   completedTrades: 212,
   online: true,
   lastSeenAt: '2026-10-24T00:00:00.000Z',

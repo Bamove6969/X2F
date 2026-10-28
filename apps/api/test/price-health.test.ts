@@ -477,9 +477,9 @@ describe('with the database', () => {
       await startSession(deps, req, reply, { accountId: b.accountId, level: 'full', deviceLabel: 'Test', method: 'passkey', firstSession: true });
       return {};
     });
-    ownerId = await seedAccount(deps, { username: 'boss', kind: 'owner' });
-    traderId = await seedAccount(deps, { username: 'trader1' });
-    staffId = await seedAccount(deps, { username: 'mod1', kind: 'staff' });
+    ownerId = await seedAccount(deps, { loginName: 'boss', kind: 'owner' });
+    traderId = await seedAccount(deps, { loginName: 'trader1' });
+    staffId = await seedAccount(deps, { loginName: 'mod1', kind: 'staff' });
   });
   afterAll(async () => app.close());
 

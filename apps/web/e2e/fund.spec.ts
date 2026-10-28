@@ -49,7 +49,7 @@ function sellerView(over: View = {}): View {
     role: 'seller',
     poster: 'buyer',
     state: 'funding',
-    counterparty: { username: B.buyer, completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { displayName: B.buyer, completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: B.method.id,
     profile: { name: B.method.name, whatItIs: B.method.whatItIs },
     amountAtomic: B.amountAtomic.toString(),
@@ -104,7 +104,7 @@ const posterView = (): View =>
   });
 
 const buyerView = (): View =>
-  sellerView({ role: 'buyer', funding: null, counterparty: { ...(sellerView().counterparty as object), username: B.seller } });
+  sellerView({ role: 'buyer', funding: null, counterparty: { ...(sellerView().counterparty as object), displayName: B.seller } });
 
 const WORDS = ['amber', 'canal', 'violin', 'oxygen'];
 type FixtureEscrow = NonNullable<Window['__x2fFixtureEscrow']>;

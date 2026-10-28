@@ -32,15 +32,45 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
+/**
+ * The status every trade gets when the runtime could not be made (a build without its config, a
+ * store that will not open): a stopped escrow, not endless "Setting up escrow" (landing review
+ * Minor 3). Not retryable: the same worker would fail the same way.
+ */
+export const RUNTIME_FAILED: EscrowStatus = {
+  phase: 'error',
+  error: 'escrow-failed',
+  retryable: false,
+  refusal: null,
+  checkWords: null,
+  keepOpen: false,
+  role: null,
+  amountAtomic: null,
+  fiatCents: null,
+  escrowAddress: null,
+  deal: null,
+  receivedAtomic: null,
+  confirmedAtomic: null,
+  paidRecorded: false,
+};
+
 /** Answers the page's messages with `runtime` (made once `makeRuntime` resolves). */
 export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s: EscrowStatus) => void) => Promise<EscrowRuntime>): void {
-  const runtime = makeRuntime((code, status) => port.postMessage({ t: 'status', code, status }));
+  const runtime = (async () => makeRuntime((code, status) => port.postMessage({ t: 'status', code, status })))();
   runtime.catch(() => undefined);
   port.addEventListener('message', (e) => {
     const m = e.data;
     if (!isRecord(m) || typeof m.t !== 'string') return;
     void (async () => {
-      const rt = await runtime;
+      let rt: EscrowRuntime;
+      try {
+        rt = await runtime;
+      } catch {
+        // No runtime: every trade the page starts is told so, and every action is refused.
+        if ((m.t === 'start' || m.t === 'retry') && typeof m.code === 'string') port.postMessage({ t: 'status', code: m.code, status: RUNTIME_FAILED });
+        if (m.t === 'act' && typeof m.id === 'number') port.postMessage({ t: 'acted', id: m.id, ok: false });
+        return;
+      }
       switch (m.t) {
         case 'start':
           if (typeof m.code === 'string') await rt.start(m.code, (m.confirmed ?? undefined) as ConfirmedTrade | undefined).catch(() => undefined);
@@ -93,9 +123,8 @@ export function workerConfig(env: Record<string, string | undefined>): RuntimeDe
 const scope = globalThis as unknown as { WorkerGlobalScope?: unknown; postMessage?: unknown };
 if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage === 'function') {
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
-    // Only the keys it reads: passing import.meta.env whole inlines every VITE_ variable into the
-    // worker bundle (VITE_FIXTURES among them, which test/bundle.test.ts forbids in production).
-    // Each read is `import.meta.env.KEY` itself, so Vite replaces it with a literal.
+    // Each key is named, so the build inlines only these five and never the whole env object
+    // (which would carry VITE_FIXTURES and any other VITE_ variable into the production worker).
     const { network, ...config } = workerConfig({
       VITE_MONERO_NETWORK: import.meta.env.VITE_MONERO_NETWORK as string | undefined,
       VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined,

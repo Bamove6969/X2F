@@ -2,12 +2,10 @@ import type { Queryable } from '../db/pool.js';
 import type { LiveEvent } from './bus.js';
 
 /**
- * The accounts column holding the PUBLIC display name, the only name an event may carry.
- * Plan 2 follow-up wip/lead-p2-fua renames `username` to `display_name` and adds a private
- * login name: when it lands, change this one line to 'display_name' (events.test.ts has a
- * tripwire that fails until you do). Never point it at the login name.
+ * The accounts column holding the PUBLIC display name, the only name an event may carry (FU-A,
+ * migration 009; events.test.ts pins it). Never point it at the private login name.
  */
-export const PUBLIC_NAME_COLUMN = 'username';
+export const PUBLIC_NAME_COLUMN = 'display_name';
 
 /** The account's public display name, or null for an unknown account. */
 export async function publicName(db: Queryable, accountId: string): Promise<string | null> {

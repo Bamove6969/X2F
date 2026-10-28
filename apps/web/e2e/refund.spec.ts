@@ -3,7 +3,9 @@
 // CSP. The API is stubbed per test with page.route in Task 6's shapes; the escrow is the fixture
 // build's recorder (src/fixtures/index.ts: window.__x2fEscrowCalls names the actions the room's
 // handle was asked for, window.__x2fEscrowFail refuses them), standing in for Task 12's runtime,
-// which needs a relay, a node and a moderator.
+// which needs a relay, a node and a moderator. The fixture records action names on a fake handle, so
+// the hook's action-to-message mapping (`signal` → `{ type: 'signal', signal }`, `buildRefund` →
+// `build-refund`) is covered by test/useEscrow.test.tsx, not here (landing review Minor 5).
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
@@ -78,8 +80,10 @@ async function open(page: Page, o: { fail?: boolean } = {}): Promise<void> {
 const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fEscrowCalls ?? []);
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 
-function parity(page: Page, board: string, viewport?: '1280x800'): Promise<void> {
-  return expectParity(page, board, viewport ? { viewport } : {});
+/** The room loads the trade first: compare once its screen (with its one primary) is up. */
+async function parity(page: Page, board: string, viewport?: '1280x800'): Promise<void> {
+  await expect(page.locator('[data-primary]')).toHaveCount(1);
+  await expectParity(page, board, viewport ? { viewport } : {});
 }
 
 test('parity with SellerRefund at 390x844', async ({ page }) => {
@@ -143,9 +147,11 @@ test('Give 30 more min twice, then it is gone', async ({ page }) => {
   await open(page);
   for (let n = 1; n <= 2; n += 1) {
     await button(page, 'Give 30 more min').click();
-    // The window is open again: no more time to give, and no refund until it ends.
+    // The window is open again: the room leaves SellerRefund (seller × secured before payBy is
+    // Task 23's waiting room; until it lands, the plain status card), so nothing can be cancelled.
+    await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
     await expect(button(page, 'Give 30 more min')).toHaveCount(0);
-    await expect(button(page, 'Cancel & get refund')).toBeDisabled();
+    await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
     expect(s.trade.view.extensions).toBe(n);
     // The 30 minutes pass on the server; the room re-reads the trade.
     s.trade.view = { ...s.trade.view, serverNow: later(s.trade.view.payBy!, 1) };
@@ -211,8 +217,13 @@ test('before payBy by the server clock nothing can be cancelled, with the device
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
   const s = await stubTrade(page, sellerView({ payBy: later(SERVER_NOW, 3), nextDeadline: later(SERVER_NOW, 3) }));
   await open(page);
-  await expect(button(page, 'Cancel & get refund')).toBeDisabled();
+  // Before payBy the room shows no refund screen at all (Task 23's waiting room, or until it lands
+  // the plain status card), though the device clock is already past payBy.
+  await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
+  await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
+  // payBy passes on the server; the room re-reads the trade at its next deadline.
+  s.trade.view = { ...s.trade.view, serverNow: later(SERVER_NOW, 4) };
   await page.clock.runFor(4 * MIN);
   await expect(button(page, 'Cancel & get refund')).toBeEnabled();
   expect(s.posted).toEqual([]);

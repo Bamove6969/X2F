@@ -145,16 +145,16 @@ function SellerQuote({ view, deal }: { view: TradeView; deal: TradeEscrow['deal'
   const rate = `${formatFiat(BigInt(view.lockedRate.centsPerXmr), view.lockedRate.currency)} / XMR`;
   const feeCheck = plan && view.fee ? (BigInt(view.fee.atomic) === plan.feeAtomic ? 'ok' : 'differs') : 'unchecked';
   return (
-    <section className="x2f-quote" aria-label="Quote">
-      <div className="x2f-quote__head">
+    <section className="x2f-trade-quote" aria-label="Quote">
+      <div className="x2f-trade-quote__head">
         <span className="x2f-trade-label">You send to escrow</span>
         <Amount xmr={formatXmr(funds)} />
       </div>
-      <div className="x2f-quote__rows">
+      <div className="x2f-trade-quote__rows">
         <Row label="Rate (locked when the trade started)" value={rate} />
         {plan && deal?.poster === 'seller' ? <Row label="Includes X2F fee (1%, your ad)" value={`${formatXmr(plan.feeAtomic)} XMR`} check={feeCheck} /> : null}
         <Row label="Network fee · set in your wallet" />
-        <div className="x2f-quote__rule" />
+        <div className="x2f-trade-quote__rule" />
         <Row label="You receive" value={fiat(view, view.fiatCents)} total />
       </div>
     </section>
@@ -367,12 +367,12 @@ export function BuyerWaitFund({ view, escrow, serverClock, refresh }: TradeScree
         </section>
         <Grown view={view} />
         <GiftCard view={view} />
-        <section className="x2f-quote" aria-label="Quote">
-          <div className="x2f-quote__head">
+        <section className="x2f-trade-quote" aria-label="Quote">
+          <div className="x2f-trade-quote__head">
             <span className="x2f-trade-label">You get</span>
             <Amount xmr={formatXmr(BigInt(view.amountAtomic) - (view.poster === 'buyer' && view.fee ? BigInt(view.fee.atomic) : 0n))} />
           </div>
-          <div className="x2f-quote__rows">
+          <div className="x2f-trade-quote__rows">
             <Row label="You pay" value={fiat(view, view.fiatCents)} total />
           </div>
         </section>

@@ -34,13 +34,11 @@ export type Party = 'buyer' | 'seller';
 
 /**
  * The other trader as the API shows them (apps/api/src/trades/view.ts `TraderSummary`). The name
- * is always the PUBLIC display name (FU-A): before wip/lead-p2-fua merges the API calls it
- * `username` (the public column), after it `displayName`. Read it only through `publicName`.
+ * is the PUBLIC display name (FU-A); the private login name is never sent. Read it only through
+ * `publicName`.
  */
 export interface TraderSummary {
-  displayName?: string;
-  /** The public name before FU-A (the column was renamed `display_name`); never a login name. */
-  username?: string;
+  displayName: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -50,8 +48,8 @@ export interface TraderSummary {
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */
-export function publicName(t: Pick<TraderSummary, 'displayName' | 'username'>): string {
-  return t.displayName ?? t.username ?? '';
+export function publicName(t: Pick<TraderSummary, 'displayName'>): string {
+  return t.displayName;
 }
 
 /**

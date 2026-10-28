@@ -202,11 +202,10 @@ describe('BuyerPay (BuyerPay board), phone', () => {
   });
 
   it('the counterparty is shown by its public display name, in data-username', () => {
-    mount(props({ view: tradeView({ counterparty: { ...tradeView().counterparty, displayName: 'Satoshi.Ghost', username: 'old_column' } }) }));
+    mount(props({ view: tradeView({ counterparty: { ...tradeView().counterparty, displayName: 'Satoshi.Ghost' } }) }));
     const names = [...document.querySelectorAll('[data-username]')].map((e) => e.textContent);
     expect(names.length).toBeGreaterThan(0);
     expect(new Set(names)).toEqual(new Set(['Satoshi.Ghost']));
-    expect(text()).not.toContain('old_column');
   });
 
   it('a gift-card method shows the one bold warning', () => {

@@ -54,8 +54,8 @@
   cursor: pointer;
 }
 
-/* Shared names (screens.css .x2f-card, browse.css .x2f-visually-hidden, trade.css .x2f-mono and
-   .x2f-tip) are scoped to Task 23's rooms, so this file never restyles another screen. */
+/* Shared names (screens.css's card, browse.css's visually-hidden, trade.css's mono and tip) are
+   scoped to Task 23's rooms, so this file never restyles another screen. */
 :is(.x2f-pay, .x2f-room) .x2f-mono {
   font-family: var(--x2f-font-mono);
 }
@@ -466,7 +466,7 @@
 
 /* The wide room (Desktop board): a main column and a 400 px chat column, filling the shell's height
    (the room's <main> is the DesktopShell body's child). */
-.x2f-desktop__body > main:has(> .x2f-room) {
+main[data-screen='trade']:has(> .x2f-room) {
   display: flex;
   flex-direction: column;
   flex-grow: 1;

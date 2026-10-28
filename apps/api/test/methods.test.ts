@@ -134,7 +134,7 @@ class Browser {
 
 async function account(kind: 'trader' | 'staff' | 'owner' = 'trader') {
   const username = uniqueName(kind === 'trader' ? 'user' : kind === 'staff' ? 'crew' : 'boss');
-  const id = await seedAccount(deps, { username, kind });
+  const id = await seedAccount(deps, { loginName: username, kind });
   seeded.push(id);
   return { id, username };
 }
@@ -573,7 +573,7 @@ describe('PUT /v1/account/password', () => {
     // Replacing it works the same way; the new password logs in, the old one does not.
     const t2 = await token(b, id, { kind: 'set-password' });
     expect((await b.put('/v1/account/password', { password: OTHER_GOOD, confirmToken: t2 })).statusCode).toBe(200);
-    const login = (pw: string) => new Browser().post('/v1/login/password', { username, password: pw, deviceLabel: 'x' });
+    const login = (pw: string) => new Browser().post('/v1/login/password', { loginName: username, password: pw, deviceLabel: 'x' });
     expect((await login(GOOD)).statusCode).toBe(401);
     expect((await login(OTHER_GOOD)).statusCode).toBe(200);
   });
@@ -655,9 +655,9 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
     const { username, id } = await account('staff');
     await addRecoveryCodes(id, ['AAAA-BBBB-CCCC-DDDD']);
     const b = new Browser();
-    const res = await b.post('/v1/login/backup', { username, kind: 'recovery-code', code: 'AAAA-BBBB-CCCC-DDDD', deviceLabel: 'x' });
+    const res = await b.post('/v1/login/backup', { loginName: username, kind: 'recovery-code', code: 'AAAA-BBBB-CCCC-DDDD', deviceLabel: 'x' });
     const unknown = await new Browser().post('/v1/login/backup', {
-      username: uniqueName('ghost'), kind: 'recovery-code', code: 'AAAA-BBBB-CCCC-DDDD', deviceLabel: 'x',
+      loginName: uniqueName('ghost'), kind: 'recovery-code', code: 'AAAA-BBBB-CCCC-DDDD', deviceLabel: 'x',
     });
     expect(res.statusCode).toBe(unknown.statusCode);
     expect(res.json()).toEqual(unknown.json());
@@ -670,7 +670,7 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
     const { username, id } = await account('staff');
     await addPassword(id);
     const verify = vi.spyOn(argon2, 'verify');
-    const res = await new Browser().post('/v1/login/password', { username, password: GOOD, deviceLabel: 'x' });
+    const res = await new Browser().post('/v1/login/password', { loginName: username, password: GOOD, deviceLabel: 'x' });
     expect(res.statusCode).toBe(401);
     expect(errorOf(res)).toBe('credentials-invalid');
     expect(verify).toHaveBeenCalledTimes(1);
@@ -681,15 +681,16 @@ describe('staff and owner: no password, TOTP or recovery codes (R2)', () => {
 // ---------------------------------------------------------------------------------------------
 // Two factors for staff and the owner (R1)
 
-async function pgpStep(b: Browser, username: string, key: Pair, pendingId?: string) {
-  const s = await b.post('/v1/login/pgp/start', { username, ...(pendingId ? { pendingId } : {}) });
+/** A PGP login step: by the pasted key (`_username` is kept for symmetry with `keyStep`; PGP login needs no name). */
+async function pgpStep(b: Browser, _username: string, key: Pair, pendingId?: string) {
+  const s = await b.post('/v1/login/pgp/start', { key: key.publicKey, ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const code = codeOf(await decrypt(s.json().encryptedMessage, key.privateKey));
   return b.post('/v1/login/pgp/finish', { challengeId: s.json().challengeId, code, deviceLabel: 'Desk', ...(pendingId ? { pendingId } : {}) });
 }
 
 async function keyStep(b: Browser, username: string, auth: SoftAuthenticator, pendingId?: string) {
-  const s = await b.post('/v1/login/webauthn/start', { username, ...(pendingId ? { pendingId } : {}) });
+  const s = await b.post('/v1/login/webauthn/start', { loginName: username, ...(pendingId ? { pendingId } : {}) });
   expect(s.statusCode).toBe(200);
   const { challengeId, options } = s.json();
   const res = await b.post('/v1/login/webauthn/finish', {
@@ -757,14 +758,14 @@ describe('two factors for staff and the owner (R1)', () => {
     await addPgp(id, keys[0]!, new Date(now.getTime() - 2 * MIN));
     await addPgp(id, keys[1]!, new Date(now.getTime() - MIN));
     const b = new Browser();
-    const s1 = await b.post('/v1/login/pgp/start', { username });
+    const s1 = await b.post('/v1/login/pgp/start', { key: keys[0]!.publicKey });
     await expect(decrypt(s1.json().encryptedMessage, keys[1]!.privateKey)).rejects.toThrow();
     const c1 = codeOf(await decrypt(s1.json().encryptedMessage, keys[0]!.privateKey));
     const first = await b.post('/v1/login/pgp/finish', { challengeId: s1.json().challengeId, code: c1, deviceLabel: 'Desk' });
     const pendingId = first.json().pendingId as string;
     expect(first.json().status).toBe('second-factor');
 
-    const s2 = await b.post('/v1/login/pgp/start', { username, pendingId });
+    const s2 = await b.post('/v1/login/pgp/start', { key: keys[1]!.publicKey, pendingId });
     await expect(decrypt(s2.json().encryptedMessage, keys[0]!.privateKey)).rejects.toThrow();
     const c2 = codeOf(await decrypt(s2.json().encryptedMessage, keys[1]!.privateKey));
     const second = await b.post('/v1/login/pgp/finish', { challengeId: s2.json().challengeId, code: c2, deviceLabel: 'Desk', pendingId });
@@ -779,9 +780,10 @@ describe('two factors for staff and the owner (R1)', () => {
     const b = new Browser();
     const first = await pgpStep(b, username, keys[0]!);
     const pendingId = first.json().pendingId as string;
-    // The second PGP challenge has no key left to go to: a decoy, whose code never works.
-    const s2 = await b.post('/v1/login/pgp/start', { username, pendingId });
-    await expect(decrypt(s2.json().encryptedMessage, keys[0]!.privateKey)).rejects.toThrow();
+    // The same key for the second PGP step: a decoy (bound to no account), whose code never works.
+    const s2 = await b.post('/v1/login/pgp/start', { key: keys[0]!.publicKey, pendingId });
+    expect(s2.statusCode).toBe(200);
+    expect((await deps.db.query('select account_id from challenges where id = $1', [s2.json().challengeId])).rows).toEqual([{ account_id: null }]);
     // Forced through completeLogin, the same key is no pair.
     const fp = keys[0]!.fingerprint;
     const forced = await b.post('/t/complete', { accountId: id, factor: { method: 'pgp', fingerprint: fp, fingerprints: [fp] }, pendingId });
@@ -843,7 +845,7 @@ describe('two factors for staff and the owner (R1)', () => {
     const t = now;
     const p3 = (await pgpStep(a, username, keys[0]!)).json().pendingId as string;
     setNow(new Date(t.getTime() + 4 * MIN));
-    const s = await a.post('/v1/login/webauthn/start', { username, pendingId: p3 });
+    const s = await a.post('/v1/login/webauthn/start', { loginName: username, pendingId: p3 });
     setNow(new Date(t.getTime() + 5 * MIN));
     const late = await a.post('/v1/login/webauthn/finish', {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId: p3,
@@ -861,7 +863,7 @@ describe('two factors for staff and the owner (R1)', () => {
     const b = new Browser();
     const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
     // Started without one: finishing with one is refused, and the pending login is untouched.
-    const s = await b.post('/v1/login/webauthn/start', { username });
+    const s = await b.post('/v1/login/webauthn/start', { loginName: username });
     const res = await b.post('/v1/login/webauthn/finish', {
       challengeId: s.json().challengeId, response: auth.authenticate(s.json().options, ORIGIN), deviceLabel: 'Desk', pendingId,
     });
@@ -918,13 +920,13 @@ describe('two factors for staff and the owner (R1)', () => {
     const pendingId = (await pgpStep(b, username, keys[0]!)).json().pendingId as string;
     await deps.db.query(`update challenges set method = 'totp' where id = $1`, [pendingId]);
     // WebAuthn: no PGP first factor is seen, so the passkey is not listed (decoy options).
-    const w = await b.post('/v1/login/webauthn/start', { username, pendingId });
+    const w = await b.post('/v1/login/webauthn/start', { loginName: username, pendingId });
     const listed = (w.json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
     expect(listed).not.toContain(passkey.auth.credentialId);
     // PGP: a decoy, not a challenge to the other key.
-    const s = await b.post('/v1/login/pgp/start', { username, pendingId });
+    const s = await b.post('/v1/login/pgp/start', { key: keys[1]!.publicKey, pendingId });
     expect(s.statusCode).toBe(200);
-    await expect(decrypt(s.json().encryptedMessage, keys[1]!.privateKey)).rejects.toThrow();
+    expect((await deps.db.query('select account_id from challenges where id = $1', [s.json().challengeId])).rows).toEqual([{ account_id: null }]);
   });
 
   it('traders still log in with one factor', async () => {

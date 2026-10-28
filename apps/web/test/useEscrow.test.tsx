@@ -3,7 +3,7 @@ import { act } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { EscrowStatus } from '../src/escrow/runtime.js';
 import { setEscrowClient, useEscrow, workerClient, type EscrowClient, type UseEscrow } from '../src/escrow/useEscrow.js';
-import { serveEscrow, workerConfig, type FromWorker, type Port } from '../src/escrow/worker.js';
+import { RUNTIME_FAILED, serveEscrow, workerConfig, type FromWorker, type Port } from '../src/escrow/worker.js';
 import { confirmedFor } from './escrow-helpers.js';
 import { render } from './render.js';
 
@@ -116,6 +116,20 @@ describe('worker protocol', () => {
     expect(calls).not.toContain('act steal');
     client.retry(CODE);
     await vi.waitFor(() => expect(calls).toContain(`retry ${CODE}`));
+  });
+
+  it('a runtime that cannot be made (missing config) stops every trade with escrow-failed and refuses every action', async () => {
+    const { port, worker } = pair();
+    serveEscrow(port, () => {
+      throw new Error('escrow worker: VITE_MOD_SIGNING_PUBLIC is not set');
+    });
+    const client = workerClient(worker);
+    const seen: EscrowStatus[] = [];
+    client.subscribe(CODE, (s) => seen.push(s));
+    client.start(CODE, confirmedFor('seller'));
+    await vi.waitFor(() => expect(seen.at(-1)).toEqual(RUNTIME_FAILED));
+    expect(seen.at(-1)).toMatchObject({ phase: 'error', error: 'escrow-failed', retryable: false, keepOpen: false });
+    await expect(client.act(CODE, { type: 'release' })).rejects.toThrow();
   });
 
   it('the worker config fails closed when a value is missing', () => {

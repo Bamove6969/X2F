@@ -60,9 +60,7 @@ describe('trade-room slots', () => {
 });
 
 describe('publicName', () => {
-  it('reads the display name, or the pre-FU-A public `username` column, never anything else', () => {
+  it('reads the display name only (FU-A)', () => {
     expect(publicName({ displayName: 'Mira.K_' })).toBe('Mira.K_');
-    expect(publicName({ username: 'mira.k' })).toBe('mira.k');
-    expect(publicName({ displayName: 'Mira.K_', username: 'old' })).toBe('Mira.K_');
   });
 });
