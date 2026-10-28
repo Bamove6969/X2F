@@ -300,6 +300,8 @@ async function setPasswordHandler(req: FastifyRequest) {
       const count = ended.rowCount ?? 0;
       if (count > 0) await addAlert(client, accountId, 'sessions-ended', { count, reason: 'password-set' }, now);
       await client.query('commit');
+      // The other sessions are revoked: end their live streams now, not at the stream lifetime.
+      req.server.events.closeAccount(accountId, sessionId);
     } catch (e) {
       await client.query('rollback');
       throw e;

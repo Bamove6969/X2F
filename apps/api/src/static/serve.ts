@@ -182,6 +182,9 @@ export async function serveWeb(app: FastifyInstance, o: WebOptions): Promise<voi
       setHeaders(reply, path) {
         if (path.endsWith('.html')) {
           void reply.header('content-security-policy', csp).header('cache-control', 'no-cache');
+        } else if (/[\\/]sw\.js$/.test(path) && !/[\\/]assets[\\/]/.test(path)) {
+          // The service worker (Task 19) keeps its name across releases: always revalidated.
+          void reply.header('cache-control', 'no-cache');
         } else if (/[\\/]assets[\\/]/.test(path)) {
           void reply.header('cache-control', IMMUTABLE);
         }

@@ -84,7 +84,9 @@ export interface PartyHandle {
   settle(o: Outcome): Promise<string | null>;
   /**
    * The escrow's balance and incoming payments, read inside the party's own work queue so
-   * wallet calls never interleave. Watchers and apps read the escrow only through this.
+   * wallet calls never interleave. Watchers and apps read the escrow only through this. Still
+   * answers after the relay connection ended for good (ready() and settle() reject with the
+   * TransportClosedError): the wallet needs no peer. Rejects after a PartyError or stop().
    */
   funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[] }>;
   stop(): Promise<void>;
@@ -744,15 +746,23 @@ export function runParty(a: PartyArgs): PartyHandle {
       return p;
     },
     funds() {
+      // The wallet stays readable after the relay connection ended for good (the relay closes a
+      // trade's channels when the trade ends, Task 7, or refuses this role: 4401/4404/4409), so the
+      // app can still see the escrow emptied and apply its after-close rules (Task 12). Reading
+      // needs no peer and signs nothing (R26); it is serialised on the same chain as every other
+      // wallet call. A party-level failure (PartyError: equivocation, address mismatch, bad state,
+      // settled elsewhere), a session that never came up, and stop() still reject.
       return new Promise((resolve, reject) => {
-        void run(async () => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure && (failure instanceof PartyError || !session)) return reject(failure);
           try {
             const { balance, unlocked } = await session.sync();
             resolve({ balance, unlocked, incoming: await session.incoming() });
           } catch (e) {
             reject(e);
           }
-        }).then(() => reject(failure ?? new PartyError('stopped')));
+        });
       });
     },
     async stop() {

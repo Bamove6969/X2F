@@ -35,6 +35,8 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Plan 3 (Task 3 onwards).
+  | 'price-unavailable'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'

@@ -24,22 +24,20 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(has('apps/web/src/chat/ChatPanel.tsx'), 'Task 20 ChatPanel landed: wire it into DisputeRoom').toBe(false);
   });
 
-  it('NEEDS_TASK_12: moderator-built transactions go through rulingAllowsCosign and cosignPolicy', () => {
-    // The escrow runtime must call rulingAllowsCosign (screens/dispute/rules.ts) with the real
-    // cosignPolicy before settling any set whose builder is 'mod', and the stand-in policy in
-    // test/dispute.test.tsx must be replaced by the real one.
-    expect(has('apps/web/src/escrow/policy.ts'), 'Task 12 landed: gate mod-built sets with rulingAllowsCosign').toBe(false);
+  it('NEEDS_PLAN_4_MOD_COSIGN: moderator-built transactions go through rulingAllowsCosign and cosignPolicy', () => {
+    // Task 12's runtime (escrow/runtime.ts) settles only the trader routes today: outcomeFor never
+    // builds a mod-built set, so rulingAllowsCosign (screens/dispute/rules.ts) is not reachable yet.
+    // When the runtime gains a path that settles a set whose builder is 'mod' (Plan 4), that path
+    // must call rulingAllowsCosign with the real cosignPolicy closed over its PolicyContext
+    // ((o) => cosignPolicy(ctx, o)), and the stand-in policy in test/dispute.test.tsx goes.
+    const runtime = readFileSync(ROOT + 'apps/web/src/escrow/runtime.ts', 'utf8');
+    expect(/'mod'|rulingAllowsCosign/.test(runtime), 'the runtime settles mod-built sets: gate them with rulingAllowsCosign').toBe(false);
   });
 
   it('NEEDS_PLAN_5: evidence upload and the unblurred copy wait for the on-device proof pipeline', () => {
     // EvidenceUpload, UnblurredRequest and tradeProofs in screens/dispute/seams.tsx are stand-ins
     // (no file input at all). Plan 5 Tasks 13-15 replace them (strip metadata, blur, check, seal).
     expect(has('apps/web/src/proof/pipeline.ts'), 'Plan 5 pipeline landed: replace the evidence seams').toBe(false);
-  });
-
-  it('NEEDS_TASK_3: the method name comes from GET /v1/methods', () => {
-    // fetchMethodName (screens/dispute/api.ts) reads { all: [{ id, name }] } from wip/second-p3-t3.
-    expect(has('apps/api/src/methods/routes.ts'), 'Task 3 landed: check fetchMethodName against /v1/methods').toBe(false);
   });
 
   it('NEEDS_TASK_19: the dispute screens poll until live events exist', () => {
