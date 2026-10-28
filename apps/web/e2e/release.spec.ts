@@ -153,6 +153,8 @@ const hold = (page: Page) => page.locator('button[data-primary]');
  * 500 ms, so a 1.7 s hold also checks that it does not cancel the hold).
  */
 async function touchHoldFor(page: Page, ms: number): Promise<void> {
+  // A finger can only press what is on screen: on a 320x568 phone the hold sits below the fold.
+  await hold(page).evaluate((el) => el.scrollIntoView({ block: 'center' }));
   const b = (await hold(page).boundingBox())!;
   const point = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
   const cdp = await page.context().newCDPSession(page);
@@ -411,14 +413,11 @@ async function overflowing(page: Page): Promise<string[]> {
   });
 }
 
-/**
- * Tap targets under 44 px tall. The method name inside the header's "Trade <code> · Zelle" line is
- * an inline text button (WCAG 2.5.8's inline exception), so it is not counted.
- */
+/** Tap targets under 44 px tall (the header's method name included: 44 px since the shared fix, 2026-10-28). */
 async function smallTargets(page: Page): Promise<string[]> {
   return page.evaluate(() => {
     const out: string[] = [];
-    for (const el of document.querySelectorAll<HTMLElement>('#root button:not(.x2f-method-name), #root a, #root label')) {
+    for (const el of document.querySelectorAll<HTMLElement>('#root button, #root a, #root label')) {
       const r = el.getBoundingClientRect();
       if (r.width === 0 || r.height === 0) continue;
       if (r.height < 44 - 0.5) out.push(`${el.tagName.toLowerCase()} "${(el.textContent ?? '').trim() || el.getAttribute('aria-label')}" ${Math.round(r.height)} px`);
@@ -427,16 +426,9 @@ async function smallTargets(page: Page): Promise<string[]> {
   });
 }
 
-/**
- * The main line's expectPhoneLayout, then Task 24's stricter checks (44 px targets, nothing past
- * either edge). `header: true` (SellerConfirm) skips expectPhoneLayout: the shared TradeHeader's
- * method name ("Trade <code> · Zelle") is an inline text button, 24 px tall (WCAG 2.5.8's inline
- * exception), but Chromium computes a <button>'s display as inline-block, so phone.ts holds it to
- * 32 px. Task 24's own check below exempts it by class, as before. Reported to the lead: phone.ts
- * or TradeHeader decides; Task 22's TradeRoom e2e will meet the same header.
- */
-async function expectFitsPhone(page: Page, onScreen: Locator, o: { header?: boolean } = {}): Promise<void> {
-  if (!o.header) await expectPhoneLayout(page);
+/** The main line's expectPhoneLayout, then Task 24's stricter checks (44 px targets, nothing past either edge). */
+async function expectFitsPhone(page: Page, onScreen: Locator): Promise<void> {
+  await expectPhoneLayout(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await overflowing(page)).toEqual([]);
   expect(await smallTargets(page)).toEqual([]);
@@ -455,14 +447,14 @@ test.describe('phone sizes', () => {
       const posts = await stub(page, { trade: view() });
       await open(page);
       await expect(page.locator('h1')).toHaveText('Check your bank account for $412.50 sent via Zelle');
-      await expectFitsPhone(page, hold(page), { header: true });
+      await expectFitsPhone(page, hold(page));
       await page.getByText('I checked my bank account myself and the $412.50 from Zelle is there.', { exact: true }).tap();
       await expect(box(page)).toBeChecked();
       await expect(hold(page)).toBeEnabled();
       await holdFor(page, 1700);
       await expect.poll(() => posts.length).toBe(1);
       await expect(hold(page)).toHaveAttribute('data-done', 'true');
-      await expectFitsPhone(page, hold(page), { header: true });
+      await expectFitsPhone(page, hold(page));
     });
 
     test(`SellerConfirm at ${vp.width}x${vp.height}: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8)`, async ({ page }) => {
@@ -489,7 +481,7 @@ test.describe('phone sizes', () => {
       await expect(hold(page)).toContainText(`Hold to release 1.250000 XMR to ${long}`);
       const clipped = await hold(page).evaluate((b) => [...b.children].some((c) => c.scrollWidth > c.clientWidth || c.getBoundingClientRect().bottom > b.getBoundingClientRect().bottom + 0.5));
       expect(clipped).toBe(false);
-      await expectFitsPhone(page, hold(page), { header: true });
+      await expectFitsPhone(page, hold(page));
     });
 
     test(`Released (poster buyer) at ${vp.width}x${vp.height}: fits, the fee rows and the explorer link on screen`, async ({ page }) => {
