@@ -5,11 +5,11 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
-import type { LiveOfferStat, LiveOfferStats } from '../methods/routes.js';
+import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
-import { loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
-import { traderSummaries, type TraderSummary } from '../traders/summary.js';
+import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
+import { ONLINE_MS, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
 
 /**
@@ -62,10 +62,24 @@ export const TERMS_MAX = 4000;
 const FIAT = /^\d{1,14}$/;
 const PRICE = /^\d{1,20}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
-// Control (C0, C1, DEL) and format characters (bidi overrides, zero-width); newlines and tabs are allowed in terms.
-const CONTROL = /[\p{Cc}\p{Cf}]/u;
-/** At most this many cards per list. */
+/**
+ * Refused in terms (review M2): C0 controls but newline and tab, DEL, C1 controls, and the bidi
+ * embeddings, overrides and isolates (U+202A-202E, U+2066-2069), which can make text read in a
+ * different order than it was written. Other format characters stay allowed: the zero-width
+ * joiner inside emoji, soft hyphens, tag characters in flags. A CR or CRLF is stored as LF.
+ * apps/web/src/screens/post/offerForm.ts mirrors this rule.
+ */
+export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+/**
+ * At most this many cards per list (a backstop: the per-account caps below keep lists short, and
+ * the list is sorted by the database before the limit).
+ */
 const LIST_LIMIT = 500;
+
+/** Per-account offer caps (review I1), owner settings with these defaults: live and paused offers count. */
+export const OFFER_CAP_DEFAULTS = Object.freeze({ perMarket: 3, total: 20 });
+export const OFFER_CAP_KEYS = Object.freeze({ perMarket: 'offers_max_per_market', total: 'offers_max_total' });
+const OFFER_CAP_MAX = 1000;
 
 interface OfferRow {
   id: string;
@@ -87,9 +101,25 @@ interface OfferRow {
 const OFFER_COLUMNS = `o.id, o.account_id, o.side, o.method_id, o.currency, o.price_mode, o.margin_bps, o.fixed_cents_per_xmr,
   o.min_fiat_cents, o.max_fiat_cents, o.min_trades, o.terms, o.country, o.status`;
 
-/** An offer anyone may see: live, and its poster neither disabled nor on a trading hold. */
+/**
+ * An offer anyone may see: live, its poster neither disabled nor on a trading hold, and the site not
+ * in an emergency stop (`site_flags.trading_paused`; review M6: during a stop nothing is listed,
+ * and only the poster can still open their own offer). No site_flags row counts as stopped.
+ */
 const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
-  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)`;
+  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)
+  and not coalesce((select f.trading_paused from site_flags f), true)`;
+
+/**
+ * The offer's rate now in SQL, with the currency's market price bound as `param` (null while the feed
+ * has none): the same number as @x2f/trade's `offerRate` (rateFor rounds half up:
+ * (market × (10000 + margin) × 2 + 10000) div 20000), so the database can sort before the limit.
+ */
+function rateSql(param: string): string {
+  return `(case when o.price_mode = 'fixed' then o.fixed_cents_per_xmr
+    when ${param}::numeric is null then null
+    else floor((${param}::numeric * (10000 + o.margin_bps) * 2 + 10000) / 20000) end)`;
+}
 
 function pricingOf(r: OfferRow): Pricing {
   return r.price_mode === 'fixed' ? { mode: 'fixed', centsPerXmr: BigInt(r.fixed_cents_per_xmr!) } : { mode: 'market', marginBps: r.margin_bps! };
@@ -174,8 +204,8 @@ function parseNewOffer(body: unknown): NewOffer & { countryGiven: unknown } {
   if (min > max) throw bad();
   if (typeof minTrades !== 'number' || !(MIN_TRADES as readonly number[]).includes(minTrades)) throw bad();
   if (typeof terms !== 'string') throw bad();
-  const cleanTerms = terms.trim();
-  if ([...cleanTerms].length > TERMS_MAX || CONTROL.test(cleanTerms.replace(/[\n\t]/g, ''))) throw bad();
+  const cleanTerms = terms.replace(/\r\n?/g, '\n').trim();
+  if ([...cleanTerms].length > TERMS_MAX || BAD_TERMS_CHAR.test(cleanTerms)) throw bad();
   return {
     side, methodId, currency, pricing: parsePricing(pricing), minFiatCents: min, maxFiatCents: max, minTrades,
     terms: cleanTerms, country: null, countryGiven: country,
@@ -187,22 +217,67 @@ function assertMethodAvailable(methodId: string): void {
   if (!isAvailable(methodId)) throw new ApiError(409, 'method-unavailable');
 }
 
+async function loadOfferCaps(db: Queryable): Promise<{ perMarket: number; total: number }> {
+  const { rows } = await db.query<{ key: string; value: string }>('select key, value from owner_settings where key = any($1)', [
+    [OFFER_CAP_KEYS.perMarket, OFFER_CAP_KEYS.total],
+  ]);
+  const get = (k: string, d: number) => {
+    const n = Number(rows.find((r) => r.key === k)?.value);
+    return Number.isInteger(n) && n >= 1 && n <= OFFER_CAP_MAX ? n : d;
+  };
+  return { perMarket: get(OFFER_CAP_KEYS.perMarket, OFFER_CAP_DEFAULTS.perMarket), total: get(OFFER_CAP_KEYS.total, OFFER_CAP_DEFAULTS.total) };
+}
+
 /**
- * Posting or relisting: refused while the site's trading is paused (409 `trading-paused`), while the
- * account has a trading hold (409 `trading-hold`) and without a usable payout wallet (409
- * `no-wallet`, spec 6.4; a wallet still in its 24-hour wait does not count).
+ * Posting or relisting, inside the caller's transaction (review M1): refused while the site's
+ * trading is paused (409 `trading-paused`), while the account has a trading hold (409
+ * `trading-hold`), without a usable payout wallet (409 `no-wallet`, spec 6.4; a wallet still in
+ * its 24-hour wait does not count), and at the account's offer caps (409 `too-many-offers`,
+ * review I1; `except` is the offer being relisted).
+ *
+ * The account row is locked `for update` first, so one account's posts and relists run one at a
+ * time (the cap cannot be raced) and a hold being inserted (its foreign key takes a key-share lock
+ * on the same row) commits either before this check or after this write; the site_flags row is read
+ * `for share`, so an emergency stop being set waits for this write or is seen by it.
  */
-async function assertMayPost(db: Queryable, accountId: string, now: Date): Promise<void> {
-  const { rows } = await db.query<{ paused: boolean | null; held: boolean }>(
-    `select (select trading_paused from site_flags) as paused,
-            exists (select 1 from trading_holds where account_id = $1 and lifted_at is null) as held`,
-    [accountId],
-  );
-  const r = rows[0]!;
+async function assertMayPost(
+  client: Queryable,
+  accountId: string,
+  now: Date,
+  market: { side: Side; methodId: string; currency: string },
+  except: string | null,
+): Promise<void> {
+  await client.query('select 1 from accounts where id = $1 for update', [accountId]);
+  const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
   // No site_flags row fails closed.
-  if (r.paused !== false) throw new ApiError(409, 'trading-paused');
-  if (r.held) throw new ApiError(409, 'trading-hold');
-  if ((await usableWallets(db, accountId, now)).length === 0) throw new ApiError(409, 'no-wallet');
+  if (flags.rows[0]?.trading_paused !== false) throw new ApiError(409, 'trading-paused');
+  const held = await client.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
+  if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
+  if ((await usableWallets(client, accountId, now)).length === 0) throw new ApiError(409, 'no-wallet');
+  const caps = await loadOfferCaps(client);
+  const { rows } = await client.query<{ same: number; total: number }>(
+    `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
+       from offers where account_id = $1 and status <> 'removed' and ($5::uuid is null or id <> $5::uuid)`,
+    [accountId, market.side, market.methodId, market.currency, except],
+  );
+  const c = rows[0]!;
+  if (c.same >= caps.perMarket || c.total >= caps.total) throw new ApiError(409, 'too-many-offers');
+}
+
+/** Runs `fn` in one transaction on its own client. */
+async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promise<T>): Promise<T> {
+  const client = await db.connect();
+  let ok = false;
+  try {
+    await client.query('begin');
+    const out = await fn(client);
+    await client.query('commit');
+    ok = true;
+    return out;
+  } finally {
+    if (!ok) await client.query('rollback').catch(() => undefined);
+    client.release();
+  }
 }
 
 const requireTrader = requireSession({ kinds: ['trader'] });
@@ -220,32 +295,22 @@ async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyR
   return req.auth?.accountId ?? null;
 }
 
-/** Best for the person browsing: lowest first on sell ads (they pay), highest first on buy ads (they are paid); no price last. */
-function compareRate(side: Side, a: bigint | null, b: bigint | null): number {
-  if (a === b) return 0;
-  if (a === null) return 1;
-  if (b === null) return -1;
-  const asc = a < b ? -1 : 1;
-  return side === 'buy' ? -asc : asc;
-}
-
-/** `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see. */
+/** `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database. */
 export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices'>): LiveOfferStats {
   return async ({ side, currency }) => {
-    const { rows } = await deps.db.query<OfferRow>(
-      `select ${OFFER_COLUMNS} from offers o join accounts a on a.id = o.account_id
-        where ${LISTED} and o.side = $1 and o.currency = $2`,
-      [side, currency],
+    const market = deps.prices.current(currency)?.centsPerXmr ?? null;
+    const { rows } = await deps.db.query<{ method_id: string; offers: number; lo: string | null; hi: string | null }>(
+      `select o.method_id, count(*)::int as offers, min(r.rate) as lo, max(r.rate) as hi
+         from offers o join accounts a on a.id = o.account_id cross join lateral (select ${rateSql('$3')} as rate) r
+        where ${LISTED} and o.side = $1 and o.currency = $2
+        group by o.method_id`,
+      [side, currency, market === null ? null : market.toString()],
     );
-    const stats = new Map<string, LiveOfferStat>();
-    for (const r of rows) {
-      const rate = rateOf(r, deps.prices);
-      const s = stats.get(r.method_id) ?? { methodId: r.method_id, offers: 0, bestCentsPerXmr: null };
-      s.offers++;
-      if (rate !== null && (s.bestCentsPerXmr === null || compareRate(side, rate, s.bestCentsPerXmr) < 0)) s.bestCentsPerXmr = rate;
-      stats.set(r.method_id, s);
-    }
-    return [...stats.values()];
+    return rows.map((r) => {
+      // Buy ads pay the seller: the best is the highest. Sell ads charge the buyer: the lowest.
+      const best = side === 'buy' ? r.hi : r.lo;
+      return { methodId: r.method_id, offers: r.offers, bestCentsPerXmr: best === null ? null : BigInt(best) };
+    });
   };
 }
 
@@ -255,6 +320,8 @@ async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow
   const cap = await tradeCap(deps.db, viewerId, deps.clock(), settings);
   if (cap.capUsdCents === null) return;
   rows.forEach((r, i) => {
+    // Never on the viewer's own offers (review M7).
+    if (r.account_id === viewerId) return;
     const q = deps.prices.quote(r.currency);
     if (q === null) return;
     const usd = usdCentsOf(BigInt(r.min_fiat_cents), { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
@@ -279,9 +346,10 @@ export function offerRoutes(app: FastifyInstance): void {
     }
     const accountId = req.auth!.accountId;
     const now = deps.clock();
-    await assertMayPost(deps.db, accountId, now);
     const p = o.pricing;
-    const { rows } = await deps.db.query<{ id: string }>(
+    const id = await inTransaction(deps.db, async (client) => {
+      await assertMayPost(client, accountId, now, o, null);
+      const { rows } = await client.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
                            min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
        values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'live', $13, $13) returning id`,
@@ -290,8 +358,10 @@ export function offerRoutes(app: FastifyInstance): void {
         p.mode === 'fixed' ? p.centsPerXmr.toString() : null, o.minFiatCents.toString(), o.maxFiatCents.toString(),
         o.minTrades, o.terms, o.country, now,
       ],
-    );
-    return reply.code(201).send({ id: rows[0]!.id });
+      );
+      return rows[0]!.id;
+    });
+    return reply.code(201).send({ id });
   });
 
   app.patch('/v1/offers/:id', { preHandler: requireTrader }, async (req) => {
@@ -312,16 +382,24 @@ export function offerRoutes(app: FastifyInstance): void {
     const accountId = req.auth!.accountId;
     if (row.account_id !== accountId) throw new ApiError(403, 'wrong-party');
     const now = deps.clock();
+    const update = (q: Queryable) =>
+      q.query(`update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
     if (status === 'live') {
-      // Relisting is posting again.
+      // Relisting is posting again: the same checks, in one transaction with the write (review M1).
       assertMethodAvailable(row.method_id);
-      await assertMayPost(deps.db, accountId, now);
+      await inTransaction(deps.db, async (client) => {
+        const cur = await client.query<{ side: Side; method_id: string; currency: string }>(
+          `select side, method_id, currency from offers where id = $1 and account_id = $2 and status <> 'removed'`,
+          [id, accountId],
+        );
+        const m = cur.rows[0];
+        if (!m) throw new ApiError(404, 'not-found');
+        await assertMayPost(client, accountId, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
+      });
+    } else if ((await update(deps.db)).rowCount !== 1) {
+      throw new ApiError(404, 'not-found');
     }
-    const r = await deps.db.query(
-      `update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`,
-      [id, status, now, accountId],
-    );
-    if (r.rowCount !== 1) throw new ApiError(404, 'not-found');
     return { id, status };
   });
 
@@ -338,20 +416,26 @@ export function offerRoutes(app: FastifyInstance): void {
     if (currency === undefined || !/^[A-Z]{3}$/.test(currency) || sort === undefined) throw bad();
     if (!isAvailable(method)) return [];
 
+    // Sorted by the database before the limit (review I1): the rate from the bound market price,
+    // online from the newest live session, trades from the completed count; ties newest first.
+    const now = deps.clock();
+    const market = deps.prices.current(currency)?.centsPerXmr ?? null;
+    const byRate = `r.rate ${side === 'buy' ? 'desc' : 'asc'} nulls last`;
+    const order =
+      sort === 'online' ? `coalesce(ls.last_seen > $5::timestamptz, false) desc, ${byRate}`
+      : sort === 'trades' ? `ct.completed desc, ${byRate}`
+      : byRate;
     const { rows } = await deps.db.query<OfferRow>(
       `select ${OFFER_COLUMNS} from offers o join accounts a on a.id = o.account_id
+         cross join lateral (select ${rateSql('$4')} as rate) r
+         cross join lateral (select max(s.last_seen_at) as last_seen from sessions s where s.account_id = a.id and s.revoked_at is null) ls
+         cross join lateral (select ${COMPLETED_TRADES_SQL} as completed) ct
         where ${LISTED} and o.side = $1 and o.method_id = $2 and o.currency = $3
-        order by o.created_at desc, o.id limit ${LIST_LIMIT}`,
-      [side, method, currency],
+        order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
+      [side, method, currency, market === null ? null : market.toString(), ...(sort === 'online' ? [new Date(now.getTime() - ONLINE_MS)] : [])],
     );
-    const now = deps.clock();
     const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now);
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
-    entries.sort((a, b) => {
-      if (sort === 'online' && a.poster.online !== b.poster.online) return a.poster.online ? -1 : 1;
-      if (sort === 'trades' && a.poster.completedTrades !== b.poster.completedTrades) return b.poster.completedTrades - a.poster.completedTrades;
-      return compareRate(side, a.rate, b.rate);
-    });
     const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
     const viewerId = await viewer(app, req, reply);
     if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);

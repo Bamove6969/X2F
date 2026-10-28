@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BOARD, SERVER_NOW, sellerRequestedView, sellerView } from '../e2e/harness/refundViews.js';
+import { BOARD, SERVER_NOW, sellerRequestedView, sellerView } from '../e2e/refundViews.js';
 import { forgetRefundRuns } from '../src/screens/trade/refundFlow.js';
 import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
 import type { RefundEscrow, RefundView } from '../src/screens/trade/refundSlot.js';
@@ -131,7 +131,7 @@ describe('SellerRefund: the board copy', () => {
   });
 
   it('never shows a login name: only the public name the view carries', () => {
-    const { host } = mount(sellerView({ counterparty: { displayName: 'Mira.K_' } }));
+    const { host } = mount(sellerView({ counterparty: { ...sellerView().counterparty, displayName: 'Mira.K_' } }));
     expect(host.textContent).toContain('Selling to Mira.K_');
   });
 

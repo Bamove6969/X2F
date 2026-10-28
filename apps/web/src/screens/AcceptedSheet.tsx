@@ -152,7 +152,7 @@ export function AcceptedSheet({
       setPhase('pick');
       return;
     }
-    // Written before the navigation: history state does not survive a reload of the room.
+    // Written before the navigation: history state is gone when the trade opens in a new tab or from a push.
     storeConfirmed(event.code, confirmed);
     setPhase('done');
     onDone(event.code, confirmed);
