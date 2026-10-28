@@ -13,7 +13,12 @@ export type AllowlistKind = 'owner' | 'staff';
 
 const HEADINGS: Record<AllowlistKind, string> = { owner: 'Owner allowlist', staff: 'Staff allowlist' };
 
-/** The AAGUIDs listed as ``- `<aaguid>` ...`` lines under the README's "## Owner allowlist" or "## Staff allowlist" heading. */
+/**
+ * The AAGUIDs listed as ``- `<aaguid>` ...`` lines under the README's "## Owner allowlist" or
+ * "## Staff allowlist" heading, lower-cased. Throws when the heading is missing, when a ``- ` ``
+ * line there does not hold a UUID, or when the list is empty (an empty list would refuse every
+ * key of that account kind at registration, silently).
+ */
 export function parseAllowlist(readme: string, kind: AllowlistKind): string[] {
   const heading = HEADINGS[kind];
   const start = readme.search(new RegExp(`^## ${heading}[ \\t]*$`, 'm'));
@@ -23,9 +28,13 @@ export function parseAllowlist(readme: string, kind: AllowlistKind): string[] {
   const section = end < 0 ? rest : rest.slice(0, end);
   const ids: string[] = [];
   for (const line of section) {
-    const m = /^- `([0-9a-f-]{36})`/.exec(line);
-    if (m && UUID.test(m[1]!)) ids.push(m[1]!);
+    const m = /^- `([^`]*)`/.exec(line);
+    if (!m) continue;
+    const id = m[1]!.toLowerCase();
+    if (!UUID.test(id)) throw new Error(`attestation: README.md "## ${heading}" has a line that is not an AAGUID: ${line.slice(0, 80)}`);
+    ids.push(id);
   }
+  if (ids.length === 0) throw new Error(`attestation: README.md "## ${heading}" is empty`);
   return ids;
 }
 

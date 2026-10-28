@@ -1,3 +1,4 @@
+import { X509Certificate } from 'node:crypto';
 import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,7 +24,7 @@ afterEach(() => {
 describe('the repo FIDO metadata snapshot', () => {
   it('loads with no network fetch and allows only listed AAGUIDs with a real attestation format', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('no network in tests'));
-    const policy = fileAttestationPolicy(SNAPSHOT);
+    const policy = fileAttestationPolicy(SNAPSHOT, { warn: () => {} });
     expect(policy.isAllowed(YUBIKEY_5_58, 'packed', 'owner')).toBe(false); // nothing before init
     await policy.init();
     expect(fetchSpy).not.toHaveBeenCalled();
@@ -35,7 +36,7 @@ describe('the repo FIDO metadata snapshot', () => {
   });
 
   it('applies the owner rules of 2026-10-20: owner YubiKey 5 on 5.7+, staff also older YubiKey 5, Security Key, Titan', async () => {
-    const policy = fileAttestationPolicy(SNAPSHOT);
+    const policy = fileAttestationPolicy(SNAPSHOT, { warn: () => {} });
     await policy.init();
     for (const [aaguid, owner] of [
       [YUBIKEY_5_58, true],
@@ -65,11 +66,12 @@ describe('the repo FIDO metadata snapshot', () => {
     expect(readme).toContain('https://mds3.fidoalliance.org/');
     const files = (await readdir(SNAPSHOT)).filter((f) => f.endsWith('.json'));
     expect(files.sort()).toEqual([...new Set([...owner, ...staff])].map((id) => `${id}.json`).sort());
-    const statements = new Map<string, { description: string; firmware: number | undefined }>();
+    const statements = new Map<string, { description: string; firmware: number | undefined; roots: string[] }>();
     for (const f of files) {
       const s = JSON.parse(await readFile(join(SNAPSHOT, f), 'utf8'));
       expect(s.attestationRootCertificates.length).toBeGreaterThan(0);
-      statements.set(s.aaguid, { description: s.description, firmware: s.authenticatorGetInfo?.firmwareVersion });
+      const roots = (s.attestationRootCertificates as string[]).map((b64) => new X509Certificate(Buffer.from(b64, 'base64')).subject);
+      statements.set(s.aaguid, { description: s.description, firmware: s.authenticatorGetInfo?.firmwareVersion, roots });
     }
     for (const id of owner) {
       const s = statements.get(id)!;
@@ -81,6 +83,11 @@ describe('the repo FIDO metadata snapshot', () => {
     for (const id of staff) {
       const s = statements.get(id)!;
       expect(s.description, id).toMatch(/^(YubiKey 5 |Security Key |Enterprise Security Key |Google Titan Security Key)/);
+      // The README rule: Yubico roots for YubiKey 5 and the Security Key series, Google's for Titan.
+      for (const subject of s.roots) {
+        if (/^Google Titan /.test(s.description)) expect(subject, id).toMatch(/^O=Google$/m);
+        else expect(subject, id).toMatch(/Yubico/);
+      }
       if (/^YubiKey 5 /.test(s.description) && (s.firmware ?? 0) >= FW_5_7) expect(owners.has(id), id).toBe(true);
     }
   });
@@ -99,6 +106,23 @@ describe('fileAttestationPolicy', () => {
     expect(parseAllowlist(readme, 'staff')).toEqual(['55555555-5555-4555-8555-555555555555']);
     expect(() => parseAllowlist('# nothing here', 'owner')).toThrow(/Owner allowlist/);
     expect(() => parseAllowlist('## Owner allowlist\n', 'staff')).toThrow(/Staff allowlist/);
+  });
+
+  it('lower-cases an upper-case AAGUID line, and refuses a bad line or an empty list loudly', () => {
+    const up = '## Staff allowlist\n\n- `ABCDEF01-2345-4678-89AB-CDEF01234567` upper\n';
+    expect(parseAllowlist(up, 'staff')).toEqual(['abcdef01-2345-4678-89ab-cdef01234567']);
+    expect(() => parseAllowlist('## Staff allowlist\n\n- `not-a-uuid` oops\n', 'staff')).toThrow(/not an AAGUID/);
+    expect(() => parseAllowlist('## Owner allowlist\n\nnothing listed\n\n## Staff allowlist\n', 'owner')).toThrow(/Owner allowlist" is empty/);
+  });
+
+  it('refuses to start with an empty owner or staff list', async () => {
+    dir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
+    const ca = createTestCa();
+    const a = '11111111-2222-4333-8444-555555555555';
+    await writeTestMds(dir, ca, { statements: [a], allow: [a], ownerAllow: [] });
+    await expect(fileAttestationPolicy(dir).init()).rejects.toThrow(/Owner allowlist" is empty/);
+    await writeTestMds(dir, ca, { statements: [a], allow: [], ownerAllow: [a] });
+    await expect(fileAttestationPolicy(dir).init()).rejects.toThrow(/Staff allowlist" is empty/);
   });
 
   it('keeps the two lists apart, and refuses an owner-only AAGUID without a statement', async () => {

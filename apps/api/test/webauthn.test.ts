@@ -549,6 +549,24 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 });
 
 describe('Plan 4 helpers', () => {
+  it('refuses an owner a staff-only key when the kind is left to the attestation', async () => {
+    const ownerId = await seedOwner();
+    const challenge = new Uint8Array(32).fill(5);
+    const options = await webauthnRegistrationOptions(deps, ownerId, { challenge });
+    expect(options.attestation).toBe('direct');
+    const key = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: STAFF_ONLY, ca } });
+    // Not on the owner list → not attested → counted as a passkey, which the owner may never use.
+    await expect(verifyWebAuthnRegistration(deps, ownerId, key.register(options, ORIGIN), challenge)).rejects.toMatchObject({
+      status: 401, code: 'webauthn-failed',
+    });
+    const keyUv = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: STAFF_ONLY, ca } });
+    await expect(verifyWebAuthnRegistration(deps, ownerId, keyUv.register(options, ORIGIN), challenge)).rejects.toMatchObject({
+      status: 403, code: 'method-not-allowed',
+    });
+    const { rows } = await deps.db.query('select 1 from webauthn_credentials where account_id = $1', [ownerId]);
+    expect(rows).toEqual([]);
+  });
+
   it('registers and verifies with caller-held challenges', async () => {
     const staffId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
     const challenge = new Uint8Array(32).fill(7);
