@@ -539,3 +539,238 @@ for (const v of PHONES) {
     expect(accept!.y + accept!.height).toBeLessThanOrEqual(height);
   });
 }
+
+// Task 28 review fix round (review 2026-10-28, ~/x2f-comms/review-task28-2026-10-28.md).
+test.describe('review fix round', () => {
+  async function toPgpCode(page: Page): Promise<void> {
+    await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pub', realKey);
+    await expect(page.locator('[data-part="key-check"]')).toContainText('Ed25519');
+    await page.click('[data-part="key-continue"]');
+    await expect(page).toHaveURL(/\/setup\/pgp-code\?/);
+  }
+
+  async function toPassword(page: Page): Promise<void> {
+    await page.goto(`/setup?returnTo=${encodeURIComponent('/post')}`);
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-method="password"]');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pw', 'Quiet-harbour-58');
+    await page.fill('#pw2', 'Quiet-harbour-58');
+  }
+
+  test('I1: a key already on another account says so, links back to the key and to Log in, and offers no endless new message', async ({ page }) => {
+    await stubApi(page);
+    await page.unroute('**/v1/register/pgp/finish');
+    await page.route('**/v1/register/pgp/finish', json({ error: 'key-in-use' }, 409));
+    await toPgpCode(page);
+    await page.fill('#phrase', '1234-5678-9ABC');
+    await page.click('[data-part="pgp-verify"]');
+    const err = page.locator('[data-part="register-error"]');
+    await expect(err).toContainText('That key is already used by another X2F account. Use a different key, or log in instead.');
+    await expect(page.locator('[data-part="pgp-new-message"]')).toHaveCount(0);
+    await expect(err.getByRole('link', { name: 'Log in' })).toHaveAttribute('href', `/login?returnTo=${encodeURIComponent('/post')}`);
+    await err.getByRole('link', { name: 'Use a different key' }).click();
+    await expect(page).toHaveURL(/\/setup\/pgp-key\?/);
+  });
+
+  test('I1: a second PGP key already on another account gets its own sentence on the backup step', async ({ page }) => {
+    await stubApi(page, { signedIn: true, methods: ['pgp'] });
+    await page.route('**/v1/account/pgp/start', json({ challengeId: 'b1', encryptedMessage: BOARD_MESSAGE, expiresAt: '2099-01-01T00:00:00.000Z' }));
+    await page.route('**/v1/account/pgp/finish', json({ error: 'key-in-use' }, 409));
+    await page.goto(`/setup/backup?returnTo=${encodeURIComponent('/post')}`);
+    await page.click('[data-backup="pgp"]');
+    await page.click('[data-part="backup-add"]');
+    await page.fill('#backup-pub', realKey);
+    await page.click('[data-part="backup-pgp-start"]');
+    await page.fill('#backup-code', '1234-5678-9ABC');
+    await page.click('[data-part="backup-pgp-finish"]');
+    await expect(page.locator('[data-part="backup-pgp"] [role="alert"]')).toHaveText(
+      'That key is already used by another X2F account. Use a different second key.',
+    );
+  });
+
+  test('I2: after a password sign-up, Back never reopens the sign-up steps or registers again', async ({ page }) => {
+    const s = await stubApi(page);
+    await toPassword(page);
+    await page.click('[data-part="password-set"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await page.goBack();
+    await expect(page.locator('[data-part="password-set"]')).toHaveCount(0);
+    await expect(page.locator('[data-part="method-continue"]')).toHaveCount(0);
+    expect(s.bodies.password).toHaveLength(1);
+  });
+
+  test('I2: after a PGP sign-up, Back never reopens the key step or starts a second sign-up', async ({ page }) => {
+    const s = await stubApi(page);
+    await toPgpCode(page);
+    await page.fill('#phrase', '1234-5678-9ABC');
+    await page.click('[data-part="pgp-verify"]');
+    await page.click('[data-part="pgp-continue"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await page.goBack();
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    await expect(page.locator('[data-part="key-continue"]')).toHaveCount(0);
+    expect(s.bodies['pgp-start']).toHaveLength(1);
+    expect(s.bodies['pgp-finish']).toHaveLength(1);
+  });
+
+  test('M5: a passkey sign-up carries both names, the device label and the accepted Terms version', async ({ page }) => {
+    const s = await stubApi(page);
+    await page.route('**/v1/register/webauthn/start', (r) => {
+      (s.bodies['webauthn-start'] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
+      return json({
+        challengeId: 'w1',
+        options: {
+          challenge: 'AQIDBAUGBwgJCgsMDQ4PEA',
+          rp: { name: 'X2F', id: 'localhost' },
+          user: { id: 'BwcH', name: 'lumen-login-7', displayName: 'lumen.k' },
+          pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+          authenticatorSelection: { residentKey: 'required', userVerification: 'required' },
+          attestation: 'none',
+          timeout: 10000,
+        },
+      })(r);
+    });
+    await page.route('**/v1/register/webauthn/finish', (r) => {
+      (s.bodies['webauthn-finish'] ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
+      s.registered = true;
+      s.methods = ['passkey'];
+      return json({ displayName: 'lumen.k' }, 201)(r);
+    });
+    await page.goto(`http://localhost:${process.env.X2F_E2E_PORT ?? 4317}/setup?returnTo=%2Fpost`);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('WebAuthn.enable');
+    await cdp.send('WebAuthn.addVirtualAuthenticator', {
+      options: { protocol: 'ctap2', transport: 'internal', hasResidentKey: true, hasUserVerification: true, isUserVerified: true, automaticPresenceSimulation: true },
+    });
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-method="passkey"]');
+    await page.click('[data-part="method-continue"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    expect(s.bodies['webauthn-start']).toEqual([{ displayName: 'lumen.k', loginName: 'lumen-login-7', kind: 'passkey' }]);
+    const finish = s.bodies['webauthn-finish']?.[0] as { acceptedTerms: string; deviceLabel: string; challengeId: string };
+    expect(finish.challengeId).toBe('w1');
+    expect(finish.acceptedTerms).toBe(TERMS_VERSION);
+    expect(finish.deviceLabel).not.toBe(TERMS_VERSION);
+    expect(finish.deviceLabel.length).toBeGreaterThan(0);
+  });
+
+  test('M5: a cancelled passkey prompt says so and keeps the person on the login step', async ({ page }) => {
+    await stubApi(page);
+    await page.route('**/v1/register/webauthn/start', json({ error: 'webauthn-failed' }, 401));
+    await page.goto('/setup');
+    await acceptTerms(page);
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    await page.click('[data-method="passkey"]');
+    await page.click('[data-part="method-continue"]');
+    await expect(page.locator('[data-part="register-error"]')).toContainText('pick another way to log in');
+    await expect(page).toHaveURL(/\/setup\/login\?/);
+  });
+
+  test('M6: Terms that change during setup send the person back to read them; the retry sends the version read', async ({ page }) => {
+    const s = await stubApi(page);
+    let tries = 0;
+    await page.unroute('**/v1/register/password');
+    await page.route('**/v1/register/password', (r) => {
+      tries += 1;
+      (s.bodies.password ??= []).push(JSON.parse(r.request().postData() ?? 'null'));
+      if (tries === 1) return json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r);
+      s.registered = true;
+      s.methods = ['password'];
+      return json({ displayName: 'lumen.k' }, 201)(r);
+    });
+    await toPassword(page);
+    await page.click('[data-part="password-set"]');
+    await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
+    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    await acceptTerms(page);
+    // The names are kept; the person picks the method again.
+    await expect(page.locator('#uname')).toHaveValue('lumen.k');
+    await page.click('[data-part="names-continue"]');
+    await page.click('[data-method="password"]');
+    await page.click('[data-part="method-continue"]');
+    await page.fill('#pw', 'Quiet-harbour-58');
+    await page.fill('#pw2', 'Quiet-harbour-58');
+    await page.click('[data-part="password-set"]');
+    await expect(page).toHaveURL(/\/setup\/backup\?/);
+    expect(s.bodies.password).toHaveLength(2);
+    expect(s.bodies.password?.[1]).toMatchObject({ acceptedTerms: TERMS_VERSION });
+  });
+
+  test('M3: /terms reloads the version when the Terms change before I accept, and the retry posts the new one', async ({ page }) => {
+    let gets = 0;
+    const posts: unknown[] = [];
+    await page.route('**/v1/terms', (r) => {
+      gets += 1;
+      return json({ version: TERMS_VERSION })(r);
+    });
+    await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
+    await page.route('**/v1/account/terms', (r) => {
+      posts.push(JSON.parse(r.request().postData() ?? 'null'));
+      return posts.length === 1 ? json({ error: 'terms-not-accepted', version: TERMS_VERSION }, 400)(r) : r.fulfill({ status: 204 });
+    });
+    await page.goto('/terms?returnTo=%2Fpost');
+    await acceptTerms(page);
+    await expect(page.locator('[data-screen="terms"] [role="alert"]')).toContainText('The Terms changed while you were reading');
+    await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
+    expect(gets).toBeGreaterThanOrEqual(2);
+    await acceptTerms(page);
+    await expect(page).toHaveURL(/\/post$/);
+    expect(posts).toHaveLength(2);
+  });
+
+  test('M4: when the server names Terms this page does not carry, the page says to reload and I accept stays off', async ({ page }) => {
+    await stubApi(page);
+    await page.unroute('**/v1/terms');
+    await page.route('**/v1/terms', json({ version: '2099-01-01' }));
+    await page.goto('/setup');
+    await expect(page.locator('[data-part="terms-stale"]')).toHaveText('The Terms have been updated. Reload the page to read the new version.');
+    await readTermsToEnd(page);
+    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
+  });
+
+  test('M7: an integrated address reaches the server and gets its own sentence', async ({ page }) => {
+    await stubApi(page, { signedIn: true, methods: ['pgp'] });
+    await page.route('**/v1/wallets', (r) =>
+      r.request().method() === 'GET' ? json([])(r) : json({ error: 'address-integrated' }, 400)(r),
+    );
+    await page.goto(`/setup/wallet?returnTo=${encodeURIComponent('/post')}`);
+    await page.fill('#addr', `4${'9'.repeat(101)}k3Fz`);
+    await page.click('[data-part="wallet-finish"]');
+    await expect(page.locator('[data-part="wallet-error"]')).toHaveText('That is an integrated address. Paste a normal receive address from your wallet.');
+  });
+
+  test('M8: the choice groups follow the radio pattern (arrow keys, one tab stop) and help text is linked', async ({ page }) => {
+    await stubApi(page);
+    await page.goto('/setup');
+    await expect(page.locator('[data-part="terms-tick"]')).toHaveAttribute('aria-describedby', /.+/);
+    const hint = await page.locator('[data-part="terms-tick"]').getAttribute('aria-describedby');
+    await expect(page.locator(`[id="${hint}"]`)).toHaveText('Scroll to the end to continue');
+    await acceptTerms(page);
+    for (const id of ['uname', 'login-name']) {
+      const d = await page.locator(`#${id}`).getAttribute('aria-describedby');
+      expect(d).toBeTruthy();
+      await expect(page.locator(`[id="${d}"]`)).toBeVisible();
+    }
+    await pickNames(page, 'lumen.k', 'lumen-login-7');
+    const radios = page.locator('[role="radiogroup"][aria-label="Login method"] [role="radio"]');
+    await expect(radios.nth(0)).toHaveAttribute('tabindex', '0');
+    await expect(radios.nth(1)).toHaveAttribute('tabindex', '-1');
+    await radios.nth(0).focus();
+    await page.keyboard.press('ArrowDown');
+    await expect(radios.nth(1)).toHaveAttribute('aria-checked', 'true');
+    await expect(radios.nth(1)).toBeFocused();
+    await page.keyboard.press('ArrowUp');
+    await page.keyboard.press('ArrowUp');
+    await expect(radios.nth(3)).toHaveAttribute('aria-checked', 'true');
+  });
+});

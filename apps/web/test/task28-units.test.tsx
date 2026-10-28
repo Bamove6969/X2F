@@ -8,7 +8,8 @@ import { ApiCallError } from '../src/api/client.js';
 import { stepPath } from '../src/screens/setup/kit.js';
 import { passwordRules } from '../src/screens/setup/Password.js';
 import { groupFingerprint } from '../src/screens/setup/PgpKey.js';
-import { nameError, termsChanged } from '../src/screens/setup/register.js';
+import { KEY_IN_USE, nameError, setupError, termsChanged } from '../src/screens/setup/register.js';
+import { TERMS_TEXT_VERSION } from '../src/screens/setup/termsText.js';
 import { TERMS } from '../src/screens/setup/termsText.js';
 import { FEE_SENTENCE, summarize } from '../src/screens/setup/Welcome.js';
 
@@ -102,5 +103,35 @@ describe('copy', () => {
     const all = TERMS.flatMap((s) => [s.heading, ...s.paragraphs]).join('\n');
     expect(all).toContain(FEE_SENTENCE);
     expect(all).not.toContain('!');
+  });
+});
+
+describe('setupError (review fix round M1, M2, I1)', () => {
+  const fallback = 'Try again.';
+  it("shows the server's sentence about a refused key from the typed client", () => {
+    expect(setupError(new AuthApiError(400, 'key-unreadable', { detail: 'That key has no signing subkey.' }), fallback)).toEqual({ text: 'That key has no signing subkey.' });
+  });
+  it('names a key already on another account, with the key-in-use links', () => {
+    expect(setupError(new AuthApiError(409, 'key-in-use'), fallback)).toEqual({ text: KEY_IN_USE, keyInUse: true });
+  });
+  it('gives honest waits for slow-down and busy', () => {
+    expect(setupError(new AuthApiError(429, 'slow-down', { retryAfterSeconds: 120 }), fallback).text).toBe('Too many tries. Try again in 2 minutes.');
+    expect(setupError(new AuthApiError(503, 'busy', { retryAfterSeconds: 30 }), fallback).text).toBe('X2F is busy right now. Try again in 1 minute.');
+    expect(setupError(new AuthApiError(503, 'busy'), fallback).text).toBe('X2F is busy right now. Try again in 1 minute.');
+  });
+  it("lists what a weak password still needs, from the server's missing list", () => {
+    expect(setupError(new AuthApiError(400, 'password-weak', { missing: ['length', 'symbol'] }), fallback).text).toBe(
+      'That password still needs: 10 characters or more, a symbol.',
+    );
+  });
+  it('names refusals link back to the names screen; anything else is the fallback', () => {
+    expect(setupError(new AuthApiError(409, 'display-name-taken'), fallback)).toEqual({ text: 'That username is taken. Pick another.', names: true });
+    expect(setupError(new TypeError('network'), fallback)).toEqual({ text: fallback });
+  });
+});
+
+describe('Terms text version (review fix round M4)', () => {
+  it('the bundled text names its version, a valid X2F_TERMS_VERSION (non-empty, at most 32 characters)', () => {
+    expect(TERMS_TEXT_VERSION).toMatch(/^\S{1,32}$/);
   });
 });
