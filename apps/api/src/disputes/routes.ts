@@ -84,6 +84,13 @@ function bodyOf(req: FastifyRequest, keys: readonly string[]): Record<string, un
   return b;
 }
 
+/**
+ * Free text a trader writes: a string of at most `max` characters with no control character
+ * except a line break or a tab (Postgres refuses U+0000 in text; the others are never typed).
+ */
+const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f]/;
+const isText = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max && !CONTROL.test(v);
+
 const isReason = (v: unknown): v is (typeof DISPUTE_REASONS)[number] => typeof v === 'string' && (DISPUTE_REASONS as readonly string[]).includes(v);
 
 /** The trade and the caller's side, or 404 for anyone who is not a participant. */
@@ -199,7 +206,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   app.post('/v1/trades/:code/dispute', { preHandler: trader }, async (req) => {
     const b = bodyOf(req, ['reason', 'note']);
     if (!isReason(b.reason)) throw new ApiError(400, 'bad-request');
-    if (typeof b.note !== 'string' || b.note.length > NOTE_MAX) throw new ApiError(400, 'bad-request');
+    if (!isText(b.note, NOTE_MAX)) throw new ApiError(400, 'bad-request');
     const reason = b.reason;
     const note = b.note;
     const { row, side } = await participant(req);
@@ -229,7 +236,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
   // first-round ruling and strictly before its appeal window ends.
   app.post('/v1/trades/:code/appeal', { preHandler: trader }, async (req) => {
     const b = bodyOf(req, ['why']);
-    if (typeof b.why !== 'string' || b.why.trim().length < APPEAL_MIN || b.why.length > APPEAL_MAX) throw new ApiError(400, 'bad-request');
+    if (!isText(b.why, APPEAL_MAX) || b.why.trim().length < APPEAL_MIN) throw new ApiError(400, 'bad-request');
     const why = b.why;
     const { row, side } = await participant(req);
     const deps = req.server.deps;

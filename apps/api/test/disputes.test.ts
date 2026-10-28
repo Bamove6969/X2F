@@ -134,11 +134,17 @@ describe('POST /v1/trades/:code/dispute', () => {
       { reason: 'paid', note: 7 },
       { reason: 'paid', note: '', by: 'seller' },
       { reason: 'paid', note: '', type: 'open-dispute' },
+      // Postgres refuses U+0000 in text (a 500 before this fix); other C0 controls are refused too.
+      { reason: 'paid', note: 'a\u0000b' },
+      { reason: 'paid', note: 'a\u0007b' },
+      { reason: 'paid', note: 'a\u001bb' },
     ]) {
       const res = await buyer.browser.post(dispute(t.code), body);
       expect(res.statusCode, JSON.stringify(body)).toBe(400);
     }
-    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'x'.repeat(1000) })).statusCode).toBe(200);
+    expect(await disputeRow(t.code)).toBeUndefined();
+    // A line break and a tab are text.
+    expect((await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'x'.repeat(998) + '\n\t' })).statusCode).toBe(200);
   });
 
   it('answers 404 to an outsider and an unknown code, 403 to staff, 401 without a session', async () => {
@@ -289,6 +295,8 @@ describe('POST /v1/trades/:code/appeal', () => {
     expect((await seller.browser.post(appeal(t.code), { why: 'too short' })).statusCode).toBe(400);
     expect((await seller.browser.post(appeal(t.code), { why: '         x' })).statusCode).toBe(400);
     expect((await seller.browser.post(appeal(t.code), { why: 'Please look again at this.', extra: 1 })).statusCode).toBe(400);
+    expect((await seller.browser.post(appeal(t.code), { why: 'Please look again\u0000 at this.' })).statusCode).toBe(400);
+    expect((await seller.browser.post(appeal(t.code), { why: 'Please look again\u0008 at this.' })).statusCode).toBe(400);
     const other = await trader();
     expect((await other.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(404);
     await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
