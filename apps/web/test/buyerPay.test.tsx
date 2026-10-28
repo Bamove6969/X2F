@@ -6,6 +6,8 @@ import { BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/Buye
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
+import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
+import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
 const at = (min: number) => new Date(T0 + min * 60_000).toISOString();
@@ -504,5 +506,25 @@ describe('slots for the trade room (Task 22)', () => {
       ['seller', ['secured']],
     ]);
     expect(TASK23_SLOTS.every((s) => s.owner === 'Task 23' && s.when === undefined)).toBe(true);
+  });
+});
+
+describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
+  it('Yes posts mark-paid with the device total, then sends trade.paid', async () => {
+    answer = (b) => (String(b.type) === 'mark-paid' ? { status: 200, json: tradeView({ ...SECURED, state: 'paid' }) } : { status: 204, json: {} });
+    const view = buyerAlertView();
+    render(
+      <MemoryRouter>
+        <FinalAlert view={view} escrow={fakeEscrow()} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+    await flush();
+    calls = calls.filter((c) => !c.includes('final-alert-seen'));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`);
+    await click(byText(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`, 'label'));
+    await click(byText("Yes, I've paid", 'button'));
+    await flush();
+    expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
   });
 });

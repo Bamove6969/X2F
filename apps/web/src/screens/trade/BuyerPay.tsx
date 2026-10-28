@@ -25,6 +25,7 @@ import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
+import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
@@ -597,3 +598,5 @@ export function SellerWaiting(p: TradeScreenProps) {
 }
 
 for (const slot of TASK23_SLOTS) registerTradeScreen(slot);
+// Task 25's FinalAlert: its I've paid is this same paid step (refund-tripwires NEEDS_TASK_23).
+setFinalAlertPaidSheet(PaidFlowSheet);

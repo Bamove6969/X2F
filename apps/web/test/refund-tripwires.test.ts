@@ -6,8 +6,6 @@
 // buildRefund is the one it expects; `RefundEscrow` is now Task 12's `UseEscrow`; the e2e harness then
 // ran the real `useEscrow` over a recorder client; its tripwire is retired.) Each
 // tripwire below fails once its piece lands: then do what it says and delete it.
-import { existsSync, readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { REFUND_SLOTS, registerRefundScreens, type RefundSlot } from '../src/screens/trade/refundScreens.js';
 import { buyerAlertView, sellerRequestedView, sellerView } from '../e2e/refundViews.js';
@@ -17,23 +15,17 @@ import { SellerWaiting } from '../src/screens/trade/BuyerPay.js';
 import { screenFor } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
 
-const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const has = (p: string): boolean => existsSync(ROOT + p);
+// Task 25 stand-ins: all retired.
+// NEEDS_TASK_22 retired 2026-10-27 (Task 22 landing): refundSlot.ts uses Task 22's types,
+// refundScreens.ts registers with registerTradeScreen at import, screens.ts imports it,
+// e2e/refund.spec.ts drives /trade/:code (with the 1280x800 parity), and methodOf is Task 22's.
 
-describe('Task 25 stand-ins', () => {
-  // NEEDS_TASK_22 retired 2026-10-27 (Task 22 landing): refundSlot.ts uses Task 22's types,
-  // refundScreens.ts registers with registerTradeScreen at import, screens.ts imports it,
-  // e2e/refund.spec.ts drives /trade/:code (with the 1280x800 parity), and methodOf is Task 22's.
-
-  it("NEEDS_TASK_23: FinalAlert's I've paid opens no sheet until PaidConfirmSheet is set", () => {
-    // When Task 23's PaidConfirmSheet lands: `setFinalAlertPaidSheet(PaidConfirmSheet)` where the
-    // room registers its screens (or have FinalAlert render it directly), and add an e2e step:
-    // FinalAlert → I've paid → Yes, I've paid → `mark-paid` posted and the `trade.paid` signal sent.
-    expect(has('apps/web/src/screens/trade/PaidConfirmSheet.tsx'), "Task 23 landed: wire PaidConfirmSheet into FinalAlert's I've paid").toBe(false);
-  });
-  // NEEDS_TASK_19 retired 2026-10-27: POST /v1/trades/:code/final-alert-seen is on the line (204; 409
-  // wrong-party / wrong-state, swallowed by FinalAlert and retried on the next visibility change).
-});
+// NEEDS_TASK_23 retired 2026-10-28 (Task 23 fix round): BuyerPay.tsx calls
+// setFinalAlertPaidSheet(PaidFlowSheet) at import (screens.ts), RefundEscrow carries what the
+// paid step reads, and test/buyerPay.test.tsx drives FinalAlert → I've paid → Yes (mark-paid,
+// then trade.paid). The fixture e2e keeps its stand-in sheet (refund.spec.ts).
+// NEEDS_TASK_19 retired 2026-10-27: POST /v1/trades/:code/final-alert-seen is on the line (204; 409
+// wrong-party / wrong-state, swallowed by FinalAlert and retried on the next visibility change).
 
 describe('the slots Task 25 registers', () => {
   it('a guarded seller × secured slot, and both sides of refund_requested', () => {

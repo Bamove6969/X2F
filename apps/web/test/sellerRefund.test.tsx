@@ -6,6 +6,7 @@ import { BOARD, SERVER_NOW, sellerRequestedView, sellerView } from '../e2e/refun
 import { forgetRefundRuns } from '../src/screens/trade/refundFlow.js';
 import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
 import type { RefundEscrow, RefundView } from '../src/screens/trade/refundSlot.js';
+import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import { fire, render } from './render.js';
 
 const MIN = 60_000;
@@ -36,6 +37,7 @@ afterEach(() => {
 function escrowFake(amountAtomic: bigint | null = null) {
   const calls: string[] = [];
   const escrow: RefundEscrow = {
+    ...PENDING_ESCROW,
     signal: vi.fn(async (s: string) => void calls.push(`signal:${s}`)),
     buildRefund: vi.fn(async () => void calls.push('build')),
     amountAtomic,
@@ -55,6 +57,7 @@ function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
     }
   };
   const escrow: RefundEscrow = {
+    ...PENDING_ESCROW,
     signal: vi.fn((s: string) => maybe('signal', `signal:${s}`)),
     buildRefund: vi.fn(() => maybe('build', 'build')),
     amountAtomic: null,
