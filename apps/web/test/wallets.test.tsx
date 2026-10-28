@@ -200,4 +200,21 @@ describe('Your wallets', () => {
       expect(where).toBe('/buy');
     });
   });
+
+  it('shows exactly one primary action: the footer steps down under the rule popup and the confirm sheet (review item 2)', async () => {
+    stub.onPost = () => ({ status: 403, json: { error: 'confirm-required', action: 'add-wallets' } });
+    const primaries = () => [...document.querySelectorAll('[data-primary]')].map((b) => b.textContent);
+    await mount();
+    expect(primaries()).toEqual(['Add a wallet']);
+
+    await click('Add a wallet');
+    expect(primaries()).toEqual(['Continue']);
+    await click('Continue', dialog('Before you add a wallet')!);
+    expect(primaries()).toEqual(['Save wallet']);
+
+    type('#wallet-address', ADDR_C);
+    await click('Save wallet');
+    expect(dialog("Confirm it's you")).not.toBeNull();
+    expect(primaries()).toEqual(['Confirm']);
+  });
 });

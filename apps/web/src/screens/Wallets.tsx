@@ -5,7 +5,7 @@ import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
-import { isConfirmAbort, useConfirm } from './auth/ConfirmSheet.js';
+import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -190,6 +190,28 @@ function RulePopup({ rule, onContinue, onClose }: { rule: WalletRule | null; onC
   );
 }
 
+/**
+ * The footer's one action. It is the screen's primary only while nothing is open over it: under the
+ * rule popup or the confirm sheet it steps down to secondary, so there is one primary per state
+ * (Task 30's convention, Task 15's parity check).
+ */
+function WalletsFoot({ adding, count, saving, onSave, onAdd }: { adding: boolean; count: number; saving: boolean; onSave: () => void; onAdd: () => void }) {
+  const variant = usePrimaryVariant();
+  return (
+    <footer className="x2f-wallets__foot">
+      {adding ? (
+        <Button variant={variant} onClick={onSave} disabled={count === 0 || saving}>
+          {count > 1 ? `Save ${count} wallets` : 'Save wallet'}
+        </Button>
+      ) : (
+        <Button variant={variant} onClick={onAdd}>
+          Add a wallet
+        </Button>
+      )}
+    </footer>
+  );
+}
+
 export function Wallets() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
@@ -209,7 +231,7 @@ export function Wallets() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const codes = useOpenEscrowKeys();
-  const { prove, confirmUi } = useConfirm();
+  const { prove, confirmUi, open: confirmOpen } = useConfirm();
   const addressInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -490,17 +512,9 @@ export function Wallets() {
         ) : null}
       </main>
 
-      <footer className="x2f-wallets__foot">
-        {adding ? (
-          <Button variant="primary" onClick={save} disabled={count === 0 || saving}>
-            {count > 1 ? `Save ${count} wallets` : 'Save wallet'}
-          </Button>
-        ) : (
-          <Button variant="primary" onClick={() => setPopup(true)}>
-            Add a wallet
-          </Button>
-        )}
-      </footer>
+      <ConfirmOpenProvider value={confirmOpen || popup}>
+        <WalletsFoot adding={adding} count={count} saving={saving} onSave={() => void save()} onAdd={() => setPopup(true)} />
+      </ConfirmOpenProvider>
 
       {popup ? (
         <RulePopup
