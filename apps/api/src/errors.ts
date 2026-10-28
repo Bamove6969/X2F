@@ -47,6 +47,7 @@ export type ApiErrorCode =
   | 'no-wallet'
   | 'trading-hold'
   | 'trading-paused'
+  | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'

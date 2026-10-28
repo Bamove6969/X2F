@@ -26,6 +26,9 @@ export interface TraderSummary {
 /** Someone counts as online when one of their sessions was used this recently. */
 export const ONLINE_MS = 5 * 60_000;
 
+/** `lastSeenAt` is rounded down to this step. */
+export const LAST_SEEN_STEP_MS = 5 * 60_000;
+
 /** The summaries of `accountIds` (unknown ids are left out), in one query. */
 export async function traderSummaries(
   q: Queryable,
@@ -51,7 +54,8 @@ export async function traderSummaries(
       displayName: r.name,
       completedTrades: completed,
       online: r.last_seen !== null && now.getTime() - r.last_seen.getTime() < ONLINE_MS,
-      lastSeenAt: r.last_seen?.toISOString() ?? null,
+      // Public, so only to the 5 minutes, floored (review M3): enough for "last seen", not for timing someone's requests.
+      lastSeenAt: r.last_seen === null ? null : new Date(Math.floor(r.last_seen.getTime() / LAST_SEEN_STEP_MS) * LAST_SEEN_STEP_MS).toISOString(),
       typicalMinutes: null,
       positivePct: null,
       badges: [],
