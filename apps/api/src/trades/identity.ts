@@ -104,6 +104,10 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
       // The moderation service refused this trade for good (no reason given): stop waiting.
       const refused = await deps.db.query('select 1 from trade_refusals where code = $1', [normalized]);
       if (refused.rows.length > 0) throw new ApiError(409, 'attestation-refused');
+      // The trade closed (e.g. setupBy cancelled it) before any attestation: none will ever come,
+      // so the devices stop waiting (review M2).
+      const closed = await deps.db.query('select 1 from trades where code = $1 and closed_at is not null', [normalized]);
+      if (closed.rows.length > 0) throw new ApiError(409, 'trade-closed');
       // Ready only once the moderation service has posted it, which needs both traders registered.
       return reply.code(202).send({ status: 'pending' });
     }

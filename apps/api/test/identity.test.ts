@@ -386,6 +386,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
            join trade_identities si on si.code = t.code and si.role = 'seller'
           where not exists (select 1 from trade_attestations a where a.code = t.code)
             and not exists (select 1 from trade_refusals r where r.code = t.code)
+            and t.state = 'setup' and t.closed_at is null
             and t.buyer_payout is not null and t.seller_refund is not null`,
       );
       const open = Number(rows[0]!.n);
