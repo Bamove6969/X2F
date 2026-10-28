@@ -80,6 +80,9 @@ describe('TRIPWIRES: trade room', () => {
     const root = fileURLToPath(web);
     const opens = sourceFiles(root).filter((f) => /new\s+(Source|EventSource)\(|connectEvents\(/.test(readFileSync(f, 'utf8')));
     expect(opens.map((f) => relative(root, f)).sort()).toEqual(['api/events.ts']);
+    // useLiveEvents opens a connection of its own: App.tsx's LiveAccepted is its only caller.
+    const hooks = sourceFiles(root).filter((f) => /useLiveEvents\(/.test(readFileSync(f, 'utf8')) && !f.endsWith(join('api', 'events.ts')));
+    expect(hooks.map((f) => relative(root, f))).toEqual(['App.tsx']);
   });
 
   // Review 2026-10-27, I4: Task 12 fails the first start of a trade with `not-confirmed` unless the

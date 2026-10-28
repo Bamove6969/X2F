@@ -3,7 +3,9 @@
 // CSP. The API is stubbed per test with page.route in Task 6's shapes; the escrow is the fixture
 // build's recorder (src/fixtures/index.ts: window.__x2fEscrowCalls names the actions the room's
 // handle was asked for, window.__x2fEscrowFail refuses them), standing in for Task 12's runtime,
-// which needs a relay, a node and a moderator.
+// which needs a relay, a node and a moderator. The fixture records action names on a fake handle, so
+// the hook's action-to-message mapping (`signal` → `{ type: 'signal', signal }`, `buildRefund` →
+// `build-refund`) is covered by test/useEscrow.test.tsx, not here (landing review Minor 5).
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
