@@ -1,45 +1,8 @@
 import { moneroUri, nextDeadline, releasableEta, type Party, type Trade } from '@x2f/trade';
-import type { Queryable } from '../db/pool.js';
+import type { TraderSummary } from '../traders/summary.js';
 
-/**
- * A trader as another trader sees them (Task 4's shape). Task 4 owns the full summary
- * (`traders/summary.ts`); until it lands, `traderSummary` below fills what the trades table and
- * sessions already know, and Plan 5 fills `typicalMinutes`, `positivePct` and `badges`.
- */
-export interface TraderSummary {
-  username: string;
-  completedTrades: number;
-  online: boolean;
-  lastSeenAt: string | null;
-  typicalMinutes: number | null;
-  positivePct: number | null;
-  badges: string[];
-}
-
-/** Someone counts as online when one of their sessions was used this recently. */
-export const ONLINE_MS = 5 * 60_000;
-
-export async function traderSummary(q: Queryable, accountId: string, now: Date): Promise<TraderSummary> {
-  const { rows } = await q.query<{ username: string; completed: string; last_seen: Date | null }>(
-    `select a.username,
-            (select count(*) from trades t
-              where t.state = 'released' and (t.buyer_account_id = a.id or t.seller_account_id = a.id)) as completed,
-            (select max(s.last_seen_at) from sessions s where s.account_id = a.id and s.revoked_at is null) as last_seen
-       from accounts a where a.id = $1`,
-    [accountId],
-  );
-  const r = rows[0];
-  if (!r) throw new Error('trader missing');
-  return {
-    username: r.username,
-    completedTrades: Number(r.completed),
-    online: r.last_seen !== null && now.getTime() - r.last_seen.getTime() < ONLINE_MS,
-    lastSeenAt: r.last_seen?.toISOString() ?? null,
-    typicalMinutes: null,
-    positivePct: null,
-    badges: [],
-  };
-}
+// The counterparty's summary is Task 4's (traders/summary.ts); re-exported for existing importers.
+export { ONLINE_MS, traderSummary, type TraderSummary } from '../traders/summary.js';
 
 /** The viewer's side of the trade, or null for anyone else. */
 export function roleOf(t: Trade, accountId: string): Party | null {
