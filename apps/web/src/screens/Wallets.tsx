@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
+import { AuthApiError, walletsAction, withConfirm } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
-import { useConfirmSheet } from './ConfirmSheet.stub.js';
+import { isConfirmAbort, useConfirm } from './auth/ConfirmSheet.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -24,8 +25,8 @@ import './Wallets.css';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
-// @x2f/auth-client's. TODO(Task 28/30): when the app moves to `createAuthApi`, use `getWalletRule`,
-// `addWallets` and `withConfirm(walletsAction(addresses), ...)` with the real ConfirmSheet.
+// @x2f/auth-client's. Adding goes through `withConfirm(walletsAction(addresses), ...)` with Task 30's
+// ConfirmSheet, so the one confirm token is bound to the exact list in order (spec 6.4, R17).
 
 const LABEL_MAX = 40;
 
@@ -34,7 +35,7 @@ function when(iso: string): string {
 }
 
 function addError(e: unknown): string {
-  if (e instanceof ApiCallError) {
+  if (e instanceof ApiCallError || e instanceof AuthApiError) {
     if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
     if (e.code === 'wallet-exists') return 'One of those wallets is already linked.';
@@ -208,7 +209,7 @@ export function Wallets() {
   const [notice, setNotice] = useState<string | null>(null);
 
   const codes = useOpenEscrowKeys();
-  const { prove, element: confirmSheet } = useConfirmSheet();
+  const { prove, confirmUi } = useConfirm();
   const addressInput = useRef<HTMLInputElement>(null);
 
   const load = useCallback(() => {
@@ -266,17 +267,22 @@ export function Wallets() {
     setError(null);
     setNotice(null);
     const drafts = trimmed === '' ? batch : [...batch, current()];
-    const body: Record<string, unknown> = { wallets: drafts };
-    try {
-      let saved: WalletView[];
+    // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
+    const post = async (confirmToken?: string): Promise<WalletView[]> => {
       try {
-        saved = await api<WalletView[]>('/v1/wallets', { method: 'POST', body });
+        return await api<WalletView[]>('/v1/wallets', {
+          method: 'POST',
+          body: confirmToken === undefined ? { wallets: drafts } : { wallets: drafts, confirmToken },
+        });
       } catch (e) {
-        // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
-        if (!(e instanceof ApiCallError && e.code === 'confirm-required')) throw e;
-        const token = await prove({ kind: 'add-wallets', addressEnds: drafts.map((d) => d.address.slice(-6)).join(',') });
-        saved = await api<WalletView[]>('/v1/wallets', { method: 'POST', body: { ...body, confirmToken: token } });
+        // withConfirm reads auth-client's error; api() throws the shell's.
+        if (e instanceof ApiCallError && e.code === 'confirm-required') throw new AuthApiError(e.status, 'confirm-required', e.extra);
+        throw e;
       }
+    };
+    try {
+      const action = await walletsAction(drafts.map((d) => d.address));
+      const saved = await withConfirm(action, post, prove);
       if (addMode) {
         navigate(returnTo);
         return;
@@ -297,7 +303,7 @@ export function Wallets() {
       }
       void api<WalletRule>('/v1/wallets/rule').then(setRule, () => setRule(null));
     } catch (e) {
-      if (!(e instanceof Error && e.message === 'confirm-cancelled')) setError(addError(e));
+      if (!isConfirmAbort(e)) setError(addError(e));
     } finally {
       setSaving(false);
     }
@@ -503,7 +509,7 @@ export function Wallets() {
           }}
         />
       ) : null}
-      {confirmSheet}
+      {confirmUi}
     </div>
   );
 }

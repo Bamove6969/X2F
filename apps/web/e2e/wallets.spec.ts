@@ -45,8 +45,9 @@ interface Stub {
 }
 
 /**
- * Stubs `me` (so the shell is quiet), the wallet list and the account's wallet rule. Each POST body
- * is recorded; `onPost` answers it (default 500).
+ * Stubs `me` (a password account, so Task 30's ConfirmSheet offers the password), its password
+ * confirm, the wallet list and the account's wallet rule. Each POST body is recorded; `onPost`
+ * answers it (default 500).
  */
 async function stub(
   page: Page,
@@ -55,7 +56,8 @@ async function stub(
   onPost?: (body: Record<string, unknown>, n: number, route: Route) => Promise<void> | void,
 ): Promise<Stub> {
   const s: Stub = { posts: [] };
-  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: {} }));
+  await page.route('**/v1/account/me', (route) => route.fulfill({ status: 200, json: { methods: ['password'] } }));
+  await page.route('**/v1/confirm/password', (route) => route.fulfill({ status: 200, json: { confirmToken: 'tok-1' } }));
   await page.route('**/v1/wallets/rule', (route) => route.fulfill({ status: 200, json: rule }));
   await page.route('**/v1/wallets', async (route) => {
     if (route.request().method() === 'GET') return route.fulfill({ status: 200, json: wallets });
@@ -133,6 +135,14 @@ async function startAdding(page: Page): Promise<void> {
   await expect(popup).toBeVisible();
   await popup.getByRole('button', { name: 'Continue' }).click();
   await expect(popup).toHaveCount(0);
+}
+
+/** Confirms it's you in Task 30's ConfirmSheet with the account's password. */
+async function confirmWithPassword(page: Page): Promise<void> {
+  const sheet = page.getByRole('dialog', { name: "Confirm it's you" });
+  await expect(sheet).toBeVisible();
+  await sheet.getByLabel('Your password').fill('Correct-Horse-9!');
+  await sheet.getByRole('button', { name: 'Confirm' }).click();
 }
 
 /** Fills one wallet in the Add a wallet form. */
@@ -287,8 +297,8 @@ test('several wallets are added under one confirm', async ({ page }) => {
   await page.getByRole('button', { name: 'Save 3 wallets' }).click();
   const confirm = page.getByRole('dialog', { name: "Confirm it's you" });
   await expect(confirm).toBeVisible();
-  await expect(confirm).toContainText('3 wallets');
-  await confirm.getByRole('button', { name: 'Confirm' }).click();
+  await expect(confirm).toContainText('3 payout wallets');
+  await confirmWithPassword(page);
   await expect(page.getByRole('listitem').filter({ hasText: 'Wallet 4' })).toBeVisible();
   await expect(confirm).toHaveCount(0);
   // Exactly one confirm: one refused request, then one retry with the token, for the same three wallets in order.
@@ -297,7 +307,7 @@ test('several wallets are added under one confirm', async ({ page }) => {
   expect(addrs(s.posts[0]!)).toEqual([address('C', 'AAAAA1'), address('D', 'BBBBB2'), address('E', 'CCCCC3')]);
   expect(addrs(s.posts[1]!)).toEqual(addrs(s.posts[0]!));
   expect(s.posts[0]).not.toHaveProperty('confirmToken');
-  expect(typeof s.posts[1]!.confirmToken).toBe('string');
+  expect(s.posts[1]!.confirmToken).toBe('tok-1');
 });
 
 test('a batch that waits shows one shared wait for all of its wallets', async ({ page }) => {
@@ -313,7 +323,7 @@ test('a batch that waits shows one shared wait for all of its wallets', async ({
   await page.getByRole('button', { name: 'Add another' }).click();
   await fillWallet(page, address('D', 'BBBBB2'), 'Wallet 3');
   await page.getByRole('button', { name: 'Save 2 wallets' }).click();
-  await page.getByRole('dialog', { name: "Confirm it's you" }).getByRole('button', { name: 'Confirm' }).click();
+  await confirmWithPassword(page);
   const status = page.getByRole('status');
   await expect(status).toContainText('Your 2 new wallets can be paid from');
   await expect(status).toContainText('one wait for all of them');
