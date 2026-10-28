@@ -250,7 +250,7 @@ export function accountRoutes(app: FastifyInstance): void {
       const id = idParam(req);
       const { rows } = await d.db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
       if (rows.length === 0) throw new ApiError(404, 'not-found');
-      await endSession(d, id);
+      await endSession({ ...d, events: req.server.events }, id);
       return reply.code(204).send();
     },
   );

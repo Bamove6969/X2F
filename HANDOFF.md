@@ -189,3 +189,21 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 
 ## Decided 2026-10-23 (owner)
 - Price feed: the lead picks 3 public XMR price sources that need no account and are reachable over Tor, and the server uses their median. Sources are kept in config and can be changed later. Trading on market offers pauses when the price is stale (> 5 min) or the sources disagree (Plan 3 Task 3). **Every currency gets a market price** (owner, 2026-10-24; spec 11.6): the XMR/USD median times dollar exchange rates from three keyless sources used in a fixed order of trust (the first if it is up and fresh under 1 hour, else the next); screens show the local price and its US-dollar value.
+
+## Decided 2026-10-27 (owner)
+
+From the OpenMonero comparison (`research/openmonero-parity-2026-10-27.md`; owner's goal: every OpenMonero feature that fits our values, done better and simpler):
+- **No guest buying.** It complicates disputes. Instead, sign-up stays easy and fast.
+- **Message and trade self-delete (a user setting).**
+  - Each user can choose how long their own typed messages and details last in a completed trade: 1 hour, 1 day, 1 week or 1 month. After that, their part disappears from the trade.
+  - A separate option deletes the whole trade 1 week or 1 month after it ends, but only when both parties have it on.
+  - A dispute opened before the 1-week mark keeps the trade's information until the dispute is resolved.
+  - Owner's note: all trades auto-delete after 90 days, and are kept that long only for training, with confidential user data stripped. (Lead to reconcile with the existing rules: dispute records 30 days after close, anonymized training copies 6 months.)
+- **Encrypted alerts outside the app: yes.** Nostr and PGP-encrypted email, alongside phone push.
+- **I2P address: yes,** next to the Tor .onion (Plan 6).
+- **Android: direct APK download from the website and F-Droid,** plus the web app. Google plans to restrict sideloading, so the web app stays the main path.
+- **Public pages: very important.** A site that introduces X2F with well-written pages, a FAQ, a searchable support centre of real questions with good answers, and guides. Statistics are collected; whether to publish them is decided later. A published policy on lawful requests: warrants are answered with what little X2F holds, and X2F can't hand over what it never collects.
+- **Not open source for now.** Instead: outside testing groups and a bug bounty.
+- **Affiliates and sponsored ads:** revisit later.
+- **Chat encryption: keep it as is.** Moderators can read a trade's chat once a dispute opens. Before that, they're stopped by rules and the audit log, not by encryption (spec 6.6).
+- **No worker session reports to the owner directly.** claude2 and claude3 report to the lead, who is the owner's single contact.

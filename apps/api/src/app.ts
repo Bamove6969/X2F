@@ -10,11 +10,22 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
+import { tradeRoutes } from './trades/routes.js';
+import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
+import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
+import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
+import type { MarketPrices } from './price/market.js';
+import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
+import { EventBus, type EventBusOptions } from './events/bus.js';
+import { eventRoutes, type EventStreamOptions } from './events/routes.js';
+import { tradeEventPublisher } from './events/tradePublisher.js';
+import { pushRoutes } from './push/routes.js';
+import { sendPush, webPushTransport, type PushKind, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -44,6 +55,12 @@ export interface Deps {
   addresses: AddressValidator;
   attestation: AttestationPolicy;
   pgpSigner: PgpSigner;
+  /** Plan 3 Task 3: market prices, XMR/USD median × exchange rate, with price health (`main.ts` starts polling). */
+  prices: MarketPrices;
+  /** Plan 3 Task 4 supplies this from the `offers` table; without it `/v1/methods` lists nothing live. */
+  liveOffers?: LiveOfferStats;
+  /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
+  nudges: NudgeWiring;
 }
 
 declare module 'fastify' {
@@ -52,12 +69,22 @@ declare module 'fastify' {
     budgets: Budgets;
     /** The app's dependencies, for hooks that receive only the request (`requireSession`, the origin check). */
     deps: Deps;
+    /** Task 19: live events to each account's own open streams (`publish`, `delivered`). */
+    events: EventBus;
+    /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
+    push: { send(accountId: string, kind: PushKind): Promise<boolean> };
   }
 }
 
 export interface BuildOptions {
   /** Where log lines go (default stdout); tests capture them. */
   logStream?: { write(line: string): void };
+  /** Task 19: stream caps, heartbeat and stream lifetime (defaults in events/). */
+  events?: EventBusOptions & EventStreamOptions;
+  /** Task 19: where pushes go (default web-push); tests pass a fake push service. */
+  pushTransport?: PushTransport;
+  /** Trade event delivery after commit; default Task 19's `tradeEventPublisher` (SSE, Web Push, final alert). */
+  tradePublish?: TradePublisher;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -132,6 +159,12 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   app.decorate('budgets', newBudgets(deps.clock));
   app.decorate('deps', deps);
+  const events = new EventBus(options.events);
+  app.decorate('events', events);
+  const transport = options.pushTransport ?? webPushTransport;
+  app.decorate('push', {
+    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind),
+  });
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
   await app.register(fastifyCookie);
@@ -193,6 +226,16 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
+  // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
+  methodListRoutes(app);
+  priceRoutes(app);
+  // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
+  eventRoutes(app, events, options.events);
+  pushRoutes(app);
+  // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
+  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
+  // Plan 3, Task 26: nudges, nudge settings and blocks.
+  nudgeRoutes(app);
 
   return app;
 }

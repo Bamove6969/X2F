@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "@x2f/core": "0.0.0",
-    "@x2f/escrow": "0.0.0"
+    "@x2f/escrow": "0.0.0",
+    "@x2f/protocol": "0.0.0"
   }
 }

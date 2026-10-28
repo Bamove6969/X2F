@@ -24,6 +24,32 @@ const GOOD = 'Correct-Horse-9';
 const WRONG = 'Wrong-Horse-99';
 const LABEL = 'Browser on Linux';
 
+/**
+ * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
+ * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
+ * (Task 3: methods, method suggestions, price, the owner's price health; Task 6: the trade view
+ * and the events route; Task 19: live events, Web Push and the final-alert receipts; Task 26:
+ * nudges, nudge settings and blocks). Any other new route still
+ * needs a client method.
+ */
+const NOT_AUTH_CLIENT = [
+  'DELETE /v1/account/push',
+  'GET /v1/account/nudges',
+  'GET /v1/account/push',
+  'GET /v1/events',
+  'GET /v1/methods',
+  'GET /v1/owner/price-health',
+  'GET /v1/price',
+  'GET /v1/trades/:code',
+  'POST /v1/account/blocks',
+  'POST /v1/account/push',
+  'POST /v1/method-suggestions',
+  'POST /v1/nudges',
+  'POST /v1/trades/:code/events',
+  'POST /v1/trades/:code/final-alert-seen',
+  'PUT /v1/account/nudges',
+] as const;
+
 let srv: Server;
 
 beforeAll(async () => {
@@ -87,10 +113,17 @@ describe('the client covers the API', () => {
     }
   });
 
-  it('every route of the API (but /healthz) has its client method', () => {
+  it('every route of the API (but /healthz and the Plan 3 app routes) has its client method', () => {
     // Two methods may share a route (addWallet and addWallets both POST /v1/wallets).
     const expected = new Set(methodNames().map((n) => ROUTES[n]));
-    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz')).toEqual([...expected].sort());
+    const notAuth = new Set<string>(NOT_AUTH_CLIENT);
+    expect(srv.serverRoutes().filter((r) => r !== 'GET /healthz' && !notAuth.has(r))).toEqual([...expected].sort());
+  });
+
+  it('lists only Plan 3 routes that exist, sorted, once each', () => {
+    const routes = srv.serverRoutes();
+    for (const r of NOT_AUTH_CLIENT) expect(routes, r).toContain(r);
+    expect([...NOT_AUTH_CLIENT]).toEqual([...new Set(NOT_AUTH_CLIENT)].sort());
   });
 
   it('serves the official PGP signing key that signs every challenge', async () => {
