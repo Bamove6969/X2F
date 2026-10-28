@@ -8,12 +8,24 @@ import {
   attestationBytes,
   channelFor,
   escrowCheckWords,
+  isAttestedTerms,
   verifyAttestation,
   WORDLIST,
   type Attestation,
+  type AttestedTerms,
+  type ConfirmedDeal,
 } from '../src/index.js';
 
 const TRADE = 'AB12-CD34-EF56-GH78';
+const BUYER_PAYOUT = '4'.padEnd(95, 'B');
+const SELLER_REFUND = '8'.padEnd(95, 'S');
+/** The deal both users confirmed (bigints), and the same deal as attested (decimal strings). */
+const DEAL: ConfirmedDeal = { poster: 'seller', takeAmountAtomic: 250_000_000_000n, currency: 'USD', centsPerXmr: 16_250n, maxFiatCents: 100_000n };
+const TERMS: AttestedTerms = {
+  deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+  buyerPayout: BUYER_PAYOUT,
+  sellerRefund: SELLER_REFUND,
+};
 
 function participantsFrom(buyer: Identity, seller: Identity, mod: Identity): Participants {
   return {
@@ -42,6 +54,7 @@ async function buildTrade(trade = TRADE): Promise<{
     channels: { escrow: await channelFor(trade, 'escrow'), signals: await channelFor(trade, 'signals') },
     participants: participantsFrom(buyer, seller, mod),
     issuedAt: '2026-10-23T00:00:00.000Z',
+    terms: TERMS,
   };
   const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSignKp.privateKey));
   return { attestation, sig, modSign: { public: sodium.to_hex(modSignKp.publicKey), secret: modSignKp.privateKey }, buyer, seller, mod };
@@ -57,9 +70,20 @@ describe('attestationBytes', () => {
 type Built = Awaited<ReturnType<typeof buildTrade>>;
 
 /** What the verifying app knows about itself: its trade, its role and both of its public keys. */
-function meOf(t: Built, role: 'buyer' | 'seller' = 'buyer', over: Partial<{ trade: string; signPublic: string; boxPublic: string; context: 'trade' | 'chat' }> = {}) {
+function meOf(
+  t: Built,
+  role: 'buyer' | 'seller' = 'buyer',
+  over: Partial<{ trade: string; signPublic: string; boxPublic: string; context: 'trade' | 'chat'; deal: ConfirmedDeal; ownAddress: string }> = {},
+) {
   const id = role === 'buyer' ? t.buyer : t.seller;
-  return { trade: TRADE, role, signPublic: id.signPublic, boxPublic: id.boxPublic, ...over };
+  const ownAddress = role === 'buyer' ? BUYER_PAYOUT : SELLER_REFUND;
+  return { trade: TRADE, role, signPublic: id.signPublic, boxPublic: id.boxPublic, deal: DEAL, ownAddress, ...over };
+}
+
+/** A chat attestation: the chat channel only and no terms. */
+async function chatOf(t: Built): Promise<Attestation> {
+  const { terms: _terms, ...rest } = t.attestation;
+  return { ...rest, channels: { chat: await channelFor(TRADE, 'chat') } };
 }
 
 /** Re-sign a modified attestation with the real moderation key (a validly signed but wrong statement). */
@@ -148,17 +172,94 @@ describe('verifyAttestation', () => {
 
   it('a chat attestation must carry exactly the chat channel', async () => {
     const t = await buildTrade();
-    const chat: Attestation = { ...t.attestation, channels: { chat: await channelFor(TRADE, 'chat') } };
+    const chat = await chatOf(t);
     await expect(verifyAttestation(chat, resign(t, chat), t.modSign.public, meOf(t, 'buyer', { context: 'chat' }))).resolves.toBeUndefined();
     // A trade attestation is not a chat attestation, and vice versa.
     await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { context: 'chat' }))).rejects.toMatchObject({ code: 'wrong-channel' });
     await expect(verifyAttestation(chat, resign(t, chat), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-channel' });
   });
 
+  it('throws wrong-terms for a trade attestation without terms', async () => {
+    const t = await buildTrade();
+    const { terms: _terms, ...bare } = t.attestation;
+    await expect(verifyAttestation(bare, resign(t, bare), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('throws wrong-terms when any field of the attested deal differs from the confirmed deal', async () => {
+    const t = await buildTrade();
+    const changes: Array<Partial<AttestedTerms['deal']>> = [
+      { poster: 'buyer' },
+      { takeAmountAtomic: '250000000001' },
+      { currency: 'EUR' },
+      { centsPerXmr: '16251' },
+      { maxFiatCents: '99999' },
+    ];
+    for (const c of changes) {
+      const other: Attestation = { ...t.attestation, terms: { ...TERMS, deal: { ...TERMS.deal, ...c } } };
+      await expect(verifyAttestation(other, resign(t, other), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'wrong-terms' });
+      await expect(verifyAttestation(other, resign(t, other), t.modSign.public, meOf(t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    }
+  });
+
+  it("throws wrong-terms when this device's own address differs; the other side's address is not its to check", async () => {
+    const t = await buildTrade();
+    const payout: Attestation = { ...t.attestation, terms: { ...TERMS, buyerPayout: '4'.padEnd(95, 'X') } };
+    await expect(verifyAttestation(payout, resign(t, payout), t.modSign.public, meOf(t, 'buyer'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(payout, resign(t, payout), t.modSign.public, meOf(t, 'seller'))).resolves.toBeUndefined();
+    const refund: Attestation = { ...t.attestation, terms: { ...TERMS, sellerRefund: '8'.padEnd(95, 'X') } };
+    await expect(verifyAttestation(refund, resign(t, refund), t.modSign.public, meOf(t, 'seller'))).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(refund, resign(t, refund), t.modSign.public, meOf(t, 'buyer'))).resolves.toBeUndefined();
+  });
+
+  it('throws wrong-terms when the verifying app passes no confirmed deal or no own address (fail closed)', async () => {
+    const t = await buildTrade();
+    const { deal: _d, ...noDeal } = meOf(t);
+    const { ownAddress: _o, ...noAddress } = meOf(t);
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, noDeal)).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, noAddress)).rejects.toMatchObject({ code: 'wrong-terms' });
+    await expect(verifyAttestation(t.attestation, t.sig, t.modSign.public, meOf(t, 'buyer', { ownAddress: '' }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('throws wrong-terms for a chat attestation that carries terms', async () => {
+    const t = await buildTrade();
+    const chat: Attestation = { ...(await chatOf(t)), terms: TERMS };
+    await expect(verifyAttestation(chat, resign(t, chat), t.modSign.public, meOf(t, 'buyer', { context: 'chat' }))).rejects.toMatchObject({ code: 'wrong-terms' });
+  });
+
+  it('throws bad-signature for malformed terms, even validly signed', async () => {
+    const t = await buildTrade();
+    const bad: unknown[] = [
+      { ...TERMS, extra: 'x' },
+      { ...TERMS, buyerPayout: '' },
+      { ...TERMS, sellerRefund: 'x'.repeat(257) },
+      { ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '0250000000000' } },
+      { ...TERMS, deal: { ...TERMS.deal, centsPerXmr: '0' } },
+      { ...TERMS, deal: { ...TERMS.deal, maxFiatCents: 100000 } },
+      { ...TERMS, deal: { ...TERMS.deal, poster: 'mod' } },
+      { ...TERMS, deal: { ...TERMS.deal, extra: '1' } },
+      { buyerPayout: BUYER_PAYOUT, sellerRefund: SELLER_REFUND },
+    ];
+    for (const terms of bad) {
+      const a = { ...t.attestation, terms } as unknown as Attestation;
+      await expect(verifyAttestation(a, resign(t, a), t.modSign.public, meOf(t))).rejects.toMatchObject({ code: 'bad-signature' });
+    }
+  });
+
   it('throws bad-signature for a malformed attestation', async () => {
     const t = await buildTrade();
     const broken = { ...t.attestation, v: 2 } as unknown as Attestation;
     await expect(verifyAttestation(broken, t.sig, t.modSign.public, meOf(t))).rejects.toBeInstanceOf(AttestationError);
+  });
+});
+
+describe('isAttestedTerms', () => {
+  it('accepts exactly the attested terms shape', () => {
+    expect(isAttestedTerms(TERMS)).toBe(true);
+    expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, poster: 'buyer' } })).toBe(true);
+    expect(isAttestedTerms(null)).toBe(false);
+    expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, currency: '' } })).toBe(false);
+    expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '-1' } })).toBe(false);
+    expect(isAttestedTerms({ ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '1'.repeat(32) } })).toBe(false);
   });
 });
 
