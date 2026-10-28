@@ -39,7 +39,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -83,7 +83,7 @@ describe('migrations', () => {
       );
 
       expect(await migrate(db)).toEqual([
-        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
+        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
       ]);
 
