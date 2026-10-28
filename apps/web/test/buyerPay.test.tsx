@@ -2,7 +2,7 @@
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
+import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
@@ -500,12 +500,13 @@ describe('desktop room (Desktop board)', () => {
 });
 
 describe('slots for the trade room (Task 22)', () => {
-  it('buyer in securing, secured and paid; seller in secured', () => {
-    expect(TASK23_SLOTS.map((s) => [s.role, [...s.states]])).toEqual([
-      ['buyer', ['securing', 'secured', 'paid']],
-      ['seller', ['secured']],
+  it('buyer in securing, secured and paid; seller in secured; buyer in settling only after a cancel', () => {
+    expect(TASK23_SLOTS.map((s) => [s.role, [...s.states], s.when ? 'guarded' : 'open'])).toEqual([
+      ['buyer', ['securing', 'secured', 'paid'], 'open'],
+      ['seller', ['secured'], 'open'],
+      ['buyer', ['settling'], 'guarded'],
     ]);
-    expect(TASK23_SLOTS.every((s) => s.owner === 'Task 23' && s.when === undefined)).toBe(true);
+    expect(TASK23_SLOTS.every((s) => s.owner === 'Task 23')).toBe(true);
   });
 });
 
@@ -526,5 +527,53 @@ describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
     await click(byText("Yes, I've paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
+  });
+});
+
+describe('after the cancel: the buyer builds the refund (review I4)', () => {
+  const settling = (kind: 'buyer-cancel' | 'mutual-cancel') => tradeView({ ...SECURED, state: 'settling', settling: kind });
+
+  it('says the XMR goes back to the seller and to keep the page open', () => {
+    mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'signing', keepOpen: true }) }), BuyerCancelling);
+    expect(text()).toContain('Returning the XMR to satoshi_ghost. Keep this page open.');
+    expect(maybe('Try again')).toBeUndefined();
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+
+  it('the escrow step rejects once; Try again calls only the escrow and posts nothing', async () => {
+    let fail = true;
+    const buyerCancel = vi.fn(async () => {
+      calls.push('escrow:buyerCancel');
+      if (fail) throw new Error('no signals yet');
+    });
+    mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ buyerCancel }) }), BuyerCancelling);
+    await click(byText('Try again', 'button'));
+    await flush();
+    expect(text()).toContain("Couldn't start the refund. Try again.");
+    fail = false;
+    await click(byText('Try again', 'button'));
+    await flush();
+    expect(calls).toEqual(['escrow:buyerCancel', 'escrow:buyerCancel']);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(text()).not.toContain("Couldn't start the refund.");
+  });
+
+  it('a mutual cancel retries with proposeCancelSign; a stopped escrow retries with retry()', async () => {
+    const r = mount(props({ view: settling('mutual-cancel') }), BuyerCancelling);
+    await click(byText('Try again', 'button'));
+    await flush();
+    expect(calls).toEqual(['escrow:proposeCancelSign']);
+    r.unmount();
+    const escrow = fakeEscrow({ phase: 'error', error: 'escrow-failed', retryable: true });
+    mount(props({ view: settling('buyer-cancel'), escrow }), BuyerCancelling);
+    await click(byText('Try again', 'button'));
+    expect(escrow.retry).toHaveBeenCalledOnce();
+    expect(calls).toEqual(['escrow:proposeCancelSign']);
+  });
+
+  it('done: the refund is settled from this device', () => {
+    mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'done' }) }), BuyerCancelling);
+    expect(text()).toContain('The XMR is on its way back to satoshi_ghost.');
+    expect(maybe('Try again')).toBeUndefined();
   });
 });

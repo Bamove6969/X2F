@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import type { TradeView } from '../src/api/trade.js';
-import { BuyerPay, SellerWaiting } from '../src/screens/trade/BuyerPay.js';
+import { BuyerCancelling, BuyerPay, SellerWaiting } from '../src/screens/trade/BuyerPay.js';
 import { screenFor } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
 
@@ -22,5 +22,12 @@ describe("Task 23 in Task 22's trade room", () => {
   it('the room picks BuyerPay for the buyer in securing, secured and paid, and SellerWaiting for the seller in secured before payBy', () => {
     for (const state of ['securing', 'secured', 'paid'] as const) expect(screenFor(view({ state }), NOW)).toBe(BuyerPay);
     expect(screenFor(view({ role: 'seller' }), NOW)).toBe(SellerWaiting);
+  });
+
+  it('the buyer in settling after a buyer cancel or a mutual cancel gets BuyerCancelling, never the release (review I4)', () => {
+    expect(screenFor(view({ state: 'settling', settling: 'buyer-cancel' }), NOW)).toBe(BuyerCancelling);
+    expect(screenFor(view({ state: 'settling', settling: 'mutual-cancel' }), NOW)).toBe(BuyerCancelling);
+    expect(screenFor(view({ state: 'settling', settling: 'release' }), NOW)).not.toBe(BuyerCancelling);
+    expect(screenFor(view({ role: 'seller', state: 'settling', settling: 'buyer-cancel' }), NOW)).not.toBe(BuyerCancelling);
   });
 });

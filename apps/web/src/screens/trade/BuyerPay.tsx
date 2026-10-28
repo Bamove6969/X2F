@@ -26,6 +26,7 @@ import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
+import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
@@ -42,6 +43,10 @@ import './pay.css';
 export const TASK23_SLOTS: readonly TradeSlot[] = [
   { owner: 'Task 23', role: 'buyer', states: ['securing', 'secured', 'paid'], screen: BuyerPay },
   { owner: 'Task 23', role: 'seller', states: ['secured'], screen: SellerWaiting },
+  // After the buyer's cancel or an accepted mutual cancel the BUYER builds the refund (policy.ts
+  // ROUTE), and only from a tapped intent: this screen keeps it in view (review I4; not in Task
+  // 22's ownership list yet; the release is Task 24's).
+  { owner: 'Task 23', role: 'buyer', states: ['settling'], when: (v) => v.settling === 'buyer-cancel' || v.settling === 'mutual-cancel', screen: BuyerCancelling },
 ];
 
 const REFUSALS: Record<string, string> = {
@@ -518,6 +523,100 @@ export function BuyerPay(p: TradeScreenProps) {
         </div>
       </footer>
       {sheets}
+    </div>
+  );
+}
+
+// ---- The buyer's room while the cancel's refund is built ----
+
+/**
+ * The buyer in `settling` after `buyer-cancel` or `mutual-cancel` (review I4): the buyer's device
+ * builds the refund to the seller, so it says to keep the page open, and it offers Try again
+ * while nothing is being signed. Try again calls only the escrow (`buyerCancel()` or
+ * `proposeCancelSign()`, or `retry()` for a stopped escrow), never a second POST: the API already
+ * moved the trade on.
+ */
+export function BuyerCancelling(p: TradeScreenProps) {
+  const { view, escrow, serverClock, wide } = p;
+  const method = payMethodOf(view);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const done = escrow.phase === 'done' || escrow.phase === 'settled-without-device';
+  const stopped = escrow.error !== null;
+  // 'ready' means no outcome is being signed: the tapped intent never got saved (or not yet).
+  const canRetry = !done && (stopped ? escrow.retryable : escrow.phase === 'ready');
+
+  const again = async () => {
+    if (busy) return;
+    if (stopped) {
+      escrow.retry();
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await (view.settling === 'mutual-cancel' ? escrow.proposeCancelSign() : escrow.buyerCancel());
+    } catch {
+      setError("Couldn't start the refund. Try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const title = (
+    <>
+      Cancelling with <Name view={view} />
+    </>
+  );
+  const body = (
+    <>
+      <section aria-label="Refund" className="x2f-card x2f-wait">
+        {done ? (
+          <p className="x2f-wait__title">
+            The XMR is on its way back to <Name view={view} />.
+          </p>
+        ) : (
+          <p className="x2f-wait__title">
+            Returning the XMR to <Name view={view} />. Keep this page open.
+          </p>
+        )}
+      </section>
+      {stopped ? (
+        <p className="x2f-room__error" role="alert" data-pay-block="escrow-stopped">
+          {errorSentence(escrow) ?? 'The escrow stopped on this device.'}
+        </p>
+      ) : null}
+      {error !== null ? (
+        <p className="x2f-room__error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </>
+  );
+  const primary = canRetry ? (
+    <Button variant="primary" disabled={busy} aria-busy={busy || undefined} onClick={() => void again()}>
+      Try again
+    </Button>
+  ) : (
+    <Button variant="primary" disabled aria-live="polite">
+      {done ? 'Refund sent' : 'Returning the XMR…'}
+    </Button>
+  );
+
+  if (wide) {
+    return (
+      <WideRoom view={view} method={method} title={title} chip={null}>
+        <TradeTimeline view={view} serverClock={serverClock} />
+        {body}
+        <div className="x2f-room__actions">{primary}</div>
+      </WideRoom>
+    );
+  }
+  return (
+    <div className="x2f-pay" data-layout="phone">
+      <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} />
+      <div className="x2f-pay__main">{body}</div>
+      <footer className="x2f-pay__footer">{primary}</footer>
     </div>
   );
 }
