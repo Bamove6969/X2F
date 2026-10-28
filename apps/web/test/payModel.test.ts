@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyerCancelMode, escrowChip, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
+import { buyerCancelMode, escrowChip, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
@@ -122,5 +122,18 @@ describe('counterpartyLine (Desktop board "412 trades · 99% positive · release
 
   it('the release time is a seller fact, so a buyer counterparty shows none', () => {
     expect(counterpartyLine(view({ role: 'seller' }))).toBe('412 trades · 99% positive');
+  });
+});
+
+describe("payBlock: I've paid only on the device's own total (review I1)", () => {
+  const e = (over: object = {}) => ({ phase: 'ready' as const, error: null, fiatCents: 41_250n, ...over });
+  it('open when the escrow is ready and the API shows the device total', () => {
+    expect(payBlock({ fiatCents: '41250' }, e())).toBeNull();
+  });
+  it('closed, with the reason, otherwise', () => {
+    expect(payBlock({ fiatCents: '41250' }, e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
+    expect(payBlock({ fiatCents: '41250' }, e({ phase: 'setting-up' }))).toBe('escrow-not-ready');
+    expect(payBlock({ fiatCents: '41250' }, e({ fiatCents: null }))).toBe('no-amount');
+    expect(payBlock({ fiatCents: '43313' }, e())).toBe('amount-differs');
   });
 });

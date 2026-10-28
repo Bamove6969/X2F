@@ -27,9 +27,10 @@ import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
 import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
-import { buyerCancelMode, escrowChip, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip, type PayBlock } from './payModel.js';
+import { errorSentence } from './SetupStatus.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaidAck, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
-import { publicName, type TradeScreenProps, type TradeView } from './payTypes.js';
+import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
@@ -57,7 +58,37 @@ function refusalText(e: unknown): string {
   return "That didn't go through. Check your connection and try again.";
 }
 
-const fiatOf = (v: TradeView): string => formatFiat(BigInt(v.fiatCents), v.lockedRate.currency);
+/** The sum to pay as THIS device works it out (Task 12's `escrow.fiatCents`), never the API's; null when the device has none (review I1). */
+interface DeviceTotal {
+  cents: bigint;
+  text: string;
+  currency: string;
+}
+
+function deviceTotal(view: TradeView, escrow: Pick<TradeEscrow, 'fiatCents' | 'deal'>): DeviceTotal | null {
+  if (escrow.fiatCents === null) return null;
+  const currency = escrow.deal?.currency ?? view.lockedRate.currency;
+  return { cents: escrow.fiatCents, text: formatFiat(escrow.fiatCents, currency), currency };
+}
+
+/** The locked rate from the deal this device stored ("$330.00 / XMR"), or null before it has one. */
+function deviceRate(escrow: Pick<TradeEscrow, 'deal'>): string | null {
+  return escrow.deal ? `${formatFiat(escrow.deal.centsPerXmr, escrow.deal.currency)} / XMR` : null;
+}
+
+/** Why I've paid waits, in words (payModel.ts `payBlock`). */
+function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'retryable'>): string {
+  switch (b) {
+    case 'escrow-stopped':
+      return `${errorSentence(escrow) ?? 'The escrow stopped on this device.'} Don't send any money until it runs again.`;
+    case 'escrow-not-ready':
+      return "Your device is still checking the escrow. Keep this page open, and don't send any money yet.";
+    case 'no-amount':
+      return "Your device can't confirm the trade amount. Don't send any money yet. Ask in the chat, or open a dispute if it doesn't clear.";
+    case 'amount-differs':
+      return "Your device is checking the new total. Don't send any money yet.";
+  }
+}
 
 /** Posts a trade event, then runs the escrow step, then re-reads the trade; one at a time. */
 function useTradeAction(p: TradeScreenProps) {
@@ -230,16 +261,21 @@ function PayTimerCard({ view, serverClock }: { view: TradeView; serverClock: () 
 }
 
 /** "Send exactly": the total, the seller's details for the method, the memo, (desktop) the rate, and the own-name warning. */
-function PaymentCard({ view, method, withRate }: { view: TradeView; method: MethodInfo; withRate: boolean }) {
+function PaymentCard({ view, method, total, rate }: { view: TradeView; method: MethodInfo; total: DeviceTotal | null; rate: string | null }) {
   const details = usePaymentDetails(view.code);
-  const fiat = fiatOf(view);
   const rows: { label: string; value: string }[] = details ?? [{ label: `${method.name} to`, value: 'Ask in the chat' }];
   return (
     <section aria-label="Send this payment" className="x2f-card x2f-pay-card">
       <h2 className="x2f-pay-card__title">Send exactly</h2>
-      <span className="x2f-pay-card__total">
-        {fiat} <span className="x2f-pay-card__currency">{view.lockedRate.currency}</span>
-      </span>
+      {total ? (
+        <span className="x2f-pay-card__total">
+          {total.text} <span className="x2f-pay-card__currency">{total.currency}</span>
+        </span>
+      ) : (
+        <span className="x2f-pay-card__total" data-no-total="">
+          No total yet
+        </span>
+      )}
       <div className="x2f-pay-card__rows">
         {rows.map((r) => (
           <div key={r.label} className="x2f-pay-card__row">
@@ -251,10 +287,10 @@ function PaymentCard({ view, method, withRate }: { view: TradeView; method: Meth
           <span className="x2f-ink-muted">Memo</span>
           <span className="x2f-mono x2f-pay-card__value">{view.code}</span>
         </div>
-        {withRate ? (
+        {rate !== null ? (
           <div className="x2f-pay-card__row">
             <span className="x2f-ink-muted">Rate</span>
-            <span className="x2f-mono x2f-pay-card__value">{formatFiat(BigInt(view.lockedRate.centsPerXmr), view.lockedRate.currency)} / XMR</span>
+            <span className="x2f-mono x2f-pay-card__value">{rate}</span>
           </div>
         ) : null}
       </div>
@@ -355,8 +391,12 @@ export function BuyerPay(p: TradeScreenProps) {
   const [retrying, setRetrying] = useState(false);
   const cancelMode = buyerCancelMode(view);
   const paid = view.state === 'paid';
+  const total = deviceTotal(view, escrow);
+  const block = payBlock(view, escrow);
 
   const onYes = async (fiatCents: bigint): Promise<YesResult> => {
+    // Only the device's own total, and only while the API shows the same one (review I1).
+    if (payBlock(view, escrow) !== null || escrow.fiatCents !== fiatCents) return { ok: false, reason: 'error', message: "Your device can't confirm this total. Don't send any money yet." };
     try {
       await postPayEvent(view.code, { type: 'mark-paid', fiatCents });
     } catch (e) {
@@ -407,10 +447,16 @@ export function BuyerPay(p: TradeScreenProps) {
       {acked ? 'Marked as paid' : 'Marking as paid…'}
     </Button>
   ) : (
-    <Button variant="primary" onClick={() => setPaySheet(true)}>
+    <Button variant="primary" disabled={block !== null} onClick={() => block === null && setPaySheet(true)}>
       I've paid
     </Button>
   );
+  const blockNote =
+    !paid && block !== null ? (
+      <p className="x2f-room__error" role="status" data-pay-block={block}>
+        {payBlockText(block, escrow)}
+      </p>
+    ) : null;
   const cancel =
     cancelMode === 'none' ? null : (
       <Button variant="quiet" disabled={action.busy} onClick={onCancel}>
@@ -435,6 +481,7 @@ export function BuyerPay(p: TradeScreenProps) {
           </Button>
         </p>
       ) : null}
+      {blockNote}
       {action.error !== null && !cancelSheet ? (
         <p className="x2f-room__error" role="alert">
           {action.error}
@@ -445,12 +492,12 @@ export function BuyerPay(p: TradeScreenProps) {
   const sheets = (
     <>
       <PaidConfirmSheet
-        open={paySheet}
-        fiatCents={BigInt(view.fiatCents)}
-        fiatText={fiatOf(view)}
+        open={paySheet && total !== null}
+        fiatCents={total?.cents ?? 0n}
+        fiatText={total?.text ?? ''}
         methodName={method.name}
         code={view.code}
-        grewTo={grew ? formatXmr(BigInt(view.amountAtomic)) : null}
+        grewTo={grew && escrow.amountAtomic !== null ? formatXmr(escrow.amountAtomic) : null}
         onYes={onYes}
         onNotYet={() => {
           setPaySheet(false);
@@ -474,7 +521,7 @@ export function BuyerPay(p: TradeScreenProps) {
           <TradeTimeline view={view} serverClock={serverClock} />
           {notices}
           <div className="x2f-room__grid">
-            <PaymentCard view={view} method={method} withRate />
+            <PaymentCard view={view} method={method} total={total} rate={deviceRate(escrow)} />
             <ProofSlot wide />
           </div>
           <div className="x2f-room__actions">
@@ -496,7 +543,7 @@ export function BuyerPay(p: TradeScreenProps) {
         {chip ? <EscrowStatus chip={chip} withBar /> : null}
         {notices}
         {paid ? null : <PayTimerCard view={view} serverClock={serverClock} />}
-        <PaymentCard view={view} method={method} withRate={false} />
+        <PaymentCard view={view} method={method} total={total} rate={null} />
         <ProofSlot wide={false} />
       </div>
       <footer className="x2f-pay__footer">
@@ -515,10 +562,11 @@ export function BuyerPay(p: TradeScreenProps) {
 
 /** The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait, chat, or propose a mutual cancel. */
 export function SellerWaiting(p: TradeScreenProps) {
-  const { view, serverClock, wide } = p;
+  const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
   const chip = escrowChip(view);
   const action = useTradeAction(p);
+  const total = deviceTotal(view, escrow);
   const cancel = (
     <SellerCancelControls
       view={view}
@@ -532,9 +580,11 @@ export function SellerWaiting(p: TradeScreenProps) {
       <p className="x2f-wait__title">
         Waiting for <Name view={view} /> to pay
       </p>
-      <span className="x2f-pay-card__total">
-        {fiatOf(view)} <span className="x2f-pay-card__currency">{view.lockedRate.currency}</span>
-      </span>
+      {total ? (
+        <span className="x2f-pay-card__total">
+          {total.text} <span className="x2f-pay-card__currency">{total.currency}</span>
+        </span>
+      ) : null}
       {view.payBy !== null ? (
         <span className="x2f-wait__left">
           Time to pay <Countdown deadline={view.payBy} serverClock={serverClock} format="minutes" />

@@ -257,7 +257,11 @@ describe("I've paid and PaidConfirmSheet", () => {
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
     // The room re-read the trade: it grew to 1.312500 XMR, $433.13.
-    r.rerender({ ...p, view: tradeView({ ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } }) });
+    r.rerender({
+      ...p,
+      view: tradeView({ ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } }),
+      escrow: { ...p.escrow, amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n },
+    });
     expect(dialog()).not.toBeNull();
     expect(dialog()!.textContent).toContain('Trade grew to 1.312500 XMR, you now pay $433.13');
     const box = dialog()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
@@ -275,7 +279,7 @@ describe("I've paid and PaidConfirmSheet", () => {
     const r = mount(p);
     await click(byText("I've paid", 'button'));
     await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    r.rerender({ ...p, view: tradeView({ ...SECURED, fiatCents: '43313', amountAtomic: '1312500000000' }) });
+    r.rerender({ ...p, view: tradeView({ ...SECURED, fiatCents: '43313', amountAtomic: '1312500000000' }), escrow: { ...p.escrow, amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n } });
     expect(dialog()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
     expect((byText("Yes, I've paid", 'button') as HTMLButtonElement).disabled).toBe(true);
   });
@@ -321,6 +325,69 @@ describe("I've paid and PaidConfirmSheet", () => {
     await click(byText('Try again', 'button'));
     await flush();
     expect(calls).toEqual(['escrow:markPaid(41250)']);
+  });
+});
+
+describe("every sum comes from this device, never the API (review 2026-10-27, I1)", () => {
+  const paidButton = () => byText("I've paid", 'button') as HTMLButtonElement;
+
+  it('an API amount outside the device range: no total, I\'ve paid disabled with the reason', async () => {
+    // The API says $999.99; this device accepts no amount (escrow.fiatCents null).
+    mount(props({ view: tradeView({ ...SECURED, amountAtomic: '3030272727272', fiatCents: '99999' }), escrow: fakeEscrow({ amountAtomic: null, fiatCents: null, refusal: 'amount-out-of-range' }) }));
+    expect(text()).not.toContain('$999.99');
+    expect(text()).not.toContain('$412.50');
+    expect(paidButton().disabled).toBe(true);
+    expect(document.querySelector('[data-pay-block]')?.textContent).toContain("Don't send any money yet");
+    await click(paidButton());
+    expect(dialog()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("shows the device's total and rate, not the API's", () => {
+    mount(props({ view: tradeView({ ...SECURED, lockedRate: { currency: 'USD', centsPerXmr: '99999' } }), wide: true }));
+    expect(text()).toContain('$412.50');
+    expect(text()).toContain('$330.00 / XMR');
+    expect(text()).not.toContain('$999.99');
+  });
+
+  it("the API's total differs from the device's: the device's is shown and I've paid waits", () => {
+    mount(props({ view: tradeView({ ...SECURED, fiatCents: '43313', amountAtomic: '1312500000000' }) }));
+    expect(text()).toContain('$412.50');
+    expect(text()).not.toContain('$433.13');
+    expect(paidButton().disabled).toBe(true);
+  });
+
+  it("an escrow that is not ready, or stopped, leaves I've paid disabled and says why", () => {
+    const r = mount(props({ view: tradeView(SECURED), escrow: fakeEscrow({ phase: 'verifying' }) }));
+    expect(paidButton().disabled).toBe(true);
+    expect(document.querySelector('[data-pay-block]')?.textContent).toContain('Keep this page open');
+    r.unmount();
+    mount(props({ view: tradeView(SECURED), escrow: fakeEscrow({ phase: 'error', error: 'escrow-failed', retryable: true }) }));
+    expect(paidButton().disabled).toBe(true);
+    expect(document.querySelector('[data-pay-block]')?.textContent).toContain('Check your connection and try again.');
+  });
+
+  it('Yes confirms and posts the device total, and the sheet says it', async () => {
+    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
+    mount(props({ view: tradeView(SECURED) }));
+    await click(paidButton());
+    expect(dialog()!.textContent).toContain('I sent exactly $412.50 via Zelle');
+    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
+    await click(byText("Yes, I've paid", 'button'));
+    await flush();
+    expect(calls[0]).toBe(`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`);
+    expect(calls[1]).toBe('escrow:markPaid(41250)');
+  });
+
+  it("the seller's waiting room shows the device total, or none", () => {
+    const seller = tradeView({ ...SECURED, role: 'seller', fiatCents: '99999' });
+    const r = mount(props({ view: seller }), SellerWaiting);
+    expect(text()).toContain('$412.50');
+    expect(text()).not.toContain('$999.99');
+    r.unmount();
+    mount(props({ view: seller, escrow: fakeEscrow({ amountAtomic: null, fiatCents: null }) }), SellerWaiting);
+    expect(text()).not.toContain('$999.99');
+    expect(text()).not.toContain('$412.50');
   });
 });
 

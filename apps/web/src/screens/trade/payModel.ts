@@ -3,7 +3,7 @@
  * from the server clock the room passes in, never the device clock (Review Focus 3).
  */
 import type { IconName } from '../../ui/icons.js';
-import type { TradeState, TradeView } from './payTypes.js';
+import type { TradeEscrow, TradeState, TradeView } from './payTypes.js';
 
 /** Confirmations after which Monero coins unlock (@x2f/trade UNLOCK_CONFIRMATIONS). */
 export const UNLOCK_CONFIRMATIONS = 10;
@@ -122,4 +122,21 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
   // How fast someone releases is a seller fact: shown only when the counterparty is the seller.
   if (v.role === 'buyer' && c.typicalMinutes !== null) parts.push(`releases in ~${c.typicalMinutes} min`);
   return parts.join(' · ');
+}
+
+/**
+ * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). The sum to
+ * pay is only ever this device's own figure (`escrow.fiatCents`, Task 12): none while the escrow
+ * is stopped or not ready, none while the device accepts no amount (the API's is outside
+ * [take, this device's size]), and none while the API's total differs from the device's (the API
+ * would refuse a `mark-paid` the device confirms, or the device would refuse the one the API takes).
+ */
+export type PayBlock = 'escrow-stopped' | 'escrow-not-ready' | 'no-amount' | 'amount-differs';
+
+export function payBlock(view: Pick<TradeView, 'fiatCents'>, e: Pick<TradeEscrow, 'phase' | 'error' | 'fiatCents'>): PayBlock | null {
+  if (e.error !== null) return 'escrow-stopped';
+  if (e.phase !== 'ready') return 'escrow-not-ready';
+  if (e.fiatCents === null) return 'no-amount';
+  if (e.fiatCents !== BigInt(view.fiatCents)) return 'amount-differs';
+  return null;
 }
