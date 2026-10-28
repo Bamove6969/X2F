@@ -196,17 +196,44 @@ describe('attesting a trade', () => {
       .rejects.toMatchObject({ code: 'wrong-terms' });
   });
 
-  it('refuses work with missing or malformed terms (bad-work) and signs nothing', async () => {
+  it('skips work with missing or malformed terms (logged bad-terms, never a final refusal) and signs nothing (review M3)', async () => {
     const bad: unknown[] = [undefined, null, { ...TERMS, buyerPayout: '' }, { ...TERMS, deal: { ...TERMS.deal, takeAmountAtomic: '01' } }, { ...TERMS, extra: 1 }];
     for (const terms of bad) {
       const code = newTradeCode();
       const buyer = await trader(code, 'buyer');
       const seller = await trader(code, 'seller');
+      const reasons: string[] = [];
       const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms } as unknown as WorkItem]);
-      expect(await (await moderation(net.fetch)).tick()).toEqual([]);
+      const mod = await startModeration(
+        { apiInternalUrl: API, relayAdminUrl: RELAY, daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95) },
+        { fetch: net.fetch, now: () => NOW, intervalMs: 0, log: (e) => void reasons.push(e.reason) },
+      );
+      expect(await mod.tick()).toEqual([]);
       expect(net.reports).toHaveLength(0);
-      expect(net.refusals).toEqual([{ trade: code, reason: 'bad-work' }]);
+      expect(net.refusals).toEqual([]);
+      expect(reasons).toContain('bad-terms');
+      const { rows } = await db.query('select 1 from signed_terms where trade = $1', [code]);
+      expect(rows).toHaveLength(0);
+      // Once the API serves the terms (e.g. after a deploy skew), the same trade is attested.
+      const fixed = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+      expect(await (await moderation(fixed.fetch)).tick()).toEqual([code]);
     }
+  });
+
+  it('hands runParty the attested terms from its own signed record, never a later work item (review M5)', async () => {
+    const code = newTradeCode();
+    const buyer = await trader(code, 'buyer');
+    const seller = await trader(code, 'seller');
+    const passed: ModPartyArgs[] = [];
+    const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: TERMS }]);
+    await (await moderation(net.fetch, (a) => void passed.push(a))).tick();
+    expect(passed.map((p) => p.terms)).toEqual([TERMS]);
+    // A restart whose work item now says other terms: the stored signed attestation's terms win.
+    const other = { ...TERMS, buyerPayout: '4'.padEnd(95, 'X') };
+    const again = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms: other }]);
+    await (await moderation(again.fetch, (a) => void passed.push(a))).tick();
+    expect(passed.map((p) => p.terms)).toEqual([TERMS, TERMS]);
+    expect(again.reports[0]!.attestation.terms).toEqual(TERMS);
   });
 
   it('101 refused trades at the front of the work list do not stall a fresh trade (I1)', async () => {

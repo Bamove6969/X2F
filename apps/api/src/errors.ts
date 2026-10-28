@@ -61,6 +61,7 @@ export type ApiErrorCode =
   | 'identity-conflict'
   | 'bad-proof'
   | 'attestation-refused'
+  | 'trade-closed'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

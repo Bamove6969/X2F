@@ -71,7 +71,7 @@ export function parseTradeView(v: unknown): EscrowTradeView | null {
  * page's api() handles Terms and wallet redirects). The Task 8 routes' answers: identity 201
  * (409 `identity-exists` counts as registered; 409 `identity-conflict`, the other slot holds this
  * key, is thrown with that code and is final), attestation 200 `{ attestation, sig }`, 202 while it
- * is not ready, or 409 `attestation-refused` (thrown, final).
+ * is not ready, or 409 `attestation-refused` or `trade-closed` (thrown, final).
  */
 export function httpEscrowApi(f: typeof fetch = (u, i) => fetch(u, i)) {
   const path = (code: string, rest = ''): string => `/v1/trades/${encodeURIComponent(code)}${rest}`;

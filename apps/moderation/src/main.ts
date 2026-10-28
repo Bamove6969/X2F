@@ -3,11 +3,11 @@ import { generateIdentity, type Identity, type Participants } from '@x2f/protoco
 import { channelFor, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
-import { AttestRefused, attestTrade } from './attest.js';
+import { AttestRefused, attestTrade, BadTerms } from './attest.js';
 import { loadParty, saveParty, walletPassword } from './keystore.js';
 import { createLink, type Fetch, type Link, type WorkItem } from './link.js';
 
-export { AttestRefused, attestTrade, checkWork, signAttestation, type Attested } from './attest.js';
+export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
 export { createLink, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
 
@@ -161,6 +161,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
           continue;
         }
         await o.db.query('update signed_terms set posted_at = now() where trade = $1', [code]);
+        const terms = attestation.terms;
+        if (terms === undefined) {
+          // Unreachable: the API stores no attestation without terms (400). A pre-terms record.
+          log({ reason: 'bad-terms' });
+          continue;
+        }
         if (!started.has(code)) {
           started.add(code);
           await runParty({
@@ -171,11 +177,17 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
             password: await walletPassword(o.db, o.keystoreKey, code),
             daemonUri: o.daemonUri,
             feeWallet: o.feeWallet,
+            // What this service signed (signed_terms), never the work item's or a later API read.
+            terms,
           });
         }
         log({ reason: 'attested' });
         done.push(code);
       } catch (e) {
+        if (e instanceof BadTerms) {
+          log({ reason: 'bad-terms' });
+          continue;
+        }
         if (!(e instanceof AttestRefused) || code === null) {
           log({ reason: 'trade-failed' });
           continue;

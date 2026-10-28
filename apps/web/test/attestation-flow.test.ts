@@ -70,6 +70,42 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(t.hub.opened).toEqual([]);
   });
 
+  it('409 trade-closed while waiting (closed before any attestation): stops polling, no error, and the record goes after 30 days (review M2)', async () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    let clock = Date.parse('2026-10-28T12:00:00Z');
+    const t = await setup();
+    let fetches = 0;
+    const api = t.api.forRole('buyer');
+    const counted = { ...api, getAttestation: async () => (fetches++, api.getAttestation()) };
+    t.state.refuse = { attestation: 'trade-closed' };
+    const buyer = await device('buyer', { api: counted, hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, now: () => clock });
+    running.push(buyer);
+    await buyer.runtime.start(CODE);
+    await until(() => fetches > 0 && buyer.last()?.phase === 'idle' && buyer.statuses.some((s) => s.phase === 'verifying'));
+    const seen = fetches;
+    await new Promise((r) => setTimeout(r, 50)); // pollMs is 5: a still-polling run would fetch again
+    expect(fetches).toBe(seen);
+    expect(buyer.last()).toMatchObject({ phase: 'idle', error: null });
+    expect(t.parties.calls).toEqual([]);
+    const kept = await buyer.store.load(CODE);
+    expect(kept?.closedSeenAt).toBe(clock);
+    expect(kept?.failed ?? null).toBeNull();
+
+    // A resume before the 30 days keeps the record; one after forgets it.
+    clock += 29 * DAY;
+    const again = await device('buyer', { api: counted, hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, now: () => clock, idb: buyer.idb });
+    running.push(again);
+    await again.runtime.resumeAll();
+    await until(async () => fetches > seen);
+    await new Promise((r) => setTimeout(r, 20));
+    expect((await again.store.load(CODE))?.closedSeenAt).toBe(clock - 29 * DAY);
+    clock += 2 * DAY;
+    const later = await device('buyer', { api: counted, hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, now: () => clock, idb: buyer.idb });
+    running.push(later);
+    await later.runtime.resumeAll();
+    await until(async () => (await later.store.load(CODE)) === null);
+  });
+
   it('an attestation signed by another key, for another trade or with another channel: participants-mismatch', async () => {
     const other = await modKey();
     const cases: Partial<ApiState>[] = [
@@ -310,6 +346,31 @@ describe('a verified trade', () => {
     // Both sides' signed terms arrived.
     await until(async () => (await buyer.store.load(CODE))?.theirAddress === ADDR.seller && (await seller.store.load(CODE))?.theirAddress === ADDR.buyer);
     void ESCROW_ADDRESS;
+  });
+
+  it('reports the derived escrow address, the stored deal and its own funds() readings (Task 22 funding facts)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(() => seller.last()?.phase === 'ready');
+    expect(seller.last()).toMatchObject({ escrowAddress: ESCROW_ADDRESS, deal: confirmedFor('seller').deal });
+    // receivedAtomic is the balance as read; confirmedAtomic sums only incoming with 1+ confirmations.
+    t.parties.funds = {
+      balance: 30n,
+      unlocked: 0n,
+      incoming: [
+        { txHash: 'a', amountAtomic: 10n, confirmations: 0, unlocked: false },
+        { txHash: 'b', amountAtomic: 20n, confirmations: 1, unlocked: false },
+      ],
+    };
+    await seller.status((s) => s.receivedAtomic === 30n);
+    expect(seller.last()).toMatchObject({ receivedAtomic: 30n, confirmedAtomic: 20n });
+    // After a settlement the balance falls, while the confirmed arrivals stay counted.
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'b', amountAtomic: 20n, confirmations: 15, unlocked: true }] };
+    await seller.status((s) => s.receivedAtomic === 0n);
+    expect(seller.last()).toMatchObject({ receivedAtomic: 0n, confirmedAtomic: 20n });
   });
 
   it('check words differ when one key differs', async () => {

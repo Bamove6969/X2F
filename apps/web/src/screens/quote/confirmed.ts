@@ -3,8 +3,9 @@
 // alone: the taker's role, the full address of the wallet they picked, and the deal (who posted,
 // the XMR amount, the currency, the rate that locked and the offer's ceiling). The room gets it
 // twice: as `{ state: { confirmed } }` on the navigation (Task 22's seam) and in this tab's storage
-// under the trade code, written BEFORE navigating, because history state does not survive a reload
-// of the room. The room may clear the stored copy once the escrow has it.
+// under the trade code, written BEFORE navigating, because history state is gone when the trade is
+// opened in a new tab or from a push notification (it does survive a reload). The room clears the
+// stored copy once the escrow has stored the deal (forgetConfirmed).
 //
 // The types are Task 12's own (escrow/runtime.ts, escrow/policy.ts), imported, not copied.
 import type { ConfirmedTrade } from '../../escrow/runtime.js';
@@ -35,6 +36,15 @@ export function storeConfirmed(code: string, c: ConfirmedTrade): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** Drops the record for `code` (the room calls it once the escrow has stored the deal). */
+export function forgetConfirmed(code: string): void {
+  try {
+    store()?.removeItem(confirmedKey(code));
+  } catch {
+    // Storage blocked: nothing was stored either.
   }
 }
 
