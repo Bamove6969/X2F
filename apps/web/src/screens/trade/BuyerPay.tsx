@@ -17,6 +17,7 @@
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
+import { getTrade } from '../../api/trade.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
@@ -435,9 +436,16 @@ export function BuyerPay(p: TradeScreenProps) {
     const ok = await action.run({ type: 'buyer-cancel' }, () => escrow.buyerCancel(), "Couldn't start the refund. Try again.");
     if (ok) setCancelSheet(false);
   };
-  const onCancel = () => {
-    if (cancelMode === 'warn') setCancelSheet(true);
-    else void cancelNow();
+  const onCancel = async () => {
+    if (cancelMode === 'warn') return setCancelSheet(true);
+    // The one-tap cancel trusts no view up to POLL_MS old: "I've paid" may have landed meanwhile
+    // (another tab, or a mark-paid whose answer was lost), and then the warning comes first (review Minor 4).
+    const fresh = await getTrade(view.code).catch(() => null);
+    if (fresh === null) return action.setError("Couldn't check the trade. Check your connection and try again.");
+    const mode = buyerCancelMode(fresh);
+    if (mode === 'warn') return setCancelSheet(true);
+    if (mode === 'none') return void p.refresh();
+    await cancelNow();
   };
 
   const primary = !paid ? (
@@ -455,7 +463,7 @@ export function BuyerPay(p: TradeScreenProps) {
   );
   const cancel =
     cancelMode === 'none' ? null : (
-      <Button variant="quiet" disabled={action.busy} onClick={onCancel}>
+      <Button variant="quiet" disabled={action.busy} onClick={() => void onCancel()}>
         Cancel trade
       </Button>
     );

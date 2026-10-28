@@ -103,9 +103,9 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
 beforeEach(() => {
   calls = [];
   answer = () => ({ status: 200, json: tradeView() });
-  fetchMock = vi.fn(async (url: string, init: RequestInit) => {
-    const body = JSON.parse(String(init.body ?? '{}')) as Record<string, unknown>;
-    calls.push(`POST ${url} ${JSON.stringify(body)}`);
+  fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    calls.push(init?.method === 'POST' ? `POST ${url} ${JSON.stringify(body)}` : `GET ${url}`);
     const a = answer(body);
     return new Response(JSON.stringify(a.json), { status: a.status, headers: { 'content-type': 'application/json' } });
   });
@@ -411,13 +411,22 @@ describe("every sum comes from this device, never the API (review 2026-10-27, I1
 });
 
 describe('buyer cancel (spec 2.3)', () => {
-  it('before "I\'ve paid", one tap posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
-    answer = () => ({ status: 200, json: tradeView({ state: 'settling', settling: 'buyer-cancel' }) });
+  it('before "I\'ve paid", one tap re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
+    answer = (b) => ({ status: 200, json: b.type ? tradeView({ state: 'settling', settling: 'buyer-cancel' }) : tradeView(SECURED) });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText('Cancel trade', 'button'));
     await flush();
     expect(dialog()).toBeNull();
-    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"buyer-cancel"}`, 'escrow:buyerCancel', 'refresh']);
+    expect(calls).toEqual([`GET /v1/trades/${CODE}`, `POST /v1/trades/${CODE}/events {"type":"buyer-cancel"}`, 'escrow:buyerCancel', 'refresh']);
+  });
+
+  it('a one-tap cancel on a stale view: the fresh trade is paid (another tab), so the warning comes first (review Minor 4)', async () => {
+    answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }) });
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText('Cancel trade', 'button'));
+    await flush();
+    expect(calls).toEqual([`GET /v1/trades/${CODE}`]);
+    expect(dialog()!.textContent).toContain('Only cancel if your payment was never sent or was returned.');
   });
 
   it('after "I\'ve paid", the warning comes first and nothing happens until it is confirmed', async () => {
