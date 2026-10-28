@@ -11,18 +11,19 @@ export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}, ov
   deps: Deps;
   setNow(d: Date): void;
   logs: string[];
-  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; username: string; browser: Browser }>;
+  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; displayName: string; browser: Browser }>;
 }> {
   const t = await testApp(overrides, options);
   addTestLogin(t.app, t.deps);
   let n = 0;
   const trader = async (kind: 'trader' | 'staff' = 'trader') => {
-    const username = `trader${String(++n).padStart(4, '0')}x`;
-    const id = await seedAccount(t.deps, { username, kind });
+    const loginName = `trader${String(++n).padStart(4, '0')}x`;
+    const displayName = `D${loginName}`;
+    const id = await seedAccount(t.deps, { loginName, displayName, kind });
     const browser = new Browser(t.app);
     const res = await browser.post('/t/login', { accountId: id });
     expect(res.statusCode).toBe(200);
-    return { id, username, browser };
+    return { id, displayName, browser };
   };
   return { ...t, trader };
 }

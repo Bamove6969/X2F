@@ -221,7 +221,7 @@ test('Fixed shows the stale-price warning and posts pricing.mode = fixed', async
 test('posting a sell ad returns to the list where buyers see it, with the offer visible', async ({ page }) => {
   // The Buy list (Task 17) reads GET /v1/offers?side=sell; the stub lists the new offer under the poster's name.
   const [satoshi] = boardBuyOffers();
-  const mine = { ...satoshi!, id: 'of_1', poster: { ...satoshi!.poster, username: ME.displayName }, pricing: { mode: 'market', marginBps: 50 }, rate: '33155', minTrades: 5 };
+  const mine = { ...satoshi!, id: 'of_1', poster: { ...satoshi!.poster, displayName: ME.displayName }, pricing: { mode: 'market', marginBps: 50 }, rate: '33155', minTrades: 5 };
   const posts = await stub(page, { offers: [mine] });
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);

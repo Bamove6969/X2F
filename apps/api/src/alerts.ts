@@ -8,6 +8,7 @@ export type AlertKind =
   | 'login-locked'
   | 'login-method-added'
   | 'login-method-removed'
+  | 'login-name-set'
   | 'sessions-ended'
   | 'wallet-added'
   | 'wallet-removed'

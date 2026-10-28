@@ -110,7 +110,7 @@ describe('sessionPolicy', () => {
 
 describe('sessions', () => {
   it('authenticates a started session and stops after endSession', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token, sessionId } = await login(id);
     const me = await get('/t/me', token);
     expect(me.statusCode).toBe(200);
@@ -128,7 +128,7 @@ describe('sessions', () => {
   });
 
   it('ends a trader session after 12 hours idle by default, and touches last_seen_at on use', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token } = await login(id);
     setNow(new Date(T0.getTime() + 11 * HOUR));
     expect((await get('/t/me', token)).statusCode).toBe(200);
@@ -140,7 +140,7 @@ describe('sessions', () => {
   });
 
   it('ends a trader session at the idle time the account chose', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     await deps.db.query('update accounts set idle_hours = 4 where id = $1', [id]);
     const kept = await login(id);
     expect((await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [kept.sessionId])).rows[0]!.expires_at)
@@ -154,7 +154,7 @@ describe('sessions', () => {
   });
 
   it('ends a trader session at 30 days even when used every few hours', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token } = await login(id);
     for (let h = 10; h < 30 * 24; h += 10) {
       setNow(new Date(T0.getTime() + h * HOUR));
@@ -165,7 +165,7 @@ describe('sessions', () => {
   });
 
   it('ends a staff session at 2 h idle, not at 1 h 59 min, and at 12 h absolute', async () => {
-    const id = await seedAccount(deps, { username: name('staffer'), kind: 'staff' });
+    const id = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     const at = (ms: number) => setNow(new Date(T0.getTime() + ms));
 
     const idle = await login(id);
@@ -191,7 +191,7 @@ describe('sessions', () => {
   });
 
   it('applies the owner policy too (2 h idle), whatever idle time is stored on the account', async () => {
-    const id = await seedAccount(deps, { username: name('boss'), kind: 'owner' });
+    const id = await seedAccount(deps, { loginName: name('boss'), kind: 'owner' });
     await deps.db.query('update accounts set idle_hours = 12 where id = $1', [id]);
     const { token } = await login(id);
     setNow(new Date(T0.getTime() + 2 * HOUR));
@@ -199,7 +199,7 @@ describe('sessions', () => {
   });
 
   it('ends a recovery session after 25 h idle, not at 24 h 59 min (M4)', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const kept = await login(id, { level: 'recovery' });
     setNow(new Date(T0.getTime() + 25 * HOUR - MIN));
     expect((await get('/t/recovery-ok', kept.token)).statusCode).toBe(200);
@@ -210,7 +210,7 @@ describe('sessions', () => {
   });
 
   it('moves expires_at to the idle deadline on use, so idle sessions get purged (M1)', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token, sessionId } = await login(id);
     const expiresAt = async () =>
       (await deps.db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [sessionId])).rows[0]?.expires_at;
@@ -234,7 +234,7 @@ describe('sessions', () => {
   });
 
   it('ends a recovery session after 48 h', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token } = await login(id, { level: 'recovery' });
     for (let h = 24; h < 48; h += 24) {
       setNow(new Date(T0.getTime() + h * HOUR));
@@ -247,14 +247,14 @@ describe('sessions', () => {
   });
 
   it('refuses a recovery session without allowRecovery, and a staff session where kinds is trader', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const rec = await login(id, { level: 'recovery' });
     const r1 = await get('/t/me', rec.token);
     expect(r1.statusCode).toBe(403);
     expect(r1.json()).toEqual({ error: 'recovery-session' });
     expect((await get('/t/recovery-ok', rec.token)).json()).toMatchObject({ level: 'recovery' });
 
-    const staff = await seedAccount(deps, { username: name('staffer'), kind: 'staff' });
+    const staff = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     const s = await login(staff);
     const r2 = await get('/t/trader', s.token);
     expect(r2.statusCode).toBe(403);
@@ -265,7 +265,7 @@ describe('sessions', () => {
   });
 
   it('stops a live session as soon as the account is disabled', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token } = await login(id);
     expect((await get('/t/me', token)).statusCode).toBe(200);
     await deps.db.query('update accounts set disabled_at = $2 where id = $1', [id, T0]);
@@ -273,36 +273,36 @@ describe('sessions', () => {
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'account-disabled' });
     await expect(assertNotDisabled(deps.db, id)).rejects.toMatchObject({ status: 403, code: 'account-disabled' });
-    const ok = await seedAccount(deps, { username: name() });
+    const ok = await seedAccount(deps, { loginName: name() });
     await expect(assertNotDisabled(deps.db, ok)).resolves.toBeUndefined();
   });
 
   it('never asks an owner (null Terms version) for Terms (M4)', async () => {
     await deps.db.query(`delete from accounts where kind = 'owner'`); // one owner per database
-    const id = await seedAccount(deps, { username: name('boss'), kind: 'owner' });
+    const id = await seedAccount(deps, { loginName: name('boss'), kind: 'owner' });
     const { rows } = await deps.db.query('select terms_version from accounts where id = $1', [id]);
     expect(rows[0].terms_version).toBeNull();
     expect((await get('/t/me', (await login(id)).token)).statusCode).toBe(200);
   });
 
   it('answers terms-required to a trader on a stale Terms version, except with allowStaleTerms (R10)', async () => {
-    const id = await seedAccount(deps, { username: name(), termsVersion: '2026-01-01' });
+    const id = await seedAccount(deps, { loginName: name(), termsVersion: '2026-01-01' });
     const { token } = await login(id);
     const res = await get('/t/me', token);
     expect(res.statusCode).toBe(403);
     expect(res.json()).toEqual({ error: 'terms-required', version: deps.config.termsVersion });
     expect((await get('/t/stale', token)).statusCode).toBe(200);
 
-    const never = await seedAccount(deps, { username: name(), termsVersion: null });
+    const never = await seedAccount(deps, { loginName: name(), termsVersion: null });
     expect((await get('/t/me', (await login(never)).token)).json()).toMatchObject({ error: 'terms-required' });
 
-    const staff = await seedAccount(deps, { username: name('staffer'), kind: 'staff' });
+    const staff = await seedAccount(deps, { loginName: name('staffer'), kind: 'staff' });
     expect((await get('/t/me', (await login(staff)).token)).statusCode).toBe(200);
   });
 
   it('endAllSessions ends every session of the account and only that account', async () => {
-    const id = await seedAccount(deps, { username: name() });
-    const other = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
+    const other = await seedAccount(deps, { loginName: name() });
     const a = await login(id);
     const b = await login(id);
     const c = await login(other);
@@ -313,7 +313,7 @@ describe('sessions', () => {
   });
 
   it('endOtherSessions keeps only the given session', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const a = await login(id);
     const b = await login(id);
     await endOtherSessions({ ...deps, events: app.events }, id, b.sessionId);
@@ -322,7 +322,7 @@ describe('sessions', () => {
   });
 
   it('never adopts an attacker-chosen session cookie (fixation)', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const planted = randomBytes(32).toString('base64url');
     const { token } = await login(id, { cookies: { [SESSION_COOKIE]: planted } });
     expect(token).not.toBe(planted);
@@ -331,7 +331,7 @@ describe('sessions', () => {
   });
 
   it('a login made while another valid session is present revokes it and replaces the cookie', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const first = await login(id);
     const second = await login(id, { cookies: { [SESSION_COOKIE]: first.token } });
     expect(second.token).not.toBe(first.token);
@@ -342,7 +342,7 @@ describe('sessions', () => {
   });
 
   it('sets both cookies HttpOnly, Secure, SameSite=Strict, Path=/ and without Domain', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { res } = await login(id);
     const raw = res.headers['set-cookie'];
     const lines = Array.isArray(raw) ? raw : [String(raw)];
@@ -361,7 +361,7 @@ describe('sessions', () => {
   });
 
   it('stores only the SHA-256 of the session token', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { token, sessionId } = await login(id);
     const { rows } = await deps.db.query<{ token_hash: Buffer }>('select token_hash from sessions where id = $1', [sessionId]);
     const stored = rows[0]!.token_hash;
@@ -372,7 +372,7 @@ describe('sessions', () => {
   });
 
   it('sets onboarding only on the first session and alerts only on later logins', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const first = await login(id, { firstSession: true });
     expect((await get('/t/me', first.token)).json()).toMatchObject({
       onboardingUntil: new Date(T0.getTime() + 30 * MIN).toISOString(),
@@ -394,7 +394,7 @@ describe('sessions', () => {
   });
 
   it('strips control and bidi/format characters from the device label (M2)', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const evil = '\u202Eevil\u202C \u0000Phone\u200B\u2066x\u2069\n\t';
     const { sessionId } = await login(id, { deviceLabel: evil });
     const s = await deps.db.query('select device_label from sessions where id = $1', [sessionId]);
@@ -408,7 +408,7 @@ describe('sessions', () => {
   });
 
   it('trusts the device it logs in from', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const { res } = await login(id);
     const dev = cookieOf(res, DEVICE_COOKIE)!.value;
     const probe = await app.inject({ method: 'POST', url: '/t/device', headers: { origin: ORIGIN }, cookies: { [DEVICE_COOKIE]: dev } });
@@ -416,7 +416,7 @@ describe('sessions', () => {
     expect(had).toBe(true);
     expect(cookieOf(probe, DEVICE_COOKIE)).toBeUndefined(); // an existing cookie is kept
     expect(await isTrusted(deps, id, Buffer.from(hash, 'hex'))).toBe(true);
-    const other = await seedAccount(deps, { username: name() });
+    const other = await seedAccount(deps, { loginName: name() });
     expect(await isTrusted(deps, other, Buffer.from(hash, 'hex'))).toBe(false);
     // The stored hash is an HMAC of the cookie, never the cookie itself.
     const { rows } = await deps.db.query<{ device_hash: Buffer }>('select device_hash from trusted_devices where account_id = $1', [id]);
@@ -435,7 +435,7 @@ describe('sessions', () => {
   });
 
   it('POST /v1/logout clears the cookie even for an expired, disabled or unknown session (M3)', async () => {
-    const id = await seedAccount(deps, { username: name() });
+    const id = await seedAccount(deps, { loginName: name() });
     const logout = (token?: string) =>
       app.inject({ method: 'POST', url: '/v1/logout', headers: { origin: ORIGIN }, ...(token ? { cookies: { [SESSION_COOKIE]: token } } : {}) });
     const expired = await login(id);
@@ -461,7 +461,7 @@ describe('sessions', () => {
   });
 
   it('POST /v1/logout ends the session and clears the cookie', async () => {
-    const id = await seedAccount(deps, { username: name(), termsVersion: '2025-01-01' });
+    const id = await seedAccount(deps, { loginName: name(), termsVersion: '2025-01-01' });
     const { token } = await login(id);
     const res = await app.inject({ method: 'POST', url: '/v1/logout', headers: { origin: ORIGIN }, cookies: { [SESSION_COOKIE]: token } });
     expect(res.statusCode).toBe(200);
@@ -513,7 +513,7 @@ describe('purgeExpired', () => {
     const db = await testDb();
     onTestFinished(() => db.end());
     const own = { ...deps, db };
-    const id = await seedAccount(own, { username: name() });
+    const id = await seedAccount(own, { loginName: name() });
     const ins = (sql: string, p: unknown[]) => db.query(sql, p);
     const ago = (ms: number) => new Date(T0.getTime() - ms);
     await ins(`insert into challenges (purpose, method, created_at, expires_at, payload) values ('login','pgp',$1,$2,'{"tag":"old"}')`, [ago(3 * HOUR), ago(2 * HOUR)]);

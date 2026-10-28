@@ -3,7 +3,7 @@
 // GET /v1/wallets/rule (M2), one confirm at a time (M3), and alert labels (M1).
 import { act, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { AuthApiError, walletAction, walletsAction, type ConfirmAction, type WalletRule } from '@x2f/auth-client';
+import { AuthApiError, walletAction, walletsAction, type ApiErrorCode, type ConfirmAction, type WalletRule } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import { ConfirmSheet, useConfirm, walletWaitNote } from '../src/screens/auth/ConfirmSheet.js';
 import { loginFailure, shouldSendAway } from '../src/screens/auth/loginRules.js';
@@ -16,24 +16,27 @@ afterEach(() => {
 
 const flush = () => act(async () => new Promise<void>((r) => setTimeout(r, 0)));
 
-describe('password-login rules (FU-A mirror)', () => {
+// The typed client's error, as `createAuthApi` builds it from a refused response.
+const refused = (status: number, code: string, extra: Record<string, unknown> = {}) => new AuthApiError(status, code as ApiErrorCode, extra);
+
+describe('password-login rules (FU-A, through the typed client)', () => {
   it('sends away only on credentials-invalid with the server count at 10 or more', () => {
-    expect(shouldSendAway(new ApiCallError(401, 'credentials-invalid', { misses: 10 }))).toBe(true);
-    expect(shouldSendAway(new ApiCallError(401, 'credentials-invalid', { misses: 9 }))).toBe(false);
-    expect(shouldSendAway(new ApiCallError(401, 'credentials-invalid', {}))).toBe(false);
-    expect(shouldSendAway(new ApiCallError(503, 'busy', { misses: 50 }))).toBe(false);
-    expect(shouldSendAway(new ApiCallError(429, 'slow-down', { misses: 50 }))).toBe(false);
-    expect(shouldSendAway(Object.assign(new AuthApiError(401, 'credentials-invalid'), { misses: 12 }))).toBe(true);
+    expect(shouldSendAway(refused(401, 'credentials-invalid', { misses: 10 }))).toBe(true);
+    expect(shouldSendAway(refused(401, 'credentials-invalid', { misses: 9 }))).toBe(false);
+    expect(shouldSendAway(refused(401, 'credentials-invalid'))).toBe(false);
+    expect(shouldSendAway(refused(503, 'busy', { misses: 50 }))).toBe(false);
+    expect(shouldSendAway(refused(429, 'slow-down', { misses: 50 }))).toBe(false);
+    expect(shouldSendAway(new ApiCallError(401, 'credentials-invalid', { misses: 10 }))).toBe(false); // not a login error
     expect(shouldSendAway(new TypeError('network'))).toBe(false);
   });
 
   it('a mismatch reads the one sentence; an outage reads as a neutral retry and too many tries as a wait, never as a mismatch', () => {
-    expect(loginFailure(new ApiCallError(401, 'credentials-invalid', { misses: 1 }))).toBe("That login name and password don't match");
-    for (const e of [new ApiCallError(503, 'busy'), new ApiCallError(500, 'internal'), new TypeError('Failed to fetch')]) {
+    expect(loginFailure(refused(401, 'credentials-invalid', { misses: 1 }))).toBe("That login name and password don't match");
+    for (const e of [refused(503, 'busy'), refused(500, 'internal'), new TypeError('Failed to fetch')]) {
       expect(loginFailure(e)).toBe('X2F could not check that just now. Try again in a moment.');
     }
     // Re-review item 3: a 429 says how long to wait (still not a miss).
-    expect(loginFailure(new ApiCallError(429, 'slow-down', { retryAfterSeconds: 5 }))).toBe('Too many tries. Try again in 1 minute.');
+    expect(loginFailure(refused(429, 'slow-down', { retryAfterSeconds: 5 }))).toBe('Too many tries. Try again in 1 minute.');
   });
 });
 

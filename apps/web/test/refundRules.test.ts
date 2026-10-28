@@ -25,7 +25,7 @@ const FUNDS = 1_262_500_000_000n;
 
 const BUYER = 'acct-b';
 const SELLER = 'acct-s';
-const PEER: TraderSummary = { username: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] };
+const PEER: TraderSummary = { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' };
 
 function secured(): Trade {
   let t = newTrade(

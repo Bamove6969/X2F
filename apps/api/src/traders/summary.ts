@@ -7,13 +7,12 @@ import { COMPLETED_TRADES_SQL, loadStarterSettings, stageFor, type Stage, type S
  * single-offer route and the trade view's counterparty. Plan 5 fills `typicalMinutes`,
  * `positivePct` and `badges`.
  *
- * `username` is the PUBLIC display name (spec 6.1), read through events/publicName.ts's column.
- * Plan 2 follow-up FU-A (wip/lead-p2-fua) renames the column to `display_name` and this field to
- * `displayName`; the web parsers (apps/web/src/screens/browse/api.ts parsePoster, quote/api.ts)
- * switch with it. Never the private login name.
+ * `displayName` is the PUBLIC display name (spec 6.1, FU-A), read through events/publicName.ts's
+ * column; never the private login name.
  */
 export interface TraderSummary {
-  username: string;
+  /** The public display name; the private login name is never shown to anyone. */
+  displayName: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -49,7 +48,7 @@ export async function traderSummaries(
   for (const r of rows) {
     const completed = Number(r.completed);
     out.set(r.id, {
-      username: r.name,
+      displayName: r.name,
       completedTrades: completed,
       online: r.last_seen !== null && now.getTime() - r.last_seen.getTime() < ONLINE_MS,
       lastSeenAt: r.last_seen?.toISOString() ?? null,

@@ -95,7 +95,7 @@ async function history(accountId: string, a: { days: number; completed: number }
   const now = deps.clock();
   await deps.db.query('update accounts set created_at = $2 where id = $1', [accountId, new Date(now.getTime() - a.days * DAY)]);
   for (let i = 0; i < a.completed; i++) {
-    const other = await seedAccount(deps, { username: `cp${Math.random().toString(36).slice(2, 12)}` });
+    const other = await seedAccount(deps, { loginName: `cp${Math.random().toString(36).slice(2, 12)}` });
     const { code } = await seedTrade(deps, { sellerId: accountId, buyerId: other, poster: 'seller' });
     await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, now]);
   }
@@ -111,7 +111,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
       {
         id,
         poster: {
-          username: p.username, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
+          displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
           typicalMinutes: null, positivePct: null, badges: [], stage: 'starter',
         },
         rate: null,
@@ -121,6 +121,12 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         minTrades: 0,
       },
     ]);
+    // The private login name is never in a public answer (spec 6.1, FU-A).
+    const { rows } = await deps.db.query<{ login_name: string }>('select login_name from accounts where id = $1', [p.id]);
+    expect(rows[0]!.login_name).not.toBe(p.displayName);
+    for (const url of ['/v1/offers?side=sell&method=ZELLE&currency=CAD', `/v1/offers/${id}`]) {
+      expect((await anon.get(url)).body).not.toContain(JSON.stringify(rows[0]!.login_name));
+    }
     // Other sides, methods and currencies do not see it.
     expect(await list('side=buy&method=ZELLE&currency=CAD')).toEqual([]);
     expect(await list('side=sell&method=REVOLUT&currency=CAD')).toEqual([]);
@@ -376,7 +382,7 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     await history(s.id, { days: 40, completed: 20 });
     const { code } = await seedTrade(deps, { sellerId: s.id, buyerId: b.id, poster: 'seller' });
     const v = (await b.browser.get(`/v1/trades/${code}`)).json() as { counterparty: Record<string, unknown> };
-    expect(v.counterparty).toMatchObject({ username: s.username, stage: 'graduated', completedTrades: 20 });
+    expect(v.counterparty).toMatchObject({ displayName: s.displayName, stage: 'graduated', completedTrades: 20 });
   });
 
   it("marks offers above a signed-in viewer's cap with the stage that opens them (opensAt)", async () => {

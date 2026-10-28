@@ -131,9 +131,8 @@ describe('SellerRefund: the board copy', () => {
   });
 
   it('never shows a login name: only the public name the view carries', () => {
-    const { host } = mount(sellerView({ counterparty: { displayName: 'Mira.K_', username: 'old-public' } }));
+    const { host } = mount(sellerView({ counterparty: { displayName: 'Mira.K_' } }));
     expect(host.textContent).toContain('Selling to Mira.K_');
-    expect(host.textContent).not.toContain('old-public');
   });
 
   it("the escrow amount is what the escrow holds (a seller's own ad funds amount + 1%)", () => {

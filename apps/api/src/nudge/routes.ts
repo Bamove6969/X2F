@@ -203,12 +203,12 @@ async function putSettings(req: FastifyRequest) {
   return settingsJson(rows[0]);
 }
 
-/** `POST /v1/account/blocks { username }`: by public name; blocking twice is a no-op. */
+/** `POST /v1/account/blocks { displayName }`: by public display name; blocking twice is a no-op. */
 async function blockHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
-  const { username } = bodyOf(req);
-  if (typeof username !== 'string' || username.length > NAME_MAX) throw new ApiError(400, 'bad-request');
-  const who = await findByPublicName(deps.db, username);
+  const { displayName } = bodyOf(req);
+  if (typeof displayName !== 'string' || displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  const who = await findByPublicName(deps.db, displayName);
   if (who === null) throw new ApiError(404, 'not-found');
   if (who.id === req.auth.accountId) throw new ApiError(400, 'bad-request');
   await deps.db.query(
