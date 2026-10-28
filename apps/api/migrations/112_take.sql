@@ -37,6 +37,8 @@ begin
 end
 $$;
 
-create trigger trades_addresses_fixed
+-- Named to run after 104's trades_purge_nulls_only (triggers fire in name order), so x2f_purge
+-- writing an address is still refused there first, as insufficient_privilege.
+create trigger trades_set_once_addresses
   before update of buyer_payout, seller_refund on trades
   for each row execute function trades_addresses_fixed();
