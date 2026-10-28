@@ -1,5 +1,5 @@
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, identityProofValid, type Attestation } from '@x2f/trade';
+import { attestationBytes, channelFor, identityProofValid, isAttestedTerms, type Attestation, type AttestedTerms } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type { WorkItem } from './link.js';
 
@@ -8,7 +8,9 @@ import type { WorkItem } from './link.js';
  * (it does not take the API's word), generates the moderator's own trade identity, and signs the
  * participant list with the long-term moderation signing key. The API never chooses the mod key:
  * a participant list the API made up can only ever be signed with a moderator identity minted
- * here, and a trader whose own key is not in its slot rejects it (`not-me`).
+ * here, and a trader whose own key is not in its slot rejects it (`not-me`). The attestation also
+ * signs the trade record's terms (deal and both addresses, lead answer 4), which each trader checks
+ * against what its user confirmed (`wrong-terms`).
  */
 export interface Attested {
   attestation: Attestation;
@@ -25,9 +27,10 @@ export class AttestRefused extends Error {
   }
 }
 
-/** Both proofs must verify for their own role and this trade, and the two keys must differ. */
+/** Both proofs must verify for their own role and this trade, the two keys must differ, and the terms must be well formed. */
 export async function checkWork(w: WorkItem): Promise<void> {
   if (typeof w?.trade !== 'string' || typeof w.participants !== 'object' || w.participants === null) throw new AttestRefused('bad-work');
+  if (!isAttestedTerms(w.terms)) throw new AttestRefused('bad-work');
   const { buyer, seller } = w.participants;
   if (!buyer || !seller || buyer.signPublic === seller.signPublic) throw new AttestRefused('bad-work');
   if (!(await identityProofValid(w.trade, 'buyer', buyer)) || !(await identityProofValid(w.trade, 'seller', seller))) {
@@ -35,8 +38,14 @@ export async function checkWork(w: WorkItem): Promise<void> {
   }
 }
 
-/** Sign an attestation for `participants` (which already include this service's mod identity). */
-export async function signAttestation(trade: string, participants: Participants, signingSecret: Uint8Array, issuedAt: Date): Promise<{ attestation: Attestation; sig: string }> {
+/** Sign an attestation for `participants` (which already include this service's mod identity) and the trade's terms. */
+export async function signAttestation(
+  trade: string,
+  participants: Participants,
+  terms: AttestedTerms,
+  signingSecret: Uint8Array,
+  issuedAt: Date,
+): Promise<{ attestation: Attestation; sig: string }> {
   await sodium.ready;
   const attestation: Attestation = {
     v: 1,
@@ -44,6 +53,11 @@ export async function signAttestation(trade: string, participants: Participants,
     channels: { escrow: await channelFor(trade, 'escrow'), signals: await channelFor(trade, 'signals') },
     participants,
     issuedAt: issuedAt.toISOString(),
+    terms: {
+      deal: { ...terms.deal },
+      buyerPayout: terms.buyerPayout,
+      sellerRefund: terms.sellerRefund,
+    },
   };
   const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), signingSecret));
   return { attestation, sig };
@@ -63,6 +77,6 @@ export async function attestTrade(
     seller: { signPublic: w.participants.seller.signPublic, boxPublic: w.participants.seller.boxPublic },
     mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
   };
-  const { attestation, sig } = await signAttestation(w.trade, participants, signingSecret, issuedAt);
+  const { attestation, sig } = await signAttestation(w.trade, participants, w.terms, signingSecret, issuedAt);
   return { attestation, sig, mod, participants };
 }

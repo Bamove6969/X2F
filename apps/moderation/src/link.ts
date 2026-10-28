@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Role } from '@x2f/core';
 import { canonicalJson } from '@x2f/protocol';
-import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes } from '@x2f/trade';
+import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, type AttestedTerms } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 
 /**
@@ -21,6 +21,8 @@ export type Fetch = (url: string, init: { method: string; headers: Record<string
 export interface WorkItem {
   trade: string;
   participants: Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>;
+  /** The trade record's deal and both addresses (lead answer 4); signed into the attestation as they are. */
+  terms: AttestedTerms;
 }
 
 export interface Link {
