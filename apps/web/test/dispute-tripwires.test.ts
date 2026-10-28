@@ -10,11 +10,18 @@ const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 27 seams still stand in for parts other tasks build', () => {
   it('NEEDS_TASK_22: the trade room links to the dispute screens', () => {
-    // TradeRoom (Task 22) must (1) show <DisputeEntry> (screens/dispute/DisputeEntry.tsx) where the
-    // boards have "Open dispute" (BuyerPay, SellerConfirm) and on a refunded trade for the buyer
-    // (spec 2.3, 90 days), and (2) send a trade in state `disputed` to /trade/:code/dispute, which
-    // App.tsx already routes to DisputeScreen. Then check the TradeView fields parseTrade reads.
-    expect(has('apps/web/src/screens/trade/TradeRoom.tsx') || has('apps/web/src/screens/TradeRoom.tsx'), 'Task 22 landed: place DisputeEntry and the disputed redirect').toBe(false);
+    // Fires when Task 22 lands (checked against origin/wip/lead-p3-task22 @9bb22b7 and its landing
+    // branch -land @50ecd93: screens/trade/TradeRoom.tsx, screens.ts, seams.ts). Then:
+    // (1) register `{ owner: 'Task 27', role: 'any', states: ['disputed'], screen: DisputeSlot }` on
+    //     the reserved line in screens/trade/screens.ts. DisputeSlot takes TradeScreenProps, loads
+    //     only GET …/dispute, names the counterparty with publicName(view.counterparty), the method
+    //     with methodOf(view), and uses props.serverClock(); it never fetches the trade or starts
+    //     the escrow (the room's one `escrow` handle is where a Plan 4 mod-built co-sign through
+    //     rulingAllowsCosign must run). Keep /trade/:code/dispute for DisputeOpen and ?view=chat.
+    // (2) re-read on the room's live source (seams.ts useTradeLive, one connection) instead of a
+    //     second useLiveEvents connection in DisputeScreen.
+    // (3) Tasks 23/24/25 place <DisputeEntry> in BuyerPay, SellerConfirm and the buyer's refunded view.
+    expect(has('apps/web/src/screens/trade/TradeRoom.tsx') || has('apps/web/src/screens/TradeRoom.tsx'), 'Task 22 landed: register the disputed slot and place DisputeEntry').toBe(false);
   });
 
   it('NEEDS_TASK_20: the dispute room uses FallbackChat until ChatPanel exists', () => {
