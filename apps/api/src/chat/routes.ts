@@ -1,0 +1,309 @@
+/**
+ * Plan 3 Task 20: the encrypted chat's API. It stores ciphertext only and never decrypts.
+ *
+ * - `POST /v1/chats { offerId }` → 201 `{ chat, role }` (200 with the same chat when the caller
+ *   already has an open one on the offer). The code comes from `newTradeCode`; the roles are fixed
+ *   by the offer side (a 'sell' offer's poster is the seller, the taker the buyer).
+ * - `GET /v1/chats` → `{ chats: ChatSummary[] }`, the caller's chats, newest first.
+ * - `GET /v1/chats/:chat` → `ChatView`.
+ * - `POST /v1/chats/:chat/identity { signPublic, boxPublic, proof }` → 201: one per role, the role
+ *   from the session, the proof over `chatIdentityProofBytes` (P3-I21).
+ * - `GET /v1/chats/:chat/attestation` → 200 `{ attestation, sig }`, 202 pending, 409 refused.
+ * - `POST /v1/chats/:chat/envelopes` (an `Envelope`, at most 16 KiB, 413 above) → 201 `{ id }`.
+ *   `checkChatEnvelope(body, channelFor(chat, 'chat'), sessionRole)`; the stored `sender_role` is
+ *   the session's role (Revision 2026-10-28). A seq not above that sender's last is 409 `stale-seq`.
+ * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope }], more }`.
+ *
+ * Every chat route needs a trader session; a chat that does not exist or does not include the
+ * caller is the same 404 `not-found`. Nothing here logs a chat code, a key or a ciphertext.
+ */
+import { newTradeCode, normalizeTradeCode } from '@x2f/core';
+import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { requireSession } from '../auth/sessions.js';
+import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
+import { traderSummaries, type TraderSummary } from '../traders/summary.js';
+
+const requireTrader = requireSession({ kinds: ['trader'] });
+
+export type ChatRole = 'buyer' | 'seller';
+
+export interface ChatView {
+  chat: string;
+  role: ChatRole;
+  offerId: string;
+  /** The other side, by display name only (never a login name, FU-A). */
+  counterparty: TraderSummary | null;
+  /** The trade a take linked to this chat, or null before a take. */
+  tradeCode: string | null;
+  /** A dispute is open on the linked trade: only then may the moderator post (spec 6.6). */
+  disputeOpen: boolean;
+  /** The moderation service's attestation is ready. */
+  attested: boolean;
+  createdAt: string;
+  lastMessageAt: string | null;
+}
+
+export interface ChatSummary {
+  chat: string;
+  role: ChatRole;
+  offerId: string;
+  counterparty: string | null;
+  lastMessageAt: string | null;
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+const HEX_KEY = /^[0-9a-f]{64}$/;
+const IDENTITY_KEYS = ['signPublic', 'boxPublic', 'proof'] as const;
+const AFTER = /^(0|[1-9][0-9]{0,17})$/;
+/** Envelopes per page. */
+export const ENVELOPE_PAGE = 100;
+/** Chats listed by GET /v1/chats. */
+const CHAT_LIST_LIMIT = 200;
+
+/** An offer anyone may see (Task 4's LISTED): live, and its poster neither disabled nor on hold. */
+const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is null
+  and not exists (select 1 from trading_holds h where h.account_id = o.account_id and h.lifted_at is null)`;
+
+interface ChatRow {
+  code: string;
+  offer_id: string;
+  buyer_account_id: string;
+  seller_account_id: string;
+  trade_code: string | null;
+  created_at: Date;
+  last_message_at: Date | null;
+}
+
+const notFound = (): ApiError => new ApiError(404, 'not-found');
+
+function isObject(v: unknown): v is Record<string, unknown> {
+  return v !== null && typeof v === 'object' && !Array.isArray(v);
+}
+
+/**
+ * The chat and the caller's role in it, from the session alone. A malformed code, an unknown chat
+ * and someone else's chat are the same 404.
+ */
+export async function roleInChat(db: Queryable, raw: string, accountId: string): Promise<{ row: ChatRow; role: ChatRole }> {
+  const code = normalizeTradeCode(raw);
+  if (code === null) throw notFound();
+  const { rows } = await db.query<ChatRow>(
+    'select code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at, last_message_at from chats where code = $1',
+    [code],
+  );
+  const row = rows[0];
+  if (!row) throw notFound();
+  if (row.buyer_account_id === accountId) return { row, role: 'buyer' };
+  if (row.seller_account_id === accountId) return { row, role: 'seller' };
+  throw notFound();
+}
+
+function identityBody(body: unknown): { signPublic: string; boxPublic: string; proof: string } {
+  if (!isObject(body)) throw new ApiError(400, 'bad-request');
+  const keys = Object.keys(body);
+  if (keys.length !== IDENTITY_KEYS.length || !IDENTITY_KEYS.every((k) => keys.includes(k))) throw new ApiError(400, 'bad-request');
+  const { signPublic, boxPublic, proof } = body;
+  if (typeof signPublic !== 'string' || !HEX_KEY.test(signPublic)) throw new ApiError(400, 'bad-request');
+  if (typeof boxPublic !== 'string' || !HEX_KEY.test(boxPublic)) throw new ApiError(400, 'bad-request');
+  if (typeof proof !== 'string' || !/^[0-9a-f]{128}$/.test(proof)) throw new ApiError(400, 'bad-request');
+  return { signPublic, boxPublic, proof };
+}
+
+/** Runs `fn` in a transaction with the chat row locked. */
+async function locked<T>(req: FastifyRequest, chat: string, fn: (q: Queryable) => Promise<T>): Promise<T> {
+  const client = await req.server.deps.db.connect();
+  try {
+    await client.query('begin');
+    try {
+      await client.query('select 1 from chats where code = $1 for update', [chat]);
+      const out = await fn(client);
+      await client.query('commit');
+      return out;
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Links an open pre-trade chat to the trade a take made from it ("a take reuses the chat"). Task 5's
+ * take calls this in its own transaction; returns the chat code, or null when the pair had no chat.
+ */
+export async function linkChatToTrade(
+  q: Queryable,
+  t: { offerId: string; buyerAccountId: string; sellerAccountId: string; tradeCode: string },
+): Promise<string | null> {
+  const { rows } = await q.query<{ code: string }>(
+    `update chats set trade_code = $4
+      where offer_id = $1 and buyer_account_id = $2 and seller_account_id = $3 and trade_code is null
+      returning code`,
+    [t.offerId, t.buyerAccountId, t.sellerAccountId, t.tradeCode],
+  );
+  return rows[0]?.code ?? null;
+}
+
+export function chatRoutes(app: FastifyInstance): void {
+  app.post('/v1/chats', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const body = req.body;
+    if (!isObject(body) || Object.keys(body).length !== 1 || !('offerId' in body)) throw new ApiError(400, 'bad-request');
+    const offerId = body.offerId;
+    if (typeof offerId !== 'string' || !UUID.test(offerId)) throw notFound();
+    const { rows } = await deps.db.query<{ account_id: string; side: 'sell' | 'buy' }>(
+      `select o.account_id, o.side from offers o join accounts a on a.id = o.account_id where o.id = $1 and ${LISTED}`,
+      [offerId],
+    );
+    const offer = rows[0];
+    if (!offer) throw notFound();
+    const me = req.auth.accountId;
+    if (offer.account_id === me) throw new ApiError(409, 'own-offer');
+    const role: ChatRole = offer.side === 'sell' ? 'buyer' : 'seller';
+    const buyer = role === 'buyer' ? me : offer.account_id;
+    const seller = role === 'seller' ? me : offer.account_id;
+    // One open chat per offer and pair (chats_open_pair): a racing second insert finds the first.
+    const inserted = await deps.db.query<{ code: string }>(
+      `insert into chats (code, offer_id, buyer_account_id, seller_account_id, created_at)
+       values ($1, $2, $3, $4, $5)
+       on conflict (offer_id, buyer_account_id, seller_account_id) where trade_code is null do nothing
+       returning code`,
+      [newTradeCode(), offerId, buyer, seller, deps.clock()],
+    );
+    if (inserted.rows[0]) return reply.code(201).send({ chat: inserted.rows[0].code, role });
+    const existing = await deps.db.query<{ code: string }>(
+      'select code from chats where offer_id = $1 and buyer_account_id = $2 and seller_account_id = $3 and trade_code is null',
+      [offerId, buyer, seller],
+    );
+    if (!existing.rows[0]) throw new ApiError(503, 'busy');
+    return reply.send({ chat: existing.rows[0].code, role });
+  });
+
+  app.get('/v1/chats', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const me = req.auth.accountId;
+    const { rows } = await deps.db.query<ChatRow>(
+      `select code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at, last_message_at from chats
+        where buyer_account_id = $1 or seller_account_id = $1
+        order by coalesce(last_message_at, created_at) desc, code limit $2`,
+      [me, CHAT_LIST_LIMIT],
+    );
+    const others = rows.map((r) => (r.buyer_account_id === me ? r.seller_account_id : r.buyer_account_id));
+    const names = await traderSummaries(deps.db, others, deps.clock());
+    const chats: ChatSummary[] = rows.map((r, i) => ({
+      chat: r.code,
+      role: r.buyer_account_id === me ? 'buyer' : 'seller',
+      offerId: r.offer_id,
+      counterparty: names.get(others[i]!)?.displayName ?? null,
+      lastMessageAt: r.last_message_at?.toISOString() ?? null,
+    }));
+    return { chats };
+  });
+
+  app.get('/v1/chats/:chat', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const other = role === 'buyer' ? row.seller_account_id : row.buyer_account_id;
+    const names = await traderSummaries(deps.db, [other], deps.clock());
+    const facts = await deps.db.query<{ disputed: boolean; attested: boolean }>(
+      `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
+              exists (select 1 from chat_attestations a where a.chat = $1) as attested`,
+      [row.code, row.trade_code],
+    );
+    const view: ChatView = {
+      chat: row.code,
+      role,
+      offerId: row.offer_id,
+      counterparty: names.get(other) ?? null,
+      tradeCode: row.trade_code,
+      disputeOpen: facts.rows[0]!.disputed,
+      attested: facts.rows[0]!.attested,
+      createdAt: row.created_at.toISOString(),
+      lastMessageAt: row.last_message_at?.toISOString() ?? null,
+    };
+    return view;
+  });
+
+  app.post('/v1/chats/:chat/identity', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const keys = identityBody(req.body);
+    if (!(await chatIdentityProofValid(row.code, role, keys))) throw new ApiError(400, 'bad-proof');
+    await locked(req, row.code, async (q) => {
+      const other = await q.query(
+        'select 1 from chat_identities where chat = $1 and role <> $2 and (sign_public = $3 or box_public = $4)',
+        [row.code, role, keys.signPublic, keys.boxPublic],
+      );
+      if (other.rows.length > 0) throw new ApiError(409, 'identity-conflict');
+      const { rowCount } = await q.query(
+        `insert into chat_identities (chat, role, sign_public, box_public, proof, created_at)
+         values ($1, $2, $3, $4, $5, $6) on conflict (chat, role) do nothing`,
+        [row.code, role, keys.signPublic, keys.boxPublic, keys.proof, deps.clock()],
+      );
+      if (rowCount === 0) throw new ApiError(409, 'identity-exists');
+    });
+    return reply.code(201).send({ ok: true, role });
+  });
+
+  app.get('/v1/chats/:chat/attestation', { preHandler: requireTrader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const { rows } = await deps.db.query<{ attestation: unknown; sig: string }>('select attestation, sig from chat_attestations where chat = $1', [row.code]);
+    if (rows[0]) return reply.send({ attestation: rows[0].attestation, sig: rows[0].sig });
+    const refused = await deps.db.query('select 1 from chat_refusals where chat = $1', [row.code]);
+    if (refused.rows.length > 0) throw new ApiError(409, 'attestation-refused');
+    return reply.code(202).send({ status: 'pending' });
+  });
+
+  app.post('/v1/chats/:chat/envelopes', { preHandler: requireTrader, bodyLimit: CHAT_BODY_MAX_BYTES }, async (req, reply) => {
+    const deps = req.server.deps;
+    const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
+    if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    let env;
+    try {
+      env = checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
+    } catch (e) {
+      if (!(e instanceof ChatEnvelopeError)) throw e;
+      if (e.code === 'too-large') throw new ApiError(413, 'bad-request');
+      if (e.code === 'wrong-channel' || e.code === 'wrong-sender') throw new ApiError(400, e.code);
+      throw new ApiError(400, 'bad-request');
+    }
+    const now = deps.clock();
+    const id = await locked(req, row.code, async (q) => {
+      const last = await q.query<{ seq: string | null }>(
+        'select max(seq)::text as seq from chat_envelopes where chat = $1 and sender_role = $2',
+        [row.code, role],
+      );
+      const top = last.rows[0]?.seq;
+      if (top !== null && top !== undefined && BigInt(env.seq) <= BigInt(top)) throw new ApiError(409, 'stale-seq');
+      const ins = await q.query<{ id: string }>(
+        `insert into chat_envelopes (chat, sender_role, seq, envelope, created_at) values ($1, $2, $3, $4, $5) returning id::text as id`,
+        [row.code, role, env.seq, env, now],
+      );
+      await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
+      return ins.rows[0]!.id;
+    });
+    return reply.code(201).send({ id });
+  });
+
+  app.get('/v1/chats/:chat/envelopes', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const { row } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
+    const raw = (req.query as Record<string, unknown> | null)?.after;
+    if (raw !== undefined && (typeof raw !== 'string' || !AFTER.test(raw))) throw new ApiError(400, 'bad-request');
+    const after = raw ?? '0';
+    const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown }>(
+      `select id::text as id, sender_role, envelope from chat_envelopes where chat = $1 and id > $2 order by id limit $3`,
+      [row.code, after, ENVELOPE_PAGE + 1],
+    );
+    const page = rows.slice(0, ENVELOPE_PAGE);
+    return {
+      envelopes: page.map((r) => ({ id: r.id, senderRole: r.sender_role, envelope: r.envelope })),
+      more: rows.length > ENVELOPE_PAGE,
+    };
+  });
+}

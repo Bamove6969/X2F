@@ -62,6 +62,12 @@ export type ApiErrorCode =
   | 'bad-proof'
   | 'attestation-refused'
   | 'trade-closed'
+  // Plan 3, Task 20: the encrypted chat.
+  | 'own-offer'
+  | 'chat-not-ready'
+  | 'stale-seq'
+  | 'wrong-channel'
+  | 'wrong-sender'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';
