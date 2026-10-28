@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
+import { DISPUTE_RETENTION_MS, purgeDisputes } from '../src/disputes/purge.js';
 import { purgeNudges } from '../src/nudge/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { applyEvent } from '../src/trades/store.js';
@@ -139,8 +140,74 @@ describe('trade_events is append-only', () => {
 });
 
 describe('retention scheduler jobs (X-12)', () => {
-  it('runs purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddresses and purgeNudges', () => {
-    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges]);
+  it('runs purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddresses, purgeNudges and purgeDisputes', () => {
+    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges, purgeDisputes]);
+    expect(purgeDisputes.name).toBe('purgeDisputes');
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
+  });
+});
+
+describe('purgeDisputes (spec 4.1: dispute records live 30 days after the dispute closes)', () => {
+  async function disputed(status: 'open' | 'ruled' | 'appealed' | 'final' | 'closed', closedAt: Date | null) {
+    const t = await released();
+    await deps.db.query(
+      `insert into disputes (code, opened_by, reason, note, opened_at, status, closed_at) values ($1, 'buyer', 'paid', 'for the moderator', $2, $3, $4)`,
+      [t.code, now, status, closedAt],
+    );
+    await deps.db.query(
+      `insert into dispute_rulings (code, round, outcome, reason, moderator_name, ruled_at, appeal_until) values ($1, 1, 'release-to-buyer', 'Paid.', 'sarah.v', $2, $2)`,
+      [t.code, now],
+    );
+    await deps.db.query(`insert into dispute_appeals (code, by, why, at) values ($1, 'seller', 'Please look again at this.', $2)`, [t.code, now]);
+    return t.code;
+  }
+  const rows = async (code: string) => {
+    const n = async (table: string) => Number((await deps.db.query<{ n: string }>(`select count(*) as n from ${table} where code = $1`, [code])).rows[0]!.n);
+    return [await n('disputes'), await n('dispute_rulings'), await n('dispute_appeals')];
+  };
+
+  it('deletes a closed dispute, its rulings and its appeal once 30 days have passed, not at the instant itself', async () => {
+    const code = await disputed('closed', now);
+    expect(await purgeDisputes.run(deps.db, at(now, DISPUTE_RETENTION_MS - 1))).toBe(0);
+    expect(await rows(code)).toEqual([1, 1, 1]);
+    await purgeDisputes.run(deps.db, at(now, DISPUTE_RETENTION_MS));
+    expect(await rows(code)).toEqual([1, 1, 1]);
+    // The count is what the scheduler logs (the job name and a number, nothing from the rows).
+    const n = await purgeDisputes.run(deps.db, at(now, DISPUTE_RETENTION_MS + 1));
+    expect(n).toBeGreaterThanOrEqual(1);
+    expect(await rows(code)).toEqual([0, 0, 0]);
+    expect(await purgeDisputes.run(deps.db, at(now, DISPUTE_RETENTION_MS + 1))).toBe(0);
+  });
+
+  it('never touches a dispute that is not closed, however old', async () => {
+    const codes = [];
+    for (const s of ['open', 'ruled', 'appealed', 'final'] as const) codes.push(await disputed(s, null));
+    await purgeDisputes.run(deps.db, at(now, 100 * DISPUTE_RETENTION_MS));
+    for (const code of codes) expect(await rows(code)).toEqual([1, 1, 1]);
+  });
+
+  it('closed and closed_at go together, and deleting a trade takes its dispute records with it', async () => {
+    const t = await released();
+    await expect(deps.db.query(`insert into disputes (code, opened_by, reason, opened_at, status) values ($1, 'buyer', 'paid', $2, 'closed')`, [t.code, now]))
+      .rejects.toMatchObject({ code: '23514' });
+    await expect(deps.db.query(`insert into disputes (code, opened_by, reason, opened_at, status, closed_at) values ($1, 'buyer', 'paid', $2, 'open', $2)`, [t.code, now]))
+      .rejects.toMatchObject({ code: '23514' });
+    const code = await disputed('final', null);
+    const client = await deps.db.connect();
+    try {
+      // The disputes rows never block a trade's deletion (trade_events is cleared first, as x2f_purge).
+      await client.query('begin');
+      await client.query('set local role x2f_purge');
+      await client.query('delete from trade_events where code = $1', [code]);
+      await client.query('reset role');
+      await client.query('delete from trades where code = $1', [code]);
+      expect(await (async () => {
+        const n = async (table: string) => Number((await client.query<{ n: string }>(`select count(*) as n from ${table} where code = $1`, [code])).rows[0]!.n);
+        return [await n('disputes'), await n('dispute_rulings'), await n('dispute_appeals')];
+      })()).toEqual([0, 0, 0]);
+      await client.query('rollback');
+    } finally {
+      client.release();
+    }
   });
 });
