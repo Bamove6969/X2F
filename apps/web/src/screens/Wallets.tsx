@@ -283,7 +283,10 @@ export function Wallets() {
     try {
       const action = await walletsAction(drafts.map((d) => d.address));
       const saved = await withConfirm(action, post, prove);
-      if (addMode) {
+      // Sent here by a 409 no-wallet: go back only when every new wallet can be paid now. A wallet
+      // that waits would send the take straight back here (no-wallet again), so the screen stays,
+      // shows the wait, and Back returns to returnTo.
+      if (addMode && saved.every((w) => w.usable)) {
         navigate(returnTo);
         return;
       }

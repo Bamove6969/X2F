@@ -165,4 +165,39 @@ describe('Your wallets', () => {
     expect(posts[1]!.body).toMatchObject({ wallets: [{ address: ADDR_C }], confirmToken: 'tok-1' });
     expect(dialog("Confirm it's you")).toBeNull();
   });
+
+  describe('?add=1 (sent here by a 409 no-wallet)', () => {
+    it('stays and shows the wait when a saved wallet waits; Back goes to returnTo (review item 1)', async () => {
+      stub.wallets = [];
+      stub.onPost = (body, n) =>
+        n === 1
+          ? { status: 403, json: { error: 'confirm-required', action: 'add-wallets' } }
+          : { status: 201, json: created(body, '2099-01-01T12:00:00.000Z', false) };
+      await mount('/wallets?add=1&returnTo=%2Fbuy');
+      await click('Continue', dialog('Before you add a wallet')!);
+      type('#wallet-address', ADDR_C);
+      await click('Save wallet');
+      type('#confirm-password', 'Correct-Horse-9!');
+      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+
+      // Not bounced back to the take (which would answer no-wallet again and loop).
+      expect(where).toBe('/wallets?add=1&returnTo=%2Fbuy');
+      expect(document.querySelector('[role="status"]')?.textContent).toContain('Your new wallet can be paid from');
+      expect(document.querySelector('.x2f-wallet-row')?.textContent).toContain('Waiting');
+      expect(dialog('Before you add a wallet')).toBeNull();
+      await click('Back');
+      expect(where).toBe('/buy');
+    });
+
+    it('returns to returnTo at once when every saved wallet is usable', async () => {
+      stub.wallets = [];
+      stub.rule = RULE_FIRST;
+      stub.onPost = (body) => ({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) });
+      await mount('/wallets?add=1&returnTo=%2Fbuy');
+      await click('Continue', dialog('Before you add a wallet')!);
+      type('#wallet-address', ADDR_C);
+      await click('Save wallet');
+      expect(where).toBe('/buy');
+    });
+  });
 });
