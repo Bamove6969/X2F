@@ -3,7 +3,7 @@
 // api.ts on 2026-10-27: same fields, `exponent` always sent; Tasks 16 and 17's offer lists are on
 // the line and App.tsx hands their Trade button to the quote, which reads offers through browse's
 // parseOffers; those tripwires are retired. Task 4's GET /v1/offers landed 2026-10-28 and matches
-// quoteOffer and parseOffers (poster.username is the public name, stage, opensAt, bigint strings); its
+// quoteOffer and parseOffers (poster.displayName is the public name, stage, opensAt, bigint strings); its
 // tripwire is retired. Task 4 also serves GET /v1/offers/:id, which the quote may use instead of the list. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the room's fallback to readConfirmed(code) when history

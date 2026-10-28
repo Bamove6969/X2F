@@ -1,6 +1,6 @@
 // TRIPWIRES for Task 20's wiring (only the pure parts are built: apps/web/src/chat/chatCrypto.ts
-// and packages/trade/src/chat.ts). Task 20's routes, migration and panel wait for Task 4's offers
-// table (Task 6's trades and startRetention are merged); the chat's mod identity waits for Task 8's
+// and packages/trade/src/chat.ts). Task 20's routes, migration and panel are unblocked: Task 4's
+// offers table (102_offers.sql) and Task 6's trades and startRetention exist; the chat's mod identity waits for Task 8's
 // attestation; the device store for Task 12. Each check fails once its dependency lands: then
 // build that part against the real module and delete it.
 import { existsSync } from 'node:fs';
@@ -12,7 +12,7 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 20 wiring still waits for its dependencies', () => {
-  it("NEEDS_TASK_4: the chat API (106_chat.sql, routes, retention) waits for Task 4's offers table", () => {
+  it('NEEDS_TASK_20_API: the chat API (106_chat.sql, routes, retention) is not built yet (its offers table is)', () => {
     // When building it (POST /v1/chats { offerId } needs the offers table): the envelopes route
     // runs checkChatEnvelope(body, channel, sessionRole) with a 16 KiB bodyLimit (413); the
     // identity route verifies chatIdentityProofBytes; purgeChats follows chatPurgeDue and is
