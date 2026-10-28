@@ -8,6 +8,8 @@ import {
   internalSignedBytes,
   verifyAttestation,
   type Attestation,
+  type AttestedTerms,
+  type ConfirmedDeal,
 } from '@x2f/trade';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -17,7 +19,7 @@ import { buildInternalListener } from '../src/internal/routes.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
-import { seedTrade } from './helpers/trades.js';
+import { RATE, seedTrade, type SeededTrade } from './helpers/trades.js';
 
 const IDENTITY_DOMAIN = 'x2f/trade-identity/v1\0';
 
@@ -40,12 +42,41 @@ async function trader(): Promise<{ id: string; b: Browser }> {
   return { id, b };
 }
 
+/** The terms the trade record says the attestation must sign (lead answer 4), by trade code. */
+const termsByCode = new Map<string, AttestedTerms>();
+
+function termsOf(t: SeededTrade): AttestedTerms {
+  return {
+    deal: {
+      poster: t.trade.poster,
+      takeAmountAtomic: t.trade.amountAtomic.toString(),
+      currency: RATE.currency,
+      centsPerXmr: RATE.centsPerXmr.toString(),
+      maxFiatCents: t.trade.maxFiatCents.toString(),
+    },
+    buyerPayout: t.sides.buyerPayout!,
+    sellerRefund: t.sides.sellerRefund!,
+  };
+}
+
+/** The same deal as a trader device holds it (bigints). */
+function dealOf(t: AttestedTerms): ConfirmedDeal {
+  return {
+    poster: t.deal.poster,
+    takeAmountAtomic: BigInt(t.deal.takeAmountAtomic),
+    currency: t.deal.currency,
+    centsPerXmr: BigInt(t.deal.centsPerXmr),
+    maxFiatCents: BigInt(t.deal.maxFiatCents),
+  };
+}
+
 /** A fresh trade with a buyer and seller account, each with a browser; returns the stored code. */
-async function freshTrade(): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
+async function freshTrade(sides: Partial<SeededTrade['sides']> = {}): Promise<{ code: string; buyer: { id: string; b: Browser }; seller: { id: string; b: Browser } }> {
   const buyer = await trader();
   const seller = await trader();
-  const { code } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
-  return { code, buyer, seller };
+  const seeded = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', ...sides });
+  if (seeded.sides.buyerPayout !== null && seeded.sides.sellerRefund !== null) termsByCode.set(seeded.code, termsOf(seeded));
+  return { code: seeded.code, buyer, seller };
 }
 
 /** Build the registration body for a role: a fresh identity and its Ed25519 proof of possession. */
@@ -100,7 +131,7 @@ function stubModKeys(): { signPublic: string; boxPublic: string } {
 }
 
 /** The moderation service's job, done here with the shared trade package only (no moderation code in the API). */
-async function attestAndPost(code: string, buyer: Identity, seller: Identity): Promise<Attestation> {
+async function attestAndPost(code: string, buyer: Identity, seller: Identity, terms: AttestedTerms = termsByCode.get(code)!): Promise<Attestation> {
   const mod = stubModKeys();
   const attestation: Attestation = {
     v: 1,
@@ -112,6 +143,7 @@ async function attestAndPost(code: string, buyer: Identity, seller: Identity): P
       mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
     },
     issuedAt: now.toISOString(),
+    terms,
   };
   const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
   const res = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
@@ -219,6 +251,8 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     const item = work.work.find((w) => w.trade === code);
     expect(item).toBeDefined();
     expect(item!.participants.buyer.signPublic).toBe(buyerId.id.signPublic);
+    // The work item hands moderation the trade record's terms to sign (lead answer 4).
+    expect((item as unknown as { terms: AttestedTerms }).terms).toEqual(termsByCode.get(code));
 
     const attestation = await attestAndPost(code, buyerId.id, sellerId.id);
 
@@ -230,6 +264,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
     await expect(
       verifyAttestation(payload.attestation, payload.sig, modSign.public, {
         trade: code, role: 'buyer', signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic,
+        deal: dealOf(termsByCode.get(code)!), ownAddress: termsByCode.get(code)!.buyerPayout,
       }),
     ).resolves.toBeUndefined();
   });
@@ -252,6 +287,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
         mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
       },
       issuedAt: now.toISOString(),
+      terms: termsByCode.get(code)!,
     };
     const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
     const report = { kind: 'attestation', attestation, sig };
@@ -318,6 +354,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
         mod,
       },
       issuedAt: now.toISOString(),
+      terms: termsByCode.get(code)!,
     };
     const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
     const late = await signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
@@ -343,7 +380,8 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
            join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
            join trade_identities si on si.code = t.code and si.role = 'seller'
           where not exists (select 1 from trade_attestations a where a.code = t.code)
-            and not exists (select 1 from trade_refusals r where r.code = t.code)`,
+            and not exists (select 1 from trade_refusals r where r.code = t.code)
+            and t.buyer_payout is not null and t.seller_refund is not null`,
       );
       const open = Number(rows[0]!.n);
       const seen = new Set<string>();
@@ -361,6 +399,63 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       for (const code of fresh) expect(seen.has(code)).toBe(true);
     } finally {
       await small.close();
+    }
+  });
+
+  it('stores no attestation whose terms differ from the trade record (409 terms-mismatch) or that has no terms (400)', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    const buyerId = identityFor(code, 'buyer');
+    const sellerId = identityFor(code, 'seller');
+    await buyer.b.post(`/v1/trades/${code}/identity`, buyerId.body);
+    await seller.b.post(`/v1/trades/${code}/identity`, sellerId.body);
+    const real = termsByCode.get(code)!;
+    const post = async (terms: unknown) => {
+      const mod = stubModKeys();
+      const attestation = {
+        v: 1,
+        trade: code,
+        channels: { escrow: await channelFor(code, 'escrow'), signals: await channelFor(code, 'signals') },
+        participants: {
+          buyer: { signPublic: buyerId.id.signPublic, boxPublic: buyerId.id.boxPublic },
+          seller: { signPublic: sellerId.id.signPublic, boxPublic: sellerId.id.boxPublic },
+          mod,
+        },
+        issuedAt: now.toISOString(),
+        ...(terms === undefined ? {} : { terms }),
+      } as Attestation;
+      const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), modSign.secret));
+      return signedInject('POST', '/internal/v1/reports', { kind: 'attestation', attestation, sig });
+    };
+    for (const terms of [
+      { ...real, buyerPayout: `${real.buyerPayout.slice(0, -1)}X` },
+      { ...real, sellerRefund: `${real.sellerRefund.slice(0, -1)}X` },
+      { ...real, deal: { ...real.deal, poster: 'buyer' } },
+      { ...real, deal: { ...real.deal, takeAmountAtomic: '1' } },
+      { ...real, deal: { ...real.deal, currency: 'EUR' } },
+      { ...real, deal: { ...real.deal, centsPerXmr: '1' } },
+      { ...real, deal: { ...real.deal, maxFiatCents: '1' } },
+    ]) {
+      const res = await post(terms);
+      expect(res.statusCode).toBe(409);
+      expect(res.json()).toMatchObject({ error: 'terms-mismatch' });
+    }
+    for (const terms of [undefined, { ...real, extra: 1 }, { ...real, deal: { ...real.deal, centsPerXmr: '01' } }]) {
+      const res = await post(terms);
+      expect(res.statusCode).toBe(400);
+      expect(res.json()).toMatchObject({ error: 'bad-attestation' });
+    }
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(202);
+    expect((await post(real)).statusCode).toBe(201);
+    expect((await buyer.b.get(`/v1/trades/${code}/attestation`)).statusCode).toBe(200);
+  });
+
+  it('does not serve as work a trade whose payout or refund address is missing', async () => {
+    for (const sides of [{ buyerPayout: null }, { sellerRefund: null }]) {
+      const { code, buyer, seller } = await freshTrade(sides);
+      await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+      await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+      const listed = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+      expect(listed.work.some((w) => w.trade === code)).toBe(false);
     }
   });
 
