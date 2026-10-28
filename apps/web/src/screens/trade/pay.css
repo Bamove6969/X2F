@@ -54,19 +54,21 @@
   cursor: pointer;
 }
 
-.x2f-mono {
+/* Shared names (screens.css .x2f-card, browse.css .x2f-visually-hidden, trade.css .x2f-mono and
+   .x2f-tip) are scoped to Task 23's rooms, so this file never restyles another screen. */
+:is(.x2f-pay, .x2f-room) .x2f-mono {
   font-family: var(--x2f-font-mono);
 }
 
-.x2f-ink {
+:is(.x2f-pay, .x2f-room) .x2f-ink {
   color: var(--x2f-ink);
 }
 
-.x2f-ink-muted {
+:is(.x2f-pay, .x2f-room) .x2f-ink-muted {
   color: var(--x2f-ink-muted);
 }
 
-.x2f-visually-hidden {
+:is(.x2f-pay, .x2f-room) .x2f-visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -74,7 +76,7 @@
   opacity: 0;
 }
 
-.x2f-card {
+:is(.x2f-pay, .x2f-room) .x2f-card {
   padding: var(--x2f-space-4);
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
@@ -141,7 +143,7 @@
   background: var(--x2f-caution);
 }
 
-.x2f-tip {
+:is(.x2f-pay, .x2f-room) .x2f-tip {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;

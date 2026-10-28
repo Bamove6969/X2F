@@ -31,3 +31,12 @@ describe("Task 23 in Task 22's trade room", () => {
     expect(screenFor(view({ role: 'seller', state: 'settling', settling: 'buyer-cancel' }), NOW)).not.toBe(BuyerCancelling);
   });
 });
+
+describe('pay.css (review Minor 3)', () => {
+  it('restyles no shared class outside the rooms (.x2f-card, .x2f-visually-hidden, .x2f-mono, .x2f-tip)', () => {
+    const css = readFileSync(`${SRC}pay.css`, 'utf8');
+    for (const c of ['x2f-card', 'x2f-visually-hidden', 'x2f-mono', 'x2f-tip', 'x2f-ink', 'x2f-ink-muted']) {
+      expect(css, c).not.toMatch(new RegExp(`^\\.${c} \\{`, 'm'));
+    }
+  });
+});
