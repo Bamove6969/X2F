@@ -7,7 +7,7 @@ import { uniqueName, type Server } from './server.js';
 /** A staff account seeded with an attested security key ("YubiKey") and a PGP key, its two login methods. */
 export async function staffWithKeyAndPgp(srv: Server): Promise<{ username: string; soft: SoftAuthenticator; key: Pair }> {
   const username = uniqueName('crew');
-  const id = await seedAccount(srv.deps, { username, kind: 'staff' });
+  const id = await seedAccount(srv.deps, { loginName: username, kind: 'staff' });
   const soft = createSoftAuthenticator({ backedUp: false, userVerified: true });
   await srv.deps.db.query(
     `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)

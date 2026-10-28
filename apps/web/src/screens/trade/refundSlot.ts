@@ -32,10 +32,9 @@ export type TradeState =
   | 'cancelled'
   | 'disputed';
 
-/** The counterparty's PUBLIC names as the API sends them (FU-A): `displayName` after the rename, `username` (the public column) before. */
+/** The counterparty's PUBLIC name as the API sends it (FU-A's `TraderSummary.displayName`). */
 export interface PublicNames {
-  displayName?: string;
-  username?: string;
+  displayName: string;
 }
 
 /** The fields of Task 22's `TradeView` (GET /v1/trades/:code, Task 6) that these screens read. */
@@ -97,7 +96,7 @@ export interface RefundScreenProps {
 
 /** Task 22's `publicName`: the counterparty's public display name, never a login name. */
 export function publicName(t: PublicNames): string {
-  return t.displayName ?? t.username ?? '';
+  return t.displayName;
 }
 
 /**

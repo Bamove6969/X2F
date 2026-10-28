@@ -285,3 +285,20 @@ export async function encryptChallenge(
     config: STRICT_CONFIG,
   });
 }
+
+/**
+ * True when the subkey `encryptChallenge` would encrypt to in `pasted` at `now` (under the same
+ * strict rules) is still valid for encryption in `current`, the server's copy of the same key
+ * merged with `pasted`. A login challenge is always encrypted to the pasted key, so the
+ * ciphertext depends on that key alone; when the server's copy has revoked (or otherwise no longer
+ * accepts) that subkey, the caller must not issue a real challenge to it.
+ */
+export async function pastedRecipientStillValid(pasted: openpgp.Key, current: openpgp.Key, now: Date): Promise<boolean> {
+  try {
+    const chosen = await pasted.getEncryptionKey(undefined, now, undefined, STRICT_CONFIG);
+    await current.getEncryptionKey(chosen.getKeyID(), now, undefined, STRICT_CONFIG);
+    return true;
+  } catch {
+    return false;
+  }
+}

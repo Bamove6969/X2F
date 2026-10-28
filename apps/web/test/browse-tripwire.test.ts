@@ -21,7 +21,7 @@ describe('Task 16 guesses still stand in for missing API routes', () => {
   });
 
   it("NEEDS_TASK_4: TraderSummary.stage (the New badge) is guessed", () => {
-    // Guessed: TraderSummary = { username; completedTrades; online; lastSeenAt: string | null;
+    // Guessed: TraderSummary = { displayName (FU-A); completedTrades; online; lastSeenAt: string | null;
     // typicalMinutes: number | null; positivePct: number | null; badges: string[];
     // stage: 'starter' | 'building' | 'graduated' }. The New badge shows while stage !== 'graduated'.
     expect(has('apps/api/src/traders/summary.ts'), "Task 4 summary landed: check the poster's stage field name and values against parsePoster").toBe(false);

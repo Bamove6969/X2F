@@ -1,0 +1,112 @@
+{
+  "legalHeader": "Submission of this statement and retrieval and use of this statement indicates acceptance of the appropriate agreement located at https://fidoalliance.org/metadata/metadata-legal-terms/.",
+  "aaguid": "42b4fb4a-2866-43b2-9bf7-6c6669c2e5d3",
+  "friendlyNames": {
+    "en-US": "Google Titan Security Key v2"
+  },
+  "description": "Google Titan Security Key v2",
+  "authenticatorVersion": 1,
+  "protocolFamily": "fido2",
+  "schema": 3,
+  "upv": [
+    {
+      "major": 1,
+      "minor": 0
+    }
+  ],
+  "authenticationAlgorithms": [
+    "secp256r1_ecdsa_sha256_raw"
+  ],
+  "publicKeyAlgAndEncodings": [
+    "ecc_x962_raw",
+    "cose"
+  ],
+  "attestationTypes": [
+    "basic_full"
+  ],
+  "userVerificationDetails": [
+    [
+      {
+        "userVerificationMethod": "passcode_external",
+        "caDesc": {
+          "base": 10,
+          "minLength": 4,
+          "maxRetries": 0,
+          "blockSlowdown": 0
+        }
+      },
+      {
+        "userVerificationMethod": "presence_internal"
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "presence_internal"
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "none"
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "passcode_external",
+        "caDesc": {
+          "base": 10,
+          "minLength": 4,
+          "maxRetries": 0,
+          "blockSlowdown": 0
+        }
+      }
+    ]
+  ],
+  "keyProtection": [
+    "hardware",
+    "secure_element"
+  ],
+  "matcherProtection": [
+    "on_chip"
+  ],
+  "cryptoStrength": 128,
+  "attachmentHint": [
+    "external",
+    "wired",
+    "wireless",
+    "nfc"
+  ],
+  "tcDisplay": [],
+  "attestationRootCertificates": [
+    "MIICIjCCAcigAwIBAgIBAjAKBggqhkjOPQQDAjBkMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGR29vZ2xlMSIwIAYDVQQLDBlBdXRoZW50aWNhdG9yIEF0dGVzdGF0aW9uMSAwHgYDVQQDDBdUaXRhbiBTZWN1cml0eSBLZXkgUm9vdDAgFw0yMTEyMDExNTI2MzFaGA8yMTIxMTIwMjE1MjYzMVowZzELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkdvb2dsZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEjMCEGA1UEAwwaVGl0YW4gU2VjdXJpdHkgS2V5IFNpZ25pbmcwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARGSX/0WmoStYfhmlzSPB4SARhmTBpPi0o3yYygS4smn/4OFdGNJdsPxkub62pOlWe0I6cJSh9W3EAHA2ZPO+S+o2YwZDAOBgNVHQ8BAf8EBAMCAQYwEgYDVR0TAQH/BAgwBgEB/wIBADAdBgNVHQ4EFgQURTqQYOsPJ897X40vav+XoW+S6sgwHwYDVR0jBBgwFoAU2d6JrFCoEZAe/LUpIMybltDsMh0wCgYIKoZIzj0EAwIDSAAwRQIgSr3N14HdtCfj7QZ0R7kWg6I317QENb8q+fbNko6nK4oCIQD5Jh14grDc6F7gHib9QTv8sUs6w8gF1JYKMK+LDOYPYg==",
+    "MIICMjCCAdmgAwIBAgIBATAKBggqhkjOPQQDAjBkMQswCQYDVQQGEwJVUzEPMA0GA1UECgwGR29vZ2xlMSIwIAYDVQQLDBlBdXRoZW50aWNhdG9yIEF0dGVzdGF0aW9uMSAwHgYDVQQDDBdUaXRhbiBTZWN1cml0eSBLZXkgUm9vdDAgFw0yMTEyMDExNTIzNTFaGA8yMTIxMTIwMjE1MjM1MVowZDELMAkGA1UEBhMCVVMxDzANBgNVBAoMBkdvb2dsZTEiMCAGA1UECwwZQXV0aGVudGljYXRvciBBdHRlc3RhdGlvbjEgMB4GA1UEAwwXVGl0YW4gU2VjdXJpdHkgS2V5IFJvb3QwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAARqmNWzcDNH63o8TzodB2jk9b49VPsfIvXpdhaWxfLayo4LBbDrXyxF3JR1P6W6ZsqWCEYrX0oYIxAog3hCE4ydo3oweDAOBgNVHQ8BAf8EBAMCAQYwDwYDVR0TAQH/BAUwAwEB/zAdBgNVHQ4EFgQU2d6JrFCoEZAe/LUpIMybltDsMh0wHwYDVR0jBBgwFoAU2d6JrFCoEZAe/LUpIMybltDsMh0wFQYLKwYBBAGC5RwCAQEEBgQEAwIAADAKBggqhkjOPQQDAgNHADBEAiANIQ48/nMp2KfYNiovcyxWXJLiul4Sv+zcRJezrd/WWAIgVucQ531fqzY7ODoK+dIDykRudvlW/yBqza/AdS0Sq6Q="
+  ],
+  "supportedExtensions": [
+    {
+      "id": "credProtect",
+      "fail_if_unknown": false
+    },
+    {
+      "id": "hmac-secret",
+      "fail_if_unknown": false
+    }
+  ],
+  "authenticatorGetInfo": {
+    "versions": [
+      "FIDO_2_0",
+      "U2F_V2"
+    ],
+    "extensions": [
+      "credProtect",
+      "hmac-secret"
+    ],
+    "aaguid": "42b4fb4a286643b29bf76c6669c2e5d3",
+    "options": {
+      "rk": true,
+      "clientPin": false
+    },
+    "maxMsgSize": 2200,
+    "pinUvAuthProtocols": [
+      1
+    ]
+  }
+}

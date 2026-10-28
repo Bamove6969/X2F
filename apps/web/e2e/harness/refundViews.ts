@@ -28,7 +28,7 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     role: 'seller',
     poster: 'buyer',
     state: 'secured',
-    counterparty: { username: BOARD.buyer },
+    counterparty: { displayName: BOARD.buyer },
     methodId: 'ZELLE',
     profile: ZELLE_PROFILE,
     amountAtomic: '1250000000000',
@@ -69,7 +69,7 @@ export function sellerRequestedView(over: Partial<RefundView> = {}): RefundView 
 export function buyerAlertView(over: Partial<RefundView> = {}): RefundView {
   return sellerView({
     role: 'buyer',
-    counterparty: { username: BOARD.seller },
+    counterparty: { displayName: BOARD.seller },
     state: 'refund_requested',
     finalAlertAt: SERVER_NOW,
     nextDeadline: iso(15),

@@ -3,7 +3,9 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { addAlert } from '../src/alerts.js';
+import { issueConfirmToken } from '../src/auth/confirm.js';
 import { startSession } from '../src/auth/sessions.js';
+import { isLoginNameClash } from '../src/routes/account.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
@@ -50,7 +52,7 @@ const at = (ms: number) => new Date(now.getTime() + ms);
 
 async function account(kind: 'trader' | 'staff' = 'trader') {
   const username = `acct${String(++n).padStart(4, '0')}x`;
-  return { id: await seedAccount(deps, { username, kind }), username };
+  return { id: await seedAccount(deps, { loginName: username, kind }), username };
 }
 
 async function loggedIn(
@@ -95,7 +97,8 @@ async function addRecoveryCodes(accountId: string, count: number, used = false):
 }
 
 interface Me {
-  username: string;
+  displayName: string;
+  needsLoginName: boolean;
   kind: string;
   level: string;
   holdUntil: string | null;
@@ -113,12 +116,95 @@ async function me(b: Browser): Promise<Me> {
 }
 
 describe('GET /v1/account/me', () => {
+  it('an account from before login names reads needsLoginName: true until POST /v1/account/login-name sets a distinct one (review I3)', async () => {
+    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer1' });
+    const { id: other } = await account();
+    const b = await loggedIn(id);
+    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: true });
+    // Re-review 2: a stolen session must not quietly change how the account logs in.
+    const bare = await b.post('/v1/account/login-name', { loginName: 'Private.OT1' });
+    expect(bare.statusCode).toBe(403);
+    expect(errorOf(bare)).toBe('confirm-required');
+    const token = () => issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });
+    const wrong = await issueConfirmToken(deps, { sessionId: b.sessionId, accountId: id, action: { kind: 'set-password' }, method: 'password' });
+    expect(errorOf(await b.post('/v1/account/login-name', { loginName: 'Private.OT1', confirmToken: wrong }))).toBe('confirm-invalid');
+    const set = async (loginName: unknown) => b.post('/v1/account/login-name', { loginName, confirmToken: await token() });
+    expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
+    expect(errorOf(await set('bad name'))).toBe('login-name-invalid');
+    expect(errorOf(await set(42))).toBe('login-name-invalid');
+    const { rows: taken } = await deps.db.query<{ login_name: string; display_name: string }>('select login_name, display_name from accounts where id = $1', [other]);
+    expect(errorOf(await set(taken[0]!.login_name))).toBe('names-unavailable'); // another account's login name
+    expect(errorOf(await set(taken[0]!.display_name))).toBe('names-unavailable'); // another account's display name
+    expect(await me(b)).toMatchObject({ needsLoginName: true });
+    const ok = await set('Private.OT1');
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toEqual({ ok: true });
+    expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: false });
+    const { rows } = await deps.db.query('select login_name, login_key, legacy_login_name from accounts where id = $1', [id]);
+    expect(rows).toEqual([{ login_name: 'Private.OT1', login_key: 'private.ot1', legacy_login_name: false }]);
+    // One alert, without the name (refusals wrote none).
+    const { rows: alerts } = await deps.db.query("select kind, detail from alerts where account_id = $1 and kind = 'login-name-set'", [id]);
+    expect(alerts).toEqual([{ kind: 'login-name-set', detail: {} }]);
+    expect((await deps.db.query('select key, kind from name_keys where account_id = $1 order by key', [id])).rows).toEqual([
+      { key: 'old.timer1', kind: 'display' }, { key: 'private.ot1', kind: 'login' },
+    ]);
+    // Once set, the route is closed (changing a login name is not this route's job).
+    const again = await set('Another.OT1');
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toBe('login-name-set');
+    // An account that chose its names at sign-up never needs one.
+    const ob = await loggedIn(other);
+    const otherToken = await issueConfirmToken(deps, { sessionId: ob.sessionId, accountId: other, action: { kind: 'set-login-name' }, method: 'password' });
+    expect(errorOf(await ob.post('/v1/account/login-name', { loginName: 'Fresh.OT1', confirmToken: otherToken }))).toBe('login-name-set');
+  });
+
+  it('two pre-009 accounts swapping display names as login names at once both get names-unavailable, never a 500 (round-2 Minor 1)', async () => {
+    // Not every round deadlocks (the interleaving is up to the scheduler); the mapping itself has a unit test below.
+    for (let round = 0; round < 10; round++) {
+      const [na, nb] = [`Swap.A${n}r${round}`, `Swap.B${n}r${round}`];
+      const a = await seedAccount(deps, { loginName: null, displayName: na });
+      const b = await seedAccount(deps, { loginName: null, displayName: nb });
+      const ba = await loggedIn(a);
+      const bb = await loggedIn(b);
+      const ta = await issueConfirmToken(deps, { sessionId: ba.sessionId, accountId: a, action: { kind: 'set-login-name' }, method: 'password' });
+      const tb = await issueConfirmToken(deps, { sessionId: bb.sessionId, accountId: b, action: { kind: 'set-login-name' }, method: 'password' });
+      const [ra, rb] = await Promise.all([
+        ba.post('/v1/account/login-name', { loginName: nb, confirmToken: ta }),
+        bb.post('/v1/account/login-name', { loginName: na, confirmToken: tb }),
+      ]);
+      // Each one's login name is the other's public display name, so neither may win.
+      expect([ra.statusCode, rb.statusCode]).toEqual([409, 409]);
+      expect([errorOf(ra), errorOf(rb)]).toEqual(['names-unavailable', 'names-unavailable']);
+    }
+    n++;
+  });
+
+  it('maps a deadlock and a taken key to a clash, nothing else (round-2 Minor 1)', () => {
+    expect(isLoginNameClash({ code: '40P01' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'name_keys_pkey' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'accounts_login_key_key' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'accounts_display_key_key' })).toBe(false);
+    expect(isLoginNameClash({ code: '23514' })).toBe(false);
+    expect(isLoginNameClash(new Error('x'))).toBe(false);
+    expect(isLoginNameClash(null)).toBe(false);
+  });
+
+  it('the login-name route needs a full session', async () => {
+    const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer2' });
+    const held = await loggedIn(id, { level: 'recovery', holdUntil: at(DAY) });
+    expect((await held.post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(403);
+    expect((await new Browser(app).post('/v1/account/login-name', { loginName: 'Private.OT2' })).statusCode).toBe(401);
+  });
+
   it('describes the account; a password-only account is told to add an authenticator and a backup', async () => {
     const { id, username } = await account();
     await addPassword(id);
     const b = await loggedIn(id);
+    const res = await b.get('/v1/account/me');
+    // The private login name is never sent, not even to its owner.
+    expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
-      username, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
+      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true,
     });
     await addTotp(id);

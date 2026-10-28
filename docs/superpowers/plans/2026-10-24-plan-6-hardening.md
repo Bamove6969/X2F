@@ -1099,3 +1099,56 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
 - **G15 "Require a security key to log in" plus lost keys:** the spec does not say whether recovery codes still work (D18).
 - **G16 PGP-signed rulings and encrypted staff alerts** (Plan 4 A9, deferred to Plan 6) are not built here, because security-key taps already authorize rulings. Confirm they can be dropped.
 - **G17 Upstream networks can log addresses.** X2F writes no IPs, but the hosting provider (flow and DDoS telemetry), a cloud provider (flow logs, if D1 = c) or a scrubbing service (D9 c) may record source addresses of clearnet visitors, outside X2F's control. Only the onion avoids this. The FAQ and Terms should say so, in the lawyer's words.
+
+## Revision 2026-10-28 (lead, from the owner's decisions of 2026-10-27)
+
+Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Source: `HANDOFF.md` "Decided 2026-10-27 (owner)".
+- **D17 decided (Android):** a direct APK download from the website and F-Droid, plus the web app, which stays the main path because Google plans to restrict sideloading. Google Play and iOS stay open (lawyer first). **F-Droid catch:** the main F-Droid catalogue lists only open-source apps that F-Droid builds from source, and the owner decided X2F is **not open source for now**. So "F-Droid" means **X2F's own F-Droid repository** (users add its address once in the F-Droid app, and it updates like any other), built with `fdroidserver` from the same signed APK. Task 22 Step 3 changes from "F-Droid metadata if D17 picks it" to "publish the APK to X2F's own F-Droid repository, signed with a separate repository key backed up to the D7 key". The Download page is Plan 7 Task 13. The owner confirms the own-repository route (approval list 2026-10-28).
+- **Not open source (owner).** Task 14's reproducible build and signed manifest stay: they let X2F, the auditors (D13) and invited testers check that the live site is the reviewed build, even though the public cannot rebuild it. Task 22's reproducible APK likewise. Gap G10's ceiling is unchanged.
+- **D14 stays open (amounts),** and the owner adds **outside testing groups** to the bug bounty: new Task 29. Whether bounty hunters may see the source under an agreement is a question for the owner when D14 is answered.
+- **I2P (owner: yes, next to the Tor onion):** new Task 27. **Catch:** the app needs a browser "secure context" for WebCrypto (escrow channels, Plan 3 Revision 2026-10-23) and WebAuthn. Tor Browser treats `.onion` as secure; I2P browser profiles may not treat `http://….i2p` as secure. Task 27 starts with that check; if it fails, I2P serves only the static public pages (Plan 7 Part C) and says to use Tor for trading, until a fix is found.
+- **Off-app alerts (owner: Nostr and PGP email)** are Plan 7 Tasks 5–8. They need outbound connections that do not reveal the server's address: new Task 28 (Tor egress), which also routes the price feeds (second session's note, `docs/coordination.md` 2026-10-24).
+- **New assumption D23, the mail route for email alerts:** Plan 7 P7-A7 (own mail host, a paid SMTP relay, or Nostr first and email later). Rec.: Nostr first, then an own mail host.
+- **Warrant canary** is an undecided comparison gap (Plan 7 "Owner questions"): lawyer first.
+
+### Task 27: I2P site
+
+**Files:**
+- Create: `deploy/i2pd/{i2pd.conf,tunnels.conf}`, `deploy/runbooks/i2p-keys.md`, `docs/security/i2p-secure-context.md` (decision record)
+- Modify: `apps/api/src/config.ts` (accept `http://<52 chars>.b32.i2p` origins in `X2F_SITES`, like the onion rule in Task 3), `tools/deploy/src/rules.ts` (rule `i2p-tunnels`: no logging of peers, no HTTP proxy or outproxy on the front host)
+- Test: `apps/api/test/i2p.test.ts`, `tools/deploy/test/lint.test.ts`
+
+**Interfaces:**
+- Consumes: Task 3 (`SiteProfile`, `cspFor`, per-host profiles), Task 4 (RP ID per origin).
+- Produces: three I2P server tunnels (web, relay, node), each with its own key, feeding HAProxy frontends on loopback like the onion ones, with per-tunnel limits; an I2P `SiteProfile`; the b32 address published, signed, on `/about` and `/download`.
+- [ ] **Step 1 (spike, before any code):** in the current I2P browser profile (and Firefox with the I2P proxy), open a test page on a `.b32.i2p` address and record `window.isSecureContext`, `crypto.subtle` and `navigator.credentials`. Write `i2p-secure-context.md`: if secure, the full app runs on I2P; if not, I2P serves only the static public pages and the app screens show "Trading needs Tor or the clearnet site" `// COPY-UNSIGNED`.
+- [ ] **Step 2: Write the failing tests:** an I2P profile is accepted only for a valid b32 host; a request with that Host gets a CSP listing only the I2P relay and node; the lint flags an outproxy or peer logging.
+- [ ] **Step 3:** Run; expect FAIL.
+- [ ] **Step 4:** Implement.
+- [ ] **Step 5:** `npm run check`; expect PASS. **Verify on staging:** the I2P address loads the public pages, and (if Step 1 passed) logs in with PGP and completes a stagenet trade.
+- [ ] **Step 6:** Commit `feat(i2p): I2P site profile and tunnels`.
+
+### Task 28: Tor egress for outbound calls
+
+**Files:**
+- Create: `apps/api/src/net/torFetch.ts`, `deploy/tor/torrc-client` (a separate client-only tor on the app host: `SocksPort 127.0.0.1:9050`, no hidden services)
+- Modify: `apps/api/src/main.ts` (pass `torFetch` as the `f` seam to `priceSources` and `fxSources`, and to Plan 7's Nostr and mail senders), `apps/api/src/config.ts` (`X2F_EGRESS = 'tor' | 'direct'`; `preflight` refuses `direct` in production)
+- Test: `apps/api/test/torFetch.test.ts`
+
+**Interfaces:**
+- Produces: `torFetch(url, init)`, a `fetch` with a SOCKS5h dispatcher (hostnames resolved by Tor, never by the host's DNS), a per-request timeout, and a fresh circuit per destination host (SOCKS username isolation); `torSocket(host, port)` for WebSocket (Nostr) and SMTP.
+- [ ] **Step 1: Write the failing tests:** against a local SOCKS5 stub, the request carries the hostname (not a resolved IP) and no DNS lookup happens; two hosts get different isolation usernames; `preflight` with `direct` in production fails.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement (any SOCKS dependency passes the 14-day rule and goes in the commit message).
+- [ ] **Step 4:** `npm run check`; expect PASS. **Verify on staging:** all five price sources answer over Tor (as the 2026-10-24 evidence showed).
+- [ ] **Step 5:** Commit `feat(net): outbound calls over Tor`.
+
+### Task 29: Outside testing programme
+
+**Files:**
+- Create: `docs/security/outside-testing.md`, `deploy/runbooks/test-environment.md`
+
+- [ ] **Step 1:** `outside-testing.md`: who is invited (small groups: experienced P2P traders, Monero community members, accessibility testers, security researchers), what they get (stagenet access, test XMR, a written test plan per flow: buy, sell, every cancel, every dispute, lost device, Tor and I2P), how they report (the support ticket route if approved, else a PGP-encrypted address), what they may not do (mainnet, other testers' accounts), and thanks or payment (owner).
+- [ ] **Step 2:** `test-environment.md`: a stagenet copy of production built from the same release manifest, reset weekly, with no production data ever copied in.
+- [ ] **Step 3:** Run the first round before Task 23's penetration test, and record every report in `docs/security/external-audit.md` with the same fields as audit findings.
+- [ ] **Step 4:** Commit each document `docs(security): …`.
