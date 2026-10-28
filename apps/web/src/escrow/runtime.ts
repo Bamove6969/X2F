@@ -470,14 +470,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       let att = this.rec.attestation;
       while (!att && !this.stopped) {
         // 409 attestation-refused (the moderation service refused the trade's identities) is final.
+        // 409 trade-closed (the trade closed before any attestation, review M2) is final too.
         const got = await this.retry(() =>
           deps.api.getAttestation(this.code).catch((e: unknown) => {
-            if (apiCode(e) === 'attestation-refused') return 'refused' as const;
+            const c = apiCode(e);
+            if (c === 'attestation-refused') return 'refused' as const;
+            if (c === 'trade-closed') return 'closed' as const;
             throw e;
           }),
         );
         if (got === undefined) return;
         if (got === 'refused') return this.fail('participants-mismatch');
+        if (got === 'closed') return this.closedUnattested();
         if (got === null) await this.sleep(pollMs);
         else att = { attestation: got.attestation, sig: typeof got.sig === 'string' ? got.sig : '' };
       }
@@ -938,6 +942,26 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
      * that never held coins has nothing to settle and goes after the 30 days.
      * Returns true once the trade is forgotten.
      */
+    /**
+     * The trade closed before any attestation (review M2): no escrow ever existed and nothing was
+     * signed, so there is nothing to settle. Stop waiting (phase back to idle, no error) and keep the
+     * record only for the 30-day after-close rule, as for a never-funded escrow; a resume after
+     * that forgets it.
+     */
+    private async closedUnattested(): Promise<void> {
+      const r = this.rec;
+      const t = now();
+      if (r.closedSeenAt == null) {
+        r.closedSeenAt = t;
+        await this.persist();
+      }
+      if (t >= r.closedSeenAt + KEEP_AFTER_CLOSE_MS) {
+        await this.close();
+        return;
+      }
+      this.set('idle');
+    }
+
     private async afterClose(f: { balance: bigint; unlocked: bigint; incoming: { confirmations: number }[] }, v: EscrowTradeView): Promise<boolean> {
       const r = this.rec;
       const t = now();

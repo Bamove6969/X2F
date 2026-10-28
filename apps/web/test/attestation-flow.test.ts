@@ -76,7 +76,7 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     const t = await setup();
     let fetches = 0;
     const api = t.api.forRole('buyer');
-    const counted = { ...api, getAttestation: async (code: string) => (fetches++, api.getAttestation(code)) };
+    const counted = { ...api, getAttestation: async () => (fetches++, api.getAttestation()) };
     t.state.refuse = { attestation: 'trade-closed' };
     const buyer = await device('buyer', { api: counted, hub: t.hub, parties: t.parties, modPublic: t.mod.publicHex, now: () => clock });
     running.push(buyer);
