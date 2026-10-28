@@ -3,7 +3,9 @@ import { Icon, type IconName } from './icons.js';
 import './ui.css';
 
 // The phone tab bar from the Main board: Trade, Post offer, Wallets, Profile. Trade covers both
-// the Sell and the Buy browse screens.
+// the Sell and the Buy browse screens. The boards with the tab bar (Main, BuyMain) have no primary
+// action, so the bar carries no data-primary (their parity runs with { primary: false }). Each tab
+// carries where it was pressed (router state `from`), so PostOffer's Close can return there.
 const TABS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy)(\/|$)/.test(p) },
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/post(\/|$)/.test(p) },
@@ -18,7 +20,7 @@ export function BottomNav() {
       {TABS.map((t) => {
         const current = t.match(pathname);
         return (
-          <Link key={t.to} to={t.to} className="x2f-bottom-nav__tab" aria-current={current ? 'page' : undefined}>
+          <Link key={t.to} to={t.to} state={{ from: pathname }} className="x2f-bottom-nav__tab" aria-current={current ? 'page' : undefined}>
             <Icon name={t.icon} size={22} />
             {t.label}
           </Link>

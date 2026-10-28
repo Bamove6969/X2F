@@ -6,7 +6,9 @@
  *
  * - any file in apps/api or apps/web (sources, tests, configs, package.json; not node_modules or
  *   build output) mentions MOD_KEYSTORE_KEY, MOD_SIGNING_SECRET, @x2f/moderation or
- *   generateIdentity;
+ *   generateIdentity (except `apps/web/src/escrow/worker.ts`, the one place a trader's own trade
+ *   identity is made on the trader's device; lead answer 2026-10-24, guarded by
+ *   apps/web/test/identity-separation.test.ts);
  * - any file in apps/moderation imports fastify (or @fastify/*), a Node server module (http,
  *   https, http2, net, with or without `node:`), calls createServer, or imports @x2f/api or
  *   @x2f/relay (both load fastify); or its package.json depends on any of them.
@@ -31,6 +33,9 @@ const FORBIDDEN_IN_API_AND_WEB: Array<[string, RegExp]> = [
   ['@x2f/moderation', /@x2f\/moderation\b/],
   ['generateIdentity', /\bgenerateIdentity\b/],
 ];
+
+/** The one apps/web file allowed to name generateIdentity: the trader's escrow worker. */
+const IDENTITY_MAKER = 'apps/web/src/escrow/worker.ts';
 
 /** A module specifier the moderation process may not load. */
 const SERVER_MODULE = /^(?:fastify(?:\/.*)?|@fastify\/.+|(?:node:)?(?:http|https|http2|net)|@x2f\/(?:api|relay)(?:\/.*)?)$/;
@@ -65,7 +70,9 @@ export async function scanSeparation(root: string): Promise<Violation[]> {
   for (const app of ['apps/api', 'apps/web']) {
     for await (const f of files(join(root, app))) {
       const text = await readFile(f, 'utf8');
+      const rel = relative(root, f).split('\\').join('/');
       for (const [rule, re] of FORBIDDEN_IN_API_AND_WEB) {
+        if (rule === 'generateIdentity' && rel === IDENTITY_MAKER) continue;
         const m = re.exec(text);
         if (m) out.push({ file: relative(root, f), rule: `${app} must not reference ${rule}`, line: lineOf(text, m.index) });
       }

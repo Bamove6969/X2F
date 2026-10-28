@@ -53,6 +53,19 @@ describe('separation-check', () => {
     ]);
   });
 
+  it('lets only the escrow worker in apps/web name generateIdentity (lead answer 2026-10-24)', async () => {
+    const root = await tree({
+      'apps/web/src/escrow/worker.ts': "import { generateIdentity } from '@x2f/protocol';\n",
+      'apps/web/src/escrow/other.ts': "import { generateIdentity } from '@x2f/protocol';\n",
+      'apps/api/src/escrow/worker.ts': "import { generateIdentity } from '@x2f/protocol';\n",
+    });
+    const rules = (await scanSeparation(root)).map((v) => `${v.file}: ${v.rule}`).sort();
+    expect(rules).toEqual([
+      'apps/api/src/escrow/worker.ts: apps/api must not reference generateIdentity',
+      'apps/web/src/escrow/other.ts: apps/web must not reference generateIdentity',
+    ]);
+  });
+
   it('flags fastify, Node server modules, createServer and @x2f/api in apps/moderation', async () => {
     const root = await tree({
       'apps/moderation/src/a.ts': "import Fastify from 'fastify';\n",

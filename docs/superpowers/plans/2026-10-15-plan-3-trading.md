@@ -11,6 +11,14 @@ Deviations in the built Task 8, pending its review. Authority: spec > `rulings-a
 - **Task 8 builds on Task 6's `trades` table** (`103_trades.sql`, on the main line since 8ce8f80): Task 8's own migration is `apps/api/migrations/106_trade_identities.sql` (105 is Task 19's `105_push.sql`) and holds only `trade_identities` and `trade_attestations` (plus, after the security review, `trade_attestation_refusals`), each with a foreign key to `trades(code)`. The role is the session account's slot in `trades` (`buyer_account_id` / `seller_account_id`); the internal work list is ordered by `taken_at`. A trade the caller is not in is 404 `not-found`. The routes are exported as `tradeIdentityRoutes` (Task 6 owns `tradeRoutes`). (The first push created its own `trades` table in `101_trades.sql`; that collided with Task 6 and was dropped.)
 - **Shared formats in `@x2f/trade`**: `identityProofBytes`/`identityProofValid` (the registration proof, checked by the API and again by moderation) and `internalSignedBytes` (moderation-signed internal requests: `x2f/api-internal/v1\0` + method + `\0` + path + `\0` + at + `\0` + hex SHA-256 of the body, in headers `x2f-mod-at`/`x2f-mod-sig`; ±60 s and a replay cache, else 401). Moderation rebuilds the relay register message itself (it may not import `@x2f/relay`, which loads fastify).
 
+## Revision 2026-10-25 (lead-approved deviation, Task 19 as built)
+
+The final alert's delivery proof is stricter than the Task 19 interface text, approved by the lead. The Task 19 lines below are corrected to match. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
+
+- **`final_alert_delivered` is set true only by the buyer's seen-receipt** (`POST /v1/trades/:code/final-alert-seen`, posted only by Task 25's `FinalAlert` while the alert is on screen; lead 2026-10-27: the live event reaching a tab and the service worker showing a push are not receipts, and the account-wide route was removed). Nothing else writes it: an open stream or a push service's 201 is not proof that the buyer saw it. Otherwise it stays null.
+- **Task 10 treats null as false:** no auto-refund on a null or false proof; the refund escalates to a moderator instead.
+- This is stricter than the earlier `delivered || pushAccepted` (an open SSE stream, or a push service accepting the push, counted as delivered).
+
 ## Revision 2026-10-23 (Task 7 as built)
 
 Four deviations in the built Task 7, all accepted in its first review. The interface text below (Task 7 Interfaces, Global Constraints) is corrected to match. Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
@@ -318,6 +326,10 @@ Rules the tests pin (one test each):
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): offers with method and hold guards`.
 
+**Revision 2026-10-26 (lead, from the Task 16 review):** `TraderSummary` in `/v1/offers` and `/v1/offers/:id` carries `stage` (the starter-limit stage the web screens grey cards by; the same field `GET /v1/me` returns). Tasks 16 and 17 already parse it; the API builder owes it.
+
+**Revision 2026-10-27 (lead):** offers for gift-card methods carry `country` (ISO 3166-1 alpha-2); the API refuses a gift-card offer without it.
+
 ### Task 5: Taking an offer (`apps/api`)
 
 **Files:**
@@ -345,6 +357,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): take with wallet choice and race-safe limits`.
+
+Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `centsPerXmr` and `fiatCents`; it refuses with 409 `price-changed` when the offer's rate now (`offerRate`, market plus the offer's margin) differs from the quote by more than 0.5%; fixed-price offers compare exactly. When it accepts, it locks exactly the quoted `centsPerXmr` and `fiatCents` (never its own fresh rate), because the attested `deal.centsPerXmr` must equal the taker's `confirmed.deal.centsPerXmr` or the trade fails `deal-mismatch` (Task 18 re-review, 2026-10-27).
 
 ### Task 6: Trade store, view, events route, retention and log hygiene (`apps/api`)
 
@@ -485,7 +499,7 @@ Rules the tests pin (one test each):
   - Signals channel (`channelFor(code,'signals')`, sealed to all three roles, own `ReplayGuard` persisted as `{trade, seen}`). Types: `trade.terms` (seller: `{ refundAddress }`; buyer: `{ payoutAddress }`; sent once at setup), `trade.paid` and `trade.cancel` (buyer), `trade.extend` and `trade.refund-request` (seller), and `trade.ack` (mod → sender).
   - The moderation service keeps its own shadow `Trade`, fed only by its chain watcher and by signals it opened itself, through the same `apply`. `recordedRefundAddress` = the seller-signed `trade.terms`, stored in `signed_terms`, **never** the API's `seller_refund`.
   - The mod never takes payouts from a tx set or the API: it derives `proposed = payoutsFor({ kind, …, balanceAtomic: funds().balance, sellerRefund: recordedRefundAddress })` (one payout of the whole balance) and passes exactly that to `settle({ kind:'release', to: proposed, builder, cosigner:'mod' })`. `settle` co-signs only a set that matches it (Plan 1).
-  - Auto-refund: when the shadow trade is `refund_requested` and the API reports the final alert delivered (SSE open or push accepted, Task 19), the service first checks `shadow.finalAlertAt > shadow.payBy` (rulings Task 9; refuse and report otherwise), then calls `autoRefundDecision({ paymentDeadline: shadow.payBy, markedPaidAt: shadow.paidAt, finalAlertAt: shadow.finalAlertAt, now, recordedRefundAddress, proposed })`. On `ok` it settles with `builder:'seller'`. With no delivery proof after 15 min it reports `escalate`. Every `ok:false` is reported with its reason only.
+  - Auto-refund: when the shadow trade is `refund_requested` and the API reports the buyer's seen-receipt for the final alert (`final_alert_delivered` true and `final_alert_seen_at` set, posted only by Task 25's `FinalAlert`; null = false → escalate; Task 19 review 2026-10-27), the service first checks `shadow.finalAlertAt > shadow.payBy` (rulings Task 9; refuse and report otherwise) and requires `now >= final_alert_seen_at + 15 min` (a push can be held by the push service for up to its 15-minute TTL, so the buyer's 15 minutes run from the receipt, not from `finalAlertAt`), then calls `autoRefundDecision({ paymentDeadline: shadow.payBy, markedPaidAt: shadow.paidAt, finalAlertAt: shadow.finalAlertAt, now, recordedRefundAddress, proposed })`. On `ok` it settles with `builder:'seller'`. With no seen-receipt after 15 min, or a receipt younger than 15 min, it reports `escalate`. Every `ok:false` is reported with its reason only.
   - Buyer cancel (spec 2.3): when the mod has opened a valid `trade.cancel` from the buyer's identity, the service calls `buyerCancelDecision({ cancelSignedByBuyer: true, recordedRefundAddress, balance, proposed })` and on `ok` settles with `builder:'buyer'`. No final alert and no delivery proof are needed: the buyer chose it, and only the seller's signed address is paid. A `trade.cancel` from any other identity is ignored.
   - `rulings.ts`: `verifyRuling(r: unknown): false`. It is the only other path to `settle` as mod; Plan 4 replaces it with staff hardware-key verification.
 
@@ -503,6 +517,8 @@ Rules the tests pin (one test each):
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(moderation): auto-refund and buyer-cancel refund from signed terms and signals only`.
+
+**Notes from Task 12 (lead, 2026-10-24):** Task 10 must accept `deal` in `trade.terms` (the seller's `{ refundAddress, deal }`, the buyer's `{ payoutAddress, deal }`, with `deal = { poster, takeAmountAtomic, currency, centsPerXmr, maxFiatCents }` as bigints) and `trade.ack` as `{ of: '<signal type>' }`. It must also accept `trade.paid` as `{ amountAtomic, fiatCents }` (bigints, the amount the buyer's device fixed and the total the buyer confirmed; the Task 12 security fix of 2026-10-24). The trader apps ignore a `trade.paid` without them. Details: `docs/coordination.md`, "Plan 3 Task 12".
 
 ### Task 11: Node proxy (`apps/node-proxy`)
 
@@ -682,13 +698,15 @@ Rules the tests pin (one test each):
 - Produces:
   - `GET /v1/events` (SSE, `requireTrader`): `{type:'trade', code, state}`, `{type:'accepted', code, by}`, `{type:'chat', chat}`, `{type:'nudge', from, context}`. `publish(accountId, ev)` delivers only to that account's streams. `delivered(accountId): boolean` (any open stream).
   - `POST /v1/account/push { endpoint, keys }` and `DELETE`. `sendPush(accountId, kind: 'nudge' | 'trade')` uses web-push with VAPID (`VAPID_PUBLIC`, `VAPID_PRIVATE`). The payload is exactly "Someone nudged you on X2F" or "Something changed in a trade on X2F", with no code and no URL beyond `/`. It returns true when a push service answered 201.
-  - Final-alert delivery: on `request-refund`, the API publishes, pushes to the buyer, and records `final_alert_delivered = delivered || pushAccepted`, which is reported to moderation (Task 10).
+  - Final-alert delivery: on `request-refund`, the API publishes and pushes to the buyer (after the actor's request, `setImmediate`); `final_alert_delivered` is set true only by the buyer's seen-receipt and is otherwise null, which moderation (Task 10) treats as false (Revision 2026-10-25; was `delivered || pushAccepted`). The receipt is posted only by Task 25's `FinalAlert` (once per `finalAlertAt`, while the alert is on screen); never by the events client or the service worker (a notification in the tray is not proof it was read). `final_alert_seen_at` keeps the first receipt's time (trade view `finalAlertSeenAt`); Task 10 counts 15 min from it (review 2026-10-27).
+  - `GET /v1/events` checks the session read-only (`requireSession({ touch: false })`): a stream never refreshes `last_seen_at` / `expires_at`, and ends at the session's deadline when sooner than `maxStreamMs`.
+  - Push: `kinds: ['trader', 'owner']`; a third fixed payload `alert` ("Something needs your attention") goes to the owner's subscriptions for `market-prices-paused` and `price-source-failing` (`push/ownerAlert.ts`, wired where `main.ts` passes `onAlert`).
   - `AcceptedSheet`: on `accepted`, the poster sees "<username> accepted your offer" and picks their wallet (`POST /v1/trades/:code/wallet`). Setup starts after that. A poster with no usable wallet left gets "Add a wallet" through `ConfirmSheet` (spec 6.4); the trade waits in `setup` until `setupBy`.
 
 - [ ] **Step 1: Write the failing tests:**
   - SSE delivers `accepted` to the poster within 1 s and never to a third account (P3-M9).
   - The push payload for each kind is exactly the generic string.
-  - `final_alert_delivered` is false with no stream and no subscription.
+  - `final_alert_delivered` stays null with no seen-receipt, even with an open stream or an accepted push (Revision 2026-10-25).
   - The accepted sheet posts the wallet and the room moves to "Setting up escrow".
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
