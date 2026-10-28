@@ -6,7 +6,9 @@ import {
   INTERNAL_AT_HEADER,
   INTERNAL_SIG_HEADER,
   internalSignedBytes,
+  isAttestedTerms,
   type Attestation,
+  type AttestedTerms,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -50,6 +52,44 @@ interface RegisteredRow {
   seller_sign: string;
   seller_box: string;
   seller_proof: string;
+  poster: 'buyer' | 'seller';
+  take_amount: string;
+  locked_currency: string;
+  locked_cents_per_xmr: string;
+  max_fiat_cents: string;
+  buyer_payout: string | null;
+  seller_refund: string | null;
+}
+
+/**
+ * The trade record's columns behind the attested terms (lead answer 4): the deal fixed at take
+ * (the amount at take is the pre-growth amount if the trade grew) and both addresses.
+ */
+const TERMS_COLUMNS = `t.poster, coalesce(t.grown_from_atomic, t.amount_atomic)::text as take_amount, t.locked_currency,
+                t.locked_cents_per_xmr::text as locked_cents_per_xmr, t.max_fiat_cents::text as max_fiat_cents,
+                t.buyer_payout, t.seller_refund`;
+
+/** The terms the moderation service must sign for this trade, from the trade record. */
+function termsOf(r: RegisteredRow): AttestedTerms {
+  return {
+    deal: {
+      poster: r.poster,
+      takeAmountAtomic: r.take_amount,
+      currency: r.locked_currency,
+      centsPerXmr: r.locked_cents_per_xmr,
+      maxFiatCents: r.max_fiat_cents,
+    },
+    buyerPayout: r.buyer_payout ?? '',
+    sellerRefund: r.seller_refund ?? '',
+  };
+}
+
+function sameTerms(a: AttestedTerms, b: AttestedTerms): boolean {
+  return (
+    a.buyerPayout === b.buyerPayout && a.sellerRefund === b.sellerRefund &&
+    a.deal.poster === b.deal.poster && a.deal.takeAmountAtomic === b.deal.takeAmountAtomic &&
+    a.deal.currency === b.deal.currency && a.deal.centsPerXmr === b.deal.centsPerXmr && a.deal.maxFiatCents === b.deal.maxFiatCents
+  );
 }
 
 interface RawBody {
@@ -150,8 +190,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.code(201).send({ ok: true });
   };
 
-  // The trades that both traders have registered an identity for, with no attestation yet and not
-  // refused by the moderation service (a refused trade is done for good and never served again).
+  // The trades that both traders have registered an identity for, with both addresses on record,
+  // no attestation yet and not refused by the moderation service (a refused trade is done for good
+  // and never served again). Each item carries the trade record's terms for the attestation.
   // Never-served trades come first, then the least recently served, so one trade that keeps failing
   // moves to the back of the line instead of holding the window shut.
   app.get('/internal/v1/work', guard('/internal/v1/work', async (_req, reply) => {
@@ -159,7 +200,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       `with picked as (
          select t.code,
                 bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
-                si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+                si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof,
+                ${TERMS_COLUMNS}
            from trades t
            join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
            join trade_identities si on si.code = t.code and si.role = 'seller'
@@ -167,6 +209,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
            left join trade_refusals r on r.code = t.code
            left join trade_work_served w on w.code = t.code
           where a.code is null and r.code is null
+            and t.buyer_payout is not null and t.seller_refund is not null
           order by w.served_at nulls first, t.taken_at, t.code
           limit $1
        ), served as (
@@ -183,6 +226,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         buyer: { signPublic: r.buyer_sign, boxPublic: r.buyer_box, proof: r.buyer_proof },
         seller: { signPublic: r.seller_sign, boxPublic: r.seller_box, proof: r.seller_proof },
       },
+      terms: termsOf(r),
     }));
     return reply.send({ work });
   }));
@@ -190,7 +234,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   // An attestation the moderation service signed. Stored only if it is signed by MOD_SIGNING_PUBLIC,
   // names a known trade, and lists exactly the buyer and seller keys the two traders registered
   // (so even a buggy moderation cannot bind a key the real trader never registered), with channels
-  // that equal channelFor(trade, kind).
+  // that equal channelFor(trade, kind), and terms equal to the trade record's (409 terms-mismatch).
   //
   // Or the moderation service's terminal refusal of a trade: exactly `{ kind: 'refused', trade,
   // reason }`, authenticated like every internal request by the moderation request signature over
@@ -218,10 +262,12 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     const a = attestation as unknown as Attestation;
     const code = typeof a.trade === 'string' ? normalizeTradeCode(a.trade) : null;
     if (code === null) throw new Refused(400, 'bad-attestation');
+    if (!isAttestedTerms(a.terms)) throw new Refused(400, 'bad-attestation');
     const { rows } = await o.db.query<RegisteredRow>(
       `select t.code,
               bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
-              si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+              si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof,
+              ${TERMS_COLUMNS}
          from trades t
          join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
          join trade_identities si on si.code = t.code and si.role = 'seller'
@@ -241,6 +287,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (a.channels?.escrow !== (await channelFor(code, 'escrow')) || a.channels?.signals !== (await channelFor(code, 'signals'))) {
       throw new Refused(400, 'bad-channel');
     }
+    if (reg.buyer_payout === null || reg.seller_refund === null || !sameTerms(a.terms, termsOf(reg))) throw new Refused(409, 'terms-mismatch');
 
     const refused = await o.db.query('select 1 from trade_refusals where code = $1', [code]);
     if (refused.rows.length > 0) throw new Refused(409, 'refused');
