@@ -13,6 +13,7 @@ import {
   type EscrowEngine,
   type EscrowSession,
   type Incoming,
+  type Outgoing,
   type Payout,
   type SavedSession,
   type TxStatus,
@@ -113,11 +114,37 @@ export class MoneroMultisigSession implements EscrowSession {
     for (const t of await this.wallet.getTransfers({ isIncoming: true, accountIndex: 0 })) {
       const tx = t.getTx();
       const txHash = tx.getHash();
-      const cur = byTx.get(txHash) ?? { txHash, amountAtomic: 0n, confirmations: tx.getNumConfirmations() ?? 0, unlocked: tx.getIsLocked() === false };
+      const height = tx.getHeight();
+      const cur = byTx.get(txHash) ?? {
+        txHash,
+        amountAtomic: 0n,
+        confirmations: tx.getNumConfirmations() ?? 0,
+        unlocked: tx.getIsLocked() === false,
+        height: typeof height === 'number' && tx.getIsConfirmed() === true ? height : null,
+      };
       cur.amountAtomic += t.getAmount();
       byTx.set(txHash, cur);
     }
     return [...byTx.values()];
+  }
+
+  async chainHeight(): Promise<number> {
+    return this.wallet.getHeight();
+  }
+
+  async outgoing(): Promise<Outgoing[]> {
+    const out: Outgoing[] = [];
+    for (const tx of await this.wallet.getTxs({ isOutgoing: true })) {
+      const txHash = tx.getHash();
+      if (!TX_HASH.test(txHash) || tx.getIsOutgoing() !== true) continue;
+      const height = tx.getHeight();
+      out.push({
+        txHash,
+        height: typeof height === 'number' && tx.getIsConfirmed() === true ? height : null,
+        spentAtomic: (tx.getOutgoingAmount() ?? 0n) + (tx.getFee() ?? 0n),
+      });
+    }
+    return out;
   }
 
   exportState(): Promise<string> {

@@ -5,6 +5,7 @@ export {
   type EscrowErrorCode,
   type EscrowSession,
   type Incoming,
+  type Outgoing,
   type Payout,
   type SavedSession,
   type TxStatus,

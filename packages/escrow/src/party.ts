@@ -10,7 +10,7 @@ import {
   type ReplayGuardJSON,
 } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Payout, type SavedSession } from './engine.js';
+import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
 import { sumPayouts } from './verify.js';
 
@@ -87,8 +87,10 @@ export interface PartyHandle {
    * wallet calls never interleave. Watchers and apps read the escrow only through this. Still
    * answers after the relay connection ended for good (ready() and settle() reject with the
    * TransportClosedError): the wallet needs no peer. Rejects after a PartyError or stop().
+   * `chainHeight` and `outgoing` (Task 9's watcher) come from the same sync when the engine
+   * provides them (the Monero engine does).
    */
-  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[] }>;
+  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[] }>;
   stop(): Promise<void>;
 }
 
@@ -758,7 +760,11 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (failure && (failure instanceof PartyError || !session)) return reject(failure);
           try {
             const { balance, unlocked } = await session.sync();
-            resolve({ balance, unlocked, incoming: await session.incoming() });
+            const incoming = await session.incoming();
+            const extra: { chainHeight?: number; outgoing?: Outgoing[] } = {};
+            if (session.chainHeight) extra.chainHeight = await session.chainHeight();
+            if (session.outgoing) extra.outgoing = await session.outgoing();
+            resolve({ balance, unlocked, incoming, ...extra });
           } catch (e) {
             reject(e);
           }
