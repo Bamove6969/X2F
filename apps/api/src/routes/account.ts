@@ -157,6 +157,21 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
  * needs a full session: a recovery session must not sign the real owner out during the hold.
  * Accepting the Terms is a change, so it is held like the other changes.
  */
+/**
+ * True for a database error that means the chosen login name clashes with another account's
+ * name on `POST /v1/account/login-name`: a taken key (23505 on `accounts_login_key_key` or the
+ * `name_keys` primary key), or a deadlock (40P01). Two pre-009 accounts setting each other's
+ * display name as their login name at the same moment each wait on the other's old login key
+ * (legacy rows have login key = display key); the victim is a clash too, never a 500 (FU-A
+ * round-2 Minor 1).
+ */
+export function isLoginNameClash(e: unknown): boolean {
+  if (e === null || typeof e !== 'object') return false;
+  const err = e as { code?: unknown; constraint?: unknown };
+  if (err.code === '40P01') return true;
+  return err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey');
+}
+
 export function accountRoutes(app: FastifyInstance): void {
   const deps = (): Deps => app.deps;
   const readAny = { allowRecovery: true, allowHeld: true } as const;
@@ -204,10 +219,7 @@ export function accountRoutes(app: FastifyInstance): void {
         throw e;
       }
     } catch (e) {
-      const err = e as { code?: string; constraint?: string };
-      if (err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey')) {
-        throw new ApiError(409, 'names-unavailable');
-      }
+      if (isLoginNameClash(e)) throw new ApiError(409, 'names-unavailable');
       throw e;
     } finally {
       client.release();

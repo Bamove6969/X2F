@@ -5,6 +5,7 @@ import type { Deps } from '../src/app.js';
 import { addAlert } from '../src/alerts.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { startSession } from '../src/auth/sessions.js';
+import { isLoginNameClash } from '../src/routes/account.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
@@ -155,6 +156,37 @@ describe('GET /v1/account/me', () => {
     const ob = await loggedIn(other);
     const otherToken = await issueConfirmToken(deps, { sessionId: ob.sessionId, accountId: other, action: { kind: 'set-login-name' }, method: 'password' });
     expect(errorOf(await ob.post('/v1/account/login-name', { loginName: 'Fresh.OT1', confirmToken: otherToken }))).toBe('login-name-set');
+  });
+
+  it('two pre-009 accounts swapping display names as login names at once both get names-unavailable, never a 500 (round-2 Minor 1)', async () => {
+    // Not every round deadlocks (the interleaving is up to the scheduler); the mapping itself has a unit test below.
+    for (let round = 0; round < 10; round++) {
+      const [na, nb] = [`Swap.A${n}r${round}`, `Swap.B${n}r${round}`];
+      const a = await seedAccount(deps, { loginName: null, displayName: na });
+      const b = await seedAccount(deps, { loginName: null, displayName: nb });
+      const ba = await loggedIn(a);
+      const bb = await loggedIn(b);
+      const ta = await issueConfirmToken(deps, { sessionId: ba.sessionId, accountId: a, action: { kind: 'set-login-name' }, method: 'password' });
+      const tb = await issueConfirmToken(deps, { sessionId: bb.sessionId, accountId: b, action: { kind: 'set-login-name' }, method: 'password' });
+      const [ra, rb] = await Promise.all([
+        ba.post('/v1/account/login-name', { loginName: nb, confirmToken: ta }),
+        bb.post('/v1/account/login-name', { loginName: na, confirmToken: tb }),
+      ]);
+      // Each one's login name is the other's public display name, so neither may win.
+      expect([ra.statusCode, rb.statusCode]).toEqual([409, 409]);
+      expect([errorOf(ra), errorOf(rb)]).toEqual(['names-unavailable', 'names-unavailable']);
+    }
+    n++;
+  });
+
+  it('maps a deadlock and a taken key to a clash, nothing else (round-2 Minor 1)', () => {
+    expect(isLoginNameClash({ code: '40P01' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'name_keys_pkey' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'accounts_login_key_key' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'accounts_display_key_key' })).toBe(false);
+    expect(isLoginNameClash({ code: '23514' })).toBe(false);
+    expect(isLoginNameClash(new Error('x'))).toBe(false);
+    expect(isLoginNameClash(null)).toBe(false);
   });
 
   it('the login-name route needs a full session', async () => {
