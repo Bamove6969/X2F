@@ -3,13 +3,12 @@
 // apps/api/src/disputes/routes.ts (the dispute view). Times are the boards' (Thursday 15 October
 // 2026, shown in UTC). Display names only: the counterparty and the moderator are the names the
 // API sends, which are public display names.
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
+import { expectParity } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 test.use({ timezoneId: 'UTC' });
 
-const HARNESS = fileURLToPath(new URL('./parity.ts', import.meta.url));
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
 const T = (hhmm: string, day = 15) => `2026-10-${day}T${hhmm}:00.000Z`;
 
@@ -116,41 +115,9 @@ const open = (page: Page, query = '') => page.goto(`/trade/${CODE}/dispute${quer
 
 // --- Parity -------------------------------------------------------------------------------------
 
-type Harness = {
-  boardTexts(page: Page, board: string): Promise<string[]>;
-  missingTexts(page: Page, texts: string[], masks?: Locator[]): Promise<string[]>;
-  reportPixels(page: Page, board: string, viewport: `${number}x${number}`, masks: Locator[], refsDir: string): Promise<string>;
-  BOARDS_DIR: string;
-};
-
-/**
- * Task 15's expectParity at 390x844, with this task's board texts that other tasks still have to
- * supply set aside (each with why) and the board's own primary count. Blocking: the primaries, no
- * horizontal scroll, no text-transform on [data-username], every other board text present.
- */
-async function parity(page: Page, board: string, o: { masks?: Locator[]; deferred?: { text: string; why: string }[]; primaries: 0 | 1 }) {
-  const why = !existsSync(HARNESS) ? 'Task 15 parity harness (apps/web/e2e/parity.ts) is not on this branch yet' : null;
-  test.skip(why !== null, why ?? '');
-  const path = './parity.js';
-  const h = (await import(path)) as Harness;
-  await page.setViewportSize({ width: 390, height: 844 });
-  const failures: string[] = [];
-  const primaries = await page.locator('[data-primary]:visible').count();
-  if (primaries !== o.primaries) failures.push(`${o.primaries} [data-primary] expected, found ${primaries}`);
-  const scroll = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  if (scroll > 0) failures.push('horizontal scroll');
-  const t = await page.locator('[data-username]').evaluateAll((els) => els.filter((e) => getComputedStyle(e).textTransform !== 'none').length);
-  if (t > 0) failures.push('text-transform on a username');
-  const skip = new Set((o.deferred ?? []).map((d) => d.text));
-  const texts = (await h.boardTexts(page, board)).filter((x) => !skip.has(x));
-  for (const m of await h.missingTexts(page, texts, o.masks ?? [])) failures.push(`board copy missing: "${m}"`);
-  await h.reportPixels(page, board, '390x844', o.masks ?? [], `${h.BOARDS_DIR}refs`);
-  expect(failures, `parity with ${board}`).toEqual([]);
-}
-
-const PLAN5_EVIDENCE = 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade';
-const TASK20_CHAT = 'Task 20 (ChatPanel): chat messages';
-const GENDER = 'The board says "She"; the app cannot know a moderator\'s gender and says "They" (lead/owner question)';
+// Task 15's expectParity. The board texts other tasks still have to supply (Plan 5's evidence,
+// Task 20's chat) are in parity.ts KNOWN_EXCEPTIONS with their reasons. DisputeRoom and
+// DisputeRuling have no primary on their boards by default (lead question), so `primary: false`.
 
 test('parity with DisputeOpen at 390x844', async ({ page }) => {
   await stub(page, { trade: tradeView() });
@@ -158,54 +125,21 @@ test('parity with DisputeOpen at 390x844', async ({ page }) => {
   await page.getByLabel('Tell the moderator what happened').fill(
     'I sent $412.50 by Zelle at 10:02 from my own account, with the trade code in the memo. satoshi_ghost said they would check tonight and has not replied since.',
   );
-  await parity(page, 'DisputeOpen', {
-    primaries: 1,
-    deferred: [
-      { text: 'Zelle screenshot', why: PLAN5_EVIDENCE },
-      { text: 'Already in this trade, blurred', why: PLAN5_EVIDENCE },
-      { text: 'Included', why: PLAN5_EVIDENCE },
-    ],
-  });
+  await expectParity(page, 'DisputeOpen');
 });
 
 test('parity with DisputeRoom at 390x844', async ({ page }) => {
   await stub(page, { trade: disputed(), dispute: disputeView() });
   await open(page);
   await expect(page.getByText('In dispute', { exact: true })).toBeVisible();
-  await parity(page, 'DisputeRoom', {
-    // The board's one orange action is the unblurred-proof request (Plan 5).
-    primaries: 0,
-    deferred: [
-      { text: 'Your Zelle screenshot', why: PLAN5_EVIDENCE },
-      { text: 'She can read this whole chat, including messages from before the trade. Moderators only ever contact you here.', why: GENDER },
-      { text: 'Message', why: 'Task 20 (ChatPanel): the composer and its label' },
-      { text: 'satoshi_ghost · 10:20', why: TASK20_CHAT },
-      { text: "Nothing from Zelle on my side yet. I'll check again tonight.", why: TASK20_CHAT },
-      { text: 'X2F Moderator', why: TASK20_CHAT },
-      { text: 'sarah.v · 10:53', why: TASK20_CHAT },
-      {
-        text: "Hi both. I've read the chat and seen the proof. mira.k, please send me the unblurred screenshot so I can check the sender name. satoshi_ghost, please look in your Zelle activity for $412.50 today with the note K7M2-9QXA-4FTR-8WPN.",
-        why: TASK20_CHAT,
-      },
-      { text: "sarah.v asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.", why: 'Plan 5 (SendUnblurred) with Plan 4\'s proof request' },
-      { text: 'Send unblurred proof to sarah.v', why: 'Plan 5 (SendUnblurred) with Plan 4\'s proof request' },
-    ],
-  });
+  await expectParity(page, 'DisputeRoom', { primary: false });
 });
 
 test('parity with DisputeRuling at 390x844', async ({ page }) => {
   await stub(page, { trade: disputed('buyer', T('14:32')), dispute: disputeView({ status: 'ruled', ruling: RULING, serverNow: T('14:32') }) });
   await open(page);
-  await parity(page, 'DisputeRuling', {
-    // The board has no orange action until the appeal form holds 10 characters (lead question).
-    primaries: 0,
-    // The harness's mask can stand for a value like "28:12" but not for "47 h 58 min" (a unit
-    // inside the value), so the appeal countdown's two board texts are checked here instead.
-    deferred: [
-      { text: 'Open · 47 h 58 min left', why: 'countdown in the minutes format; checked by the regex below' },
-      { text: '47 h 58 min', why: 'countdown in the minutes format; checked by the regex below' },
-    ],
-  });
+  await expectParity(page, 'DisputeRuling', { primary: false });
+  // The appeal countdown's board texts are KNOWN_EXCEPTIONS (a mask cannot stand for "47 h 58 min"); its shape:
   await expect(page.locator('.dispute-window-open')).toHaveText(/^Open · \d+ h \d+ min left$/);
 });
 
@@ -330,19 +264,14 @@ const SCREENS: { name: string; stubs: () => Stubs; ready: (p: Page) => Locator; 
   },
 ];
 
-for (const [width, height] of [
-  [360, 640],
-  [390, 844],
-  [412, 915],
-] as const) {
+for (const viewport of PHONE_VIEWPORTS) {
   for (const s of SCREENS) {
-    test(`${s.name} fits a ${width}x${height} phone`, async ({ page }) => {
-      await page.setViewportSize({ width, height });
+    test(`${s.name} fits a ${viewport} phone`, async ({ page }) => {
       await stub(page, s.stubs());
       await open(page);
+      await setPhone(page, viewport);
       await expect(s.ready(page)).toBeVisible();
-      const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
-      expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
+      await expectPhoneLayout(page);
       expect(await page.locator('[data-primary]:visible').count()).toBeLessThanOrEqual(1);
       const sizes = await page.locator('input:not([type=radio]), textarea').evaluateAll((els) => els.map((e) => parseFloat(getComputedStyle(e).fontSize)));
       for (const px of sizes) expect(px).toBeGreaterThanOrEqual(16);

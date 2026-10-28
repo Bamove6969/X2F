@@ -80,6 +80,37 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
     },
   ],
+  // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
+  DisputeOpen: [
+    { text: 'Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'Already in this trade, blurred', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'Included', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+  ],
+  DisputeRoom: [
+    { text: 'Your Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    {
+      text: 'She can read this whole chat, including messages from before the trade. Moderators only ever contact you here.',
+      why: 'The app cannot know a moderator\'s gender and says "They" (Task 27; lead/owner question).',
+    },
+    { text: 'satoshi_ghost · 10:20', why: 'Task 20 (ChatPanel): chat messages.' },
+    { text: "Nothing from Zelle on my side yet. I'll check again tonight.", why: 'Task 20 (ChatPanel): chat messages.' },
+    { text: 'X2F Moderator', why: 'Task 20 (ChatPanel): a moderator\'s chat message carries the badge.' },
+    { text: 'sarah.v · 10:53', why: 'Task 20 (ChatPanel): chat messages.' },
+    {
+      text: "Hi both. I've read the chat and seen the proof. mira.k, please send me the unblurred screenshot so I can check the sender name. satoshi_ghost, please look in your Zelle activity for $412.50 today with the note K7M2-9QXA-4FTR-8WPN.",
+      why: 'Task 20 (ChatPanel): chat messages.',
+    },
+    { text: "sarah.v asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.", why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+    { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+  ],
+  DisputeRuling: [
+    {
+      text: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
+      why: 'Dispute records are deleted 30 days after the dispute closes (spec 4.1; Task 27 fix round I2), so the app says that; the board line is an owner copy question.',
+    },
+    { text: 'Open · 47 h 58 min left', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
+    { text: '47 h 58 min', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
+  ],
   BuyQuote: [
     {
       text: 'Paid by satoshi_ghost',
