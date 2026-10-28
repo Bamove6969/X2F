@@ -7,6 +7,8 @@ import { api, ApiCallError } from '../../api/client.js';
 
 export type Party = 'buyer' | 'seller';
 export type Reason = 'paid' | 'silent' | 'terms' | 'other';
+/** A stored reason: a trader's, or 'escalated' when the system opened the dispute. */
+export type DisputeReason = Reason | 'escalated';
 export type Outcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
 
 /** The TradeView fields the dispute screens read. `counterparty` is a public display name. */
@@ -40,8 +42,9 @@ export interface RulingView {
 }
 
 export interface DisputeView {
-  openedBy: Party;
-  reason: Reason;
+  /** 'system' when the trade was escalated (late funds after it ended, a lapse nobody refunded). */
+  openedBy: Party | 'system';
+  reason: DisputeReason;
   openedAt: string;
   afterRefund: boolean;
   dueAt: string | null;
@@ -148,8 +151,8 @@ export function parseDispute(v: unknown): DisputeView {
     appeal = { by: oneOf(a.by, PARTIES, 'appeal.by'), at: iso(a.at, 'appeal.at') };
   }
   return {
-    openedBy: oneOf(d.openedBy, PARTIES, 'openedBy'),
-    reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other'] as const, 'reason'),
+    openedBy: oneOf(d.openedBy, ['buyer', 'seller', 'system'] as const, 'openedBy'),
+    reason: oneOf(d.reason, ['paid', 'silent', 'terms', 'other', 'escalated'] as const, 'reason'),
     openedAt: iso(d.openedAt, 'openedAt'),
     afterRefund: d.afterRefund === true,
     dueAt: isoOrNull(d.dueAt, 'dueAt'),

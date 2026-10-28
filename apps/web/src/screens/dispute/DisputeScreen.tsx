@@ -1,9 +1,11 @@
 // /trade/:code/dispute (Plan 3 Task 27): loads the trade and its dispute, then shows DisputeOpen
 // (no dispute yet), DisputeRoom (open, or ?view=chat) or DisputeRuling (once there is a ruling).
-// Until Task 19's live events exist it re-reads every 30 s and when the page comes back into view.
+// It re-reads on Task 19's live `trade` event for this code, when the page comes back into view,
+// and every 30 s (a moderator's join or ruling is Plan 4's and has no live event yet).
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
+import { useLiveEvents } from '../../api/events.js';
 import { fetchDispute, fetchMethodName, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
@@ -18,6 +20,37 @@ interface Loaded {
   methodName: string;
 }
 
+/**
+ * Which screen a trade gets. A disputed trade never gets the open form: if its dispute record has
+ * not arrived (an older escalation, or a read between the two calls), the room shows the dispute
+ * from the trade itself, waiting for a moderator.
+ */
+export type DisputeScreenKind = { kind: 'open' } | { kind: 'room'; dispute: DisputeView } | { kind: 'ruling'; dispute: DisputeView };
+
+export function disputeScreenFor(trade: DisputeTrade, dispute: DisputeView | null, chatView: boolean): DisputeScreenKind {
+  if (dispute === null) {
+    if (trade.state !== 'disputed') return { kind: 'open' };
+    const by = trade.dispute?.by ?? 'system';
+    return {
+      kind: 'room',
+      dispute: {
+        openedBy: by,
+        reason: by === 'system' ? 'escalated' : 'other',
+        openedAt: trade.dispute?.at ?? trade.serverNow,
+        afterRefund: false,
+        dueAt: null,
+        status: 'open',
+        moderator: null,
+        ruling: null,
+        appeal: null,
+        serverNow: trade.serverNow,
+      },
+    };
+  }
+  if (dispute.ruling !== null && !chatView) return { kind: 'ruling', dispute };
+  return { kind: 'room', dispute };
+}
+
 function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void; setDispute: (d: DisputeView) => void }) {
   const { trade, dispute, methodName } = data;
   const clock = useServerClock(dispute?.serverNow ?? trade.serverNow);
@@ -29,7 +62,8 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
     return () => clearInterval(id);
   }, []);
 
-  if (dispute === null) {
+  const screen = disputeScreenFor(trade, dispute, params.get('view') === 'chat');
+  if (screen.kind === 'open') {
     return (
       <DisputeOpen
         trade={trade}
@@ -46,12 +80,12 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
       />
     );
   }
-  if (dispute.ruling !== null && params.get('view') !== 'chat') {
+  if (screen.kind === 'ruling') {
     return (
       <DisputeRuling
         trade={trade}
         methodName={methodName}
-        dispute={dispute}
+        dispute={screen.dispute}
         serverClock={clock}
         onAppeal={async (why) => {
           try {
@@ -63,7 +97,7 @@ function Ready({ data, reload, setDispute }: { data: Loaded; reload: () => void;
       />
     );
   }
-  return <DisputeRoom trade={trade} methodName={methodName} dispute={dispute} serverClock={clock} />;
+  return <DisputeRoom trade={trade} methodName={methodName} dispute={screen.dispute} serverClock={clock} />;
 }
 
 export function DisputeScreen() {
@@ -91,6 +125,10 @@ export function DisputeScreen() {
     return () => ac.abort();
   }, [code, n]);
 
+  useLiveEvents((e) => {
+    if (e.type === 'trade' && e.code === code) reload();
+  });
+
   useEffect(() => {
     const id = setInterval(reload, REFRESH_MS);
     const onShow = () => {
@@ -109,7 +147,7 @@ export function DisputeScreen() {
         {failed ? (
           <p className="dispute-error" role="alert">
             {"This trade couldn't be loaded. " /* COPY-UNSIGNED */}
-            <button type="button" className="dispute-retry" onClick={() => (code ? reload() : void navigate('/trades'))}>
+            <button type="button" className="dispute-retry" onClick={() => (code ? reload() : void navigate('/sell'))}>
               Try again
             </button>
           </p>

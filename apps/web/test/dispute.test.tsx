@@ -3,7 +3,9 @@ import { payoutsFor, escrowPlan } from '@x2f/trade';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it, vi } from 'vitest';
-import type { DisputeTrade, DisputeView } from '../src/screens/dispute/api.js';
+import { parseDispute, type DisputeTrade, type DisputeView } from '../src/screens/dispute/api.js';
+import { DisputeEntry } from '../src/screens/dispute/DisputeEntry.js';
+import { disputeScreenFor } from '../src/screens/dispute/DisputeScreen.js';
 import { DisputeOpen } from '../src/screens/dispute/DisputeOpen.js';
 import { DisputeRoom } from '../src/screens/dispute/DisputeRoom.js';
 import { DisputeRuling } from '../src/screens/dispute/DisputeRuling.js';
@@ -107,6 +109,13 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(disputeEntry({ ...r, role: 'seller' }, new Date(T0 + day)).kind).toBe('none');
   });
 
+  it('never offers a second dispute on a refunded trade that already had one (fix round, Minor 4)', () => {
+    const r = trade({ state: 'refunded', closedAt: iso(0), dispute: { by: 'buyer', at: iso(-10) } });
+    expect(disputeEntry(r, new Date(T0 + 60 * MIN))).toEqual({ kind: 'opened' });
+    const { host } = render(inRouter(<DisputeEntry trade={r} now={new Date(T0 + 60 * MIN)} />));
+    expect(host.textContent).not.toContain('Open a dispute');
+  });
+
   it('opens a stuck signing only after its window', () => {
     const s = trade({ state: 'settling', settleBy: iso(15) });
     expect(disputeEntry(s, new Date(T0 + 15 * MIN)).kind).toBe('none');
@@ -131,12 +140,12 @@ describe('copy helpers', () => {
       label: 'Ruling: release to the buyer',
       title: '1.25 XMR goes to you',
       destination: { app: 'Cake Wallet', end: 'k3Fz', tail: ', once the appeal window closes.' },
-      footer: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
+      footer: "This ruling and its evidence are deleted 30 days after the dispute closes. It appears on satoshi_ghost's profile as a lost dispute.",
     });
     const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN));
     expect(theirs.title).toBe('1.25 XMR goes to mira.k');
     expect(theirs.destination).toBeNull();
-    expect(theirs.footer).toBe('This ruling and its evidence are kept with the trade. It appears on your profile as a lost dispute.');
+    expect(theirs.footer).toBe('This ruling and its evidence are deleted 30 days after the dispute closes. It appears on your profile as a lost dispute.');
   });
 });
 
@@ -243,6 +252,30 @@ describe('DisputeOpen', () => {
 });
 
 describe('DisputeRoom', () => {
+  it('tells both sides, before a moderator joins, that the whole chat is readable now (fix round, Minor 11)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const line = 'A dispute is open. A moderator can read this whole chat, including messages from before the trade.';
+    const before = render(inRouter(<DisputeRoom trade={{ ...t, role: 'seller' }} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
+    expect(before.host.textContent).toContain(line);
+    const after = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute({ moderator: { name: 'sarah.v', joinedAt: iso(168) } })} serverClock={at(200)} />));
+    expect(after.host.textContent).not.toContain(line);
+  });
+
+  it('goes back to the trade, a route that exists (fix round, Minor 9)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
+    expect(host.querySelector('header a')?.getAttribute('href')).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+  });
+
+  it('shows the dispute the system opened (fix round I1)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'system', at: iso(130) } });
+    const d = dispute({ openedBy: 'system', reason: 'escalated' });
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={d} serverClock={at(200)} />));
+    expect(host.textContent).toContain('In dispute');
+    expect(host.textContent).toContain('This trade went to a moderator automatically.');
+    expect(host.textContent).not.toContain('Open dispute');
+  });
+
   it('shows the join banner from server records only, and the locked amount', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const before = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
@@ -254,7 +287,34 @@ describe('DisputeRoom', () => {
   });
 });
 
+describe('which dispute screen a trade gets (fix round I1)', () => {
+  it('a disputed trade is never sent to the open form, even before its dispute record arrives', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'system', at: iso(130) } });
+    const room = disputeScreenFor(t, null, false);
+    expect(room.kind).toBe('room');
+    expect(room.kind === 'room' && room.dispute).toMatchObject({ openedBy: 'system', reason: 'escalated', status: 'open', moderator: null, ruling: null, openedAt: iso(130) });
+    expect(disputeScreenFor(trade(), null, false)).toEqual({ kind: 'open' });
+    expect(disputeScreenFor(t, ruled(), false)).toMatchObject({ kind: 'ruling' });
+    expect(disputeScreenFor(t, ruled(), true)).toMatchObject({ kind: 'room' });
+  });
+
+  it('reads a system-opened dispute from the API', () => {
+    const d = parseDispute({ ...dispute({ openedBy: 'system', reason: 'escalated' }) });
+    expect(d).toMatchObject({ openedBy: 'system', reason: 'escalated' });
+    expect(() => parseDispute({ ...dispute(), openedBy: 'mod' })).toThrow();
+  });
+});
+
 describe('DisputeRuling appeal form', () => {
+  it('offers the appeal only on a ruled dispute (fix round, Minor 3)', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    for (const status of ['open', 'final', 'closed'] as const) {
+      const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled({}, { status })} serverClock={at(500)} onAppeal={async () => undefined} />));
+      expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Appeal this ruling'), status).toBe(false);
+      expect(host.textContent, status).toContain('This ruling is final.');
+    }
+  });
+
   it('keeps Send appeal disabled at 9 characters and enables it at 10', async () => {
     const t = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const onAppeal = vi.fn(async () => undefined);

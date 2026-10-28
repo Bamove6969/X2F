@@ -41,7 +41,12 @@ export function systemCardsFor(trade: DisputeTrade, d: DisputeView): { at: strin
   cards.push({
     at: d.openedAt,
     // The board's line for the opener; the other side sees who opened it (COPY-UNSIGNED).
-    text: d.openedBy === trade.role ? `You opened a dispute: ${reasonLabel(d.openedBy, d.reason)}` : `${trade.counterparty} opened a dispute`,
+    text:
+      d.openedBy === 'system' || d.reason === 'escalated'
+        ? 'This trade went to a moderator automatically.' // COPY-UNSIGNED
+        : d.openedBy === trade.role
+          ? `You opened a dispute: ${reasonLabel(d.openedBy, d.reason)}`
+          : `${trade.counterparty} opened a dispute`,
   });
   if (d.moderator !== null) cards.push({ at: d.moderator.joinedAt, text: `Moderator ${d.moderator.name} joined this dispute` });
   return cards;

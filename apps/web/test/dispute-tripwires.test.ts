@@ -40,12 +40,6 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
     expect(has('apps/web/src/proof/pipeline.ts'), 'Plan 5 pipeline landed: replace the evidence seams').toBe(false);
   });
 
-  it('NEEDS_TASK_19: the dispute screens poll until live events exist', () => {
-    // DisputeScreen re-reads the dispute every 30 s and on focus; Task 19's SSE (moderator-joined,
-    // ruling) should trigger the re-read instead.
-    expect(has('apps/web/src/live/useLive.ts') || has('apps/web/src/events/useTradeEvents.ts'), 'Task 19 landed: refresh on live events').toBe(false);
-  });
-
   it('NEEDS_FU_A: the counterparty name is TradeView.counterparty.username (the public name today)', () => {
     const view = readFileSync(ROOT + 'apps/api/src/trades/view.ts', 'utf8');
     expect(view.includes('displayName'), 'FU-A renamed the field: update parseTrade').toBe(false);

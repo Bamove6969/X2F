@@ -4,7 +4,7 @@
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
 import { TIMERS, formatXmr } from '@x2f/trade';
 import { formatRemaining } from '../../ui/Countdown.js';
-import type { DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
+import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
 /** The buyer's reasons, from the DisputeOpen board. */
 export const BUYER_REASONS: readonly (readonly [Reason, string])[] = [
@@ -25,7 +25,7 @@ export const SELLER_REASONS: readonly (readonly [Reason, string])[] = [
 export const reasonsFor = (side: Party) => (side === 'buyer' ? BUYER_REASONS : SELLER_REASONS);
 
 /** A reason as the side that chose it wrote it. */
-export function reasonLabel(by: Party, r: Reason): string {
+export function reasonLabel(by: Party, r: DisputeReason): string {
   return reasonsFor(by).find(([id]) => id === r)?.[1] ?? 'Something else';
 }
 
@@ -72,6 +72,8 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       return by !== null && n > by ? { kind: 'open' } : { kind: 'none' };
     }
     case 'refunded': {
+      // One dispute per trade: a refund that was already disputed (and ruled) offers none again.
+      if (t.dispute !== null) return { kind: 'opened' };
       const closed = ms(t.closedAt);
       if (t.role !== 'buyer' || closed === null) return { kind: 'none' };
       return n <= closed + TIMERS.disputeAfterRefundDays * DAY_MS ? { kind: 'open' } : { kind: 'none' };
@@ -204,7 +206,8 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
     destination = { app, end: r.destination.addressEnd.slice(-4), tail: waiting ? ', once the appeal window closes.' : '.' };
   }
   const loser = loserOf(r.outcome);
-  let footer = 'This ruling and its evidence are kept with the trade.';
+  // Dispute records are deleted 30 days after the dispute closes (spec 4.1; purgeDisputes). COPY-UNSIGNED
+  let footer = 'This ruling and its evidence are deleted 30 days after the dispute closes.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
   return { label, title, destination, footer };
 }

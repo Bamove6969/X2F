@@ -50,7 +50,7 @@ export function DisputeRoom({
   const ruling = `/trade/${encodeURIComponent(trade.code)}/dispute`;
   return (
     <div className="dispute-screen">
-      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: methodName, whatItIs: trade.whatItIs }} backTo="/trades" />
+      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: methodName, whatItIs: trade.whatItIs }} backTo={`/trade/${encodeURIComponent(trade.code)}`} />
       <section className="dispute-status" aria-label="Dispute status">
         <div className="dispute-chips">
           <StatusChip tone="danger" icon="clock" label="In dispute" />
@@ -100,6 +100,10 @@ export function DisputeRoom({
         </section>
 
         <p className="dispute-chat-notice">Chats are encrypted. If a dispute is opened, a moderator can read this conversation.</p>
+        {dispute.moderator === null ? (
+          // The side that did not open the dispute never saw DisputeOpen's notice (COPY-UNSIGNED).
+          <p className="dispute-chat-notice">A dispute is open. A moderator can read this whole chat, including messages from before the trade.</p>
+        ) : null}
 
         {chat ?? <FallbackChat trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute)} />}
         {unblurred ?? <UnblurredRequest trade={trade} dispute={dispute} />}

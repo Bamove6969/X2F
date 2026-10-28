@@ -49,7 +49,8 @@ function AppealSection({
       </section>
     );
   }
-  if (r.appealUntil === null) {
+  // Only a ruled dispute can be appealed (the server refuses the rest as wrong-state).
+  if (r.appealUntil === null || dispute.status !== 'ruled') {
     return (
       <section aria-label="Appeal" className="dispute-appeal">
         <p className="dispute-muted">This ruling is final. {/* COPY-UNSIGNED */}</p>
