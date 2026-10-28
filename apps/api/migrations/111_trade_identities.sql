@@ -1,5 +1,5 @@
 -- Plan 3, Task 8: per-role trade identities and the moderation attestation, on Task 6's trades
--- table (103_trades.sql). Numbered 106 because 105 is Task 19's 105_push.sql.
+-- table (103_trades.sql). Numbered 111: 106 is reserved for Task 20's chat, 110 for disputes.
 --
 -- The API knows who the buyer and seller of a trade are (trades.buyer_account_id and
 -- seller_account_id), but holds NO escrow key and never mints a trade identity: each trader's app
