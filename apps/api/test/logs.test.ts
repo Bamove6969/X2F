@@ -4,7 +4,7 @@ import type { Deps } from '../src/app.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { startRetention, type RetentionLog } from '../src/retention.js';
 import { applyEvent, type TradePublisher } from '../src/trades/store.js';
-import { fakeAddress, happyPath, seedTrade } from './helpers/trades.js';
+import { driveTo, fakeAddress, happyPath, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
 let app: FastifyInstance;
@@ -39,7 +39,7 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
       await buyer.browser.post(`${url}/events`, { type: 'chain', receivedAtomic: '1' });
       await seller.browser.post(`${url}/events`, { type: 'buyer-cancel' });
       await buyer.browser.post(`${url}/events`, { type: 'mark-paid', fiatCents: 'x' });
-      await third.browser.post(`${url}/events`, { type: 'open-dispute' });
+      await third.browser.post(`${url}/events`, { type: 'propose-cancel' });
       if (step.by === 'system') {
         await applyEvent(deps, trade.code, step.e, 'system');
       } else {
@@ -51,6 +51,23 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
     for (const who of [seller, buyer]) await who.browser.get(url);
     await third.browser.get(`/v1/trades/${trade.code.replaceAll('-', '').toLowerCase()}`);
 
+    // Task 27: a dispute on a second trade, its view, an outsider's attempt, a bad body and an appeal.
+    const second = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, second.trade, 'secured');
+    const durl = `/v1/trades/${second.trade.code}`;
+    expect((await third.browser.post(`${durl}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(404);
+    expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'a\u0000b' })).statusCode).toBe(400);
+    expect((await buyer.browser.post(`${durl}/dispute`, { reason: 'paid', note: 'private to the moderator' })).statusCode).toBe(200);
+    for (const who of [seller, buyer, third]) await who.browser.get(`${durl}/dispute`);
+    await deps.db.query(
+      `insert into dispute_rulings (code, round, outcome, reason, moderator_name, ruled_at, appeal_until)
+       values ($1, 1, 'release-to-buyer', 'Paid.', 'sarah.v', now(), now() + interval '2 days')`,
+      [second.trade.code],
+    );
+    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [second.trade.code]);
+    await third.browser.post(`${durl}/appeal`, { why: 'Please look again at this.' });
+    expect((await seller.browser.post(`${durl}/appeal`, { why: 'Please look again at this.' })).statusCode).toBe(200);
+
     // The retention scheduler's own lines go to the same check.
     const jobLines: RetentionLog[] = [];
     const stop = startRetention(deps, [...RETENTION_JOBS], 20, (e) => void jobLines.push(e));
@@ -59,10 +76,15 @@ describe('log hygiene over a whole trade (P3-I15)', () => {
     expect(jobLines.length).toBeGreaterThan(0);
 
     const text = logs.join('\n') + JSON.stringify(jobLines);
-    // The two route-made publish failures were logged, so the check is not vacuous.
-    expect(logs.filter((l) => l.includes('trade publish failed'))).toHaveLength(2);
+    // The two route-made publish failures and the dispute's were logged, so the check is not vacuous.
+    expect(logs.filter((l) => l.includes('trade publish failed'))).toHaveLength(3);
     const compact = trade.code.replaceAll('-', '');
-    for (const secret of [trade.code, compact, compact.toLowerCase(), escrow, sides.buyerPayout!, sides.sellerRefund!]) {
+    const compact2 = second.trade.code.replaceAll('-', '');
+    for (const secret of [
+      trade.code, compact, compact.toLowerCase(), escrow, sides.buyerPayout!, sides.sellerRefund!,
+      second.trade.code, compact2, compact2.toLowerCase(), second.sides.buyerPayout!, second.sides.sellerRefund!,
+      'private to the moderator', 'Please look again',
+    ]) {
       expect(text).not.toContain(secret);
     }
     for (const a of [escrow, sides.buyerPayout!, sides.sellerRefund!]) expect(text).not.toContain(a.slice(0, 20));
