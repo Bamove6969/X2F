@@ -1,12 +1,20 @@
-import { useEffect, useSyncExternalStore } from 'react';
-import { Navigate, Outlet, Route, Routes, useNavigate } from 'react-router';
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
+import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { PostOffer } from './screens/PostOffer.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
 import { SELL_COPY } from './screens/browse/SellCopy.js';
+import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
+import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
+import { BuyQuote } from './screens/quote/BuyQuote.js';
+import { quotePath } from './screens/quote/quoteModel.js';
+import { SellQuote } from './screens/quote/SellQuote.js';
 import { Security } from './screens/settings/Security.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
@@ -47,6 +55,18 @@ function Screen({ name }: { name: string }) {
   return <main data-screen={name} />;
 }
 
+/**
+ * The offer list (Tasks 16/17) with its Trade button opening the quote (Task 18): a sell ad opens
+ * BuyQuote at `/buy/<method>/<offer>`, a buy ad SellQuote at `/sell/<method>/<offer>`, in the
+ * currency being browsed.
+ */
+function BrowseOffers({ side, copy }: { side: Side; copy: BrowseCopy }) {
+  const { methodId = '' } = useParams();
+  const { search } = useLocation();
+  const navigate = useNavigate();
+  return <OfferList side={side} copy={copy} onTrade={(o) => void navigate(quotePath(adSide(side), methodId, o.id, currencyFrom(search)))} />;
+}
+
 /** Hands the router's navigate to the API client, so terms-required and no-wallet redirects stay in the app. */
 function RouterBridge() {
   const navigate = useNavigate();
@@ -60,20 +80,59 @@ function RouterBridge() {
   return null;
 }
 
+/**
+ * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
+ * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade.
+ * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
+ * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
+ */
+function LiveAccepted() {
+  const navigate = useNavigate();
+  const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
+  useLiveEvents((e) => {
+    if (e.type === 'accepted') setAccepted(e);
+  });
+  if (!accepted) return null;
+  return (
+    <AcceptedSheet
+      key={accepted.code}
+      event={accepted}
+      onDone={(code, confirmed) => {
+        setAccepted(null);
+        // The room gets the poster's ConfirmedTrade as router state (also stored by the sheet).
+        void navigate(...acceptedNavigation(code, confirmed));
+      }}
+      onClose={() => setAccepted(null)}
+    />
+  );
+}
+
+/** Only full trader sessions have live events (`GET /v1/events` is `requireTrader`). */
+function isTrader(session: ReturnType<typeof useSession>): boolean {
+  if (session.status !== 'signed-in') return false;
+  const me = session.me;
+  if (me === null || typeof me !== 'object') return false;
+  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown };
+  return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
+}
+
 export function App() {
-  useSession();
+  const session = useSession();
   return (
     <>
       <RouterBridge />
+      {isTrader(session) ? <LiveAccepted /> : null}
       <Routes>
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
         </Route>
         <Route element={<Layout nav={false} />}>
-          <Route path="/sell/:methodId" element={<OfferList side="sell" copy={SELL_COPY} />} />
-          <Route path="/buy/:methodId" element={<OfferList side="buy" copy={BUY_COPY} />} />
-          <Route path="/post" element={<Screen name="post" />} />
+          <Route path="/post" element={<PostOffer />} />
+          <Route path="/sell/:methodId" element={<BrowseOffers side="sell" copy={SELL_COPY} />} />
+          <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />
+          <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
+          <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<Screen name="trade" />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />

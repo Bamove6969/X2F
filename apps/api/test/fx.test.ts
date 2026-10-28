@@ -3,6 +3,7 @@ import { loadConfig } from '../src/config.js';
 import {
   FX_DEFAULTS, FX_SOURCE_NAMES, RATE_SCALE, createFxRates, decimalToScaled, fxSources, parseFxSources, type FxSource,
 } from '../src/price/fx.js';
+import { VAPID_ENV } from './helpers/vapid.js';
 
 const T0 = new Date('2026-10-24T06:00:00Z');
 const MIN = 60_000;
@@ -190,7 +191,7 @@ describe('FX sources', () => {
       X2F_SERVER_KEY: Buffer.alloc(32, 1).toString('base64'), X2F_MONERO_NETWORK: 'stagenet', X2F_TERMS_VERSION: 'v1',
       X2F_PGP_SIGNING_KEY_PATH: '/k', X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
       X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 11).toString('base64')}`, X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 12).toString('base64')}`,
-      X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`,
+      X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`, ...VAPID_ENV,
     };
     expect(loadConfig(env).fxSources).toEqual(['coinbase', 'bitpay', 'coingecko']);
     expect(loadConfig({ ...env, FX_SOURCES: 'coingecko' }).fxSources).toEqual(['coingecko']);

@@ -22,6 +22,7 @@ beforeAll(async () => {
   await mkdir(join(root, 'assets'));
   await writeFile(join(root, 'index.html'), '<!doctype html><html><body><div id="root"></div></body></html>');
   await writeFile(join(root, 'assets', 'app-abc123.js'), 'console.log(1)');
+  await writeFile(join(root, 'sw.js'), "self.addEventListener('push', () => undefined);");
   ({ app } = await testApp());
   await serveWeb(app, { root, relayOrigin: RELAY, nodeProxyOrigin: NODE });
 });
@@ -76,6 +77,14 @@ describe('security headers', () => {
     expectBaseHeaders(res.headers);
     expect(res.headers['content-security-policy']).toBeUndefined();
     expect(res.headers['cache-control']).toBe('public, max-age=31536000, immutable');
+  });
+
+  it('the service worker is served from this origin at /sw.js, revalidated on every load (Task 19)', async () => {
+    const res = await app.inject({ method: 'GET', url: '/sw.js' });
+    expect(res.statusCode).toBe(200);
+    expectBaseHeaders(res.headers);
+    expect(String(res.headers['content-type'])).toMatch(/javascript/);
+    expect(res.headers['cache-control']).toBe('no-cache');
   });
 
   it('a missing file is a 404, not the app page', async () => {

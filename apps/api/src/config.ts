@@ -1,4 +1,4 @@
-import { hkdfSync, timingSafeEqual } from 'node:crypto';
+import { createECDH, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
 import { parseFxSources, type FxSourceName } from './price/fx.js';
@@ -16,6 +16,9 @@ export interface Config {
   termsVersion: string;
   pgpSigningKeyPath: string;
   pgpSigningFingerprint: string;
+  /** Task 19: VAPID key pair for Web Push, base64url (P-256 public point; private scalar). */
+  vapidPublic: string;
+  vapidPrivate: string;
   /** `PRICE_SOURCES` (spec 11.6): the price sources the feed asks, by name; default all of them. */
   priceSources: PriceSourceName[];
   /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
@@ -76,6 +79,17 @@ function parseOrigins(raw: string): string[] {
     }
   }
   return list;
+}
+
+/** True when `publicKey` is the P-256 public point of `privateKey` (both base64url). */
+function vapidPairMatches(publicKey: string, privateKey: string): boolean {
+  try {
+    const ecdh = createECDH('prime256v1');
+    ecdh.setPrivateKey(Buffer.from(privateKey, 'base64url'));
+    return ecdh.getPublicKey().toString('base64url') === publicKey;
+  } catch {
+    return false;
+  }
 }
 
 /** Key ids are stored in `smallint` columns and in the sealed-blob header: 1..32767. */
@@ -198,10 +212,22 @@ export function loadConfig(env: Env): Config {
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
   ]);
 
+  // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
+  const vapidPublic = required(env, 'X2F_VAPID_PUBLIC');
+  const pub = /^[A-Za-z0-9_-]{87}$/.test(vapidPublic) ? Buffer.from(vapidPublic, 'base64url') : null;
+  if (!pub || pub.length !== 65 || pub[0] !== 0x04) {
+    throw malformed('X2F_VAPID_PUBLIC', 'base64url of an uncompressed P-256 public key (65 bytes)');
+  }
+  const vapidPrivate = required(env, 'X2F_VAPID_PRIVATE');
+  if (!/^[A-Za-z0-9_-]{43}$/.test(vapidPrivate) || Buffer.from(vapidPrivate, 'base64url').length !== 32) {
+    throw malformed('X2F_VAPID_PRIVATE', 'base64url of a P-256 private key (32 bytes)');
+  }
+  if (!vapidPairMatches(vapidPublic, vapidPrivate)) throw malformed('X2F_VAPID_PUBLIC', 'not the public half of X2F_VAPID_PRIVATE');
+
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    legacySecrets, priceSources, fxSources,
+    legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
   };
 }
 

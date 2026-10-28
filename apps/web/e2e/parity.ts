@@ -74,6 +74,20 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'Buyer deposits were removed (plan Revision 2026-10-18, spec 2.5); the card shows its range and, when the API knows it, the typical time ("Pays in ~N min").',
     },
   ],
+  PostOffer: [
+    {
+      text: 'Bank transfer (ACH)',
+      why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
+    },
+  ],
+  BuyQuote: [
+    {
+      text: 'Paid by satoshi_ghost',
+      why: 'OD-4 (spec 11.1): the release network fee comes off the payout, so the row reads "about 0.0001 XMR, taken from the payout".',
+    },
+    { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
+    { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
+  ],
 };
 
 /**
@@ -141,11 +155,21 @@ export async function boardTexts(page: Page, board: string, o: { within?: string
       }
       const scope = within ? root.querySelector(within) : root;
       if (!scope) throw new Error(`no ${within} on the board`);
+      // A <select>'s options are copy of their own (each is checked on its own below), not part of
+      // the label or row around the select: "Currency" and "USD", never "Currency USDEURGBP".
+      const textOf = (node: Node, root: Node): string => {
+        if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
+        if (node.nodeType !== Node.ELEMENT_NODE) return '';
+        if (node !== root && (node as Element).matches('select')) return '';
+        return Array.from(node.childNodes)
+          .map((n) => textOf(n, root))
+          .join('');
+      };
       const out: string[] = [];
       for (const el of [scope, ...Array.from(scope.querySelectorAll('*'))]) {
         const own = Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? '').trim() !== '');
         if (!own) continue;
-        const text = (el.textContent ?? '').replace(/\s+/g, ' ').trim();
+        const text = textOf(el, el).replace(/\s+/g, ' ').trim();
         if (text !== '') out.push(text);
       }
       return out;
@@ -235,7 +259,12 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
     ({ sel, mask }) => {
       // Shown to a sighted person: rendered, and at least 2x2 px inside the document, so screen-reader
       // only text (1 px clip), a 0x0 box or text moved off the page does not count.
-      const visible = (el: Element) => {
+      const visible = (el: Element): boolean => {
+        // An <option> has no box of its own in a closed select; it is shown when its select is.
+        if (el.matches('option, optgroup')) {
+          const select = el.closest('select');
+          return select !== null && visible(select);
+        }
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
         const r = el.getBoundingClientRect();
         if (r.width < 2 || r.height < 2) return false;
@@ -257,18 +286,20 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
         );
         if (!inline) standalone.push({ id, text: (el.textContent ?? '').replace(/\s+/g, ' ').trim() });
       }
-      const read = (node: Node, found: number[]): string => {
+      const read = (node: Node, found: number[], from: Node = node): string => {
         if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? '';
         if (node.nodeType !== Node.ELEMENT_NODE) return '';
         const el = node as Element;
         if (el.matches('script, style, template')) return '';
+        // As boardTexts: a select's options are texts of their own, not part of the text around it.
+        if (el.matches('select') && node !== from) return '';
         if (el.matches(sel)) {
           const id = ids.get(el);
           if (id !== undefined) found.push(id);
           return mask;
         }
         return Array.from(el.childNodes)
-          .map((n) => read(n, found))
+          .map((n) => read(n, found, from))
           .join('');
       };
       const shown: { text: string; masks: number[] }[] = [];

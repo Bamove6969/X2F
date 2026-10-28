@@ -429,6 +429,28 @@ describe('createMarketPrices', () => {
     await expect(prices.poll()).resolves.toBeUndefined();
     expect(prices.current('EUR')?.centsPerXmr).toBe(29700n);
   });
+
+  it('a failing alert sink is logged as one fixed line per lost alert, with no alert detail (re-review I3)', async () => {
+    const c = clockAt(T0);
+    // Every source down: the urgent alert fires, and the sink fails.
+    const xmr = createPriceFeed([xmrStub('a', () => new Error('down')), xmrStub('b', () => new Error('down'))], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    const fx = createFxRates([fxStub('coinbase', () => ({ EUR: '0.9' }))], { clock: c.clock });
+    const lines: Array<[Record<string, unknown>, string]> = [];
+    const prices = createMarketPrices({
+      xmr, fx, clock: c.clock,
+      onAlert: () => Promise.reject(Object.assign(new Error('db down'), { detail: 'Key (account_id)=(secret-owner-id)' })),
+      log: { error: (obj, msg) => void lines.push([obj, msg]) },
+    });
+    await prices.poll();
+    await prices.stop();
+    expect(lines.length).toBeGreaterThan(0);
+    for (const [obj, msg] of lines) {
+      expect(msg).toBe('price alert not delivered');
+      // Only the message, never the error object: a pg `detail` must not reach the logs (round 3).
+      expect(obj).toEqual({ error: 'db down' });
+    }
+    expect(JSON.stringify(lines)).not.toContain('secret-owner-id');
+  });
 });
 
 // ---- Database: owner settings, owner alerts, routes ----

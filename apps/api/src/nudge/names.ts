@@ -1,11 +1,15 @@
 import { checkDisplayName } from '@x2f/accounts';
 import type { Queryable } from '../db/pool.js';
+import { PUBLIC_NAME_COLUMN } from '../events/publicName.js';
 
 /**
  * The PUBLIC name column and its lower-cased key: the display name shown on offers and in chats,
- * NEVER the private login name (`login_name` / `login_key`). test/nudge.test.ts pins this.
+ * NEVER the private login name (`login_name` / `login_key`). The column is events/publicName.ts's
+ * PUBLIC_NAME_COLUMN, so a nudge's `from` and every other live event name come from one place
+ * (test/nudge.test.ts and test/events.test.ts pin both).
  */
-export const [PUBLIC_NAME, PUBLIC_NAME_KEY] = ['display_name', 'display_key'] as const;
+export const PUBLIC_NAME = PUBLIC_NAME_COLUMN;
+export const PUBLIC_NAME_KEY = 'display_key';
 
 /** An account found by its public name, case-insensitively; null for a name that is malformed or unknown. */
 export async function findByPublicName(
