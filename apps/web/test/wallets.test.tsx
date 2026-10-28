@@ -217,4 +217,11 @@ describe('Your wallets', () => {
     expect(dialog("Confirm it's you")).not.toBeNull();
     expect(primaries()).toEqual(['Confirm']);
   });
+
+  it('offers no QR scan button until a scanner exists (review item 7)', async () => {
+    await mount();
+    await startAdding();
+    expect(document.querySelector('#wallet-address')).not.toBeNull();
+    expect(document.querySelector('[aria-label="Scan address QR code"]')).toBeNull();
+  });
 });

@@ -466,9 +466,7 @@ export function Wallets() {
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
                 />
-                <button type="button" className="x2f-wallets__scan" aria-label="Scan address QR code">
-                  <Icon name="plus-circle" size={20} />
-                </button>
+                {/* The board's "Scan address QR code" button comes back with a scanner; a button that does nothing is not shown. */}
               </span>
             </label>
             <span className="x2f-wallets__confirm-note">
