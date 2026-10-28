@@ -14,7 +14,7 @@
  * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
  *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
-import { useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
@@ -113,12 +113,44 @@ const CONFIRM_TIP =
 const PAY_TIP =
   "You get 90 minutes to send the money and tap I've paid. The clock starts once the escrow has settled, so waiting for it never costs you time. If time runs out without that tap, the seller can cancel and get a refund, or give you more time.";
 
-/** A help tip: hover or tap the trigger to show it (BuyerPay board). */
+/**
+ * A help tip (BuyerPay board): a mouse shows it on hover; a tap or click opens it (never toggles,
+ * so a phone's emulated hover before the click cannot shut it again), and a tap outside, Escape
+ * or leaving the trigger by keyboard closes it (review Minor 2).
+ */
 function useTip() {
   const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const outside = (e: Event) => {
+      if (!(e.target instanceof Node) || !ref.current?.contains(e.target)) setOpen(false);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', esc);
+    return () => {
+      document.removeEventListener('pointerdown', outside);
+      document.removeEventListener('keydown', esc);
+    };
+  }, [open]);
   return {
     open,
-    trigger: { onMouseEnter: () => setOpen(true), onMouseLeave: () => setOpen(false), onClick: () => setOpen((o) => !o) },
+    trigger: {
+      ref: (el: HTMLElement | null) => {
+        ref.current = el;
+      },
+      onPointerEnter: (e: ReactPointerEvent) => {
+        if (e.pointerType === 'mouse') setOpen(true);
+      },
+      onPointerLeave: (e: ReactPointerEvent) => {
+        if (e.pointerType === 'mouse') setOpen(false);
+      },
+      onClick: () => setOpen(true),
+      onBlur: () => setOpen(false),
+    },
   };
 }
 

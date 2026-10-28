@@ -577,3 +577,34 @@ describe('after the cancel: the buyer builds the refund (review I4)', () => {
     expect(maybe('Try again')).toBeUndefined();
   });
 });
+
+describe('help tips (review Minor 2)', () => {
+  const trigger = () => document.querySelector<HTMLElement>('[aria-describedby="tip-pay"]')!;
+  const tip = () => document.getElementById('tip-pay');
+  const pointer = (el: Element, type: string, pointerType: string) =>
+    act(() => {
+      el.dispatchEvent(new PointerEvent(type, { bubbles: true, pointerType }));
+    });
+
+  it('a tap opens the tip and leaves it open (the emulated hover does not toggle it shut)', async () => {
+    mount(props());
+    pointer(trigger(), 'pointerover', 'touch');
+    await click(trigger());
+    expect(tip()?.textContent).toContain('You get 90 minutes');
+    await click(trigger());
+    expect(tip()).not.toBeNull();
+  });
+
+  it('a tap outside closes it; the mouse opens it on hover and closes it on leave', async () => {
+    mount(props());
+    await click(trigger());
+    act(() => {
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerType: 'touch' }));
+    });
+    expect(tip()).toBeNull();
+    pointer(trigger(), 'pointerover', 'mouse');
+    expect(tip()).not.toBeNull();
+    pointer(trigger(), 'pointerout', 'mouse');
+    expect(tip()).toBeNull();
+  });
+});
