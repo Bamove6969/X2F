@@ -13,6 +13,7 @@ import { REFUND_SLOTS, registerRefundScreens, type RefundSlot } from '../src/scr
 import { buyerAlertView, sellerRequestedView, sellerView } from '../e2e/refundViews.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
+import { SellerWaiting } from '../src/screens/trade/BuyerPay.js';
 import { screenFor } from '../src/screens/trade/TradeRoom.js';
 import '../src/screens/trade/screens.js';
 
@@ -67,7 +68,7 @@ describe("in Task 22's trade room (screens.ts)", () => {
     expect(screenFor(v, after)).toBe(SellerRefund);
     expect(screenFor(sellerRequestedView(), after)).toBe(SellerRefund);
     expect(screenFor(buyerAlertView(), after)).toBe(FinalAlert);
-    // Before payBy the seller's secured slot is Task 23's (not on the line yet: no screen).
-    expect(screenFor(v, Date.parse(v.payBy!))).toBeNull();
+    // Before payBy the seller's secured slot is Task 23's waiting room.
+    expect(screenFor(v, Date.parse(v.payBy!))).toBe(SellerWaiting);
   });
 });

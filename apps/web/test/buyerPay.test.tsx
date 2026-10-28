@@ -51,6 +51,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     paidAt: null,
     confirmBy: null,
     finalAlertAt: null,
+    finalAlertSeenAt: null,
     settleBy: null,
     pausedAt: null,
     closedAt: null,
@@ -59,6 +60,8 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     ...over,
   };
 }
+
+const DEAL = { poster: 'seller' as const, takeAmountAtomic: 1_250_000_000_000n, currency: 'USD', centsPerXmr: 33_000n, maxFiatCents: 100_000n };
 
 const SECURED: Partial<TradeView> = { state: 'secured', confirmations: 12, releasable: true, releasableEtaMin: 0, securedAt: at(-28), payBy: at(62) };
 
@@ -72,6 +75,12 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
   return {
     phase: 'ready',
     escrowAddress: null,
+    // The device's own figures for the board trade (1.25 XMR at $330.00, $412.50).
+    deal: DEAL,
+    amountAtomic: 1_250_000_000_000n,
+    fiatCents: 41_250n,
+    receivedAtomic: null,
+    confirmedAtomic: null,
     error: null,
     retryable: false,
     refusal: null,

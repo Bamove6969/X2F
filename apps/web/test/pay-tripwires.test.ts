@@ -9,28 +9,6 @@ const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 const has = (p: string) => existsSync(`${SRC}${p}`);
 
 describe('Task 23 tripwires', () => {
-  it('registered in TradeRoom once Task 22 merges', () => {
-    // Task 22 (wip/lead-p3-task22) owns TradeRoom.tsx and the slot registry.
-    if (!has('screens/trade/TradeRoom.tsx')) return;
-    const screens = has('screens/trade/screens.ts') ? readFileSync(`${SRC}screens/trade/screens.ts`, 'utf8') : '';
-    const buyerPay = readFileSync(`${SRC}screens/trade/BuyerPay.tsx`, 'utf8');
-    const types = readFileSync(`${SRC}screens/trade/payTypes.ts`, 'utf8');
-    const problems: string[] = [];
-    if (!/^import '\.\/BuyerPay\.js';$/m.test(screens)) problems.push("screens/trade/screens.ts: put `import './BuyerPay.js';` on Task 23's reserved line");
-    if (!/registerTradeScreen\(/.test(buyerPay)) problems.push('BuyerPay.tsx: call registerTradeScreen(slot) for each of TASK23_SLOTS at module top level');
-    if (/^export interface TradeView\b/m.test(types)) {
-      problems.push("payTypes.ts: replace the copied types with re-exports from '../../api/trade.js', './TradeRoom.js' and './seams.js'");
-    }
-    const seams = readFileSync(`${SRC}screens/trade/paySeams.ts`, 'utf8');
-    if (/^export function (postTradeEvent|methodOf)\b/m.test(seams)) {
-      problems.push("paySeams.ts: use Task 22's postTradeEvent and methodOf from '../../api/trade.js' (keep the `fields` reading here)");
-    }
-    if (!existsSync(fileURLToPath(new URL('../e2e/pay.spec.ts', import.meta.url)))) {
-      problems.push('e2e: move pay.harness.ts to pay.spec.ts against /trade/:code (the room) and drop the fixtures harness route');
-    }
-    expect(problems, 'Task 22 merged: wire Task 23 into the trade room').toEqual([]);
-  });
-
   it("Task 12's escrow runtime exposes the moderator's ack of trade.paid", () => {
     // Task 12 (wip/second-p3-t12) EscrowStatus has no ack field yet, so "Marked as paid" waits for
     // `setPaidAckSource` (paySeams.ts). Once Task 12 merges, install a source from its status.

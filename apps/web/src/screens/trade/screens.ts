@@ -6,7 +6,7 @@
 
 import './TradeFund.js'; // Task 22: TradeFund, BuyerWaitFund, SetupStatus
 
-// Task 23: import './BuyerPay.js';
+import './BuyerPay.js'; // Task 23: BuyerPay, SellerWaiting
 
 // Task 24: import './SellerConfirm.js';
 

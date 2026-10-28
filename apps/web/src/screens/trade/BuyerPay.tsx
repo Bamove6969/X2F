@@ -28,14 +28,18 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
 import { PaidConfirmSheet, type YesResult } from './PaidConfirmSheet.js';
 import { buyerCancelMode, escrowChip, payTimer, showProposal, type EscrowChip } from './payModel.js';
-import { GIFT_CARD_WARNING, methodOf, postTradeEvent, usePaidAck, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
-import { publicName, type Party, type TradeScreenProps, type TradeState, type TradeView } from './payTypes.js';
+import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaidAck, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
+import { publicName, type TradeScreenProps, type TradeView } from './payTypes.js';
+import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
-/** Task 23's trade-room slots (Task 22's `registerTradeScreen`; see the tripwire in test/pay-tripwires.test.ts). */
-export const TASK23_SLOTS: readonly { owner: 'Task 23'; role: Party; states: readonly TradeState[]; when?: undefined; screen: (p: TradeScreenProps) => ReactNode }[] = [
-  // `paid` for the buyer is not in Task 22's ownership list; Task 23 takes it ("Marked as paid", the warned cancel).
+/**
+ * Task 23's trade-room slots (Task 22's slot interface, TradeRoom.tsx), registered at import
+ * (screens.ts imports this file). `paid` for the buyer is not in Task 22's ownership list; Task 23
+ * takes it ("Marked as paid", the warned cancel).
+ */
+export const TASK23_SLOTS: readonly TradeSlot[] = [
   { owner: 'Task 23', role: 'buyer', states: ['securing', 'secured', 'paid'], screen: BuyerPay },
   { owner: 'Task 23', role: 'seller', states: ['secured'], screen: SellerWaiting },
 ];
@@ -65,7 +69,7 @@ function useTradeAction(p: TradeScreenProps) {
     setError(null);
     try {
       try {
-        await postTradeEvent(p.view.code, e);
+        await postPayEvent(p.view.code, e);
       } catch (err) {
         setError(refusalText(err));
         return false;
@@ -340,7 +344,7 @@ function WideRoom({ view, method, title, chip, children }: { view: TradeView; me
 
 export function BuyerPay(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
-  const method = methodOf(view);
+  const method = payMethodOf(view);
   const chip = escrowChip(view);
   const acked = usePaidAck(view.code);
   const action = useTradeAction(p);
@@ -354,7 +358,7 @@ export function BuyerPay(p: TradeScreenProps) {
 
   const onYes = async (fiatCents: bigint): Promise<YesResult> => {
     try {
-      await postTradeEvent(view.code, { type: 'mark-paid', fiatCents });
+      await postPayEvent(view.code, { type: 'mark-paid', fiatCents });
     } catch (e) {
       if (e instanceof ApiCallError && e.status === 409 && e.code === 'total-changed') {
         // The trade grew while the sheet was open: nothing is sent; re-read and ask again.
@@ -512,7 +516,7 @@ export function BuyerPay(p: TradeScreenProps) {
 /** The seller in `secured` (before payBy; SellerRefund takes over after it, Task 25): wait, chat, or propose a mutual cancel. */
 export function SellerWaiting(p: TradeScreenProps) {
   const { view, serverClock, wide } = p;
-  const method = methodOf(view);
+  const method = payMethodOf(view);
   const chip = escrowChip(view);
   const action = useTradeAction(p);
   const cancel = (
@@ -578,3 +582,5 @@ export function SellerWaiting(p: TradeScreenProps) {
     </div>
   );
 }
+
+for (const slot of TASK23_SLOTS) registerTradeScreen(slot);

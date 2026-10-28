@@ -10,6 +10,7 @@ import { api, serverClock } from '../api/client.js';
 import { TASK23_SLOTS } from '../screens/trade/BuyerPay.js';
 import { setPaidAckSource, setPaymentDetailsSource, setTradeChat, type TradeChatProps } from '../screens/trade/paySeams.js';
 import type { TradeEscrow, TradeView } from '../screens/trade/payTypes.js';
+import { PENDING_ESCROW } from '../screens/trade/seams.js';
 import { DesktopShell } from '../ui/DesktopShell.js';
 import { PAY_CHAT, PAY_DETAILS } from './payBoard.js';
 import './payHarness.css';
@@ -40,13 +41,8 @@ function record(name: string) {
 }
 
 const ESCROW: TradeEscrow = {
+  ...PENDING_ESCROW,
   phase: 'ready',
-  escrowAddress: null,
-  error: null,
-  retryable: false,
-  refusal: null,
-  checkWords: null,
-  keepOpen: false,
   release: record('release'),
   buildRefund: record('buildRefund'),
   buyerCancel: record('buyerCancel'),
