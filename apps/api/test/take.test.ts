@@ -106,7 +106,7 @@ async function taken(who: Who, offerId: string, b: Record<string, unknown>): Pro
   const res = await take(who, offerId, b);
   expect(res.statusCode, res.body).toBe(200);
   const code = (res.json() as { code: string }).code;
-  expect(code).toMatch(/^[0-9A-Z]{16}$/);
+  expect(code).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/);
   return code;
 }
 
@@ -342,7 +342,10 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const offer = await postOffer(seller);
     // $200.00 is 0.60606... XMR at $330: the largest amount within the cap goes through.
     const atCap = (XMR * 20_000n) / 33_000n;
-    expect(refusal(await take(buyer, offer, body(buyer, atCap + 2n)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
+    // $200.01.
+    const over = (XMR * 20_001n) / 33_000n + 1n;
+    expect(fiatCents(over, { currency: 'USD', centsPerXmr: 33_000n })).toBe(20_001n);
+    expect(refusal(await take(buyer, offer, body(buyer, over)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
     await taken(buyer, offer, body(buyer, atCap));
   });
 
@@ -444,6 +447,15 @@ describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted 
     expect(refusal(await poster.browser.post('/v1/trades/NOPE/wallet', { walletId: poster.wallet }))).toEqual({ status: 404, error: 'not-found' });
     await deps.db.query(`update trades set state = 'cancelled', closed_at = $2 where code = $1`, [code, deps.clock()]);
     expect(refusal(await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet }))).toEqual({ status: 409, error: 'wrong-state' });
+  });
+
+  it('an address, once set, never changes; the purge may still null it', async () => {
+    const { poster, code } = await setupTrade('sell');
+    expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet })).statusCode).toBe(204);
+    for (const col of ['buyer_payout', 'seller_refund']) {
+      await expect(deps.db.query(`update trades set ${col} = $2 where code = $1`, [code, fakeAddress()])).rejects.toMatchObject({ code: '23000' });
+    }
+    await deps.db.query(`update trades set buyer_payout = null, seller_refund = null where code = $1`, [code]);
   });
 
   it('refuses a waiting or foreign wallet (wallet-not-ready), no usable wallet (no-wallet) and a bad body', async () => {

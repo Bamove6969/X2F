@@ -11,6 +11,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import { tradeRoutes } from './trades/routes.js';
+import { takeRoutes } from './trades/take.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
@@ -240,6 +241,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
+  // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.
+  takeRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
 

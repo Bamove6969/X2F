@@ -56,6 +56,15 @@ export type ApiErrorCode =
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
+  // Plan 3, Task 5: taking an offer and the poster's wallet.
+  | 'own-offer'
+  | 'out-of-range'
+  | 'not-enough-trades'
+  | 'wallet-not-ready'
+  | 'already-waiting'
+  | 'ad-busy'
+  | 'price-changed'
+  | 'starter-limit'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';
