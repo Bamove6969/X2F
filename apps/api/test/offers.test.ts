@@ -411,7 +411,8 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     const eur = await post(p, { currency: 'EUR', minFiatCents: '50000', maxFiatCents: '60000', side: 'buy' });
     expect((await list('side=buy&method=ZELLE&currency=EUR', starter.browser)).find((c) => c.id === eur)?.opensAt).toBe('building');
     // A fixed-price offer is converted the same way (its minimum is still money in its currency).
-    const fixedBig = await post(p, { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'fixed', centsPerXmr: '1' } });
+    // (Another poster: p already has 3 offers in USD buy ads, the per-market cap.)
+    const fixedBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'fixed', centsPerXmr: '1' } });
     expect((await list(q, starter.browser)).find((c) => c.id === fixedBig)?.opensAt).toBe('graduated');
 
     // While the market is down the cap cannot be checked here: no mark (the take checks it).
@@ -426,5 +427,153 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'starter_cap_usd'`);
     }
+  });
+});
+
+describe('review fixes (Task 4 review 2026-10-28)', () => {
+  it('I1: at most 3 live or paused offers per side, method and currency (409 too-many-offers); removed ones do not count', async () => {
+    const p = await poster();
+    const ids = [await post(p, { currency: 'TRY' }), await post(p, { currency: 'TRY' }), await post(p, { currency: 'TRY' })];
+    const over = await p.browser.post('/v1/offers', { ...BODY, currency: 'TRY' });
+    expect(over.statusCode).toBe(409);
+    expect(over.json()).toEqual({ error: 'too-many-offers' });
+    // A paused offer still counts; a removed one does not.
+    await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'paused' });
+    expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'TRY' })).statusCode).toBe(409);
+    await p.browser.patch(`/v1/offers/${ids[0]}`, { status: 'removed' });
+    await post(p, { currency: 'TRY' });
+    // Another market is its own count.
+    await post(p, { currency: 'TRY', side: 'buy' });
+  });
+
+  it('I1: at most 20 offers in total; the owner settings move both caps, relisting included', async () => {
+    const p = await poster();
+    const markets: [string, string][] = [];
+    for (const c of ['USD', 'EUR', 'GBP', 'CAD', 'AUD', 'NZD', 'CHF']) for (const side of ['sell', 'buy']) markets.push([c, side]);
+    let n = 0;
+    for (const [currency, side] of markets) {
+      for (let i = 0; i < 2 && n < 20; i++, n++) await post(p, { currency, side, methodId: 'REVOLUT' });
+    }
+    const over = await p.browser.post('/v1/offers', { ...BODY, currency: 'ILS', methodId: 'REVOLUT' });
+    expect(over.json()).toEqual({ error: 'too-many-offers' });
+
+    const q = await poster();
+    const a = await post(q, { currency: 'ZAR' });
+    const b = await post(q, { currency: 'ZAR' });
+    await q.browser.patch(`/v1/offers/${a}`, { status: 'paused' });
+    await q.browser.patch(`/v1/offers/${b}`, { status: 'paused' });
+    await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('offers_max_per_market', 1, now())`);
+    try {
+      expect((await q.browser.post('/v1/offers', { ...BODY, currency: 'ZAR' })).json()).toEqual({ error: 'too-many-offers' });
+      // Relisting counts the others: one other paused offer is already the cap of 1.
+      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'too-many-offers' });
+      await q.browser.patch(`/v1/offers/${b}`, { status: 'removed' });
+      expect((await q.browser.patch(`/v1/offers/${a}`, { status: 'live' })).statusCode).toBe(200);
+    } finally {
+      await deps.db.query(`delete from owner_settings where key = 'offers_max_per_market'`);
+    }
+  });
+
+  it('I1: six concurrent posts in one market create exactly three offers (real Postgres)', async () => {
+    const p = await poster();
+    const results = await Promise.all(Array.from({ length: 6 }, () => p.browser.post('/v1/offers', { ...BODY, currency: 'NGN' })));
+    expect(results.map((r) => r.statusCode).sort()).toEqual([201, 201, 201, 409, 409, 409]);
+    const { rows } = await deps.db.query(`select count(*)::int as n from offers where account_id = $1 and currency = 'NGN'`, [p.id]);
+    expect(rows[0]).toEqual({ n: 3 });
+  });
+
+  it('I1: the best sort is done by the database across market and fixed offers', async () => {
+    const p = await poster();
+    const q = await poster();
+    // USD market 33000: +1% = 33330, −1% = 32670; fixed 33000 sits between.
+    const mid = await post(q, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'fixed', centsPerXmr: '33000' } });
+    const up = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: 100 } });
+    const down = await post(p, { currency: 'USD', methodId: 'CASH_APP', pricing: { mode: 'market', marginBps: -100 } });
+    const cards = await list('side=sell&method=CASH_APP&currency=USD&sort=best');
+    expect(cards.map((c) => [c.id, c.rate])).toEqual([[down, '32670'], [mid, '33000'], [up, '33330']]);
+  });
+
+  it('M2: terms refuse C0/C1 controls (but newline and tab) and bidi controls; emoji with ZWJ and soft hyphens are fine; CRLF becomes LF', async () => {
+    const p = await poster();
+    for (const t of ['nul \u0000 here', 'c1 \u0085 here', 'del \u007f', 'bidi ‮', 'isolate ⁦x⁩', 'esc \u001b[31m']) {
+      const res = await p.browser.post('/v1/offers', { ...BODY, currency: 'UAH', terms: t });
+      expect(res.statusCode, JSON.stringify(t)).toBe(400);
+    }
+    const id = await post(p, { currency: 'UAH', terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\r\nline two\rthree\tend' });
+    expect((await anon.get(`/v1/offers/${id}`)).json()).toMatchObject({ terms: 'Team \u{1F469}‍\u{1F4BB} ok­ay\nline two\nthree\tend' });
+  });
+
+  it('M3: lastSeenAt is public only to the 5 minutes (floored); online uses the exact time', async () => {
+    const p = await poster();
+    await post(p, { currency: 'GEL' });
+    await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [p.id, new Date('2026-10-17T11:58:27.123Z')]);
+    const [card] = await list('side=sell&method=ZELLE&currency=GEL');
+    expect(card!.poster).toMatchObject({ online: true, lastSeenAt: '2026-10-17T11:55:00.000Z' });
+  });
+
+  it('M6: during an emergency stop the lists are empty and only the poster sees the offer', async () => {
+    const p = await poster();
+    const id = await post(p, { currency: 'AED' });
+    await deps.db.query('update site_flags set trading_paused = true');
+    try {
+      expect(await list('side=sell&method=ZELLE&currency=AED')).toEqual([]);
+      expect(((await anon.get('/v1/methods?side=sell&currency=AED')).json() as { live: unknown[] }).live).toEqual([]);
+      expect((await anon.get(`/v1/offers/${id}`)).statusCode).toBe(404);
+      expect((await p.browser.get(`/v1/offers/${id}`)).json()).toMatchObject({ id, status: 'live' });
+    } finally {
+      await deps.db.query('update site_flags set trading_paused = false');
+    }
+    expect(await list('side=sell&method=ZELLE&currency=AED')).toHaveLength(1);
+  });
+
+  it("M7: the poster's own offers never carry opensAt; another viewer's single-offer answer does", async () => {
+    const p = await poster(); // Starter, cap $200
+    const id = await post(p, { currency: 'SAR', minFiatCents: '50000', maxFiatCents: '90000', pricing: { mode: 'fixed', centsPerXmr: '120000' } });
+    // SAR has no market in the fake feed, so use USD for the converted cap.
+    const usd = await post(p, { currency: 'USD', side: 'sell', methodId: 'APPLE_CASH', minFiatCents: '50000', maxFiatCents: '90000' });
+    expect((await list('side=sell&method=APPLE_CASH&currency=USD', p.browser)).find((c) => c.id === usd)!.opensAt).toBeUndefined();
+    expect((await p.browser.get(`/v1/offers/${usd}`)).json()).not.toHaveProperty('opensAt');
+    const other = await trader();
+    expect((await other.browser.get(`/v1/offers/${usd}`)).json()).toMatchObject({ opensAt: 'building' });
+    expect((await other.browser.get(`/v1/offers/${id}`)).json()).not.toHaveProperty('opensAt');
+  });
+
+  it('M11: the single-offer route hides held and disabled posters and methods under legal review', async () => {
+    const held = await poster();
+    const off = await poster();
+    const h = await post(held, { currency: 'PKR' });
+    const d = await post(off, { currency: 'PKR' });
+    await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [held.id, deps.clock()]);
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [off.id, deps.clock()]);
+    expect((await anon.get(`/v1/offers/${h}`)).statusCode).toBe(404);
+    expect((await anon.get(`/v1/offers/${d}`)).statusCode).toBe(404);
+    // An SBP offer (only possible from before the method went under review) is hidden too.
+    const p = await poster();
+    const sbp = await post(p, { currency: 'BDT' });
+    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [sbp]);
+    expect((await anon.get(`/v1/offers/${sbp}`)).statusCode).toBe(404);
+    expect(await list('side=sell&method=SBP&currency=BDT')).toEqual([]);
+  });
+
+  it('M11: a repeated sort is 400; browsing signed in does not touch the session', async () => {
+    expect((await anon.get('/v1/offers?side=sell&method=ZELLE&currency=USD&sort=best&sort=online')).statusCode).toBe(400);
+    const t = await trader();
+    const before = new Date(deps.clock().getTime() - 60_000);
+    await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [t.id, before]);
+    await list('side=sell&method=ZELLE&currency=USD', t.browser);
+    const p = await poster();
+    const id = await post(p, { currency: 'LKR' });
+    await t.browser.get(`/v1/offers/${id}`);
+    const { rows } = await deps.db.query<{ last_seen_at: Date }>('select last_seen_at from sessions where account_id = $1', [t.id]);
+    expect(rows.map((r) => r.last_seen_at.toISOString())).toEqual([before.toISOString()]);
+  });
+
+  it('M10: GET /v1/account/me carries the trader stage', async () => {
+    const t = await trader();
+    expect((await t.browser.get('/v1/account/me')).json()).toMatchObject({ stage: 'starter' });
+    await history(t.id, { days: 8, completed: 5 });
+    expect((await t.browser.get('/v1/account/me')).json()).toMatchObject({ stage: 'building' });
+    const staff = await trader('staff');
+    expect((await staff.browser.get('/v1/account/me')).json()).toMatchObject({ stage: null });
   });
 });
