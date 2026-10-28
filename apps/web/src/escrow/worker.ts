@@ -32,15 +32,44 @@ function isRecord(x: unknown): x is Record<string, unknown> {
   return typeof x === 'object' && x !== null && !Array.isArray(x);
 }
 
+/**
+ * The status every trade gets when the runtime could not be made (a build without its config, a
+ * store that will not open): a stopped escrow, not endless "Setting up escrow" (landing review
+ * Minor 3). Not retryable: the same worker would fail the same way.
+ */
+export const RUNTIME_FAILED: EscrowStatus = {
+  phase: 'error',
+  error: 'escrow-failed',
+  retryable: false,
+  refusal: null,
+  checkWords: null,
+  keepOpen: false,
+  role: null,
+  amountAtomic: null,
+  fiatCents: null,
+  escrowAddress: null,
+  deal: null,
+  receivedAtomic: null,
+  confirmedAtomic: null,
+};
+
 /** Answers the page's messages with `runtime` (made once `makeRuntime` resolves). */
 export function serveEscrow(port: Port, makeRuntime: (onStatus: (code: string, s: EscrowStatus) => void) => Promise<EscrowRuntime>): void {
-  const runtime = makeRuntime((code, status) => port.postMessage({ t: 'status', code, status }));
+  const runtime = (async () => makeRuntime((code, status) => port.postMessage({ t: 'status', code, status })))();
   runtime.catch(() => undefined);
   port.addEventListener('message', (e) => {
     const m = e.data;
     if (!isRecord(m) || typeof m.t !== 'string') return;
     void (async () => {
-      const rt = await runtime;
+      let rt: EscrowRuntime;
+      try {
+        rt = await runtime;
+      } catch {
+        // No runtime: every trade the page starts is told so, and every action is refused.
+        if ((m.t === 'start' || m.t === 'retry') && typeof m.code === 'string') port.postMessage({ t: 'status', code: m.code, status: RUNTIME_FAILED });
+        if (m.t === 'act' && typeof m.id === 'number') port.postMessage({ t: 'acted', id: m.id, ok: false });
+        return;
+      }
       switch (m.t) {
         case 'start':
           if (typeof m.code === 'string') await rt.start(m.code, (m.confirmed ?? undefined) as ConfirmedTrade | undefined).catch(() => undefined);
