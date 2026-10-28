@@ -1,7 +1,7 @@
 // The API answers PostOffer reads, parsed strictly so a renamed or missing field fails loudly.
 // Shapes: GET /v1/price and GET /v1/methods from Task 3 (apps/api/src/price, apps/api/src/methods;
 // on the main line, checked against these parsers 2026-10-27); POST /v1/offers from the plan's
-// Task 4. test/post-tripwires.test.ts fails when Task 4 lands.
+// Task 4 (apps/api/src/offers/routes.ts; checked against these shapes 2026-10-28).
 import { api } from '../../api/client.js';
 
 /** GET /v1/price?currency: the market price in the currency's minor units, and the same XMR in US cents. */

@@ -1,8 +1,7 @@
 // PostOffer (Task 21, board PostOffer.dc.html). The API is stubbed per test with page.route, in
 // the shapes of Task 3 (GET /v1/methods, GET /v1/price, on the main line and checked against the
-// parsers 2026-10-27) and the plan's Task 4 (POST /v1/offers, GET /v1/offers);
-// apps/web/test/post-tripwires.test.ts fails when Task 4 lands so these stubs get checked against
-// it. The method list is built from data/payment-methods.json with Task 3's own rule (a method with
+// parsers 2026-10-27) and Task 4 (POST /v1/offers, GET /v1/offers; on the main line and checked
+// against these stubs 2026-10-28: 201 { id }, 409 { error } refusals). The method list is built from data/payment-methods.json with Task 3's own rule (a method with
 // `legalReview` is unavailable and left out).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
