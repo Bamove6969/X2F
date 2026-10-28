@@ -35,7 +35,7 @@ const name = (p: string) => `${p}${String(++n).padStart(4, '0')}`;
 
 /** A trader account with a logged-in browser. */
 async function trader(): Promise<{ id: string; b: Browser }> {
-  const id = await seedAccount(deps, { username: name('idn') });
+  const id = await seedAccount(deps, { loginName: name('idn') });
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id });
   expect(res.statusCode).toBe(200);
@@ -57,6 +57,11 @@ function termsOf(t: SeededTrade): AttestedTerms {
     buyerPayout: t.sides.buyerPayout!,
     sellerRefund: t.sides.sellerRefund!,
   };
+}
+
+/** Closes a trade the way a setupBy cancel does (state and closed_at), straight in the table. */
+async function closeTrade(code: string): Promise<void> {
+  await deps.db.query(`update trades set state = 'cancelled', closed_at = now() where code = $1`, [code]);
 }
 
 /** The same deal as a trader device holds it (bigints). */
@@ -381,6 +386,7 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
            join trade_identities si on si.code = t.code and si.role = 'seller'
           where not exists (select 1 from trade_attestations a where a.code = t.code)
             and not exists (select 1 from trade_refusals r where r.code = t.code)
+            and t.state = 'setup' and t.closed_at is null
             and t.buyer_payout is not null and t.seller_refund is not null`,
       );
       const open = Number(rows[0]!.n);
@@ -457,6 +463,75 @@ describe('GET /v1/trades/:code/attestation and the internal listener', () => {
       const listed = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
       expect(listed.work.some((w) => w.trade === code)).toBe(false);
     }
+  });
+
+  it('a closed trade is neither work nor refusable, and its never-attested attestation is a final 409 trade-closed (review M1, M2)', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+    const listed = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(listed.work.some((w) => w.trade === code)).toBe(true);
+
+    await closeTrade(code);
+    const after = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(after.work.some((w) => w.trade === code)).toBe(false);
+    const refuse = await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: code, reason: 'bad-proof' });
+    expect(refuse.statusCode).toBe(409);
+    expect(refuse.json()).toMatchObject({ error: 'not-refusable' });
+    for (const t of [buyer, seller]) {
+      const got = await t.b.get(`/v1/trades/${code}/attestation`);
+      expect(got.statusCode).toBe(409);
+      expect(got.json()).toMatchObject({ error: 'trade-closed' });
+    }
+  });
+
+  it('a trade past setup (still open) is not served as work (review M1)', async () => {
+    const { code, buyer, seller } = await freshTrade();
+    await buyer.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'buyer').body);
+    await seller.b.post(`/v1/trades/${code}/identity`, identityFor(code, 'seller').body);
+    await deps.db.query(`update trades set state = 'funding' where code = $1`, [code]);
+    const listed = (await signedInject('GET', '/internal/v1/work')).json() as { work: Array<{ trade: string }> };
+    expect(listed.work.some((w) => w.trade === code)).toBe(false);
+  });
+
+  it('an attested or refused trade keeps its answer after it closes (200, attestation-refused)', async () => {
+    const a = await freshTrade();
+    const aBuyer = identityFor(a.code, 'buyer');
+    const aSeller = identityFor(a.code, 'seller');
+    await a.buyer.b.post(`/v1/trades/${a.code}/identity`, aBuyer.body);
+    await a.seller.b.post(`/v1/trades/${a.code}/identity`, aSeller.body);
+    await attestAndPost(a.code, aBuyer.id, aSeller.id);
+    await closeTrade(a.code);
+    expect((await a.buyer.b.get(`/v1/trades/${a.code}/attestation`)).statusCode).toBe(200);
+
+    const r = await freshTrade();
+    await r.buyer.b.post(`/v1/trades/${r.code}/identity`, identityFor(r.code, 'buyer').body);
+    await r.seller.b.post(`/v1/trades/${r.code}/identity`, identityFor(r.code, 'seller').body);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: r.code, reason: 'bad-proof' })).statusCode).toBe(201);
+    await closeTrade(r.code);
+    const got = await r.buyer.b.get(`/v1/trades/${r.code}/attestation`);
+    expect(got.statusCode).toBe(409);
+    expect(got.json()).toMatchObject({ error: 'attestation-refused' });
+  });
+
+  it('the work-served stamp goes once the attestation or the refusal is recorded (review M7)', async () => {
+    const served = async (code: string) => (await deps.db.query('select 1 from trade_work_served where code = $1', [code])).rows.length;
+    const a = await freshTrade();
+    const aBuyer = identityFor(a.code, 'buyer');
+    const aSeller = identityFor(a.code, 'seller');
+    await a.buyer.b.post(`/v1/trades/${a.code}/identity`, aBuyer.body);
+    await a.seller.b.post(`/v1/trades/${a.code}/identity`, aSeller.body);
+    const r = await freshTrade();
+    await r.buyer.b.post(`/v1/trades/${r.code}/identity`, identityFor(r.code, 'buyer').body);
+    await r.seller.b.post(`/v1/trades/${r.code}/identity`, identityFor(r.code, 'seller').body);
+    // Pull until both have been served (older open trades from other tests share the window).
+    for (let i = 0; i < 50 && ((await served(a.code)) === 0 || (await served(r.code)) === 0); i++) await signedInject('GET', '/internal/v1/work');
+    expect(await served(a.code)).toBe(1);
+    expect(await served(r.code)).toBe(1);
+    await attestAndPost(a.code, aBuyer.id, aSeller.id);
+    expect((await signedInject('POST', '/internal/v1/reports', { kind: 'refused', trade: r.code, reason: 'bad-work' })).statusCode).toBe(201);
+    expect(await served(a.code)).toBe(0);
+    expect(await served(r.code)).toBe(0);
   });
 
   it('an attested trade cannot be refused afterwards', async () => {

@@ -189,7 +189,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     if (reason !== 'bad-proof' && reason !== 'bad-work') throw new Refused(400, 'bad-body');
     const code = typeof body.trade === 'string' ? normalizeTradeCode(body.trade) : null;
     if (code === null) throw new Refused(400, 'bad-body');
-    // Only a trade that is (or was) work: both identities registered and no attestation.
+    // Only a trade that is (or was) work: open and in setup, both identities registered and no attestation.
     const { rowCount } = await o.db.query(
       `insert into trade_refusals (code, reason, created_at)
        select t.code, $2, now()
@@ -197,7 +197,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
          join trade_identities bi on bi.code = t.code and bi.role = 'buyer'
          join trade_identities si on si.code = t.code and si.role = 'seller'
          left join trade_attestations a on a.code = t.code
-        where t.code = $1 and a.code is null
+        where t.code = $1 and a.code is null and t.state = 'setup' and t.closed_at is null
        on conflict (code) do nothing`,
       [code, reason],
     );
@@ -205,6 +205,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       const again = await o.db.query('select 1 from trade_refusals where code = $1', [code]);
       if (again.rows.length === 0) throw new Refused(409, 'not-refusable');
     }
+    await o.db.query('delete from trade_work_served where code = $1', [code]);
     log({ reason: 'internal-refused' });
     return reply.code(201).send({ ok: true });
   };
@@ -281,7 +282,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({ trades: rows.map((r) => ({ trade: r.code, state: r.state })) });
   }));
 
-  // The trades that both traders have registered an identity for, with both addresses on record,
+  // The open trades in setup that both traders have registered an identity for, with both addresses on record,
   // no attestation yet and not refused by the moderation service (a refused trade is done for good
   // and never served again). Each item carries the trade record's terms for the attestation.
   // Never-served trades come first, then the least recently served, so one trade that keeps failing
@@ -300,6 +301,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
            left join trade_refusals r on r.code = t.code
            left join trade_work_served w on w.code = t.code
           where a.code is null and r.code is null
+            and t.state = 'setup' and t.closed_at is null
             and t.buyer_payout is not null and t.seller_refund is not null
           order by w.served_at nulls first, t.taken_at, t.code
           limit $1
@@ -389,6 +391,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
        values ($1, $2, $3, now()) on conflict (code) do nothing`,
       [code, attestation, sig],
     );
+    await o.db.query('delete from trade_work_served where code = $1', [code]);
     log({ reason: 'internal-attested' });
     return reply.code(201).send({ ok: true });
   }));

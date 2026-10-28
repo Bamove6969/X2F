@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { actionHash, checkUsername, type AccountKind, type ConfirmAction } from '@x2f/accounts';
+import { actionHash, type AccountKind, type ConfirmAction } from '@x2f/accounts';
 import {
   generateAuthenticationOptions,
   generateRegistrationOptions,
@@ -13,13 +13,13 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertTermsAccepted, assertUsername, createAccount } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from '../accounts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { parseConfirmAction } from './actionInput.js';
 import { hasCertificateChain, isUnknownAuthenticator } from './attestation.js';
-import { consumeChallenge, type ChallengeRow } from './challenges.js';
+import { consumeChallenge, takeStartBudgetUnlessOpen, type ChallengeRow } from './challenges.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
@@ -30,6 +30,12 @@ export type CredentialKind = 'passkey' | 'security-key';
 
 /** WebAuthn challenges live 5 minutes; at exactly 5:00 they are refused. */
 export const WEBAUTHN_TTL_MS = 5 * 60_000;
+/**
+ * At most this many security keys per account (FU-A review I2), so that a login by name can always
+ * list exactly this many credential IDs, real ones padded with decoys: the entry count then never
+ * says whether a login name exists. The next key is refused with 409 `security-key-limit`.
+ */
+export const MAX_SECURITY_KEYS = 5;
 /** EdDSA, ES256, RS256. */
 const ALGORITHMS = [-8, -7, -257];
 const LABEL_MAX = 60;
@@ -138,13 +144,14 @@ const CREDENTIAL_SELECT = `select c.id, c.account_id, c.credential_id, c.public_
 
 interface AccountRow {
   id: string;
-  username: string;
+  /** The public display name: the only name an authenticator ever stores or shows (never the login name). */
+  display_name: string;
   kind: AccountKind;
   webauthn_user_id: Buffer;
 }
 
 async function accountById(db: Queryable, accountId: string): Promise<AccountRow> {
-  const { rows } = await db.query<AccountRow>('select id, username, kind, webauthn_user_id from accounts where id = $1', [accountId]);
+  const { rows } = await db.query<AccountRow>('select id, display_name, kind, webauthn_user_id from accounts where id = $1', [accountId]);
   if (!rows[0]) throw new ApiError(401, 'not-authenticated');
   return rows[0];
 }
@@ -169,7 +176,21 @@ interface NewCredential {
   aaguid: string | null;
 }
 
+/** How many security keys the account holds; 409 `security-key-limit` when another would exceed `MAX_SECURITY_KEYS`. */
+async function assertSecurityKeyRoom(db: Queryable, accountId: string): Promise<void> {
+  const { rows } = await db.query<{ n: number }>(
+    "select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = 'security-key'",
+    [accountId],
+  );
+  if (rows[0]!.n >= MAX_SECURITY_KEYS) throw new ApiError(409, 'security-key-limit');
+}
+
+/**
+ * Stores a credential. A security key is counted against `MAX_SECURITY_KEYS` first; a caller that
+ * must be race-proof locks the account row in its transaction (`addKeyFinish`).
+ */
 async function insertCredential(db: Queryable, accountId: string, c: NewCredential, label: string, now: Date): Promise<string> {
+  if (c.kind === 'security-key') await assertSecurityKeyRoom(db, accountId);
   try {
     const { rows } = await db.query<{ id: string }>(
       `insert into webauthn_credentials
@@ -230,8 +251,8 @@ async function buildRegistrationOptions(
 /**
  * Checks a registration response: origin, RP ID, type `webauthn.create`, user presence, the
  * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
- * with a certificate chain that `MetadataService` verified against the snapshot, and an allowlisted
- * AAGUID) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
+ * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
+ * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
  * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`.
  */
 async function verifyRegistration(
@@ -257,8 +278,10 @@ async function verifyRegistration(
   }
   if (!result.verified) throw failed();
   const info = result.registrationInfo;
+  // The owner's keys are checked against the owner's allowlist; staff (and a trader's key) against staff's.
+  const list = a.accountKind === 'owner' ? 'owner' : 'staff';
   const attested =
-    info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt);
+    info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt, list);
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
   if (kind === 'passkey' && !info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });
@@ -353,7 +376,7 @@ export async function webauthnRegistrationOptions(
     kind: o.kind ?? 'security-key',
     accountKind: account.kind,
     userID: account.webauthn_user_id,
-    userName: account.username,
+    userName: account.display_name,
     exclude,
     ...(o.challenge ? { challenge: o.challenge } : {}),
   });
@@ -414,18 +437,52 @@ function allowed(accountKind: AccountKind, c: { kind: string; attested: boolean 
 // ---------------------------------------------------------------------------------------------
 // Login routes
 
+/** How many stored security-key credential IDs have each byte length: the distribution the decoys draw from. */
+export interface IdLengths {
+  len: number;
+  n: number;
+}
+
+/** Grouped, so the result is a handful of rows however many keys there are. Runs on every name-based start (parity). */
+async function securityKeyIdLengths(db: Queryable): Promise<IdLengths[]> {
+  const { rows } = await db.query<{ len: number; n: string }>(
+    "select length(credential_id) as len, count(*) as n from webauthn_credentials where kind = 'security-key' group by len order by len",
+  );
+  return rows.map((r) => ({ len: r.len, n: Number(r.n) }));
+}
+
 /**
- * Decoy credential IDs for a username without usable security keys (P2-I7): HMAC under
- * `subkey('decoy')` of `username_key ‖ i` for i < 1 + (first HMAC byte mod 2), so repeated calls
- * for one name are identical and different names differ. HMAC-SHA-512 rather than the plan's
- * SHA-256, so each ID is 64 bytes like a YubiKey's non-discoverable credential ID (review M3).
+ * `count` decoy credential IDs for a login name (P2-I7, review I2): deterministic under
+ * `subkey('decoy')` for the name's tag (`loginNameLookup`), so repeated starts for one name are
+ * identical and different names differ. Each decoy's byte length is drawn, by HMAC, from the
+ * lengths of the security keys actually stored (`lengths`, weighted by count), so a stranger's name
+ * lists IDs of the same lengths as registered accounts do; with nothing stored yet, 64 bytes (a
+ * YubiKey's non-discoverable credential ID). The bytes come from HMAC-SHA-512 in counter mode.
  */
-export function decoyCredentialIds(deps: Pick<Deps, 'config'>, usernameKey: string): Buffer[] {
+export function decoyCredentialIds(deps: Pick<Deps, 'config'>, nameTag: string, count: number, lengths: readonly IdLengths[]): Buffer[] {
   const key = subkey(deps.config, 'decoy');
-  const mac = (i: number) => createHmac('sha512', key).update(Buffer.concat([Buffer.from(usernameKey, 'utf8'), Buffer.from([i])])).digest();
-  const first = mac(0);
-  const n = 1 + (first[0]! % 2);
-  return Array.from({ length: n }, (_, i) => (i === 0 ? first : mac(i)));
+  const mac = (label: string, i: number, j: number) =>
+    createHmac('sha512', key).update(Buffer.concat([Buffer.from(`${label}/${nameTag}/`, 'utf8'), Buffer.from([i, j])])).digest();
+  const total = lengths.reduce((sum, l) => sum + l.n, 0);
+  // A uniform draw in [0, 1) per decoy, mapped through the cumulative distribution of the stored
+  // lengths, so a shift in the stored mix moves only the few draws near a boundary (the modulo
+  // alternative would re-pick nearly every decoy on every registration site-wide).
+  const lengthFor = (i: number): number => {
+    if (total === 0) return 64;
+    const u = mac('len', i, 0).readUInt32BE(0) / 2 ** 32;
+    let seen = 0;
+    for (const l of lengths) {
+      seen += l.n;
+      if (u < seen / total) return l.len;
+    }
+    return lengths[lengths.length - 1]!.len;
+  };
+  return Array.from({ length: count }, (_, i) => {
+    const len = lengthFor(i);
+    const blocks: Buffer[] = [];
+    for (let j = 0; blocks.length * 64 < len; j++) blocks.push(mac('id', i, j));
+    return Buffer.concat(blocks).subarray(0, len);
+  });
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -447,9 +504,26 @@ async function pendingAfterPgp(deps: Deps, req: FastifyRequest, accountId: strin
   return rows.length > 0;
 }
 
-/** The throttle-free key an unknown or malformed username is decoyed under (cut to 64 code units). */
-function nameKeyOf(username: string): string {
-  return username.slice(0, 64).toLowerCase();
+/**
+ * The account of the open pending login `pendingId` names, when it was started from this device
+ * after a PGP first factor (review I3: the second step needs no login name, so a pre-009 staff or
+ * owner account can finish it). Null for anything else.
+ */
+async function pendingPgpAccount(deps: Deps, req: FastifyRequest, pendingId: string): Promise<{ id: string; kind: AccountKind } | null> {
+  const device = deviceHash(req);
+  if (!UUID.test(pendingId) || device === null) return null;
+  const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>(
+    `select a.id, a.kind from challenges c join accounts a on a.id = c.account_id
+      where c.id = $1 and c.device_hash = $2 and c.purpose = 'second-factor' and c.method = 'pair'
+        and c.used_at is null and c.expires_at > $3 and c.payload->'first'->>'method' = 'pgp'`,
+    [pendingId, device, deps.clock()],
+  );
+  return rows[0] ?? null;
+}
+
+/** The decoy tag of a nameless second step: HMAC of the pendingId under the name subkey (deterministic, never the id itself). */
+function pendingTag(deps: Pick<Deps, 'config'>, pendingId: string): string {
+  return createHmac('sha256', subkey(deps.config, 'name')).update(`pending/${pendingId}`).digest('hex');
 }
 
 interface LoginRouteOptions {
@@ -464,8 +538,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     req.server.budgets.start.take();
     const body = record(req.body);
 
-    if (body.username === undefined && opts.discoverable) {
-      // Discoverable passkey login (traders): no username, the authenticator picks the credential.
+    if (body.loginName === undefined && body.pendingId === undefined && opts.discoverable) {
+      // Discoverable passkey login (traders): no name, the authenticator picks the credential.
       const options = await generateAuthenticationOptions({
         rpID: deps.config.rpId, allowCredentials: [], userVerification: 'required', timeout: WEBAUTHN_TTL_MS,
       });
@@ -475,19 +549,32 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       return { challengeId, options };
     }
 
-    const username = str(body, 'username');
     const pendingId = optStr(body, 'pendingId');
-    const name = checkUsername(username);
-    const nameKey = name.ok ? name.key : nameKeyOf(username);
-    // The same queries for a real account, an unknown name and a malformed one (review M3): an
-    // account lookup ('' matches no username key) and a credentials lookup (NIL_UUID matches none).
-    const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [
-      name.ok ? name.key : '',
-    ]);
-    const found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
-    // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
-    // query count does not reveal a staff username (second review).
-    const afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+    let found: { id: string; kind: AccountKind } | null;
+    let afterPgp: boolean;
+    let tag: string;
+    if (body.loginName === undefined && pendingId !== undefined) {
+      // The second step of a staff or owner login, no name (review I3): the pending login from this
+      // device names the account. Anything else gets a decoy under the pendingId's tag.
+      const pending = await pendingPgpAccount(deps, req, pendingId);
+      found = pending !== null && opts.kinds.includes(pending.kind) ? pending : null;
+      afterPgp = found !== null;
+      tag = pendingTag(deps, pendingId);
+    } else {
+      // The private login name (owner, 2026-10-23), never the public display name.
+      const loginName = str(body, 'loginName');
+      const name = loginNameLookup(deps.config, loginName);
+      tag = name.tag;
+      // The same queries for a real account, an unknown name and a malformed one (review M3): an
+      // account lookup ('' matches no login key) and a credentials lookup (NIL_UUID matches none).
+      const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [
+        name.key ?? '',
+      ]);
+      found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
+      // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
+      // query count does not reveal a staff login name (second review).
+      afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
+    }
     const withPasskeys = afterPgp && found?.kind === 'staff';
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
@@ -496,13 +583,22 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // Passkeys are in `creds` only after a staff member's PGP first factor (they may then be the only
     // credential listed: PGP + passkey is a staff pair).
     if (found !== null && creds.length > 0) account = found;
-    else creds = decoyCredentialIds(deps, nameKey).map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }));
+    else creds = [];
+    // Always exactly MAX_SECURITY_KEYS entries (review I2): real IDs padded with decoys whose lengths
+    // follow the stored keys, ordered by their bytes so real and decoy entries interleave. Only a
+    // staff second step after a PGP first factor (passkeys listed too) can exceed that, and it
+    // already named the account.
+    const lengths = await securityKeyIdLengths(deps.db);
+    const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
+    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
+      Buffer.compare(x.credential_id, y.credential_id),
+    );
     const options = await buildAssertionOptions(deps, creds);
     const challengeId = await storeChallenge(deps, req, {
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
       // The pendingId this start was given (any, even one that matched nothing): `finish` uses it and
       // refuses a different one, so a second step is bound to the pending login it was started for.
-      payload: { mode: 'username', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}) },
+      payload: { mode: 'login-name', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}) },
     });
     return { challengeId, options };
   });
@@ -510,8 +606,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
   app.post('/finish', async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
-    req.server.budgets.start.take();
     const body = record(req.body);
+    await takeStartBudgetUnlessOpen(req, body.challengeId, { purpose: 'login', methods: ['passkey', 'security-key'] });
     const challengeId = str(body, 'challengeId');
     const deviceLabel = str(body, 'deviceLabel');
     const pendingId = optStr(body, 'pendingId');
@@ -548,7 +644,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
 }
 
 /**
- * The username-based WebAuthn login (`POST <prefix>/start { username, pendingId? }` and
+ * The login-name-based WebAuthn login (`POST <prefix>/start { loginName, pendingId? }`, or
+ * `{ pendingId }` alone for the second step of a staff or owner login, and
  * `POST <prefix>/finish { challengeId, response, deviceLabel, pendingId? }`), registered as a
  * fastify plugin. An account whose kind is not in `kinds` gets decoy options; `afterAuthenticate`
  * runs in `completeLogin` after the credential check passes. Plan 4 mounts it on the staff app.
@@ -557,7 +654,7 @@ export async function securityKeyLoginRoutes(app: FastifyInstance, opts: LoginRo
   loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: false });
 }
 
-/** `buildApi`'s mount at `/v1/login/webauthn`: the username-based routes plus discoverable passkey login (`start {}`). */
+/** `buildApi`'s mount at `/v1/login/webauthn`: the login-name-based routes plus discoverable passkey login (`start {}`). */
 export async function webauthnLoginRoutes(app: FastifyInstance, opts: LoginRouteOptions): Promise<void> {
   loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: true });
 }
@@ -584,16 +681,15 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
   const body = record(req.body);
-  const { username, key } = assertUsername(body.username);
+  const names = await assertNewNames(deps.db, body.displayName, body.loginName);
   const kind = credentialKind(body.kind);
-  const taken = await deps.db.query('select 1 from accounts where username_key = $1', [key]);
-  if (taken.rows.length > 0) throw new ApiError(409, 'username-taken');
+  await assertDisplayNameFree(deps.db, names);
   // The account does not exist yet: its WebAuthn user handle is chosen now and kept with the challenge.
   const userID = randomBytes(32);
-  const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: username, exclude: [] });
+  const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });
   const challengeId = await storeChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', method: kind, challenge: options.challenge,
-    payload: { username, key, userId: b64url(userID) },
+    payload: { names, userId: b64url(userID) },
   });
   return { challengeId, options };
 }
@@ -610,7 +706,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   const ch = await consumeChallenge(deps.db, challengeId, deps.clock());
   if (!ch || ch.purpose !== 'register' || ch.account_id !== null || ch.webauthn_challenge === null) throw expired();
   const kind = credentialKind(ch.method);
-  const { username, key, userId } = ch.payload as { username: string; key: string; userId: string };
+  const { names, userId } = ch.payload as { names: NewNames; userId: string };
   const cred = await verifyRegistration(deps, { accountKind: 'trader', kind, response: body.response, expectedChallenge: ch.webauthn_challenge });
 
   const now = deps.clock();
@@ -619,7 +715,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { username, key, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
       await client.query('update accounts set webauthn_user_id = $2 where id = $1', [accountId, Buffer.from(userId, 'base64url')]);
       await insertCredential(client, accountId, cred, cleanLabel(label, kind), now);
       await client.query('commit');
@@ -631,7 +727,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: kind, firstSession: true });
-  return reply.code(201).send({ username });
+  return reply.code(201).send({ displayName: names.displayName });
 }
 
 async function confirmStart(req: FastifyRequest) {
@@ -679,9 +775,10 @@ async function addKeyStart(req: FastifyRequest) {
   const deps = req.server.deps;
   const kind = credentialKind(record(req.body).kind);
   const account = await accountById(deps.db, req.auth.accountId);
+  if (kind === 'security-key') await assertSecurityKeyRoom(deps.db, account.id);
   const exclude = (await credentialsOf(deps.db, account.id)).map((c) => c.credential_id);
   const options = await buildRegistrationOptions(deps, {
-    kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.username, exclude,
+    kind, accountKind: account.kind, userID: account.webauthn_user_id, userName: account.display_name, exclude,
   });
   const challengeId = await storeChallenge(deps, req, {
     accountId: account.id, sessionId: req.auth.sessionId, purpose: 'add-key', method: kind, challenge: options.challenge, payload: {},
@@ -703,6 +800,8 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
+      // The account row is locked so two parallel finishes cannot both pass the security-key count.
+      await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
       await insertCredential(client, req.auth.accountId, cred, cleanLabel(label, kind), now);
       await addAlert(client, req.auth.accountId, 'login-method-added', { method: kind }, now);
       await client.query('commit');

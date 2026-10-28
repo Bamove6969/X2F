@@ -17,8 +17,8 @@ let now = new Date('2026-10-28T12:00:00Z');
 const clock = () => now;
 
 async function trade(): Promise<Trade> {
-  const sellerId = await seedAccount(deps, { username: `tm${String(++n).padStart(4, '0')}s` });
-  const buyerId = await seedAccount(deps, { username: `tm${String(n).padStart(4, '0')}b` });
+  const sellerId = await seedAccount(deps, { loginName: `tm${String(++n).padStart(4, '0')}s` });
+  const buyerId = await seedAccount(deps, { loginName: `tm${String(n).padStart(4, '0')}b` });
   return (await seedTrade({ db: deps.db, clock }, { sellerId, buyerId, poster: 'seller' })).trade;
 }
 

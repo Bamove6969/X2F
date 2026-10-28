@@ -39,8 +39,8 @@ const report = (body: unknown) => signed('POST', '/internal/v1/reports', body);
 
 /** A seeded trade; `attested` also stores an attestation row (as Task 8's report would). */
 async function trade(attested = true): Promise<Trade> {
-  const sellerId = await seedAccount(deps, { username: `wr${String(++n).padStart(4, '0')}s` });
-  const buyerId = await seedAccount(deps, { username: `wr${String(n).padStart(4, '0')}b` });
+  const sellerId = await seedAccount(deps, { loginName: `wr${String(++n).padStart(4, '0')}s` });
+  const buyerId = await seedAccount(deps, { loginName: `wr${String(n).padStart(4, '0')}b` });
   const { trade: t } = await seedTrade(deps, { sellerId, buyerId, poster: 'seller' });
   if (attested) {
     await deps.db.query(`insert into trade_attestations (code, attestation, sig, created_at) values ($1, '{}'::jsonb, 'x', now())`, [t.code]);

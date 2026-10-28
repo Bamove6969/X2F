@@ -182,8 +182,8 @@ export interface ApiState {
   /** Replaces the attestation the API serves (for the mismatch tests). */
   tamper?: (a: Attestation) => Attestation;
   resign?: Uint8Array;
-  /** Final 409 answers of the Task 8 routes: `identity-conflict` on register, `attestation-refused` on fetch. */
-  refuse?: { identity?: 'identity-conflict'; attestation?: 'attestation-refused' };
+  /** Final 409 answers of the Task 8 routes: `identity-conflict` on register, `attestation-refused` or `trade-closed` on fetch. */
+  refuse?: { identity?: 'identity-conflict'; attestation?: 'attestation-refused' | 'trade-closed' };
   /** Per-role fields laid over the view (a lying API telling each side something else). */
   roleView?: Partial<Record<'buyer' | 'seller', Record<string, unknown>>>;
 }
