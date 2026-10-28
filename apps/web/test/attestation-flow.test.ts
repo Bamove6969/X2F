@@ -3,7 +3,7 @@ import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
 import { seal, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan, fiatCents } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
-import type { Attestation } from '../src/escrow/adapters.js';
+import type { Attestation } from '@x2f/trade';
 import { cosignPolicy } from '../src/escrow/policy.js';
 import { ADDR, AMOUNT, CODE, ESCROW_ADDRESS, FEE_WALLET, Hub, Parties, confirmedFor, device, testIdentity, type Funds, funded, makeApi, modKey, tradeView, until, type ApiState, type Device } from './escrow-helpers.js';
 
@@ -56,6 +56,20 @@ describe('attestation check before any escrow work (P3-C1)', () => {
     expect(buyer.statuses.map((s) => s.phase)).toEqual(['idle', 'registering', 'verifying', 'error']);
   });
 
+  it.each([
+    ['409 identity-conflict on registering', { identity: 'identity-conflict' as const }, ['idle', 'registering', 'error']],
+    ['409 attestation-refused while waiting', { attestation: 'attestation-refused' as const }, ['idle', 'registering', 'verifying', 'error']],
+  ])('%s is final: participants-mismatch, no retry, runParty never called', async (_n, refuse, phases) => {
+    const t = await setup({ refuse });
+    const buyer = await t.mk('buyer');
+    await buyer.runtime.start(CODE);
+    await until(() => buyer.last()?.phase === 'error');
+    expect(buyer.last()).toMatchObject({ phase: 'error', error: 'participants-mismatch' });
+    expect(buyer.statuses.map((s) => s.phase)).toEqual(phases);
+    expect(t.parties.calls).toEqual([]);
+    expect(t.hub.opened).toEqual([]);
+  });
+
   it('an attestation signed by another key, for another trade or with another channel: participants-mismatch', async () => {
     const other = await modKey();
     const cases: Partial<ApiState>[] = [
@@ -77,9 +91,9 @@ describe('attestation check before any escrow work (P3-C1)', () => {
   });
 
   it.each([
-    ['another deal (offer maximum)', (a: Attestation) => ({ ...a, terms: { ...a.terms, deal: { ...a.terms.deal, maxFiatCents: '90000' } } })],
-    ['another take amount', (a: Attestation) => ({ ...a, terms: { ...a.terms, deal: { ...a.terms.deal, takeAmountAtomic: '1' } } })],
-    ['another payout address for this buyer', (a: Attestation) => ({ ...a, terms: { ...a.terms, buyerPayout: '4AttackerAddress' } })],
+    ['another deal (offer maximum)', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, maxFiatCents: '90000' } } })],
+    ['another take amount', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, deal: { ...a.terms!.deal, takeAmountAtomic: '1' } } })],
+    ['another payout address for this buyer', (a: Attestation): Attestation => ({ ...a, terms: { ...a.terms!, buyerPayout: '4AttackerAddress' } })],
   ])('the moderator attests %s: deal-mismatch, runParty never called', async (_n, tamper) => {
     const t = await setup({ tamper });
     const buyer = await t.mk('buyer');
@@ -299,7 +313,7 @@ describe('a verified trade', () => {
   });
 
   it('check words differ when one key differs', async () => {
-    const { escrowCheckWords } = await import('../src/escrow/adapters.js');
+    const { escrowCheckWords } = await import('@x2f/trade');
     const [a, b, c] = await Promise.all([testIdentity(), testIdentity(), testIdentity()]);
     const p = { buyer: a, seller: b, mod: c };
     const w1 = await escrowCheckWords(p, ESCROW_ADDRESS);

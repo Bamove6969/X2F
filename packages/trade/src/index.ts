@@ -1,5 +1,26 @@
 export { CHANNEL_KINDS, channelFor, type ChannelKind } from './channels.js';
 export {
+  AttestationError,
+  attestationBytes,
+  identityProofBytes,
+  identityProofValid,
+  isAttestedTerms,
+  verifyAttestation,
+  type Attestation,
+  type AttestationErrorCode,
+  type AttestationSelf,
+  type AttestedTerms,
+  type ConfirmedDeal,
+} from './attestation.js';
+export { escrowCheckWords } from './checkWords.js';
+export { WORDLIST } from './wordlist.js';
+export {
+  INTERNAL_AT_HEADER,
+  INTERNAL_SIG_HEADER,
+  internalSignedBytes,
+  type InternalRequest,
+} from './internalAuth.js';
+export {
   ATOMIC_PER_XMR,
   MAX_MARGIN_BPS,
   amountForFunds,

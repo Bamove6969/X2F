@@ -56,6 +56,11 @@ export type ApiErrorCode =
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
+  // Plan 3, Task 8: participant identities and the moderation attestation.
+  | 'identity-exists'
+  | 'identity-conflict'
+  | 'bad-proof'
+  | 'attestation-refused'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

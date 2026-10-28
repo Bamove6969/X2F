@@ -14,9 +14,20 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError, type EscrowEngine, type Outcome, type PartyArgs, type PartyHandle, type Payout, type Transport } from '@x2f/escrow';
 import type { Identity, Participants } from '@x2f/protocol';
-import { channelFor, fiatCents, type SettleKind, type TradeState } from '@x2f/trade';
+import {
+  AttestationError,
+  channelFor,
+  escrowCheckWords,
+  fiatCents,
+  identityProofBytes,
+  verifyAttestation,
+  type Attestation,
+  type AttestedTerms,
+  type SettleKind,
+  type TradeState,
+} from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
-import { AttestationError, escrowCheckWords, identityProofBytes, parseTradeView, verifyAttestation, type Attestation, type AttestedTerms, type EscrowTradeView } from './adapters.js';
+import { parseTradeView, type EscrowTradeView } from './adapters.js';
 import { cosignPolicy, deviceAmount, outcomeFor, type Deal, type PolicyContext } from './policy.js';
 import { runSignals, sameDeal, type SignalsHandle, type UserSignal } from './signals.js';
 import type { EscrowRecord, EscrowStore, StoredIntent } from './store.js';
@@ -185,6 +196,9 @@ export function viewSupports(kind: SettleKind, v: Pick<EscrowTradeView, 'state' 
 }
 
 const toHex = (b: Uint8Array): string => Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('');
+/** The API's error code on a thrown httpEscrowApi error (`{ status, code }`), if any. */
+const apiCode = (e: unknown): string | null =>
+  typeof e === 'object' && e !== null && typeof (e as { code?: unknown }).code === 'string' ? (e as { code: string }).code : null;
 const sumOf = (to: readonly Payout[]): bigint => to.reduce((s, p) => s + p.amountAtomic, 0n);
 const key = (o: { to: readonly Payout[]; builder: string; cosigner: string } | null): string =>
   o === null ? '' : JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
@@ -436,8 +450,18 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         this.set('registering');
         await sodium.ready;
         const proof = toHex(sodium.crypto_sign_detached(identityProofBytes(this.code, this.rec.role, me.signPublic, me.boxPublic), me.signSecret));
-        const ok = await this.retry(() => deps.api.registerIdentity(this.code, { signPublic: me.signPublic, boxPublic: me.boxPublic, proof }).then(() => true));
-        if (!ok) return;
+        // 409 identity-conflict (the other slot already holds this key) is final: never retried.
+        const ok = await this.retry(() =>
+          deps.api.registerIdentity(this.code, { signPublic: me.signPublic, boxPublic: me.boxPublic, proof }).then(
+            () => true,
+            (e: unknown) => {
+              if (apiCode(e) === 'identity-conflict') return false;
+              throw e;
+            },
+          ),
+        );
+        if (ok === undefined) return;
+        if (!ok) return this.fail('participants-mismatch');
         this.rec.registered = true;
         await this.persist();
       }
@@ -445,8 +469,15 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       this.set('verifying');
       let att = this.rec.attestation;
       while (!att && !this.stopped) {
-        const got = await this.retry(() => deps.api.getAttestation(this.code));
+        // 409 attestation-refused (the moderation service refused the trade's identities) is final.
+        const got = await this.retry(() =>
+          deps.api.getAttestation(this.code).catch((e: unknown) => {
+            if (apiCode(e) === 'attestation-refused') return 'refused' as const;
+            throw e;
+          }),
+        );
         if (got === undefined) return;
+        if (got === 'refused') return this.fail('participants-mismatch');
         if (got === null) await this.sleep(pollMs);
         else att = { attestation: got.attestation, sig: typeof got.sig === 'string' ? got.sig : '' };
       }
@@ -455,11 +486,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       if (this.rec.ownAddress === null || this.rec.ownAddress === '') return this.fail('deal-mismatch');
       try {
         await verifyAttestation(
-          att.attestation,
+          att.attestation as Attestation,
           att.sig,
           deps.config.modSigningPublic,
-          { role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress },
-          this.code,
+          { trade: this.code, role: this.rec.role, signPublic: me.signPublic, boxPublic: me.boxPublic, deal: this.rec.deal, ownAddress: this.rec.ownAddress },
         );
       } catch (e) {
         // stop: no terms, no party, no funding address
@@ -468,6 +498,8 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
       }
       const attestation = att.attestation as Attestation;
       this.participants = attestation.participants;
+      // verifyAttestation refused a trade attestation without terms, so they are here.
+      if (attestation.terms === undefined) return this.fail('participants-mismatch');
       this.attested = attestation.terms;
       if (!this.rec.attestation) {
         this.rec.attestation = att;
