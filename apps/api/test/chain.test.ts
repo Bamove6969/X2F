@@ -41,7 +41,7 @@ describe('daemonConfirmations', () => {
     expect(await lookup(HASH)).toBe(1);
     const tx = n.calls.find((c) => c.url.endsWith('/get_transactions'))!;
     expect(tx.url).toBe('http://127.0.0.1:18081/get_transactions');
-    expect(tx.body).toEqual({ txs_hashes: [HASH] });
+    expect(tx.body).toEqual({ txs_hashes: [HASH], prune: true });
     expect(n.calls.find((c) => c.url.endsWith('/get_height'))!.url).toBe('http://127.0.0.1:18081/get_height');
   });
 

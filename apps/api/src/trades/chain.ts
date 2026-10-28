@@ -22,7 +22,11 @@ export interface DaemonOptions {
   cacheMs?: number;
   /** Answers kept at most (default 1000); the oldest goes first. */
   maxCached?: number;
-  /** Lookups at the node at once (default 4), and waiting (default 64; more get 503 `busy`). */
+  /**
+   * Lookups at the node at once (default 4), and waiting (default 64). Past that the lookup throws
+   * (the semaphore's 503 `busy`), which the route answers like any failed lookup: 200 with
+   * `confirmations: null` (the released screen backs off after a few of those).
+   */
   running?: number;
   queue?: number;
   now?: () => number;
@@ -41,7 +45,9 @@ const isCount = (n: unknown): n is number => typeof n === 'number' && Number.isS
 /**
  * A TxConfirmations over monerod's plain RPC: `/get_transactions` for the tx's block, and
  * `/get_height` for the chain height; confirmations = height − block height (Monero's own count).
- * Only a 64-hex hash is ever sent; anything else answers null without a call.
+ * Only a 64-hex hash is ever sent; anything else answers null without a call. The tx is asked for
+ * pruned (`prune: true`, allowed on a restricted RPC): only its block height is read, so the
+ * node need not send the whole tx hex on every poll.
  */
 export function daemonConfirmations(o: DaemonOptions): TxConfirmations {
   const base = o.url.replace(/\/+$/, '');
@@ -77,7 +83,7 @@ export function daemonConfirmations(o: DaemonOptions): TxConfirmations {
   };
 
   const ask = async (txHash: string): Promise<number | null> => {
-    const got = await call('/get_transactions', { txs_hashes: [txHash] });
+    const got = await call('/get_transactions', { txs_hashes: [txHash], prune: true });
     const txs = Array.isArray(got.txs) ? (got.txs as unknown[]) : [];
     const tx = txs[0] as { tx_hash?: unknown; in_pool?: unknown; block_height?: unknown } | undefined;
     if (tx === undefined) {
