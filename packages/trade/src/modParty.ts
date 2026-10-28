@@ -6,6 +6,7 @@
  */
 import { normalizeTradeCode } from '@x2f/core';
 import type { EscrowEngine, PartyArgs, PartyStore, Transport } from '@x2f/escrow';
+import { isAttestedTerms, type AttestedTerms } from './attestation.js';
 import { channelFor } from './channels.js';
 import type { TradeState } from './machine.js';
 
@@ -22,6 +23,11 @@ export interface ModPartyArgs {
   password: string;
   daemonUri: string;
   feeWallet: string;
+  /**
+   * The terms this service attested (review M5): from its own `signed_terms` record, never a later
+   * API read. The watcher and the settle checks (e.g. the mod's derived refund payout) use these.
+   */
+  terms: AttestedTerms;
 }
 
 const PASSWORD = /^[0-9a-f]{64}$/;
@@ -32,13 +38,15 @@ const PASSWORD = /^[0-9a-f]{64}$/;
  * is built by `io.transport` on that same channel (the wrapper passes e.g.
  * `(channel) => wsTransport({ url, code: channel, role: 'mod', me })`), and the channel is returned
  * too. Refuses, before building anything, a password that is not 32 bytes as lower-case hex, any
- * role but `mod`, a bad code, and keys that are not the attested mod slot.
+ * role but `mod`, terms that are not the attested terms shape, a bad code, and keys that are not the
+ * attested mod slot.
  */
 export async function modPartyArgs(
   a: ModPartyArgs,
   io: { transport: (channel: string) => Transport; engine: EscrowEngine; store: PartyStore },
 ): Promise<{ args: PartyArgs; channel: string }> {
   if (a.role !== 'mod') throw new RangeError('moderator party: role must be mod');
+  if (!isAttestedTerms(a.terms)) throw new RangeError('moderator party: bad attested terms');
   if (typeof a.password !== 'string' || !PASSWORD.test(a.password)) throw new RangeError('moderator party: bad wallet secret');
   const code = typeof a.trade === 'string' ? normalizeTradeCode(a.trade) : null;
   if (code === null) throw new RangeError('moderator party: bad trade code');

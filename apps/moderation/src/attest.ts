@@ -20,6 +20,18 @@ export interface Attested {
   participants: Participants;
 }
 
+/**
+ * Work whose terms are missing or malformed (review M3): an API bug or a deploy skew (moderation
+ * rolled out before the API serves `terms`), never the traders' doing. Logged and skipped, never a
+ * final refusal; the work list's rotation keeps it from holding other trades back.
+ */
+export class BadTerms extends Error {
+  constructor() {
+    super('bad-terms');
+    this.name = 'BadTerms';
+  }
+}
+
 export class AttestRefused extends Error {
   constructor(readonly reason: 'bad-proof' | 'bad-work') {
     super(reason);
@@ -27,15 +39,18 @@ export class AttestRefused extends Error {
   }
 }
 
-/** Both proofs must verify for their own role and this trade, the two keys must differ, and the terms must be well formed. */
+/**
+ * Both proofs must verify for their own role and this trade and the two keys must differ (else a
+ * final AttestRefused); then the terms must be well formed (else BadTerms, a skip).
+ */
 export async function checkWork(w: WorkItem): Promise<void> {
   if (typeof w?.trade !== 'string' || typeof w.participants !== 'object' || w.participants === null) throw new AttestRefused('bad-work');
-  if (!isAttestedTerms(w.terms)) throw new AttestRefused('bad-work');
   const { buyer, seller } = w.participants;
   if (!buyer || !seller || buyer.signPublic === seller.signPublic) throw new AttestRefused('bad-work');
   if (!(await identityProofValid(w.trade, 'buyer', buyer)) || !(await identityProofValid(w.trade, 'seller', seller))) {
     throw new AttestRefused('bad-proof');
   }
+  if (!isAttestedTerms(w.terms)) throw new BadTerms();
 }
 
 /** Sign an attestation for `participants` (which already include this service's mod identity) and the trade's terms. */
