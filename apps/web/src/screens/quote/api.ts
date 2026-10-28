@@ -54,8 +54,8 @@ export function quoteOffer(o: Offer, side: AdSide, currency: string): QuoteOffer
     id: o.id,
     side,
     currency,
-    // `username` is the public display name (spec 6.1); the private login name never reaches here.
-    poster: { username: o.poster.username, stage: o.poster.stage },
+    // The public display name (spec 6.1); the private login name never reaches here.
+    poster: { displayName: o.poster.displayName, stage: o.poster.stage },
     pricing: o.pricing,
     minFiatCents: o.minFiatCents,
     maxFiatCents: o.maxFiatCents,

@@ -1,21 +1,24 @@
-// SellerRefund and FinalAlert (Task 25, board SellerRefund.dc.html). TradeRoom (Task 22) is not on
-// the main line yet, so these drive the screens through the e2e screen harness (harness/main.tsx),
-// built from the same sources and served with the real CSP. The API is stubbed per test with
-// page.route in Task 6's shapes; the escrow is Task 12's useEscrow over the harness's recorder
-// client (window.__escrowCalls names the runtime's actions).
-// TRIPWIRE NEEDS_TASK_22 (test/refund-tripwires.test.ts): once TradeRoom lands, drive /trade/:code.
+// SellerRefund and FinalAlert (Task 25, board SellerRefund.dc.html) in Task 22's trade room at
+// /trade/:code, on a fixtures-mode build of the app (e2e/fixtures-serve.ts) served with the real
+// CSP. The API is stubbed per test with page.route in Task 6's shapes; the escrow is the fixture
+// build's recorder (src/fixtures/index.ts: window.__x2fEscrowCalls names the actions the room's
+// handle was asked for, window.__x2fEscrowFail refuses them), standing in for Task 12's runtime,
+// which needs a relay, a node and a moderator. The fixture records action names on a fake handle, so
+// the hook's action-to-message mapping (`signal` → `{ type: 'signal', signal }`, `buildRefund` →
+// `build-refund`) is covered by test/useEscrow.test.tsx, not here (landing review Minor 5).
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { FastifyInstance } from 'fastify';
-import type { RefundView } from '../src/screens/trade/refundSlot.js';
-import { startHarness } from './harness/serve.js';
-import { BOARD, SERVER_NOW, buyerAlertView, sellerView } from './harness/refundViews.js';
+import type { TradeView } from '../src/api/trade.js';
+import { startFixtures } from './fixtures-serve.js';
+import { expectParity } from './parity.js';
+import { BOARD, SERVER_NOW, buyerAlertView, sellerView } from './refundViews.js';
 
+type RefundView = TradeView;
 const PORT = 4319;
 const BASE = `http://127.0.0.1:${PORT}`;
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
-const HARNESS = fileURLToPath(new URL('./parity.ts', import.meta.url));
 const REF = `${ROOT}design/x2f-app/refs/SellerRefund.png`;
 const MIN = 60_000;
 const CODE = encodeURIComponent(BOARD.code);
@@ -23,7 +26,7 @@ const CODE = encodeURIComponent(BOARD.code);
 let server: FastifyInstance;
 test.beforeAll(async () => {
   test.setTimeout(240_000);
-  server = await startHarness(PORT);
+  server = await startFixtures(PORT, 'dist-fixtures-refund');
 });
 test.afterAll(async () => {
   await server?.close();
@@ -58,35 +61,53 @@ async function stubTrade(page: Page, view: RefundView): Promise<{ trade: { view:
   return { trade, posted, seen };
 }
 
-const open = (page: Page, screen: 'seller-refund' | 'final-alert', extra = '') => page.goto(`${BASE}/?screen=${screen}&code=${CODE}${extra}`);
-const escrowCalls = (page: Page) => page.evaluate(() => window.__escrowCalls ?? []);
+/**
+ * Opens the trade room. The device's escrow is ready and accepts the board's amount; `fail`
+ * starts with every escrow action refused (a relay that is down).
+ */
+async function open(page: Page, o: { fail?: boolean } = {}): Promise<void> {
+  const board = sellerView();
+  await page.addInitScript(
+    ({ amountAtomic, fiatCents, fail }) => {
+      window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic, fiatCents };
+      window.__x2fEscrowFail = fail;
+      window.__x2fFixturePaidSheet = true;
+    },
+    { amountAtomic: board.amountAtomic, fiatCents: board.fiatCents, fail: o.fail === true },
+  );
+  await page.goto(`${BASE}/trade/${CODE}`);
+}
+const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fEscrowCalls ?? []);
 const button = (page: Page, name: string) => page.getByRole('button', { name, exact: true });
 
-type ExpectParity = (page: Page, board: string, o?: { viewport?: '390x844' | '1280x800' }) => Promise<void>;
+/** The room loads the trade first: compare once its screen (with its one primary) is up. */
 async function parity(page: Page, board: string, viewport?: '1280x800'): Promise<void> {
-  const path = './parity.js';
-  const { expectParity } = (await import(path)) as { expectParity: ExpectParity };
+  await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expectParity(page, board, viewport ? { viewport } : {});
 }
 
 test('parity with SellerRefund at 390x844', async ({ page }) => {
-  // The harness and the reference are on the main line (Task 15); the skip stays as a guard for a
-  // branch that lacks them. The board's header "Chat" link is rendered (it points at the room's
-  // chat anchor until Task 20's chat screen lands; lead decision 2026-10-27).
-  const why = !existsSync(HARNESS) ? 'Task 15 parity harness (apps/web/e2e/parity.ts) is not on this branch yet' : !existsSync(REF) ? 'design/x2f-app/refs/SellerRefund.png is absent' : null;
-  test.skip(why !== null, why ?? '');
+  // The board's header "Chat" link is rendered (it points at the room's chat anchor until Task
+  // 20's chat screen lands; lead decision 2026-10-27).
+  test.skip(!existsSync(REF), 'design/x2f-app/refs/SellerRefund.png is absent');
   await stubTrade(page, sellerView());
-  await open(page, 'seller-refund');
+  await open(page);
   await parity(page, 'SellerRefund');
 });
 
-test('parity with the Desktop board at 1280x800', async ({ page }) => {
-  // TRIPWIRE (Tasks 15, 22, 23): the desktop trade room (TradeTimeline, counterparty card, chat) is
-  // Task 23's, inside Task 22's TradeRoom. Runs once all three are here.
-  const room = fileURLToPath(new URL('../src/screens/trade/TradeRoom.tsx', import.meta.url));
-  test.skip(!existsSync(HARNESS) || !existsSync(room), 'needs the Task 15 parity harness and Task 22/23 desktop trade room');
+test('parity with SellerRefund at 1280x800, in the desktop shell', async ({ page }) => {
   await stubTrade(page, sellerView());
-  await page.goto(`${BASE}/trade/${CODE}`);
+  await open(page);
+  await parity(page, 'SellerRefund', '1280x800');
+});
+
+test('parity with the Desktop board at 1280x800', async ({ page }) => {
+  // The Desktop board is the buyer's paying room (TradeTimeline, counterparty card, chat): Task
+  // 23's, inside this room. Runs once Task 23's BuyerPay is here.
+  const buyerPay = fileURLToPath(new URL('../src/screens/trade/BuyerPay.tsx', import.meta.url));
+  test.skip(!existsSync(buyerPay), "needs Task 23's desktop trade room (BuyerPay)");
+  await stubTrade(page, sellerView());
+  await open(page);
   await parity(page, 'Desktop', '1280x800');
 });
 
@@ -96,7 +117,7 @@ test('the board copy, the warning before the tap, one primary and no CSP violati
     if (/content security policy/i.test(m.text())) csp.push(m.text());
   });
   await stubTrade(page, sellerView());
-  await open(page, 'seller-refund');
+  await open(page);
   await expect(page.getByRole('heading', { name: "mira.k didn't mark the payment in time" })).toBeVisible();
   for (const t of [
     'Payment window ended',
@@ -123,12 +144,14 @@ test('the board copy, the warning before the tap, one primary and no CSP violati
 
 test('Give 30 more min twice, then it is gone', async ({ page }) => {
   const s = await stubTrade(page, sellerView());
-  await open(page, 'seller-refund');
+  await open(page);
   for (let n = 1; n <= 2; n += 1) {
     await button(page, 'Give 30 more min').click();
-    // The window is open again: no more time to give, and no refund until it ends.
+    // The window is open again: the room leaves SellerRefund (seller × secured before payBy is
+    // Task 23's waiting room; until it lands, the plain status card), so nothing can be cancelled.
+    await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
     await expect(button(page, 'Give 30 more min')).toHaveCount(0);
-    await expect(button(page, 'Cancel & get refund')).toBeDisabled();
+    await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
     expect(s.trade.view.extensions).toBe(n);
     // The 30 minutes pass on the server; the room re-reads the trade.
     s.trade.view = { ...s.trade.view, serverNow: later(s.trade.view.payBy!, 1) };
@@ -142,7 +165,7 @@ test('Give 30 more min twice, then it is gone', async ({ page }) => {
 
 test('each extension sends the extend signal once', async ({ page }) => {
   await stubTrade(page, sellerView());
-  await open(page, 'seller-refund');
+  await open(page);
   await button(page, 'Give 30 more min').click();
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
   expect(await escrowCalls(page)).toEqual(['signal:trade.extend']);
@@ -150,7 +173,7 @@ test('each extension sends the extend signal once', async ({ page }) => {
 
 test('Cancel & get refund sends exactly one event, one signal and one tx set', async ({ page }) => {
   const s = await stubTrade(page, sellerView());
-  await open(page, 'seller-refund');
+  await open(page);
   await button(page, 'Cancel & get refund').dblclick();
   await expect(page.getByText('Final alert sent', { exact: true })).toBeVisible();
   await expect(page.getByRole('timer')).toHaveText(/^1[45]:\d\d$/);
@@ -160,7 +183,7 @@ test('Cancel & get refund sends exactly one event, one signal and one tx set', a
 
 test('the relay is down at the tap: the final-alert view resumes the run, Retry finishes the tx set once the relay is back (review I1)', async ({ page }) => {
   const s = await stubTrade(page, sellerView());
-  await open(page, 'seller-refund', '&escrow=fail');
+  await open(page, { fail: true });
   await button(page, 'Cancel & get refund').click();
   // The API accepted request-refund, so the seller sees the final alert running; the signal failed
   // and the resume failed again, so the seller is told and offered Retry. No tx set was built.
@@ -171,7 +194,7 @@ test('the relay is down at the tap: the final-alert view resumes the run, Retry 
   expect(await escrowCalls(page)).toEqual(['signal:trade.refund-request', 'signal:trade.refund-request']);
   // The relay is back.
   await page.evaluate(() => {
-    window.__escrowFail = false;
+    window.__x2fEscrowFail = false;
   });
   await button(page, 'Retry').click();
   await expect(button(page, 'Retry')).toHaveCount(0);
@@ -184,7 +207,7 @@ test('the relay is down at the tap: the final-alert view resumes the run, Retry 
 test('a refused request-refund sends no signal and no tx set', async ({ page }) => {
   await stubTrade(page, sellerView());
   await page.route(`**/v1/trades/${CODE}/events`, json({ error: 'too-early' }, 409));
-  await open(page, 'seller-refund');
+  await open(page);
   await button(page, 'Cancel & get refund').click();
   await expect(page.getByRole('alert')).toHaveText('That did not work. Try again.');
   expect(await escrowCalls(page)).toEqual([]);
@@ -193,9 +216,14 @@ test('a refused request-refund sends no signal and no tx set', async ({ page }) 
 test('before payBy by the server clock nothing can be cancelled, with the device clock 10 min ahead', async ({ page }) => {
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
   const s = await stubTrade(page, sellerView({ payBy: later(SERVER_NOW, 3), nextDeadline: later(SERVER_NOW, 3) }));
-  await open(page, 'seller-refund');
-  await expect(button(page, 'Cancel & get refund')).toBeDisabled();
+  await open(page);
+  // Before payBy the room shows no refund screen at all (Task 23's waiting room, or until it lands
+  // the plain status card), though the device clock is already past payBy.
+  await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
+  await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
+  // payBy passes on the server; the room re-reads the trade at its next deadline.
+  s.trade.view = { ...s.trade.view, serverNow: later(SERVER_NOW, 4) };
   await page.clock.runFor(4 * MIN);
   await expect(button(page, 'Cancel & get refund')).toBeEnabled();
   expect(s.posted).toEqual([]);
@@ -204,7 +232,7 @@ test('before payBy by the server clock nothing can be cancelled, with the device
 test('Nudge mira.k nudges by public name with the trade as context', async ({ page }) => {
   await stubTrade(page, sellerView());
   const nudge = page.waitForRequest('**/v1/nudges');
-  await open(page, 'seller-refund');
+  await open(page);
   await button(page, 'Nudge mira.k').click();
   expect((await nudge).postDataJSON()).toEqual({ to: 'mira.k', context: BOARD.code });
   await expect(page.getByRole('status')).toHaveText('Nudge sent.');
@@ -213,7 +241,7 @@ test('Nudge mira.k nudges by public name with the trade as context', async ({ pa
 test('the buyer sees FinalAlert with the server-clock countdown, the device clock 10 min ahead', async ({ page }) => {
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
   const s = await stubTrade(page, buyerAlertView());
-  await open(page, 'final-alert');
+  await open(page);
   await expect(page.getByText("The seller is cancelling. If you already paid, tap I've paid now.", { exact: true })).toBeVisible();
   await expect(page.getByRole('timer')).toHaveText('15:00');
   await expect(page.locator('[data-primary]')).toHaveCount(1);
@@ -228,7 +256,7 @@ test('the buyer sees FinalAlert with the server-clock countdown, the device cloc
 test("after 15 minutes I've paid is closed", async ({ page }) => {
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 14 * MIN + 58_000) });
   await stubTrade(page, buyerAlertView({ serverNow: later(SERVER_NOW, 14) }));
-  await open(page, 'final-alert');
+  await open(page);
   await expect(button(page, "I've paid")).toBeEnabled();
   await page.clock.runFor(63_000);
   await expect(button(page, "I've paid")).toBeDisabled();
@@ -247,7 +275,7 @@ for (const [width, height] of [
     test(`${which} fits a ${width}x${height} phone`, async ({ page }) => {
       await page.setViewportSize({ width, height });
       await stubTrade(page, which === 'seller-refund' ? sellerView() : buyerAlertView());
-      await open(page, which);
+      await open(page);
       const primary = page.locator('[data-primary]');
       await expect(primary).toHaveCount(1);
       await expect(primary).toBeInViewport({ ratio: 1 });

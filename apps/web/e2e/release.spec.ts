@@ -1,11 +1,11 @@
 // SellerConfirm and Released (Task 24; boards SellerConfirm.dc.html and the released part of
 // Review.dc.html). The API is stubbed per test with page.route in Task 6's TradeView shape and
 // Task 24's /confirmations shape. Until Task 22's TradeRoom merges, /trade/:code is Task 24's
-// InterimTradeRoute (test/release-tripwires.test.ts). It runs in the e2e screen harness
-// (harness/main.tsx, `screen=release`): the app's own InterimTradeRoute and Task 12's real
-// useEscrow over the harness's recorder client instead of the escrow worker, so the device's
-// phase and accepted amount are known (`&phase=`, `&role=`); window.__escrowCalls lists the
-// device actions asked for.
+// Task 22's TradeRoom at /trade/:code, on a fixtures-mode build of the app (e2e/fixtures-serve.ts)
+// served with the real CSP. The escrow is the fixture build's handle (src/fixtures/index.ts),
+// seeded per test through window.__x2fFixtureEscrow (phase, accepted amount); it stands in for
+// Task 12's runtime, which needs a relay, a node and a moderator. window.__x2fEscrowCalls lists
+// the device actions the room asked for; window.__x2fEscrowFail refuses them.
 //
 // Plan 5 parts are not built and are left out of the board comparison: the smart proof card on
 // SellerConfirm (section "Payment proof") and the rating cards on Review (everything after
@@ -14,7 +14,7 @@
 // [data-mask=clock] region the harness cannot match inline, so it is checked here directly.
 import type { FastifyInstance } from 'fastify';
 import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
-import { startHarness } from './harness/serve.js';
+import { startFixtures } from './fixtures-serve.js';
 import { boardTexts, boardViewport, missingTexts, reportPixels } from './parity.js';
 import { PHONE_VIEWPORTS, expectPhoneLayout } from './phone.js';
 
@@ -25,15 +25,27 @@ const BASE = `http://127.0.0.1:${PORT}`;
 let server: FastifyInstance;
 test.beforeAll(async () => {
   test.setTimeout(240_000);
-  server = await startHarness(PORT);
+  server = await startFixtures(PORT, 'dist-fixtures-release');
 });
 test.afterAll(async () => {
   await server?.close();
 });
 
-/** Opens the trade at /trade/:code in the harness; `extra` is `&role=buyer`, `&phase=signing`, `&escrow=fail`. */
-const open = (page: Page, extra = '') => page.goto(`${BASE}/trade/${CODE}?screen=release${extra}`);
-const escrowCalls = (page: Page) => page.evaluate(() => window.__escrowCalls ?? []);
+/**
+ * Opens the trade at /trade/:code in the fixtures build. `extra` sets this device's escrow:
+ * `&phase=<EscrowPhase>` (default ready) and `&escrow=fail` (every action refused). The device
+ * accepts the board's 1.25 XMR / $412.50.
+ */
+async function open(page: Page, extra = ''): Promise<void> {
+  const q = new URLSearchParams(extra.replace(/^&/, ''));
+  const seed = { phase: q.get('phase') ?? 'ready', fail: q.get('escrow') === 'fail' };
+  await page.addInitScript((f) => {
+    window.__x2fFixtureEscrow = { phase: f.phase as 'ready', amountAtomic: '1250000000000', fiatCents: '41250' };
+    window.__x2fEscrowFail = f.fail;
+  }, seed);
+  await page.goto(`${BASE}/trade/${CODE}`);
+}
+const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fEscrowCalls ?? []);
 const TX = 'ab'.repeat(32);
 const NOW = '2026-10-25T12:00:00.000Z';
 const ME = { displayName: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
@@ -256,7 +268,7 @@ test.describe('SellerConfirm', () => {
     await expect(page.getByRole('alert')).toHaveText('The release didn’t finish on this device. Keep this page open.');
     await expect(hold(page)).not.toHaveAttribute('data-done', 'true');
     await expect(page.getByText('Both signatures sent', { exact: false })).toHaveCount(0);
-    await page.evaluate(() => (window.__escrowFail = false));
+    await page.evaluate(() => (window.__x2fEscrowFail = false));
     await page.getByRole('button', { name: 'Finish the release on this device' }).click();
     await expect(hold(page)).toHaveAttribute('data-done', 'true');
     expect(posts).toHaveLength(1);
@@ -338,7 +350,7 @@ test.describe('Released', () => {
     await page.route('**/v1/account/me', json(ME));
     await page.route(`**/v1/trades/${CODE}/confirmations`, json({ confirmations: 2, target: 10, payoutEnd: 'k3Fz' }));
     await page.route(`**/v1/trades/${CODE}`, (r) => json(trade.current)(r));
-    await open(page, '&role=buyer&phase=signing');
+    await open(page, '&phase=signing');
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('satoshi_ghost released 1.250000 XMR to you');
     await expect(page.getByText('Your device is adding its signature. Keep this page open.', { exact: true })).toBeVisible();
     await expect(page.getByText('Checking…', { exact: true })).toBeVisible();

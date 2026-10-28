@@ -63,7 +63,7 @@ beforeEach(() => {
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
 async function trader(o: { kind?: 'trader' | 'staff' | 'owner'; level?: 'full' | 'recovery' } = {}) {
-  const id = await seedAccount(deps, { username: `Pu_${String(++n).padStart(4, '0')}`, ...(o.kind ? { kind: o.kind } : {}) });
+  const id = await seedAccount(deps, { loginName: `Pu_${String(++n).padStart(4, '0')}`, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id, ...(o.level ? { level: o.level } : {}) })).statusCode).toBe(200);
   return { id, b };
@@ -75,7 +75,7 @@ async function trader(o: { kind?: 'trader' | 'staff' | 'owner'; level?: 'full' |
  */
 let ownerId: Promise<string> | undefined;
 async function owner(): Promise<{ id: string; b: Browser }> {
-  const id = await (ownerId ??= seedAccount(deps, { username: 'Pu_owner', kind: 'owner' }));
+  const id = await (ownerId ??= seedAccount(deps, { loginName: 'Pu_owner', kind: 'owner' }));
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { id, b };

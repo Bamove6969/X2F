@@ -14,6 +14,8 @@ export type ConfirmAction =
   | { kind: 'add-method'; method: MethodType }
   | { kind: 'remove-method'; method: MethodType; id: string }
   | { kind: 'set-password' }
+  /** A pre-009 account sets its private login name (FU-A re-review 2). */
+  | { kind: 'set-login-name' }
   | { kind: 'new-recovery-codes' }
   | { kind: 'add-device-key'; signPublicHash: string };
 
@@ -50,6 +52,8 @@ export function describeAction(a: ConfirmAction): string {
       return `remove a login method (${a.method})`;
     case 'set-password':
       return 'set a new password';
+    case 'set-login-name':
+      return 'set your login name';
     case 'new-recovery-codes':
       return 'make new recovery codes';
     case 'add-device-key':
