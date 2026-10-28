@@ -3,6 +3,7 @@ import { apply, type By, type Trade, type TradeEvent, type TradeState } from '@x
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
+import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 
 /**
@@ -321,6 +322,9 @@ export async function applyEvent(
       await client.query('insert into trade_events (code, at, by, event) values ($1, $2, $3, $4)', [
         code, now, by, JSON.stringify(eventRecord(e)),
       ]);
+      // Task 27: a system escalation writes its dispute row with the trade (a trader's own
+      // opening writes it through `within`, with the reason they gave).
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
       if (within) await within(client, prev, next, now);
       await client.query('commit');
     } catch (err) {

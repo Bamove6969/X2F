@@ -271,7 +271,7 @@ describe('POST /v1/trades/:code/appeal', () => {
     for (const status of ['open', 'appealed', 'final', 'closed']) {
       const { seller, t } = await ruled();
       await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(48 * 60 * MIN) });
-      await deps.db.query('update disputes set status = $2 where code = $1', [t.code, status]);
+      await deps.db.query(`update disputes set status = $2, closed_at = case when $2 = 'closed' then now() end where code = $1`, [t.code, status]);
       setNow(at(2 * 60 * MIN));
       const res = await seller.browser.post(appeal(t.code), { why: 'Please look again at this.' });
       expect(res.statusCode, status).toBe(409);
@@ -293,5 +293,64 @@ describe('POST /v1/trades/:code/appeal', () => {
     expect((await other.browser.post(appeal(t.code), { why: 'Please look again at this.' })).statusCode).toBe(404);
     await rule(t.code, { outcome: 'release-to-buyer', round: 2, ruledAt: at(90 * MIN), appealUntil: null });
     expect(errorOf(await buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' }))).toBe('wrong-state');
+  });
+});
+
+describe('a dispute the system escalates (late funds, a lapse nobody refunded)', () => {
+  it('writes the dispute row with the trade, so both sides see the dispute and can appeal its ruling', async () => {
+    const { buyer, seller, t } = await tradeIn('released');
+    setNow(at(3 * 60 * MIN));
+    await relogin(buyer, seller);
+    const next = await applyEvent(deps, t.code, { type: 'escalate' }, 'system');
+    expect(next.state).toBe('disputed');
+    expect(await disputeRow(t.code)).toMatchObject({ opened_by: 'system', reason: 'escalated', note: '', after_refund: false, status: 'open', closed_at: null });
+    for (const who of [buyer, seller]) {
+      const res = await who.browser.get(dispute(t.code));
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toMatchObject({ openedBy: 'system', reason: 'escalated', status: 'open', openedAt: at(3 * 60 * MIN).toISOString(), ruling: null, appeal: null });
+    }
+    // Neither side can open a second one on top of it.
+    expect(errorOf(await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' }))).toBe('dispute-exists');
+
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(4 * 60 * MIN), appealUntil: at(52 * 60 * MIN) });
+    setNow(at(5 * 60 * MIN));
+    await relogin(seller);
+    const res = await seller.browser.post(appeal(t.code), { why: 'The moderator missed my bank statement.' });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'appealed', appeal: { by: 'seller' } });
+  });
+
+  it('a trade disputed and settled before shows the new dispute, never the old one as current', async () => {
+    const { buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(dispute(t.code), { reason: 'paid', note: 'the first one' });
+    await rule(t.code, { outcome: 'release-to-buyer', ruledAt: at(60 * MIN), appealUntil: at(49 * 60 * MIN) });
+    await buyer.browser.post(appeal(t.code), { why: 'Please look again at this.' });
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'release', txHash: 'ef'.repeat(32) }, 'system');
+    await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [t.code, at(2 * 60 * MIN)]);
+    setNow(at(3 * 60 * MIN));
+    await relogin(buyer);
+    expect((await applyEvent(deps, t.code, { type: 'escalate' }, 'system')).state).toBe('disputed');
+    const res = await buyer.browser.get(dispute(t.code));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ openedBy: 'system', reason: 'escalated', status: 'open', ruling: null, appeal: null, moderator: null });
+    expect(await disputeRow(t.code)).toMatchObject({ note: '', closed_at: null });
+  });
+});
+
+describe('a dispute opening is delivered live (Task 19)', () => {
+  it('publishes exactly one open-dispute trade event, by the side that opened it', async () => {
+    const published: { type: string; by: string; state: string }[] = [];
+    const live = await tradeApp({ tradePublish: async (t, e, by) => void published.push({ type: e.type, by, state: t.state }) });
+    try {
+      const seller = await live.trader();
+      const buyer = await live.trader();
+      const { trade } = await seedTrade(live.deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      await driveTo(live.deps, trade, 'secured');
+      published.length = 0;
+      expect((await seller.browser.post(dispute(trade.code), { reason: 'silent', note: '' })).statusCode).toBe(200);
+      expect(published).toEqual([{ type: 'open-dispute', by: 'seller', state: 'disputed' }]);
+    } finally {
+      await live.app.close();
+    }
   });
 });

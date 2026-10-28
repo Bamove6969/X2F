@@ -15,9 +15,10 @@ import { roleOf } from '../trades/view.js';
  * Participants only (anyone else gets the same 404 as an unknown code), trader sessions only.
  */
 
-/** Reason codes, relative to whoever opens the dispute (108_disputes.sql). */
+/** Reason codes a trader may give, relative to whoever opens the dispute (108_disputes.sql). */
 export const DISPUTE_REASONS = ['paid', 'silent', 'terms', 'other'] as const;
-export type DisputeReason = (typeof DISPUTE_REASONS)[number];
+/** A stored reason: a trader's, or 'escalated' for a dispute the system opened (110). */
+export type DisputeReason = (typeof DISPUTE_REASONS)[number] | 'escalated';
 export const NOTE_MAX = 1000;
 export const APPEAL_MIN = 10;
 export const APPEAL_MAX = 1000;
@@ -26,7 +27,8 @@ export type RulingOutcome = 'release-to-buyer' | 'refund-to-seller' | 'seller-se
 
 /** What `GET /v1/trades/:code/dispute` returns. Names are public display names; no address is ever whole. */
 export interface DisputeView {
-  openedBy: Party;
+  /** 'system' when the timer loop escalated the trade (late funds, a lapse nobody refunded). */
+  openedBy: Party | 'system';
   reason: DisputeReason;
   openedAt: string;
   afterRefund: boolean;
@@ -53,7 +55,7 @@ export interface DisputeView {
 }
 
 interface DisputeRow {
-  opened_by: Party;
+  opened_by: Party | 'system';
   reason: DisputeReason;
   opened_at: Date;
   after_refund: boolean;
@@ -82,7 +84,7 @@ function bodyOf(req: FastifyRequest, keys: readonly string[]): Record<string, un
   return b;
 }
 
-const isReason = (v: unknown): v is DisputeReason => typeof v === 'string' && (DISPUTE_REASONS as readonly string[]).includes(v);
+const isReason = (v: unknown): v is (typeof DISPUTE_REASONS)[number] => typeof v === 'string' && (DISPUTE_REASONS as readonly string[]).includes(v);
 
 /** The trade and the caller's side, or 404 for anyone who is not a participant. */
 async function participant(req: FastifyRequest): Promise<{ row: TradeRow; t: Trade; side: Party }> {
