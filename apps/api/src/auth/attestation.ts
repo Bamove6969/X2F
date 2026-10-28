@@ -8,10 +8,16 @@ export type { AttestationPolicy } from '../app.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
-/** The AAGUIDs listed as ``- `<aaguid>` ...`` lines under the README's "## Allowlist" heading. */
-export function parseAllowlist(readme: string): string[] {
-  const start = readme.search(/^## Allowlist[ \t]*$/m);
-  if (start < 0) throw new Error('attestation: README.md has no "## Allowlist" section');
+/** Which allowlist: the owner's (YubiKey 5 on firmware 5.7 or newer) or staff's (wider). */
+export type AllowlistKind = 'owner' | 'staff';
+
+const HEADINGS: Record<AllowlistKind, string> = { owner: 'Owner allowlist', staff: 'Staff allowlist' };
+
+/** The AAGUIDs listed as ``- `<aaguid>` ...`` lines under the README's "## Owner allowlist" or "## Staff allowlist" heading. */
+export function parseAllowlist(readme: string, kind: AllowlistKind): string[] {
+  const heading = HEADINGS[kind];
+  const start = readme.search(new RegExp(`^## ${heading}[ \\t]*$`, 'm'));
+  if (start < 0) throw new Error(`attestation: README.md has no "## ${heading}" section`);
   const rest = readme.slice(start).split('\n').slice(1);
   const end = rest.findIndex((l) => /^#{1,2} /.test(l));
   const section = end < 0 ? rest : rest.slice(0, end);
@@ -42,9 +48,10 @@ export function isUnknownAuthenticator(e: unknown): boolean {
 /**
  * The repo's FIDO metadata snapshot (`apps/api/data/fido-mds`, P2-I5). `init` loads every `*.json`
  * statement into `MetadataService` in `strict` mode with no metadata server (no network fetch) and
- * reads the README's AAGUID allowlist; it throws when the folder is unreadable, a statement is
- * malformed, or an allowlisted AAGUID has no statement. Until `init` has succeeded nothing is
- * allowed. `isAllowed` = `fmt !== 'none'` and the AAGUID is allowlisted. Once the clock reaches
+ * reads the README's two AAGUID allowlists (owner and staff, owner's rules of 2026-10-20); it throws
+ * when the folder is unreadable, a statement is malformed, or an allowlisted AAGUID has no
+ * statement. Until `init` has succeeded nothing is allowed. `isAllowed(aaguid, fmt, kind)` =
+ * `fmt !== 'none'` and the AAGUID is on `kind`'s allowlist. Once the clock reaches
  * the README's `nextUpdate`, `init` warns (stderr by default) that the snapshot needs a refresh.
  *
  * `MetadataService` is process-wide: the last policy initialised is the one registration checks
@@ -56,11 +63,12 @@ export function fileAttestationPolicy(
 ): AttestationPolicy {
   const clock = o.clock ?? (() => new Date());
   const warn = o.warn ?? ((message: string) => void process.stderr.write(`${JSON.stringify({ level: 40, msg: message })}\n`));
-  let allowed: ReadonlySet<string> | null = null;
+  let allowed: Readonly<Record<AllowlistKind, ReadonlySet<string>>> | null = null;
   return {
     async init() {
       const readme = await readFile(join(dir, 'README.md'), 'utf8');
-      const ids = parseAllowlist(readme);
+      const owner = parseAllowlist(readme, 'owner');
+      const staff = parseAllowlist(readme, 'staff');
       const next = parseNextUpdate(readme);
       if (clock().getTime() >= next.getTime()) {
         // The date only: never a path, a certificate or anything from the environment.
@@ -78,13 +86,13 @@ export function fileAttestationPolicy(
         statements.push(s as MetadataStatement);
       }
       const have = new Set(statements.map((s) => s.aaguid));
-      const missing = ids.filter((id) => !have.has(id));
+      const missing = [...new Set([...owner, ...staff])].filter((id) => !have.has(id));
       if (missing.length > 0) throw new Error(`attestation: allowlisted AAGUID without a statement: ${missing.join(', ')}`);
       await MetadataService.initialize({ mdsServers: [], statements, verificationMode: 'strict' });
-      allowed = new Set(ids);
+      allowed = { owner: new Set(owner), staff: new Set(staff) };
     },
-    isAllowed(aaguid, fmt) {
-      return allowed !== null && fmt !== 'none' && allowed.has(aaguid.toLowerCase());
+    isAllowed(aaguid, fmt, kind) {
+      return allowed !== null && fmt !== 'none' && allowed[kind].has(aaguid.toLowerCase());
     },
   };
 }
