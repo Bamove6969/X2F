@@ -221,7 +221,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
-  // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
+  // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).

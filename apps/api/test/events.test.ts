@@ -54,16 +54,16 @@ beforeEach(async () => {
 const errorOf = (res: LightMyRequestResponse) => (res.json() as { error?: string }).error;
 
 async function trader(o: { kind?: 'trader' | 'staff'; level?: 'full' | 'recovery'; holdUntil?: Date; termsVersion?: string } = {}) {
-  const username = `Ev_${String(++n).padStart(4, '0')}`;
+  const displayName = `Ev_${String(++n).padStart(4, '0')}`;
   const id = await seedAccount(deps, {
-    loginName: `${username}.lg`, displayName: username, ...(o.kind ? { kind: o.kind } : {}), ...(o.termsVersion ? { termsVersion: o.termsVersion } : {}),
+    loginName: `${displayName}.lg`, displayName, ...(o.kind ? { kind: o.kind } : {}), ...(o.termsVersion ? { termsVersion: o.termsVersion } : {}),
   });
   const b = new Browser(app);
   const res = await b.post('/t/login', {
     accountId: id, ...(o.level ? { level: o.level } : {}), ...(o.holdUntil ? { holdUntil: o.holdUntil.toISOString() } : {}),
   });
   expect(res.statusCode).toBe(200);
-  return { id, b, username };
+  return { id, b, displayName };
 }
 
 async function stream(b: Browser): Promise<SseStream> {
@@ -304,8 +304,8 @@ describe('GET /v1/events: the stream', () => {
 describe('public names in events', () => {
   it('events name an account only by its public display name', async () => {
     const a = await trader();
-    expect(await publicName(deps.db, a.id)).toBe(a.username);
-    expect(await acceptedEvent(deps.db, CODE, a.id)).toEqual({ type: 'accepted', code: CODE, by: a.username });
+    expect(await publicName(deps.db, a.id)).toBe(a.displayName);
+    expect(await acceptedEvent(deps.db, CODE, a.id)).toEqual({ type: 'accepted', code: CODE, by: a.displayName });
   });
 
   it('an unknown account has no name', async () => {
