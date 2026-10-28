@@ -10,7 +10,8 @@ import { channelFor, CHANNEL_KINDS, type ChannelKind } from './channels.js';
  * is caught before the escrow is funded (P3-C1).
  *
  * A trade gets `escrow` and `signals`; a chat gets `chat`. Every channel value must equal
- * `channelFor(trade, kind)`.
+ * `channelFor(trade, kind)`. A trade attestation also carries the attested `terms` (lead answer 4);
+ * a chat attestation carries none.
  */
 export interface Attestation {
   v: 1;
@@ -18,6 +19,64 @@ export interface Attestation {
   channels: Partial<Record<ChannelKind, string>>;
   participants: Participants;
   issuedAt: string;
+  terms?: AttestedTerms;
+}
+
+/**
+ * What the moderator attests about the deal (lead answer 4, docs/coordination.md): the deal fixed
+ * at take and both sides' addresses, filled from the trade record. Bigints are decimal strings
+ * without leading zeros (canonical JSON has no bigints); the key sets are exact.
+ */
+export interface AttestedTerms {
+  deal: { poster: 'buyer' | 'seller'; takeAmountAtomic: string; currency: string; centsPerXmr: string; maxFiatCents: string };
+  /** The buyer's payout address. */
+  buyerPayout: string;
+  /** The seller's refund address. */
+  sellerRefund: string;
+}
+
+/** The deal as the user confirmed it on the device (bigints): the amount at take, the poster, and the locked rate and offer maximum fixed at take (OD-5). */
+export interface ConfirmedDeal {
+  poster: 'buyer' | 'seller';
+  takeAmountAtomic: bigint;
+  currency: string;
+  centsPerXmr: bigint;
+  maxFiatCents: bigint;
+}
+
+const DECIMAL = /^[1-9]\d{0,30}$/;
+const MAX_ADDRESS = 256;
+const MAX_CURRENCY = 16;
+
+function exactKeys(o: Record<string, unknown>, keys: readonly string[]): boolean {
+  const own = Object.keys(o);
+  return own.length === keys.length && keys.every((k) => own.includes(k));
+}
+
+function isRecord(x: unknown): x is Record<string, unknown> {
+  return typeof x === 'object' && x !== null && !Array.isArray(x);
+}
+
+/** Exactly the `AttestedTerms` shape: exact key sets, positive decimal strings, non-empty bounded strings. */
+export function isAttestedTerms(t: unknown): t is AttestedTerms {
+  if (!isRecord(t) || !exactKeys(t, ['deal', 'buyerPayout', 'sellerRefund'])) return false;
+  for (const a of [t.buyerPayout, t.sellerRefund]) if (typeof a !== 'string' || a.length === 0 || a.length > MAX_ADDRESS) return false;
+  const d = t.deal;
+  if (!isRecord(d) || !exactKeys(d, ['poster', 'takeAmountAtomic', 'currency', 'centsPerXmr', 'maxFiatCents'])) return false;
+  if (d.poster !== 'buyer' && d.poster !== 'seller') return false;
+  if (typeof d.currency !== 'string' || d.currency.length === 0 || d.currency.length > MAX_CURRENCY) return false;
+  return [d.takeAmountAtomic, d.centsPerXmr, d.maxFiatCents].every((x) => typeof x === 'string' && DECIMAL.test(x));
+}
+
+/** The attested deal equals the confirmed one, field by field. */
+function sameDeal(t: AttestedTerms['deal'], d: ConfirmedDeal): boolean {
+  return (
+    t.poster === d.poster &&
+    t.currency === d.currency &&
+    typeof d.takeAmountAtomic === 'bigint' && t.takeAmountAtomic === d.takeAmountAtomic.toString() &&
+    typeof d.centsPerXmr === 'bigint' && t.centsPerXmr === d.centsPerXmr.toString() &&
+    typeof d.maxFiatCents === 'bigint' && t.maxFiatCents === d.maxFiatCents.toString()
+  );
 }
 
 const DOMAIN = 'x2f/attestation/v1\0';
@@ -59,7 +118,8 @@ export function attestationBytes(a: Attestation): Uint8Array {
   return new TextEncoder().encode(DOMAIN + canonicalJson(a));
 }
 
-export type AttestationErrorCode = 'bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel';
+/** `wrong-terms`: the attested deal or this app's own address is not what its user confirmed (lead answer 4). */
+export type AttestationErrorCode = 'bad-signature' | 'not-me' | 'wrong-trade' | 'wrong-channel' | 'wrong-terms';
 
 export class AttestationError extends Error {
   constructor(readonly code: AttestationErrorCode) {
@@ -94,6 +154,8 @@ function wellFormed(a: unknown): a is Attestation {
   for (const [kind, value] of Object.entries(channels)) {
     if (!(CHANNEL_KINDS as readonly string[]).includes(kind) || typeof value !== 'string') return false;
   }
+  if (!exactKeys(o, ['v', 'trade', 'channels', 'participants', 'issuedAt']) && !exactKeys(o, ['v', 'trade', 'channels', 'participants', 'issuedAt', 'terms'])) return false;
+  if ('terms' in o && !isAttestedTerms(o.terms)) return false;
   return true;
 }
 
@@ -109,6 +171,10 @@ export interface AttestationSelf {
   boxPublic: string;
   /** Which kind of attestation is expected (default 'trade'). */
   context?: 'trade' | 'chat';
+  /** Trade context: the deal the user confirmed on this device. Required there (fail closed). */
+  deal?: ConfirmedDeal;
+  /** Trade context: this app's own address (the buyer's payout, the seller's refund). Required there. */
+  ownAddress?: string;
 }
 
 /**
@@ -117,7 +183,9 @@ export interface AttestationSelf {
  * key (`bad-signature`, also for any malformed input); that `me`'s slot holds BOTH of its keys
  * (`not-me`); that the attestation is for `me.trade` (`wrong-trade`); and that the channels are
  * EXACTLY the set for the context (trade: escrow + signals; chat: chat), each equal to
- * `channelFor(trade, kind)` (`wrong-channel`).
+ * `channelFor(trade, kind)` (`wrong-channel`); and, for a trade, that `terms` are present and their
+ * deal and this app's own address equal `me.deal` and `me.ownAddress`, both required (`wrong-terms`).
+ * A chat attestation must carry no terms (`wrong-terms`).
  *
  * Deviation from the plan's signature (review of Task 8): `me` also carries `trade`, `boxPublic`
  * and an optional `context`, so a validly signed attestation for another trade, a partial channel
@@ -165,4 +233,13 @@ export async function verifyAttestation(
   for (const kind of want) {
     if (a.channels[kind] !== (await channelFor(trade, kind))) throw new AttestationError('wrong-channel');
   }
+
+  if ((me.context ?? 'trade') === 'chat') {
+    if (a.terms !== undefined) throw new AttestationError('wrong-terms');
+    return;
+  }
+  const t = a.terms;
+  if (t === undefined || !isRecord(me.deal) || typeof me.ownAddress !== 'string' || me.ownAddress === '') throw new AttestationError('wrong-terms');
+  if (!sameDeal(t.deal, me.deal)) throw new AttestationError('wrong-terms');
+  if ((me.role === 'buyer' ? t.buyerPayout : t.sellerRefund) !== me.ownAddress) throw new AttestationError('wrong-terms');
 }

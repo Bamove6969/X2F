@@ -4,10 +4,13 @@ export {
   attestationBytes,
   identityProofBytes,
   identityProofValid,
+  isAttestedTerms,
   verifyAttestation,
   type Attestation,
   type AttestationErrorCode,
   type AttestationSelf,
+  type AttestedTerms,
+  type ConfirmedDeal,
 } from './attestation.js';
 export { escrowCheckWords } from './checkWords.js';
 export { WORDLIST } from './wordlist.js';
