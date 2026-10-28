@@ -260,4 +260,18 @@ describe('Your wallets', () => {
       expect(alertText()).toBe('Too many tries. Try again in 2 minutes.');
     });
   });
+
+  it('?add=1 with only waiting wallets shows the wait instead of the rule popup (round 2, M2)', async () => {
+    stub.wallets = [{ ...READY, id: 'w-wait', usable: false, usableFrom: '2099-01-01T12:00:00.000Z' }];
+    await mount('/wallets?add=1&returnTo=%2Fbuy');
+    expect(dialog('Before you add a wallet')).toBeNull();
+    expect(document.querySelector('[role="status"]')?.textContent).toContain('Your wallet can be paid from');
+    expect(document.querySelector('.x2f-wallet-row')?.textContent).toContain('Waiting');
+  });
+
+  it('?add=1 with no wallets still opens the rule popup', async () => {
+    stub.wallets = [];
+    await mount('/wallets?add=1&returnTo=%2Fbuy');
+    expect(dialog('Before you add a wallet')).not.toBeNull();
+  });
 });

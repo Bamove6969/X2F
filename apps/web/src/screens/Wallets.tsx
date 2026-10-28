@@ -230,7 +230,8 @@ export function Wallets() {
 
   const [wallets, setWallets] = useState<WalletView[] | null>(null);
   const [rule, setRule] = useState<WalletRule | null>(null);
-  const [popup, setPopup] = useState(addMode);
+  // In add mode the rule popup opens once the list is in (see the effect below), not before.
+  const [popup, setPopup] = useState(false);
   const [adding, setAdding] = useState(false);
   const [app, setApp] = useState<WalletApp>('cake');
   const [label, setLabel] = useState('');
@@ -258,6 +259,20 @@ export function Wallets() {
   useEffect(() => {
     load();
   }, [load]);
+
+  // Sent here by a 409 no-wallet (?add=1): open the rule popup, unless every wallet is linked but
+  // still waiting. Then the person already added one and only has to wait, so say until when.
+  const arrived = useRef(false);
+  useEffect(() => {
+    if (!addMode || wallets === null || arrived.current) return;
+    arrived.current = true;
+    if (wallets.length > 0 && wallets.every((w) => !w.usable)) {
+      const first = wallets.map((w) => w.usableFrom).sort()[0] as string;
+      setNotice(`Your ${wallets.length === 1 ? 'wallet' : 'wallets'} can be paid from ${when(first)}.`);
+    } else {
+      setPopup(true);
+    }
+  }, [addMode, wallets]);
 
   useEffect(() => {
     if (adding) addressInput.current?.focus();
