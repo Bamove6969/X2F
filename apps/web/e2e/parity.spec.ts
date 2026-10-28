@@ -216,6 +216,21 @@ test.describe('expectParity: blocking checks', () => {
     expect(await missingTexts(page, ['New to PGP?'])).toEqual([]);
   });
 
+  test('text moved off the right edge of a page that cannot scroll does not count as shown', async ({ page }) => {
+    await page.setContent(
+      '<style>html,body{margin:0;overflow:hidden}</style><p>Here</p><p style="position:absolute;left:5000px;top:0">Off to the right</p>',
+    );
+    expect(await missingTexts(page, ['Here', 'Off to the right'])).toEqual(['Off to the right']);
+  });
+
+  test('text clipped inside a non-scrolling overflow:hidden box does not count as shown', async ({ page }) => {
+    await page.setContent(
+      '<div style="height:40px;width:300px;overflow:hidden"><p style="margin:0">Inside</p><div style="height:400px"></div><p>Clipped below</p></div>' +
+        '<div style="height:40px;width:300px;overflow:hidden"><div style="width:3000px">Row <span style="margin-left:2000px">Clipped right</span></div></div>',
+    );
+    expect(await missingTexts(page, ['Inside', 'Clipped below', 'Clipped right'])).toEqual(['Clipped below', 'Clipped right']);
+  });
+
   test("a select's options are shown with their select, and are not part of the label's text", async ({ page }) => {
     await page.setContent(
       '<label>Currency<select><option>USD</option><option>EUR</option></select></label>' +
