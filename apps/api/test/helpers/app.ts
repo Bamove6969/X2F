@@ -1,11 +1,21 @@
-import { randomBytes } from 'node:crypto';
+import { createECDH, randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import * as openpgp from 'openpgp';
 import { buildApi, type BuildOptions, type Deps } from '../../src/app.js';
+import { PRICE_FEED_DEFAULTS, createPriceFeed } from '../../src/price/feed.js';
+import { createFxRates } from '../../src/price/fx.js';
+import { createMarketPrices } from '../../src/price/market.js';
 import { pgpSignerFromArmored, type PgpSigner } from '../../src/auth/pgp.js';
 import type { Config, Keyring } from '../../src/config.js';
 import { testDb } from './db.js';
 import { captureLogs } from './logs.js';
+
+/** A fresh VAPID key pair (P-256), base64url as web-push expects (Task 19). */
+function vapidKeys(): { vapidPublic: string; vapidPrivate: string } {
+  const ecdh = createECDH('prime256v1');
+  ecdh.generateKeys();
+  return { vapidPublic: ecdh.getPublicKey().toString('base64url'), vapidPrivate: Buffer.concat([Buffer.alloc(32), ecdh.getPrivateKey()]).subarray(-32).toString('base64url') };
+}
 
 /** A one-key ring of fresh random bytes under `id`. */
 export function testRing(id = 1): Keyring {
@@ -14,6 +24,7 @@ export function testRing(id = 1): Keyring {
 
 export function testConfig(over: Partial<Config> = {}): Config {
   return {
+    ...vapidKeys(),
     siteName: 'X2F',
     origins: ['https://x2f.test'],
     rpId: 'x2f.test',
@@ -25,6 +36,8 @@ export function testConfig(over: Partial<Config> = {}): Config {
     termsVersion: '2026-10-17',
     pgpSigningKeyPath: '/nonexistent/signing.asc',
     pgpSigningFingerprint: '0'.repeat(40),
+    priceSources: ['kraken', 'bitfinex', 'coingecko'],
+    fxSources: ['coinbase', 'bitpay', 'coingecko'],
     passwordPeppers: testRing(),
     recoveryCodeKeys: testRing(),
     totpKeys: testRing(),
@@ -76,6 +89,11 @@ export async function testApp(overrides: Partial<Deps> = {}, options: Omit<Build
     attestation: notYet('attestation policy (Task 8)'),
     nudges: notYet('nudge wiring (Tasks 6, 19, 20)'),
     pgpSigner,
+    // No sources: every price is unavailable unless a test passes its own feed.
+    prices: createMarketPrices({
+      xmr: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
+      fx: createFxRates([], { clock: () => now }),
+    }),
     ...overrides,
   };
   const { stream, logs } = captureLogs();

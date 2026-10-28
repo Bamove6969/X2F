@@ -115,7 +115,7 @@ describe('sessions', () => {
     const me = await get('/t/me', token);
     expect(me.statusCode).toBe(200);
     expect(me.json()).toMatchObject({ sessionId, accountId: id, kind: 'trader', level: 'full', onboardingUntil: null });
-    await endSession(deps, sessionId);
+    await endSession({ ...deps, events: app.events }, sessionId);
     const after = await get('/t/me', token);
     expect(after.statusCode).toBe(401);
     expect(after.json()).toEqual({ error: 'not-authenticated' });
@@ -306,7 +306,7 @@ describe('sessions', () => {
     const a = await login(id);
     const b = await login(id);
     const c = await login(other);
-    await endAllSessions(deps, id);
+    await endAllSessions({ ...deps, events: app.events }, id);
     expect((await get('/t/me', a.token)).statusCode).toBe(401);
     expect((await get('/t/me', b.token)).statusCode).toBe(401);
     expect((await get('/t/me', c.token)).statusCode).toBe(200);
@@ -316,7 +316,7 @@ describe('sessions', () => {
     const id = await seedAccount(deps, { username: name() });
     const a = await login(id);
     const b = await login(id);
-    await endOtherSessions(deps, id, b.sessionId);
+    await endOtherSessions({ ...deps, events: app.events }, id, b.sessionId);
     expect((await get('/t/me', a.token)).statusCode).toBe(401);
     expect((await get('/t/me', b.token)).statusCode).toBe(200);
   });

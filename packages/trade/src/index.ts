@@ -33,3 +33,33 @@ export {
   type TradeRuleCode,
   type TradeState,
 } from './machine.js';
+export { TIMER_LOOP_MS, timerEvents, type TimerEvent, type TimerPass } from './timerLoop.js';
+export {
+  WATCH_CLOSED_DAYS,
+  WATCH_INTERVAL_MS,
+  newWatchState,
+  settleKindFor,
+  watchStep,
+  type ChainFacts,
+  type EscrowFunds,
+  type SpendEvidence,
+  type WatchIncoming,
+  type WatchReport,
+  type WatchState,
+  type WatchStepResult,
+} from './watch.js';
+export { modPartyArgs, modPartyPlan, type ModPartyArgs, type ModPartyFacts, type ModPartyPlan } from './modParty.js';
+export {
+  CHAT_AFTER_CLOSE_DAYS,
+  CHAT_BODY_MAX_BYTES,
+  CHAT_MSG_TYPE,
+  CHAT_PRETRADE_IDLE_DAYS,
+  CHAT_TEXT_MAX_BYTES,
+  ChatEnvelopeError,
+  chatIdentityProofBytes,
+  chatPurgeDue,
+  checkChatEnvelope,
+  type ChatEnvelope,
+  type ChatEnvelopeErrorCode,
+  type ChatRetentionFacts,
+} from './chat.js';

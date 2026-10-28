@@ -25,14 +25,26 @@ export interface NudgeEvent {
  * What nudges need from other tasks, injected through `Deps.nudges`:
  * - `hasSharedContext`: the two accounts share the open chat (Task 20) or active trade (Task 6)
  *   named by `context`, a chat or trade code.
- * - `publish`: Task 19's SSE bus, delivering only to that account's own streams.
- * - `sendPush`: Task 19's Web Push. It takes only the kind, so the payload can only be the generic
+ * - `publish` / `sendPush`: left out in production, so delivery is Task 19's own (`liveDelivery`);
+ *   tests pass fakes. `sendPush` takes only the kind, so the payload can only be the generic
  *   "Someone nudged you on X2F": never a name, an amount or a trade detail.
  */
 export interface NudgeWiring {
   hasSharedContext(fromId: string, toId: string, context: string): Promise<boolean>;
-  publish(accountId: string, ev: NudgeEvent): void | Promise<void>;
-  sendPush(accountId: string, kind: 'nudge'): Promise<boolean>;
+  publish?(accountId: string, ev: NudgeEvent): void | Promise<void>;
+  sendPush?(accountId: string, kind: 'nudge'): Promise<boolean>;
+}
+
+/**
+ * Task 19's real channels: the SSE bus delivers only to the recipient's own open streams; a
+ * recipient with no stream open (a closed tab, plan Task 26) gets the generic Web Push, the same
+ * rule as trade events (events/tradePublisher.ts), so an open tab does not also get an OS alert.
+ */
+export function liveDelivery(app: FastifyInstance): Required<Pick<NudgeWiring, 'publish' | 'sendPush'>> {
+  return {
+    publish: (accountId, ev) => void app.events.publish(accountId, ev),
+    sendPush: async (accountId, kind) => (app.events.delivered(accountId) ? false : app.push.send(accountId, kind)),
+  };
 }
 
 const NAME_MAX = 64;
@@ -63,9 +75,11 @@ interface RecipientFacts {
  * they run at all) cannot be timed by the sender. Failures are logged with no name or context.
  */
 function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
-  const wiring = app.deps.nudges;
+  const live = liveDelivery(app);
+  const publish = app.deps.nudges.publish ?? live.publish;
+  const sendPush = app.deps.nudges.sendPush ?? live.sendPush;
   setImmediate(() => {
-    const tries = [Promise.resolve().then(() => wiring.publish(toId, ev)), Promise.resolve().then(() => wiring.sendPush(toId, 'nudge'))];
+    const tries = [Promise.resolve().then(() => publish(toId, ev)), Promise.resolve().then(() => sendPush(toId, 'nudge'))];
     void Promise.allSettled(tries).then((results) => {
       for (const r of results) if (r.status === 'rejected') app.log.warn({ err: r.reason }, 'nudge delivery failed');
     });

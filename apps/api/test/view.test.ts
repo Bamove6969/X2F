@@ -120,8 +120,8 @@ describe('toTradeView', () => {
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
     const cp: TraderSummary = { username: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] };
-    expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null })).toThrow();
-    expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null }).fee).toEqual({ atomic: FEE });
-    expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null })).toBe(false);
+    expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toThrow();
+    expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null }).fee).toEqual({ atomic: FEE });
+    expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toBe(false);
   });
 });
