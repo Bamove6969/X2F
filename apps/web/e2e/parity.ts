@@ -46,6 +46,17 @@ export const MAX_DIFF_PIXEL_RATIO = 0.03;
  * (the progress steps, the counterparty card, the chat) are not exceptions.
  */
 export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: string }[]>> = {
+  TradeFund: [
+    {
+      text: 'Rate (locked when you fund)',
+      why: 'OD-5 (P3-I11): the rate and fiat total lock at Trade, so the row reads "Rate (locked when the trade started)".',
+    },
+    {
+      text: 'Network fee (fast)',
+      why: 'P3-M12: the seller pays the funding fee in their own wallet (spec 11.1), so the row reads "Network fee · set in your wallet".',
+    },
+    { text: '0.000062 XMR', why: 'The value of the replaced network-fee row (P3-M12): X2F does not set the funding fee.' },
+  ],
   Desktop: [
     {
       text: 'You pay · 62 min left',

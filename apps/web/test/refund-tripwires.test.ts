@@ -3,30 +3,26 @@
 // refundFlow.ts: the runtime's `build-refund` needs the view to be `refund_requested`
 // (`viewSupports('auto-refund')`) and settles `payoutsFor('auto-refund')` with builder seller and
 // cosigner mod (escrow/policy.ts ROUTE), so the order request-refund → trade.refund-request →
-// buildRefund is the one it expects; `RefundEscrow` is now Task 12's `UseEscrow` and the e2e
-// harness runs the real `useEscrow` over a recorder client; its tripwire is retired.) Each
+// buildRefund is the one it expects; `RefundEscrow` is now Task 12's `UseEscrow`; the e2e harness then
+// ran the real `useEscrow` over a recorder client; its tripwire is retired.) Each
 // tripwire below fails once its piece lands: then do what it says and delete it.
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { REFUND_SLOTS, registerRefundScreens, type RefundSlot } from '../src/screens/trade/refundScreens.js';
-import { sellerView } from '../e2e/harness/refundViews.js';
+import { buyerAlertView, sellerRequestedView, sellerView } from '../e2e/refundViews.js';
+import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
+import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
+import { screenFor } from '../src/screens/trade/TradeRoom.js';
+import '../src/screens/trade/screens.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 25 stand-ins', () => {
-  it('NEEDS_TASK_22: SellerRefund and FinalAlert are not registered in the trade room yet', () => {
-    // When TradeRoom.tsx lands (wip/lead-p3-task22):
-    // 1. refundSlot.ts: replace the copied types with Task 22's (`TradeView`, `TradeScreenProps`
-    //    from api/trade.ts, seams.ts and TradeRoom.tsx; `publicName` from api/trade.ts; `RefundEscrow`
-    //    is already Task 12's `UseEscrow`, which Task 22's `TradeEscrow` is).
-    // 2. refundScreens.ts: add `registerRefundScreens(registerTradeScreen);` at top level.
-    // 3. screens.ts: replace `// Task 25: import './SellerRefund.js';` with `import './refundScreens.js';`.
-    // 4. e2e/refund.spec.ts: drive /trade/:code instead of the harness, and run the 1280x800 parity.
-    // 5. methodOf(): take the method's name from the room once the view or the room carries it.
-    expect(has('apps/web/src/screens/trade/TradeRoom.tsx'), 'Task 22 landed: register the refund screens (see the steps above)').toBe(false);
-  });
+  // NEEDS_TASK_22 retired 2026-10-27 (Task 22 landing): refundSlot.ts uses Task 22's types,
+  // refundScreens.ts registers with registerTradeScreen at import, screens.ts imports it,
+  // e2e/refund.spec.ts drives /trade/:code (with the 1280x800 parity), and methodOf is Task 22's.
 
   it("NEEDS_TASK_23: FinalAlert's I've paid opens no sheet until PaidConfirmSheet is set", () => {
     // When Task 23's PaidConfirmSheet lands: `setFinalAlertPaidSheet(PaidConfirmSheet)` where the
@@ -61,5 +57,17 @@ describe('the slots Task 25 registers', () => {
     expect(guard(v, payBy)).toBe(false);
     expect(guard(v, payBy + 1)).toBe(true);
     expect(guard({ ...v, paidAt: v.payBy }, payBy + 1)).toBe(false);
+  });
+});
+
+describe("in Task 22's trade room (screens.ts)", () => {
+  it('the room picks SellerRefund and FinalAlert; registering them collided with no other slot', () => {
+    const v = sellerView();
+    const after = Date.parse(v.payBy!) + 1;
+    expect(screenFor(v, after)).toBe(SellerRefund);
+    expect(screenFor(sellerRequestedView(), after)).toBe(SellerRefund);
+    expect(screenFor(buyerAlertView(), after)).toBe(FinalAlert);
+    // Before payBy the seller's secured slot is Task 23's (not on the line yet: no screen).
+    expect(screenFor(v, Date.parse(v.payBy!))).toBeNull();
   });
 });

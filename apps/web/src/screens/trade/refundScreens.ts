@@ -1,21 +1,21 @@
 /**
- * Task 25's trade-room slots (Task 22's slot interface; refundSlot.ts explains the copy):
+ * Task 25's trade-room slots (Task 22's slot interface, TradeRoom.tsx), registered at import
+ * (screens.ts imports this file):
  * - seller × `secured`, guarded by `sellerRefundOpen` (past `payBy` by the server clock, unpaid,
  *   not paused): SellerRefund. Task 23's unguarded seller × `secured` waiting room shows otherwise.
  * - seller × `refund_requested`: SellerRefund's "final alert sent" view (no other task owns it).
  * - buyer × `refund_requested`: FinalAlert.
- *
- * TRIPWIRE (test/refund-tripwires.test.ts): when TradeRoom.tsx lands, call
- * `registerRefundScreens(registerTradeScreen)` at the top level of this file and replace the
- * Task 25 comment in screens.ts with `import './refundScreens.js';`.
+ * None of these collides with another task's slot (TradeRoom.tsx's ownership list; a collision
+ * throws at registration).
  */
 import type { ReactNode } from 'react';
 import { FinalAlert } from './FinalAlert.js';
 import { sellerRefundOpen } from './refundRules.js';
 import type { Party, RefundScreenProps, RefundView, TradeState } from './refundSlot.js';
 import { SellerRefund } from './SellerRefund.js';
+import { registerTradeScreen } from './TradeRoom.js';
 
-/** Task 22's `TradeSlot`, with these screens' narrower props. */
+/** Task 22's `TradeSlot`, with these screens' narrower props (assignable to it). */
 export interface RefundSlot {
   owner: string;
   role: Party | 'any';
@@ -38,3 +38,5 @@ export function registerRefundScreens(register: (slot: RefundSlot) => () => void
     for (const off of offs) off();
   };
 }
+
+registerRefundScreens(registerTradeScreen);
