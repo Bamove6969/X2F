@@ -230,8 +230,8 @@ async function buildRegistrationOptions(
 /**
  * Checks a registration response: origin, RP ID, type `webauthn.create`, user presence, the
  * challenge, and user verification for a passkey; then decides `attested` (a `packed` statement
- * with a certificate chain that `MetadataService` verified against the snapshot, and an allowlisted
- * AAGUID) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
+ * with a certificate chain that `MetadataService` verified against the snapshot, and an AAGUID on
+ * the owner's allowlist for the owner, staff's otherwise) and applies `assertCredentialAllowed`. `kind` null (Plan 4's helper) means: attested →
  * security key, otherwise passkey. Any verification error → 401 `webauthn-failed`.
  */
 async function verifyRegistration(
@@ -257,8 +257,10 @@ async function verifyRegistration(
   }
   if (!result.verified) throw failed();
   const info = result.registrationInfo;
+  // The owner's keys are checked against the owner's allowlist; staff (and a trader's key) against staff's.
+  const list = a.accountKind === 'owner' ? 'owner' : 'staff';
   const attested =
-    info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt);
+    info.fmt === 'packed' && hasCertificateChain(info.attestationObject) && deps.attestation.isAllowed(info.aaguid, info.fmt, list);
   const kind = a.kind ?? (attested ? 'security-key' : 'passkey');
   if (kind === 'passkey' && !info.userVerified) throw failed();
   assertCredentialAllowed(a.accountKind, { kind, attested });

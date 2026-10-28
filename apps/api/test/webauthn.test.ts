@@ -31,6 +31,8 @@ const TERMS = '2026-10-17';
 const ALLOWED = '11111111-2222-4333-8444-555555555555';
 const UNLISTED = '66666666-7777-4888-8999-aaaaaaaaaaaa';
 const NO_STATEMENT = 'bbbbbbbb-cccc-4ddd-8eee-ffffffffffff';
+/** On staff's allowlist but not the owner's (like a YubiKey 5 below firmware 5.7, a Security Key or a Titan). */
+const STAFF_ONLY = '12121212-3434-4565-8787-909090909090';
 
 let app: FastifyInstance;
 let deps: Deps;
@@ -57,7 +59,7 @@ class Browser {
 beforeAll(async () => {
   ca = createTestCa();
   mdsDir = await mkdtemp(join(tmpdir(), 'x2f-mds-'));
-  await writeTestMds(mdsDir, ca, { statements: [ALLOWED, UNLISTED], allow: [ALLOWED] });
+  await writeTestMds(mdsDir, ca, { statements: [ALLOWED, UNLISTED, STAFF_ONLY], allow: [ALLOWED, STAFF_ONLY], ownerAllow: [ALLOWED] });
   const attestation = fileAttestationPolicy(mdsDir);
   await attestation.init();
   let set: (d: Date) => void;
@@ -445,6 +447,29 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     ]);
   });
 
+  it('checks the owner against the owner allowlist and staff against the staff allowlist (owner, 2026-10-20)', async () => {
+    const staffId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const staff = await loggedIn(staffId, true);
+    const staffKey = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: STAFF_ONLY, ca } });
+    expect((await staffAdd(staff, staffKey, 'security-key')).res.statusCode).toBe(201);
+
+    const ownerId = await seedOwner();
+    const owner = await loggedIn(ownerId, true);
+    const ownerStaffKey = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: STAFF_ONLY, ca } });
+    const refused = await staffAdd(owner, ownerStaffKey, 'security-key');
+    expect(refused.options.attestation).toBe('direct');
+    expect(refused.res.statusCode).toBe(403);
+    expect(errorOf(refused.res)).toBe('method-not-allowed');
+    const ownerKey = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: ALLOWED, ca } });
+    expect((await staffAdd(owner, ownerKey, 'security-key')).res.statusCode).toBe(201);
+
+    const { rows } = await deps.db.query('select account_id, attested, aaguid from webauthn_credentials where account_id = any($1) order by created_at', [[staffId, ownerId]]);
+    expect(rows).toEqual([
+      { account_id: staffId, attested: true, aaguid: STAFF_ONLY },
+      { account_id: ownerId, attested: true, aaguid: ALLOWED },
+    ]);
+  });
+
   it('refuses an owner passkey before any confirm token is spent', async () => {
     const ownerId = await seedOwner();
     const b = await loggedIn(ownerId, true);
@@ -524,6 +549,24 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 });
 
 describe('Plan 4 helpers', () => {
+  it('refuses an owner a staff-only key when the kind is left to the attestation', async () => {
+    const ownerId = await seedOwner();
+    const challenge = new Uint8Array(32).fill(5);
+    const options = await webauthnRegistrationOptions(deps, ownerId, { challenge });
+    expect(options.attestation).toBe('direct');
+    const key = createSoftAuthenticator({ backedUp: false, userVerified: false, attestation: { aaguid: STAFF_ONLY, ca } });
+    // Not on the owner list → not attested → counted as a passkey, which the owner may never use.
+    await expect(verifyWebAuthnRegistration(deps, ownerId, key.register(options, ORIGIN), challenge)).rejects.toMatchObject({
+      status: 401, code: 'webauthn-failed',
+    });
+    const keyUv = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: STAFF_ONLY, ca } });
+    await expect(verifyWebAuthnRegistration(deps, ownerId, keyUv.register(options, ORIGIN), challenge)).rejects.toMatchObject({
+      status: 403, code: 'method-not-allowed',
+    });
+    const { rows } = await deps.db.query('select 1 from webauthn_credentials where account_id = $1', [ownerId]);
+    expect(rows).toEqual([]);
+  });
+
   it('registers and verifies with caller-held challenges', async () => {
     const staffId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
     const challenge = new Uint8Array(32).fill(7);
