@@ -21,7 +21,7 @@ function stubClient() {
       subs.set(code, cb);
       return () => subs.delete(code);
     },
-    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', amountAtomic: null, fiatCents: null, ...s })),
+    push: (s) => act(() => subs.get(CODE)?.({ phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: 'buyer', amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, ...s })),
   };
   return c;
 }
@@ -47,6 +47,10 @@ describe('useEscrow', () => {
     // The amount the device accepts (and its fiat total) reach the screens through the hook (review 2026-10-26 I3).
     c.push({ phase: 'ready', amountAtomic: 1_250_000_000_000n, fiatCents: 41_250n });
     expect(out.v).toMatchObject({ amountAtomic: 1_250_000_000_000n, fiatCents: 41_250n });
+    // The funding screen's facts (Task 22): the device's own address, deal and funds() readings.
+    expect(out.v).toMatchObject({ escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null });
+    c.push({ phase: 'ready', escrowAddress: '4escrow', deal: conf.deal, receivedAtomic: 7n, confirmedAtomic: 5n });
+    expect(out.v).toMatchObject({ escrowAddress: '4escrow', deal: conf.deal, receivedAtomic: 7n, confirmedAtomic: 5n });
     await out.v!.buyerCancel();
     await out.v!.markPaid(41_250n);
     await out.v!.signal('trade.extend');
@@ -104,7 +108,7 @@ describe('worker protocol', () => {
     await vi.waitFor(() => expect(calls).toContain(`start ${CODE} seller`));
     const seen: EscrowStatus[] = [];
     client.subscribe(CODE, (s) => seen.push(s));
-    emit(CODE, { phase: 'ready', error: null, retryable: false, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller', amountAtomic: null, fiatCents: null });
+    emit(CODE, { phase: 'ready', error: null, retryable: false, refusal: null, checkWords: ['1', '2', '3', '4'], keepOpen: false, role: 'seller', amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null });
     await vi.waitFor(() => expect(seen.at(-1)?.phase).toBe('ready'));
     await expect(client.act(CODE, { type: 'buyer-cancel' })).resolves.toBeUndefined();
     await expect(client.act(CODE, { type: 'release' })).rejects.toThrow();

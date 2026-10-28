@@ -4,8 +4,8 @@
 // the line and App.tsx hands their Trade button to the quote, which reads offers through browse's
 // parseOffers; those tripwires are retired. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
-// (address over 256 characters included); the room's fallback to readConfirmed(code) when history
-// state is empty is Task 22's to wire, recorded in docs/coordination.md.) Each one below fails once the named module lands: then
+// (address over 256 characters included); the trade room (Task 22) passes location.state.confirmed,
+// else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx).) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';

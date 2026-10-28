@@ -19,6 +19,8 @@ import { Security } from './screens/settings/Security.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
+import { TradeRoom } from './screens/trade/TradeRoom.js';
+import './screens/trade/screens.js';
 
 const WIDE = '(min-width: 1024px)';
 
@@ -133,7 +135,7 @@ export function App() {
           <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />
           <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
-          <Route path="/trade/:code" element={<Screen name="trade" />} />
+          <Route path="/trade/:code" element={<TradeRoom />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
           <Route path="/wallets" element={<Screen name="wallets" />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
