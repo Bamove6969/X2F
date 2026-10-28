@@ -1,4 +1,4 @@
-/* The Desktop board's chat column (fixture stand-in for Task 20's ChatPanel). */
+/* The Desktop board's chat column (fixture stand-in for Task 20's ChatPanel, src/fixtures/payChat.tsx). */
 .x2f-board-chat {
   display: flex;
   flex-direction: column;

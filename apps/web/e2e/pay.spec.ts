@@ -1,16 +1,28 @@
-// Task 23 end to end: BuyerPay (BuyerPay board, 390×844), the wide room (Desktop board,
-// 1280×800), the confirm step, buyer cancel and the seller's waiting room, in the fixtures build
-// through the Task 23 harness (/__harness/pay/:code, standing in for Task 22's /trade/:code until
-// it merges; the tripwire in test/pay-tripwires.test.ts moves this file then). The API is stubbed
-// with a tiny model of the trade rules; the escrow is the harness's recording fake.
-//   flock ~/x2f-comms/check.lock npx playwright test -c apps/web/e2e/harness.config.ts
+// Task 23 end to end in Task 22's trade room at /trade/:code: BuyerPay (BuyerPay board, 390×844),
+// the wide room (Desktop board, 1280×800), the confirm step, buyer cancel and the seller's
+// waiting room, on a fixtures-mode build (e2e/fixtures-serve.ts) served with the real CSP. The
+// API is stubbed with a tiny model of the trade rules; the escrow is the fixture build's recorder
+// (src/fixtures/index.ts: window.__x2fEscrowCalls, window.__x2fSetFixtureEscrow), whose figures are
+// the device's: every sum on screen is the device's (review 2026-10-27, I1).
 import { expect, test, type Page, type Route } from '@playwright/test';
+import type { FastifyInstance } from 'fastify';
 import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
+import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 
+const PORT = 4320;
 const CODE = PAY_SECURING.code;
-const ROOM = `/__harness/pay/${CODE}`;
+const ROOM = `http://127.0.0.1:${PORT}/trade/${CODE}`;
+
+let server: FastifyInstance;
+test.beforeAll(async () => {
+  test.setTimeout(240_000);
+  server = await startFixtures(PORT, 'dist-fixtures-pay');
+});
+test.afterAll(async () => {
+  await server?.close();
+});
 const SENTENCE = (fiat: string) => `I sent exactly ${fiat} via Zelle with ${CODE} in the memo`;
 const at = (min: number) => new Date(Date.parse(PAY_NOW) + min * 60_000).toISOString();
 
@@ -56,6 +68,7 @@ function apply(s: Server, e: Record<string, unknown>): { status: number; json: u
 
 async function serve(page: Page, view: TradeView, before?: Server['before']): Promise<Server> {
   const s: Server = { view, posts: [], ...(before ? { before } : {}) };
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
   await page.route(/\/v1\/trades\/[^/]+(\/events)?$/, async (route: Route) => {
     const req = route.request();
     if (req.method() === 'POST') {
@@ -69,13 +82,19 @@ async function serve(page: Page, view: TradeView, before?: Server['before']): Pr
   return s;
 }
 
-const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fPay?.calls ?? []);
+const escrowCalls = (page: Page) => page.evaluate(() => window.__x2fEscrowCalls ?? []);
 const room = (page: Page) => page.locator('main[data-screen="trade"]');
 const primary = (page: Page) => page.locator('[data-primary]').first();
 const sheet = (page: Page) => page.getByRole('dialog');
 
+/** The device's own figures for the board trade: 1.25 XMR at $330.00, $412.50 (and its deal). */
+const DEVICE = { phase: 'ready' as const, amountAtomic: PAY_SECURED.amountAtomic, fiatCents: PAY_SECURED.fiatCents, deal: { poster: 'seller' as const, takeAmountAtomic: PAY_SECURED.amountAtomic } };
+
 async function open(page: Page, view: TradeView, before?: Server['before']): Promise<Server> {
   const s = await serve(page, view, before);
+  await page.addInitScript((e) => {
+    window.__x2fFixtureEscrow = e;
+  }, DEVICE);
   await page.goto(ROOM);
   await expect(room(page)).toHaveAttribute('data-trade-state', view.state);
   return s;
@@ -113,17 +132,35 @@ test.describe("I've paid", () => {
     await expect(room(page)).toHaveAttribute('data-trade-state', 'secured');
   });
 
-  test('Yes posts the total shown, sends trade.paid, and "Marked as paid" waits for the ack', async ({ page }) => {
+  test('Yes posts the device total, sends trade.paid, and shows "Marked as paid" once the device recorded it', async ({ page }) => {
     const s = await open(page, PAY_SECURED);
     await primary(page).click();
     await page.getByText(SENTENCE('$412.50')).click();
     await page.getByRole('button', { name: "Yes, I've paid" }).click();
     await expect(room(page)).toHaveAttribute('data-trade-state', 'paid');
     expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
-    expect(await escrowCalls(page)).toEqual(['markPaid(41250)']);
-    await expect(primary(page)).toHaveText('Marking as paid…');
-    await page.evaluate(() => window.__x2fPay!.ack());
+    expect(await escrowCalls(page)).toEqual(['paid:41250']);
     await expect(primary(page)).toHaveText('Marked as paid');
+  });
+
+  test('an API amount outside the device range: no total, I\'ve paid disabled, nothing posted (review I1)', async ({ page }) => {
+    const s = await open(page, { ...PAY_SECURED, amountAtomic: '3030272727272', fiatCents: '99999' });
+    // This device accepts no amount: the API's is above its own size.
+    await page.evaluate(() => window.__x2fSetFixtureEscrow!({ refusal: 'amount-out-of-range', amountAtomic: null, fiatCents: null }));
+    await expect(primary(page)).toBeDisabled();
+    await expect(page.locator('[data-pay-block]')).toContainText("Don't send any money yet");
+    await expect(page.getByText('$999.99')).toHaveCount(0);
+    expect(s.posts).toEqual([]);
+  });
+
+  test('paid on the server but never recorded on this device (a reload): Finish sends only trade.paid (review I2)', async ({ page }) => {
+    const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) });
+    await page.evaluate(() => window.__x2fSetFixtureEscrow!({ refusal: 'amount-unknown' }));
+    await expect(page.getByText("Your device hasn't recorded your payment. Tap to finish.")).toBeVisible();
+    await primary(page).click();
+    await expect(primary(page)).toHaveText('Marked as paid');
+    expect(await escrowCalls(page)).toEqual(['paid:41250']);
+    expect(s.posts).toEqual([]);
   });
 
   test('the trade grows while the sheet is open: total-changed, no signal, still secured, the new total asked', async ({ page }) => {
@@ -136,6 +173,10 @@ test.describe("I've paid", () => {
     await primary(page).click();
     await page.getByText(SENTENCE('$412.50')).click();
     await page.getByRole('button', { name: "Yes, I've paid" }).click();
+    // Refused (total-changed) and re-read: the API's $433.13 is not this device's yet, so no sum is asked.
+    await expect(sheet(page).locator('[data-pay-block="amount-differs"]')).toBeVisible();
+    // This device's own reading grew too (Task 12 follows its own funds()).
+    await page.evaluate(() => window.__x2fSetFixtureEscrow!({ amountAtomic: '1312500000000', fiatCents: '43313' }));
     await expect(sheet(page)).toContainText('Trade grew to 1.312500 XMR, you now pay $433.13');
     await expect(sheet(page)).toContainText(SENTENCE('$433.13'));
     await expect(sheet(page).getByRole('checkbox')).not.toBeChecked();
@@ -146,7 +187,7 @@ test.describe("I've paid", () => {
     await page.getByRole('button', { name: "Yes, I've paid" }).click();
     await expect(room(page)).toHaveAttribute('data-trade-state', 'paid');
     expect(s.posts[1]).toEqual({ type: 'mark-paid', fiatCents: '43313' });
-    expect(await escrowCalls(page)).toEqual(['markPaid(43313)']);
+    expect(await escrowCalls(page)).toEqual(['paid:43313']);
   });
 
   test('the countdown follows the server clock with the device clock 10 min ahead (Review Focus 3)', async ({ page }) => {
@@ -163,7 +204,7 @@ test.describe('cancel', () => {
     await expect(room(page)).toHaveAttribute('data-trade-state', 'settling');
     await expect(sheet(page)).toHaveCount(0);
     expect(s.posts).toEqual([{ type: 'buyer-cancel' }]);
-    expect(await escrowCalls(page)).toEqual(['buyerCancel']);
+    expect(await escrowCalls(page)).toEqual(['buyer-cancel']);
   });
 
   test("after I've paid, the warning first, and nothing until it is confirmed", async ({ page }) => {
@@ -180,7 +221,7 @@ test.describe('cancel', () => {
     await sheet(page).getByRole('button', { name: 'Cancel trade' }).click();
     await expect(room(page)).toHaveAttribute('data-trade-state', 'settling');
     expect(s.posts).toEqual([{ type: 'buyer-cancel' }]);
-    expect(await escrowCalls(page)).toEqual(['buyerCancel']);
+    expect(await escrowCalls(page)).toEqual(['buyer-cancel']);
   });
 
   test("the seller's funded room has no cancel-alone control; Propose cancel gives the buyer an accept card", async ({ page }) => {
@@ -199,7 +240,7 @@ test.describe('cancel', () => {
     await page.getByRole('button', { name: 'Accept' }).click();
     await expect(room(page)).toHaveAttribute('data-trade-state', 'settling');
     expect(s.posts.at(-1)).toEqual({ type: 'accept-cancel' });
-    expect(await escrowCalls(page)).toEqual(['proposeCancelSign']);
+    expect(await escrowCalls(page)).toEqual(['propose-cancel-sign']);
   });
 });
 
