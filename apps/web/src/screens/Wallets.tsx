@@ -6,6 +6,7 @@ import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
+import { refusalText } from './auth/refusals.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -34,13 +35,22 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
+/** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2). */
+export const RECOVERY_SESSION_WALLETS =
+  "You logged in with a backup, so you can't add wallets in this session. Log in with your usual method to add one.";
+/** 403 `confirm-invalid`: the confirm ran out (or was used) before the save went through. */
+export const CONFIRM_INVALID_WALLETS = 'Your confirmation ran out before the wallets were saved. Save again and confirm once more.';
+
 function addError(e: unknown): string {
   if (e instanceof ApiCallError || e instanceof AuthApiError) {
     if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
     if (e.code === 'wallet-exists') return 'One of those wallets is already linked.';
+    if (e.code === 'recovery-session') return RECOVERY_SESSION_WALLETS;
+    if (e.code === 'confirm-invalid') return CONFIRM_INVALID_WALLETS;
   }
-  return 'That could not be saved. Check the addresses and try again.';
+  // Task 30's wording for a held backup session, a wait after too many tries, and the rest.
+  return refusalText(e, 'That could not be saved. Check the addresses and try again.');
 }
 
 // ---------------------------------------------------------------------------------------------

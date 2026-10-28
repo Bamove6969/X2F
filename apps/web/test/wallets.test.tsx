@@ -4,7 +4,7 @@ import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { walletsAction, type WalletRule } from '@x2f/auth-client';
-import { Wallets } from '../src/screens/Wallets.js';
+import { CONFIRM_INVALID_WALLETS, RECOVERY_SESSION_WALLETS, Wallets } from '../src/screens/Wallets.js';
 import type { WalletView } from '../src/screens/wallets-model.js';
 import { fire, render } from './render.js';
 
@@ -223,5 +223,41 @@ describe('Your wallets', () => {
     await startAdding();
     expect(document.querySelector('#wallet-address')).not.toBeNull();
     expect(document.querySelector('[aria-label="Scan address QR code"]')).toBeNull();
+  });
+
+  describe('refusals say what to do (round 2, M1)', () => {
+    function alertText(): string {
+      return document.querySelector('[role="alert"]')?.textContent ?? '';
+    }
+
+    it('a backup-login session is told it cannot add wallets, not to check the addresses', async () => {
+      stub.onPost = () => ({ status: 403, json: { error: 'recovery-session' } });
+      await mount();
+      await startAdding();
+      type('#wallet-address', ADDR_C);
+      await click('Save wallet');
+      expect(alertText()).toBe(RECOVERY_SESSION_WALLETS);
+    });
+
+    it('a confirm that ran out before the save asks to save and confirm again', async () => {
+      stub.onPost = (_b, n) =>
+        n === 1 ? { status: 403, json: { error: 'confirm-required', action: 'add-wallets' } } : { status: 403, json: { error: 'confirm-invalid' } };
+      await mount();
+      await startAdding();
+      type('#wallet-address', ADDR_C);
+      await click('Save wallet');
+      type('#confirm-password', 'Correct-Horse-9!');
+      await click('Confirm', dialog("Confirm it's you")!.querySelector('[data-method="password"]')!);
+      expect(alertText()).toBe(CONFIRM_INVALID_WALLETS);
+    });
+
+    it("Task 30's refusalText words a wait after too many tries", async () => {
+      stub.onPost = () => ({ status: 429, json: { error: 'slow-down', retryAfterSeconds: 120 } });
+      await mount();
+      await startAdding();
+      type('#wallet-address', ADDR_C);
+      await click('Save wallet');
+      expect(alertText()).toBe('Too many tries. Try again in 2 minutes.');
+    });
   });
 });
