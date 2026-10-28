@@ -348,6 +348,31 @@ describe('a verified trade', () => {
     void ESCROW_ADDRESS;
   });
 
+  it('reports the derived escrow address, the stored deal and its own funds() readings (Task 22 funding facts)', async () => {
+    const t = await setup();
+    const buyer = await t.mk('buyer');
+    const seller = await t.mk('seller');
+    await buyer.runtime.start(CODE);
+    await seller.runtime.start(CODE);
+    await until(() => seller.last()?.phase === 'ready');
+    expect(seller.last()).toMatchObject({ escrowAddress: ESCROW_ADDRESS, deal: confirmedFor('seller').deal });
+    // receivedAtomic is the balance as read; confirmedAtomic sums only incoming with 1+ confirmations.
+    t.parties.funds = {
+      balance: 30n,
+      unlocked: 0n,
+      incoming: [
+        { txHash: 'a', amountAtomic: 10n, confirmations: 0, unlocked: false },
+        { txHash: 'b', amountAtomic: 20n, confirmations: 1, unlocked: false },
+      ],
+    };
+    await seller.status((s) => s.receivedAtomic === 30n);
+    expect(seller.last()).toMatchObject({ receivedAtomic: 30n, confirmedAtomic: 20n });
+    // After a settlement the balance falls, while the confirmed arrivals stay counted.
+    t.parties.funds = { balance: 0n, unlocked: 0n, incoming: [{ txHash: 'b', amountAtomic: 20n, confirmations: 15, unlocked: true }] };
+    await seller.status((s) => s.receivedAtomic === 0n);
+    expect(seller.last()).toMatchObject({ receivedAtomic: 0n, confirmedAtomic: 20n });
+  });
+
   it('check words differ when one key differs', async () => {
     const { escrowCheckWords } = await import('@x2f/trade');
     const [a, b, c] = await Promise.all([testIdentity(), testIdentity(), testIdentity()]);

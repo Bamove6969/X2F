@@ -10,10 +10,11 @@
  *   for 24 hours: `requireSession` refuses it with 403 `recovery-hold` on every route that does not
  *   set `allowHeld`, so it cannot add a primary method early; a recovery code skips the hold.
  *   Any full session of the account can end a recovery session.
- * - Staff and the owner have no backup login (R2): their usernames take the unknown-username path.
+ * - The backup login starts with the private login name (owner, 2026-10-23), never the display name.
+ * - Staff and the owner have no backup login (R2): their login names take the unknown-name path.
  */
 import { createHash, createHmac } from 'node:crypto';
-import { checkUsername, newRecoveryCode, normalizeRecoveryCode, type AccountKind } from '@x2f/accounts';
+import { newRecoveryCode, normalizeRecoveryCode, type AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { addAlert } from '../alerts.js';
 import type { Config } from '../config.js';
@@ -21,10 +22,10 @@ import { ApiError } from '../errors.js';
 import { requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
 import { allowedMethods, methodAllowed } from './methods.js';
-import { nameKeyOf } from './password.js';
+import { loginNameLookup } from '../accounts.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
-import { dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
-import { dummyTotpCheck, verifyTotp } from './totp.js';
+import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { verifyTotp } from './totp.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
 /** Backup TOTP attempts per account (or unknown name) per UTC day, right or wrong. */
@@ -100,10 +101,10 @@ async function newCodes(req: FastifyRequest) {
   return { codes: list };
 }
 
-type Who = { id: string } | { usernameKey: string };
+type Who = { id: string } | { nameTag: string };
 
 /**
- * `POST /v1/login/backup { username, kind, code, deviceLabel }`. Unknown usernames, accounts of
+ * `POST /v1/login/backup { loginName, kind, code, deviceLabel }`. Unknown login names, accounts of
  * other kinds (R2) and accounts without the method take the same path and fail the same way: 401
  * `credentials-invalid`. A disabled account is named only after a correct code, and its code stays
  * unused.
@@ -112,17 +113,15 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   ensureDeviceCookie(req, reply);
   req.server.budgets.start.take();
-  const { username: rawName, kind, code, deviceLabel } = strings(req.body, ['username', 'kind', 'code', 'deviceLabel'] as const);
+  const { loginName, kind, code, deviceLabel } = strings(req.body, ['loginName', 'kind', 'code', 'deviceLabel'] as const);
   if (kind !== 'totp' && kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
-  const name = checkUsername(rawName);
-  const nameKey = name.ok ? name.key : nameKeyOf(rawName);
-  const found = name.ok
-    ? (await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where username_key = $1', [name.key])).rows[0]
-    : undefined;
+  const name = loginNameLookup(deps.config, loginName);
+  // Always one lookup: '' matches no login key (I-1).
+  const found = (await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [name.key ?? ''])).rows[0];
   // R2: an account whose kind may not hold this method (staff and the owner hold neither) takes the
-  // unknown-username path.
+  // unknown-name path.
   const accountId = found && allowedMethods(found.kind).includes(kind === 'totp' ? 'totp' : 'recovery-codes') ? found.id : null;
-  const who: Who = accountId !== null ? { id: accountId } : { usernameKey: nameKey };
+  const who: Who = accountId !== null ? { id: accountId } : { nameTag: name.tag };
   const refuse = async (key: string): Promise<never> => {
     await throttleFail(deps, key, accountId);
     throw new ApiError(401, 'credentials-invalid');
@@ -152,10 +151,11 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   }
 
   // TOTP: at most 5 tries a day per account, right or wrong, before the per-guess throttle.
-  await dailyCap(deps, `backup-totp:${accountId ?? `name:${nameKey}`}`, TOTP_BACKUP_DAILY);
+  await dailyCap(deps, `backup-totp:${accountId ?? `name:${name.tag}`}`, TOTP_BACKUP_DAILY);
   const key = await throttleKey(deps, req, 'totp', who);
   await throttleCheck(deps, key);
-  const ok = accountId !== null ? await verifyTotp(deps, accountId, code) : dummyTotpCheck(code, deps.clock());
+  // The same lookup for no account: NIL_UUID has no TOTP row, so it runs the dummy check (I-1).
+  const ok = await verifyTotp(deps, accountId ?? NIL_UUID, code);
   if (!ok || accountId === null) return refuse(key);
   await throttleReset(deps, key);
   await assertNotDisabled(deps.db, accountId);

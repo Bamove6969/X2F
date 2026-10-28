@@ -1,0 +1,102 @@
+{
+  "legalHeader": "Submission of this statement and retrieval and use of this statement indicates acceptance of the appropriate agreement located at https://fidoalliance.org/metadata/metadata-legal-terms/.",
+  "aaguid": "6d44ba9b-f6ec-2e49-b930-0c8fe920cb73",
+  "friendlyNames": {
+    "en-US": "Security Key by Yubico with NFC"
+  },
+  "description": "Security Key by Yubico with NFC",
+  "authenticatorVersion": 50100,
+  "protocolFamily": "fido2",
+  "schema": 3,
+  "upv": [
+    {
+      "major": 1,
+      "minor": 0
+    }
+  ],
+  "authenticationAlgorithms": [
+    "ed25519_eddsa_sha512_raw",
+    "secp256r1_ecdsa_sha256_raw"
+  ],
+  "publicKeyAlgAndEncodings": [
+    "cose"
+  ],
+  "attestationTypes": [
+    "basic_full"
+  ],
+  "userVerificationDetails": [
+    [
+      {
+        "userVerificationMethod": "none"
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "passcode_external",
+        "caDesc": {
+          "base": 64,
+          "minLength": 4,
+          "maxRetries": 8,
+          "blockSlowdown": 0
+        }
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "presence_internal"
+      }
+    ],
+    [
+      {
+        "userVerificationMethod": "presence_internal",
+        "caDesc": {
+          "base": 64,
+          "minLength": 4,
+          "maxRetries": 8,
+          "blockSlowdown": 0
+        }
+      },
+      {
+        "userVerificationMethod": "passcode_external"
+      }
+    ]
+  ],
+  "keyProtection": [
+    "hardware",
+    "secure_element"
+  ],
+  "matcherProtection": [
+    "on_chip"
+  ],
+  "cryptoStrength": 128,
+  "attachmentHint": [
+    "external",
+    "wired",
+    "wireless",
+    "nfc"
+  ],
+  "tcDisplay": [],
+  "attestationRootCertificates": [
+    "MIIDHjCCAgagAwIBAgIEG0BT9zANBgkqhkiG9w0BAQsFADAuMSwwKgYDVQQDEyNZdWJpY28gVTJGIFJvb3QgQ0EgU2VyaWFsIDQ1NzIwMDYzMTAgFw0xNDA4MDEwMDAwMDBaGA8yMDUwMDkwNDAwMDAwMFowLjEsMCoGA1UEAxMjWXViaWNvIFUyRiBSb290IENBIFNlcmlhbCA0NTcyMDA2MzEwggEiMA0GCSqGSIb3DQEBAQUAA4IBDwAwggEKAoIBAQC/jwYuhBVlqaiYWEMsrWFisgJ+PtM91eSrpI4TK7U53mwCIawSDHy8vUmk5N2KAj9abvT9NP5SMS1hQi3usxoYGonXQgfO6ZXyUA9a+KAkqdFnBnlyugSeCOep8EdZFfsaRFtMjkwz5Gcz2Py4vIYvCdMHPtwaz0bVuzneueIEz6TnQjE63Rdt2zbwnebwTG5ZybeWSwbzy+BJ34ZHcUhPAY89yJQXuE0IzMZFcEBbPNRbWECRKgjq//qT9nmDOFVlSRCt2wiqPSzluwn+v+suQEBsUjTGMEd25tKXXTkNW21wIWbxeSyUoTXwLvGS6xlwQSgNpk2qXYwf8iXg7VWZAgMBAAGjQjBAMB0GA1UdDgQWBBQgIvz0bNGJhjgpToksyKpP9xv9oDAPBgNVHRMECDAGAQH/AgEAMA4GA1UdDwEB/wQEAwIBBjANBgkqhkiG9w0BAQsFAAOCAQEAjvjuOMDSa+JXFCLyBKsycXtBVZsJ4Ue3LbaEsPY4MYN/hIQ5ZM5p7EjfcnMG4CtYkNsfNHc0AhBLdq45rnT87q/6O3vUEtNMafbhU6kthX7Y+9XFN9NpmYxr+ekVY5xOxi8h9JDIgoMP4VB1uS0aunL1IGqrNooL9mmFnL2kLVVee6/VR6C5+KSTCMCWppMuJIZII2v9o4dkoZ8Y7QRjQlLfYzd3qGtKbw7xaF1UsG/5xUb/Btwb2X2g4InpiB/yt/3CpQXpiWX/K4mBvUKiGn05ZsqeY1gx4g0xLBqcU9psmyPzK+Vsgw2jeRQ5JlKDyqE0hebfC1tvFu0CCrJFcw=="
+  ],
+  "authenticatorGetInfo": {
+    "versions": [
+      "U2F_V2",
+      "FIDO_2_0"
+    ],
+    "extensions": [
+      "hmac-secret"
+    ],
+    "aaguid": "6d44ba9bf6ec2e49b9300c8fe920cb73",
+    "options": {
+      "plat": false,
+      "rk": true,
+      "clientPin": true,
+      "up": true
+    },
+    "maxMsgSize": 1200,
+    "pinUvAuthProtocols": [
+      1
+    ]
+  }
+}

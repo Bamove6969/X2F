@@ -13,14 +13,14 @@ const SELL_AD: QuoteOffer = {
   id: 'offer-ghost',
   side: 'sell',
   currency: 'USD',
-  poster: { username: 'satoshi_ghost', stage: 'graduated' },
+  poster: { displayName: 'satoshi_ghost', stage: 'graduated' },
   pricing: { mode: 'market', marginBps: 0 },
   minFiatCents: 5_000n,
   maxFiatCents: 150_000n,
   minTrades: 0,
 };
 
-const BUY_AD: QuoteOffer = { ...SELL_AD, id: 'offer-mira', side: 'buy', poster: { username: 'mira.k', stage: 'graduated' } };
+const BUY_AD: QuoteOffer = { ...SELL_AD, id: 'offer-mira', side: 'buy', poster: { displayName: 'mira.k', stage: 'graduated' } };
 
 describe('parseAmount', () => {
   it('reads fiat to cents and XMR to atomic units', () => {

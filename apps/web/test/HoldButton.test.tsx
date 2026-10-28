@@ -215,6 +215,102 @@ describe('HoldButton', () => {
     expect(onComplete).not.toHaveBeenCalled();
   });
 
+  describe('completeOn="release" (the user\'s release performs the action, so a touch hold keeps user activation; Task 22 review I2)', () => {
+    const release = (props: Partial<Parameters<typeof HoldButton>[0]> = {}) =>
+      setup({ completeOn: 'release', releaseLabel: 'Release to open', caption: 'Press and hold', ...props });
+
+    it('arms at holdMs instead of completing, says "Release to open", and completes synchronously inside pointerup', () => {
+      const { button, onComplete } = release();
+      pointer(button, 'pointerdown');
+      advance(1500, vi);
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(button.dataset.armed).toBe('true');
+      expect(button.textContent).toContain('Release to open');
+      // A document listener runs after React's root listener for the same pointerup: by then it has completed.
+      let calledWithinPointerup = false;
+      const probe = () => {
+        calledWithinPointerup = onComplete.mock.calls.length === 1;
+      };
+      document.addEventListener('pointerup', probe);
+      pointer(button, 'pointerup');
+      document.removeEventListener('pointerup', probe);
+      expect(onComplete).toHaveBeenCalledTimes(1);
+      expect(calledWithinPointerup).toBe(true);
+      expect(button.dataset.armed).toBe('false');
+    });
+
+    it('never completes from the timer, however long the finger stays down', () => {
+      const { button, onComplete } = release();
+      pointer(button, 'pointerdown');
+      advance(60_000, vi);
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(button.textContent).toContain('Release to open');
+    });
+
+    it('a release before holdMs resets and does nothing', () => {
+      const { button, onComplete } = release();
+      pointer(button, 'pointerdown');
+      advance(1499, vi);
+      pointer(button, 'pointerup');
+      expect(onComplete).not.toHaveBeenCalled();
+      expect(button.dataset.armed).toBe('false');
+      expect(button.textContent).toContain('Press and hold');
+    });
+
+    it('leaving or cancelling while armed disarms; a later pointerup does nothing', () => {
+      const { button, onComplete } = release();
+      pointer(button, 'pointerdown');
+      advance(1500, vi);
+      pointer(button, 'pointerleave');
+      expect(button.dataset.armed).toBe('false');
+      pointer(button, 'pointerup');
+      expect(onComplete).not.toHaveBeenCalled();
+      pointer(button, 'pointerdown');
+      advance(1500, vi);
+      pointer(button, 'pointercancel');
+      pointer(button, 'pointerup');
+      expect(onComplete).not.toHaveBeenCalled();
+    });
+
+    it('completes once; later holds do nothing', () => {
+      const { button, onComplete } = release();
+      pointer(button, 'pointerdown');
+      advance(1500, vi);
+      pointer(button, 'pointerup');
+      pointer(button, 'pointerdown');
+      advance(1500, vi);
+      pointer(button, 'pointerup');
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('a keyboard hold completes on the key release once armed', () => {
+      const { button, onComplete } = release();
+      key(button, 'keydown', ' ');
+      advance(1500, vi);
+      expect(onComplete).not.toHaveBeenCalled();
+      key(button, 'keyup', ' ');
+      expect(onComplete).toHaveBeenCalledTimes(1);
+    });
+
+    it('under reduced motion the countdown ends in "Release to open"', () => {
+      setReducedMotion(true);
+      const { button } = release();
+      pointer(button, 'pointerdown');
+      expect(button.textContent).toContain('Keep holding… 1.5 s');
+      advance(1500, vi);
+      expect(button.textContent).toContain('Release to open');
+      expect(button.textContent).not.toContain('Keep holding');
+    });
+  });
+
+  it('the default completes from the timer and is never armed', () => {
+    const { button, onComplete } = setup();
+    pointer(button, 'pointerdown');
+    advance(1500, vi);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+    expect(button.dataset.armed).toBe('false');
+  });
+
   it('the stylesheet gives done the escrow fill on ground text, with no lift or glow', () => {
     const rule = css.match(/\.x2f-hold\[data-done='true'\][^{]*\{([^}]*)\}/);
     expect(rule).not.toBeNull();

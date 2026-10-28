@@ -180,7 +180,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     );
   }
 
-  const poster = o.poster.username;
+  const poster = o.poster.displayName;
   const posterName = <span data-username="">{poster}</span>;
   // Every fiat figure below is in the currency's minor units with its exponent (whole yen, 3-place dinars).
   const exponent = quoteExponent(o, marketNow);

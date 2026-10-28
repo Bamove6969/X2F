@@ -35,7 +35,7 @@ const name = (p: string) => `${p}${String(++n).padStart(4, '0')}`;
 
 /** A trader account with a logged-in browser. */
 async function trader(): Promise<{ id: string; b: Browser }> {
-  const id = await seedAccount(deps, { username: name('idn') });
+  const id = await seedAccount(deps, { loginName: name('idn') });
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id });
   expect(res.statusCode).toBe(200);

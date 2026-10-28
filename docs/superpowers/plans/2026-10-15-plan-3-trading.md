@@ -871,7 +871,7 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 **Interfaces:**
 - Produces:
   - `POST /v1/nudges { to: username, context: chat | code }`. Sender-own refusals: `no-shared-context`, `too-soon` (one per sender per 10 min). Silent drops (`recipient-busy` 3/hour, blocked, quiet hours, nudges off) all return the same `202` as a delivered nudge (P3-M5).
-  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { username }`.
+  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { displayName }`.
   - Delivery: SSE `nudge` → "Wake up, <name> wants to trade" and a WebAudio buzz while the tab is open. A hidden tab gets a `Notification` "Someone nudged you on X2F". A closed tab gets Web Push `nudge` (Task 19).
 
 - [ ] **Step 1: Write the failing tests:**
@@ -1025,3 +1025,12 @@ The owner replaced "no trade limits for new accounts" with starter limits (spec 
 - **Escrow growth (overfunding):** growth may not push the trade above either side's cap. Otherwise the trade amount stays fixed and the extra returns to the seller, as for "above the offer's maximum".
 - Tests cover each stage boundary, the day thresholds, the lost-dispute drop, the open-trade count, and a cap error that never reveals the other side's stage.
 
+
+## Revision 2026-10-28 (lead, from the owner's decisions of 2026-10-27)
+
+Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Source: `HANDOFF.md` "Decided 2026-10-27 (owner)".
+- **No guest buying (owner).** There is no buy path without an account; disputes need one. Nothing to remove: setup already starts on the first Trade tap or ad post (spec 6.1). **Task 28 (Getting started)** gains one test: from a Trade tap by a visitor, the shortest route (Terms, username, PGP or passkey, first wallet) returns to the same quote with the amount kept, in no more than the board's screens, with no dead end. Any extra step added later must keep that test green.
+- **Chat keys unchanged (owner).** Task 20 is built as written: chats sealed to buyer, seller and the moderator chat identity; the moderator may read once a dispute opens, enforced by rules and the activity log (spec 6.6).
+- **Task 20 must store each envelope's sender role** (`sender_role 'buyer'|'seller'|'mod'|'system'`, taken from the session's role as `checkChatEnvelope(body, channel, sessionRole)` already checks it), and `purgeChats` must take its due-time from a function so Plan 7's self-delete (per-side hide and destroy times) can plug in without a schema change. Add a test that the stored role equals the session role, never a body field.
+- **Task 19 push stays as built.** Plan 7 Task 5 wraps `sendPush` in a `notify()` fan-out for the new Nostr and email channels; the push payloads do not change.
+- **Comparison gaps the owner has not decided** ("Full block" extending Task 26's `blocks`, "Pause all my offers" on Task 4's per-offer pause) are listed with costs in Plan 7's "Owner questions". Nothing is built for them until the owner says yes.

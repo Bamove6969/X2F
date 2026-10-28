@@ -14,7 +14,7 @@ export const BOARD_BUY_QUOTE = {
   offer: {
     id: 'offer-ghost',
     poster: {
-      username: 'satoshi_ghost',
+      displayName: 'satoshi_ghost',
       completedTrades: 212,
       online: true,
       lastSeenAt: '2026-10-24T00:00:00.000Z',

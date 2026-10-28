@@ -17,7 +17,7 @@ export interface QuoteOffer {
   side: AdSide;
   currency: string;
   /** Public fields only: the poster's display name (spec 6.1) and stage. */
-  poster: { username: string; stage: Stage };
+  poster: { displayName: string; stage: Stage };
   pricing: Pricing;
   minFiatCents: bigint;
   maxFiatCents: bigint;
