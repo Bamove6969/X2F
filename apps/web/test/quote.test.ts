@@ -228,6 +228,15 @@ describe('take refusals', () => {
     expect(odd).not.toMatch(/starter|building|graduated/i);
   });
 
+  it("a starter-limit refusal for the open-trade count says so; one about the other side names no stage (Task 5 as built)", () => {
+    expect(takeRefusal(new ApiCallError(409, 'starter-limit', { stage: 'starter', maxOpen: 3 }), SELL_AD)).toBe(
+      'Your account is on Starter limits: at most 3 open trades at once. Finish one first.',
+    );
+    const other = takeRefusal(new ApiCallError(409, 'starter-limit', {}), SELL_AD);
+    expect(other).toBe('This trade is above a trading limit right now. Try a smaller amount or another offer.');
+    expect(other).not.toMatch(/your account|starter|building|graduated/i);
+  });
+
   it('a not-enough-trades refusal counts in the singular for 1', () => {
     const one = takeRefusal(new ApiCallError(409, 'not-enough-trades', {}), { ...SELL_AD, minTrades: 1 });
     expect(one).toBe('This offer needs at least 1 completed trade.');

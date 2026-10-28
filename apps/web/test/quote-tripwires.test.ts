@@ -7,7 +7,11 @@
 // tripwire is retired. Task 4 also serves GET /v1/offers/:id, which the quote may use instead of the list. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the room's fallback to readConfirmed(code) when history
-// state is empty is Task 22's to wire, recorded in docs/coordination.md.) Each one below fails once the named module lands: then
+// state is empty is Task 22's to wire, recorded in docs/coordination.md. Task 5's take route landed
+// 2026-10-28 and matches takeOffer's body (amountAtomic, walletId, centsPerXmr, fiatCents) → { code },
+// price-changed and takeRefusal's codes; its starter-limit refusal carries { stage, capUsdCents } or
+// { stage: 'starter', maxOpen } for the caller's own limit and nothing for the other side's (takeErrors.ts);
+// that tripwire is retired.) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
@@ -18,17 +22,6 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 18 guesses still stand in for missing tasks', () => {
-  it('NEEDS_TASK_5: the take route and its starter-limit refusal are guessed', () => {
-    // Guessed: POST /v1/offers/:id/take { amountAtomic: string; walletId; centsPerXmr: string; fiatCents:
-    // string } → { code } (plan Task 5 with Revision 2026-10-27: the quoted rate and total travel with the
-    // take; the server locks exactly them or refuses 409 { error: 'price-changed' } when the market moved
-    // past the offer's tolerance, fixed-price offers comparing exactly); the other refusals 409 with { error }
-    // as in plan Task 5, plus 409 { error: 'starter-limit', stage: 'starter'|'building', capUsdCents?: string }
-    // naming only the caller's own stage (Revision 2026-10-24). Also check that the trade's stored fiatCents
-    // is the quoted one (OD-5).
-    expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer's body (centsPerXmr, fiatCents), price-changed, takeRefusal's codes and the starter-limit fields").toBe(false);
-  });
-
   it("NEEDS_TASK_28: setup does not yet come back to the quote with `resume=<nonce>` and this tab's pending-take marker", () => {
     // useTake sends a logged-out Trade to /setup/terms?returnTo=<quote with resume=<nonce>> after
     // writing the single-use pending-take marker to this tab's sessionStorage (pendingTake.ts). Setup
