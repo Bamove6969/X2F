@@ -36,12 +36,12 @@ interface Seen {
 }
 
 const FIXED = { ...B.offer, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerXmr: '34000' }, rate: '34000' };
-const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, username: 'mira.k' } };
+const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [] };
   await page.route('**/v1/account/me', (r) =>
-    s.signedIn ? r.fulfill({ json: { username: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
+    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),

@@ -860,7 +860,7 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 **Interfaces:**
 - Produces:
   - `POST /v1/nudges { to: username, context: chat | code }`. Sender-own refusals: `no-shared-context`, `too-soon` (one per sender per 10 min). Silent drops (`recipient-busy` 3/hour, blocked, quiet hours, nudges off) all return the same `202` as a delivered nudge (P3-M5).
-  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { username }`.
+  - `PUT /v1/account/nudges { enabled, quietFrom, quietTo, tz }` (enabled by default); `POST /v1/account/blocks { displayName }`.
   - Delivery: SSE `nudge` → "Wake up, <name> wants to trade" and a WebAudio buzz while the tab is open. A hidden tab gets a `Notification` "Someone nudged you on X2F". A closed tab gets Web Push `nudge` (Task 19).
 
 - [ ] **Step 1: Write the failing tests:**

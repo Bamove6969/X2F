@@ -4,13 +4,14 @@ import { join } from 'node:path';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { randomBytes } from 'node:crypto';
 import { fileAttestationPolicy } from '../src/auth/attestation.js';
 import { issueConfirmToken, requireConfirm } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { SESSION_COOKIE, requireSession, startSession } from '../src/auth/sessions.js';
 import {
   assertCredentialAllowed,
-  decoyCredentialIds,
+  MAX_SECURITY_KEYS,
   registrationOptionsFor,
   securityKeyLoginRoutes,
   verifyWebAuthnAssertion,
@@ -22,6 +23,7 @@ import { ApiError } from '../src/errors.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
+import { spySql } from './helpers/sqlSpy.js';
 
 const ORIGIN = 'https://x2f.test';
 const T0 = new Date('2026-10-17T12:00:00Z');
@@ -116,9 +118,11 @@ afterEach(async () => {
 
 let nameSeq = 0;
 const uniqueName = (prefix: string) => `${prefix}${++nameSeq}x`;
+/** Sign-up names for a test login name: display name `D.<login name>`. */
+const names = (loginName: string) => ({ displayName: `D.${loginName}`, loginName });
 
 async function seedOwner(): Promise<string> {
-  const id = await seedAccount(deps, { username: uniqueName('boss'), kind: 'owner' });
+  const id = await seedAccount(deps, { loginName: uniqueName('boss'), kind: 'owner' });
   seededOwners.push(id);
   return id;
 }
@@ -127,14 +131,14 @@ async function seedOwner(): Promise<string> {
 async function signUp(kind: 'passkey' | 'security-key', username = uniqueName('user')) {
   const b = new Browser();
   const auth = createSoftAuthenticator({ backedUp: kind === 'passkey', userVerified: true });
-  const start = await b.post('/v1/register/webauthn/start', { username, kind });
+  const start = await b.post('/v1/register/webauthn/start', { ...names(username), kind });
   expect(start.statusCode).toBe(200);
   const { challengeId, options } = start.json();
   const res = await b.post('/v1/register/webauthn/finish', {
     challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS,
   });
   expect(res.statusCode).toBe(201);
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where username_key = $1', [username.toLowerCase()]);
+  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [username.toLowerCase()]);
   return { b, auth, username, accountId: rows[0]!.id, options };
 }
 
@@ -150,7 +154,7 @@ async function discoverableLogin(auth: SoftAuthenticator, o: { origin?: string; 
 }
 
 async function usernameLogin(auth: SoftAuthenticator, username: string, b = new Browser(), prefix = '/v1/login/webauthn') {
-  const start = await b.post(`${prefix}/start`, { username });
+  const start = await b.post(`${prefix}/start`, { loginName: username });
   const { challengeId, options } = start.json();
   const res = await b.post(`${prefix}/finish`, { challengeId, response: auth.authenticate(options, ORIGIN), deviceLabel: 'Desk' });
   return { res, b, options };
@@ -195,17 +199,17 @@ describe('passkey sign-up and discoverable login', () => {
     const b = new Browser();
     const username = uniqueName('terms');
     const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
-    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { username, kind: 'passkey' })).json();
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(username), kind: 'passkey' })).json();
     const response = auth.register(options, ORIGIN);
     for (const acceptedTerms of [undefined, '2026-01-01']) {
       const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms });
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
     }
-    expect((await deps.db.query('select 1 from accounts where username_key = $1', [username.toLowerCase()])).rows).toEqual([]);
+    expect((await deps.db.query('select 1 from accounts where login_key = $1', [username.toLowerCase()])).rows).toEqual([]);
     const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
     expect(ok.statusCode).toBe(201);
-    const { rows } = await deps.db.query('select terms_version from accounts where username_key = $1', [username.toLowerCase()]);
+    const { rows } = await deps.db.query('select terms_version from accounts where login_key = $1', [username.toLowerCase()]);
     expect(rows[0].terms_version).toBe(TERMS);
   });
 
@@ -214,15 +218,18 @@ describe('passkey sign-up and discoverable login', () => {
     const id = Buffer.from(options.user.id, 'base64url');
     expect(id).toHaveLength(32);
     expect(id.toString('latin1').toLowerCase()).not.toContain(username.toLowerCase());
+    // The authenticator stores and shows the public display name only, never the private login name.
+    expect(options.user.name).toBe(`D.${username}`);
+    expect(JSON.stringify(options)).not.toContain(`"${username}"`);
     const { rows } = await deps.db.query('select webauthn_user_id from accounts where id = $1', [accountId]);
     expect(rows[0].webauthn_user_id).toEqual(id);
   });
 
   it('refuses a taken username at start', async () => {
     const { username } = await signUp('passkey');
-    const res = await new Browser().post('/v1/register/webauthn/start', { username: username.toUpperCase(), kind: 'passkey' });
+    const res = await new Browser().post('/v1/register/webauthn/start', { ...names(username.toUpperCase()), kind: 'passkey' });
     expect(res.statusCode).toBe(409);
-    expect(errorOf(res)).toBe('username-taken');
+    expect(errorOf(res)).toBe('display-name-taken');
   });
 
   it('a disabled account with a valid passkey gets account-disabled', async () => {
@@ -243,7 +250,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
 
     const b = new Browser();
     const fresh = createSoftAuthenticator({ backedUp: true, userVerified: true });
-    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { username: uniqueName('evil'), kind: 'passkey' })).json();
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('evil')), kind: 'passkey' })).json();
     const reg = await b.post('/v1/register/webauthn/finish', {
       challengeId, response: fresh.register(options, 'https://evil.test'), deviceLabel: 'L', acceptedTerms: TERMS,
     });
@@ -295,7 +302,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
 
     const b = new Browser();
     const noUv = createSoftAuthenticator({ backedUp: true, userVerified: false });
-    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { username: uniqueName('nouv'), kind: 'passkey' })).json();
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(uniqueName('nouv')), kind: 'passkey' })).json();
     const reg = await b.post('/v1/register/webauthn/finish', {
       challengeId, response: noUv.register(options, ORIGIN), deviceLabel: 'L', acceptedTerms: TERMS,
     });
@@ -311,7 +318,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
     const a = await signUp('security-key');
     const bAcct = await signUp('security-key');
     const browser = new Browser();
-    const start = (await browser.post('/v1/login/webauthn/start', { username: bAcct.username })).json();
+    const start = (await browser.post('/v1/login/webauthn/start', { loginName: bAcct.username })).json();
     const res = await browser.post('/v1/login/webauthn/finish', {
       challengeId: start.challengeId, response: a.auth.authenticate(start.options, ORIGIN), deviceLabel: 'D',
     });
@@ -331,7 +338,7 @@ describe('WebAuthn security checks (P2-I4)', () => {
       'webauthn-failed',
     );
     // Discoverable login is for traders: a staff passkey is refused there.
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const crewKey = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(crewId, crewKey, 'passkey', false);
     const { rows } = await deps.db.query<{ webauthn_user_id: Buffer }>('select webauthn_user_id from accounts where id = $1', [crewId]);
@@ -349,7 +356,7 @@ describe('enumeration (P2-I7)', () => {
     const passkeyOnly = await signUp('passkey');
     const b = new Browser();
     const responses = await Promise.all(
-      [real.username, 'Nobody.Here42', passkeyOnly.username, 'bad name!'].map((username) => b.post('/v1/login/webauthn/start', { username })),
+      [real.username, 'Nobody.Here42', passkeyOnly.username, 'bad name!'].map((username) => b.post('/v1/login/webauthn/start', { loginName: username })),
     );
     const shapes = responses.map((r) => {
       expect(r.statusCode).toBe(200);
@@ -358,15 +365,12 @@ describe('enumeration (P2-I7)', () => {
     });
     for (const s of shapes) expect(s).toEqual(shapes[0]);
 
-    const again = (await b.post('/v1/login/webauthn/start', { username: 'Nobody.Here42' })).json();
+    const again = (await b.post('/v1/login/webauthn/start', { loginName: 'Nobody.Here42' })).json();
     const first = responses[1]!.json();
     expect(again.options.allowCredentials).toEqual(first.options.allowCredentials);
     expect(again.options.challenge).not.toEqual(first.options.challenge);
-    expect([1, 2]).toContain(first.options.allowCredentials.length);
-    expect(first.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual(
-      decoyCredentialIds(deps, 'nobody.here42').map((id) => id.toString('base64url')),
-    );
-    const other = (await b.post('/v1/login/webauthn/start', { username: 'Nobody.Else42' })).json();
+    expect(first.options.allowCredentials).toHaveLength(MAX_SECURITY_KEYS);
+    const other = (await b.post('/v1/login/webauthn/start', { loginName: 'Nobody.Else42' })).json();
     expect(other.options.allowCredentials).not.toEqual(first.options.allowCredentials);
     // The passkey-only account's decoy does not list its passkey.
     expect(responses[2]!.json().options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(passkeyOnly.auth.credentialId);
@@ -380,7 +384,7 @@ describe('enumeration (P2-I7)', () => {
 
   it('gives decoys on a mount whose kinds exclude the account', async () => {
     const t = await signUp('security-key');
-    const start = (await new Browser().post('/t/staff-only/start', { username: t.username })).json();
+    const start = (await new Browser().post('/t/staff-only/start', { loginName: t.username })).json();
     expect(start.options.allowCredentials.map((c: { id: string }) => c.id)).not.toContain(t.auth.credentialId);
   });
 });
@@ -410,7 +414,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   }
 
   it('stores attested keys only from the allowlist, and staff passkeys unattested', async () => {
-    const staffId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const b = await loggedIn(staffId, true);
 
     const none = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: 'none' });
@@ -448,7 +452,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
   });
 
   it('checks the owner against the owner allowlist and staff against the staff allowlist (owner, 2026-10-20)', async () => {
-    const staffId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const staff = await loggedIn(staffId, true);
     const staffKey = createSoftAuthenticator({ backedUp: false, userVerified: true, attestation: { aaguid: STAFF_ONLY, ca } });
     expect((await staffAdd(staff, staffKey, 'security-key')).res.statusCode).toBe(201);
@@ -484,9 +488,12 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(ownerId, key, 'security-key', true);
     await insertCredential(ownerId, pk, 'passkey', false);
-    const { rows } = await deps.db.query<{ username: string }>('select username from accounts where id = $1', [ownerId]);
+    const { rows } = await deps.db.query<{ username: string }>('select login_name as username from accounts where id = $1', [ownerId]);
     const { res, options } = await usernameLogin(pk, rows[0]!.username);
-    expect(options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const listed = options.allowCredentials.map((c: { id: string }) => c.id);
+    expect(listed).toHaveLength(MAX_SECURITY_KEYS); // the key plus decoys (review I2)
+    expect(listed).toContain(key.credentialId);
+    expect(listed).not.toContain(pk.credentialId);
     expect(res.statusCode).toBe(403);
     expect(errorOf(res)).toBe('method-not-allowed');
     expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeUndefined();
@@ -516,35 +523,63 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
 
   it('lists a staff passkey at login only after a PGP first factor from the same device', async () => {
     const name = uniqueName('crewlogin');
-    const staffId = await seedAccount(deps, { username: name, kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: name, kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(staffId, key, 'security-key', true);
     await insertCredential(staffId, pk, 'passkey', false);
     const b = new Browser();
-    const plain = (await b.post('/v1/login/webauthn/start', { username: name })).json();
-    expect(plain.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const plain = (await b.post('/v1/login/webauthn/start', { loginName: name })).json();
+    const ids = (j: { options: { allowCredentials: Array<{ id: string }> } }) => j.options.allowCredentials.map((c) => c.id);
+    // The key among decoys (review I2: always MAX_SECURITY_KEYS entries), never the passkey.
+    expect(ids(plain)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(plain)).toContain(key.credentialId);
+    expect(ids(plain)).not.toContain(pk.credentialId);
 
     const device = await deps.db.query<{ device_hash: Buffer }>('select device_hash from challenges where id = $1', [plain.challengeId]);
     const insertPending = (method: string, deviceHash: Buffer) =>
       deps.db.query<{ id: string }>(
         `insert into challenges (account_id, device_hash, purpose, method, payload, created_at, expires_at)
          values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
-        [staffId, deviceHash, JSON.stringify({ first: { method } }), now, new Date(now.getTime() + 5 * MIN)],
+        [
+          staffId, deviceHash,
+          // A PGP first factor as completeLogin records it (parseFactor needs the fingerprints).
+          JSON.stringify({ first: method === 'pgp' ? { method, fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } : { method } }),
+          now, new Date(now.getTime() + 5 * MIN),
+        ],
       );
     const afterPgp = (await insertPending('pgp', device.rows[0]!.device_hash)).rows[0]!.id;
-    const withPending = (await b.post('/v1/login/webauthn/start', { username: name, pendingId: afterPgp })).json();
-    expect(withPending.options.allowCredentials.map((c: { id: string }) => c.id).sort()).toEqual([key.credentialId, pk.credentialId].sort());
+    const withPending = (await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
+    expect(ids(withPending)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
+    expect(ids(withPending)).toHaveLength(MAX_SECURITY_KEYS);
+    // The second step needs no login name (review I3): the pending login from this device names the account.
+    const nameless = (await b.post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    expect(ids(nameless)).toEqual(expect.arrayContaining([key.credentialId, pk.credentialId]));
+    expect(ids(nameless)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(nameless.options.userVerification).toBe('required');
+    // From another device, or with a pendingId that names nothing, it is a decoy; no name is needed either.
+    const elsewhere = (await new Browser().post('/v1/login/webauthn/start', { pendingId: afterPgp })).json();
+    expect(ids(elsewhere)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(elsewhere)).not.toContain(key.credentialId);
+    const nothing = (await b.post('/v1/login/webauthn/start', { pendingId: '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90' })).json();
+    expect(ids(nothing)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(ids(nothing)).not.toContain(key.credentialId);
     expect(withPending.options.userVerification).toBe('required');
 
     // Another device, or a first factor that was not PGP: security keys only.
-    const other = (await new Browser().post('/v1/login/webauthn/start', { username: name, pendingId: afterPgp })).json();
-    expect(other.options.allowCredentials).toHaveLength(1);
+    const other = (await new Browser().post('/v1/login/webauthn/start', { loginName: name, pendingId: afterPgp })).json();
+    expect(ids(other)).not.toContain(pk.credentialId);
     const afterKey = (await insertPending('security-key', device.rows[0]!.device_hash)).rows[0]!.id;
-    expect((await b.post('/v1/login/webauthn/start', { username: name, pendingId: afterKey })).json().options.allowCredentials).toHaveLength(1);
+    expect(ids((await b.post('/v1/login/webauthn/start', { loginName: name, pendingId: afterKey })).json())).not.toContain(pk.credentialId);
     // Reading the pending row does not use it up.
     const { rows } = await deps.db.query('select used_at from challenges where id = $1', [afterPgp]);
     expect(rows[0].used_at).toBeNull();
+    // Finishing the nameless start logs the staff member in (the pending login is consumed).
+    const fin = await b.post('/v1/login/webauthn/finish', {
+      challengeId: nameless.challengeId, response: key.authenticate(nameless.options, ORIGIN), deviceLabel: 'Desk', pendingId: afterPgp,
+    });
+    expect(fin.statusCode).toBe(200);
+    expect(fin.json()).toEqual({ status: 'ok' });
   });
 });
 
@@ -568,7 +603,7 @@ describe('Plan 4 helpers', () => {
   });
 
   it('registers and verifies with caller-held challenges', async () => {
-    const staffId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: uniqueName('helper'), kind: 'staff' });
     const challenge = new Uint8Array(32).fill(7);
     const options = await webauthnRegistrationOptions(deps, staffId, { challenge });
     expect(options.attestation).toBe('direct');
@@ -584,7 +619,7 @@ describe('Plan 4 helpers', () => {
     const ok = await verifyWebAuthnAssertion(deps, staffId, good.authenticate(aOpts, ORIGIN), assertChallenge);
     expect(ok).toEqual({ credentialId: good.credentialId, kind: 'security-key', attested: true });
 
-    const otherId = await seedAccount(deps, { username: uniqueName('helper'), kind: 'staff' });
+    const otherId = await seedAccount(deps, { loginName: uniqueName('helper'), kind: 'staff' });
     await expect(verifyWebAuthnAssertion(deps, otherId, good.authenticate(aOpts, ORIGIN), assertChallenge)).rejects.toMatchObject({
       code: 'webauthn-failed',
     });
@@ -629,8 +664,8 @@ describe('confirm and adding a credential', () => {
     const alerts = await deps.db.query("select detail from alerts where account_id = $1 and kind = 'login-method-added'", [t.accountId]);
     expect(alerts.rows).toEqual([{ detail: { method: 'security-key' } }]);
 
-    const login = (await new Browser().post('/v1/login/webauthn/start', { username: t.username })).json();
-    expect(login.options.allowCredentials.map((c: { id: string }) => c.id).sort()).toEqual([t.auth.credentialId, second.credentialId].sort());
+    const login = (await new Browser().post('/v1/login/webauthn/start', { loginName: t.username })).json();
+    expect(login.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual(expect.arrayContaining([t.auth.credentialId, second.credentialId]));
     expect((await usernameLogin(second, t.username)).res.json()).toEqual({ status: 'ok' });
 
     const passkeyToken = await confirm({ kind: 'add-method', method: 'passkey' });
@@ -664,14 +699,14 @@ describe('confirm and adding a credential', () => {
 });
 
 async function usernameOf(accountId: string): Promise<string> {
-  const { rows } = await deps.db.query<{ username: string }>('select username from accounts where id = $1', [accountId]);
+  const { rows } = await deps.db.query<{ username: string }>('select login_name as username from accounts where id = $1', [accountId]);
   return rows[0]!.username;
 }
 
 describe('review fixes', () => {
   it('I1: runs afterAuthenticate only for credentials the account kind may use', async () => {
     const ownerId = await seedOwner();
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const ownerKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const ownerPasskey = createSoftAuthenticator({ backedUp: true, userVerified: true });
     const ownerPlainKey = createSoftAuthenticator({ backedUp: false, userVerified: true });
@@ -728,54 +763,129 @@ describe('review fixes', () => {
   });
 
   it('M2: refuses a credential the challenge did not list', async () => {
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     const key = createSoftAuthenticator({ backedUp: false, userVerified: true });
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(crewId, key, 'security-key', true);
     await insertCredential(crewId, pk, 'passkey', false);
     const { res, options } = await usernameLogin(pk, await usernameOf(crewId), new Browser(), '/t/two');
-    expect(options.allowCredentials.map((c: { id: string }) => c.id)).toEqual([key.credentialId]);
+    const listed = options.allowCredentials.map((c: { id: string }) => c.id);
+    expect(listed).toContain(key.credentialId);
+    expect(listed).not.toContain(pk.credentialId);
     expect(res.statusCode).toBe(401);
     expect(errorOf(res)).toBe('webauthn-failed');
     expect(twoFactorCalls).toEqual([]);
   });
 
-  it('M3: decoys look like real security-key IDs and cost the same queries', async () => {
-    const real = await signUp('security-key');
-    const b = new Browser();
-    const a1 = (await b.post('/v1/login/webauthn/start', { username: 'Ghost.User77' })).json();
-    const a2 = (await b.post('/v1/login/webauthn/start', { username: 'Ghost.User77' })).json();
-    expect(a2.options.allowCredentials).toEqual(a1.options.allowCredentials);
-    for (const c of a1.options.allowCredentials) expect(Buffer.from(c.id, 'base64url')).toHaveLength(64);
-    expect(Buffer.from(real.auth.credentialId, 'base64url')).toHaveLength(64);
-
-    const spy = vi.spyOn(deps.db, 'query');
-    const count = async (username: string) => {
-      spy.mockClear();
-      expect((await b.post('/v1/login/webauthn/start', { username })).statusCode).toBe(200);
-      return spy.mock.calls.length;
-    };
-    const counts = [await count(real.username), await count('Ghost.User77'), await count('bad name!')];
-    expect(new Set(counts).size).toBe(1);
+  const idsOf = (res: LightMyRequestResponse): string[] => (res.json().options.allowCredentials as Array<{ id: string }>).map((c) => c.id);
+  const lengthsOf = (res: LightMyRequestResponse): number[] => idsOf(res).map((id) => Buffer.from(id, 'base64url').length);
+  /** A soft authenticator whose credential ID has `bytes` bytes (real authenticators differ: YubiKeys use 64). */
+  const withIdLength = (bytes: number): SoftAuthenticator => ({
+    ...createSoftAuthenticator({ backedUp: false, userVerified: true }), credentialId: randomBytes(bytes).toString('base64url'),
   });
 
-  it('M3: with a pendingId, staff, trader and unknown usernames cost the same queries', async () => {
+  it('I2: a known name, an unknown one and a malformed one list exactly MAX_SECURITY_KEYS entries and run the same SQL', async () => {
+    const real = await signUp('security-key');
+    await insertCredential(real.accountId, withIdLength(64), 'security-key', false);
+    await insertCredential(real.accountId, withIdLength(32), 'security-key', false);
+    const b = new Browser();
+    await b.post('/v1/login/webauthn/start', {}); // the device cookie
+    const spy = spySql(deps.db);
+    try {
+      const run = async (loginName: string) => {
+        spy.clear();
+        const res = await b.post('/v1/login/webauthn/start', { loginName });
+        expect(res.statusCode).toBe(200);
+        return { res, sql: spy.sql() };
+      };
+      const known = await run(real.username);
+      const unknown = await run('Ghost.User77');
+      const malformed = await run('bad name!');
+      // Three real keys plus two decoys, five decoys, five decoys: never a count that only a real account produces.
+      for (const r of [known, unknown, malformed]) expect(idsOf(r.res)).toHaveLength(MAX_SECURITY_KEYS);
+      expect(idsOf(known.res)).toEqual(expect.arrayContaining([real.auth.credentialId]));
+      expect(new Set(idsOf(known.res)).size).toBe(MAX_SECURITY_KEYS);
+      // The same statements in the same order (Minor 6: sequence, not count).
+      expect(unknown.sql).toEqual(known.sql);
+      expect(malformed.sql).toEqual(known.sql);
+      expect(known.sql.length).toBeGreaterThan(2);
+      // Deterministic per name: a retry lists the same entries (real and decoy alike), another name lists others.
+      expect(idsOf((await run(real.username)).res)).toEqual(idsOf(known.res));
+      expect(idsOf((await run('Ghost.User77')).res)).toEqual(idsOf(unknown.res));
+      expect(idsOf((await run('Ghost.User78')).res)).not.toEqual(idsOf(unknown.res));
+    } finally {
+      spy.restore();
+    }
+  });
+
+  it('I2: decoy ID lengths are drawn from the lengths of the security keys actually stored, not a fixed 64', async () => {
+    const holder = await signUp('security-key');
+    for (let i = 0; i < 3; i++) await insertCredential(holder.accountId, withIdLength(32), 'security-key', false);
+    const { rows } = await deps.db.query<{ len: number }>(
+      "select distinct length(credential_id)::int as len from webauthn_credentials where kind = 'security-key'",
+    );
+    const stored = new Set(rows.map((r) => r.len));
+    expect(stored.has(32)).toBe(true);
+    expect(stored.has(64)).toBe(true);
+    const b = new Browser();
+    const seen = new Set<number>();
+    for (let i = 0; i < 40; i++) {
+      for (const len of lengthsOf(await b.post('/v1/login/webauthn/start', { loginName: `Stranger.${i}` }))) {
+        expect(stored.has(len)).toBe(true);
+        seen.add(len);
+      }
+    }
+    expect(seen.has(32)).toBe(true);
+    expect(seen.has(64)).toBe(true);
+  });
+
+  it('I2: at most MAX_SECURITY_KEYS security keys per account; the next one is refused at start and at finish', async () => {
+    const t = await signUp('security-key');
+    for (let i = 0; i < MAX_SECURITY_KEYS - 2; i++) await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
+    // Within onboarding: no confirm token needed. The fifth key is allowed.
+    const start = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    expect(start.statusCode).toBe(200);
+    const { challengeId, options } = start.json();
+    // Another key reaches the table before this ceremony finishes: the finish is refused too.
+    await insertCredential(t.accountId, withIdLength(64), 'security-key', false);
+    const fifth = createSoftAuthenticator({ backedUp: false, userVerified: false });
+    const fin = await t.b.post('/v1/account/webauthn/finish', { challengeId, response: fifth.register(options, ORIGIN), label: 'Sixth' });
+    expect(fin.statusCode).toBe(409);
+    expect(errorOf(fin)).toBe('security-key-limit');
+    const again = await t.b.post('/v1/account/webauthn/start', { kind: 'security-key' });
+    expect(again.statusCode).toBe(409);
+    expect(errorOf(again)).toBe('security-key-limit');
+    // Passkeys are not counted.
+    expect((await t.b.post('/v1/account/webauthn/start', { kind: 'passkey' })).statusCode).toBe(200);
+    const { rows } = await deps.db.query("select count(*)::int as n from webauthn_credentials where account_id = $1 and kind = 'security-key'", [t.accountId]);
+    expect(rows[0].n).toBe(MAX_SECURITY_KEYS);
+    // Its login options still list exactly MAX_SECURITY_KEYS entries: all real, no decoy.
+    const login = await new Browser().post('/v1/login/webauthn/start', { loginName: t.username });
+    expect(idsOf(login)).toHaveLength(MAX_SECURITY_KEYS);
+    expect(idsOf(login)).toEqual(expect.arrayContaining([t.auth.credentialId]));
+  });
+
+  it('M3: with a pendingId, staff, trader, unknown and malformed names run the same SQL', async () => {
     const trader = await signUp('security-key');
-    const crewId = await seedAccount(deps, { username: uniqueName('crew'), kind: 'staff' });
+    const crewId = await seedAccount(deps, { loginName: uniqueName('crew'), kind: 'staff' });
     await insertCredential(crewId, createSoftAuthenticator({ backedUp: false, userVerified: true }), 'security-key', true);
     const crew = await usernameOf(crewId);
     const b = new Browser();
     await b.post('/v1/login/webauthn/start', {}); // the device cookie
     const pendingId = '0b8f3a52-6f0e-4d3c-9a4e-2b7c1d5e8f90';
 
-    const spy = vi.spyOn(deps.db, 'query');
-    const count = async (username: string) => {
-      spy.mockClear();
-      expect((await b.post('/v1/login/webauthn/start', { username, pendingId })).statusCode).toBe(200);
-      return spy.mock.calls.length;
-    };
-    const counts = [await count(crew), await count(trader.username), await count('Ghost.User77'), await count('bad name!')];
-    expect(new Set(counts).size).toBe(1);
+    const spy = spySql(deps.db);
+    try {
+      const run = async (loginName: string) => {
+        spy.clear();
+        expect((await b.post('/v1/login/webauthn/start', { loginName, pendingId })).statusCode).toBe(200);
+        return spy.sql();
+      };
+      const sequences = [await run(crew), await run(trader.username), await run('Ghost.User77'), await run('bad name!')];
+      for (const seq of sequences) expect(seq).toEqual(sequences[0]);
+    } finally {
+      spy.restore();
+    }
   });
 
   it('M4: an add-key challenge cannot be spent at login', async () => {
@@ -804,13 +914,13 @@ describe('review fixes', () => {
     const b = new Browser();
     const username = uniqueName('trans');
     const auth = createSoftAuthenticator({ backedUp: false, userVerified: true });
-    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { username, kind: 'security-key' })).json();
+    const { challengeId, options } = (await b.post('/v1/register/webauthn/start', { ...names(username), kind: 'security-key' })).json();
     const response = auth.register(options, ORIGIN);
     response.response.transports = ['usb', 'bogus', 'nfc', 'x'.repeat(500), 'hybrid'] as never;
     const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
     expect(res.statusCode).toBe(201);
     const { rows } = await deps.db.query(
-      'select c.transports from webauthn_credentials c join accounts a on a.id = c.account_id where a.username_key = $1',
+      'select c.transports from webauthn_credentials c join accounts a on a.id = c.account_id where a.login_key = $1',
       [username.toLowerCase()],
     );
     expect(rows[0].transports).toEqual(['usb', 'nfc', 'hybrid']);

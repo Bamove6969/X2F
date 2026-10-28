@@ -32,7 +32,7 @@ export function BackupLogin() {
     setBusy(true);
     setError(null);
     try {
-      const result = await authApi.loginBackup({ username: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
+      const result = await authApi.loginBackup({ loginName: loginName.trim(), kind, code: code.trim(), deviceLabel: deviceLabel() });
       if (result.holdUntil !== null) setHeldUntil(result.holdUntil);
       else await afterLogin((to) => navigate(to), returnTo);
     } catch (e) {

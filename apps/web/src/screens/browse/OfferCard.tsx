@@ -115,7 +115,7 @@ function Badges({ offer }: { offer: Offer }) {
           {open ? (
             <span role="tooltip" className="x2f-offer__tip">
               <span className="x2f-offer__tip-title">
-                All of <span data-username>{offer.poster.username}</span>'s badges
+                All of <span data-username>{offer.poster.displayName}</span>'s badges
               </span>
               {all.map((b) => (
                 <span key={b.label}>
@@ -145,7 +145,7 @@ export interface OfferCardProps {
 }
 
 export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge }: OfferCardProps) {
-  const name = offer.poster.username;
+  const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
   const margin = marginLine(offer, currency, copy, market);
   const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;

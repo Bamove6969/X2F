@@ -99,7 +99,7 @@ async function login(accountId: string, o: { firstSession?: boolean; level?: 'fu
 }
 
 async function session(o: { firstSession?: boolean; level?: 'full' | 'recovery' } = {}) {
-  const accountId = await seedAccount(deps, { username: name() });
+  const accountId = await seedAccount(deps, { loginName: name() });
   return { accountId, ...(await login(accountId, o)) };
 }
 
