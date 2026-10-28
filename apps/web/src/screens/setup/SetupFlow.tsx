@@ -10,7 +10,10 @@
  * What the person has entered lives only in this component's memory: nothing goes to the URL,
  * localStorage or logs. Every step carries `returnTo` in its query (always through safeReturnTo).
  * A step opened without the steps before it (a reload before the account exists) goes back to the
- * Terms. From the backup step on, the account exists and the session is the source of truth.
+ * Terms. From the backup step on, the account exists and the session is the source of truth: the
+ * steps before it redirect to the backup step (with `replace`), and the step after each sign-up is
+ * entered with `replace`, so Back never offers a second sign-up. A finished PGP code step stays
+ * (it shows "Key verified" and Continue only).
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
@@ -35,21 +38,24 @@ export function SetupFlow() {
   const [state, setState] = useState<SetupState>(INITIAL);
   const update = useCallback((patch: Partial<SetupState>) => setState((s) => ({ ...s, ...patch })), []);
   const path = useCallback((step: Step) => stepPath(step, returnTo), [returnTo]);
-  const go = useCallback((step: Step) => void navigate(stepPath(step, returnTo)), [navigate, returnTo]);
+  const go = useCallback((step: Step, o?: { replace?: boolean }) => void navigate(stepPath(step, returnTo), { replace: o?.replace === true }), [navigate, returnTo]);
   const api = useMemo(() => ({ state, update, returnTo, go, path }), [state, update, returnTo, go, path]);
 
   const named = state.terms !== null && state.displayName !== '' && state.loginName !== '';
   const need = (ok: boolean, el: ReactNode) => (ok ? el : <Navigate to={path('')} replace />);
+  // Once the account exists, the steps that create it are closed (review I2): Back, or a stale tab,
+  // lands on the backup step instead of a second sign-up that would read "That username is taken".
+  const before = (ok: boolean, el: ReactNode) => (state.registered ? <Navigate to={path('backup')} replace /> : need(ok, el));
 
   return (
     <SetupContext.Provider value={api}>
       <Routes>
         <Route index element={<SetupStart />} />
-        <Route path="name" element={need(state.terms !== null, <Username />)} />
-        <Route path="login" element={need(named, <Login />)} />
-        <Route path="pgp-key" element={need(named, <PgpKey />)} />
+        <Route path="name" element={before(state.terms !== null, <Username />)} />
+        <Route path="login" element={before(named, <Login />)} />
+        <Route path="pgp-key" element={before(named, <PgpKey />)} />
         <Route path="pgp-code" element={need(state.challenge !== null, <PgpChallenge />)} />
-        <Route path="password" element={need(named, <Password />)} />
+        <Route path="password" element={before(named, <Password />)} />
         <Route path="backup" element={<Backup />} />
         <Route path="wallet" element={<Wallet />} />
         <Route path="welcome" element={<Welcome />} />

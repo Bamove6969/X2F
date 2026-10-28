@@ -50,6 +50,7 @@ export function Username() {
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
+          aria-describedby="uname-help"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
         />
@@ -61,7 +62,7 @@ export function Username() {
             </span>
           </span>
         ) : null}
-        <p className="x2f-setup__help">
+        <p className="x2f-setup__help" id="uname-help">
           5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real
           name or used elsewhere.
         </p>
@@ -79,10 +80,11 @@ export function Username() {
           autoCorrect="off"
           spellCheck={false}
           maxLength={64}
+          aria-describedby="login-name-help"
           value={loginName}
           onChange={(e) => setLoginName(e.target.value)}
         />
-        <p className="x2f-setup__help">
+        <p className="x2f-setup__help" id="login-name-help">
           Private: nobody else ever sees it. You use it to log in with a password or a security key, so make it different from your username.
         </p>
       </div>

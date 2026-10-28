@@ -6,11 +6,10 @@
  */
 import { useEffect, useState } from 'react';
 import { inspectPublicKey } from '@x2f/auth-client';
-import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { nameError, registerPgpStart, termsChanged } from './register.js';
+import { registerPgpStart, setupError, termsChanged, type SetupError } from './register.js';
 
 type KeyInspection = Awaited<ReturnType<typeof inspectPublicKey>>;
 
@@ -36,7 +35,7 @@ export function PgpKey() {
   const [key, setKey] = useState(state.publicKey);
   const [check, setCheck] = useState<KeyInspection | null>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ text: string; names: boolean } | null>(null);
+  const [error, setError] = useState<SetupError | null>(null);
 
   useEffect(() => {
     const armored = key.trim();
@@ -66,10 +65,8 @@ export function PgpKey() {
         go('');
         return;
       }
-      const names = nameError(e);
-      if (names !== null) setError({ text: names, names: true });
-      else if (e instanceof ApiCallError && e.detail !== undefined) setError({ text: e.detail, names: false });
-      else setError({ text: 'X2F could not use that key just now. Try again.', names: false });
+      // The server's own sentence about a refused key (AuthApiError detail) is shown as it wrote it.
+      setError(setupError(e, 'X2F could not use that key just now. Try again.'));
     } finally {
       setBusy(false);
     }

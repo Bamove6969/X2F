@@ -10,7 +10,7 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { errorCode, nameError, registerPgpFinish, registerPgpStart, termsChanged } from './register.js';
+import { errorCode, registerPgpFinish, registerPgpStart, setupError, termsChanged, type SetupError } from './register.js';
 
 /** Each login code expires 5 minutes after X2F sends it (spec 6.2). */
 const CODE_LIFETIME_MS = 5 * 60_000;
@@ -20,7 +20,7 @@ export function PgpChallenge() {
   const challenge = state.challenge!;
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ text: string; names: boolean } | null>(null);
+  const [error, setError] = useState<SetupError | null>(null);
   const [copied, setCopied] = useState(false);
   const done = state.registered;
   // The server's clock at the moment the message arrived is its expiry less the code's lifetime, so
@@ -29,7 +29,7 @@ export function PgpChallenge() {
 
   const verify = async () => {
     if (code.trim() === '') {
-      setError({ text: 'Paste the code from the decrypted message first.', names: false });
+      setError({ text: 'Paste the code from the decrypted message first.' });
       return;
     }
     setBusy(true);
@@ -44,10 +44,15 @@ export function PgpChallenge() {
         go('');
         return;
       }
-      const names = nameError(e);
-      if (names !== null) setError({ text: names, names: true });
-      else if (errorCode(e) === null) setError({ text: 'X2F could not check that code just now. Try again.', names: false });
-      else setError({ text: 'That code did not work. It may have expired: send a new message and try again.', names: false });
+      // key-in-use (review I1): the code was right but another account holds the key, so a new
+      // message would only end the same way; RegisterError links to the key screen and to Log in.
+      if (errorCode(e) === null) setError({ text: 'X2F could not check that code just now. Try again.' });
+      else
+        setError(
+          setupError(e, 'That code did not work. It may have expired: send a new message and try again.', {
+            expired: 'That code has expired. Send a new message and try again.',
+          }),
+        );
     } finally {
       setBusy(false);
     }
@@ -61,8 +66,7 @@ export function PgpChallenge() {
       setCode('');
       setCopied(false);
     } catch (e) {
-      const names = nameError(e);
-      setError(names !== null ? { text: names, names: true } : { text: 'Could not send a new message. Try again.', names: false });
+      setError(setupError(e, 'Could not send a new message. Try again.'));
     } finally {
       setBusy(false);
     }
@@ -82,7 +86,7 @@ export function PgpChallenge() {
       {...(done ? {} : { back: path('pgp-key') })}
       footer={
         done ? (
-          <Button variant="primary" onClick={() => go('backup')} data-part="pgp-continue">
+          <Button variant="primary" onClick={() => go('backup', { replace: true })} data-part="pgp-continue">
             Continue
           </Button>
         ) : (
@@ -142,7 +146,7 @@ export function PgpChallenge() {
             />
           </label>
           <RegisterError error={error} />
-          {error !== null && !error.names ? (
+          {error !== null && !error.names && !error.keyInUse ? (
             <button type="button" className="x2f-setup__textbutton" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
               Send a new message
             </button>

@@ -6,8 +6,8 @@
 import { useState } from 'react';
 import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
-import { RegisterError, SetupFrame, SetupIntro, useSetup, type LoginMethod } from './kit.js';
-import { errorCode, nameError, registerWebAuthn, termsChanged } from './register.js';
+import { RegisterError, SetupFrame, SetupIntro, radioProps, useSetup, type LoginMethod } from './kit.js';
+import { errorCode, registerWebAuthn, setupError, termsChanged, type SetupError } from './register.js';
 
 interface MethodDef {
   id: LoginMethod;
@@ -54,7 +54,7 @@ export function Login() {
   const [pick, setPick] = useState<LoginMethod>(state.method);
   const [explain, setExplain] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ text: string; names: boolean } | null>(null);
+  const [error, setError] = useState<SetupError | null>(null);
   const current = METHODS.find((m) => m.id === pick)!;
 
   const next = async () => {
@@ -67,17 +67,15 @@ export function Login() {
       await registerWebAuthn({ displayName: state.displayName, loginName: state.loginName }, pick, state.terms!);
       update({ registered: true });
       refreshSession();
-      go('backup');
+      go('backup', { replace: true });
     } catch (e) {
       if (termsChanged(e)) {
         update({ terms: null });
         go('');
         return;
       }
-      const names = nameError(e);
-      if (names !== null) setError({ text: names, names: true });
-      else if (errorCode(e) === null) setError({ text: 'That did not finish. Try again, or pick another way to log in.', names: false });
-      else setError({ text: 'X2F could not set that up. Try again, or pick another way to log in.', names: false });
+      if (errorCode(e) === null) setError({ text: 'That did not finish. Try again, or pick another way to log in.' });
+      else setError(setupError(e, 'X2F could not set that up. Try again, or pick another way to log in.'));
     } finally {
       setBusy(false);
     }
@@ -96,15 +94,18 @@ export function Login() {
     >
       <SetupIntro title="How do you want to log in?">Choose one for now. You can add others later in Settings.</SetupIntro>
       <div className="x2f-setup__choices" role="radiogroup" aria-label="Login method">
-        {METHODS.map((m) => (
+        {METHODS.map((m, i) => (
           <button
             key={m.id}
             type="button"
-            role="radio"
-            aria-checked={pick === m.id}
+            {...radioProps(
+              METHODS.map((x) => x.id),
+              pick,
+              setPick,
+              i,
+            )}
             className="x2f-setup__choice"
             data-method={m.id}
-            onClick={() => setPick(m.id)}
           >
             <span className="x2f-setup__choice-head">
               <span className="x2f-setup__choice-name">{m.name}</span>

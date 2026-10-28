@@ -14,7 +14,7 @@ import { walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { SetupFrame, SetupIntro, useSetup } from './kit.js';
+import { SetupFrame, SetupIntro, radioProps, useSetup } from './kit.js';
 import { errorCode } from './register.js';
 
 export const APP_LABELS: Record<WalletApp, string> = {
@@ -33,8 +33,12 @@ const APPS = Object.keys(APP_LABELS) as WalletApp[];
 /** The first wallet's name: neutral, never where the money comes from (spec 6.3, "Labels"). */
 export const FIRST_WALLET_LABEL = 'Wallet 1';
 
-/** A standard Monero address or subaddress: 95 base58 characters (the server checks the network). */
-const ADDRESS_RE = /^[1-9A-HJ-NP-Za-km-z]{95}$/;
+/**
+ * A Monero address: 95 base58 characters (standard or subaddress) or 106 (integrated). The server
+ * checks the network and refuses an integrated one with `address-integrated`, which has its own
+ * sentence below (review M7); Task 29's Wallets screen leaves the shape to the server the same way.
+ */
+const ADDRESS_RE = /^(?:[1-9A-HJ-NP-Za-km-z]{95}|[1-9A-HJ-NP-Za-km-z]{106})$/;
 
 const ERRORS: Record<string, string> = {
   'address-invalid': "That isn't a Monero address for this network. Copy it again from your wallet.",
@@ -98,8 +102,8 @@ export function Wallet() {
       >
         <SetupIntro title="Where should we send your XMR?">Choose the wallet you want to be paid to. X2F never holds your coins.</SetupIntro>
         <div className="x2f-setup__chips" role="radiogroup" aria-label="Wallet app">
-          {APPS.map((a) => (
-            <button key={a} type="button" role="radio" aria-checked={app === a} className="x2f-setup__chip" data-app={a} onClick={() => setApp(a)}>
+          {APPS.map((a, i) => (
+            <button key={a} type="button" {...radioProps(APPS, app, setApp, i)} className="x2f-setup__chip" data-app={a}>
               {APP_LABELS[a]}
             </button>
           ))}

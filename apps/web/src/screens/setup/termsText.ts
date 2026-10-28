@@ -7,6 +7,14 @@
  * The server only knows the version (`GET /v1/terms`); whoever publishes new Terms changes this
  * text and the server's version together.
  */
+/**
+ * The version of the text below (review fix round M4). The server's `X2F_TERMS_VERSION` must be
+ * this value: when `GET /v1/terms` names another one, this bundle is out of date (an old tab, or a
+ * deploy that changed one without the other), and the Terms screen refuses to take an "I accept"
+ * for a version whose text it does not show. Change both together.
+ */
+export const TERMS_TEXT_VERSION = '2026-10-17';
+
 export interface TermsSection {
   heading: string;
   paragraphs: string[];

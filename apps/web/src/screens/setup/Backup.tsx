@@ -12,7 +12,8 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } fr
 import { authApi } from '../auth/authApi.js';
 import { RecoveryCodes } from '../settings/RecoveryCodes.js';
 import { Totp } from '../settings/Totp.js';
-import { SetupFrame, SetupIntro, useSetup, type BackupChoice } from './kit.js';
+import { SetupFrame, SetupIntro, radioProps, useSetup, type BackupChoice } from './kit.js';
+import { errorCode, setupError } from './register.js';
 
 type Prove = ReturnType<typeof useConfirm>['prove'];
 
@@ -63,15 +64,18 @@ export function Backup() {
         </p>
         {adding === null ? (
           <div className="x2f-setup__options" role="radiogroup" aria-label="Backup method">
-            {BACKUPS.map((b) => (
+            {BACKUPS.map((b, i) => (
               <button
                 key={b.id}
                 type="button"
-                role="radio"
-                aria-checked={pick === b.id}
+                {...radioProps(
+                  BACKUPS.map((x) => x.id),
+                  pick,
+                  setPick,
+                  i,
+                )}
                 className="x2f-setup__option"
                 data-backup={b.id}
-                onClick={() => setPick(b.id)}
               >
                 <span className="x2f-setup__option-text">
                   <span className="x2f-setup__choice-name">{b.name}</span>
@@ -163,7 +167,7 @@ function SecondPgpKey({ prove, onDone, onCancel }: { prove: Prove; onDone: () =>
       );
       setCode('');
     } catch (e) {
-      if (!isConfirmAbort(e)) setError('X2F could not use that key. Check that you pasted the whole public key.');
+      if (!isConfirmAbort(e)) setError(setupError(e, 'X2F could not use that key. Check that you pasted the whole public key.').text);
     } finally {
       setBusy(false);
     }
@@ -175,8 +179,14 @@ function SecondPgpKey({ prove, onDone, onCancel }: { prove: Prove; onDone: () =>
     try {
       await authApi.addPgpKeyFinish({ challengeId: challenge!.challengeId, code: code.trim() });
       onDone();
-    } catch {
-      setError('That code did not work. It may have expired: send a new message and try again.');
+    } catch (e) {
+      // Each refusal its own sentence (review I1): a key another account holds never passes, so a new
+      // message would not help; an expired message does need one; a wrong code needs checking.
+      const code = errorCode(e);
+      if (code === 'key-in-use') setError('That key is already used by another X2F account. Use a different second key.');
+      else if (code === 'challenge-expired') setError('That message has expired. Send a new message and try again.');
+      else if (code === 'code-invalid') setError('That code did not work. Check it and try again, or send a new message.');
+      else setError(setupError(e, 'X2F could not check that code just now. Try again.').text);
     } finally {
       setBusy(false);
     }

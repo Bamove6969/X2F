@@ -23,7 +23,8 @@ import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE } from './termsText.js';
+import { termsChanged } from './register.js';
+import { KEY_POINTS, PRIVACY_HEADING, TERMS, TERMS_DRAFT_NOTE, TERMS_TEXT_VERSION } from './termsText.js';
 
 /** How close to the bottom (in CSS pixels) counts as the end, for rounding on zoomed screens. */
 const END_SLACK = 4;
@@ -73,14 +74,25 @@ function TermsScreen({
     return () => window.removeEventListener('resize', checkEnd);
   }, [checkEnd]);
 
+  // This page shows only the text it was built with: a server version it does not carry is not
+  // accepted from here (review M4).
+  const stale = version !== null && version !== TERMS_TEXT_VERSION;
+
   const accept = async () => {
-    if (version === null) return;
+    if (version === null || stale) return;
     setBusy(true);
     setError(null);
     try {
       await onAccept(version);
-    } catch {
-      setError('Could not save that. Try again.');
+    } catch (e) {
+      if (termsChanged(e)) {
+        // The Terms changed between loading and accepting (review M3): read the new version first.
+        setTicked(false);
+        setRead(false);
+        if (box.current !== null) box.current.scrollTop = 0;
+        load();
+        setError('The Terms changed while you were reading. Read them to the end again, then accept.');
+      } else setError('Could not save that. Try again.');
       setBusy(false);
     }
   };
@@ -101,7 +113,7 @@ function TermsScreen({
       fit
       {...(back !== undefined ? { back } : {})}
       footer={
-        <Button variant="primary" disabled={!ticked || version === null || busy} onClick={() => void accept()} data-part="terms-accept">
+        <Button variant="primary" disabled={!ticked || version === null || stale || busy} onClick={() => void accept()} data-part="terms-accept">
           I accept
         </Button>
       }
@@ -141,8 +153,13 @@ function TermsScreen({
           {error}
         </p>
       ) : null}
+      {stale ? (
+        <p className="x2f-error" role="alert" id="terms-stale" data-part="terms-stale">
+          The Terms have been updated. Reload the page to read the new version.
+        </p>
+      ) : null}
       {!read ? (
-        <p className="x2f-note x2f-terms__hint">
+        <p className="x2f-note x2f-terms__hint" id="terms-hint">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M12 5v14M6 13l6 6 6-6" />
           </svg>
@@ -150,7 +167,14 @@ function TermsScreen({
         </p>
       ) : null}
       <label className="x2f-check">
-        <input type="checkbox" disabled={!read} checked={ticked} onChange={(e) => setTicked(e.target.checked)} data-part="terms-tick" />
+        <input
+          type="checkbox"
+          disabled={!read || stale}
+          checked={ticked}
+          onChange={(e) => setTicked(e.target.checked)}
+          {...(stale ? { 'aria-describedby': 'terms-stale' } : !read ? { 'aria-describedby': 'terms-hint' } : {})}
+          data-part="terms-tick"
+        />
         <span>
           I have read and agree to the{' '}
           <button type="button" className="x2f-setup__textbutton" onClick={() => show(null)}>

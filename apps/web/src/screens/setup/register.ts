@@ -7,6 +7,7 @@
 import { AuthApiError, registerWithWebAuthn, type PgpChallenge, type WebAuthnKind } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import { authApi, deviceLabel } from '../auth/authApi.js';
+import { refusalText } from '../auth/refusals.js';
 
 export interface Names {
   displayName: string;
@@ -57,4 +58,51 @@ export function nameError(e: unknown): string | null {
 /** True when the Terms changed during setup (`terms-not-accepted`): the person reads them again. */
 export function termsChanged(e: unknown): boolean {
   return errorCode(e) === 'terms-not-accepted';
+}
+
+/** 409 `key-in-use` at the PGP finish: the key proved to be the person's, but another account holds it. */
+export const KEY_IN_USE = 'That key is already used by another X2F account. Use a different key, or log in instead.';
+
+/** A refused setup call as the screen shows it; `names` and `keyInUse` add their links (RegisterError). */
+export interface SetupError {
+  text: string;
+  names?: true;
+  keyInUse?: true;
+}
+
+/** The password rules in the board's words, for a 400 `password-weak` `{ missing }`. */
+const PASSWORD_RULES: Record<string, string> = {
+  length: '10 characters or more',
+  'too-long': 'at most 256 characters',
+  upper: 'an upper case letter',
+  lower: 'a lower case letter',
+  number: 'a number',
+  symbol: 'a symbol',
+};
+
+function minutes(seconds: number | undefined): string {
+  const s = seconds !== undefined && Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
+  const min = Math.max(1, Math.ceil(s / 60));
+  return `${min} ${min === 1 ? 'minute' : 'minutes'}`;
+}
+
+/**
+ * What a setup screen says for a refused call (review fix round M1, M2): the names refusals (with
+ * the link back to the names), a key already on another account, 503 `busy` with its wait, the
+ * rules a weak password still misses, then Task 30's `refusalText` (429 waits, a refused key's
+ * reason or the server's own sentence about the key, an expired step), else `fallback`.
+ */
+export function setupError(e: unknown, fallback: string, o: { expired?: string } = {}): SetupError {
+  const names = nameError(e);
+  if (names !== null) return { text: names, names: true };
+  const code = errorCode(e);
+  if (code === 'key-in-use') return { text: KEY_IN_USE, keyInUse: true };
+  if (e instanceof AuthApiError || e instanceof ApiCallError) {
+    if (e.status === 503 && code === 'busy') return { text: `X2F is busy right now. Try again in ${minutes(e.retryAfterSeconds)}.` };
+    if (code === 'password-weak' && e instanceof AuthApiError && e.missing !== undefined && e.missing.length > 0) {
+      const needs = e.missing.map((m) => PASSWORD_RULES[m]).filter((m): m is string => m !== undefined);
+      if (needs.length > 0) return { text: `That password still needs: ${needs.join(', ')}.` };
+    }
+  }
+  return { text: refusalText(e, fallback, o.expired !== undefined ? { expired: o.expired } : {}) };
 }

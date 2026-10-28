@@ -433,12 +433,13 @@ test('someone who already has an account goes from the Terms to Log in, keeping 
 });
 
 test('raising the Terms version sends a logged-in trader to /terms and back to the same screen', async ({ page }) => {
+  // The trader accepted an older version; the owner has published TERMS_VERSION, whose text this
+  // build carries (TERMS_TEXT_VERSION, review M4), so the next page load is refused terms-required.
   let accepted: unknown = null;
-  let version = '2026-10-17';
-  await page.route('**/v1/terms', (r) => json({ version })(r));
+  await page.route('**/v1/terms', json({ version: TERMS_VERSION }));
   await page.route('**/v1/account/me', (r) =>
-    accepted === null && version !== '2026-10-17'
-      ? json({ error: 'terms-required', version }, 403)(r)
+    accepted === null
+      ? json({ error: 'terms-required', version: TERMS_VERSION }, 403)(r)
       : json({ displayName: 'nightowl', loginNameSet: true, kind: 'trader', level: 'full', holdUntil: null, methods: ['pgp'], hasBackup: false, suggestions: [], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true })(r),
   );
   await page.route('**/v1/account/terms', (r) => {
@@ -446,14 +447,12 @@ test('raising the Terms version sends a logged-in trader to /terms and back to t
     return r.fulfill({ status: 204 });
   });
 
-  // The owner publishes new Terms: the next page load is refused with terms-required.
-  version = '2026-11-02';
   await page.goto('/trade/K7M2-9QXA-4FTR-8WPN');
   await expect(page).toHaveURL(/\/terms\?returnTo=%2Ftrade%2FK7M2-9QXA-4FTR-8WPN$/);
   await expect(page.locator('[data-part="terms-accept"]')).toBeDisabled();
   await acceptTerms(page);
   await expect(page).toHaveURL(/\/trade\/K7M2-9QXA-4FTR-8WPN$/);
-  expect(accepted).toEqual({ version: '2026-11-02' });
+  expect(accepted).toEqual({ version: TERMS_VERSION });
 });
 
 test('Start trading with no usable wallet goes to Add a wallet first, then on to the take', async ({ page }) => {

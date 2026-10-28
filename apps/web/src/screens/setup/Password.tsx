@@ -10,7 +10,7 @@ import { refreshSession } from '../../session/useSession.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { RegisterError, SetupFrame, SetupIntro, useSetup } from './kit.js';
-import { errorCode, nameError, registerPassword, termsChanged } from './register.js';
+import { errorCode, registerPassword, setupError, termsChanged, type SetupError } from './register.js';
 
 type Met = 'true' | 'false' | 'unknown';
 
@@ -50,7 +50,7 @@ export function Password() {
   const [again, setAgain] = useState('');
   const [leaked, setLeaked] = useState<Met>('unknown');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<{ text: string; names: boolean } | null>(null);
+  const [error, setError] = useState<SetupError | null>(null);
   const rules = passwordRules(pw, again);
 
   const submit = async () => {
@@ -62,7 +62,7 @@ export function Password() {
       setAgain('');
       update({ registered: true, method: 'password' });
       refreshSession();
-      go('backup');
+      go('backup', { replace: true });
     } catch (e) {
       const code = errorCode(e);
       if (termsChanged(e)) {
@@ -70,13 +70,11 @@ export function Password() {
         go('');
         return;
       }
-      const names = nameError(e);
-      if (names !== null) setError({ text: names, names: true });
-      else if (code === 'password-leaked') {
+      if (code === 'password-leaked') {
         setLeaked('false');
-        setError({ text: 'That password is on a list of leaked passwords. Pick another one.', names: false });
-      } else if (code === 'password-weak') setError({ text: 'That password does not meet the rules above.', names: false });
-      else setError({ text: 'X2F could not set that password just now. Try again.', names: false });
+        setError({ text: 'That password is on a list of leaked passwords. Pick another one.' });
+      } else if (code === 'password-weak') setError(setupError(e, 'That password does not meet the rules above.'));
+      else setError(setupError(e, 'X2F could not set that password just now. Try again.'));
     } finally {
       setBusy(false);
     }
