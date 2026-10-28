@@ -1,6 +1,6 @@
 // Fixture mode: `VITE_FIXTURES=1` in a non-production build only (vite.config.ts drops it from
 // production). The boards' example data is in boards.ts; each screen task answers its own API calls from it.
-import { createElement } from 'react';
+import { createElement, useSyncExternalStore } from 'react';
 import { setFinalAlertPaidSheet } from '../screens/trade/FinalAlert.js';
 import { PENDING_ESCROW, setTradeEscrowHook, type TradeEscrow } from '../screens/trade/seams.js';
 import { BOARD_TRADE } from './boards.js';
@@ -52,7 +52,16 @@ export function installFixtures(): void {
       calls.push(name);
       if (window.__x2fEscrowFail) throw new Error('escrow action refused');
     };
-  const state: TradeEscrow = {
+  // A tiny store, so an action that changes the device's state re-renders the room: a release
+  // that is not refused moves the device to `done`, as Task 12's runtime does once this device
+  // has signed (Task 24's e2e: the released look, "Finish the release on this device").
+  const listeners = new Set<() => void>();
+  let state: TradeEscrow;
+  const set = (next: Partial<TradeEscrow>): void => {
+    state = { ...state, ...next };
+    for (const l of listeners) l();
+  };
+  state = {
     ...PENDING_ESCROW,
     ...rest,
     deal: deal
@@ -62,12 +71,19 @@ export function installFixtures(): void {
     confirmedAtomic: big(confirmedAtomic),
     amountAtomic: big(amountAtomic),
     fiatCents: big(fiatCents),
-    release: record('release'),
+    release: async () => {
+      await record('release')();
+      set({ phase: 'done', keepOpen: false });
+    },
     buildRefund: record('build-refund'),
     buyerCancel: record('buyer-cancel'),
     proposeCancelSign: record('propose-cancel-sign'),
     markPaid: record('paid'),
     signal: async (type) => record(`signal:${type}`)(),
   };
-  setTradeEscrowHook(() => state);
+  const subscribe = (l: () => void): (() => void) => {
+    listeners.add(l);
+    return () => listeners.delete(l);
+  };
+  setTradeEscrowHook(() => useSyncExternalStore(subscribe, () => state));
 }

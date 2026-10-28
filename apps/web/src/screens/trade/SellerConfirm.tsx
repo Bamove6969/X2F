@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { api, useServerClock } from '../../api/client.js';
+import { useServerClock } from '../../api/client.js';
+import { postTradeEvent } from '../../api/trade.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
@@ -90,10 +91,7 @@ export function SellerConfirm({
     setFailed(null);
     let next: ReleaseTrade;
     try {
-      next = await api<ReleaseTrade>(`/v1/trades/${encodeURIComponent(trade.code)}/events`, {
-        method: 'POST',
-        body: { type: 'release-started' },
-      });
+      next = await postTradeEvent(trade.code, { type: 'release-started' });
     } catch {
       // Refused or unreachable. If the API did apply it (a lost answer), the room's next read
       // shows the release settling and the resume below signs it.

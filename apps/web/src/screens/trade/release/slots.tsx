@@ -1,7 +1,7 @@
 import { Link } from 'react-router';
 import { Released } from '../Released.js';
 import { SellerConfirm } from '../SellerConfirm.js';
-import { methodInfo, type ReleaseEscrow, type ReleaseTrade } from './view.js';
+import { methodOf, type ReleaseEscrow, type ReleaseTrade } from './view.js';
 
 /**
  * Task 24's screens in the trade room (TradeRoom routes role × state; lead's plan: "Task 24:
@@ -22,9 +22,9 @@ export function releaseScreenOf(t: Pick<ReleaseTrade, 'role' | 'state' | 'settli
 }
 
 /**
- * What the trade room hands a screen: structurally Task 22's `TradeScreenProps`
- * (wip/lead-p3-task22 apps/web/src/screens/trade/TradeRoom.tsx), so `ReleaseRoomScreen` registers
- * as is. `escrow` is the room's one handle (Task 12's `useEscrow`); a screen never starts its own.
+ * What the trade room hands a screen: Task 22's `TradeScreenProps` (TradeRoom.tsx), narrowed to
+ * what these screens read, so `ReleaseRoomScreen` registers as is. `escrow` is the room's one
+ * handle (Task 12's `useEscrow`); a screen never starts its own.
  */
 export interface ReleaseRoomProps {
   view: ReleaseTrade;
@@ -51,7 +51,7 @@ export function ReleaseRoomScreen({ view, escrow, refresh, serverClock }: Releas
     return (
       <SellerConfirm
         trade={view}
-        method={methodInfo(view)}
+        method={methodOf(view)}
         escrow={escrow}
         onTrade={() => void refresh()}
         serverClock={serverClock}
@@ -63,9 +63,8 @@ export function ReleaseRoomScreen({ view, escrow, refresh, serverClock }: Releas
 }
 
 /**
- * The registrations for Task 22's `registerTradeScreen`, one per slot the lead gave Task 24. When
- * TradeRoom is on the line (release-tripwires.test.ts), SellerConfirm.tsx adds at top level
- * `for (const s of RELEASE_SLOTS) registerTradeScreen(s);` and screens.ts gets its Task 24 line.
+ * Task 24's slots in Task 22's room (TradeRoom.tsx's ownership list), registered by
+ * releaseScreens.ts (screens.ts imports it).
  */
 export const RELEASE_SLOTS = [
   { owner: 'Task 24', role: 'seller', states: ['paid'], screen: ReleaseRoomScreen },

@@ -70,7 +70,7 @@ function view(over: View = {}): View {
     role: 'seller',
     poster: 'seller',
     state: 'paid',
-    counterparty: { username: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: 'ZELLE',
     profile: ZELLE,
     amountAtomic: '1250000000000',
@@ -116,7 +116,7 @@ const BUYER_RELEASED = (over: View = {}) =>
     txHash: TX,
     closedAt: NOW,
     confirmBy: null,
-    counterparty: { username: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { displayName: 'satoshi_ghost', completedTrades: 40, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] },
     ...over,
   });
 
@@ -355,8 +355,8 @@ test.describe('Released', () => {
     await expect(page.getByText('Your device is adding its signature. Keep this page open.', { exact: true })).toBeVisible();
     await expect(page.getByText('Checking…', { exact: true })).toBeVisible();
     trade.current = BUYER_RELEASED();
-    // The interim route reads the trade every 5 s; the same Released stays mounted.
-    await expect(page.getByText('2 of 10', { exact: true })).toBeVisible({ timeout: 10_000 });
+    // The room reads the trade every 15 s (POLL_MS) without a live event; the same Released stays mounted.
+    await expect(page.getByText('2 of 10', { exact: true })).toBeVisible({ timeout: 20_000 });
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('1.237500 XMR is yours');
     await expect(page.locator('.x2f-released__where')).toContainText('ending …k3Fz');
   });
@@ -467,7 +467,7 @@ test.describe('phone sizes', () => {
     test(`SellerConfirm at ${vp.width}x${vp.height} with a 20-character display name: the hold's lines are not clipped`, async ({ page }) => {
       await page.setViewportSize(vp);
       const long = 'abcdefghij_klmnopqrs';
-      await stub(page, { trade: view({ counterparty: { username: long, completedTrades: 0, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] } }) });
+      await stub(page, { trade: view({ counterparty: { displayName: long, completedTrades: 0, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] } }) });
       await open(page);
       await expect(hold(page)).toContainText(`Hold to release 1.250000 XMR to ${long}`);
       const clipped = await hold(page).evaluate((b) => [...b.children].some((c) => c.scrollWidth > c.clientWidth || c.getBoundingClientRect().bottom > b.getBoundingClientRect().bottom + 0.5));

@@ -6,11 +6,14 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Released } from '../src/screens/trade/Released.js';
 import { SellerConfirm } from '../src/screens/trade/SellerConfirm.js';
-import { RELEASE_SLOTS, ReleaseRoomScreen, releaseScreenOf } from '../src/screens/trade/release/slots.js';
+import type { TradeView, TraderSummary } from '../src/api/trade.js';
+import { ReleaseRoomScreen, releaseScreenOf } from '../src/screens/trade/release/slots.js';
 import type { ReleaseEscrow, ReleaseTrade } from '../src/screens/trade/release/view.js';
+import '../src/screens/trade/screens.js';
+import { screenFor } from '../src/screens/trade/TradeRoom.js';
 import { advance, pointer, render } from './render.js';
 
-const ZELLE = { name: 'Zelle', whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' };
+const ZELLE = { name: 'Zelle', giftCard: false, whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' };
 const PROFILE = {
   id: 'ZELLE',
   whatItIs: ZELLE.whatItIs,
@@ -23,14 +26,20 @@ const PROFILE = {
 const NOW = '2026-10-25T12:00:00.000Z';
 const TX = 'ab'.repeat(32);
 
-/** The board trade (K7M2-9QXA-4FTR-8WPN): satoshi_ghost sells 1.25 XMR to mira.k for $412.50 via Zelle. */
-function trade(over: Partial<ReleaseTrade> = {}): ReleaseTrade {
-  return {
+/** The other trader as the API sends them (FU-A: the public display name only). */
+const who = (displayName: string): TraderSummary => ({ displayName, completedTrades: 3, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] });
+
+type Over = Omit<Partial<ReleaseTrade>, 'fee'> & { fee?: ReleaseTrade['fee'] | undefined };
+
+/** The board trade (K7M2-9QXA-4FTR-8WPN): satoshi_ghost sells 1.25 XMR to mira.k for $412.50 via Zelle. `fee: undefined` drops the fee (a taker's view). */
+function trade(over: Over = {}): ReleaseTrade {
+  const { fee, ...rest } = over;
+  const t: ReleaseTrade = {
     code: 'K7M2-9QXA-4FTR-8WPN',
     role: 'seller',
     poster: 'seller',
     state: 'paid',
-    counterparty: { username: 'mira.k' },
+    counterparty: who('mira.k'),
     methodId: 'ZELLE',
     profile: PROFILE,
     amountAtomic: '1250000000000',
@@ -43,8 +52,13 @@ function trade(over: Partial<ReleaseTrade> = {}): ReleaseTrade {
     txHash: null,
     confirmBy: '2026-10-25T13:52:00.000Z',
     serverNow: NOW,
-    ...over,
+    ...rest,
   };
+  if ('fee' in over) {
+    if (fee === undefined) delete t.fee;
+    else t.fee = fee;
+  }
+  return t;
 }
 
 type Call = { url: string; method: string; body: unknown };
@@ -350,7 +364,7 @@ const RELEASED = { state: 'released' as const, settling: null, txHash: TX };
 describe('Released', () => {
   it('poster buyer: the board copy, the fee row above You receive, and the payout ending', async () => {
     answer = () => ({ status: 200, body: { confirmations: 1, target: 10, payoutEnd: 'Qwk3Fz' } });
-    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: { username: 'satoshi_ghost' } }));
+    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: who('satoshi_ghost') }));
     await flush();
     expect(r.host.querySelector('h1')!.textContent).toBe('1.237500 XMR is yours');
     expect(r.text()).toContain("Released by you and satoshi_ghost. It's on its way to your external wallet ending …Qwk3Fz.");
@@ -363,7 +377,7 @@ describe('Released', () => {
 
   it('taker buyer: the whole amount and no fee anywhere', async () => {
     answer = () => ({ status: 200, body: { confirmations: 0, target: 10, payoutEnd: 'Qwk3Fz' } });
-    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'seller', fee: undefined, counterparty: { username: 'satoshi_ghost' } }));
+    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'seller', fee: undefined, counterparty: who('satoshi_ghost') }));
     await flush();
     expect(r.host.querySelector('h1')!.textContent).toBe('1.250000 XMR is yours');
     expect(r.host.querySelector('dl')).toBeNull();
@@ -431,7 +445,7 @@ describe('Released', () => {
 });
 
 describe('Released for a buyer who opens the room while the release settles (I2)', () => {
-  const BUYER = { role: 'buyer' as const, poster: 'seller' as const, fee: undefined, counterparty: { username: 'satoshi_ghost' } };
+  const BUYER = { role: 'buyer' as const, poster: 'seller' as const, fee: undefined, counterparty: who('satoshi_ghost') };
 
   it('asks nothing while settling, then starts counting when the trade reaches released, on the same mount', async () => {
     answer = () => ({ status: 200, body: { confirmations: 1, target: 10, payoutEnd: 'Qwk3Fz' } });
@@ -488,7 +502,7 @@ describe('Released, more', () => {
 
   it('labels the buyer\'s sum as before the network fee (Minor 4)', async () => {
     answer = () => ({ status: 200, body: { confirmations: 1, target: 10 } });
-    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: { username: 'satoshi_ghost' } }));
+    const r = released(trade({ ...RELEASED, role: 'buyer', poster: 'buyer', counterparty: who('satoshi_ghost') }));
     await flush();
     expect(r.text()).toContain('Before the Monero network fee, which comes off your payout.');
   });
@@ -534,30 +548,29 @@ describe('releaseScreenOf (the slot Task 22 registers in TradeRoom)', () => {
 });
 
 describe('ReleaseRoomScreen (the trade room\'s props)', () => {
-  it('registers for exactly the lead\'s slots: seller in paid, both in settling (release only), both in released', () => {
-    expect(RELEASE_SLOTS.map((s) => [s.role, s.states.join(',')])).toEqual([
-      ['seller', 'paid'],
-      ['any', 'settling'],
-      ['any', 'released'],
-    ]);
-    const settling = RELEASE_SLOTS[1];
-    expect(settling.when({ settling: 'release' })).toBe(true);
-    expect(settling.when({ settling: 'buyer-cancel' })).toBe(false);
+  it('the room picks ReleaseRoomScreen for each Task 24 slot, and nothing else of Task 24\'s', () => {
+    const full = (over: Over) => trade(over) as TradeView;
+    expect(screenFor(full({ role: 'seller', state: 'paid' }), 0)).toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'seller', state: 'settling', settling: 'release' }), 0)).toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'buyer', state: 'settling', settling: 'release' }), 0)).toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'seller', state: 'released' }), 0)).toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'buyer', state: 'released' }), 0)).toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'buyer', state: 'settling', settling: 'buyer-cancel' }), 0)).not.toBe(ReleaseRoomScreen);
+    expect(screenFor(full({ role: 'buyer', state: 'paid' }), 0)).not.toBe(ReleaseRoomScreen);
   });
 
-  it('uses the room\'s escrow, server clock and refresh, and shows the display name over the old column', async () => {
+  it('uses the room\'s escrow, server clock and refresh, and shows the public display name', async () => {
     vi.useFakeTimers();
     answer = () => ({ status: 200, body: trade({ state: 'settling', settling: 'release' }) });
     const escrow = escrowStub();
     const refresh = vi.fn(async () => undefined);
-    const view = trade({ counterparty: { displayName: 'mira.k', username: 'old-column' } });
+    const view = trade({ counterparty: who('mira.k') });
     const r = render(
       <MemoryRouter>
         <ReleaseRoomScreen view={view} escrow={escrow} refresh={refresh} serverClock={() => new Date('2026-10-25T12:00:00Z')} wide={false} />
       </MemoryRouter>,
     );
     expect(r.host.textContent).toContain('Selling to mira.k');
-    expect(r.host.textContent).not.toContain('old-column');
     expect(r.host.textContent).toContain('1 h 52 min to confirm');
     expect(r.host.querySelector('a.x2f-release__chat')!.textContent).toBe('Chat');
     act(() => r.host.querySelector<HTMLInputElement>('input[type=checkbox]')!.click());

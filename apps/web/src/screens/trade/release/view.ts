@@ -1,41 +1,37 @@
 import { escrowPlan, formatFiat, formatXmr } from '@x2f/trade';
+import { methodOf, publicName, type TradeView } from '../../../api/trade.js';
 import type { UseEscrow } from '../../../escrow/useEscrow.js';
 
 /**
- * The fields of Task 6's TradeView (`GET /v1/trades/:code`, apps/api/src/trades/view.ts) that
- * SellerConfirm and Released read. Amounts are decimal strings, dates ISO strings. `fee` exists
- * only in the ad poster's view. The other trader is shown only by `publicName(counterparty)`, the
- * PUBLIC display name (FU-A); a login name never reaches the browser. Structurally a subset of
- * Task 22's `TradeView` (wip/lead-p3-task22 apps/web/src/api/trade.ts), so the trade room's view
- * can be passed straight in.
+ * The fields of Task 22's `TradeView` (`GET /v1/trades/:code`, apps/web/src/api/trade.ts) that
+ * SellerConfirm and Released read. `fee` exists only in the ad poster's view; the other trader is
+ * shown only through `publicName(counterparty)`, the PUBLIC display name (FU-A).
  */
-export interface ReleaseTrade {
-  code: string;
-  role: 'buyer' | 'seller';
-  poster: 'buyer' | 'seller';
-  /** Task 22's `TradeState` (packages/trade); a string here so either view type passes in. */
-  state: string;
-  counterparty: { displayName?: string; username?: string };
-  methodId: string;
-  /** Task 3's method profile, or null until Task 3 wires `getProfile` into the view. */
-  profile: unknown;
-  amountAtomic: string;
-  fiatCents: string;
-  lockedRate: { currency: string; centsPerXmr: string };
-  releasable: boolean;
-  releasableEtaMin: number | null;
-  fee?: { atomic: string } | undefined;
-  settling: string | null;
-  txHash: string | null;
-  confirmBy: string | null;
-  serverNow: string;
-}
+export type ReleaseTrade = Pick<
+  TradeView,
+  | 'code'
+  | 'role'
+  | 'poster'
+  | 'state'
+  | 'counterparty'
+  | 'methodId'
+  | 'profile'
+  | 'amountAtomic'
+  | 'fiatCents'
+  | 'lockedRate'
+  | 'releasable'
+  | 'releasableEtaMin'
+  | 'fee'
+  | 'settling'
+  | 'txHash'
+  | 'confirmBy'
+  | 'serverNow'
+>;
 
-/** The payment method as the trade header shows it (name and the "What is this?" sentence). */
-export interface MethodInfo {
-  name: string;
-  whatItIs: string;
-}
+/** The payment method as the trade header shows it: Task 22's `methodOf`. */
+export type MethodInfo = ReturnType<typeof methodOf>;
+
+export { methodOf, publicName };
 
 /**
  * The page's handle on the escrow for a release: Task 12's `UseEscrow` (escrow/useEscrow.ts, the
@@ -52,27 +48,6 @@ export interface Confirmations {
   target: number;
   /** The buyer's own payout address ending, on a release, for the buyer only. */
   payoutEnd?: string;
-}
-
-/**
- * The counterparty's public display name: `displayName` once wip/lead-p2-fua renames the column,
- * `username` (the public column) before. The same rule as Task 22's `publicName` in
- * apps/web/src/api/trade.ts; use that one once it is on the line (release-tripwires.test.ts).
- */
-export function publicName(t: { displayName?: string; username?: string }): string {
-  return t.displayName ?? t.username ?? '';
-}
-
-/**
- * The method for the trade header: the profile's `name` if the view carries one, else the method
- * id. The same rule as Task 22's `methodOf` (apps/web/src/api/trade.ts).
- */
-export function methodInfo(t: Pick<ReleaseTrade, 'methodId' | 'profile'>): MethodInfo {
-  const p = (t.profile !== null && typeof t.profile === 'object' ? t.profile : {}) as Record<string, unknown>;
-  return {
-    name: typeof p.name === 'string' && p.name !== '' ? p.name : t.methodId,
-    whatItIs: typeof p.whatItIs === 'string' ? p.whatItIs : '',
-  };
 }
 
 const xmr = (atomic: bigint) => `${formatXmr(atomic)} XMR`;
