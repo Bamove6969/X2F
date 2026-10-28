@@ -1,6 +1,6 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import { channelFor, type Attestation } from '@x2f/trade';
+import { channelFor, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestTrade } from './attest.js';
@@ -35,18 +35,6 @@ export interface ModerationOptions {
   keystoreKey: Uint8Array;
   /** MOD_SIGNING_SECRET: the 64-byte Ed25519 secret key. */
   signingSecret: Uint8Array;
-  feeWallet: string;
-}
-
-/** What the moderator party is started with (Task 9 runs `@x2f/escrow`'s `runParty` with it). */
-export interface ModPartyArgs {
-  trade: string;
-  role: 'mod';
-  me: Identity;
-  participants: Participants;
-  /** R27: the trade's own escrow wallet password, 32 random bytes as hex, from `mod_wallet_secrets`. */
-  password: string;
-  daemonUri: string;
   feeWallet: string;
 }
 

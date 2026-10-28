@@ -1,6 +1,6 @@
 /**
- * The moderator party's decisions (Task 9), pure. The moderation service (apps/moderation, after
- * Task 8) runs `runParty` as `mod` for each attested trade, reports `setup-done { escrowAddress }`
+ * The moderator party's decisions (Task 9), pure. The moderation service (apps/moderation, Task
+ * 8) runs `runParty` as `mod` for each attested trade, reports `setup-done { escrowAddress }`
  * on `ready()`, and keeps the party (the watcher reads the escrow only through its `funds()`) until
  * the watch of a closed escrow ends.
  */
@@ -10,9 +10,8 @@ import { channelFor } from './channels.js';
 import type { TradeState } from './machine.js';
 
 /**
- * SEAM (Task 8 not merged yet; tripwire in test/task8-tripwire.test.ts): a copy of `ModPartyArgs`
- * as exported by apps/moderation/src/main.ts on wip/t3-p3-task8, what Task 8's loop hands to its
- * `runParty` hook once a trade is attested and sealed. Replace with Task 8's type when it lands.
+ * What the moderation service's loop (apps/moderation/src/main.ts, Task 8) hands to its `runParty`
+ * hook once a trade is attested and sealed. Defined here once; apps/moderation imports it.
  */
 export interface ModPartyArgs {
   trade: string;

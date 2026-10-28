@@ -10,6 +10,7 @@ import {
   internalSignedBytes,
   verifyAttestation,
   type Attestation,
+  type ModPartyArgs,
 } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import pg from 'pg';
@@ -21,7 +22,6 @@ import {
   relayRegisterMessage,
   startModeration,
   type Fetch,
-  type ModPartyArgs,
   type ModerationHandle,
   type WorkItem,
 } from '../src/main.js';
