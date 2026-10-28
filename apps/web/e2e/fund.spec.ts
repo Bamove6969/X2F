@@ -2,23 +2,19 @@
 // stubbed with the boards' example trade (src/fixtures/boards.ts) in Task 6's TradeView shape.
 //
 // Funding shows only an address this device's escrow runtime derived and verified (security
-// review). Task 12's runtime is not merged, so most tests run against a fixtures-mode build
-// (`vite build --mode fixtures`, served here through the API's serveWeb with the real CSP) whose
-// escrow state each test sets with `window.__x2fFixtureEscrow`. The production build (the config's
-// web server) runs with the stand-in escrow, and its test checks that it shows no address at all.
-import { execFile } from 'node:child_process';
-import { join } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { promisify } from 'node:util';
+// review). Task 12's runtime needs a relay, a node and a moderator, so most tests run against a
+// fixtures-mode build (`vite build --mode fixtures`, e2e/fixtures-serve.ts, served through the
+// API's serveWeb with the real CSP) whose escrow state each test sets with
+// `window.__x2fFixtureEscrow`. The production build (the config's web server) runs Task 12's real
+// runtime, and its test checks that a device that never confirmed the trade shows no address at all.
 import { expect, test, type Page } from '@playwright/test';
-import Fastify, { type FastifyInstance } from 'fastify';
-import { clientErrorHandler, frameworkErrors, serveWeb } from '../../api/src/static/serve.js';
+import type { FastifyInstance } from 'fastify';
 import { fiatCents, formatFiat, moneroUri } from '@x2f/trade';
 import { BOARD_TRADE as B } from '../src/fixtures/boards.js';
+import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { PORT } from './playwright.config.js';
 
-const WEB = fileURLToPath(new URL('..', import.meta.url));
 const FIXTURES_PORT = PORT + 1;
 const FIXTURES = `http://127.0.0.1:${FIXTURES_PORT}`;
 const PRODUCTION = `http://127.0.0.1:${PORT}`;
@@ -26,14 +22,7 @@ let server: FastifyInstance | null = null;
 
 test.beforeAll(async () => {
   test.setTimeout(240_000);
-  await promisify(execFile)(process.execPath, [join(WEB, 'node_modules', 'vite', 'bin', 'vite.js'), 'build', '--mode', 'fixtures', '--logLevel', 'error'], {
-    cwd: WEB,
-    env: { ...process.env, VITE_FIXTURES: '1' },
-    timeout: 200_000,
-  });
-  server = Fastify({ logger: false, frameworkErrors, clientErrorHandler });
-  await serveWeb(server, { root: join(WEB, 'dist-fixtures'), relayOrigin: 'wss://relay.x2f.invalid', nodeProxyOrigin: 'https://node.x2f.invalid' });
-  await server.listen({ host: '127.0.0.1', port: FIXTURES_PORT });
+  server = await startFixtures(FIXTURES_PORT);
 });
 
 test.afterAll(async () => {

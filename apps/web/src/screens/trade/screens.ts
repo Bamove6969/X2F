@@ -10,6 +10,6 @@ import './TradeFund.js'; // Task 22: TradeFund, BuyerWaitFund, SetupStatus
 
 // Task 24: import './SellerConfirm.js';
 
-// Task 25: import './SellerRefund.js';
+import './refundScreens.js'; // Task 25: SellerRefund, FinalAlert
 
 // Task 27: import './DisputeRoom.js';
