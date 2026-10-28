@@ -10,11 +10,16 @@
  * `window.__escrowCalls` by the runtime's action names (`signal:<type>`, `build-refund`), and
  * `&escrow=fail` makes every action fail until the spec sets `window.__escrowFail = false` (the
  * relay is back). FinalAlert's paid sheet is a labelled stand-in dialog.
+ *
+ * `/trade/<code>?screen=release[&role=buyer][&phase=<EscrowPhase>]` (Task 24, release.spec.ts):
+ * the app's own InterimTradeRoute (its real `useEscrow`, over the same recorder), so the release
+ * screens run as the build runs them. The device starts in `phase` (default `ready`); a `release`
+ * action moves it to `done`, as the worker does once this device has signed.
  * Built from this folder only (vite.config.ts), never part of the app's `dist`.
  */
 import { StrictMode, useCallback, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter } from 'react-router';
+import { BrowserRouter, Route, Routes } from 'react-router';
 import '../../src/theme/fonts.css';
 import '../../src/theme/tokens.css';
 import '../../src/theme/base.css';
@@ -24,6 +29,7 @@ import { setEscrowClient, useEscrow } from '../../src/escrow/useEscrow.js';
 import { FinalAlert, setFinalAlertPaidSheet } from '../../src/screens/trade/FinalAlert.js';
 import type { RefundView } from '../../src/screens/trade/refundSlot.js';
 import { SellerRefund } from '../../src/screens/trade/SellerRefund.js';
+import { InterimTradeRoute } from '../../src/screens/trade/release/InterimTradeRoute.js';
 import { sellerView } from './refundViews.js';
 
 declare global {
@@ -41,30 +47,36 @@ window.__escrowCalls = [];
 window.__escrowFail = q.get('escrow') === 'fail';
 // The device's status for the board's trade: ready, with the board's amount as the accepted one.
 const board = sellerView();
+const RELEASE = screen === 'release';
 const READY: EscrowStatus = {
-  phase: 'ready',
+  phase: RELEASE ? ((q.get('phase') as EscrowStatus['phase'] | null) ?? 'ready') : 'ready',
   error: null,
   retryable: false,
   refusal: null,
   checkWords: null,
   keepOpen: true,
-  role: screen === 'final-alert' ? 'buyer' : 'seller',
+  role: screen === 'final-alert' || q.get('role') === 'buyer' ? 'buyer' : 'seller',
   amountAtomic: BigInt(board.amountAtomic),
   fiatCents: BigInt(board.fiatCents),
 };
+let status = READY;
 const subscribers = new Set<(s: EscrowStatus) => void>();
 setEscrowClient({
   start: () => {
-    for (const cb of subscribers) cb(READY);
+    for (const cb of subscribers) cb(status);
   },
   act: async (_code, a) => {
     window.__escrowCalls?.push(a.type === 'signal' ? `signal:${a.signal}` : a.type);
     if (window.__escrowFail) throw new Error('escrow action refused');
+    if (RELEASE && a.type === 'release') {
+      status = { ...status, phase: 'done', keepOpen: false };
+      for (const cb of subscribers) cb(status);
+    }
   },
   retry: () => undefined,
   subscribe: (_code, cb) => {
     subscribers.add(cb);
-    cb(READY);
+    cb(status);
     return () => subscribers.delete(cb);
   },
 });
@@ -95,7 +107,14 @@ function Harness() {
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
-      <Harness />
+      {RELEASE ? (
+        <Routes>
+          <Route path="/trade/:code" element={<InterimTradeRoute />} />
+          <Route path="*" element={<main data-screen="elsewhere" />} />
+        </Routes>
+      ) : (
+        <Harness />
+      )}
     </BrowserRouter>
   </StrictMode>,
 );

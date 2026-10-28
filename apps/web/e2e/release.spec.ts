@@ -1,17 +1,39 @@
 // SellerConfirm and Released (Task 24; boards SellerConfirm.dc.html and the released part of
 // Review.dc.html). The API is stubbed per test with page.route in Task 6's TradeView shape and
 // Task 24's /confirmations shape. Until Task 22's TradeRoom merges, /trade/:code is Task 24's
-// InterimTradeRoute (test/release-tripwires.test.ts).
+// InterimTradeRoute (test/release-tripwires.test.ts). It runs in the e2e screen harness
+// (harness/main.tsx, `screen=release`): the app's own InterimTradeRoute and Task 12's real
+// useEscrow over the harness's recorder client instead of the escrow worker, so the device's
+// phase and accepted amount are known (`&phase=`, `&role=`); window.__escrowCalls lists the
+// device actions asked for.
 //
 // Plan 5 parts are not built and are left out of the board comparison: the smart proof card on
 // SellerConfirm (section "Payment proof") and the rating cards on Review (everything after
 // section "Trade complete", including the board's one primary "Submit rating", so Released has
 // no primary until Plan 5). The confirm countdown ("1 h 52 min to confirm") is a masked
 // [data-mask=clock] region the harness cannot match inline, so it is checked here directly.
+import type { FastifyInstance } from 'fastify';
 import { expect, test, type Locator, type Page, type Request, type Route } from '@playwright/test';
+import { startHarness } from './harness/serve.js';
 import { boardTexts, boardViewport, missingTexts, reportPixels } from './parity.js';
+import { PHONE_VIEWPORTS, expectPhoneLayout } from './phone.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
+const PORT = 4320;
+const BASE = `http://127.0.0.1:${PORT}`;
+
+let server: FastifyInstance;
+test.beforeAll(async () => {
+  test.setTimeout(240_000);
+  server = await startHarness(PORT);
+});
+test.afterAll(async () => {
+  await server?.close();
+});
+
+/** Opens the trade at /trade/:code in the harness; `extra` is `&role=buyer`, `&phase=signing`, `&escrow=fail`. */
+const open = (page: Page, extra = '') => page.goto(`${BASE}/trade/${CODE}?screen=release${extra}`);
+const escrowCalls = (page: Page) => page.evaluate(() => window.__escrowCalls ?? []);
 const TX = 'ab'.repeat(32);
 const NOW = '2026-10-25T12:00:00.000Z';
 const ME = { displayName: 'satoshi_ghost', kind: 'trader', level: 'full', termsCurrent: true };
@@ -112,6 +134,21 @@ async function stub(page: Page, o: Stubs): Promise<Request[]> {
 }
 
 const hold = (page: Page) => page.locator('button[data-primary]');
+
+/**
+ * Holds the release with one finger for `ms`, through CDP touch events (Chromium makes the
+ * pointer events from them, as on a phone; Android's long-press context menu comes at about
+ * 500 ms, so a 1.7 s hold also checks that it does not cancel the hold).
+ */
+async function touchHoldFor(page: Page, ms: number): Promise<void> {
+  const b = (await hold(page).boundingBox())!;
+  const point = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+  await page.waitForTimeout(ms);
+  await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+  await cdp.detach();
+}
 const box = (page: Page) => page.getByRole('checkbox');
 
 /** Holds the release for `ms` with the mouse (pointer events, as the board's hold). */
@@ -164,7 +201,7 @@ async function partialParity(
 test.describe('SellerConfirm', () => {
   test('parity with the SellerConfirm board at 390x844 (the Plan 5 proof card left out)', async ({ page }) => {
     await stub(page, { trade: view() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await box(page).check();
     await partialParity(page, 'SellerConfirm', {
       without: 'section[aria-label="Payment proof"]',
@@ -178,7 +215,7 @@ test.describe('SellerConfirm', () => {
 
   test('release is locked until the box is ticked, and while the escrow is not releasable', async ({ page }) => {
     const posts = await stub(page, { trade: view({ releasable: false, releasableEtaMin: 12 }) });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await expect(hold(page)).toBeDisabled();
     await expect(page.getByText('Tick the box above to unlock this release button.', { exact: true })).toBeVisible();
     await box(page).check();
@@ -190,7 +227,7 @@ test.describe('SellerConfirm', () => {
 
   test('a ticked box and a full hold post release-started once and show the released look', async ({ page }) => {
     const posts = await stub(page, { trade: view() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await box(page).check();
     await expect(hold(page)).toBeEnabled();
     await expect(page.getByText('Press and hold for 1.5 seconds. Once released, the XMR can’t be taken back.', { exact: true })).toBeVisible();
@@ -205,14 +242,46 @@ test.describe('SellerConfirm', () => {
     expect(posts[0]!.postDataJSON()).toEqual({ type: 'release-started' });
     await expect(hold(page)).toContainText('1.250000 XMR is on its way to mira.k');
     await expect(page.getByText('Both signatures sent. mira.k will be asked to rate the trade.', { exact: true })).toBeVisible();
-    // Task 12 is not merged: the stand-in escrow refuses to sign, and the screen says so.
-    await expect(page.getByRole('alert')).toHaveText('The release didn’t finish on this device. Keep this page open.');
+    // The POST first, then this device's signature (Task 12's release action), once.
+    expect(await escrowCalls(page)).toEqual(['release']);
+    await expect(page.getByRole('alert')).toHaveCount(0);
     await expect(hold(page)).toBeDisabled();
+  });
+
+  test('when the device could not sign, says so and "Finish the release on this device" signs it (I1)', async ({ page }) => {
+    const posts = await stub(page, { trade: view() });
+    await open(page, '&escrow=fail');
+    await box(page).check();
+    await holdFor(page, 1700);
+    await expect(page.getByRole('alert')).toHaveText('The release didn’t finish on this device. Keep this page open.');
+    await expect(hold(page)).not.toHaveAttribute('data-done', 'true');
+    await expect(page.getByText('Both signatures sent', { exact: false })).toHaveCount(0);
+    await page.evaluate(() => (window.__escrowFail = false));
+    await page.getByRole('button', { name: 'Finish the release on this device' }).click();
+    await expect(hold(page)).toHaveAttribute('data-done', 'true');
+    expect(posts).toHaveLength(1);
+    expect(await escrowCalls(page)).toEqual(['release', 'release']);
+  });
+
+  test('opened in settling on a ready device that has not signed (reload after the POST): signs once (I1)', async ({ page }) => {
+    const posts = await stub(page, { trade: view({ state: 'settling', settling: 'release', settleBy: '2026-10-25T12:15:00.000Z' }) });
+    await open(page);
+    await expect(hold(page)).toHaveAttribute('data-done', 'true');
+    expect(await escrowCalls(page)).toEqual(['release']);
+    expect(posts).toHaveLength(0);
+  });
+
+  test('opened in settling while the device is still signing: says so, not "Both signatures sent" (I1)', async ({ page }) => {
+    await stub(page, { trade: view({ state: 'settling', settling: 'release', settleBy: '2026-10-25T12:15:00.000Z' }) });
+    await open(page, '&phase=signing');
+    await expect(page.getByText('Signing the release on this device. Keep this page open.', { exact: true })).toBeVisible();
+    await expect(hold(page)).not.toHaveAttribute('data-done', 'true');
+    expect(await escrowCalls(page)).toEqual([]);
   });
 
   test('a refused release-started signs nothing and the seller can hold again', async ({ page }) => {
     const posts = await stub(page, { trade: view(), posted: { status: 409, body: { error: 'not-releasable' } } });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await box(page).check();
     await holdFor(page, 1700);
     await expect(page.getByRole('alert')).toHaveText('The release didn’t start. Try again.');
@@ -223,23 +292,23 @@ test.describe('SellerConfirm', () => {
 
   test('"Payment not received" goes to the dispute screen', async ({ page }) => {
     await stub(page, { trade: view() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await page.getByRole('link', { name: 'Payment not received' }).click();
-    await expect(page).toHaveURL(`/trade/${CODE}/dispute`);
+    await expect(page).toHaveURL(`${BASE}/trade/${CODE}/dispute`);
   });
 });
 
 test.describe('Released', () => {
   test('parity with the released part of the Review board at 390x844 (poster buyer; rating cards are Plan 5)', async ({ page }) => {
     await stub(page, { trade: BUYER_RELEASED() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await expect(page.getByText('1 of 10', { exact: true })).toBeVisible();
     await partialParity(page, 'Review', { within: 'section[aria-label="Trade complete"]', primaries: 0 });
   });
 
   test('the poster buyer sees the fee row above You receive; the taker buyer sees no fee anywhere', async ({ page }) => {
     await stub(page, { trade: BUYER_RELEASED() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     const sums = page.getByRole('definition');
     await expect(page.getByText('X2F fee (1%, your ad)', { exact: true })).toBeVisible();
     await expect(sums).toHaveText(['1.250000 XMR', '−0.012500 XMR', '1.237500 XMR']);
@@ -247,25 +316,42 @@ test.describe('Released', () => {
 
     const taker = await page.context().newPage();
     await stub(taker, { trade: BUYER_RELEASED({ poster: 'seller', fee: undefined }) });
-    await taker.goto(`/trade/${CODE}`);
+    await open(taker);
     await expect(taker.getByRole('heading', { level: 1 })).toHaveText('1.250000 XMR is yours');
     await expect(taker.getByText('1 of 10', { exact: true })).toBeVisible();
-    expect(await taker.locator('#root').innerText()).not.toMatch(/fee/i);
+    // Only the poster sees the X2F fee; the network-fee note (Minor 4) is every buyer's.
+    expect(await taker.locator('#root').innerText()).not.toMatch(/X2F fee|1%/i);
     await expect(taker.getByRole('definition')).toHaveCount(0);
   });
 
   test('the seller\'s released screen names the buyer and never the buyer\'s payout ending', async ({ page }) => {
     await stub(page, { trade: view({ state: 'released', txHash: TX, closedAt: NOW }), confirmations: { confirmations: 3, target: 10 } });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     await expect(page.getByRole('heading', { level: 1 })).toHaveText('1.250000 XMR is on its way to mira.k');
     await expect(page.getByText('3 of 10', { exact: true })).toBeVisible();
     await expect(page.getByRole('term')).toHaveText(['Trade amount', 'X2F fee (1%, your ad)', 'You sent']);
     expect(await page.locator('#root').innerText()).not.toContain('…');
   });
 
+  test('a buyer in the room while the release settles gets the count once it is released, without a reload (I2)', async ({ page }) => {
+    const trade = { current: BUYER_RELEASED({ state: 'settling', settling: 'release', txHash: null, closedAt: null }) };
+    await page.route('**/v1/account/me', json(ME));
+    await page.route(`**/v1/trades/${CODE}/confirmations`, json({ confirmations: 2, target: 10, payoutEnd: 'k3Fz' }));
+    await page.route(`**/v1/trades/${CODE}`, (r) => json(trade.current)(r));
+    await open(page, '&role=buyer&phase=signing');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('satoshi_ghost released 1.250000 XMR to you');
+    await expect(page.getByText('Your device is adding its signature. Keep this page open.', { exact: true })).toBeVisible();
+    await expect(page.getByText('Checking…', { exact: true })).toBeVisible();
+    trade.current = BUYER_RELEASED();
+    // The interim route reads the trade every 5 s; the same Released stays mounted.
+    await expect(page.getByText('2 of 10', { exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('1.237500 XMR is yours');
+    await expect(page.locator('.x2f-released__where')).toContainText('ending …k3Fz');
+  });
+
   test('the explorer link opens the tx with no referrer and no opener', async ({ page }) => {
     await stub(page, { trade: BUYER_RELEASED() });
-    await page.goto(`/trade/${CODE}`);
+    await open(page);
     const link = page.getByRole('link', { name: 'View on the Monero blockchain' });
     await expect(link).toHaveAttribute('rel', 'noreferrer noopener');
     await expect(link).toHaveAttribute('target', '_blank');
@@ -276,13 +362,11 @@ test.describe('Released', () => {
   });
 });
 
-// Mobile ready at launch (spec, owner 2026-10-25): every screen at phone sizes, from a small
-// phone (320 wide) through the board's 390 to a large one (430).
-const PHONES = [
-  { width: 320, height: 568 },
-  { width: 390, height: 844 },
-  { width: 430, height: 932 },
-] as const;
+// Mobile ready at launch (spec, owner 2026-10-25): every screen at the main line's PHONE_VIEWPORTS
+// (e2e/phone.ts: 390x844, 360x800), plus a small phone (320 wide) and a large one (430) as extras.
+const PHONES = [...PHONE_VIEWPORTS, '320x568', '430x932']
+  .map((v) => v.split('x').map(Number) as [number, number])
+  .map(([width, height]) => ({ width, height }));
 
 /** Elements whose box pokes out past the viewport's left or right edge. */
 async function overflowing(page: Page): Promise<string[]> {
@@ -314,7 +398,16 @@ async function smallTargets(page: Page): Promise<string[]> {
   });
 }
 
-async function expectFitsPhone(page: Page, onScreen: Locator): Promise<void> {
+/**
+ * The main line's expectPhoneLayout, then Task 24's stricter checks (44 px targets, nothing past
+ * either edge). `header: true` (SellerConfirm) skips expectPhoneLayout: the shared TradeHeader's
+ * method name ("Trade <code> · Zelle") is an inline text button, 24 px tall (WCAG 2.5.8's inline
+ * exception), but Chromium computes a <button>'s display as inline-block, so phone.ts holds it to
+ * 32 px. Task 24's own check below exempts it by class, as before. Reported to the lead: phone.ts
+ * or TradeHeader decides; Task 22's TradeRoom e2e will meet the same header.
+ */
+async function expectFitsPhone(page: Page, onScreen: Locator, o: { header?: boolean } = {}): Promise<void> {
+  if (!o.header) await expectPhoneLayout(page);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   expect(await overflowing(page)).toEqual([]);
   expect(await smallTargets(page)).toEqual([]);
@@ -331,33 +424,49 @@ test.describe('phone sizes', () => {
     test(`SellerConfirm at ${vp.width}x${vp.height}: fits, every control tappable, the box ticks by tapping and the hold releases`, async ({ page }) => {
       await page.setViewportSize(vp);
       const posts = await stub(page, { trade: view() });
-      await page.goto(`/trade/${CODE}`);
+      await open(page);
       await expect(page.locator('h1')).toHaveText('Check your bank account for $412.50 sent via Zelle');
-      await expectFitsPhone(page, hold(page));
+      await expectFitsPhone(page, hold(page), { header: true });
       await page.getByText('I checked my bank account myself and the $412.50 from Zelle is there.', { exact: true }).tap();
       await expect(box(page)).toBeChecked();
       await expect(hold(page)).toBeEnabled();
       await holdFor(page, 1700);
       await expect.poll(() => posts.length).toBe(1);
       await expect(hold(page)).toHaveAttribute('data-done', 'true');
-      await expectFitsPhone(page, hold(page));
+      await expectFitsPhone(page, hold(page), { header: true });
+    });
+
+    test(`SellerConfirm at ${vp.width}x${vp.height}: a touch hold of 1.7 s releases, 0.7 s does not (Minor 8)`, async ({ page }) => {
+      await page.setViewportSize(vp);
+      const posts = await stub(page, { trade: view() });
+      await open(page);
+      await page.getByText('I checked my bank account myself and the $412.50 from Zelle is there.', { exact: true }).tap();
+      await expect(hold(page)).toBeEnabled();
+      await touchHoldFor(page, 700);
+      await page.waitForTimeout(300);
+      expect(posts).toHaveLength(0);
+      await expect(hold(page)).not.toHaveAttribute('data-done', 'true');
+      await touchHoldFor(page, 1700);
+      await expect.poll(() => posts.length).toBe(1);
+      await expect(hold(page)).toHaveAttribute('data-done', 'true');
+      expect(await escrowCalls(page)).toEqual(['release']);
     });
 
     test(`SellerConfirm at ${vp.width}x${vp.height} with a 20-character display name: the hold's lines are not clipped`, async ({ page }) => {
       await page.setViewportSize(vp);
       const long = 'abcdefghij_klmnopqrs';
       await stub(page, { trade: view({ counterparty: { username: long, completedTrades: 0, online: true, lastSeenAt: NOW, typicalMinutes: null, positivePct: null, badges: [] } }) });
-      await page.goto(`/trade/${CODE}`);
+      await open(page);
       await expect(hold(page)).toContainText(`Hold to release 1.250000 XMR to ${long}`);
       const clipped = await hold(page).evaluate((b) => [...b.children].some((c) => c.scrollWidth > c.clientWidth || c.getBoundingClientRect().bottom > b.getBoundingClientRect().bottom + 0.5));
       expect(clipped).toBe(false);
-      await expectFitsPhone(page, hold(page));
+      await expectFitsPhone(page, hold(page), { header: true });
     });
 
     test(`Released (poster buyer) at ${vp.width}x${vp.height}: fits, the fee rows and the explorer link on screen`, async ({ page }) => {
       await page.setViewportSize(vp);
       await stub(page, { trade: BUYER_RELEASED() });
-      await page.goto(`/trade/${CODE}`);
+      await open(page);
       await expect(page.getByText('1 of 10', { exact: true })).toBeVisible();
       await expect(page.getByRole('term')).toHaveCount(3);
       await expectFitsPhone(page, page.getByRole('link', { name: 'View on the Monero blockchain' }));
@@ -366,7 +475,7 @@ test.describe('phone sizes', () => {
     test(`Released (seller) at ${vp.width}x${vp.height}: fits`, async ({ page }) => {
       await page.setViewportSize(vp);
       await stub(page, { trade: view({ state: 'released', txHash: TX, closedAt: NOW }), confirmations: { confirmations: 10, target: 10 } });
-      await page.goto(`/trade/${CODE}`);
+      await open(page);
       await expect(page.getByText('10 of 10', { exact: true })).toBeVisible();
       await expectFitsPhone(page, page.getByRole('link', { name: 'View on the Monero blockchain' }));
     });
