@@ -99,12 +99,10 @@ describe('TRIPWIRES: trade room', () => {
     ).toEqual([]);
   });
 
-  it('FU-A (display names) is not merged: the API still calls the public name `username`', () => {
-    const summary = fields(new URL('trades/view.ts', api), 'TraderSummary');
-    expect(
-      summary.includes('username') && !summary.includes('displayName'),
-      'FU-A merged: drop `username` from TraderSummary in src/api/trade.ts so publicName reads only displayName',
-    ).toBe(true);
+  // FU-A's tripwire retired 2026-10-28 (Task 22 landing, after FU-A merged): TraderSummary has
+  // only displayName, and publicName reads only it.
+  it("the web TraderSummary has the API's fields (displayName, no username)", () => {
+    expect(fields(new URL('api/trade.ts', web), 'TraderSummary')).toEqual(fields(new URL('trades/view.ts', api), 'TraderSummary'));
   });
 
   it('Task 3 (method profiles) is merged but not wired into the trade view: methodOf still falls back to the method id', () => {

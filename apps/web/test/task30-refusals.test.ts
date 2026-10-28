@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { KEY_EXPIRED, KEY_REVOKED, STEP_EXPIRED, holdSentence, isExpired, localTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
+import { KEY_EXPIRED, KEY_REVOKED, LOGIN_NAME_SET, SECURITY_KEY_LIMIT, STEP_EXPIRED, holdSentence, isExpired, localTime, refusalText, waitSentence } from '../src/screens/auth/refusals.js';
 
 const NOW = new Date('2026-10-26T15:00:00Z');
 const FALLBACK = 'Could not do that. Try again.';
@@ -50,6 +50,9 @@ describe('refusalText', () => {
       expect(refusalText(make(400, 'challenge-expired'), FALLBACK)).toBe(STEP_EXPIRED);
       expect(refusalText(make(400, 'challenge-expired'), FALLBACK, { expired: 'That message has expired.' })).toBe('That message has expired.');
       expect(refusalText(make(401, 'code-invalid'), FALLBACK)).toBe(FALLBACK);
+      // FU-A: the security-key cap (Security settings, add a key) and a login name already chosen.
+      expect(refusalText(make(409, 'security-key-limit'), FALLBACK)).toBe(SECURITY_KEY_LIMIT);
+      expect(refusalText(make(409, 'login-name-set'), FALLBACK)).toBe(LOGIN_NAME_SET);
       expect(isExpired(make(400, 'challenge-expired'))).toBe(true);
       expect(isExpired(make(401, 'code-invalid'))).toBe(false);
     });

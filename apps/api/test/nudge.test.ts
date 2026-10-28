@@ -2,7 +2,7 @@ import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { findByPublicName, PUBLIC_NAME, PUBLIC_NAME_KEY } from '../src/nudge/names.js';
+import { findByPublicName, PUBLIC_NAME, PUBLIC_NAME_KEY, publicNameOf } from '../src/nudge/names.js';
 import { canonicalTimeZone, FORMATTER_CAP, formatterCacheSize, inQuietHours, localMinutes } from '../src/nudge/quiet.js';
 import {
   NUDGE_GAP_MS, NUDGE_RETENTION_MS, RECIPIENT_LIMIT_PER_HOUR, purgeNudges, type NudgeEvent, type NudgeWiring,
@@ -116,7 +116,7 @@ const uniq = (p = 'ndg') => `${p}${String(++n).padStart(4, '0')}`;
 
 async function trader(o: { kind?: 'trader' | 'staff' } = {}) {
   const name = uniq();
-  const id = await seedAccount(deps, { username: name, ...(o.kind ? { kind: o.kind } : {}) });
+  const id = await seedAccount(deps, { displayName: name, loginName: `L${name}`, ...(o.kind ? { kind: o.kind } : {}) });
   const b = new Browser(app);
   const res = await b.post('/t/login', { accountId: id });
   expect(res.statusCode).toBe(200);
@@ -325,7 +325,7 @@ describe('POST /v1/nudges: silent drops look exactly like a delivered nudge (P3-
 
   it('the recipient blocked the sender', async () => {
     await expectSilentDrop(async (p) => {
-      expect((await p.to.b.post('/v1/account/blocks', { username: p.from.name })).statusCode).toBe(204);
+      expect((await p.to.b.post('/v1/account/blocks', { displayName: p.from.name })).statusCode).toBe(204);
     });
   });
 
@@ -375,7 +375,7 @@ describe('POST /v1/nudges: silent drops look exactly like a delivered nudge (P3-
     for (let i = 0; i < 3; i++) {
       const blocked = await trader();
       shared.add(ctxKey(blocked.id, q.to.id, q.context));
-      expect((await q.to.b.post('/v1/account/blocks', { username: blocked.name })).statusCode).toBe(204);
+      expect((await q.to.b.post('/v1/account/blocks', { displayName: blocked.name })).statusCode).toBe(204);
       expect((await nudge(blocked, q.to.name, q.context)).statusCode).toBe(202);
     }
     published.length = 0;
@@ -555,25 +555,29 @@ describe('POST /v1/account/blocks', () => {
   it('blocks by public name; repeating is harmless', async () => {
     const a = await trader();
     const b = await trader();
-    expect((await a.b.post('/v1/account/blocks', { username: b.name })).statusCode).toBe(204);
-    expect((await a.b.post('/v1/account/blocks', { username: b.name.toUpperCase() })).statusCode).toBe(204);
+    expect((await a.b.post('/v1/account/blocks', { displayName: b.name })).statusCode).toBe(204);
+    expect((await a.b.post('/v1/account/blocks', { displayName: b.name.toUpperCase() })).statusCode).toBe(204);
     const { rows } = await deps.db.query('select 1 from account_blocks where account_id = $1 and blocked_id = $2', [a.id, b.id]);
     expect(rows).toHaveLength(1);
   });
 
   it('an unknown name → 404 not-found; yourself or a malformed body → 400', async () => {
     const a = await trader();
-    expect((await a.b.post('/v1/account/blocks', { username: uniq('ghost') })).json()).toEqual({ error: 'not-found' });
-    expect((await a.b.post('/v1/account/blocks', { username: a.name })).statusCode).toBe(400);
+    expect((await a.b.post('/v1/account/blocks', { displayName: uniq('ghost') })).json()).toEqual({ error: 'not-found' });
+    expect((await a.b.post('/v1/account/blocks', { displayName: a.name })).statusCode).toBe(400);
     expect((await a.b.post('/v1/account/blocks', {})).statusCode).toBe(400);
-    expect((await a.b.post('/v1/account/blocks', { username: 7 })).statusCode).toBe(400);
+    expect((await a.b.post('/v1/account/blocks', { displayName: 7 })).statusCode).toBe(400);
+    // The old `{ username }` field is gone, and the private login name blocks nobody.
+    const b = await trader();
+    expect((await a.b.post('/v1/account/blocks', { username: b.name })).statusCode).toBe(400);
+    expect((await a.b.post('/v1/account/blocks', { displayName: `L${b.name}` })).json()).toEqual({ error: 'not-found' });
   });
 
   it('a block only stops nudges from the blocked person', async () => {
     const p = await pair();
     const other = await trader();
     shared.add(ctxKey(other.id, p.to.id, p.context));
-    expect((await p.to.b.post('/v1/account/blocks', { username: p.from.name })).statusCode).toBe(204);
+    expect((await p.to.b.post('/v1/account/blocks', { displayName: p.from.name })).statusCode).toBe(204);
     expect((await nudge(other, p.to.name, p.context)).statusCode).toBe(202);
     await settle();
     expect(published.map(([id]) => id)).toEqual([p.to.id]);
@@ -595,7 +599,7 @@ describe('purgeNudges', () => {
   });
 });
 
-describe('the public name helper (wip/lead-p2-fua renames username → display_name)', () => {
+describe('the public name helper (display name, never the login name)', () => {
   it('recipient lookup uses the public name column through one constant', async () => {
     const t = await trader();
     expect(await findByPublicName(deps.db, t.name.toUpperCase())).toEqual({ id: t.id, name: t.name, disabled: false });
@@ -603,16 +607,19 @@ describe('the public name helper (wip/lead-p2-fua renames username → display_n
     expect(await findByPublicName(deps.db, 'bad name!')).toBeNull();
   });
 
-  it('TRIPWIRE (fua): the public name column is still `username`', async () => {
+  it('the private login name finds nobody, and is never what the lookup returns', async () => {
+    const t = await trader();
+    expect(await findByPublicName(deps.db, `L${t.name}`)).toBeNull();
+    expect(await publicNameOf(deps.db, t.id)).toBe(t.name);
+  });
+
+  it('the public name columns are display_name / display_key (never login_name / login_key)', async () => {
+    expect([PUBLIC_NAME, PUBLIC_NAME_KEY]).toEqual(['display_name', 'display_key']);
     const { rows } = await deps.db.query<{ column_name: string }>(
       `select column_name from information_schema.columns where table_name = 'accounts' and column_name in ($1, $2)`,
       [PUBLIC_NAME, PUBLIC_NAME_KEY],
     );
-    // When wip/lead-p2-fua merges (username → display_name), set PUBLIC_NAME / PUBLIC_NAME_KEY in
-    // apps/api/src/nudge/names.ts to display_name / display_key: never the private login name.
-    expect(rows.map((r) => r.column_name).sort(), 'fua merged: update apps/api/src/nudge/names.ts').toEqual(
-      [PUBLIC_NAME, PUBLIC_NAME_KEY].sort(),
-    );
+    expect(rows.map((r) => r.column_name).sort()).toEqual(['display_key', 'display_name']);
   });
 });
 

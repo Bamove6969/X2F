@@ -23,8 +23,8 @@ afterAll(async () => {
 });
 
 async function released() {
-  const seller = await seedAccount(deps, { username: `seller${++n}x` });
-  const buyer = await seedAccount(deps, { username: `buyer${n}x` });
+  const seller = await seedAccount(deps, { loginName: `seller${++n}x` });
+  const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
   const { trade } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
   return driveTo(deps, trade, 'released');
 }
@@ -53,8 +53,8 @@ describe('purgeTradeAddresses (P3-I12)', () => {
   });
 
   it('keeps a refunded trade\'s addresses at the last instant the buyer may still dispute it', async () => {
-    const seller = await seedAccount(deps, { username: `seller${++n}x` });
-    const buyer = await seedAccount(deps, { username: `buyer${n}x` });
+    const seller = await seedAccount(deps, { loginName: `seller${++n}x` });
+    const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
     const { trade } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
     await driveTo(deps, trade, 'secured');
     const refunded = await applyEvent(deps, trade.code, { type: 'settled', kind: 'mutual-cancel', txHash: 'ab'.repeat(32) }, 'system');
@@ -74,8 +74,8 @@ describe('purgeTradeAddresses (P3-I12)', () => {
     // Late funds after the release: the trade is disputed again (closedAt cleared by the machine)...
     await applyEvent(deps, t.code, { type: 'escalate' }, 'system');
     const open = await (async () => {
-      const seller = await seedAccount(deps, { username: `seller${++n}x` });
-      const buyer = await seedAccount(deps, { username: `buyer${n}x` });
+      const seller = await seedAccount(deps, { loginName: `seller${++n}x` });
+      const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
       return (await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'buyer' })).trade;
     })();
     // ...and even a disputed row that still carries an old closed_at is kept.

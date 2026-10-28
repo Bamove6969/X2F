@@ -62,7 +62,7 @@ async function registerPgp(j: Jar): Promise<{ username: string; key: Pair }> {
   const { version } = await j.api.getTerms();
   const key = await genKey();
   const username = uniqueName('pgp');
-  const start = await j.api.registerPgpStart({ username, publicKey: key.publicKey });
+  const start = await j.api.registerPgpStart({ displayName: `D${username}`, loginName: username, publicKey: key.publicKey });
   await j.api.registerPgpFinish({
     challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, acceptedTerms: version,
   });
@@ -98,7 +98,7 @@ describe('onboarding', () => {
     const own = jar();
     const { version } = await own.api.getTerms();
     const username = uniqueName('pass');
-    await own.api.registerPassword({ username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
@@ -169,7 +169,8 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
   it('password: the first batch works at once without a prompt; a later batch is proved once and waits on one clock', async () => {
     const own = jar();
     const { version } = await own.api.getTerms();
-    await own.api.registerPassword({ username: uniqueName('bat'), password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
 
     const first = await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) });
@@ -197,7 +198,8 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
   it('a token for list A does not add list B, nor A in another order, and stays usable for A', async () => {
     const own = jar();
     const { version } = await own.api.getTerms();
-    await own.api.registerPassword({ username: uniqueName('bat'), password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
     const a = [fakeAddress(), fakeAddress()];
     const b = [fakeAddress(), fakeAddress()];
@@ -234,7 +236,8 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
   it('refuses a batch with one bad address whole: nothing is added', async () => {
     const own = jar();
     const { version } = await own.api.getTerms();
-    await own.api.registerPassword({ username: uniqueName('bat'), password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    const login = uniqueName('bat');
+    await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     const e = apiError(await failure(own.api.addWallets({ wallets: drafts([fakeAddress(), 'not-an-address']) })));
     expect(e.status).toBe(400);
     expect(e.code).toBe('address-invalid');
@@ -248,8 +251,10 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     const browser: AuthApi = jar().api;
     const first = await loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft));
     if (first.status !== 'second-factor') throw new Error('expected a second factor');
-    const start = await browser.loginPgpStart({ username, pendingId: first.pendingId });
+    const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
-    await expect(browser.me()).resolves.toMatchObject({ username, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false } });
+    await expect(browser.me()).resolves.toMatchObject({
+      displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
+    });
   });
 });

@@ -63,7 +63,7 @@ beforeEach(async () => {
 
 async function trader() {
   const name = `Nd_${String(++n).padStart(4, '0')}`;
-  const id = await seedAccount(deps, { username: name });
+  const id = await seedAccount(deps, { loginName: `${name}.lg`, displayName: name });
   const b = new Browser(app);
   expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
   return { id, b, name };

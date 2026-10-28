@@ -7,7 +7,8 @@ import type { Queryable } from '../db/pool.js';
  * sessions already know, and Plan 5 fills `typicalMinutes`, `positivePct` and `badges`.
  */
 export interface TraderSummary {
-  username: string;
+  /** The public display name; the private login name is never shown to anyone. */
+  displayName: string;
   completedTrades: number;
   online: boolean;
   lastSeenAt: string | null;
@@ -20,8 +21,8 @@ export interface TraderSummary {
 export const ONLINE_MS = 5 * 60_000;
 
 export async function traderSummary(q: Queryable, accountId: string, now: Date): Promise<TraderSummary> {
-  const { rows } = await q.query<{ username: string; completed: string; last_seen: Date | null }>(
-    `select a.username,
+  const { rows } = await q.query<{ display_name: string; completed: string; last_seen: Date | null }>(
+    `select a.display_name,
             (select count(*) from trades t
               where t.state = 'released' and (t.buyer_account_id = a.id or t.seller_account_id = a.id)) as completed,
             (select max(s.last_seen_at) from sessions s where s.account_id = a.id and s.revoked_at is null) as last_seen
@@ -31,7 +32,7 @@ export async function traderSummary(q: Queryable, accountId: string, now: Date):
   const r = rows[0];
   if (!r) throw new Error('trader missing');
   return {
-    username: r.username,
+    displayName: r.display_name,
     completedTrades: Number(r.completed),
     online: r.last_seen !== null && now.getTime() - r.last_seen.getTime() < ONLINE_MS,
     lastSeenAt: r.last_seen?.toISOString() ?? null,

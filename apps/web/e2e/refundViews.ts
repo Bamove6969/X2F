@@ -24,7 +24,7 @@ const ZELLE_PROFILE = {
 };
 
 /** The other trader's card as the API sends it (public name only). */
-const trader = (name: string): TraderSummary => ({ username: name, completedTrades: 0, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] });
+const trader = (name: string): TraderSummary => ({ displayName: name, completedTrades: 0, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] });
 
 /** The seller's view, `secured` with payBy 5 min ago and no extension used. */
 export function sellerView(over: Partial<RefundView> = {}): RefundView {

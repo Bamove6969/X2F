@@ -138,7 +138,7 @@ describe('TradeFund (seller)', () => {
   });
 
   it('never shows anything but the display name, even if an older field is also present', async () => {
-    current = { ...base, counterparty: { ...base.counterparty, displayName: 'Mira.K_', username: 'secret_login_1' } };
+    current = { ...base, counterparty: { ...base.counterparty, displayName: 'Mira.K_', ...{ username: 'secret_login_1' } } };
     const host = await room();
     expect(host.textContent).toContain('Selling to Mira.K_');
     expect(host.textContent).not.toContain('secret_login_1');
