@@ -377,6 +377,27 @@
   color: var(--x2f-danger);
 }
 
+/* "Trade grew to … XMR, you now pay …" (review Minor 1). */
+.x2f-room__grown {
+  margin: 0;
+  padding: 12px var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-caution);
+  color: var(--x2f-ink);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+/* "Dispute opens in N min" in place of the link before confirmBy (review Minor 7). */
+.x2f-room__dispute-wait {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+}
+
 .x2f-paid__actions {
   display: flex;
   flex-direction: column;

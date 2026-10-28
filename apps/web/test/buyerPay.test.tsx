@@ -617,3 +617,44 @@ describe('help tips (review Minor 2)', () => {
     expect(tip()).toBeNull();
   });
 });
+
+describe('review minors 1, 5 and 7', () => {
+  const grown = { ...SECURED, amountAtomic: '1312500000000', fiatCents: '43313', grown: { at: at(-1), fromAtomic: '1250000000000', fromFiatCents: '41250' } };
+  const grownEscrow = () => fakeEscrow({ amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n });
+
+  it('a trade that grew says so on the payment screen, with the device figures, and Cancel is right there', () => {
+    mount(props({ view: tradeView(grown), escrow: grownEscrow() }));
+    const note = document.querySelector('[data-grown]')!;
+    expect(note.textContent).toBe('Trade grew to 1.312500 XMR, you now pay $433.13');
+    expect(maybe('Cancel trade')).toBeDefined();
+  });
+
+  it("the seller's waiting room says so too", () => {
+    mount(props({ view: tradeView({ ...grown, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' } }), escrow: grownEscrow() }), SellerWaiting);
+    expect(document.querySelector('[data-grown]')!.textContent).toBe('Trade grew to 1.312500 XMR, mira.k now pays $433.13');
+  });
+
+  it('no growth note without the device amount', () => {
+    mount(props({ view: tradeView(grown), escrow: fakeEscrow({ amountAtomic: null, fiatCents: null }) }));
+    expect(document.querySelector('[data-grown]')).toBeNull();
+  });
+
+  it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(maybe('Open dispute')).toBeUndefined();
+    expect(text()).toContain('Dispute opens in');
+    r.unmount();
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(maybe('Open dispute')).toBeDefined();
+  });
+
+  it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {
+    setTradeChat(() => <input aria-label="Message" data-test-chat />);
+    mount(props({ view: tradeView({ ...SECURED, role: 'seller' }), wide: true }), SellerWaiting);
+    expect(document.querySelectorAll('[data-test-chat]')).toHaveLength(1);
+    await click(byText('Chat', 'button'));
+    expect(dialog()).toBeNull();
+    expect(document.querySelectorAll('[data-test-chat]')).toHaveLength(1);
+    expect(document.activeElement?.hasAttribute('data-test-chat')).toBe(true);
+  });
+});

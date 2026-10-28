@@ -16,6 +16,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
+import { formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { getTrade } from '../../api/trade.js';
 import { Button } from '../../ui/Button.js';
@@ -384,6 +385,27 @@ function WideRoom({ view, method, title, chip, children }: { view: TradeView; me
 // ---- BuyerPay ----
 
 /**
+ * "Trade grew to … XMR, you now pay …" (Revision 2026-10-21; review Minor 1): whenever the view
+ * says the trade grew, in this device's own figures (none without them), so a buyer who copied
+ * the old total into a bank app sees the change before ticking the new sentence.
+ */
+function GrownNote({ view, escrow, children }: { view: TradeView; escrow: Pick<TradeEscrow, 'amountAtomic' | 'fiatCents' | 'deal'>; children: ReactNode }) {
+  const total = deviceTotal(view, escrow);
+  if (view.grown === null || escrow.amountAtomic === null || total === null) return null;
+  return (
+    <p className="x2f-room__grown" role="status" data-grown="">
+      Trade grew to {formatXmr(escrow.amountAtomic)} XMR, {children} {total.text}
+    </p>
+  );
+}
+
+/** Focuses the composer of the chat beside the wide room, if one is installed. */
+function focusAsideChat(from: HTMLElement): void {
+  from.closest('.x2f-room')?.querySelector<HTMLElement>('.x2f-room__chat-panel :is(input, textarea, [contenteditable="true"])')?.focus();
+}
+
+
+/**
  * The escrow's other refusals, in words (review I2: shown, never silent). `amount-out-of-range`
  * is the "no total" note before paid; `amount-unknown` is the Finish card; the seller-only ones
  * never reach the buyer.
@@ -467,7 +489,13 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  const dispute = (
+  // The buyer's dispute in paid opens at confirmBy (machine.ts: too-early before it; review Minor 7).
+  const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
+  const dispute = disputeWait ? (
+    <span className="x2f-room__dispute-wait">
+      Dispute opens in <Countdown deadline={view.confirmBy!} serverClock={serverClock} format="minutes" />
+    </span>
+  ) : (
     <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
       Open dispute
     </Link>
@@ -475,6 +503,11 @@ export function BuyerPay(p: TradeScreenProps) {
   const refusal = refusalText(escrow.refusal);
   const notices = (
     <>
+      {!paid ? (
+        <GrownNote view={view} escrow={escrow}>
+          you now pay
+        </GrownNote>
+      ) : null}
       {showProposal(view) ? (
         <CancelProposalCard view={view} busy={action.busy} onAccept={() => void action.run({ type: 'accept-cancel' }, () => escrow.proposeCancelSign())} />
       ) : null}
@@ -711,10 +744,16 @@ export function SellerWaiting(p: TradeScreenProps) {
     return (
       <WideRoom view={view} method={method} title={title} chip={chip}>
         <TradeTimeline view={view} serverClock={serverClock} />
+        <GrownNote view={view} escrow={escrow}>
+          <Name view={view} /> now pays
+        </GrownNote>
         {waiting}
         {error}
         <div className="x2f-room__actions">
-          <ChatButton view={view} primary />
+          {/* The chat is already beside the room: Chat goes there, never a second panel (review Minor 5). */}
+          <Button variant="primary" onClick={(e) => focusAsideChat(e.currentTarget)}>
+            Chat
+          </Button>
           {cancel}
         </div>
       </WideRoom>
@@ -725,6 +764,9 @@ export function SellerWaiting(p: TradeScreenProps) {
       <TradeHeader title={title} code={view.code} method={method} backTo="/trades" />
       <div className="x2f-pay__main">
         {chip ? <EscrowStatus chip={chip} withBar /> : null}
+        <GrownNote view={view} escrow={escrow}>
+          <Name view={view} /> now pays
+        </GrownNote>
         {waiting}
         {error}
       </div>
