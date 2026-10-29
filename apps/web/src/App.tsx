@@ -4,6 +4,7 @@ import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { News } from './screens/News.js';
+import { Feedback } from './screens/Feedback.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -161,6 +162,7 @@ export function App() {
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/news" element={<News />} />
+          <Route path="/feedback" element={<Feedback />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>

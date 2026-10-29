@@ -190,6 +190,7 @@ export function SellerConfirm({
             ? null
             : notReleasable
               ? 'The XMR in escrow needs more confirmations before it can be released.'
+              // not-a-refusal: explains that a release is final
               : 'Press and hold for 1.5 seconds. Once released, the XMR can’t be taken back.';
   const fiat = sums?.fiat ?? 'the payment';
 

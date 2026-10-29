@@ -168,7 +168,10 @@ test('removing the last method is refused with Plan 2’s message', async ({ pag
 
   await page.goto('/settings/security');
   await page.click('[data-method="passkey"] [data-part="remove"]');
-  await expect(page.locator('[data-part="methods-error"]')).toContainText('only way to log in');
+  // Plan 5 Task 21: a refusal opens CantDoThat, with the feedback link for this code.
+  const popup = page.locator('[role="dialog"] [data-part="cant-do-that"]');
+  await expect(popup).toContainText('only way to log in');
+  await expect(popup.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=last-login-method');
 });
 
 test('ending another device’s session logs it out', async ({ page }) => {
@@ -254,7 +257,8 @@ test('removing the only login method is refused at once, without a confirm or a 
   });
   await page.goto('/settings/security');
   await page.click('[data-method="passkey"] [data-part="remove"]');
-  await expect(page.locator('[data-part="methods-error"]')).toContainText('only way to log in');
-  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  // Refused before any confirm: the only dialog is CantDoThat.
+  await expect(page.locator('[role="dialog"] [data-part="cant-do-that"]')).toContainText('only way to log in');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
   expect(deletes).toBe(0);
 });

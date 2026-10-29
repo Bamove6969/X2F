@@ -170,7 +170,7 @@ describe('BlockAction', () => {
     expect(document.activeElement).toBe(done.querySelector('[role="status"]'));
   });
 
-  it('Cancel blocks nobody; a refusal is shown inline', async () => {
+  it('Cancel blocks nobody; a refusal opens CantDoThat, a failure stays inline', async () => {
     const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!, new MouseEvent('click', { bubbles: true }));
@@ -181,7 +181,17 @@ describe('BlockAction', () => {
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('That trader cannot be blocked.');
+    // Task 21's popup (portalled into the body), with its feedback link for this refusal.
+    const popup = document.querySelector('[data-part="cant-do-that"]')!;
+    expect(popup.getAttribute('data-from')).toBe('cannot-block');
+    expect(popup.querySelector('[role="alert"]')?.textContent).toBe('That trader cannot be blocked.');
+    expect(popup.querySelector('a')?.getAttribute('href')).toBe('/feedback?from=cannot-block');
+    expect(host.querySelector('[role="alert"]')).toBeNull();
+    expect(popup.closest('[role="dialog"]')?.contains(document.activeElement)).toBe(true);
+    fire([...popup.querySelectorAll('button')].find((b) => b.textContent === 'OK')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
+    expect(document.activeElement).toBe(byPart(host, 'block-open'));
     failNext = 500;
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));

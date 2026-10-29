@@ -1,8 +1,9 @@
 /**
  * "Block <name>" (Plan 3 Task 37), wherever a trader is shown to a signed-in trader: the quote
  * today; Plan 5's profile and Task 20's chat when they land. Asks once (Claude Design's Block
- * board: what the block does, that it is silent, that open trades finish), then blocks; refusals
- * are inline (Plan 5 Task 21's CantDoThat popup is not on the main line yet). Kit parts only.
+ * board: what the block does, that it is silent, that open trades finish), then blocks. A block
+ * the API refuses (400 yourself, 404 a closed account) opens CantDoThat (Plan 5 Task 21) with its
+ * feedback link; a failure (network, server) stays inline. Kit parts only.
  * Focus (review M2): opening moves it to the question, Cancel returns it to "Block <name>", and the
  * outcome is announced (role="status") and focused. Nothing is shown to the person being blocked.
  */
@@ -10,12 +11,14 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANNOT_BLOCK, CANNOT_BLOCK_CODE, CANT_DO_TITLE } from '../../ui/cantDoCodes.js';
 import { blockTrader } from './blockApi.js';
 import { BLOCK_COPY as C } from './blockCopy.js';
 
 export const BLOCKED_PATH = '/settings/blocked';
 
-type State = { kind: 'idle' } | { kind: 'asking' } | { kind: 'busy' } | { kind: 'done' } | { kind: 'error'; text: string };
+type State = { kind: 'idle' } | { kind: 'asking' } | { kind: 'busy' } | { kind: 'done' } | { kind: 'refused' } | { kind: 'error'; text: string };
 
 export function BlockAction({ displayName, onBlocked }: { displayName: string; onBlocked?: () => void }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
@@ -45,8 +48,10 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
       go({ kind: 'done' }, 'done');
       onBlocked?.();
     } catch (e) {
-      const cannot = e instanceof ApiCallError && (e.status === 404 || e.status === 400);
-      go({ kind: 'error', text: cannot ? C.cannot : C.failed(displayName) }, 'open');
+      const refused = e instanceof ApiCallError && (e.status === 404 || e.status === 400);
+      // A refusal: the popup takes focus itself, and closing it returns focus to "Block <name>".
+      if (refused) go({ kind: 'refused' }, null);
+      else go({ kind: 'error', text: C.failed(displayName) }, 'open');
     }
   };
 
@@ -97,6 +102,13 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
       <Button variant="quiet" onClick={() => go({ kind: 'asking' }, 'ask')} data-part="block-open">
         {C.action(displayName)}
       </Button>
+      <CantDoThat
+        open={state.kind === 'refused'}
+        title={CANT_DO_TITLE.block}
+        body={CANNOT_BLOCK}
+        from={CANNOT_BLOCK_CODE}
+        onClose={() => go({ kind: 'idle' }, 'open')}
+      />
     </div>
   );
 }

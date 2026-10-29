@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
-describe('Task 37 web still waits for its design and the shared popup', () => {
+describe('Task 37 web still waits for its design and the chat', () => {
   it('NEEDS_DESIGN_BLOCK: the Block board is not in the app canvas yet (brief item 14)', () => {
     // Claude Design's board is drafted on origin/wip/design-brief as docs/design-boards/Block.dc.html
     // and Block-Wide.dc.html (views: profile, chat, settings; the confirm sheet). The build follows
@@ -19,13 +19,6 @@ describe('Task 37 web still waits for its design and the shared popup', () => {
     // from the Profile tab (Plan 5), and delete this check.
     const boards = readdirSync(`${ROOT}design/x2f-app`).filter((f) => /block/i.test(f));
     expect(boards, 'a block board landed: build to it').toEqual([]);
-  });
-
-  it("NEEDS_TASK_21_CANTDOTHAT: the block's refusals are inline until the shared CantDoThat popup is on the line", () => {
-    // Plan 5 Task 21 (wip/lead-p5-task21) adds ui/CantDoThat.tsx. Then show BlockAction's and
-    // Blocked's refusals ("That trader cannot be blocked.", the failed unblock) through it, with
-    // its feedback link, and delete this check.
-    expect(has('apps/web/src/ui/CantDoThat.tsx'), 'CantDoThat landed: use it for the block refusals').toBe(false);
   });
 
   it('NEEDS_TASK_20_BLOCK_UI: the trade chat has no block action yet (Task 20 ChatPanel not built)', () => {
