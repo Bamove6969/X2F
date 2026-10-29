@@ -5,6 +5,7 @@ import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
+import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { XMR, fakeAddress, seedTrade } from './helpers/trades.js';
 
@@ -39,7 +40,8 @@ let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 type Who = Awaited<ReturnType<typeof trader>> & { wallet: string; address: string };
 
 beforeAll(async () => {
-  ({ app, deps, trader } = await tradeApp({}, { prices }));
+  // A pool larger than any race below, so every racing take holds its own transaction at once.
+  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 12 }) }));
   // Small stage thresholds for this file: Building at 1 completed trade and 7 days, Graduated at 2 and 30.
   await deps.db.query(
     `insert into owner_settings (key, value, updated_at) values
@@ -48,6 +50,7 @@ beforeAll(async () => {
 });
 afterAll(async () => {
   await app.close();
+  await deps.db.end();
 });
 beforeEach(() => {
   market.usdCentsPerXmr = 33_000n;
@@ -109,6 +112,46 @@ async function taken(who: Who, offerId: string, b: Record<string, unknown>): Pro
   expect(code).toMatch(/^[0-9A-Z]{4}(-[0-9A-Z]{4}){3}$/);
   return code;
 }
+
+/**
+ * Runs `fire()` while a separate transaction holds `lock` (row locks every racer must wait behind),
+ * waits until `n` backends of `fire`'s requests are blocked inside their transactions on that lock,
+ * and only then lets them all go. So a race test proves the requests overlapped in Postgres, not just
+ * in the event loop: drop the take's account lock and the racers run their checks side by side.
+ */
+async function allAtOnce<T>(lock: string[], n: number, fire: () => Promise<T>[]): Promise<T[]> {
+  const holder = await deps.db.connect();
+  try {
+    await holder.query('begin');
+    for (const sql of lock) await holder.query(sql);
+    const pending = Promise.all(fire());
+    const deadline = Date.now() + 10_000;
+    for (;;) {
+      const { rows } = await deps.db.query<{ n: number }>(
+        `select count(*)::int as n from pg_stat_activity
+          where datname = current_database() and pid <> $1 and wait_event_type = 'Lock' and state = 'active'`,
+        [(await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid],
+      );
+      if (rows[0]!.n >= n) break;
+      if (Date.now() > deadline) throw new Error(`only ${rows[0]!.n} of ${n} racers reached the lock`);
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    await holder.query('commit');
+    return await pending;
+  } catch (e) {
+    await holder.query('rollback').catch(() => {});
+    throw e;
+  } finally {
+    holder.release();
+  }
+}
+
+/** The rows every take reads under a lock: both accounts, the offer and the site pause. */
+const takeLocks = (posterId: string, offerId: string): string[] => [
+  `select 1 from accounts where id = '${posterId}' for update`,
+  `select 1 from offers where id = '${offerId}' for update`,
+  'select 1 from site_flags for update',
+];
 
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 const tenth = XMR / 10n; // $33.00 at $330
@@ -260,7 +303,7 @@ describe('POST /v1/offers/:id/take', () => {
     const poster = await person();
     const offer = await postOffer(poster, { side: 'buy' });
     const sellers = await Promise.all([1, 2, 3, 4, 5].map(() => person()));
-    const results = await Promise.all(sellers.map((s) => take(s, offer, body(s, tenth))));
+    const results = await allAtOnce(takeLocks(poster.id, offer), 5, () => sellers.map((s) => take(s, offer, body(s, tenth))));
     const ok = results.filter((r) => r.statusCode === 200);
     expect(ok).toHaveLength(1);
     expect(results.filter((r) => r.statusCode !== 200).map(refusal)).toEqual(Array(4).fill({ status: 409, error: 'ad-busy' }));
@@ -280,14 +323,14 @@ describe('POST /v1/offers/:id/take', () => {
     const poster = await person();
     const offer = await postOffer(poster);
     const buyers = await Promise.all([1, 2, 3].map(() => person()));
-    const results = await Promise.all(buyers.map((b) => take(b, offer, body(b, tenth))));
+    const results = await allAtOnce(takeLocks(poster.id, offer), 3, () => buyers.map((b) => take(b, offer, body(b, tenth))));
     expect(results.map((r) => r.statusCode)).toEqual([200, 200, 200]);
     expect(new Set(results.map((r) => (r.json() as { code: string }).code)).size).toBe(3);
 
     // The same buyer again (any amount), and twice at once.
     expect(refusal(await take(buyers[0]!, offer, body(buyers[0]!, tenth * 2n)))).toEqual({ status: 409, error: 'already-waiting' });
     const fourth = await person();
-    const twice = await Promise.all([take(fourth, offer, body(fourth, tenth)), take(fourth, offer, body(fourth, tenth))]);
+    const twice = await allAtOnce(takeLocks(poster.id, offer), 2, () => [take(fourth, offer, body(fourth, tenth)), take(fourth, offer, body(fourth, tenth))]);
     expect(twice.map((r) => r.statusCode).sort()).toEqual([200, 409]);
     expect(refusal(twice.find((r) => r.statusCode === 409)!)).toEqual({ status: 409, error: 'already-waiting' });
 
@@ -405,7 +448,7 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     const poster = await person('starter');
     const offer = await postOffer(poster);
     const buyers = await Promise.all([1, 2, 3, 4, 5].map(() => person()));
-    const results = await Promise.all(buyers.map((b) => take(b, offer, body(b, tenth))));
+    const results = await allAtOnce(takeLocks(poster.id, offer), 5, () => buyers.map((b) => take(b, offer, body(b, tenth))));
     expect(results.filter((r) => r.statusCode === 200)).toHaveLength(3);
     expect(results.filter((r) => r.statusCode !== 200).map(refusal)).toEqual(Array(2).fill({ status: 409, error: 'starter-limit' }));
   });
@@ -431,6 +474,19 @@ describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted 
     expect((await loadTradeRow(deps.db, code))!.seller_refund).toBe(poster.address);
     // The seller's view now carries the wallet app for the funding button.
     expect((await poster.browser.get(`/v1/trades/${code}`)).json()).toMatchObject({ funding: { walletApp: 'feather' } });
+  });
+
+  it('two wallet calls at once set the address once; the other is refused', async () => {
+    const { poster, code } = await setupTrade('sell');
+    const second = await addWallet(poster.id);
+    const results = await allAtOnce([`select 1 from trades where code = '${code}' for update`], 2, () => [
+      poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet }),
+      poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: second.id }),
+    ]);
+    expect(results.map((r) => r.statusCode).sort()).toEqual([204, 409]);
+    expect(refusal(results.find((r) => r.statusCode === 409)!)).toEqual({ status: 409, error: 'wrong-state' });
+    const winner = results[0]!.statusCode === 204 ? poster.address : second.address;
+    expect((await loadTradeRow(deps.db, code))!.seller_refund).toBe(winner);
   });
 
   it('sets the poster-buyer payout address', async () => {
