@@ -71,6 +71,8 @@ export {
 } from './price/feed.js';
 export { DEFAULT_PRICE_SOURCES, PRICE_SOURCE_NAMES, parsePriceSources, priceSources, type PriceSourceName } from './price/sources.js';
 export { priceRoutes } from './price/routes.js';
+export { tradeIdentityRoutes, type TraderRole } from './trades/identity.js';
+export { buildInternalListener, INTERNAL_MAX_AGE_MS, type InternalOptions } from './internal/routes.js';
 export { RETENTION_JOBS } from './retentionJobs.js';
 export {
   applyEvent, eventRecord, insertTrade, loadTrade, loadTradeRow, noPublish, rowToTrade,

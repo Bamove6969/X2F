@@ -36,7 +36,7 @@ export function appPromptName(app: WalletApp): string {
  * (spec 6.3, 6.4). A waiting wallet is shown on this screen with its status but is never takeable,
  * so the take picker (Tasks 17-19) filters its list through this one source of truth.
  */
-export function takeableWallets(list: readonly WalletView[]): WalletView[] {
+export function takeableWallets<W extends Pick<WalletView, 'usable'>>(list: readonly W[]): W[] {
   return list.filter((w) => w.usable);
 }
 

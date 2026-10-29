@@ -1,18 +1,18 @@
 /**
- * The moderator party's decisions (Task 9), pure. The moderation service (apps/moderation, after
- * Task 8) runs `runParty` as `mod` for each attested trade, reports `setup-done { escrowAddress }`
+ * The moderator party's decisions (Task 9), pure. The moderation service (apps/moderation, Task
+ * 8) runs `runParty` as `mod` for each attested trade, reports `setup-done { escrowAddress }`
  * on `ready()`, and keeps the party (the watcher reads the escrow only through its `funds()`) until
  * the watch of a closed escrow ends.
  */
 import { normalizeTradeCode } from '@x2f/core';
 import type { EscrowEngine, PartyArgs, PartyStore, Transport } from '@x2f/escrow';
+import { isAttestedTerms, type AttestedTerms } from './attestation.js';
 import { channelFor } from './channels.js';
 import type { TradeState } from './machine.js';
 
 /**
- * SEAM (Task 8 not merged yet; tripwire in test/task8-tripwire.test.ts): a copy of `ModPartyArgs`
- * as exported by apps/moderation/src/main.ts on wip/t3-p3-task8, what Task 8's loop hands to its
- * `runParty` hook once a trade is attested and sealed. Replace with Task 8's type when it lands.
+ * What the moderation service's loop (apps/moderation/src/main.ts, Task 8) hands to its `runParty`
+ * hook once a trade is attested and sealed. Defined here once; apps/moderation imports it.
  */
 export interface ModPartyArgs {
   trade: string;
@@ -23,6 +23,11 @@ export interface ModPartyArgs {
   password: string;
   daemonUri: string;
   feeWallet: string;
+  /**
+   * The terms this service attested (review M5): from its own `signed_terms` record, never a later
+   * API read. The watcher and the settle checks (e.g. the mod's derived refund payout) use these.
+   */
+  terms: AttestedTerms;
 }
 
 const PASSWORD = /^[0-9a-f]{64}$/;
@@ -33,13 +38,15 @@ const PASSWORD = /^[0-9a-f]{64}$/;
  * is built by `io.transport` on that same channel (the wrapper passes e.g.
  * `(channel) => wsTransport({ url, code: channel, role: 'mod', me })`), and the channel is returned
  * too. Refuses, before building anything, a password that is not 32 bytes as lower-case hex, any
- * role but `mod`, a bad code, and keys that are not the attested mod slot.
+ * role but `mod`, terms that are not the attested terms shape, a bad code, and keys that are not the
+ * attested mod slot.
  */
 export async function modPartyArgs(
   a: ModPartyArgs,
   io: { transport: (channel: string) => Transport; engine: EscrowEngine; store: PartyStore },
 ): Promise<{ args: PartyArgs; channel: string }> {
   if (a.role !== 'mod') throw new RangeError('moderator party: role must be mod');
+  if (!isAttestedTerms(a.terms)) throw new RangeError('moderator party: bad attested terms');
   if (typeof a.password !== 'string' || !PASSWORD.test(a.password)) throw new RangeError('moderator party: bad wallet secret');
   const code = typeof a.trade === 'string' ? normalizeTradeCode(a.trade) : null;
   if (code === null) throw new RangeError('moderator party: bad trade code');

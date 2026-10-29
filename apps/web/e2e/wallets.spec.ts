@@ -260,6 +260,23 @@ test('/wallets?add=1&returnTo=… opens Add a wallet and returns to returnTo aft
   expect(s.posts[0]).toMatchObject({ wallets: [{ app: 'cake', address: READY.address }] });
 });
 
+test("/wallets?add=1&returnTo=… returns to returnTo after confirm-it's-you when the new wallet works at once", async ({ page }) => {
+  const s = await stub(page, [READY], RULE_KEY, (body, n, route) =>
+    n === 1
+      ? route.fulfill({ status: 403, json: { error: 'confirm-required', action: 'add-wallets' } })
+      : route.fulfill({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) }),
+  );
+  await page.goto('/wallets?add=1&returnTo=%2Fbuy%3Fresume%3Dn1');
+  const popup = page.getByRole('dialog', { name: 'Before you add a wallet' });
+  await popup.getByRole('button', { name: 'Continue' }).click();
+  await fillWallet(page, address('C', 'AAAAA1'));
+  await page.getByRole('button', { name: 'Save wallet' }).click();
+  await confirmWithPassword(page);
+  await expect(page).toHaveURL(/\/buy\?resume=n1$/);
+  expect(s.posts).toHaveLength(2);
+  expect(s.posts[1]!.confirmToken).toBe('tok-1');
+});
+
 test('the first wallet never waits: no confirm, no wait, and the screen says so', async ({ page }) => {
   const s = await stub(page, [], RULE_FIRST, (body, _n, route) =>
     route.fulfill({ status: 201, json: created(body, '2026-10-24T00:00:00.000Z', true) }),
