@@ -14,6 +14,7 @@ import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
 import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
+import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
@@ -98,6 +99,8 @@ function RouterBridge() {
 function LiveAccepted() {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
+  // Plan 2 Task 16: a new device asking to log in ("Is this you?"), over whatever screen is showing.
+  const approvals = useLoginApprovals();
   // The trade room listens on this same connection (seams.ts liveFanOut); without a trader
   // session there is no live source and the room only polls.
   useEffect(() => {
@@ -107,7 +110,11 @@ function LiveAccepted() {
   useLiveEvents((e) => {
     if (e.type === 'accepted') setAccepted(e);
     else if (e.type === 'trade') liveFanOut.emit(e);
+    else if (e.type === 'login-approval') approvals.refresh();
   });
+  if (approvals.current !== null) {
+    return <LoginApprove key={approvals.current.id} approval={approvals.current} onDone={approvals.dismiss} />;
+  }
   if (!accepted) return null;
   return (
     <AcceptedSheet

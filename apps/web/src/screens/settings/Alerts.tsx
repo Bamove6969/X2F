@@ -23,6 +23,11 @@ const KIND_WORDS: Record<string, string> = {
   'wallet-added': 'A payout wallet was added',
   'wallet-removed': 'A payout wallet was removed',
   'device-key-added': 'A trade signing key was added',
+  // Plan 2 Task 16.
+  'login-approval': 'A new device asked to log in',
+  'login-blocked': 'A login was blocked',
+  'logged-out-by-new-device': 'A new device logged other devices out',
+  'one-device-set': 'One device at a time was changed',
 };
 
 export function alertWords(kind: string): string {

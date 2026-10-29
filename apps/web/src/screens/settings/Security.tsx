@@ -149,7 +149,7 @@ export function Security() {
         <HoldBanner />
         <Methods prove={prove} />
         <PayoutWait />
-        <Devices />
+        <Devices prove={prove} />
         <LogoutTimer />
         <Alerts />
         {confirmUi}
