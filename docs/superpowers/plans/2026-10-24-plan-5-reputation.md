@@ -780,10 +780,10 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 **Interfaces:**
 - Produces:
   - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review.
-  - `POST /v1/reviews/:id/dispute` (the subject only, once the review is revealed). Staff: `GET /staff/v1/review-disputes`, `POST …/:id/decide { outcome, reason ≥ 20 }` (perm `reputation.review`; never the reviewer or subject's own staff account). Each step is logged without the note text.
+  - `POST /v1/reviews/:id/dispute` (the subject only, once the review is revealed). Staff: `GET /staff/v1/review-disputes`, `POST …/:id/decide { outcome, reason ≥ 20 }` (perm `reputation.review`). Each step is logged without the note text.
   - A removed review no longer counts anywhere (stats, badges, profile); its row is kept with `removed_at` so the decision can be checked.
   - The moderator sees the review and the reason. If the trade is already purged (older than 30 days), there is no chat to read; the decision rests on the review text and the reason. (See the open point in the final report.)
-- [ ] **Step 1: Write the failing tests:** only the subject can dispute; a second open dispute → 409; `removed` drops the review from `positivePct` and the profile; `note-removed` keeps the stars; a mod who is the subject's staff account cannot decide; parity for both screens.
+- [ ] **Step 1: Write the failing tests:** only the subject can dispute; a second open dispute → 409; `removed` drops the review from `positivePct` and the profile; `note-removed` keeps the stars; a helper gets `forbidden`; parity for both screens.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
