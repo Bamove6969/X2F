@@ -16,6 +16,7 @@ import { Login } from './screens/auth/Login.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
+import { Blocked } from './screens/settings/Blocked.js';
 import { Security } from './screens/settings/Security.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
@@ -155,6 +156,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/settings/blocked" element={<Blocked />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>

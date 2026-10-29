@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { posterRole, type Price } from '@x2f/trade';
+import { useSession } from '../../session/useSession.js';
 import { addressEnd } from '../../ui/addressEnd.js';
+import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
@@ -103,6 +105,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const { market, refresh: refreshMarket } = useMarket(currency);
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
+  const session = useSession();
+  const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
+  // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
+  const [blockedPoster, setBlockedPoster] = useState(false);
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
@@ -205,7 +211,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
-  const canTrade = ok !== null && !state.busy && (signedIn === false || (signedIn === true && pickedWallet !== null));
+  const canTrade = ok !== null && !state.busy && !blockedPoster && (signedIn === false || (signedIn === true && pickedWallet !== null));
   /**
    * What the trade room is handed (confirmed.ts): built from this screen's own figures, the ones the
    * person sees and taps Trade on. The taker of a sell ad is the buyer; of a buy ad, the seller.
@@ -326,6 +332,9 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           </div>
         </section>
         <p className="x2f-quote__fine">{copy.footnote(poster)}</p>
+        {signedIn === true && myName !== null && myName !== poster ? (
+          <BlockAction displayName={poster} onBlocked={() => setBlockedPoster(true)} />
+        ) : null}
       </main>
 
       <footer className="x2f-quote__footer">
