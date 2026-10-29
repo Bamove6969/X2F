@@ -117,9 +117,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     }
     // 2026-10-29. `cant-do-that-todo`: auth/refusals.ts (recovery-hold, security-key-limit and its
     // sentence, login-name-set), listed with their owner in docs/coordination.md. Lower these as
-    // refusals move into CantDoThat; raise one only with a reviewed reason.
+    // refusals move into CantDoThat; raise one only with a reviewed reason. `not-a-refusal` 40 -> 43
+    // (Task 37 landing, 2026-10-29): settings/blockCopy.ts's three lines saying what a block stops
+    // the OTHER trader doing ("<name> can't: ...", the done note, "What blocking does").
     expect(todo).toBeLessThanOrEqual(4);
-    expect(notARefusal).toBeLessThanOrEqual(40);
+    expect(notARefusal).toBeLessThanOrEqual(43);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

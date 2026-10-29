@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
+import { blockedEitherWaySql } from '../traders/blocks.js';
 import { findByPublicName, PUBLIC_NAME } from './names.js';
 import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
@@ -24,13 +25,20 @@ export interface NudgeEvent {
 /**
  * What nudges need from other tasks, injected through `Deps.nudges`:
  * - `hasSharedContext`: the two accounts share the open chat (Task 20) or active trade (Task 6)
- *   named by `context`, a chat or trade code.
+ *   named by `context`, a chat or trade code. It answers `'open-trade'` when `context` is an open
+ *   trade between them: a block does not stop those nudges (Task 37 review N1, lead decision (a):
+ *   open trades with a blocked person finish normally, so a buyer who paid can still wake the
+ *   seller to release). `true` is any other shared context (an offer chat), where a block either
+ *   way drops the nudge.
  * - `publish` / `sendPush`: left out in production, so delivery is Task 19's own (`liveDelivery`);
  *   tests pass fakes. `sendPush` takes only the kind, so the payload can only be the generic
  *   "Someone nudged you on X2F": never a name, an amount or a trade detail.
  */
+/** `false`: nothing shared (403). `'open-trade'`: an open trade, which a block does not stop. `true`: any other shared context. */
+export type SharedContext = boolean | 'open-trade';
+
 export interface NudgeWiring {
-  hasSharedContext(fromId: string, toId: string, context: string): Promise<boolean>;
+  hasSharedContext(fromId: string, toId: string, context: string): Promise<SharedContext>;
   publish?(accountId: string, ev: NudgeEvent): void | Promise<void>;
   sendPush?(accountId: string, kind: 'nudge'): Promise<boolean>;
 }
@@ -89,7 +97,7 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
 /**
  * `POST /v1/nudges { to, context }`. The sender's own refusals are distinct: 403
  * `no-shared-context` (also for an unknown name or yourself) and 429 `too-soon`. Everything about
- * the recipient (blocked, nudges off, quiet hours, 3 already this hour, disabled) is decided after
+ * the recipient (a block either way outside an open trade (Task 37 review M6, N1), nudges off, quiet hours, 3 already this hour, disabled) is decided after
  * the same queries in the same order and answers the same 202 as a delivered nudge, so the
  * sender learns nothing about the recipient's settings or blocks.
  */
@@ -101,9 +109,10 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
   const fromId = req.auth.accountId;
 
   const recipient = await findByPublicName(deps.db, to);
-  if (recipient === null || recipient.id === fromId || !(await deps.nudges.hasSharedContext(fromId, recipient.id, context))) {
-    throw new ApiError(403, 'no-shared-context');
-  }
+  const shared = recipient === null || recipient.id === fromId ? false : await deps.nudges.hasSharedContext(fromId, recipient.id, context);
+  if (recipient === null || shared === false) throw new ApiError(403, 'no-shared-context');
+  // Review N1: inside an open trade a block does not drop the nudge (the trade finishes normally).
+  const blockApplies = shared !== 'open-trade';
 
   const now = deps.clock();
   let deliverIt = false;
@@ -127,7 +136,7 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       const { rows } = await client.query<RecipientFacts>(
         `select (select ${PUBLIC_NAME} from accounts where id = $1) as from_name,
                 coalesce(s.enabled, true) as enabled, s.quiet_from, s.quiet_to, s.tz,
-                exists (select 1 from account_blocks b where b.account_id = $2 and b.blocked_id = $1) as blocked,
+                ${blockedEitherWaySql('$1::uuid', '$2::uuid')} as blocked,
                 (select count(*) from nudges n where n.to_id = $2 and n.delivered and n.sent_at > $3)::int as recent
            from (select 1) as one left join nudge_settings s on s.account_id = $2`,
         [fromId, recipient.id, new Date(now.getTime() - HOUR_MS)],
@@ -135,7 +144,7 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       const f = rows[0]!;
       fromName = f.from_name;
       const quiet = inQuietHours({ quietFrom: f.quiet_from, quietTo: f.quiet_to, tz: f.tz }, now);
-      deliverIt = !recipient.disabled && f.enabled && !quiet && !f.blocked && f.recent < RECIPIENT_LIMIT_PER_HOUR;
+      deliverIt = !recipient.disabled && f.enabled && !quiet && !(blockApplies && f.blocked) && f.recent < RECIPIENT_LIMIT_PER_HOUR;
       // Recorded either way: a dropped nudge still starts the sender's 10 minutes.
       await client.query('insert into nudges (from_id, to_id, sent_at, delivered) values ($1, $2, $3, $4)', [
         fromId, recipient.id, now, deliverIt,
@@ -218,6 +227,47 @@ async function blockHandler(req: FastifyRequest, reply: FastifyReply) {
   return reply.code(204).send();
 }
 
+/**
+ * `DELETE /v1/account/blocks/:displayName` (Task 37): unblocks by public display name; unblocking
+ * someone not blocked is a no-op (204), an unknown name 404 as for blocking. Everything the block
+ * stopped (offers, takes, chats, presence) comes back at once: nothing is stored but the row.
+ */
+async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
+  const { displayName } = req.params as { displayName: string };
+  if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  // By the stored key (display_key = lower(display_name)), within my own blocks only, with no
+  // name-shape or reserved-word check (review M1): a name that a later rule change would refuse
+  // must still be unblockable. 404 only when no account has that name.
+  const { rows } = await deps.db.query<{ found: boolean }>(
+    `with who as (select id from accounts where display_key = lower($2)),
+          gone as (delete from account_blocks b using who where b.account_id = $1 and b.blocked_id = who.id returning 1)
+     select exists (select 1 from who) as found`,
+    [req.auth.accountId, displayName],
+  );
+  if (rows[0]?.found !== true) throw new ApiError(404, 'not-found');
+  return reply.code(204).send();
+}
+
+/** One entry of my Blocked list: the public display name only (never the login name). */
+export interface BlockedEntry {
+  displayName: string;
+  blockedAt: string;
+}
+
+/**
+ * `GET /v1/account/blocks` (Task 37) → `BlockedEntry[]`, newest first: only the people I blocked.
+ * Who blocked me is never answered anywhere (blocks are private, spec 2.4).
+ */
+async function listBlocks(req: FastifyRequest): Promise<BlockedEntry[]> {
+  const { rows } = await req.server.deps.db.query<{ name: string; created_at: Date }>(
+    `select a.${PUBLIC_NAME} as name, b.created_at from account_blocks b join accounts a on a.id = b.blocked_id
+      where b.account_id = $1 order by b.created_at desc, a.${PUBLIC_NAME}`,
+    [req.auth.accountId],
+  );
+  return rows.map((r) => ({ displayName: r.name, blockedAt: r.created_at.toISOString() }));
+}
+
 /** Deletes nudge records older than an hour (registered in main.ts). */
 export const purgeNudges: RetentionJob = {
   name: 'purgeNudges',
@@ -227,11 +277,13 @@ export const purgeNudges: RetentionJob = {
   },
 };
 
-/** Nudges, nudge settings and blocks: full trader sessions only. */
+/** Nudges, nudge settings and blocks (Tasks 26 and 37): full trader sessions only. */
 export function nudgeRoutes(app: FastifyInstance): void {
   const trader = requireSession({ kinds: ['trader'] });
   app.post('/v1/nudges', { preHandler: trader }, nudgeHandler);
   app.get('/v1/account/nudges', { preHandler: trader }, getSettings);
   app.put('/v1/account/nudges', { preHandler: trader }, putSettings);
+  app.get('/v1/account/blocks', { preHandler: trader }, listBlocks);
   app.post('/v1/account/blocks', { preHandler: trader }, blockHandler);
+  app.delete('/v1/account/blocks/:displayName', { preHandler: trader }, unblockHandler);
 }
