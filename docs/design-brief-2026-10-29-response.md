@@ -1,0 +1,73 @@
+# Design brief 2026-10-29: what was delivered
+
+All boards are on the X2F App canvas (https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH), row "Brief 29 Oct".
+Every item has a phone board `<Name>.dc.html` and a wide board `<Name>-Wide.dc.html`; night/day is the `theme` tweak.
+Variants the brief asked for are tweaks on the same board.
+
+| Brief | Board | Tweaks |
+|---|---|---|
+| A1 | FlexOffer-Post | example: filled/overlap |
+| A2 | FlexOffer-Quote | variant: greyed/hidden |
+| A3 | MyOffers | |
+| A4 | CantDoThat | |
+| A5 | Feedback | view: form/sent |
+| A6 | Warn-IvePaid | |
+| A7 | Warn-Release | |
+| A8 | Refunded | variant: buyer-cancelled/time-ran-out/moderator |
+| A9 | Appeal-Notice | variant: open/filed/waiting/decided/closed |
+| A10 | Lien-Notice | |
+| A11 | Ban-Notice | variant: trade-ban/site-ban |
+| A12 | Maintenance | |
+| A13 | News | variant: plain/with-dont-show-again |
+| A14 | Block | view: profile/chat/settings |
+| A15 | Reviews | view: write/profile; stars: 5/10 |
+| A16 | Alerts | |
+| A17 | DeleteAccount | variant: blocked/allowed |
+| A18 | Support | view: new/thread |
+| A19 | SelfDestruct | view: trade/privacy; trade: completed/disputed |
+| B | Login, Login-Backup | method / view |
+
+## Section B fixes
+- `.x2f-method-name`: no board uses it (code only). Recommended CSS: `display:inline-flex; align-items:center; min-height:44px; margin-block:-13px`; then drop the `:not(.x2f-method-name)` exclusion in `apps/web/e2e/refund.spec.ts`. All tappable method rows on boards are already 60px.
+- Orange chips: Main, SellOffers (and their mirrors BuyMain, BuyOffers): selected sort chip border orange → ink.
+- SetupPgpChallenge fits 844 (spacing tightened; canvas h 884 → 844).
+- SetupWallet: "This first wallet works right away. Any wallet you add later asks you to confirm it's you, and we always show an alert. Want extra protection? In Security settings, you can make newly added addresses wait 24 hours before they can be paid."
+- SetupTerms Fees placeholder: now the 2026-10-20 extra-XMR rule.
+- SetupUsername/SetupWelcome example: lumen.k (the owner's name on OwnerSetup) → mira.k.
+
+## Owner copy changed
+- A4: added a full stop after "feedback"; title "You can't do that yet"; button "OK".
+- A5: thank-you split into heading "Thank you!" + the owner's sentence (words unchanged).
+- A6: owner text verbatim in two paragraphs; added title "Wait until the XMR is fully in escrow" and a 3-of-10 confirmations bar.
+- A7 (final words were ours): "Is the $412.50 really in your account?" / "Only release once the money is really in your account." / "Check your own bank or Zelle app, not a screenshot. Screenshots can be faked." / "Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back."
+- A1: "Buyer must have at least __ completed trades" reads "Seller must have…" on buy offers (the taker is a seller).
+- A2 hidden variant: added "2 more offers aren't shown. You don't meet their rules for $600.00."
+- A11: "…reach out to our moderators on Matrix (or Telegram)." (link placement). Matrix/Telegram addresses are examples.
+- A12: one long sentence split into two.
+- A15: "Rate the trade" → "Review the trade"; "Submit rating" → "Submit review". Stars amber (caution), not orange.
+- Selected states on new boards use an ink border, not orange (orange fill only for the one primary action).
+
+## Brief vs spec (brief followed; spec needs updating or owner decision)
+- Appeal window 72 h (brief) vs 48 h on DisputeRuling; appeal reviewer = "a senior moderator who hasn't seen this case".
+- Lien implies coins move at the ruling; DisputeRuling says they move after the appeal window.
+- Self-destruct 30 days after end / 90 days from the dispute button vs spec 4.1 (chats 90 days after close; disputes 30 days after close). Privacy page still mentions the 6-month anonymised training copy.
+- No email anywhere vs spec 6.3's opt-in PGP-encrypted email notifications.
+- Reviews 1–10 option and custom comment vs spec's 1–5 + one-line note.
+
+## Open questions for the owner
+1. Orange selected outlines remain on ~12 older boards (PostOffer, SetupWallet chips, Wallet, ModQueue, StaffList, StaffOverview, Review, BadgeSettings; radios on BuyQuote, DisputeOpen, ModCase, SetupLogin, SetupBackup): switch all to ink?
+2. Sort chips are 32px tall (< 44px): raise?
+3. mira.k "is available" in setup although mira.k has trade history elsewhere: fine as a storyboard shortcut?
+4. A6: also show the warning when the pay screen opens / when escrow already has 10 confirmations?
+5. A5: how do staff reply to non-anonymous feedback?
+6. A9: add a "ruling stands" decided state?
+7. A8: offer "Did you pay before you cancelled? Open a dispute" when the buyer cancelled?
+8. A11: is a trade ban timed / does it show an end date or reason? Can a site-banned user open Wallets? Real Matrix/Telegram addresses?
+9. A14: is the blocked person told? Open trades continue until they end (assumed).
+10. A15: dispute-review reasons; does the review stay visible while checked? Do the trade badges fit?
+11. A13: where News lives after "don't show again" (we wrote Profile); separate planned vs emergency maintenance variant?
+12. A16: Jabber alert account OMEMO fingerprint published? App list Conversations/Monal/Gajim? Battery tip Android-only?
+13. A17: can a deleted username be reused? Trade records kept until their self-destruct date (assumed yes).
+14. Login-Backup: during the 24-hour hold, is trading blocked (we wrote yes)?
+15. A1: method price adjustment % only, or also a fixed amount with fixed-price offers? Amount-range mismatches treated like tier rules (greyed/hidden)?
+16. A3: Select all with mixed states turns all on (built) or all off?
