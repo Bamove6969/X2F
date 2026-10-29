@@ -69,6 +69,8 @@ export function dumpWatchState(s: WatchState): unknown {
     closedAt: s.closedAt ? s.closedAt.toISOString() : null,
     settlingSince: s.settlingSince ? s.settlingSince.toISOString() : null,
     spendUnshownReported: s.spendUnshownReported === true,
+    claimReported: s.claimReported === true,
+    claimedAt: s.claimedAt ? s.claimedAt.toISOString() : null,
   };
 }
 
@@ -103,6 +105,14 @@ export function reviveWatchState(j: unknown): WatchState {
     if (Number.isNaN(settlingSince.getTime())) bad();
   }
   if (o.spendUnshownReported !== undefined && typeof o.spendUnshownReported !== 'boolean') bad();
+  // Absent in a state persisted before lead decision (b): no claim reported.
+  let claimedAt: Date | null = null;
+  if (o.claimedAt !== undefined && o.claimedAt !== null) {
+    if (typeof o.claimedAt !== 'string') bad();
+    claimedAt = new Date(o.claimedAt as string);
+    if (Number.isNaN(claimedAt.getTime())) bad();
+  }
+  if (o.claimReported !== undefined && typeof o.claimReported !== 'boolean') bad();
   if (o.settledTx !== null && typeof o.settledTx !== 'string') bad();
   if (!strings(o.sweepTxs) || !strings(o.lateReported) || (o.swept !== null && !strings(o.swept))) bad();
   for (const k of ['reopened', 'escalationPending', 'channelsClosed'] as const) if (typeof o[k] !== 'boolean') bad();
@@ -118,11 +128,13 @@ export function reviveWatchState(j: unknown): WatchState {
     channelsClosed: o.channelsClosed as boolean,
     settlingSince,
     spendUnshownReported: o.spendUnshownReported === true,
+    claimReported: o.claimReported === true,
+    claimedAt,
   };
 }
 
 /** The escrow facts `watchStep` takes, or null when the engine gave no heights (never guessed). */
-function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: EscrowFunds; outgoing: Outgoing[] } | null {
+function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: EscrowFunds; outgoing: Outgoing[]; claimed: boolean } | null {
   if (typeof f.chainHeight !== 'number' || !Array.isArray(f.outgoing)) return null;
   if (f.incoming.some((i) => i.height === undefined)) return null;
   return {
@@ -133,6 +145,9 @@ function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: Esc
       incoming: f.incoming.map((i) => ({ txHash: i.txHash, amountAtomic: i.amountAtomic, height: i.height ?? null, unlocked: i.unlocked })),
     },
     outgoing: f.outgoing,
+    // A trade party's sealed post-release info reached the party (lead decision b): only the
+    // party's own record of opened, signed messages from the buyer or seller.
+    claimed: Array.isArray(f.spendClaims) && f.spendClaims.some((r) => r === 'buyer' || r === 'seller'),
   };
 }
 
@@ -162,6 +177,7 @@ const reportBody = (trade: string, r: WatchReport): Record<string, unknown> => {
   }
   if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash };
   if (r.kind === 'spend-unshown') return { kind: 'spend-unshown', trade };
+  if (r.kind === 'release-claimed') return { kind: 'release-claimed', trade };
   return { kind: 'late-funds', trade };
 };
 
@@ -238,7 +254,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       return true;
     }
     const state = reviveWatchState(row.state);
-    const step = watchStep({ trade: { state: apiState }, funds: facts.funds, spend: spendEvidence(facts.outgoing, state), state, now: o.now() });
+    const step = watchStep({ trade: { state: apiState }, funds: facts.funds, spend: spendEvidence(facts.outgoing, state), state, now: o.now(), claimed: facts.claimed });
     if (!(await post(row.trade, step.reports))) return true;
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {

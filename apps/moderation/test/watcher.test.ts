@@ -135,7 +135,7 @@ function fakeNetwork() {
 
 /** A stand-in escrow party: scripted funds, a ready() the test resolves. */
 interface FakeParty {
-  funds: { balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight: number | undefined; outgoing: Outgoing[] | undefined };
+  funds: { balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight: number | undefined; outgoing: Outgoing[] | undefined; spendClaims?: Role[] };
   stopped: boolean;
   resolveReady: (a: string) => void;
   handle: PartyHandle;
@@ -460,6 +460,67 @@ describe('the chain watcher', () => {
     await third.handle.watch();
     expect(unshown()).toHaveLength(1);
     await third.handle.stop();
+  });
+
+  it('a trade party\'s claim (spend.info refused, or spend.claim when too big) → release-claimed once, surviving a restart; 6 h after it with no spend shown → spend-unshown once (lead decision b)', async () => {
+    const { net, fetch } = fakeNetwork();
+    const first = await moderation(fetch);
+    const code = await inFunding(first, net);
+    const p = first.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    net.states.set(code, 'settling');
+    const start = clock.getTime();
+    await first.handle.watch();
+    const claimed = () => net.reports.filter((r) => r.kind === 'release-claimed' && r.trade === code);
+    const unshown = () => net.reports.filter((r) => r.kind === 'spend-unshown' && r.trade === code);
+    expect(claimed()).toEqual([]);
+    // 10 min in, the seller's too-big info arrives as a claim alone (the party's PartyState.claims).
+    clock = new Date(start + 10 * 60_000);
+    p.funds = { ...p.funds, spendClaims: ['seller'] };
+    await first.handle.watch();
+    expect(claimed()).toEqual([{ kind: 'release-claimed', trade: code }]);
+    // the API keeps the claimed trade settling past its 15-min window; the buyer's refused info adds a second claimant
+    clock = new Date(start + 30 * 60_000);
+    p.funds = { ...p.funds, spendClaims: ['seller', 'buyer'] };
+    await first.handle.watch();
+    await first.handle.stop();
+    const second = await moderation(fetch);
+    await second.handle.watch();
+    second.parties.get(code)!.funds = p.funds;
+    await second.handle.watch();
+    expect(claimed()).toHaveLength(1);
+    // 6 h after settling started is not enough: the fallback counts from the claim
+    clock = new Date(start + 6 * 60 * 60_000 + 60_000);
+    await second.handle.watch();
+    expect(unshown()).toEqual([]);
+    clock = new Date(start + 10 * 60_000 + 6 * 60 * 60_000);
+    await second.handle.watch();
+    expect(unshown()).toEqual([{ kind: 'spend-unshown', trade: code }]);
+    clock = new Date(start + 8 * 60 * 60_000);
+    await second.handle.watch();
+    expect(unshown()).toHaveLength(1);
+    expect(claimed()).toHaveLength(1);
+    await second.handle.stop();
+  });
+
+  it('a claim followed by the sweep shown within 6 h settles normally; nothing escalates', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)], spendClaims: ['buyer'] };
+    net.states.set(code, 'settling');
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.trade === code).map((r) => r.kind)).toContain('release-claimed');
+    clock = new Date(clock.getTime() + 60 * 60_000);
+    p.funds = { ...p.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('b'), height: 90, spentAtomic: XMR }] };
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+    net.states.set(code, 'released');
+    clock = new Date(clock.getTime() + 7 * 60 * 60_000);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'spend-unshown' && r.trade === code)).toEqual([]);
+    await m.handle.stop();
   });
 
   it('spend-unshown refused by the API (not wrong-state) is posted again on the next pass', async () => {

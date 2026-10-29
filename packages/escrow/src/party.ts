@@ -66,6 +66,13 @@ export interface PartyState {
   sent: Record<string, Record<string, string | Record<string, string>>>;
   received: Record<string, Partial<Record<Role, Received>>>;
   release: ReleaseState | null;
+  /**
+   * Moderator only: the trade parties whose sealed post-release info (`spend.info`, or
+   * `spend.claim` when theirs is too big to send) this party has received, in arrival order,
+   * whether or not the import was refused (Task 9 I/O, lead decision b: the watcher reports
+   * `release-claimed`). Saved before the import is tried. Absent in states saved before it.
+   */
+  claims?: Role[];
 }
 
 export interface PartyStore {
@@ -88,9 +95,9 @@ export interface PartyHandle {
    * answers after the relay connection ended for good (ready() and settle() reject with the
    * TransportClosedError): the wallet needs no peer. Rejects after a PartyError or stop().
    * `chainHeight` and `outgoing` (Task 9's watcher) come from the same sync when the engine
-   * provides them (the Monero engine does).
+   * provides them (the Monero engine does). `spendClaims` (moderator only): PartyState.claims.
    */
-  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[] }>;
+  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] }>;
   /**
    * This party's post-release multisig info (hex), for the moderator, who takes no part in a
    * seller–buyer release and so cannot see that spend on its own (Task 9, lead decision A). The
@@ -152,6 +159,12 @@ const READY = 'msig.ready:0';
  */
 const SPEND_INFO = 'spend.info:0';
 const SPEND_ACK = 'spend.ack:0';
+/**
+ * Sent instead of SPEND_INFO when this party's info is over SPEND_INFO_MAX_HEX (a dust-attacked
+ * escrow): no info, only the claim that its release is done, so the moderator's watcher still
+ * reports `release-claimed` and the 6 h fallback escalates (lead decision b). Acked by SPEND_ACK.
+ */
+const SPEND_CLAIM = 'spend.claim:0';
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
@@ -205,6 +218,7 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === READY) return exactStrings(p, ['key', 'address']);
   if (key === SPEND_INFO) return from !== 'mod' && exactStrings(p, ['key', 'hex']);
   if (key === SPEND_ACK) return from === 'mod' && exactStrings(p, ['key']);
+  if (key === SPEND_CLAIM) return from !== 'mod' && exactStrings(p, ['key']);
   const rel = RELEASE_KEY.exec(key);
   if (!rel || Number(rel[3]) > MAX_ATTEMPT) return false;
   if (rel[1] === 'state.export') return exactStrings(p, ['key', 'hex']);
@@ -335,7 +349,7 @@ export function runParty(a: PartyArgs): PartyHandle {
       readyResends += 1;
       await send(READY, peers.filter((p) => !pastSetup(p)));
     }
-    if (spendInfoSendable() && !state.received[SPEND_ACK]?.mod) await send(SPEND_INFO, ['mod']);
+    if (!state.received[SPEND_ACK]?.mod) await sendSpend();
     const rel = state.release;
     if (!rel) return;
     if (rel.phase === 'exhausted' || rel.phase === 'superseded') return;
@@ -621,7 +635,15 @@ export function runParty(a: PartyArgs): PartyHandle {
       // Never fatal after a release that is done: nothing was sent, tried again on the next tick.
       return ignored('spend-info-export-failed');
     }
-    if (spendInfoSendable()) await send(SPEND_INFO, ['mod']);
+    await sendSpend();
+  };
+
+  /** The exported info when it fits one sealed message, else the claim alone (never sent before an export). */
+  const sendSpend = async (): Promise<void> => {
+    if (!state.sent[SPEND_INFO]) return;
+    if (spendInfoSendable()) return send(SPEND_INFO, ['mod']);
+    state.sent[SPEND_CLAIM] ??= {};
+    await send(SPEND_CLAIM, ['mod']);
   };
 
   /** Exported and small enough for one sealed message (else never sent: the watcher's fallback escalates). */
@@ -685,7 +707,14 @@ export function runParty(a: PartyArgs): PartyHandle {
       return;
     }
     if (a.role !== 'mod') return ignored('spend-info-not-mod');
-    if (state.received[SPEND_INFO]?.[from]?.digest !== digest) {
+    // Opened, signed by a trade party: a claim that its release is done, imported or not (lead decision b).
+    if (!(state.claims ?? []).includes(from)) {
+      state.claims = [...(state.claims ?? []), from];
+      await saveState();
+    }
+    if (key === SPEND_CLAIM) {
+      (state.received[SPEND_CLAIM] ??= {})[from] ??= { payload, digest };
+    } else if (state.received[SPEND_INFO]?.[from]?.digest !== digest) {
       const hex = payload.hex;
       if (importRefusal(hex) !== null) return ignored('spend-info-refused');
       try {
@@ -753,7 +782,7 @@ export function runParty(a: PartyArgs): PartyHandle {
       ignored('setup-after-ready');
       return;
     }
-    if (key === SPEND_INFO || key === SPEND_ACK) {
+    if (key === SPEND_INFO || key === SPEND_ACK || key === SPEND_CLAIM) {
       await onSpend(key, from, payload);
       return;
     }
@@ -902,7 +931,8 @@ export function runParty(a: PartyArgs): PartyHandle {
           try {
             const { balance, unlocked } = await session.sync();
             const incoming = await session.incoming();
-            const extra: { chainHeight?: number; outgoing?: Outgoing[] } = {};
+            const extra: { chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] } = {};
+            if (a.role === 'mod') extra.spendClaims = [...(state.claims ?? [])];
             if (session.chainHeight) extra.chainHeight = await session.chainHeight();
             if (session.outgoing) extra.outgoing = await session.outgoing();
             resolve({ balance, unlocked, incoming, ...extra });

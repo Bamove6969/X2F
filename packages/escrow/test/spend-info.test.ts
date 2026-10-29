@@ -1,13 +1,23 @@
 // Task 9 I/O, lead decision (A) of 2026-10-29: after a seller–buyer release, the releasing device
 // sends the moderator its post-release multisig info; the moderator imports it, and only then does
 // its OWN wallet show the spend (funds().outgoing). Regtest.
-import { ROLES } from '@x2f/core';
+import { ROLES, type Role } from '@x2f/core';
+import { generateIdentity, seal } from '@x2f/protocol';
 import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@x2f/regtest';
 import { buildRelay, type Relay } from '@x2f/relay';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { MoneroMultisigEngine, SPEND_INFO_MAX_HEX, runParty, wsTransport, type Outcome, type Transport } from '../src/index.js';
-import { minedWhile, partyKit, type Trade } from './harness.js';
+import {
+  MoneroMultisigEngine,
+  SPEND_INFO_MAX_HEX,
+  runParty,
+  wsTransport,
+  type EscrowEngine,
+  type EscrowSession,
+  type Outcome,
+  type Transport,
+} from '../src/index.js';
+import { minedWhile, partyKit, type MemoryStore, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 const XMR = 1_000_000_000_000n;
@@ -105,6 +115,9 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       // A party never imports (its own release is done; the info is for the moderator only).
       f = await mod.funds();
       expect(f.outgoing).toEqual([]);
+      // Calls on the handle are not claims: only a sealed message from a trade party is (lead decision b).
+      expect(f.spendClaims).toEqual([]);
+      expect((await t.parties.buyer.funds()).spendClaims).toBeUndefined();
       expect(t.stores.buyer.current()!.received['spend.ack:0']).toBeUndefined();
 
       // The mod hears again: the parties' resends arrive, it imports, its own wallet shows the
@@ -118,8 +131,59 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       await expect.poll(() => [t.stores.buyer, t.stores.seller].map((s) => s.current()!.received['spend.ack:0']?.mod !== undefined), { timeout: 60_000 }).toEqual([true, true]);
       expect(Object.keys(t.stores.mod.current()!.received['spend.info:0'] ?? {}).sort()).toEqual(['buyer', 'seller']);
       expect(modIgnored).not.toContain('spend-info-refused');
+      expect([...(await mod.funds()).spendClaims!].sort()).toEqual(['buyer', 'seller']);
+      expect([...t.stores.mod.current()!.claims!].sort()).toEqual(['buyer', 'seller']);
     } finally {
       await mod.stop();
+      await dest.close();
+    }
+  });
+
+  it('a claim counts from a trade party\'s sealed spend.info even when the import is refused, and from spend.claim when the info is too big; a foreign frame never counts (lead decision b)', async () => {
+    // The buyer's post-release export is garbage (refused by the mod), the seller's too big to send.
+    const stores: Partial<Record<Role, MemoryStore>> = {};
+    const fakeExport = (role: Role, hex: string): EscrowEngine => {
+      const wrap = (sess: EscrowSession): EscrowSession =>
+        new Proxy(sess, {
+          get(target, key, receiver) {
+            const v = Reflect.get(target, key, receiver) as unknown;
+            if (key !== 'exportState' || typeof v !== 'function') return v;
+            // Only the post-release export: the release's own exports stay real.
+            return async () => (stores[role]?.current()?.release?.phase === 'done' ? hex : await (v as () => Promise<string>).apply(target));
+          },
+        });
+      return {
+        create: async (a) => wrap(await engine.create(a)),
+        resume: async (saved, a) => wrap(await engine.resume(saved, a)),
+      };
+    };
+    const big = 'ab'.repeat(SPEND_INFO_MAX_HEX / 2 + 1);
+    const t = await kit.newTrade({ buyer: { engine: fakeExport('buyer', '00'.repeat(200)) }, seller: { engine: fakeExport('seller', big) } });
+    stores.buyer = t.stores.buyer;
+    stores.seller = t.stores.seller;
+    await fund(t, XMR);
+    const dest = await newTestWallet(node.rpcUri);
+    try {
+      // A spend.info signed by someone outside the trade, naming the buyer as sender: never opened, never a claim.
+      const stranger = await generateIdentity();
+      const before = kit.ignoredBy.mod.length;
+      t.taps.mod.inject(await seal({ trade: t.code, from: 'buyer', seq: 1_000_000, type: 'spend.info', payload: { key: 'spend.info:0', hex: '00'.repeat(10) }, to: ['mod'], me: stranger, participants: { ...t.participants, buyer: { signPublic: stranger.signPublic, boxPublic: stranger.boxPublic } } }));
+      await expect.poll(() => kit.ignoredBy.mod.length, { timeout: 10_000 }).toBeGreaterThan(before);
+      expect((await t.parties.mod.funds()).spendClaims).toEqual([]);
+
+      const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
+      await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
+      await expect.poll(async () => [...((await t.parties.mod.funds()).spendClaims ?? [])].sort(), { timeout: 60_000, interval: 1000 }).toEqual(['buyer', 'seller']);
+      // The buyer's info was refused: not imported, not acked (it keeps resending). The seller's claim is acked.
+      expect(kit.ignoredBy.mod).toContain('spend-info-refused');
+      expect(t.stores.mod.current()!.received['spend.info:0']).toBeUndefined();
+      expect(Object.keys(t.stores.mod.current()!.received['spend.claim:0'] ?? {})).toEqual(['seller']);
+      await expect.poll(() => t.stores.seller.current()!.received['spend.ack:0']?.mod !== undefined, { timeout: 60_000 }).toBe(true);
+      expect(t.stores.buyer.current()!.received['spend.ack:0']).toBeUndefined();
+      expect(t.stores.seller.current()!.sent['spend.info:0']).toEqual({ hex: big }); // kept, never sent
+      // The mod's own wallet still shows nothing: only the fallback covers these.
+      expect((await t.parties.mod.funds()).outgoing).toEqual([]);
+    } finally {
       await dest.close();
     }
   });
