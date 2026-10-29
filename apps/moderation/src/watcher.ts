@@ -67,6 +67,8 @@ export function dumpWatchState(s: WatchState): unknown {
     ...s,
     lastChain: s.lastChain && { ...s.lastChain, receivedAtomic: s.lastChain.receivedAtomic.toString(), unlockedAtomic: s.lastChain.unlockedAtomic.toString() },
     closedAt: s.closedAt ? s.closedAt.toISOString() : null,
+    settlingSince: s.settlingSince ? s.settlingSince.toISOString() : null,
+    spendUnshownReported: s.spendUnshownReported === true,
   };
 }
 
@@ -93,6 +95,14 @@ export function reviveWatchState(j: unknown): WatchState {
     closedAt = new Date(o.closedAt as string);
     if (Number.isNaN(closedAt.getTime())) bad();
   }
+  // Absent in a state persisted before the Task 9 fallback: never seen settling.
+  let settlingSince: Date | null = null;
+  if (o.settlingSince !== undefined && o.settlingSince !== null) {
+    if (typeof o.settlingSince !== 'string') bad();
+    settlingSince = new Date(o.settlingSince as string);
+    if (Number.isNaN(settlingSince.getTime())) bad();
+  }
+  if (o.spendUnshownReported !== undefined && typeof o.spendUnshownReported !== 'boolean') bad();
   if (o.settledTx !== null && typeof o.settledTx !== 'string') bad();
   if (!strings(o.sweepTxs) || !strings(o.lateReported) || (o.swept !== null && !strings(o.swept))) bad();
   for (const k of ['reopened', 'escalationPending', 'channelsClosed'] as const) if (typeof o[k] !== 'boolean') bad();
@@ -106,6 +116,8 @@ export function reviveWatchState(j: unknown): WatchState {
     reopened: o.reopened as boolean,
     escalationPending: o.escalationPending as boolean,
     channelsClosed: o.channelsClosed as boolean,
+    settlingSince,
+    spendUnshownReported: o.spendUnshownReported === true,
   };
 }
 
@@ -125,14 +137,16 @@ function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: Esc
 }
 
 /**
- * SEAM(NEEDS_SPEND_EVIDENCE): the spend evidence `watchStep` may use. It is ONLY a tx this mod's
- * own wallet records as spending the escrow (Outgoing: it co-signed it, or holds the key images
- * after an export round); a tx hash seen in a block or reported by a party or the API never counts
- * (coordination.md, Task 9 I/O notes). The gap: a seller–buyer release, which the mod takes no part
- * in, is never shown here, so that trade's `settled` is never reported (it stays `settling`; its
- * `chain` reports pause because the balance fell). The lead decides how the mod is shown that spend
- * (tripwire NEEDS_SPEND_EVIDENCE, apps/moderation/test/spend-evidence-tripwire.test.ts).
- * Picks the oldest sweep not yet counted, a block before the pool.
+ * The spend evidence `watchStep` may use. It is ONLY a tx this mod's own wallet records as spending
+ * the escrow (Outgoing): one it co-signed, or one it found by its own key images after importing a
+ * party's post-release multisig info (lead decision A, 2026-10-29: a buyer or seller whose release
+ * is done sends `spend.info` on the escrow channel until the mod's party acks; the party syncs and
+ * imports it, packages/escrow party.ts). A tx hash seen in a block or reported by a party or the API
+ * never counts (coordination.md, Task 9 I/O notes): the info only completes key images for this
+ * wallet's own outputs, and the wallet then finds those key images among the inputs of txs in blocks,
+ * so a forged or wrong info cannot show a spend that did not happen (at worst it shows nothing, and
+ * the 6 h `spend-unshown` fallback in watchStep escalates). Picks the oldest sweep not yet counted,
+ * a block before the pool.
  */
 export function spendEvidence(outgoing: readonly Outgoing[], state: WatchState): SpendEvidence | null {
   const fresh = outgoing
@@ -147,6 +161,7 @@ const reportBody = (trade: string, r: WatchReport): Record<string, unknown> => {
     return { kind: 'chain', trade, receivedAtomic: r.receivedAtomic.toString(), unlockedAtomic: r.unlockedAtomic.toString(), confirmations: r.confirmations };
   }
   if (r.kind === 'settled') return { kind: 'settled', trade, txHash: r.txHash };
+  if (r.kind === 'spend-unshown') return { kind: 'spend-unshown', trade };
   return { kind: 'late-funds', trade };
 };
 

@@ -214,7 +214,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * A chain-watcher report (Task 9): `setup-done { escrowAddress }`, `chain { receivedAtomic,
    * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
    * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
-   * `late-funds` (applied as `escalate`), each for an attested trade only. Applied through the
+   * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
+   * Task 9 I/O fallback; both applied as `escalate`), each for an attested trade only. Applied through the
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
    * report is refused `wrong-state` and the watcher counts it as done.
    */
@@ -240,6 +241,7 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         event = { type: 'settled', kind: 'release', txHash: body.txHash }; // kind set below from the trade
         break;
       case 'late-funds':
+      case 'spend-unshown':
         if (!keysAre(body, ['kind', 'trade'])) break;
         event = { type: 'escalate' };
         break;

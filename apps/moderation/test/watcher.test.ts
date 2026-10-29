@@ -155,6 +155,13 @@ function fakeParty(): FakeParty {
         const { chainHeight, outgoing, ...rest } = p.funds;
         return { ...rest, incoming: rest.incoming.map((i) => ({ ...i })), ...(chainHeight === undefined ? {} : { chainHeight }), ...(outgoing === undefined ? {} : { outgoing }) };
       },
+      // The party itself imports a releasing party's spend.info; the watcher never calls these.
+      spendInfo: async () => {
+        throw new Error('not used by the watcher');
+      },
+      importSpendInfo: async () => {
+        throw new Error('not used by the watcher');
+      },
       stop: async () => {
         p.stopped = true;
       },
@@ -414,6 +421,62 @@ describe('the chain watcher', () => {
       { kind: 'chain', trade: code, receivedAtomic: '5', unlockedAtomic: '0', confirmations: 0 },
       { kind: 'late-funds', trade: code },
     ]);
+    await m.handle.stop();
+  });
+
+  it('settling 6 h with no spend shown → spend-unshown once (fake clock); a restart neither forgets the anchor nor repeats it', async () => {
+    const { net, fetch } = fakeNetwork();
+    const first = await moderation(fetch);
+    const code = await inFunding(first, net);
+    const p = first.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    await first.handle.watch();
+    // A seller-buyer release was submitted; the mod is never shown it (no spend.info arrives).
+    net.states.set(code, 'settling');
+    const start = clock.getTime();
+    await first.handle.watch();
+    const unshown = () => net.reports.filter((r) => r.kind === 'spend-unshown' && r.trade === code);
+    clock = new Date(start + 3 * 60 * 60_000);
+    await first.handle.watch();
+    expect(unshown()).toEqual([]);
+    // A restart halfway: the anchor is the persisted first sight, not the restart.
+    await first.handle.stop();
+    const second = await moderation(fetch);
+    await second.handle.watch();
+    second.parties.get(code)!.funds = p.funds;
+    clock = new Date(start + 6 * 60 * 60_000 - 1000);
+    await second.handle.watch();
+    expect(unshown()).toEqual([]);
+    clock = new Date(start + 6 * 60 * 60_000);
+    await second.handle.watch();
+    expect(unshown()).toEqual([{ kind: 'spend-unshown', trade: code }]);
+    // The API has not shown the dispute yet: no repeat, not even after another restart.
+    clock = new Date(start + 7 * 60 * 60_000);
+    await second.handle.watch();
+    await second.handle.stop();
+    const third = await moderation(fetch);
+    await third.handle.watch();
+    clock = new Date(start + 8 * 60 * 60_000);
+    await third.handle.watch();
+    expect(unshown()).toHaveLength(1);
+    await third.handle.stop();
+  });
+
+  it('spend-unshown refused by the API (not wrong-state) is posted again on the next pass', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, unlocked: XMR, incoming: [incoming(hash('a'), XMR, 50, true)] };
+    net.states.set(code, 'settling');
+    await m.handle.watch();
+    clock = new Date(clock.getTime() + 6 * 60 * 60_000);
+    net.answer = (r) => (r.kind === 'spend-unshown' ? { status: 503 } : { status: 201 });
+    await m.handle.watch();
+    net.answer = () => ({ status: 201 });
+    await m.handle.watch();
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'spend-unshown' && r.trade === code)).toHaveLength(2);
     await m.handle.stop();
   });
 

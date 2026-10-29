@@ -137,6 +137,7 @@ describe('POST /internal/v1/reports: watcher reports', () => {
       { kind: 'settled', trade: t.code, txHash: 'nothex' },
       { kind: 'setup-done', trade: t.code, escrowAddress: '' },
       { kind: 'late-funds', trade: t.code, kindOf: 'x' },
+      { kind: 'spend-unshown', trade: t.code, txHash: 'a'.repeat(64) },
       { kind: 'nope', trade: t.code },
     ];
     for (const b of bad) {
@@ -170,5 +171,22 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const res = await report({ kind: 'late-funds', trade: t.code });
     expect(res.statusCode).toBe(201);
     expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', closedAt: null });
+  });
+
+  it('spend-unshown escalates a settling trade to disputed (Task 9 I/O fallback); outside settling it is wrong-state', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const res = await report({ kind: 'spend-unshown', trade: t.code });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', dispute: { by: 'system' }, closedAt: null });
+    // repeated: the trade is disputed now, refused wrong-state (the watcher counts that as done)
+    const again = await report({ kind: 'spend-unshown', trade: t.code });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toEqual({ error: 'wrong-state' });
+    const u = await trade();
+    await driveTo(deps, u, 'secured');
+    const refused = await report({ kind: 'spend-unshown', trade: u.code });
+    expect(refused.statusCode).toBe(409);
+    expect((await loadTrade(deps.db, u.code))!.state).toBe('secured');
   });
 });
