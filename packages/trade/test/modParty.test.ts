@@ -23,6 +23,11 @@ const start: ModPartyArgs = {
   password: 'ab'.repeat(32),
   daemonUri: 'http://127.0.0.1:18081',
   feeWallet: '4fee',
+  terms: {
+    deal: { poster: 'seller', takeAmountAtomic: '250000000000', currency: 'USD', centsPerXmr: '16250', maxFiatCents: '100000' },
+    buyerPayout: '4'.padEnd(95, 'B'),
+    sellerRefund: '8'.padEnd(95, 'S'),
+  },
 };
 
 const facts = (o: Partial<ModPartyFacts> = {}): ModPartyFacts => ({
@@ -139,6 +144,11 @@ describe('modPartyArgs (the runParty arguments for the moderator)', () => {
     await expect(modPartyArgs({ ...start, password: 'AB'.repeat(32) }, io)).rejects.toThrow(RangeError);
     await expect(modPartyArgs({ ...start, role: 'buyer' as 'mod' }, io)).rejects.toThrow(RangeError);
     await expect(modPartyArgs({ ...start, trade: 'not a code' }, io)).rejects.toThrow(RangeError);
+  });
+
+  test('refuses terms that are not the attested terms shape (review M5)', async () => {
+    await expect(modPartyArgs({ ...start, terms: undefined as unknown as ModPartyArgs['terms'] }, io)).rejects.toThrow(RangeError);
+    await expect(modPartyArgs({ ...start, terms: { ...start.terms, sellerRefund: '' } }, io)).rejects.toThrow(RangeError);
   });
 
   test("refuses when the mod's own keys are not the attested mod slot", async () => {
