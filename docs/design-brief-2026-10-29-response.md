@@ -142,3 +142,34 @@ Spec 6.3 (device list and new-login alerts) should be updated to match these dec
 - **Lead:** update spec 6.6 (staff pay is "monthly" today) and the staff pay plan.
 
 Devices and team boards are now on the canvas: LoginApprove, Devices and Team, each with a -Wide version.
+
+## Remaining open questions, answered (owner, 2026-10-29)
+
+- **Deleted accounts:** trade and dispute records stay until their normal auto-delete date. The username is never reused.
+- **Flexible offers:** the price adjustment is a percent of the market rate only, with no fixed amount.
+- **Site ban, Wallets:** the user can get back in only while something is unfinished (an open trade, a lien, a payout still arriving, an open appeal). Once everything is complete, a site-banned user can't get back in at all; they see only the ban notice and how to appeal.
+- **Maintenance:** two versions.
+  - Planned: announced ahead, with start and end times.
+  - Emergency: "back soon", and all trade timers pause.
+- **Appeal window:** 48 hours. The brief's 72 h is dropped, and DisputeRuling and StaffSettings stay at 48.
+- **When coins move, and liens:** coins move as soon as a trade ends, by release or by a ruling. They are never held until the appeal window passes.
+  - For 48 h after a trade ends, either side can open a dispute; for 48 h after a ruling, either side can appeal.
+  - Whoever loses gets a lien. They can't trade until they pay it back.
+  - If an appeal overturns a ruling, the person who received the coins gets the lien.
+  - **Lead:** this replaces any "coins stay in escrow until the appeal window closes" wording in the spec and plans.
+- **Reviews:**
+  - Stars are 1–5 only; the 1–10 variant is dropped.
+  - Disputing a review has no reason list for now, only a "Dispute" button and a free-text box for the reason. Pickable reasons can be added later, based on common answers.
+- **Email:** none anywhere. Spec 6.3's opt-in PGP email alerts are removed. Alerts go through the app, push or Jabber.
+- **Data retention:**
+  - Trade chats auto-delete 30 days after the trade ends.
+  - Dispute records are kept 90 days, used for moderator training, with as much private detail auto-blurred as possible.
+  - The 6-month anonymised training copy is dropped.
+  - **Lead:** update spec 4.1, the Terms key points and the privacy text.
+- **Jabber alerts:**
+  - OMEMO only; unencrypted Jabber is not offered. Alerts are sent over Tor (X2F's Jabber server is reached through an onion address).
+  - The X2F alert account's OMEMO fingerprint is shown on the Alerts screen with "check this matches".
+  - Suggested apps: Conversations (Android), Monal (iPhone), Gajim (computer).
+  - The battery-saver tip is shown on Android only.
+- **Matrix/Telegram appeal contacts:** to be decided later; placeholders stay.
+- **Flexible offers, buyer amount outside one payment method's range:** recommended greying that method out with the reason (e.g. "PayPal: up to $500"). Explained again to the owner and awaiting a final answer.
