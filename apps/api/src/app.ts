@@ -10,7 +10,8 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
-import { tradeRoutes } from './trades/routes.js';
+import type { TxConfirmations } from './trades/chain.js';
+import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
@@ -91,6 +92,8 @@ export interface BuildOptions {
   pushTransport?: PushTransport;
   /** Trade event delivery after commit; default Task 19's `tradeEventPublisher` (SSE, Web Push, final alert). */
   tradePublish?: TradePublisher;
+  /** Plan 3 Task 24: confirmations from X2F's own node; without it the released screen's count is unknown. */
+  txConfirmations?: TxConfirmations;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -245,6 +248,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   tradeIdentityRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
+  // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
+  confirmationsRoute(app, options.txConfirmations);
 
   return app;
 }

@@ -124,8 +124,10 @@ afterEach(() => {
 });
 
 function props(over: Partial<TradeScreenProps> = {}): TradeScreenProps {
+  const view = over.view ?? tradeView();
   return {
-    view: tradeView(),
+    code: view.code,
+    view,
     escrow: fakeEscrow(),
     refresh: vi.fn(async () => void calls.push('refresh')),
     serverClock: () => new Date(T0),
@@ -525,7 +527,7 @@ describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
     const view = buyerAlertView();
     render(
       <MemoryRouter>
-        <FinalAlert view={view} escrow={fakeEscrow()} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
+        <FinalAlert code={view.code} view={view} escrow={fakeEscrow()} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
       </MemoryRouter>,
     );
     await flush();
@@ -689,7 +691,7 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     const view = buyerAlertView();
     render(
       <MemoryRouter>
-        <FinalAlert view={view} escrow={fakeEscrow({ refusal: 'view-mismatch' })} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
+        <FinalAlert code={view.code} view={view} escrow={fakeEscrow({ refusal: 'view-mismatch' })} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
       </MemoryRouter>,
     );
     await flush();

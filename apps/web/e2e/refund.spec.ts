@@ -299,8 +299,8 @@ for (const [width, height] of [
       }
       const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
       expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
-      // The header's method name is an inline text button (Task 14's TradeHeader), not an action.
-      const heights = await page.locator('button:visible:not(.x2f-method-name)').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+      // Every button, the header's method name included (44 px since the shared fix, 2026-10-28).
+      const heights = await page.locator('button:visible').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
       for (const h of heights) expect(h).toBeGreaterThanOrEqual(44);
     });
   }
