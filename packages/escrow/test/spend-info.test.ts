@@ -6,7 +6,7 @@ import { fundedWallet, mine, newTestWallet, startRegtest, type Regtest } from '@
 import { buildRelay, type Relay } from '@x2f/relay';
 import type { MoneroWalletFull } from 'monero-ts';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { MoneroMultisigEngine, SPEND_INFO_MAX_HEX, type Outcome } from '../src/index.js';
+import { MoneroMultisigEngine, SPEND_INFO_MAX_HEX, runParty, wsTransport, type Outcome, type Transport } from '../src/index.js';
 import { minedWhile, partyKit, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
@@ -49,50 +49,76 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
     return addresses[0]!;
   }
 
-  it('the mod sees no spend after a seller-buyer release until it imports the releasing party\'s info; then its wallet shows the sweep', async () => {
+  it('a seller-buyer release is shown to the mod only through the releasing parties\' spend.info: strict import, resent until acked', async () => {
     const [t, other] = [await kit.newTrade(), await kit.newTrade()];
     await fund(t, XMR);
     await Promise.all(ROLES.map((r) => other.parties[r].ready()));
     const dest = await newTestWallet(node.rpcUri);
+    // The mod's party is restarted on a transport that drops every incoming frame while `deaf`.
+    await t.parties.mod.stop();
+    await new Promise((r) => setTimeout(r, 2000)); // the relay drops the old connection first (else 4409)
+    let deaf = true;
+    const inner = wsTransport({ url: relayUrl, code: t.code, role: 'mod', me: t.ids.mod });
+    const deafTransport: Transport = {
+      send: (e) => inner.send(e),
+      next: async () => {
+        for (;;) {
+          const f = await inner.next();
+          if (!deaf) return f;
+        }
+      },
+      onReconnect: (cb) => inner.onReconnect(cb),
+      close: () => inner.close(),
+    };
+    const modIgnored: string[] = [];
+    // runParty directly: kit.startParty would open a second mod socket, and the relay keeps one per role (4409).
+    const mod = runParty({
+      role: 'mod', trade: t.code, me: t.ids.mod, participants: t.participants, transport: deafTransport, engine,
+      daemonUri: node.rpcUri, password: 'pw-mod', store: t.stores.mod, resendMs: 500, resendMaxMs: 2000, onIgnored: (r) => modIgnored.push(r),
+    });
     try {
       const o: Outcome = { kind: 'release', to: [{ address: await dest.getPrimaryAddress(), amountAtomic: XMR }], builder: 'seller', cosigner: 'buyer' };
       // Before any release is done there is nothing to export (the nonces are in use).
       await expect(t.parties.buyer.spendInfo()).rejects.toMatchObject({ code: 'bad-state' });
-      const [hash] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o), t.parties.mod.settle(o)]));
+      const [hash] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       await mine(node.rpcUri, 2, funderAddress);
 
       // The gap: the mod took no part, so its own wallet does not show the spend.
-      let f = await t.parties.mod.funds();
+      let f = await mod.funds();
       expect(f.outgoing).toEqual([]);
 
-      // Strict input: garbage, wrong size, and another escrow's info are refused and change nothing.
-      await expect(t.parties.mod.importSpendInfo('zz')).rejects.toMatchObject({ code: 'bad-spend-info' });
-      await expect(t.parties.mod.importSpendInfo('ab'.repeat(SPEND_INFO_MAX_HEX / 2 + 1))).rejects.toMatchObject({ code: 'bad-spend-info' });
-      await expect(t.parties.mod.importSpendInfo('00'.repeat(200))).rejects.toMatchObject({ code: 'bad-spend-info' });
+      // Strict input: garbage, wrong size, another escrow's info and a tampered one are refused.
+      await expect(mod.importSpendInfo('zz')).rejects.toMatchObject({ code: 'bad-spend-info' });
+      await expect(mod.importSpendInfo('abc')).rejects.toMatchObject({ code: 'bad-spend-info' });
+      await expect(mod.importSpendInfo('ab'.repeat(SPEND_INFO_MAX_HEX / 2 + 1))).rejects.toMatchObject({ code: 'bad-spend-info' });
+      await expect(mod.importSpendInfo('00'.repeat(200))).rejects.toMatchObject({ code: 'bad-spend-info' });
       const info = await t.parties.buyer.spendInfo();
       expect(info).toMatch(/^[0-9a-f]+$/);
+      expect(info.length).toBeLessThanOrEqual(SPEND_INFO_MAX_HEX);
       expect(await t.parties.buyer.spendInfo()).toBe(info); // exported once, saved
-      expect(t.stores.buyer.current()!.spendInfo).toBe(info);
+      expect(t.stores.buyer.current()!.sent['spend.info:0']).toEqual({ hex: info });
       await expect(other.parties.mod.importSpendInfo(info)).rejects.toMatchObject({ code: 'bad-spend-info' });
-      // A tampered byte breaks the info's signature.
       const flipped = info.slice(0, -4) + (info.slice(-4) === '0000' ? '0001' : '0000');
-      await expect(t.parties.mod.importSpendInfo(flipped)).rejects.toMatchObject({ code: 'bad-spend-info' });
-      f = await t.parties.mod.funds();
+      await expect(mod.importSpendInfo(flipped)).rejects.toMatchObject({ code: 'bad-spend-info' });
+      // A party never imports (its own release is done; the info is for the moderator only).
+      f = await mod.funds();
       expect(f.outgoing).toEqual([]);
+      expect(t.stores.buyer.current()!.received['spend.ack:0']).toBeUndefined();
 
-      // The real info: the mod's own wallet now shows the sweep, in its block, spending everything.
-      await t.parties.mod.importSpendInfo(info);
-      f = await t.parties.mod.funds();
+      // The mod hears again: the parties' resends arrive, it imports, its own wallet shows the
+      // sweep in its block spending everything, and both releasing parties get the ack.
+      deaf = false;
+      await expect.poll(async () => (await mod.funds()).outgoing?.map((x) => x.txHash), { timeout: 60_000, interval: 1000 }).toEqual([hash]);
+      f = await mod.funds();
       expect(f.balance).toBe(0n);
-      expect(f.outgoing).toHaveLength(1);
       expect(f.outgoing![0]).toMatchObject({ txHash: hash, spentAtomic: XMR });
       expect(typeof f.outgoing![0]!.height).toBe('number');
-      // The builder's info shows the same (either releasing device may send it).
-      const sellerInfo = await t.parties.seller.spendInfo();
-      await t.parties.mod.importSpendInfo(sellerInfo);
-      expect((await t.parties.mod.funds()).outgoing!.map((x) => x.txHash)).toEqual([hash]);
+      await expect.poll(() => [t.stores.buyer, t.stores.seller].map((s) => s.current()!.received['spend.ack:0']?.mod !== undefined), { timeout: 60_000 }).toEqual([true, true]);
+      expect(Object.keys(t.stores.mod.current()!.received['spend.info:0'] ?? {}).sort()).toEqual(['buyer', 'seller']);
+      expect(modIgnored).not.toContain('spend-info-refused');
     } finally {
+      await mod.stop();
       await dest.close();
     }
   });
