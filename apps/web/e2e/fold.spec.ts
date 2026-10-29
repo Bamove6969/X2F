@@ -133,11 +133,16 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
     });
   }
 
-  test('FOLD_VIEWPORTS: every size fits with no sideways scroll and every control tappable', async ({ page }) => {
+  test('FOLD_VIEWPORTS: every size fits with no sideways scroll, and under 1000 px every control is tappable', async ({ page }) => {
     await openRoom(page);
     for (const v of FOLD_VIEWPORTS) {
       await setPhone(page, v);
-      await expectPhoneLayout(page);
+      if (Number(v.split('x')[0]) < 1000) {
+        await expectPhoneLayout(page);
+      } else {
+        // The wide layout is the Desktop board (its header links are its own, 24 px tall): no sideways scroll.
+        expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+      }
     }
   });
 

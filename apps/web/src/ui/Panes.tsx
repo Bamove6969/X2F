@@ -39,7 +39,7 @@ export function Panes({
   const showGlance = glance !== undefined && glance !== null && (layout === 'tabletop' || layout === 'cover');
   const showSide = side !== undefined && side !== null && hasPanes(layout);
   return (
-    <div className="x2f-panes" data-layout={layout} data-side={showSide || undefined}>
+    <div className="x2f-panes" data-fold-layout={layout} data-side={showSide || undefined}>
       {showGlance ? (
         <section data-pane="glance" aria-label={glanceLabel}>
           {glance}
