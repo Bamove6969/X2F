@@ -155,7 +155,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - Plan 5 adds `pastrep.approved`, `pastrep.rejected`, `pastrep.revoked` and `proof.opened` to that file, with their detail schemas, in the tasks that first use them (11 and 14).
   - `proof.unblurred-requested` and `proof.unblurred-opened` already exist in Plan 4.
 - `buildStaffApi`, staff route `Perm` declaration, `apps/staff-web` shell (Task 16), ModCase (Task 18).
-- Dispute records: `disputes.state.status` (closed or not, closed time) and final `rulings` outcomes. Plan 5 consumes `lostDisputeCount(db, accountId): Promise<number>` in `apps/api/src/disputes/lost.ts` (the Plan 3 starter-limit revision needs the same count; whichever lands first owns it).
+- Dispute records: `disputes.state.status` (closed or not, closed time) and final `rulings` outcomes. Plan 5 consumes `lostDisputeCount(db, accountId): Promise<number>` in `apps/api/src/disputes/lost.ts` (the Plan 3 starter limits no longer use it: owner 2026-10-29, a lost dispute still counts as a completed trade and drops no stage; Plan 5 owns it).
 - `proof-requested { username }` SSE to the uploader (Task 11); moderation `/internal/proof/read` (Task 11) uses Plan 5's `readProof`.
   - **Review 2026-10-24: three mismatches.**
     - Plan 4's moderation internal API listens on a Unix socket with an HMAC header. `/internal/proof/read {code, logEntryId}` takes **no proof id**, accepts only log action `proof.unblurred-opened`, and returns the unblurred image.
@@ -628,6 +628,8 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: encrypted proof storage, moderator-only unblurred copies, retention`.
 
+**Revision 2026-10-29 (owner):** `purgeProofs` follows the new retention: proofs go with the trade 30 days after it ends, or 90 days after the dispute button for a disputed trade (Plan 7 Task 2, Plan 4 Task 23). See "Revision 2026-10-29 (owner)" at the end.
+
 ### Task 15: Proof screens — upload, blur editor, paid card, evidence and the unblurred copy (`apps/web`)
 
 **Boards:** `BuyerPay.dc.html` (proof slot), `DisputeOpen.dc.html` (Add more evidence), `DisputeRoom.dc.html` (unblurred request). The blur editor has **no board**: controller step first: ask the owner to add a "Check your proof" board to the X2F App canvas (photo with frosted regions, "Add blur" / tap a region to remove, the best-effort line, **Send proof** primary, Choose another). If the owner prefers, build it from design-system parts with `// COPY-UNSIGNED` copy and add the board afterwards.
@@ -732,7 +734,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 8. **Portable record:** signed by X2F's key, private until the trader chooses to show it, listing month, role, stars and phrases per trade (no amounts or names). OK? (P5-A18)
 9. **Blur look:** a frosted solid patch rather than a see-through blur, because light blur can be undone. OK? (P5-A26)
 10. **Name check on the proof card:** X2F knows no real names, so the card can only say whether a name is hidden or visible. OK to drop "name doesn't match the buyer"? (P5-A28)
-11. **Review notes:** refuse notes with personal details (emails, phone numbers, account numbers)? Default: yes (P5-A6). Should traders be able to report an abusive review to a moderator? Not in the spec; not built.
+11. **Review notes:** refuse notes with personal details (emails, phone numbers, account numbers)? Default: yes (P5-A6). Should traders be able to report an abusive review to a moderator? Not in the spec; not built. *Answered 2026-10-29 (owner): yes, the rated person can dispute a review (new Task 19).*
 12. **Feedback:** who reads it? Default: the owner only, kept one year (P5-A19).
 13. **Blur editor screen:** please add a "Check your proof" board to the canvas, or approve building it from design-system parts (Task 15).
 
@@ -753,3 +755,80 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
 - **P5-A29 (the buyer keeps the unblurred original on the device)** shortens with self-delete: the copy is deleted from IndexedDB at the buyer's own destroy time (Plan 7 Task 4 `localPurge`), but never while a dispute is open.
 - **Whole-trade delete keeps reviews working.** A review references the bare trade record that Plan 7 keeps (P7-A6); Task 3 must not join reviews to anything a whole-trade delete removes (method, amounts).
 - **"Delete my own account"** is an undecided comparison gap (Plan 7 "Owner questions"); if approved, it is a new task here after Task 12 (reviews then show "Deleted user").
+
+
+## Revision 2026-10-29 (owner)
+
+Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`), recorded in the spec and `HANDOFF.md` "Decided 2026-10-29 (owner)".
+
+- **All feedback is permanent** (owner, "like Amazon or Uber"). Reviews survive the 30-day trade delete (Plan 7 Task 2). So Task 3's `reviews` table must **not** reference `trades(code)`: it holds everything it needs itself (reviewer, subject, role, stars, phrases, note, trade badges, the weight, method name, the review date). The trade code is kept only until the trade is purged, then nulled. New Task 20 does this. This supersedes the 2026-10-28 line "a review references the bare trade record": there is no per-trade stub any more.
+- **What a review holds** (owner): a custom comment (the note), templated comments (the phrases), **badges that describe the trade** (new: a short owner-approved list, for example "Smooth trade", "Great communication"; `// COPY-UNSIGNED` until the owner gives the list), and a star rating. **1–5 or 1–10 is not decided:** Task 1 reads `STAR_MAX` (default 5) and P5-A1's thresholds scale with it.
+- **Review disputes** (owner): the person rated can dispute a review and have it moderated (retaliation, a competitor, doxxing and similar). This answers owner question 11 ("not built") with yes: new Task 19.
+- **Lost disputes still count** (owner). P5-A13: `completedTrades` = released trades **plus settled disputes, whoever won**. Clean record still needs zero lost disputes, from the running total. No stage drop (Plan 3 Revision 2026-10-29).
+- **Running totals instead of per-trade rows.** After the 30-day delete, stats can't be computed from `trades`. New Task 20 keeps per-account running totals (completed trades, lost disputes, cancels, trades reaching funding) updated when each trade or dispute ends. **Decided (lead call, 2026-10-29):** P5-A8 `typicalMinutes` (median of the last 20 action times) and P5-A9 cancel rate need more than a count, so each account keeps its last 20 action durations, in minutes, with no trade code or date. The owner still has to confirm the running-totals approach (answers, Q3 "pending confirmation").
+- **Feedback link on every "can't do that" popup** (owner): new Task 21 adds the feedback form (complaint, feedback or recommendation; named or anonymous) and the shared `CantDoThat` popup. Task 4's "How's X2F doing?" card stays as it is.
+- **P5-A29** (the buyer keeps the unblurred original on the device until no dispute is possible) follows the dispute-after-refund window, which is open (Plan 3 Revision 2026-10-29).
+- **The self-delete lines of Revision 2026-10-28 are superseded.** There are no per-side self-delete times. Proofs are deleted with the trade, 30 days after it ends, or 90 days after the dispute button for a disputed trade (Task 14's `purgeProofs` takes both numbers).
+- **Delete my account** is decided (yes) and planned in Plan 7 (new Task 18). Reviews by and about a deleted account stay (they are permanent) and show "Deleted user".
+
+### Task 19: Review disputes — NEW 2026-10-29
+
+**Scope:** the rated person can dispute a review; a moderator decides to keep it, remove it, or remove only the note.
+
+**Files:**
+- Create: `apps/api/migrations/3xx_review_disputes.sql`, `apps/api/src/reviews/disputes.ts`, `apps/staff-web/src/screens/ReviewDisputes.tsx`, `apps/web/src/screens/review/DisputeReview.tsx`
+- Test: `apps/api/test/reviewDisputes.test.ts`, `apps/staff-web/e2e/reviewDisputes.spec.ts`, `apps/web/e2e/disputeReview.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review.
+  - `POST /v1/reviews/:id/dispute` (the subject only, once the review is revealed). Staff: `GET /staff/v1/review-disputes`, `POST …/:id/decide { outcome, reason ≥ 20 }` (perm `reputation.review`). Each step is logged without the note text.
+  - A removed review no longer counts anywhere (stats, badges, profile); its row is kept with `removed_at` so the decision can be checked.
+  - The moderator sees the review and the reason. If the trade is already purged (older than 30 days), there is no chat to read; the decision rests on the review text and the reason. (See the open point in the final report.)
+- [ ] **Step 1: Write the failing tests:** only the subject can dispute; a second open dispute → 409; `removed` drops the review from `positivePct` and the profile; `note-removed` keeps the stars; a helper gets `forbidden`; parity for both screens.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: review disputes moderated by staff`.
+
+### Task 20: Permanent reviews and running totals — NEW 2026-10-29
+
+**Scope:** make reputation survive the 30-day trade delete with no per-trade stub.
+
+**Files:**
+- Create: `apps/api/migrations/3xx_permanent_reputation.sql`, `apps/api/src/reputation/totals.ts`
+- Modify: Task 3 `reviews` (drop the foreign key to `trades`, add the columns it needs), Task 5 `badgeFactsMany` and `TraderSummary` (read totals, not `trades`), Plan 3 `tradeCap` (completed count from totals), Plan 7 Task 2 (calls `addToTotals` before deleting a trade)
+- Test: `apps/api/test/reputationTotals.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `account_totals(account_id pk, completed int, lost_disputes int, funded int, cancels int, recent_action_minutes int[] /* last 20, no codes or dates */, updated_at)`.
+  - `addToTotals(client, trade)`: runs once per trade when it closes (released, refunded, cancelled) or its dispute settles; idempotent (a flag on the trade until it is purged).
+  - Stats, starter-limit stages and badges read `account_totals` and `reviews`, never `trades`, so nothing changes when a trade is purged.
+- [ ] **Step 1: Write the failing tests:** a profile and `tradeCap` give the same answer before and after the trade is purged; a settled dispute counts as completed and a lost one also adds to `lost_disputes`; running the hook twice adds once; a review survives its trade's purge and still shows its method name and age.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(api): permanent reviews and running reputation totals`.
+
+### Task 21: Feedback form and the "can't do that" popup — NEW 2026-10-29
+
+**Scope:** every popup that tells a user they can't do something carries a feedback link; the form takes a complaint, feedback or recommendation, named or anonymous.
+
+**Files:**
+- Create: `apps/web/src/ui/CantDoThat.tsx`, `apps/web/src/screens/Feedback.tsx`, `apps/api/migrations/3xx_feedback_form.sql`
+- Modify: `apps/api/src/feedback/routes.ts`, the staff Feedback page (Task 4), every existing refusal popup (Plan 3 caps, starter limit, trading hold, review pending, lien, ban, and later ones)
+- Test: `apps/web/test/CantDoThat.test.tsx`, `apps/api/test/feedbackForm.test.ts`, `apps/web/e2e/feedback.spec.ts`, a copy-lint rule
+
+**Interfaces:**
+- Produces:
+  - `CantDoThat({ title, body })` always renders "If you feel this feature can be improved please leave feedback" with a link to `/feedback?from=<refusal code>`.
+  - The form: kind (Complaint, Feedback, Recommendation), text, and a **"Send anonymously"** checkbox. Anonymous rows hold no account id (as Task 4); named rows hold the account id so staff can reach out for details (P5-A19 changes for named rows only).
+  - After sending: "Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all." (owner wording).
+  - `POST /v1/feedback/form { kind, text ≤ 2000, anonymous, from? }` → 202; the staff Feedback page lists both kinds.
+  - **Copy-lint rule:** a component that shows a refusal without `CantDoThat` fails the check (local tree only).
+- [ ] **Step 1: Write the failing tests:** an anonymous row has no account id (schema check); a named row has it; the thank-you text is exact; every refusal popup in `apps/web` uses `CantDoThat` (the lint); parity.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: feedback form linked from every can't-do popup`.

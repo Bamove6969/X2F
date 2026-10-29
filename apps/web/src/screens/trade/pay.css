@@ -1,0 +1,650 @@
+/*
+ * BuyerPay (design/x2f-app/BuyerPay.dc.html) and the wide trade room (Desktop.dc.html)
+ * measurements; colours are design tokens only. No inline styles: the CSP has no 'unsafe-inline'
+ * for styles, so code sets only CSS custom properties (the confirmations fill).
+ */
+.x2f-pay {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+
+.x2f-pay__main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-pay__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-pay__footer-row .x2f-button--quiet,
+.x2f-pay__footer-row .x2f-button--danger {
+  padding: 0 6px;
+}
+
+.x2f-pay__footer-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  flex-wrap: wrap;
+}
+
+.x2f-room__chat {
+  display: flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* Shared names (screens.css's card, browse.css's visually-hidden, trade.css's mono and tip) are
+   scoped to Task 23's rooms, so this file never restyles another screen. */
+:is(.x2f-pay, .x2f-room) .x2f-mono {
+  font-family: var(--x2f-font-mono);
+}
+
+:is(.x2f-pay, .x2f-room) .x2f-ink {
+  color: var(--x2f-ink);
+}
+
+:is(.x2f-pay, .x2f-room) .x2f-ink-muted {
+  color: var(--x2f-ink-muted);
+}
+
+:is(.x2f-pay, .x2f-room) .x2f-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+:is(.x2f-pay, .x2f-room) .x2f-card {
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+/* The escrow chip and the confirmations bar. */
+.x2f-escrow {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-escrow__bar-wrap {
+  position: relative;
+  display: flex;
+  width: 100%;
+}
+
+.x2f-escrow__bar {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  font-family: inherit;
+  text-align: left;
+  cursor: help;
+}
+
+.x2f-escrow__bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  width: 100%;
+  font-size: 13px;
+}
+
+.x2f-escrow__bar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.x2f-escrow__track {
+  display: block;
+  width: 100%;
+  height: 6px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  overflow: hidden;
+}
+
+.x2f-escrow__fill {
+  display: block;
+  width: var(--x2f-fill, 0%);
+  height: 100%;
+  background: var(--x2f-caution);
+}
+
+:is(.x2f-pay, .x2f-room) .x2f-tip {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: min(300px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-ink);
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+/* Time to pay. */
+.x2f-pay-timer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-pay-timer__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font-family: inherit;
+  text-align: left;
+  cursor: help;
+}
+
+.x2f-pay-timer__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-caution);
+}
+
+.x2f-pay-timer__value {
+  font-family: var(--x2f-font-mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+}
+
+.x2f-pay-timer__hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-pay-timer__ring {
+  flex-shrink: 0;
+}
+
+.x2f-pay-timer__ring-left {
+  stroke: var(--x2f-caution);
+}
+
+.x2f-pay-timer__ring-track {
+  stroke: var(--x2f-surface-raised);
+}
+
+/* Send exactly. */
+.x2f-pay-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.x2f-pay-card__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-pay-card__total {
+  font-family: var(--x2f-font-mono);
+  font-size: 28px;
+  line-height: 32px;
+  font-weight: 500;
+}
+
+.x2f-pay-card__currency {
+  font-size: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-pay-card__rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  font-size: 14px;
+  line-height: 18px;
+}
+
+.x2f-pay-card__row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-pay-card__value {
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.x2f-pay-card__note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-giftcard {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--x2f-danger);
+}
+
+/* The proof slot (Plan 5 makes it upload). */
+.x2f-proof {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.x2f-proof__slot {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  border: 1px dashed var(--x2f-line);
+  color: var(--x2f-ink);
+}
+
+.x2f-proof[data-wide] {
+  flex-grow: 1;
+}
+
+.x2f-proof[data-wide] .x2f-proof__slot {
+  flex-direction: column;
+  justify-content: center;
+  flex-grow: 1;
+  gap: var(--x2f-space-2);
+  text-align: center;
+}
+
+.x2f-proof__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.x2f-proof__title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.x2f-proof__hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+/* "I've paid" and cancel sheets. */
+.x2f-paid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-paid__check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  font-size: 16px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.x2f-paid__check input {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--x2f-monero);
+}
+
+.x2f-paid__grew {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--x2f-caution);
+}
+
+.x2f-paid__note {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-paid__error,
+.x2f-room__error {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  color: var(--x2f-danger);
+}
+
+/* "Trade grew to … XMR, you now pay …" (review Minor 1). */
+.x2f-room__grown {
+  margin: 0;
+  padding: 12px var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-caution);
+  color: var(--x2f-ink);
+  font-size: 16px;
+  line-height: 22px;
+}
+
+/* "Dispute opens in N min" in place of the link before confirmBy (review Minor 7), and the wide
+   seller room's "Chat isn't available here yet." while no chat panel is installed (round 2, Minor 3). */
+.x2f-room__dispute-wait,
+.x2f-room__hint {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+}
+
+.x2f-paid__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-cancel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-cancel__warning {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+  color: var(--x2f-danger);
+}
+
+.x2f-cancel__proposed {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+  font-size: 15px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-proposal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.x2f-proposal__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+}
+
+.x2f-proposal__actions {
+  display: flex;
+  gap: var(--x2f-space-4);
+  align-items: center;
+}
+
+/* The seller's waiting room. */
+.x2f-wait {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.x2f-wait__title {
+  margin: 0;
+  font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-wait__left {
+  font-size: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+/* The wide room (Desktop board): a main column and a 400 px chat column, filling the shell's height
+   (the room's <main> is the DesktopShell body's child). */
+main[data-screen='trade']:has(> .x2f-room) {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.x2f-room {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 400px;
+  gap: var(--x2f-space-6);
+  flex-grow: 1;
+  min-height: 0;
+}
+
+.x2f-room__main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-room__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-room__head-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.x2f-room__title {
+  margin: 0;
+  font-family: var(--x2f-font-display);
+  font-size: 24px;
+  line-height: 30px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.x2f-room__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--x2f-space-4);
+}
+
+.x2f-room__actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: auto;
+}
+
+.x2f-room__actions .x2f-button--primary {
+  height: 52px;
+  padding: 0 32px;
+  font-size: 17px;
+}
+
+.x2f-room__actions .x2f-button--quiet,
+.x2f-room__actions .x2f-button--danger {
+  height: 52px;
+  padding: 0 var(--x2f-space-4);
+}
+
+.x2f-room__spacer {
+  flex-grow: 1;
+}
+
+.x2f-room__aside {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-room__chat-panel {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-height: 0;
+}
+
+/* The Desktop board's progress steps. */
+.x2f-timeline {
+  list-style: none;
+  margin: 0;
+  padding: var(--x2f-space-4);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-timeline__step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.x2f-timeline__bar {
+  height: 4px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-timeline__label {
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-timeline__step[data-status='done'] .x2f-timeline__bar {
+  background: var(--x2f-escrow);
+}
+
+.x2f-timeline__step[data-status='done'] .x2f-timeline__label {
+  color: var(--x2f-escrow);
+  font-weight: 600;
+}
+
+.x2f-timeline__step[data-status='current'] .x2f-timeline__bar {
+  background: var(--x2f-caution);
+}
+
+.x2f-timeline__step[data-status='current'] .x2f-timeline__label {
+  color: var(--x2f-caution);
+  font-weight: 600;
+}
+
+/* The counterparty card at the top of the chat column. */
+.x2f-counterparty {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-counterparty__text {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-counterparty__name {
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.x2f-counterparty__line {
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-counterparty__badges {
+  display: flex;
+  gap: 6px;
+}
+
+.x2f-counterparty__badge {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-escrow);
+  border: 1px solid var(--x2f-escrow);
+  border-radius: var(--x2f-radius-pill);
+  padding: 3px 8px;
+  line-height: 16px;
+}

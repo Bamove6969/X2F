@@ -43,7 +43,7 @@ const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, d
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
   const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
   await page.route('**/v1/account/me', (r) =>
-    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
+    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
@@ -161,21 +161,27 @@ test.describe('BuyQuote', () => {
     expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
   });
 
-  test('logged out, Trade goes to /setup/terms; back from a stubbed setup the quote is shown again at the price now, never taken silently', async ({ page }) => {
+  test("logged out, Trade goes to setup; Welcome's Start trading comes back in the same tab and the quote is shown again at the price now, never taken silently", async ({ page }) => {
     const stub: Stub = { ...base, signedIn: false, wallets: [] };
     const seen = await stubApi(page, stub);
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(card(page)).toContainText('1.250000 XMR');
     await trade(page).click();
-    await expect(page).toHaveURL(/\/setup\/terms\?returnTo=/);
+    // Setup starts on the Terms (Task 28), with this quote and a pending-take nonce as returnTo.
+    await expect(page).toHaveURL(/\/setup\?returnTo=/);
+    await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
+    expect(new URL(returnTo, 'http://x').searchParams.get('resume')).toMatch(/^[0-9a-f]{32}$/);
     expect(seen.takes).toHaveLength(0);
-    // The stubbed setup: an account now exists with its first wallet, and setup ends on returnTo.
+    // The steps in between are setup.spec's: here an account now exists with its first wallet, and
+    // the person is on Welcome in this same tab (the marker lives in this tab's sessionStorage).
     // Setup took a while and the feed moved: the quote the person comes back to shows the rate now.
     stub.signedIn = true;
     stub.wallets = [B.wallets[0]];
     stub.rate = '34000';
-    await page.goto(returnTo);
+    await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(returnTo)}`);
+    await page.click('[data-part="start-trading"]');
+    await expect(page).toHaveURL(/\/buy\//);
     await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
     await expect(card(page)).toContainText('$340.00 / XMR');
     await expect(card(page)).toContainText('$412.50 USD');

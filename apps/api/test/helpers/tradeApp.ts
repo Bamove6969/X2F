@@ -6,14 +6,15 @@ import { testApp } from './app.js';
 import { Browser, addTestLogin } from './totp.js';
 
 /** A trade-route test app with a direct test login, and helpers for traders. */
-export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}): Promise<{
+export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}, overrides: Partial<Deps> = {}): Promise<{
   app: FastifyInstance;
   deps: Deps;
   setNow(d: Date): void;
   logs: string[];
-  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; displayName: string; browser: Browser }>;
+  /** `loginName` is the private login name (stored only as its tag, FU-D), for tests that check it never leaks. */
+  trader(kind?: 'trader' | 'staff'): Promise<{ id: string; displayName: string; loginName: string; browser: Browser }>;
 }> {
-  const t = await testApp({}, options);
+  const t = await testApp(overrides, options);
   addTestLogin(t.app, t.deps);
   let n = 0;
   const trader = async (kind: 'trader' | 'staff' = 'trader') => {
@@ -23,7 +24,7 @@ export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}): P
     const browser = new Browser(t.app);
     const res = await browser.post('/t/login', { accountId: id });
     expect(res.statusCode).toBe(200);
-    return { id, displayName, browser };
+    return { id, displayName, loginName, browser };
   };
   return { ...t, trader };
 }

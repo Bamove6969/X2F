@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { setLoginName } from '../accounts.js';
 import type { Queryable } from '../db/pool.js';
+import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
@@ -23,6 +24,8 @@ export interface AccountOverview {
   level: SessionLevel;
   /** The calling recovery session's hold while it is still ahead (Task 9), else null. */
   holdUntil: string | null;
+  /** A trader's starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26), the same as on their offers; null for staff and owner. */
+  stage: Stage | null;
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
@@ -140,6 +143,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     kind: row.kind,
     level: row.level,
     holdUntil: held ? row.hold_until!.toISOString() : null,
+    stage: row.kind === 'trader' ? (await tradeCap(deps.db, accountId, now)).stage : null,
     methods: methodTypes(counts),
     hasBackup: hasBackup(counts),
     suggestions: suggestionsFor(counts),

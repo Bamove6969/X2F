@@ -18,6 +18,7 @@ import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
+import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 
 function port(raw: string | undefined): number {
@@ -78,7 +79,9 @@ const deps: Deps = {
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
-const app = await buildApi(deps);
+// Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
+const monerod = monerodUrlFromEnv(process.env);
+const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 alertLog = app.log;
 prices.start();

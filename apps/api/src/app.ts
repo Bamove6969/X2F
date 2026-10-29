@@ -10,10 +10,13 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
-import { tradeRoutes } from './trades/routes.js';
+import type { TxConfirmations } from './trades/chain.js';
+import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
+import { disputeRoutes } from './disputes/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
+import { offerRoutes } from './offers/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
@@ -62,7 +65,7 @@ export interface Deps {
   pgpSigner: PgpSigner;
   /** Plan 3 Task 3: market prices, XMR/USD median × exchange rate, with price health (`main.ts` starts polling). */
   prices: MarketPrices;
-  /** Plan 3 Task 4 supplies this from the `offers` table; without it `/v1/methods` lists nothing live. */
+  /** Live-offer counts for `/v1/methods`; default Task 4's, from the `offers` table (offers/routes.ts `liveOfferStats`). */
   liveOffers?: LiveOfferStats;
   /** Task 26: shared-context check (Tasks 6, 20), SSE publish and Web Push (Task 19). */
   nudges: NudgeWiring;
@@ -90,6 +93,8 @@ export interface BuildOptions {
   pushTransport?: PushTransport;
   /** Trade event delivery after commit; default Task 19's `tradeEventPublisher` (SSE, Web Push, final alert). */
   tradePublish?: TradePublisher;
+  /** Plan 3 Task 24: confirmations from X2F's own node; without it the released screen's count is unknown. */
+  txConfirmations?: TxConfirmations;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -233,16 +238,22 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   walletRoutes(app);
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
   methodListRoutes(app);
+  offerRoutes(app);
   priceRoutes(app);
   // Plan 3 Task 19: live events (SSE) and generic Web Push subscriptions.
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
+  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
+  tradeRoutes(app, { publish: tradePublish });
+  // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
+  disputeRoutes(app, { publish: tradePublish });
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
+  // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
+  confirmationsRoute(app, options.txConfirmations);
 
   return app;
 }

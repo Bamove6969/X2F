@@ -42,6 +42,12 @@ export type ApiErrorCode =
   | 'terms-required'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
+  // Plan 3, Task 4: posting and relisting offers.
+  | 'method-unavailable'
+  | 'no-wallet'
+  | 'trading-hold'
+  | 'trading-paused'
+  | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'
@@ -57,6 +63,8 @@ export type ApiErrorCode =
   | 'bad-proof'
   | 'attestation-refused'
   | 'trade-closed'
+  // Plan 3, Task 27: a second dispute on one trade.
+  | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

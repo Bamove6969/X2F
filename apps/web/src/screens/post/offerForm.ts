@@ -155,7 +155,22 @@ export function afterPostPath(side: Side, methodId: string, currency: string): s
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
 
-export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed';
+export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed' | 'terms';
+
+/** The longest terms the API stores (apps/api/src/offers/routes.ts TERMS_MAX). */
+export const TERMS_MAX = 4000;
+/**
+ * The characters the API refuses in terms (apps/api/src/offers/routes.ts BAD_TERMS_CHAR, keep in
+ * step): control characters other than newline and tab, and bidi overrides and isolates.
+ */
+export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+export const TERMS_BAD_TEXT = 'Your terms contain hidden characters (for example from copying formatted text). Retype the part you pasted.';
+export const TERMS_LONG_TEXT = `Keep your terms under ${TERMS_MAX.toLocaleString('en-US')} characters.`;
+
+/** The terms as the API stores them: line breaks as newlines, no space at either end. */
+export function cleanTerms(t: string): string {
+  return t.replace(/\r\n?/g, '\n').trim();
+}
 
 export interface ValidateContext {
   /** The chosen method is a gift card, so the card's country is required and sent. */
@@ -184,6 +199,9 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       if (check.kind === 'refuse') errors.fixed = check.text;
     }
   }
+  const terms = cleanTerms(f.terms);
+  if (BAD_TERMS_CHAR.test(terms)) errors.terms = TERMS_BAD_TEXT;
+  else if ([...terms].length > TERMS_MAX) errors.terms = TERMS_LONG_TEXT;
   if (Object.keys(errors).length > 0) return { errors };
   return {
     errors,
@@ -195,7 +213,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       minFiatCents: min!,
       maxFiatCents: max!,
       minTrades: f.minTrades,
-      terms: f.terms.trim(),
+      terms,
       ...(giftCard ? { country: f.country } : {}),
     },
   };
@@ -210,6 +228,8 @@ export function refusalText(code: string): string {
       return 'Trading is paused for maintenance. Your offer was not posted. Try again soon.';
     case 'method-unavailable':
       return "This payment method isn't available right now. Choose another one.";
+    case 'too-many-offers':
+      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
     default:
       return "Something went wrong and your offer wasn't posted. Try again.";
   }
