@@ -8,7 +8,9 @@
 // else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 28's setup is on the
 // branch since 2026-10-28: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
 // trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
-// re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome.) Each one below fails once the named module lands: then
+// re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome. Task 29 is on the line since
+// 2026-10-29: WalletPicker names and filters wallets through wallets-model.ts (APP_LABELS,
+// takeableWallets), and e2e/quote.spec.ts drives the real /wallets?add=1&returnTo screen back here.) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
@@ -37,13 +39,6 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     // naming only the caller's own stage (Revision 2026-10-24). Also check that the trade's stored fiatCents
     // is the quoted one (OD-5).
     expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer's body (centsPerXmr, fiatCents), price-changed, takeRefusal's codes and the starter-limit fields").toBe(false);
-  });
-
-  it('NEEDS_TASK_29: the wallet names and the usable filter mirror the unmerged wallets model', () => {
-    expect(
-      has('apps/web/src/screens/wallets-model.ts'),
-      'Task 29 landed: use APP_LABELS and takeableWallets in WalletPicker, and check /wallets?add=1&returnTo comes back here after confirm-it\'s-you',
-    ).toBe(false);
   });
 
   it('NEEDS_TASK_20: the quote header Chat button is a placeholder', () => {
