@@ -97,3 +97,8 @@ The owner uses fold phones. The app must be laid out properly for them; fold-onl
 - Folding or unfolding keeps the user's place: same screen, same scroll position, and any typed text.
 - Web app: use `horizontal-viewport-segments` / `vertical-viewport-segments` and `env(viewport-segment-*)`. Where those aren't supported, fall back to two panes at 600 px wide or more.
 - New boards: Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover (Flip cover screen), Fold-Notes.
+
+## Backup login wait (owner, 2026-10-29)
+
+- During the 24-hour wait after an authenticator-code login, trades that were already open can still be finished (mark paid, release, dispute). New trades, new logins and wallet changes stay blocked.
+- No wait for strong logins: a security key, a recovery code, or a PGP signature plus a passkey (or PGP plus a security key).
