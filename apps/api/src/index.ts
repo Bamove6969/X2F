@@ -39,6 +39,10 @@ export {
 } from './auth/pgp.js';
 export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
 export {
+  APPROVAL_COOKIE, APPROVAL_TTL_MS, APPROVALS_PER_HOUR, DEFAULT_MAX_DEVICES, MAX_OPEN_APPROVALS, approvalRoutes, coarseDeviceLabel,
+  traderLogin, type ApprovalMethod, type ApprovalView, type ApprovalWait, type DeviceRoom,
+} from './auth/approval.js';
+export {
   PRIMARY, allowedMethods, assertMethodAllowed, listMethods, methodAllowed, methodRoutes, needsAfter, ownerReady, pairAllowed,
   parseFactor, passwordAllowed, removeMethod, type MethodEntry,
 } from './auth/methods.js';

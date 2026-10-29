@@ -40,6 +40,9 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Plan 2 Task 16: new-device approval.
+  | 'approval-ended'
+  | 'too-many-devices'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
   // Plan 3, Task 4: posting and relisting offers.

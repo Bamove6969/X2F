@@ -1,4 +1,4 @@
-import { checkLoginName, isIdleHours, type AccountKind, type IdleHours, type MethodType } from '@x2f/accounts';
+import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -6,6 +6,8 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
+import { maxDevices } from '../auth/approval.js';
+import { maxDevices } from '../auth/approval.js';
 import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -176,6 +178,22 @@ export function isLoginNameClash(e: unknown): boolean {
   return err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey');
 }
 
+/** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
+function oneDeviceAction(req: FastifyRequest): ConfirmAction {
+  const body = req.body;
+  const on = body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as { on?: unknown }).on : undefined;
+  if (typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+  return { kind: 'set-one-device', on: on ? 'on' : 'off' };
+}
+
+/** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
+function oneDeviceAction(req: FastifyRequest): ConfirmAction {
+  const body = req.body;
+  const on = body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as { on?: unknown }).on : undefined;
+  if (typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+  return { kind: 'set-one-device', on: on ? 'on' : 'off' };
+}
+
 export function accountRoutes(app: FastifyInstance): void {
   const deps = (): Deps => app.deps;
   const readAny = { allowRecovery: true, allowHeld: true } as const;
@@ -301,6 +319,45 @@ export function accountRoutes(app: FastifyInstance): void {
     }
     return logoutTimerOf('trader', idleHours);
   });
+
+  const DEVICES = '/v1/account/security/devices';
+
+  // Task 16: the device limit and "One device at a time". Reading changes nothing.
+  app.get(DEVICES, { preHandler: requireSession({ ...readAny, allowStaleTerms: true, kinds: ['trader'] }) }, async (req) => {
+    const d = deps();
+    const { rows } = await d.db.query<{ one_device: boolean }>('select one_device from accounts where id = $1', [req.auth.accountId]);
+    return { oneDevice: rows[0]!.one_device, maxDevices: await maxDevices(d.db) };
+  });
+
+  /**
+   * `PUT /v1/account/security/one-device { on, confirmToken }` (Task 16): full trader sessions only,
+   * behind confirm-it's-you for exactly that change (`set-one-device`, `on: 'on' | 'off'`). It ends
+   * no session by itself: the next approved device does. Alert `one-device-set { on }`.
+   */
+  app.put(
+    '/v1/account/security/one-device',
+    { preHandler: [requireSession({ kinds: ['trader'] }), requireConfirm(oneDeviceAction)] },
+    async (req) => {
+      const d = deps();
+      const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
+      const now = d.clock();
+      const client = await d.db.connect();
+      try {
+        await client.query('begin');
+        try {
+          await client.query('update accounts set one_device = $2 where id = $1', [req.auth.accountId, on]);
+          await addAlert(client, req.auth.accountId, 'one-device-set', { on }, now);
+          await client.query('commit');
+        } catch (e) {
+          await client.query('rollback');
+          throw e;
+        }
+      } finally {
+        client.release();
+      }
+      return { oneDevice: on, maxDevices: await maxDevices(d.db) };
+    },
+  );
 
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();

@@ -12,6 +12,7 @@ import { parseConfirmAction } from './actionInput.js';
 import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
+import { traderLogin } from './approval.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import {
   claimPasswordTry, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss, visitorReset,
@@ -254,8 +255,8 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
     const pendingId = await issueSecondFactor(deps, req, { accountId, deviceLabel });
     return { status: 'second-factor' as const, pendingId, needs: ['totp'] };
   }
-  await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel, method: 'password', firstSession: false });
-  return { status: 'ok' as const };
+  // Task 16: a session now, or an approval from a logged-in device first.
+  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel });
 }
 
 async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {

@@ -63,11 +63,17 @@ function presentedToken(req: FastifyRequest): string | null {
   return typeof v === 'string' && TOKEN.test(v) ? v : null;
 }
 
+/** The hash of the well-formed session cookie this request carries, else null (Task 16's device count). */
+export function presentedTokenHash(req: FastifyRequest): Buffer | null {
+  const token = presentedToken(req);
+  return token === null ? null : tokenHash(token);
+}
+
 /**
  * Control and format characters (bidi overrides, zero-width, NUL) removed, then trimmed and cut to
  * 60 code points; chosen by the client, never read from request headers.
  */
-function cleanLabel(label: string): string {
+export function cleanLabel(label: string): string {
   const visible = label.replace(/[\p{Cc}\p{Cf}]/gu, '').trim();
   return Array.from(visible).slice(0, DEVICE_LABEL_MAX).join('').trim();
 }

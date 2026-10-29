@@ -7,6 +7,7 @@ import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
+import { approvalRoutes } from './auth/approval.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -232,6 +233,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
+  // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
+  approvalRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });

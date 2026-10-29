@@ -6,7 +6,9 @@ export type LiveEvent =
   | { type: 'trade'; code: string; state: string }
   | { type: 'accepted'; code: string; by: string }
   | { type: 'chat'; chat: string }
-  | { type: 'nudge'; from: string; context: string };
+  | { type: 'nudge'; from: string; context: string }
+  /** Plan 2 Task 16: a new device waits for approval; the approval itself is fetched over the session. */
+  | { type: 'login-approval'; id: string };
 
 /** One open stream: `send` writes a whole SSE frame; `close` ends the response. */
 export interface StreamSink {

@@ -4,6 +4,7 @@ import type { Deps } from '../app.js';
 import { ApiError } from '../errors.js';
 import { deviceHash } from './device.js';
 import { needsAfter, pairAllowed, parseFactor } from './methods.js';
+import { traderLogin, type ApprovalWait } from './approval.js';
 import { assertNotDisabled, startSession } from './sessions.js';
 import { SECOND_FACTOR_TTL_MS } from './totp.js';
 
@@ -23,7 +24,11 @@ export type LoginFactor =
   | { method: 'pgp'; fingerprint: string; fingerprints: string[] }
   | { method: 'passkey' | 'security-key'; credentialId: string; attested: boolean };
 
-export type LoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: MethodType[] };
+/**
+ * `approve-on-device` (Task 16): a trader's login from a new browser while the account is logged in
+ * elsewhere waits for a logged-in device to approve it (`POST /v1/login/approval/:id/poll`).
+ */
+export type LoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: MethodType[] } | ApprovalWait;
 
 /** A staff or owner login waiting for its second factor lives 5 minutes, as Task 9's password second factor. */
 export const PAIR_TTL_MS = SECOND_FACTOR_TTL_MS;
@@ -59,6 +64,8 @@ export async function completeLogin(
   const device = deviceHash(req);
   if (a.account.kind === 'trader') {
     if (a.pendingId !== undefined) throw new ApiError(400, 'challenge-expired');
+    // Task 16: a session now, or an approval from a logged-in device first.
+    return traderLogin(deps, req, reply, { accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel });
   } else if (a.pendingId === undefined) {
     const needs = needsAfter(a.account.kind, a.factor);
     if (needs.length === 0) throw new ApiError(403, 'method-not-allowed');

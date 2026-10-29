@@ -14,9 +14,9 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, DeviceRoom, IssuedChallenge, LoginResult } from '@x2f/api';
 
-export type { ApiErrorCode, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, DeviceRoom, LoginResult };
 
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
 export class AuthApiError extends Error {
@@ -36,6 +36,10 @@ export class AuthApiError extends Error {
   readonly action?: string;
   /** This browser's password-login misses in a row (401 `credentials-invalid` from `loginPassword`); see `shouldSendAway`. */
   readonly misses?: number;
+  /** The open full sessions to choose from (409 `too-many-devices`, Task 16). */
+  readonly sessions?: Array<{ id: string; deviceLabel: string; lastSeenAt: string; current: boolean }>;
+  /** How a decided approval ended (409 `approval-ended`, Task 16). */
+  readonly outcome?: 'approved' | 'blocked' | 'expired';
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -52,6 +56,14 @@ export class AuthApiError extends Error {
     if (typeof extra.version === 'string') this.version = extra.version;
     if (typeof extra.action === 'string') this.action = extra.action;
     if (typeof extra.misses === 'number' && Number.isInteger(extra.misses) && extra.misses > 0) this.misses = extra.misses;
+    if (Array.isArray(extra.sessions)) {
+      this.sessions = extra.sessions.filter(
+        (s): s is { id: string; deviceLabel: string; lastSeenAt: string; current: boolean } =>
+          s !== null && typeof s === 'object' && typeof s.id === 'string' && typeof s.deviceLabel === 'string' &&
+          typeof s.lastSeenAt === 'string' && typeof s.current === 'boolean',
+      );
+    }
+    if (extra.outcome === 'approved' || extra.outcome === 'blocked' || extra.outcome === 'expired') this.outcome = extra.outcome;
   }
 }
 
@@ -92,8 +104,30 @@ export interface AuthenticationChallenge {
   options: PublicKeyCredentialRequestOptionsJSON;
 }
 
-/** A password login: a session, or (TOTP enrolled) a pending login for `loginSecondFactor`. */
-export type PasswordLoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: ['totp'] };
+/**
+ * A password login: a session, (TOTP enrolled) a pending login for `loginSecondFactor`, or (Task 16)
+ * a wait for a logged-in device to approve this one (`pollLoginApproval`).
+ */
+export type PasswordLoginResult = { status: 'ok' } | { status: 'second-factor'; pendingId: string; needs: ['totp'] } | ApprovalWait;
+
+/**
+ * Task 16: the new device's poll. `ok`: the session has started (`loggedOut` names the devices
+ * this login logged out); `blocked`: a logged-in device said no or a wrong number was tapped.
+ */
+export type ApprovalPoll =
+  | { status: 'waiting'; expiresAt: string }
+  | { status: 'ok'; loggedOut: string[] }
+  | { status: 'blocked' }
+  | { status: 'expired' };
+
+/** Task 16: the logged-in device's answer: the number it tapped (and, at the device limit, the session to log out), or a block. */
+export type ApprovalDecision = { choice: number; logOut?: string } | { block: true };
+
+/** Task 16: the device limit and "One device at a time". */
+export interface DeviceSettings {
+  oneDevice: boolean;
+  maxDevices: number;
+}
 
 export interface ConfirmTokenResult {
   confirmToken: string;
@@ -211,7 +245,11 @@ export interface AuthApi {
   /** Every failure is 401 `credentials-invalid` (`PASSWORD_LOGIN_MISMATCH`) with `misses`; check `shouldSendAway`. */
   loginPassword(b: { loginName: string; password: string; deviceLabel: string }): Promise<PasswordLoginResult>;
   /** `POST /v1/login/second-factor`: the TOTP code for a password login's `pendingId`. */
-  loginSecondFactor(b: { pendingId: string; code: string }): Promise<{ status: 'ok' }>;
+  loginSecondFactor(b: { pendingId: string; code: string }): Promise<{ status: 'ok' } | ApprovalWait>;
+  /** `POST /v1/login/approval/:id/poll` (Task 16): only the browser that started the login, with its approval cookie; anything else 404. */
+  pollLoginApproval(id: string): Promise<ApprovalPoll>;
+  /** `POST /v1/login/approval/:id/cancel` (Task 16): stop waiting. */
+  cancelLoginApproval(id: string): Promise<void>;
   /** `POST /v1/login/backup`: opens a recovery session (TOTP: held 24 hours). */
   loginBackup(b: { loginName: string; kind: 'totp' | 'recovery-code'; code: string; deviceLabel: string }): Promise<{
     status: 'ok';
@@ -274,6 +312,16 @@ export interface AuthApi {
   endSession(id: string): Promise<void>;
   listAlerts(): Promise<AlertEntry[]>;
   markAlertSeen(id: string): Promise<void>;
+
+  // New-device approval (Task 16): full trader sessions only.
+  /** `GET /v1/account/approvals`: the logins waiting for this account's approval. */
+  listApprovals(): Promise<ApprovalView[]>;
+  getApproval(id: string): Promise<ApprovalView>;
+  /** 409 `too-many-devices` (`AuthApiError.sessions`) at the limit without `logOut`; 409 `approval-ended` (`outcome`). */
+  decideApproval(id: string, b: ApprovalDecision): Promise<{ outcome: 'approved' | 'blocked' }>;
+  getDeviceSettings(): Promise<DeviceSettings>;
+  /** Confirm-it's-you for `{ kind: 'set-one-device', on }` (`withConfirm`). */
+  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings>;
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
@@ -371,6 +419,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     registerPassword: (b) => post('/v1/register/password', b),
     loginPassword: (b) => post('/v1/login/password', b),
     loginSecondFactor: (b) => post('/v1/login/second-factor', b),
+    pollLoginApproval: (id) => post(`/v1/login/approval/${seg(id)}/poll`),
+    cancelLoginApproval: (id) => done(post(`/v1/login/approval/${seg(id)}/cancel`)),
     loginBackup: (b) => post('/v1/login/backup', b),
     registerPgpStart: (b) => post('/v1/register/pgp/start', b),
     registerPgpFinish: (b) => post('/v1/register/pgp/finish', b),
@@ -407,6 +457,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     endSession: (id) => done(call('DELETE', `/v1/account/sessions/${seg(id)}`)),
     listAlerts: () => get('/v1/account/alerts'),
     markAlertSeen: (id) => done(post(`/v1/account/alerts/${seg(id)}/seen`)),
+    listApprovals: () => get('/v1/account/approvals'),
+    getApproval: (id) => get(`/v1/account/approvals/${seg(id)}`),
+    decideApproval: (id, b) => post(`/v1/account/approvals/${seg(id)}`, b),
+    getDeviceSettings: () => get('/v1/account/security/devices'),
+    setOneDevice: (b) => call('PUT', '/v1/account/security/one-device', b),
 
     listWallets: () => get('/v1/wallets'),
     addWallet: (b) => post('/v1/wallets', b),
