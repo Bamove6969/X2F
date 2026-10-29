@@ -17,17 +17,23 @@ import { roleOf } from './view.js';
  * Plan 3 Task 5: taking an offer, and the poster's side of the new trade.
  *
  * - `POST /v1/offers/:id/take { amountAtomic, walletId, centsPerXmr, fiatCents }` (`requireTrader`)
- *   → `{ code }`. The amount, the rate and the total are decimal strings: the rate and total are the
- *   ones the taker's quote showed (Revision 2026-10-27), and they are what locks (OD-5), never a
- *   fresh rate of the server's. `walletId` is the taker's own: the buyer's payout wallet when the
- *   taker buys, the seller's refund and funding wallet when the taker sells. The trade starts in
- *   `setup` with the poster's side unset.
+ *   → `{ code, centsPerXmr, fiatCents }`. The amount, the rates and the totals are decimal strings.
+ *   The client's rate and total are the ones the taker's quote showed; they are never locked (lead
+ *   decision 2026-10-29, Task 5 review I2). The take always locks the server's own rate now
+ *   (`offerRate`: the market plus the offer's margin, or the fixed price) and that rate's total
+ *   (OD-5), and answers with both so the device records the deal that locked; the client's rate
+ *   only detects a move: past 0.5% of the server's (fixed: any difference) → 409 `price-changed`.
+ *   So the taker gets the live price, within 0.5% of what they saw, and can never pick a better
+ *   one. `walletId` is the taker's own: the buyer's payout wallet when the taker buys, the seller's
+ *   refund and funding wallet when the taker sells. The trade starts in `setup` with the poster's
+ *   side unset.
  * - `POST /v1/trades/:code/wallet { walletId }` (the poster only, in `setup`, once) → 204: the
  *   poster's side, from the "accepted your offer" sheet (Task 19).
  *
- * The payout and refund addresses never change once set (a trigger in 112_take.sql refuses it;
- * only the retention purge may null them): Task 8 attests them, and both trader devices check the
- * attested addresses against what their user confirmed.
+ * The deal and the payout and refund addresses never change once written (a trigger in 112_take.sql
+ * refuses it for every role; only the retention purge may null an address, after close): Task 8
+ * attests them, and both trader devices check the attested deal and addresses against what their
+ * user confirmed.
  */
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -112,9 +118,10 @@ function pricingOf(r: OfferRow): Pricing {
 }
 
 /**
- * The quoted rate, when the offer's rate now (`offerRate`) still agrees with it: exactly for a
- * fixed price, within 0.5% for a market offer (Revision 2026-10-27). 409 `price-unavailable` for a
- * market offer while the feed is down, `price-changed` past the tolerance.
+ * The rate that locks: always the offer's rate now (`offerRate`), never the client's (lead decision
+ * 2026-10-29). The client's quoted rate only detects a move: 409 `price-changed` when it differs
+ * from the rate now by more than 0.5% for a market offer, or at all for a fixed price. 409
+ * `price-unavailable` for a market offer while the feed is down.
  */
 function lockRate(r: OfferRow, quoted: bigint, prices: MarketPrices): Price {
   const p = pricingOf(r);
@@ -123,19 +130,23 @@ function lockRate(r: OfferRow, quoted: bigint, prices: MarketPrices): Price {
   const diff = quoted > now.centsPerXmr ? quoted - now.centsPerXmr : now.centsPerXmr - quoted;
   const ok = p.mode === 'fixed' ? diff === 0n : diff * 1000n <= now.centsPerXmr * TOLERANCE_PER_MILLE;
   if (!ok) throw new ApiError(409, 'price-changed');
-  return { currency: r.currency, centsPerXmr: quoted };
+  return now;
 }
 
 /**
- * The trade's fiat total in US cents for the starter caps: converted with `usdCentsOf` at the
- * market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review M8), so a
- * card and a take agree. USD needs no conversion. Null when there is no quote to convert with.
+ * What the trade counts against the starter caps, in US cents: the larger of its fiat total and its
+ * XMR amount valued at the live market price (lead decision 2026-10-29, Task 5 review M5), so a
+ * fixed price far below market cannot move more XMR inside a cap. Both convert with `usdCentsOf`
+ * at the market quote, exactly as Task 4's `opensAt` converts an offer's minimum (Task 4 review
+ * M8). Null when there is no quote to value the XMR with.
  */
-function usdCents(currency: string, cents: bigint, prices: MarketPrices): bigint | null {
-  if (currency === 'USD') return cents;
+function usdCents(currency: string, amountAtomic: bigint, cents: bigint, prices: MarketPrices): bigint | null {
   const q = prices.quote(currency);
   if (q === null) return null;
-  return usdCentsOf(cents, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr });
+  const usd = (c: bigint): bigint => (currency === 'USD' ? c : usdCentsOf(c, { centsPerXmr: q.price.centsPerXmr, usdCentsPerXmr: q.usdCentsPerXmr }));
+  const total = usd(cents);
+  const market = usd(fiatCents(amountAtomic, q.price));
+  return total > market ? total : market;
 }
 
 async function openTrades(db: Queryable, accountId: string): Promise<number> {
@@ -149,7 +160,10 @@ async function openTrades(db: Queryable, accountId: string): Promise<number> {
 /**
  * Both sides' starter limits (Revision 2026-10-24): the trade's USD equivalent within each side's
  * cap, and a Starter side below its open-trade limit. A refusal (409 `starter-limit`) names only
- * the caller's own stage and limit; the poster's is never named, so the taker learns nothing of it.
+ * the caller's own stage and limit. The poster's cap gives `starter-limit` with nothing (their stage
+ * is public on the card); the poster's open-trade count gives a generic 409 `offer-busy` ("this
+ * offer can't take more trades right now"), so the taker learns nothing of how many trades the
+ * poster has open (Task 5 review M6).
  */
 async function checkStarterLimits(db: Queryable, a: { takerId: string; posterId: string; usd: () => bigint | null; now: Date }): Promise<void> {
   const settings = await loadStarterSettings(db);
@@ -169,7 +183,7 @@ async function checkStarterLimits(db: Queryable, a: { takerId: string; posterId:
   }
   for (const [c, id, own] of caps) {
     if (c.maxOpen !== null && (await openTrades(db, id)) >= c.maxOpen) {
-      throw new ApiError(409, 'starter-limit', own ? { stage: c.stage, maxOpen: c.maxOpen } : {});
+      throw own ? new ApiError(409, 'starter-limit', { stage: c.stage, maxOpen: c.maxOpen }) : new ApiError(409, 'offer-busy');
     }
   }
 }
@@ -200,6 +214,21 @@ function raceRefusal(e: unknown): ApiError | null {
   return null;
 }
 
+/**
+ * 404 `not-found` when either trader has blocked the other (Plan 3 Task 37, lead default
+ * 2026-10-29: the blocker's take of the blocked person's offer is refused too). One check, both
+ * directions. Task 37 (wip/lead-p3-task37) exports the same `assertNotBlocked(q, actor, other)`
+ * from traders/blocks.ts: whichever lands second replaces this one with the import.
+ */
+async function assertNotBlocked(q: Queryable, actor: string, other: string): Promise<void> {
+  const { rows } = await q.query<{ blocked: boolean }>(
+    `select exists (select 1 from account_blocks
+      where (account_id = $1 and blocked_id = $2) or (account_id = $2 and blocked_id = $1)) as blocked`,
+    [actor, other],
+  );
+  if (rows[0]?.blocked === true) throw notFound();
+}
+
 const requireTrader = requireSession({ kinds: ['trader'] });
 
 export function takeRoutes(app: FastifyInstance): void {
@@ -218,12 +247,17 @@ export function takeRoutes(app: FastifyInstance): void {
     const trade = await inTransaction(deps.db, async (c) => {
       // Both accounts, in id order (no deadlock between two takes): every take involving either
       // account waits here, so the Starter open-trade count and both waiting limits are read and
-      // written by one take at a time. `no key update` leaves inserts that reference them alone.
-      await c.query('select id from accounts where id = any($1) order by id for no key update', [[takerId, posterId]]);
+      // written by one take at a time. `for update`, as Task 4's assertMayPost: a trading hold
+      // inserted for either account (its foreign key takes `for key share`) waits until this take
+      // commits, so a hold can never land between the hold check below and the trade insert
+      // (Task 5 review M1).
+      await c.query('select id from accounts where id = any($1) order by id for update', [[takerId, posterId]]);
       // The offer, locked against a pause or removal (PATCH) until this take commits, and read
       // again with the poster's hold and the site pause inside the transaction (Task 4 review M1).
       const r = (await c.query<OfferRow>(`${OFFER_SQL} for share of o`, [id])).rows[0];
       if (!r || r.status !== 'live' || !r.poster_ok) throw notFound();
+      // Blocked either way: as if the offer did not exist, before any refusal that shows it does.
+      await assertNotBlocked(c, takerId, posterId);
       if (!isAvailable(r.method_id)) throw new ApiError(409, 'method-unavailable');
       if (posterId === takerId) throw new ApiError(409, 'own-offer');
       const now = deps.clock();
@@ -243,11 +277,12 @@ export function takeRoutes(app: FastifyInstance): void {
       ).rows[0]!.n;
       if (completed < r.min_trades) throw new ApiError(409, 'not-enough-trades');
 
+      // The client's total must be its amount at its rate, as the quote works it out.
+      if (fiatCents(b.amountAtomic, { currency: r.currency, centsPerXmr: b.centsPerXmr }) !== b.fiatCents) throw bad();
       const rate = lockRate(r, b.centsPerXmr, deps.prices);
-      // The total must be the quoted amount at the quoted rate, as the quote works it out.
-      if (fiatCents(b.amountAtomic, rate) !== b.fiatCents) throw bad();
-      if (b.fiatCents < BigInt(r.min_fiat_cents) || b.fiatCents > BigInt(r.max_fiat_cents)) throw new ApiError(409, 'out-of-range');
-      await checkStarterLimits(c, { takerId, posterId, usd: () => usdCents(r.currency, b.fiatCents, deps.prices), now });
+      const total = fiatCents(b.amountAtomic, rate);
+      if (total < BigInt(r.min_fiat_cents) || total > BigInt(r.max_fiat_cents)) throw new ApiError(409, 'out-of-range');
+      await checkStarterLimits(c, { takerId, posterId, usd: () => usdCents(r.currency, b.amountAtomic, total, deps.prices), now });
 
       const poster = posterRole(r.side);
       const profile = getProfile(r.method_id) ?? getProfile(FALLBACK_PROFILE);
@@ -291,7 +326,7 @@ export function takeRoutes(app: FastifyInstance): void {
         if (app.events.publish(posterId, ev) === 0) await app.push.send(posterId, 'trade');
       })().catch((err: unknown) => app.log.error({ err }, 'accepted publish failed'));
     });
-    return { code: trade.code };
+    return { code: trade.code, centsPerXmr: trade.lockedRate.centsPerXmr.toString(), fiatCents: trade.fiatCents.toString() };
   });
 
   app.post('/v1/trades/:code/wallet', { preHandler: requireTrader }, async (req, reply) => {
@@ -300,31 +335,44 @@ export function takeRoutes(app: FastifyInstance): void {
     const raw = (req.params as { code?: unknown }).code;
     const code = typeof raw === 'string' ? normalizeTradeCode(raw) : null;
     if (code === null) throw notFound();
-    const row = await loadTradeRow(deps.db, code);
-    if (!row) throw notFound();
-    const t = rowToTrade(row);
     const me = req.auth.accountId;
-    const role = roleOf(t, me);
-    if (role === null) throw notFound();
-    if (role !== t.poster) throw new ApiError(409, 'wrong-party');
-    const set = role === 'seller' ? row.seller_refund : row.buyer_payout;
-    if (t.state !== 'setup' || set !== null) throw new ApiError(409, 'wrong-state');
-    const w = await pickWallet(deps.db, me, walletId, deps.clock());
-    // Once only, and only while in setup: the conditions live in the UPDATE, so two calls at once
-    // set it once and the other is refused.
-    const r =
-      role === 'seller'
-        ? await deps.db.query(
-            `update trades set seller_refund = $3, seller_wallet_app = $4
-              where code = $1 and seller_account_id = $2 and poster = 'seller' and state = 'setup' and seller_refund is null`,
-            [code, me, w.address, w.app],
-          )
-        : await deps.db.query(
-            `update trades set buyer_payout = $3
-              where code = $1 and buyer_account_id = $2 and poster = 'buyer' and state = 'setup' and buyer_payout is null`,
-            [code, me, w.address],
-          );
-    if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+    // One transaction (Task 5 review M4): the trade row first, then the poster's account (`for
+    // update`, so a trading hold inserted meanwhile waits; trade before account, the order a
+    // dispute takes when it places a hold), then the wallet (`for share`, so it cannot be removed
+    // before the write). Everything is checked again under those locks.
+    await inTransaction(deps.db, async (c) => {
+      const row = await loadTradeRow(c, code, true);
+      if (!row) throw notFound();
+      const t = rowToTrade(row);
+      const role = roleOf(t, me);
+      if (role === null) throw notFound();
+      if (role !== t.poster) throw new ApiError(409, 'wrong-party');
+      const now = deps.clock();
+      const set = role === 'seller' ? row.seller_refund : row.buyer_payout;
+      // Past setup_by the timer is about to cancel the trade: too late to set it up.
+      if (t.state !== 'setup' || set !== null || (t.setupBy !== null && now.getTime() > t.setupBy.getTime())) {
+        throw new ApiError(409, 'wrong-state');
+      }
+      await c.query('select id from accounts where id = $1 for update', [me]);
+      const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
+      if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
+      await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);
+      const w = await pickWallet(c, me, walletId, now);
+      // Once only, and only while in setup: the conditions stay in the UPDATE too.
+      const r =
+        role === 'seller'
+          ? await c.query(
+              `update trades set seller_refund = $3, seller_wallet_app = $4
+                where code = $1 and seller_account_id = $2 and poster = 'seller' and state = 'setup' and seller_refund is null`,
+              [code, me, w.address, w.app],
+            )
+          : await c.query(
+              `update trades set buyer_payout = $3
+                where code = $1 and buyer_account_id = $2 and poster = 'buyer' and state = 'setup' and buyer_payout is null`,
+              [code, me, w.address],
+            );
+      if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+    });
     return reply.code(204).send();
   });
 }

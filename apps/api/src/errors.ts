@@ -66,6 +66,7 @@ export type ApiErrorCode =
   | 'ad-busy'
   | 'price-changed'
   | 'starter-limit'
+  | 'offer-busy'
   // Plan 3, Task 8: participant identities and the moderation attestation.
   | 'identity-exists'
   | 'identity-conflict'

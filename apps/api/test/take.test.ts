@@ -157,7 +157,7 @@ const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res
 const tenth = XMR / 10n; // $33.00 at $330
 
 describe('POST /v1/offers/:id/take', () => {
-  it('starts a trade in setup with the taker side filled in and the quoted rate and total locked (OD-5)', async () => {
+  it('starts a trade in setup with the taker side filled in and the rate and total locked (OD-5)', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller, { pricing: { mode: 'market', marginBps: 100 } });
@@ -178,14 +178,30 @@ describe('POST /v1/offers/:id/take', () => {
     expect((await seller.browser.get(`/v1/trades/${code}`)).json()).toMatchObject({ role: 'seller', state: 'setup', fiatCents: '3333' });
   });
 
-  it('locks exactly the quoted rate while the offer rate moved within 0.5%, and refuses price-changed past it', async () => {
+  it('answers with the rate and total that locked, so the device records the deal that locked', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
-    // Quoted at $330.00; the market is now $331.65 (+0.5% exactly): still the quoted rate.
+    market.usdCentsPerXmr = 33_100n;
+    const res = await take(buyer, offer, body(buyer, tenth, 33_000n));
+    expect(res.statusCode, res.body).toBe(200);
+    const out = res.json() as { code: string; centsPerXmr: string; fiatCents: string };
+    expect(Object.keys(out).sort()).toEqual(['centsPerXmr', 'code', 'fiatCents']);
+    expect(out).toMatchObject({ centsPerXmr: '33100', fiatCents: '3310' });
+    expect(rowToTrade((await loadTradeRow(deps.db, out.code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_100n }, fiatCents: 3_310n });
+  });
+
+  it("locks the server's rate now, never the quoted one, while it moved within 0.5%, and refuses price-changed past it", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller);
+    // Quoted at $330.00; the market is now $331.65 (+0.5% of the rate now, within): the take goes
+    // through at $331.65, the live price (lead decision 2026-10-29, Task 5 review I2).
     market.usdCentsPerXmr = 33_165n;
     const code = await taken(buyer, offer, body(buyer, tenth, 33_000n));
-    expect(rowToTrade((await loadTradeRow(deps.db, code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 3_300n });
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!)).toMatchObject({
+      lockedRate: { centsPerXmr: 33_165n }, fiatCents: fiatCents(tenth, { currency: 'USD', centsPerXmr: 33_165n }),
+    });
 
     // Another buyer quoted at $330.00 while the market is now $331.66 (just over 0.5%): refused, nothing created.
     const late = await person();
@@ -198,6 +214,21 @@ describe('POST /v1/offers/:id/take', () => {
     expect((await deps.db.query('select count(*)::int as n from trades where offer_id = $1', [offer])).rows).toEqual(before.rows);
     // Re-quoted at the rate now, it goes through.
     await taken(late, offer, body(late, tenth, 32_834n));
+  });
+
+  it('a client rate 0.5% better for the taker than the rate now still locks the rate now (review I2 probe)', async () => {
+    // Market $330.00, margin 0. A buyer on a sell ad quotes $328.35 (0.5% under): locks $330.00.
+    const seller = await person();
+    const buyer = await person();
+    const sellAd = await postOffer(seller);
+    const code = await taken(buyer, sellAd, body(buyer, XMR, 32_835n));
+    expect(rowToTrade((await loadTradeRow(deps.db, code))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 33_000n });
+    // A seller on a buy ad quotes $331.65 (0.5% over): locks $330.00 too.
+    const poster = await person();
+    const sellerTaker = await person();
+    const buyAd = await postOffer(poster, { side: 'buy' });
+    const code2 = await taken(sellerTaker, buyAd, body(sellerTaker, XMR, 33_165n));
+    expect(rowToTrade((await loadTradeRow(deps.db, code2))!)).toMatchObject({ lockedRate: { centsPerXmr: 33_000n }, fiatCents: 33_000n });
   });
 
   it('a fixed-price offer compares exactly, and can be taken while the feed is down; a market offer cannot', async () => {
@@ -444,13 +475,102 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await taken(buyer, offer, body(buyer, tenth));
   });
 
-  it("a Starter poster's open-trade count holds under a race, and the taker is not told the poster's stage", async () => {
-    const poster = await person('starter');
+  it("a Starter poster's open-trade count holds under a race, and the taker learns nothing of it (offer-busy, review M6)", async () => {
+    // Probabilistic on its own (review M2): released together, the racers reach the count read at
+    // slightly different times. Three rounds make a missing lock show; the next test is the
+    // deterministic one.
+    for (let round = 0; round < 3; round++) {
+      const poster = await person('starter');
+      const offer = await postOffer(poster);
+      const buyers = await Promise.all([1, 2, 3, 4, 5].map(() => person()));
+      const results = await allAtOnce(takeLocks(poster.id, offer), 5, () => buyers.map((b) => take(b, offer, body(b, tenth))));
+      expect(results.filter((r) => r.statusCode === 200)).toHaveLength(3);
+      expect(results.filter((r) => r.statusCode !== 200).map(refusal)).toEqual(Array(2).fill({ status: 409, error: 'offer-busy' }));
+    }
+  });
+
+  it('a take holds both accounts for update until it commits, so a hold or another take waits (review M1, M2)', async () => {
+    const poster = await person();
+    const buyer = await person();
     const offer = await postOffer(poster);
-    const buyers = await Promise.all([1, 2, 3, 4, 5].map(() => person()));
-    const results = await allAtOnce(takeLocks(poster.id, offer), 5, () => buyers.map((b) => take(b, offer, body(b, tenth))));
-    expect(results.filter((r) => r.statusCode === 200)).toHaveLength(3);
-    expect(results.filter((r) => r.statusCode !== 200).map(refusal)).toEqual(Array(2).fill({ status: 409, error: 'starter-limit' }));
+    // Park the take after its account locks: it waits on site_flags, which a holder keeps.
+    const holder = await deps.db.connect();
+    let pending: Promise<Awaited<ReturnType<typeof take>>> | null = null;
+    try {
+      await holder.query('begin');
+      await holder.query('select 1 from site_flags for update');
+      pending = take(buyer, offer, body(buyer, tenth));
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const { rows } = await deps.db.query<{ n: number }>(
+          `select count(*)::int as n from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%site_flags%'`,
+        );
+        if (rows[0]!.n >= 1) break;
+        if (Date.now() > deadline) throw new Error('the take never reached site_flags');
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      // Both accounts are locked for update: another lock on either is refused at once, and a
+      // trading hold insert (its foreign key's key-share lock) has to wait.
+      for (const id of [poster.id, buyer.id]) {
+        const probe = await deps.db.connect();
+        try {
+          await probe.query('begin');
+          await expect(probe.query('select 1 from accounts where id = $1 for key share nowait', [id])).rejects.toMatchObject({ code: '55P03' });
+          await probe.query('rollback');
+          await probe.query('begin');
+          await probe.query("set local lock_timeout = '100ms'");
+          await expect(probe.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [id, deps.clock()])).rejects.toMatchObject({ code: '55P03' });
+          await probe.query('rollback');
+        } finally {
+          probe.release();
+        }
+      }
+      await holder.query('commit');
+    } catch (e) {
+      await holder.query('rollback').catch(() => {});
+      throw e;
+    } finally {
+      holder.release();
+    }
+    expect((await pending!).statusCode).toBe(200);
+  });
+
+  it("the poster's open-trade limit refuses with offer-busy and nothing else", async () => {
+    const poster = await person('starter');
+    for (let i = 0; i < 3; i++) {
+      const b = await person();
+      await seedTrade(deps, { sellerId: poster.id, buyerId: b.id, poster: 'seller' });
+    }
+    const offer = await postOffer(poster);
+    const buyer = await person();
+    expect(refusal(await take(buyer, offer, body(buyer, tenth)))).toEqual({ status: 409, error: 'offer-busy' });
+  });
+
+  it('the cap counts the XMR at the market price too, so a fixed price far below market moves no more XMR (review M5)', async () => {
+    const seller = await person();
+    const buyer = await person('starter');
+    // Fixed at $3.30 per XMR, 1% of the $330 market.
+    const offer = await postOffer(seller, { pricing: { mode: 'fixed', centsPerXmr: '330' }, minFiatCents: '100' });
+    const fixedBody = (amount: bigint) => body(buyer, amount, 330n);
+    // 50 XMR is $165.00 at the offer's price but $16,500 at market: refused at the Starter cap.
+    expect(refusal(await take(buyer, offer, fixedBody(50n * XMR)))).toEqual({ status: 409, error: 'starter-limit', stage: 'starter', capUsdCents: '20000' });
+    // 0.6 XMR is $1.98 at the offer's price and $198 at market: within the cap.
+    await taken(buyer, offer, fixedBody((XMR * 6n) / 10n));
+  });
+
+  it('a blocked pair cannot take each other\'s offers, either way: 404 as if the offer did not exist (review M3, Task 37)', async () => {
+    const poster = await person();
+    const blocked = await person();
+    const offer = await postOffer(poster);
+    await deps.db.query('insert into account_blocks (account_id, blocked_id, created_at) values ($1, $2, $3)', [poster.id, blocked.id, deps.clock()]);
+    expect(refusal(await take(blocked, offer, body(blocked, tenth)))).toEqual({ status: 404, error: 'not-found' });
+    // The blocker cannot take the blocked person's offer either (lead default 2026-10-29).
+    const theirs = await postOffer(blocked);
+    expect(refusal(await take(poster, theirs, body(poster, tenth)))).toEqual({ status: 404, error: 'not-found' });
+    // Before any other refusal: an out-of-range amount still answers 404.
+    expect(refusal(await take(blocked, offer, body(blocked, XMR / 1000n)))).toEqual({ status: 404, error: 'not-found' });
+    await deps.db.query('delete from account_blocks where account_id = $1', [poster.id]);
+    await taken(blocked, offer, body(blocked, tenth));
   });
 });
 
@@ -505,13 +625,82 @@ describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted 
     expect(refusal(await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet }))).toEqual({ status: 409, error: 'wrong-state' });
   });
 
-  it('an address, once set, never changes; the purge may still null it', async () => {
+  /** Runs `sql` as the retention purge's role (as purgeTradeAddresses does). */
+  async function asPurge(sql: string, params: unknown[]): Promise<void> {
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('set local role x2f_purge');
+      await c.query(sql, params);
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback');
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
+  it('an address, once set, never changes for any role; only the purge nulls it, after close, and it is never written again (review I1)', async () => {
     const { poster, code } = await setupTrade('sell');
     expect((await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet })).statusCode).toBe(204);
+    for (const col of ['buyer_payout', 'seller_refund', 'seller_wallet_app']) {
+      await expect(deps.db.query(`update trades set ${col} = $2 where code = $1`, [code, fakeAddress()])).rejects.toMatchObject({ code: '23000' });
+      // The app role may not null one either (null, then write another, was the hole).
+      await expect(deps.db.query(`update trades set ${col} = null where code = $1`, [code])).rejects.toMatchObject({ code: '23000' });
+    }
+    // The purge may not null an open trade's address.
+    await expect(asPurge('update trades set buyer_payout = null, seller_refund = null where code = $1', [code])).rejects.toMatchObject({ code: '23000' });
+    await deps.db.query(`update trades set state = 'cancelled', closed_at = $2 where code = $1`, [code, deps.clock()]);
+    await asPurge('update trades set buyer_payout = null, seller_refund = null where code = $1', [code]);
+    const row = (await loadTradeRow(deps.db, code))!;
+    expect({ payout: row.buyer_payout, refund: row.seller_refund }).toEqual({ payout: null, refund: null });
+    // A purged address is never written again.
     for (const col of ['buyer_payout', 'seller_refund']) {
       await expect(deps.db.query(`update trades set ${col} = $2 where code = $1`, [code, fakeAddress()])).rejects.toMatchObject({ code: '23000' });
     }
-    await deps.db.query(`update trades set buyer_payout = null, seller_refund = null where code = $1`, [code]);
+  });
+
+  it('an unset address is set only in setup: not once the trade has left it (review I1)', async () => {
+    const { code } = await setupTrade('sell');
+    await deps.db.query(`update trades set state = 'funding' where code = $1`, [code]);
+    await expect(deps.db.query('update trades set seller_refund = $2 where code = $1', [code, fakeAddress()])).rejects.toMatchObject({ code: '23000' });
+  });
+
+  it("the deal never changes for any role; state, timers, escrow and dispute fields stay writable (review I1)", async () => {
+    const { code } = await setupTrade('sell');
+    const other = await person();
+    const otherOffer = await postOffer(other);
+    for (const [col, v] of [
+      ['locked_cents_per_xmr', 1], ['locked_currency', 'EUR'], ['fiat_cents', 1], ['amount_atomic', 1], ['method_id', 'CUSTOM'],
+      ['offer_id', otherOffer], ['seller_account_id', other.id], ['buyer_account_id', other.id], ['poster', 'buyer'],
+      ['confirm_window_min', 1], ['min_fiat_cents', 1], ['max_fiat_cents', 1], ['taken_at', new Date(0)],
+    ] as const) {
+      await expect(deps.db.query(`update trades set ${col} = $2 where code = $1`, [code, v]), col).rejects.toMatchObject({ code: '23000' });
+    }
+    // Growth keeps the take's amount and total in grown_from_* (spec 11.1): allowed.
+    const t = rowToTrade((await loadTradeRow(deps.db, code))!);
+    await deps.db.query(
+      `update trades set amount_atomic = $2, fiat_cents = $3, grown_at = $4, grown_from_atomic = $5, grown_from_fiat_cents = $6 where code = $1`,
+      [code, (t.amountAtomic * 2n).toString(), (t.fiatCents * 2n).toString(), deps.clock(), t.amountAtomic.toString(), t.fiatCents.toString()],
+    );
+    // Growth that rewrites the take's amount is not.
+    await expect(deps.db.query('update trades set grown_from_atomic = $2 where code = $1', [code, '1'])).rejects.toMatchObject({ code: '23000' });
+    await deps.db.query(
+      `update trades set state = 'disputed', dispute_by = 'buyer', dispute_at = $2, setup_by = $2, escrow_address = 'x', confirmations = 3, closed_at = null where code = $1`,
+      [code, deps.clock()],
+    );
+  });
+
+  it('refuses a poster on a trading hold, and a trade past setup_by (review M4)', async () => {
+    const held = await setupTrade('sell');
+    await deps.db.query('insert into trading_holds (account_id, created_at) values ($1, $2)', [held.poster.id, deps.clock()]);
+    expect(refusal(await held.poster.browser.post(`/v1/trades/${held.code}/wallet`, { walletId: held.poster.wallet }))).toEqual({ status: 409, error: 'trading-hold' });
+    expect((await loadTradeRow(deps.db, held.code))!.seller_refund).toBeNull();
+
+    const late = await setupTrade('sell');
+    await deps.db.query('update trades set setup_by = $2 where code = $1', [late.code, new Date(deps.clock().getTime() - 1000)]);
+    expect(refusal(await late.poster.browser.post(`/v1/trades/${late.code}/wallet`, { walletId: late.poster.wallet }))).toEqual({ status: 409, error: 'wrong-state' });
   });
 
   it('refuses a waiting or foreign wallet (wallet-not-ready), no usable wallet (no-wallet) and a bad body', async () => {
