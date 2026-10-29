@@ -1,19 +1,24 @@
 // @vitest-environment happy-dom
 // Plan 3 Task 36: My offers against a stubbed API in the shapes of apps/api/src/offers/routes.ts
-// (MyOffer, OfferSwitchResult), and the screen's small rules.
+// (MyOffer, OfferSwitchResult), and the screen's small rules. Behaviour after Claude Design's
+// MyOffers board (2026-10-29): a tick box per offer, Select all only ticks, the bar applies.
 import { act } from 'react';
 import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MyOffers } from '../src/screens/MyOffers.js';
 import { parseMyOffers, parseSwitch, type MyOffer } from '../src/screens/myoffers/api.js';
-import { applyResults, idsFor, offerDetail, offerTitle, refusalLine, summaryLine } from '../src/screens/myoffers/model.js';
+import {
+  allHint, applyResults, batches, countLine, idsFor, offerLimits, offerMethods, offerPrice, offerTitle, refusalLine, statusLine, summaryLine,
+} from '../src/screens/myoffers/model.js';
 import { fire, render } from './render.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
 
-const RAW = [
+type Raw = Record<string, unknown> & { id: string; status: string };
+
+const RAW: Raw[] = [
   {
     id: A, side: 'sell', methodId: 'ZELLE', methodName: 'Zelle', currency: 'USD', rate: '33165',
     pricing: { mode: 'market', marginBps: 50 }, minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0,
@@ -37,19 +42,18 @@ interface Call {
   body: Record<string, unknown> | undefined;
 }
 
-let list: typeof RAW;
-let onSwitch: (body: { ids: string[] | 'all'; status: string }) => { status: number; json: unknown };
+let list: Raw[];
+let onSwitch: (body: { ids: string[]; status: string }) => { status: number; json: unknown };
 let calls: Call[];
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 }
 
-/** The server's rule for a stub: every named (or every) offer switches. */
-function allSwitch(body: { ids: string[] | 'all'; status: string }): { status: number; json: unknown } {
-  const ids = body.ids === 'all' ? list.map((o) => o.id) : body.ids;
-  list = list.map((o) => (ids.includes(o.id) ? { ...o, status: body.status } : o));
-  return { status: 200, json: { status: body.status, results: ids.map((id) => ({ id, status: body.status })) } };
+/** The API's rule for a stub: every named offer switches; one already in the status is done. */
+function allSwitch(body: { ids: string[]; status: string }): { status: number; json: unknown } {
+  list = list.map((o) => (body.ids.includes(o.id) ? { ...o, status: body.status } : o));
+  return { status: 200, json: { status: body.status, results: body.ids.map((id) => ({ id, status: body.status })) } };
 }
 
 beforeEach(() => {
@@ -65,7 +69,7 @@ beforeEach(() => {
       calls.push({ url, method, body });
       if (url === '/v1/account/offers' && method === 'GET') return json(200, list);
       if (url === '/v1/account/offers/status' && method === 'POST') {
-        const a = onSwitch(body as { ids: string[] | 'all'; status: string });
+        const a = onSwitch(body as { ids: string[]; status: string });
         return json(a.status, a.json);
       }
       return json(404, { error: 'not-found' });
@@ -100,7 +104,13 @@ async function mount(): Promise<HTMLElement> {
 const q = <T extends Element = HTMLElement>(host: Element, sel: string) => host.querySelector(sel) as T;
 const row = (host: Element, id: string) => q(host, `[data-offer="${id}"]`);
 const sw = (host: Element, id: string) => q<HTMLButtonElement>(row(host, id), '[data-part="switch"]');
+const tick = (host: Element, id: string) => q<HTMLButtonElement>(row(host, id), '[data-part="select"]');
 const isOn = (host: Element, id: string) => sw(host, id).getAttribute('aria-checked') === 'true';
+const isTicked = (host: Element, id: string) => tick(host, id).getAttribute('aria-checked') === 'true';
+const posts = () => calls.filter((c) => c.method === 'POST');
+/** The text of the elements an aria-labelledby names, joined as a name. */
+const nameOf = (el: Element) =>
+  (el.getAttribute('aria-labelledby') ?? '').split(' ').map((id) => document.getElementById(id)!.textContent).join(' ');
 
 async function click(el: Element): Promise<void> {
   fire(el, new MouseEvent('click', { bubbles: true, cancelable: true }));
@@ -108,10 +118,12 @@ async function click(el: Element): Promise<void> {
 }
 
 describe('the model', () => {
-  it('parses the API answer strictly', () => {
-    const offers = parseMyOffers(RAW);
-    expect(offers.map((o) => [o.id, o.status, o.rate])).toEqual([[A, 'live', 33165n], [B, 'paused', 30000n], [C, 'paused', null]]);
+  it('parses the API answer strictly, hidden included', () => {
+    const offers = parseMyOffers([...RAW, { ...RAW[0], id: 'x', hidden: 'trading-hold' }]);
+    expect(offers.map((o) => [o.id, o.status, o.rate])).toEqual([[A, 'live', 33165n], [B, 'paused', 30000n], [C, 'paused', null], ['x', 'live', 33165n]]);
     expect(offers[2]!.country).toBe('US');
+    expect(offers[3]!.hidden).toBe('trading-hold');
+    expect(() => parseMyOffers([{ ...RAW[0], hidden: 'nope' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], status: 'removed' }])).toThrow();
     expect(() => parseMyOffers([{ ...RAW[0], minFiatCents: 5000 }])).toThrow();
     expect(() => parseMyOffers({})).toThrow();
@@ -121,86 +133,133 @@ describe('the model', () => {
     expect(() => parseSwitch({ results: [{ id: A }] })).toThrow();
   });
 
-  it('describes an offer, applies results and words the summary', () => {
+  it("words an offer as the board does, and an On offer nobody can see says why (M4)", () => {
     const [a, b, c] = parseMyOffers(RAW) as [MyOffer, MyOffer, MyOffer];
-    expect(offerTitle(a)).toBe('Sell · Zelle · USD');
-    expect(offerTitle(c)).toBe('Sell · Amazon gift card · USD (US)');
-    expect(offerDetail(a)).toBe('Market +0.5% · $331.65 / XMR · $50 to $2,000');
-    expect(offerDetail(b)).toBe('Fixed €300.00 / XMR · €12.50 to €500');
-    expect(offerDetail(c)).toBe('Market -1.0% · $25 to $100');
+    expect([offerTitle(a), offerMethods(a), offerPrice(a), offerLimits(a)]).toEqual(['Selling XMR · USD', 'Zelle', '+0.5% · follows the market', '$50 – $2,000 per trade']);
+    expect([offerTitle(b), offerPrice(b), offerLimits(b)]).toEqual(['Buying XMR · EUR', '€300.00 / XMR · Fixed price', '€12.50 – €500 per trade']);
+    expect(offerMethods(c)).toBe('Amazon gift card (US)');
+    expect(statusLine(a)).toBe('On · people can see and take it');
+    expect(statusLine(b)).toBe('Off · hidden from everyone');
+    expect(statusLine({ ...a, hidden: 'trading-paused' })).toBe('On, hidden while trading is paused');
+    expect(statusLine({ ...a, hidden: 'trading-hold' })).toBe('On, hidden while your account has a trading hold');
+    expect(statusLine({ ...b, hidden: 'trading-hold' })).toBe('Off · hidden from everyone');
+    expect(countLine([a, b, c])).toBe('1 of 3 offers on');
+    expect([allHint(0, 3), allHint(3, 3), allHint(2, 3)]).toEqual(['Pick offers to turn them on or off together.', 'All 3 offers selected.', 'Some selected: 2 of 3.']);
+  });
+
+  it('applies results, words the summary, always sends explicit ids (M1) and batches them (M5)', () => {
+    const [a, b, c] = parseMyOffers(RAW) as [MyOffer, MyOffer, MyOffer];
     const next = applyResults([a, b, c], [{ id: a.id, status: 'paused' }, { id: b.id, status: 'paused', refused: 'trading-hold' }, { id: c.id, refused: 'not-found' }]);
     expect(next.map((o) => [o.id, o.status])).toEqual([[A, 'paused'], [B, 'paused']]);
     expect(summaryLine('paused', [{ id: A, status: 'paused' }, { id: B, status: 'paused' }])).toBe('2 offers turned off.');
     expect(summaryLine('live', [{ id: A, status: 'paused', refused: 'trading-hold' }])).toBe('No offers turned on. Each one says why below.');
-    expect(summaryLine('live', [{ id: A, status: 'live' }, { id: B, status: 'paused', refused: 'no-wallet' }])).toBe(
-      '1 offer turned on. 1 offer stayed as they were; each one says why below.',
-    );
-    expect(idsFor([a, b, c], new Set([A, B, C]))).toBe('all');
-    expect(idsFor([a, b, c], new Set([B]))).toEqual([B]);
+    expect(idsFor([a, b, c], new Set([A, B, C]))).toEqual([A, B, C]);
+    expect(idsFor([a, b, c], new Set([B, 'not-listed']))).toEqual([B]);
+    const many = Array.from({ length: 250 }, (_, i) => `id${i}`);
+    expect(batches(many).map((x) => x.length)).toEqual([100, 100, 50]);
+    expect(batches(many).flat()).toEqual(many);
     for (const code of ['trading-hold', 'trading-paused', 'no-wallet', 'too-many-offers', 'method-unavailable', 'not-found', 'other']) {
       expect(refusalLine(code)).toMatch(/\.$/);
     }
-    expect(refusalLine('trading-hold')).toContain('trading hold');
   });
 });
 
 describe('the My offers screen', () => {
-  it('lists every offer with its switch; a switch turns one offer on or off', async () => {
+  it('lists every offer with its tick box and switch; a switch turns one offer on or off', async () => {
     const host = await mount();
     expect([...host.querySelectorAll('[data-part="offer"]')].map((r) => r.getAttribute('data-offer'))).toEqual([A, B, C]);
+    expect(q(host, '[data-part="count"]').textContent).toBe('1 of 3 offers on');
     expect(isOn(host, A)).toBe(true);
     expect(isOn(host, B)).toBe(false);
     expect(sw(host, A).getAttribute('role')).toBe('switch');
-    expect(sw(host, A).textContent).toBe('On');
-    expect(sw(host, A).getAttribute('aria-labelledby')).toBeTruthy();
+    expect(tick(host, A).getAttribute('role')).toBe('checkbox');
+    // M2 and M3: the names carry the method, price and limits; the switch's name starts with its visible text.
+    expect(nameOf(sw(host, A))).toBe('On Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+    expect(nameOf(tick(host, A))).toBe('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+    expect(row(host, A).querySelector('[data-part="status"]')!.textContent).toBe('On · people can see and take it');
+    expect(q(host, '[data-part="bar"]')).toBeNull();
 
     await click(sw(host, B));
-    expect(calls.at(-1)).toMatchObject({ url: '/v1/account/offers/status', method: 'POST', body: { ids: [B], status: 'live' } });
+    expect(posts().at(-1)).toMatchObject({ url: '/v1/account/offers/status', body: { ids: [B], status: 'live' } });
     expect(isOn(host, B)).toBe(true);
     expect(q(host, '[data-part="summary"]').textContent).toBe('1 offer turned on.');
+    expect(q(host, '[data-part="summary"]').getAttribute('role')).toBe('status');
 
     await click(sw(host, A));
-    expect(calls.at(-1)!.body).toEqual({ ids: [A], status: 'paused' });
+    expect(posts().at(-1)!.body).toEqual({ ids: [A], status: 'paused' });
     expect(isOn(host, A)).toBe(false);
   });
 
-  it('Select all, then Turn off sends "all"; a part selection sends its ids', async () => {
+  it('Select all only ticks: nothing is sent until Turn on or Turn off in the bar, which sends explicit ids (M1)', async () => {
     const host = await mount();
-    const on = q<HTMLButtonElement>(host, '[data-part="turn-on"]');
-    expect(on.disabled).toBe(true);
     await click(q(host, '[data-part="select-all"]'));
-    expect([...host.querySelectorAll('[data-part="select"]')].every((c) => c.getAttribute('aria-pressed') === 'true')).toBe(true);
-    await click(q(host, '[data-part="turn-off"]'));
-    expect(calls.at(-1)!.body).toEqual({ ids: 'all', status: 'paused' });
-    for (const id of [A, B, C]) expect(isOn(host, id)).toBe(false);
+    expect([A, B, C].every((id) => isTicked(host, id))).toBe(true);
+    expect(q(host, '[data-part="all-hint"]').textContent).toBe('All 3 offers selected.');
+    expect(posts()).toEqual([]);
+    expect([isOn(host, A), isOn(host, B), isOn(host, C)]).toEqual([true, false, false]);
+    expect(q(host, '[data-part="sel-count"]').textContent).toBe('3 selected');
 
-    // Clear, pick two, turn them on.
-    await click(q(host, '[data-part="select-all"]'));
-    await click(q(row(host, A), '[data-part="select"]'));
-    await click(q(row(host, C), '[data-part="select"]'));
-    expect(q(host, '[data-part="select-all"]').getAttribute('aria-pressed')).toBe('mixed');
+    await click(q(host, '[data-part="turn-off"]'));
+    expect(posts().at(-1)!.body).toEqual({ ids: [A, B, C], status: 'paused' });
+    for (const id of [A, B, C]) expect(isOn(host, id)).toBe(false);
+    // The ticks clear after the bar's action, and the bar goes away.
+    expect([A, B, C].some((id) => isTicked(host, id))).toBe(false);
+    expect(q(host, '[data-part="bar"]')).toBeNull();
+
+    // Two of three, then Turn on; Select all shows mixed.
+    await click(tick(host, A));
+    await click(tick(host, C));
+    expect(q(host, '[data-part="select-all"]').getAttribute('aria-checked')).toBe('mixed');
+    expect(q(host, '[data-part="all-hint"]').textContent).toBe('Some selected: 2 of 3.');
     await click(q(host, '[data-part="turn-on"]'));
-    expect(calls.at(-1)!.body).toEqual({ ids: [A, C], status: 'live' });
+    expect(posts().at(-1)!.body).toEqual({ ids: [A, C], status: 'live' });
     expect([isOn(host, A), isOn(host, B), isOn(host, C)]).toEqual([true, false, true]);
+
+    // Select all with all ticked clears; Clear clears.
+    await click(q(host, '[data-part="select-all"]'));
+    await click(q(host, '[data-part="select-all"]'));
+    expect([A, B, C].some((id) => isTicked(host, id))).toBe(false);
+    await click(tick(host, B));
+    await click(q(host, '[data-part="clear"]'));
+    expect(isTicked(host, B)).toBe(false);
+    expect(posts()).toHaveLength(2);
   });
 
-  it('turning all on while held: every offer stays off and each row says why', async () => {
-    onSwitch = (body) => ({
-      status: 200,
-      json: { status: body.status, results: list.map((o) => ({ id: o.id, status: o.status, refused: 'trading-hold' })) },
-    });
+  it('more than 100 ticked offers go in batches of 100 (M5)', async () => {
+    list = Array.from({ length: 230 }, (_, i) => ({ ...RAW[1]!, id: `00000000-0000-4000-8000-${String(i).padStart(12, '0')}` }));
     const host = await mount();
     await click(q(host, '[data-part="select-all"]'));
     await click(q(host, '[data-part="turn-on"]'));
-    expect(calls.at(-1)!.body).toEqual({ ids: 'all', status: 'live' });
+    expect(posts().map((c) => (c.body!.ids as string[]).length)).toEqual([100, 100, 30]);
+    expect(q(host, '[data-part="summary"]').textContent).toBe('230 offers turned on.');
+    expect(host.querySelectorAll('[data-status="live"]')).toHaveLength(230);
+  });
+
+  it('turning on while held: every offer stays off and each row says why, as an alert (N3)', async () => {
+    onSwitch = (body) => ({
+      status: 200,
+      json: { status: body.status, results: body.ids.map((id) => ({ id, status: list.find((o) => o.id === id)!.status, refused: 'trading-hold' })) },
+    });
+    const host = await mount();
+    await click(tick(host, B));
+    await click(tick(host, C));
+    await click(q(host, '[data-part="turn-on"]'));
     expect(q(host, '[data-part="summary"]').textContent).toBe('No offers turned on. Each one says why below.');
+    expect(q(host, '[data-part="summary"]').getAttribute('role')).toBe('alert');
     expect(isOn(host, B)).toBe(false);
-    expect(row(host, B).querySelector('[data-part="refused"]')!.textContent).toBe(refusalLine('trading-hold'));
-    expect(sw(host, B).getAttribute('aria-describedby')).toBe(row(host, B).querySelector('[data-part="refused"]')!.id);
-    // A later success clears the row's reason.
+    const why = row(host, B).querySelector('[data-part="refused"]')!;
+    expect(why.textContent).toBe(refusalLine('trading-hold'));
+    expect(sw(host, B).getAttribute('aria-describedby')).toContain(why.id);
     onSwitch = allSwitch;
     await click(sw(host, B));
     expect(row(host, B).querySelector('[data-part="refused"]')).toBeNull();
+  });
+
+  it('a live offer hidden by a hold or a stop shows the real state (M4)', async () => {
+    list[0] = { ...list[0]!, hidden: 'trading-paused' };
+    const host = await mount();
+    expect(isOn(host, A)).toBe(true);
+    expect(row(host, A).querySelector('[data-part="status"]')!.textContent).toBe('On, hidden while trading is paused');
   });
 
   it('an offer removed elsewhere drops off the list (not-found re-reads it)', async () => {
@@ -217,7 +276,8 @@ describe('the My offers screen', () => {
   it('shows the empty state, a load failure with Retry, a failed switch, and the log-in link when signed out', async () => {
     list = [];
     let host = await mount();
-    expect(q(host, '[data-part="empty"]').textContent).toContain('You have no offers yet.');
+    expect(q(host, '[data-part="empty"]').textContent).toBe('You have no offers yet.');
+    expect(q<HTMLAnchorElement>(host, '[data-part="post"]').getAttribute('href')).toBe('/post');
     host.remove();
 
     list = RAW.map((o) => ({ ...o }));
@@ -225,6 +285,7 @@ describe('the My offers screen', () => {
     host = await mount();
     await click(sw(host, A));
     expect(q(host, '[data-part="summary"]').textContent).toContain("weren't changed");
+    expect(q(host, '[data-part="summary"]').getAttribute('role')).toBe('alert');
     expect(isOn(host, A)).toBe(true);
     host.remove();
 

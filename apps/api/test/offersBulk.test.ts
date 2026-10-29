@@ -273,7 +273,7 @@ describe('POST /v1/account/offers/status', () => {
     const many = Array.from({ length: SWITCH_MAX_IDS + 1 }, () => a);
     for (const body of [
       null, [], {}, { ids: 'all' }, { status: 'paused' }, { ids: 'all', status: 'removed' }, { ids: 'all', status: 'gone' },
-      { ids: [], status: 'paused' }, { ids: ['not-a-uuid'], status: 'paused' }, { ids: [1], status: 'paused' },
+      { ids: [], status: 'paused' }, { ids: ['x'.repeat(65)], status: 'paused' }, { ids: [1], status: 'paused' }, { ids: [null], status: 'paused' },
       { ids: 'ALL', status: 'paused' }, { ids: many, status: 'paused' }, { ids: [a], status: 'paused', extra: 1 },
     ]) {
       const res = await p.browser.post('/v1/account/offers/status', body);
@@ -315,5 +315,75 @@ describe('POST /v1/account/offers/status', () => {
     await deps.db.query('update site_flags set trading_paused = false');
     expect(off.statusCode, off.body).toBe(200);
     expect(Object.values(await statuses(q.id))).toEqual(['paused', 'paused']);
+  });
+});
+
+describe('review fixes (Task 36 review 2026-10-29)', () => {
+  it('M4: a live offer nobody can see says why (hold, emergency stop, method under review); paused ones do not', async () => {
+    const p = await poster();
+    const a = await post(p);
+    const b = await post(p, { side: 'buy' });
+    await setStatus(p, [b], 'paused');
+    const hiddenOf = async () =>
+      Object.fromEntries(((await p.browser.get('/v1/account/offers')).json() as { id: string; hidden?: string }[]).map((o) => [o.id, o.hidden ?? null]));
+    expect(await hiddenOf()).toEqual({ [a]: null, [b]: null });
+    await withStop(async () => {
+      expect(await hiddenOf()).toEqual({ [a]: 'trading-paused', [b]: null });
+    });
+    await hold(p.id);
+    expect(await hiddenOf()).toEqual({ [a]: 'trading-hold', [b]: null });
+    await deps.db.query('update trading_holds set lifted_at = $2 where account_id = $1', [p.id, deps.clock()]);
+    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    expect(await hiddenOf()).toEqual({ [a]: 'method-unavailable', [b]: null });
+  });
+
+  it('N1: the refusal order matches PATCH (method before the account guards)', async () => {
+    const p = await poster();
+    const a = await post(p);
+    await setStatus(p, [a], 'paused');
+    await deps.db.query(`update offers set method_id = 'SBP' where id = $1`, [a]);
+    await hold(p.id);
+    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'live' })).json()).toEqual({ error: 'method-unavailable' });
+    expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'paused', refused: 'method-unavailable' }]);
+  });
+
+  it('N2: an id that is not a lower-case UUID is not-found, as PATCH answers 404', async () => {
+    const p = await poster();
+    const a = await post(p);
+    expect((await p.browser.patch(`/v1/offers/${a.toUpperCase()}`, { status: 'paused' })).statusCode).toBe(404);
+    expect(await setStatus(p, [a.toUpperCase(), 'nope', a], 'paused')).toEqual([
+      { id: a.toUpperCase(), refused: 'not-found' },
+      { id: 'nope', refused: 'not-found' },
+      { id: a, status: 'paused' },
+    ]);
+  });
+
+  it('R10 (lead decision 2026-10-29): on a stale Terms version, turning off works (bulk and PATCH) and turning on does not', async () => {
+    const p = await poster();
+    const a = await post(p);
+    const b = await post(p, { side: 'buy' });
+    const c = await post(p, { currency: 'EUR' });
+    await deps.db.query(`update accounts set terms_version = 'stale-version' where id = $1`, [p.id]);
+    const terms = { error: 'terms-required', version: deps.config.termsVersion };
+
+    expect((await p.browser.get('/v1/account/offers')).statusCode).toBe(200);
+    expect(await setStatus(p, [a], 'paused')).toEqual([{ id: a, status: 'paused' }]);
+    expect((await p.browser.patch(`/v1/offers/${b}`, { status: 'paused' })).json()).toEqual({ id: b, status: 'paused' });
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'live' });
+    expect(await setStatus(p, 'all', 'paused')).toHaveLength(3);
+
+    const on = await p.browser.post('/v1/account/offers/status', { ids: [a], status: 'live' });
+    expect(on.statusCode).toBe(403);
+    expect(on.json()).toEqual(terms);
+    const relist = await p.browser.patch(`/v1/offers/${a}`, { status: 'live' });
+    expect(relist.statusCode).toBe(403);
+    expect(relist.json()).toEqual(terms);
+    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'removed' })).json()).toEqual(terms);
+    // Posting still needs the current Terms.
+    expect((await p.browser.post('/v1/offers', BODY)).json()).toEqual(terms);
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'paused' });
+
+    await deps.db.query('update accounts set terms_version = $2 where id = $1', [p.id, deps.config.termsVersion]);
+    expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
   });
 });

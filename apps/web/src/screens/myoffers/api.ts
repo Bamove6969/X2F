@@ -1,7 +1,8 @@
 // My offers (Plan 3 Task 36): the API's two routes, parsed strictly so a renamed or missing field
 // fails loudly. Shapes from apps/api/src/offers/routes.ts (`MyOffer`, `OfferSwitchResult`), built
 // in the same task:
-//   GET  /v1/account/offers → MyOffer[] (live and paused, newest first)
+//   GET  /v1/account/offers → MyOffer[] (live and paused, newest first; `hidden` on a live offer
+//        nobody can see now)
 //   POST /v1/account/offers/status { ids: string[] | 'all', status: 'live' | 'paused' }
 //        → { status, results: { id, status?, refused? }[] }, one result per offer named (or every
 //        offer of mine for 'all'); a refused offer keeps its status and says why.
@@ -22,6 +23,8 @@ export interface MyOffer {
   minTrades: number;
   country?: string;
   status: OfferState;
+  /** A live offer nobody can see right now, and why (review M4). */
+  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
 }
 
 export interface SwitchResult {
@@ -77,6 +80,10 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
       status: state(o.status),
     };
     if (o.country !== undefined) out.country = str(o.country);
+    if (o.hidden !== undefined) {
+      if (o.hidden !== 'trading-paused' && o.hidden !== 'trading-hold' && o.hidden !== 'method-unavailable') throw shape();
+      out.hidden = o.hidden;
+    }
     return out;
   });
 }
@@ -97,6 +104,7 @@ export async function fetchMyOffers(signal?: AbortSignal): Promise<MyOffer[]> {
   return parseMyOffers(await api('/v1/account/offers', signal ? { signal } : {}));
 }
 
-export async function switchOffers(ids: string[] | 'all', status: OfferState): Promise<SwitchResult[]> {
+/** One call: at most SWITCH_BATCH ids (model.ts batches). The UI never sends 'all' (review M1). */
+export async function switchOffers(ids: string[], status: OfferState): Promise<SwitchResult[]> {
   return parseSwitch(await api('/v1/account/offers/status', { method: 'POST', body: { ids, status } }));
 }

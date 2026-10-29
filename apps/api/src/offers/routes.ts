@@ -71,6 +71,12 @@ export interface MyOffer {
   minTrades: number;
   country?: string;
   status: 'live' | 'paused';
+  /**
+   * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
+   * the account's trading hold, or its method under legal review. Absent when the offer is listed
+   * or paused.
+   */
+  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
   createdAt: string;
 }
 
@@ -340,6 +346,18 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
 }
 
 const requireTrader = requireSession({ kinds: ['trader'] });
+/**
+ * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
+ * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
+ * live, or removes it, still needs the current Terms (`assertTermsCurrent`).
+ */
+const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true });
+
+/** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
+async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+  if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+}
 // Browsing: a signed-in trader's session, read only (no touch), when there is one.
 const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true });
 
@@ -423,13 +441,15 @@ export function offerRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ id });
   });
 
-  app.patch('/v1/offers/:id', { preHandler: requireTrader }, async (req) => {
+  app.patch('/v1/offers/:id', { preHandler: requireTraderStaleOk }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
+    // Pausing works on stale Terms (R10 lead decision 2026-10-29); relisting and removing do not.
+    if (status !== 'paused') await assertTermsCurrent(deps, req.auth!.accountId);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',
@@ -525,13 +545,21 @@ export function offerRoutes(app: FastifyInstance): void {
   /**
    * Task 36, My offers: every live and paused offer of mine, newest first. Removed offers are gone.
    */
-  app.get('/v1/account/offers', { preHandler: requireTrader }, async (req): Promise<MyOffer[]> => {
+  app.get('/v1/account/offers', { preHandler: requireTraderStaleOk }, async (req): Promise<MyOffer[]> => {
     const deps = req.server.deps;
+    const accountId = req.auth!.accountId;
     const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
       `select ${OFFER_COLUMNS}, o.created_at from offers o
         where o.account_id = $1 and o.status <> 'removed' order by o.created_at desc, o.id`,
-      [req.auth!.accountId],
+      [accountId],
     );
+    // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean }>(
+      `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
+              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
+      [accountId],
+    );
+    const accountHidden = why[0]!.paused ? 'trading-paused' : why[0]!.held ? 'trading-hold' : null;
     return rows.map((r) => {
       const p = pricingOf(r);
       const rate = rateOf(r, deps.prices);
@@ -544,6 +572,10 @@ export function offerRoutes(app: FastifyInstance): void {
         createdAt: r.created_at.toISOString(),
       };
       if (r.country !== null) out.country = r.country;
+      if (r.status === 'live') {
+        const hidden = accountHidden ?? (isAvailable(r.method_id) ? null : 'method-unavailable');
+        if (hidden !== null) out.hidden = hidden;
+      }
       return out;
     });
   });
@@ -556,15 +588,18 @@ export function offerRoutes(app: FastifyInstance): void {
    * all-or-nothing. Every offer that may switch does, every one that may not stays as it was and is
    * named with its reason; the reply is 200 even when every offer was refused. Turning on runs the
    * relist guards for each offer (paused site, trading hold, no usable wallet, the caps counted as
-   * relisting counts them, the method's availability). Turning off has no guard: it always succeeds,
-   * under a hold and during an emergency stop too. Removed offers and other accounts' offers are
+   * relisting counts them, the method's availability), in PATCH's order: method, account, caps.
+   * Turning off has no guard: it always succeeds, under a hold, during an emergency stop and on a
+   * stale Terms version too (R10 lead decision 2026-10-29); turning on needs the current Terms
+   * (403 `terms-required` for the whole call). The web always sends explicit ids (review M1) in
+   * batches of at most SWITCH_MAX_IDS (M5); `'all'` stays for other clients. Removed offers and other accounts' offers are
    * never touched (`not-found` when named). An offer already in the asked status counts as done.
    *
    * Locks follow Task 4's order: the account row `for update` first (so this and any post, relist or
    * take of the account run one at a time), then site_flags `for share` (turning on only), then the
    * account's offer rows `for update`.
    */
-  app.post('/v1/account/offers/status', { preHandler: requireTrader }, async (req) => {
+  app.post('/v1/account/offers/status', { preHandler: requireTraderStaleOk }, async (req) => {
     const deps = req.server.deps;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).sort().join(',') !== 'ids,status') throw bad();
@@ -573,10 +608,13 @@ export function offerRoutes(app: FastifyInstance): void {
     const ids = body.ids;
     let wanted: string[] | 'all';
     if (ids === 'all') wanted = 'all';
-    else if (Array.isArray(ids) && ids.length >= 1 && ids.length <= SWITCH_MAX_IDS && ids.every((i) => typeof i === 'string' && UUID.test(i))) {
+    // An id that is not a (lower-case) UUID is not-found, as PATCH answers 404 for it (review N2).
+    else if (Array.isArray(ids) && ids.length >= 1 && ids.length <= SWITCH_MAX_IDS && ids.every((i) => typeof i === 'string' && i.length <= 64)) {
       wanted = [...new Set(ids as string[])];
     } else throw bad();
     const accountId = req.auth!.accountId;
+    // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
+    if (status === 'live') await assertTermsCurrent(deps, accountId);
     const now = deps.clock();
 
     const results = await inTransaction(deps.db, async (client) => {
@@ -604,8 +642,8 @@ export function offerRoutes(app: FastifyInstance): void {
           continue;
         }
         if (status === 'live') {
-          let refused: OfferSwitchRefusal | null = refusedAll;
-          if (refused === null && !isAvailable(o.method_id)) refused = 'method-unavailable';
+          // PATCH's order (review N1): the method first, then the account's guards, then the caps.
+          let refused: OfferSwitchRefusal | null = isAvailable(o.method_id) ? refusedAll : 'method-unavailable';
           if (refused === null) {
             // As relisting counts: every other live or paused offer of mine (this one left out).
             let same = 0;

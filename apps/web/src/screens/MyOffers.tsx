@@ -1,20 +1,39 @@
-// My offers (Plan 3 Task 36, spec Revision 2026-10-29): every live and paused offer of mine, each
-// with an on/off switch, a Select toggle, "Select all", and Turn on / Turn off for the selection. Turning on runs the posting guards on the server (hold, paused site, wallet, caps,
-// method); an offer refused stays off and its row says why. Turning off always works.
+// My offers (Plan 3 Task 36, spec Revision 2026-10-29), after Claude Design's MyOffers board
+// (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29): every live and paused
+// offer of mine, each with its own tick box and its own on/off switch. "Select all" only ticks (or
+// clears); a bar with Turn on / Turn off applies to the ticked offers. Turning on runs the posting
+// guards on the server (method, hold, paused site, wallet, caps); an offer refused stays off and its
+// row says why. Turning off always works, and an offer turned off stays off until it is turned on.
 //
-// TRIPWIRE NEEDS_DESIGN_MYOFFERS (test/myOffers-tripwires.test.ts): Claude Design has no board for
-// this screen yet (design brief item 3). It is built from the existing kit only (Button and the
-// screens.css classes) with no CSS of its own and no parity entry; the switch and the select
-// toggles are kit Buttons (role="switch", aria-pressed), since a native checkbox is under the
-// 32 px tap size and styling one would be new CSS; match it to the board when it
-// lands. Refusals are inline text until Plan 5 Task 21's CantDoThat is on the main line
+// TRIPWIRE NEEDS_DESIGN_MYOFFERS (test/myOffers-tripwires.test.ts): the board is not on the main
+// line yet, so this is built from the existing kit only (Button, Icon, screens.css and ui.css
+// classes) with no CSS of its own and no parity entry. The tick boxes and the switch are kit
+// Buttons (role="checkbox" / role="switch"): a native checkbox is under the 32 px tap size and
+// styling one would be new CSS. The board's per-offer Edit link waits for an edit screen (Task 35).
+// Refusals are inline text until Plan 5 Task 21's CantDoThat is on the main line
 // (NEEDS_CANTDOTHAT_MYOFFERS).
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../api/client.js';
 import { Button } from '../ui/Button.js';
+import { Icon } from '../ui/icons.js';
 import { fetchMyOffers, switchOffers, type MyOffer, type OfferState, type SwitchResult } from './myoffers/api.js';
-import { MY_OFFERS_PATH, applyResults, idsFor, offerDetail, offerTitle, refusalLine, summaryLine } from './myoffers/model.js';
+import {
+  FOOTNOTE,
+  MY_OFFERS_PATH,
+  allHint,
+  applyResults,
+  batches,
+  countLine,
+  idsFor,
+  offerLimits,
+  offerMethods,
+  offerPrice,
+  offerTitle,
+  refusalLine,
+  statusLine,
+  summaryLine,
+} from './myoffers/model.js';
 import './screens.css';
 
 type Load = { kind: 'loading' } | { kind: 'signed-out' } | { kind: 'failed' } | { kind: 'ready'; offers: MyOffer[] };
@@ -46,26 +65,29 @@ export function MyOffers() {
   }, [reload]);
 
   const offers = load.kind === 'ready' ? load.offers : [];
-  const allSelected = offers.length > 0 && offers.every((o) => selected.has(o.id));
-  const someSelected = offers.some((o) => selected.has(o.id));
+  const nSelected = offers.filter((o) => selected.has(o.id)).length;
+  const allSelected = offers.length > 0 && nSelected === offers.length;
 
-  async function run(target: string[] | 'all', status: OfferState): Promise<void> {
+  /** Switches `target` (explicit ids, in batches of SWITCH_BATCH) and shows what happened. */
+  async function run(target: string[], status: OfferState, clearSelection: boolean): Promise<void> {
+    if (target.length === 0) return;
     setBusy(true);
     setSummary(null);
-    let results: SwitchResult[];
-    try {
-      results = await switchOffers(target, status);
-    } catch (e) {
-      setBusy(false);
-      if (e instanceof ApiCallError && e.status === 401) {
-        setLoad({ kind: 'signed-out' });
-        return;
+    const results: SwitchResult[] = [];
+    let failed: unknown = null;
+    for (const batch of batches(target)) {
+      try {
+        results.push(...(await switchOffers(batch, status)));
+      } catch (e) {
+        failed = e;
+        break;
       }
-      // COPY-UNSIGNED
-      setSummary({ text: "Something went wrong and your offers weren't changed. Try again.", error: true });
-      return;
     }
     setBusy(false);
+    if (failed instanceof ApiCallError && failed.status === 401) {
+      setLoad({ kind: 'signed-out' });
+      return;
+    }
     setRefusals((before) => {
       const next = new Map(before);
       for (const r of results) {
@@ -74,24 +96,44 @@ export function MyOffers() {
       }
       return next;
     });
-    setSummary({ text: summaryLine(status, results), error: results.some((r) => r.refused !== undefined) });
-    const known = new Set(offers.map((o) => o.id));
-    // An offer posted or removed elsewhere since the list loaded: read the list again.
-    if (results.some((r) => r.refused === 'not-found' || !known.has(r.id))) await reload();
+    if (failed !== null) {
+      // COPY-UNSIGNED
+      const text = results.length === 0 ? "Something went wrong and your offers weren't changed. Try again." : `${summaryLine(status, results)} The rest weren't changed. Try again.`;
+      setSummary({ text, error: true });
+    } else {
+      setSummary({ text: summaryLine(status, results), error: results.some((r) => r.refused !== undefined) });
+      if (clearSelection) setSelected(new Set());
+    }
+    // An offer removed elsewhere since the list loaded: read the list again.
+    if (results.some((r) => r.refused === 'not-found')) await reload();
     else setLoad((l) => (l.kind === 'ready' ? { kind: 'ready', offers: applyResults(l.offers, results) } : l));
   }
 
-  const toggleSelected = (id: string, on: boolean) =>
+  const toggleSelected = (id: string) =>
     setSelected((s) => {
       const next = new Set(s);
-      if (on) next.add(id);
-      else next.delete(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 
+  const hintId = `${ids}-all-hint`;
+
   return (
     <main className="x2f-screen" data-screen="my-offers">
-      <h1 className="x2f-screen__title">My offers</h1>
+      <header className="x2f-row">
+        <Link to="/sell" aria-label="Back" className="x2f-icon-button">
+          <Icon name="chevron-left" />
+        </Link>
+        <div className="x2f-stack">
+          <h1 className="x2f-screen__title">My offers</h1>
+          {load.kind === 'ready' ? (
+            <span className="x2f-note" data-part="count">
+              {countLine(offers)}
+            </span>
+          ) : null}
+        </div>
+      </header>
 
       {load.kind === 'loading' ? <p className="x2f-note">Loading…</p> : null}
       {load.kind === 'failed' ? (
@@ -115,35 +157,33 @@ export function MyOffers() {
 
       {load.kind === 'ready' && offers.length === 0 ? (
         <p className="x2f-note" data-part="empty">
-          You have no offers yet.{' '}
-          <Link className="x2f-link" to="/post" state={{ from: MY_OFFERS_PATH }}>
-            Post an offer
-          </Link>
+          You have no offers yet.
         </p>
       ) : null}
 
       {load.kind === 'ready' && offers.length > 0 ? (
         <>
-          <div className="x2f-row" data-part="bulk">
+          <div className="x2f-row" data-part="select-all-row">
+            {/* "Select all" only ticks every offer (or clears the ticks); it never turns anything on or off. */}
             <Button
-              variant="quiet"
-              aria-pressed={allSelected ? true : someSelected ? 'mixed' : false}
+              variant="secondary"
+              role="checkbox"
+              aria-checked={allSelected ? true : nSelected > 0 ? 'mixed' : false}
+              aria-describedby={hintId}
               disabled={busy}
               onClick={() => setSelected(allSelected ? new Set() : new Set(offers.map((o) => o.id)))}
               data-part="select-all"
             >
+              {allSelected ? <Icon name="check" size={20} /> : null}
               Select all
             </Button>
-            <Button variant="secondary" disabled={busy || !someSelected} onClick={() => void run(idsFor(offers, selected), 'live')} data-part="turn-on">
-              Turn on
-            </Button>
-            <Button variant="secondary" disabled={busy || !someSelected} onClick={() => void run(idsFor(offers, selected), 'paused')} data-part="turn-off">
-              Turn off
-            </Button>
+            <span className="x2f-note" id={hintId} data-part="all-hint">
+              {allHint(nSelected, offers.length)}
+            </span>
           </div>
 
           {summary ? (
-            <p className={summary.error ? 'x2f-error' : 'x2f-note'} role="status" data-part="summary">
+            <p className={summary.error ? 'x2f-error' : 'x2f-note'} role={summary.error ? 'alert' : 'status'} data-part="summary">
               {summary.text}
             </p>
           ) : null}
@@ -151,37 +191,57 @@ export function MyOffers() {
           <ul className="x2f-list" aria-label="My offers">
             {offers.map((o) => {
               const why = refusals.get(o.id);
-              const titleId = `${ids}-${o.id}-title`;
-              const whyId = `${ids}-${o.id}-why`;
+              const p = `${ids}-${o.id}`;
+              // Each offer's name carries its method, price and limits (review M2): two offers in one
+              // market differ by price or limits.
+              const parts = `${p}-title ${p}-methods ${p}-price ${p}-limits`;
+              const ticked = selected.has(o.id);
               return (
                 <li key={o.id} className="x2f-list__row" data-part="offer" data-offer={o.id} data-status={o.status}>
                   <Button
-                    variant="quiet"
-                    aria-pressed={selected.has(o.id)}
-                    aria-label={`Select ${offerTitle(o)}`}
+                    variant="secondary"
+                    role="checkbox"
+                    aria-checked={ticked}
+                    aria-labelledby={`${p}-select ${parts}`}
                     disabled={busy}
-                    onClick={() => toggleSelected(o.id, !selected.has(o.id))}
+                    onClick={() => toggleSelected(o.id)}
                     data-part="select"
                   >
-                    {selected.has(o.id) ? 'Selected' : 'Select'}
+                    <span id={`${p}-select`} hidden>
+                      Select
+                    </span>
+                    {ticked ? <Icon name="check" size={20} /> : null}
                   </Button>
                   <div className="x2f-list__label x2f-stack">
-                    <span id={titleId}>{offerTitle(o)}</span>
-                    <span className="x2f-note">{offerDetail(o)}</span>
+                    <span id={`${p}-title`}>{offerTitle(o)}</span>
+                    <span className="x2f-note" id={`${p}-methods`}>
+                      {offerMethods(o)}
+                    </span>
+                    <span className="x2f-note" id={`${p}-price`}>
+                      {offerPrice(o)}
+                    </span>
+                    <span className="x2f-note" id={`${p}-limits`}>
+                      {offerLimits(o)}
+                    </span>
+                    <span id={`${p}-status`} data-part="status">
+                      {statusLine(o)}
+                    </span>
                     {why ? (
-                      <span className="x2f-error" id={whyId} data-part="refused">
+                      <span className="x2f-error" id={`${p}-why`} data-part="refused">
                         {why}
                       </span>
                     ) : null}
                   </div>
+                  {/* The switch's visible On/Off is the first part of its name (review M3). */}
                   <Button
                     variant="secondary"
                     role="switch"
+                    id={`${p}-switch`}
                     aria-checked={o.status === 'live'}
-                    aria-labelledby={titleId}
-                    {...(why ? { 'aria-describedby': whyId } : {})}
+                    aria-labelledby={`${p}-switch ${parts}`}
+                    aria-describedby={why ? `${p}-status ${p}-why` : `${p}-status`}
                     disabled={busy}
-                    onClick={() => void run([o.id], o.status === 'live' ? 'paused' : 'live')}
+                    onClick={() => void run([o.id], o.status === 'live' ? 'paused' : 'live', false)}
                     data-part="switch"
                   >
                     {o.status === 'live' ? 'On' : 'Off'}
@@ -190,7 +250,34 @@ export function MyOffers() {
               );
             })}
           </ul>
+
+          <p className="x2f-note" data-part="footnote">
+            {FOOTNOTE}
+          </p>
+
+          {nSelected > 0 ? (
+            <div className="x2f-row" role="region" aria-label="Selected offers" data-part="bar">
+              <span aria-live="polite" data-part="sel-count">
+                {nSelected} selected
+              </span>
+              <Button variant="quiet" disabled={busy} onClick={() => setSelected(new Set())} data-part="clear">
+                Clear
+              </Button>
+              <Button variant="secondary" disabled={busy} onClick={() => void run(idsFor(offers, selected), 'live', true)} data-part="turn-on">
+                Turn on
+              </Button>
+              <Button variant="secondary" disabled={busy} onClick={() => void run(idsFor(offers, selected), 'paused', true)} data-part="turn-off">
+                Turn off
+              </Button>
+            </div>
+          ) : null}
         </>
+      ) : null}
+
+      {load.kind === 'ready' ? (
+        <Link className="x2f-button x2f-button--primary" to="/post" state={{ from: MY_OFFERS_PATH }} data-primary="" data-part="post">
+          Post an offer
+        </Link>
       ) : null}
     </main>
   );

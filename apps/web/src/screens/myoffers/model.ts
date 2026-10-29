@@ -1,11 +1,15 @@
 // My offers (Plan 3 Task 36): the screen's words and the small rules behind them, kept apart from
-// React so the unit tests can read them. All copy here is lead wording until the owner signs it off
-// (COPY-UNSIGNED); the screen has no Claude Design board yet (tripwire NEEDS_DESIGN_MYOFFERS).
+// React so the unit tests can read them. Words follow Claude Design's MyOffers board
+// (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
+// not give is lead wording until the owner signs it off (COPY-UNSIGNED).
 import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
 /** The route of the My offers screen (under Profile, where the bottom nav's Profile tab points). */
 export const MY_OFFERS_PATH = '/profile/offers';
+
+/** At most this many ids per POST /v1/account/offers/status (the API's SWITCH_MAX_IDS); more go in batches (review M5). */
+export const SWITCH_BATCH = 100;
 
 /**
  * Why one offer did not switch, shown under that offer. Inline text for now: the shared CantDoThat
@@ -31,19 +35,60 @@ export function refusalLine(code: string): string {
   }
 }
 
-/** One line about the offer: "Sell · Zelle · USD". */
+/** The board's title line: "Selling XMR · USD". */
 export function offerTitle(o: MyOffer): string {
-  return `${o.side === 'sell' ? 'Sell' : 'Buy'} · ${o.methodName} · ${o.currency}${o.country ? ` (${o.country})` : ''}`;
+  return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currency}`;
 }
 
-/** The price and range: "+0.5% · $331.65 / XMR · $50 to $2,000". */
-export function offerDetail(o: MyOffer): string {
-  const price =
-    o.pricing.mode === 'market'
-      ? `Market ${marginText(o.pricing.marginBps)}${o.rate !== null ? ` · ${formatPrice(o.rate, o.currency)}` : ''}`
-      : `Fixed ${formatPrice(o.pricing.centsPerXmr, o.currency)}`;
-  return `${price} · ${formatAmount(o.minFiatCents, o.currency)} to ${formatAmount(o.maxFiatCents, o.currency)}`;
+/** The method line: "Zelle", or "Amazon gift card (US)" for a gift card. */
+export function offerMethods(o: MyOffer): string {
+  return `${o.methodName}${o.country ? ` (${o.country})` : ''}`;
 }
+
+/** The price line, as the board: "+0.5% · follows the market" or "$335.00 / XMR · Fixed price". */
+export function offerPrice(o: MyOffer): string {
+  return o.pricing.mode === 'market' ? `${marginText(o.pricing.marginBps)} · follows the market` : `${formatPrice(o.pricing.centsPerXmr, o.currency)} · Fixed price`;
+}
+
+/** The limits line: "$50 – $2,000 per trade". */
+export function offerLimits(o: MyOffer): string {
+  return `${formatAmount(o.minFiatCents, o.currency)} – ${formatAmount(o.maxFiatCents, o.currency)} per trade`;
+}
+
+/**
+ * The status line. The board's "On · people can see and take it" / "Off · hidden from everyone",
+ * and (review M4) an On offer nobody can see right now says why.
+ */
+export function statusLine(o: MyOffer): string {
+  if (o.status === 'paused') return 'Off · hidden from everyone';
+  switch (o.hidden) {
+    // COPY-UNSIGNED (the three hidden reasons)
+    case 'trading-paused':
+      return 'On, hidden while trading is paused';
+    case 'trading-hold':
+      return 'On, hidden while your account has a trading hold';
+    case 'method-unavailable':
+      return "On, hidden: this payment method isn't available right now";
+    default:
+      return 'On · people can see and take it';
+  }
+}
+
+/** The header line: "3 of 5 offers on". */
+export function countLine(offers: readonly MyOffer[]): string {
+  const on = offers.filter((o) => o.status === 'live').length;
+  return `${on} of ${offers.length} ${offers.length === 1 ? 'offer' : 'offers'} on`;
+}
+
+/** The hint under Select all. */
+export function allHint(selected: number, total: number): string {
+  if (selected === 0) return 'Pick offers to turn them on or off together.';
+  if (selected === total) return `All ${total} offers selected.`;
+  return `Some selected: ${selected} of ${total}.`;
+}
+
+/** The board's footnote, without its cap sentence: the "2 offers per side" cap comes with Task 34. */
+export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal.';
 
 /** The offers with each switch result's status applied; ids reported `not-found` are dropped. */
 export function applyResults(offers: readonly MyOffer[], results: readonly SwitchResult[]): MyOffer[] {
@@ -68,8 +113,17 @@ export function summaryLine(status: OfferState, results: readonly SwitchResult[]
   return `${offers(done)} turned ${verb}. ${offers(refused)} stayed as they were; each one says why below.`;
 }
 
-/** The ids to send: 'all' when every listed offer is selected (the API's "Select all"), else the selection. */
-export function idsFor(offers: readonly MyOffer[], selected: ReadonlySet<string>): string[] | 'all' {
-  const ids = offers.filter((o) => selected.has(o.id)).map((o) => o.id);
-  return ids.length > 0 && ids.length === offers.length ? 'all' : ids;
+/**
+ * The ids to send: always the listed offers that are ticked, never 'all' (review M1: 'all' would
+ * also switch an offer posted elsewhere that this screen never showed).
+ */
+export function idsFor(offers: readonly MyOffer[], selected: ReadonlySet<string>): string[] {
+  return offers.filter((o) => selected.has(o.id)).map((o) => o.id);
+}
+
+/** `ids` in batches of at most `size`. */
+export function batches(ids: readonly string[], size = SWITCH_BATCH): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
 }

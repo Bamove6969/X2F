@@ -1,8 +1,9 @@
 // My offers (Plan 3 Task 36). The API is stubbed with page.route in the shapes of
 // apps/api/src/offers/routes.ts (GET /v1/account/offers → MyOffer[]; POST /v1/account/offers/status
 // → { status, results }), which apps/api/test/offersBulk.test.ts checks against the real routes.
-// No board yet (tripwire NEEDS_DESIGN_MYOFFERS): the phone layout rule runs at both phone sizes,
-// but there is no expectParity until the board lands.
+// The behaviour follows Claude Design's MyOffers board (origin/wip/design-brief, not on the line
+// yet: tripwire NEEDS_DESIGN_MYOFFERS), so the phone layout rule runs at both phone sizes but there
+// is no expectParity until the board lands.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
@@ -11,7 +12,7 @@ const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
 
-type Offer = Record<string, unknown> & { id: string; status: 'live' | 'paused' };
+type Offer = Record<string, unknown> & { id: string; status: 'live' | 'paused'; hidden?: string };
 
 const OFFERS: Offer[] = [
   {
@@ -35,22 +36,23 @@ const json = (body: unknown, status = 200) => (r: Route) => r.fulfill({ status, 
 
 interface Server {
   offers: Offer[];
-  /** Turning on is refused with this code for every offer (a hold, a paused site), when set. */
+  /** Turning on is refused with this code (a hold, a paused site), when set; offers that are already on are done, as the API answers. */
   refuseOn?: string;
   posts: unknown[];
 }
 
-/** A small fake of the two routes: it keeps the statuses, so a reload shows what was saved. */
+/** A small fake of the two routes, with the API's rules: it keeps the statuses, so a reload shows what was saved. */
 async function stub(page: Page, s: Server): Promise<void> {
   await page.route('**/v1/account/me', json(ME));
   await page.route('**/v1/account/offers', (r) => json(s.offers)(r));
   await page.route('**/v1/account/offers/status', (r) => {
-    const body = r.request().postDataJSON() as { ids: string[] | 'all'; status: 'live' | 'paused' };
+    const body = r.request().postDataJSON() as { ids: string[]; status: 'live' | 'paused' };
     s.posts.push(body);
-    const ids = body.ids === 'all' ? s.offers.map((o) => o.id) : body.ids;
-    const results = ids.map((id) => {
+    const results = body.ids.map((id) => {
       const o = s.offers.find((x) => x.id === id);
       if (!o) return { id, refused: 'not-found' };
+      // As routes.ts: an offer already in the asked status is done, before any guard (review M6).
+      if (o.status === body.status) return { id, status: o.status };
       if (body.status === 'live' && s.refuseOn) return { id, status: o.status, refused: s.refuseOn };
       o.status = body.status;
       return { id, status: o.status };
@@ -62,24 +64,37 @@ async function stub(page: Page, s: Server): Promise<void> {
 const fresh = (): Server => ({ offers: OFFERS.map((o) => ({ ...o })), posts: [] });
 const row = (page: Page, id: string) => page.locator(`[data-offer="${id}"]`);
 const sw = (page: Page, id: string) => row(page, id).getByRole('switch');
+const tick = (page: Page, id: string) => row(page, id).getByRole('checkbox');
 
-test('lists my offers with their switches, at both phone sizes', async ({ page }) => {
+test('lists my offers with tick boxes and switches, at both phone sizes', async ({ page }) => {
   await stub(page, fresh());
   await page.goto('/profile/offers');
   await expect(page.getByRole('heading', { name: 'My offers' })).toBeVisible();
+  await expect(page.getByText('2 of 3 offers on')).toBeVisible();
   await expect(page.locator('[data-part="offer"]')).toHaveCount(3);
   await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
   await expect(sw(page, B)).toHaveAttribute('aria-checked', 'false');
-  await expect(row(page, A)).toContainText('Sell · Zelle · USD');
-  await expect(row(page, A)).toContainText('Market +0.5% · $331.65 / XMR · $50 to $2,000');
-  await expect(sw(page, A)).toHaveAccessibleName('Sell · Zelle · USD');
+  await expect(row(page, A)).toContainText('Selling XMR · USD');
+  await expect(row(page, A)).toContainText('+0.5% · follows the market');
+  await expect(row(page, A)).toContainText('$50 – $2,000 per trade');
+  await expect(row(page, B)).toContainText('Off · hidden from everyone');
+  // Review M2 and M3: the names carry the price and limits, and start with the switch's visible text.
+  await expect(sw(page, A)).toHaveAccessibleName('On Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+  await expect(tick(page, A)).toHaveAccessibleName('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+  for (const v of PHONE_VIEWPORTS) {
+    await setPhone(page, v);
+    await expectPhoneLayout(page);
+  }
+  // With the bar showing too.
+  await page.getByRole('checkbox', { name: 'Select all' }).click();
+  await expect(page.getByRole('region', { name: 'Selected offers' })).toBeVisible();
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
     await expectPhoneLayout(page);
   }
 });
 
-test('the switches and Select all round-trip: a reload shows what was saved', async ({ page }) => {
+test('Select all only ticks; the bar turns the ticked offers on or off; a reload shows what was saved', async ({ page }) => {
   const s = fresh();
   await stub(page, s);
   await page.goto('/profile/offers');
@@ -88,19 +103,22 @@ test('the switches and Select all round-trip: a reload shows what was saved', as
   await expect(page.getByRole('status')).toHaveText('1 offer turned on.');
   expect(s.posts.at(-1)).toEqual({ ids: [B], status: 'live' });
 
-  await page.getByRole('button', { name: 'Select all' }).click();
+  await page.getByRole('checkbox', { name: 'Select all' }).click();
+  await expect(page.getByRole('region', { name: 'Selected offers' })).toContainText('3 selected');
+  expect(s.posts).toHaveLength(1);
   await page.getByRole('button', { name: 'Turn off' }).click();
   await expect(page.getByRole('status')).toHaveText('3 offers turned off.');
-  expect(s.posts.at(-1)).toEqual({ ids: 'all', status: 'paused' });
+  expect(s.posts.at(-1)).toEqual({ ids: [A, B, C], status: 'paused' });
   for (const id of [A, B, C]) await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
+  await expect(page.getByRole('region', { name: 'Selected offers' })).toHaveCount(0);
 
+  // Turned-off offers stay off across a reload.
   await page.reload();
   for (const id of [A, B, C]) await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
 
-  // Two of three, then Turn on.
-  await row(page, A).getByRole('button', { name: /^Select / }).click();
-  await row(page, C).getByRole('button', { name: /^Select / }).click();
-  await expect(page.getByRole('button', { name: 'Select all' })).toHaveAttribute('aria-pressed', 'mixed');
+  await tick(page, A).click();
+  await tick(page, C).click();
+  await expect(page.getByRole('checkbox', { name: 'Select all' })).toHaveAttribute('aria-checked', 'mixed');
   await page.getByRole('button', { name: 'Turn on' }).click();
   expect(s.posts.at(-1)).toEqual({ ids: [A, C], status: 'live' });
   await page.reload();
@@ -109,16 +127,21 @@ test('the switches and Select all round-trip: a reload shows what was saved', as
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'true');
 });
 
-test('turning all on while held: every offer stays off and each row says why; turning off still works', async ({ page }) => {
+test('turning on while held: the paused offers stay off and say why; the one already on is done', async ({ page }) => {
   const s = fresh();
-  s.offers.forEach((o) => (o.status = 'paused'));
   s.refuseOn = 'trading-hold';
+  s.offers[0]!.hidden = 'trading-hold';
   await stub(page, s);
   await page.goto('/profile/offers');
-  await page.getByRole('button', { name: 'Select all' }).click();
+  // Review M4: the On offer says it is hidden.
+  await expect(row(page, A)).toContainText('On, hidden while your account has a trading hold');
+  await sw(page, C).click(); // turning off works under a hold
+  await expect(sw(page, C)).toHaveAttribute('aria-checked', 'false');
+  await page.getByRole('checkbox', { name: 'Select all' }).click();
   await page.getByRole('button', { name: 'Turn on' }).click();
-  await expect(page.getByRole('status')).toHaveText('No offers turned on. Each one says why below.');
-  for (const id of [A, B, C]) {
+  await expect(page.getByRole('alert')).toHaveText('1 offer turned on. 2 offers stayed as they were; each one says why below.');
+  await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
+  for (const id of [B, C]) {
     await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
     await expect(row(page, id)).toContainText('trading hold');
     await expect(sw(page, id)).toHaveAccessibleDescription(/trading hold/);
@@ -129,7 +152,7 @@ test('turning all on while held: every offer stays off and each row says why; tu
   }
 });
 
-test('PostOffer links to My offers; an empty list links back to Post an offer', async ({ page }) => {
+test('PostOffer links to My offers; an empty list still offers Post an offer', async ({ page }) => {
   const s = fresh();
   s.offers = [];
   await stub(page, s);

@@ -7,14 +7,23 @@ import { describe, expect, it } from 'vitest';
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
+/**
+ * Claude Design's board (2026-10-29) is on origin/wip/design-brief at this path, not merged yet;
+ * the parity boards live in design/x2f-app/ once a board is taken onto the line.
+ */
+const BOARDS = ['docs/design-boards/MyOffers.dc.html', 'design/x2f-app/MyOffers.dc.html'];
+
 describe('My offers waits for its board and the shared popup', () => {
-  it('NEEDS_DESIGN_MYOFFERS: no Claude Design board for My offers yet (design brief item 3)', () => {
-    // Built from the existing kit only (Button, screens.css's x2f-screen, x2f-list, x2f-row,
-    // x2f-note, x2f-error, x2f-link) with no CSS of its own, kit Buttons for the on/off
-    // (role="switch") and the Select toggles (aria-pressed), no parity entry, and a "My offers" link (kit quiet-button classes) at the end of PostOffer. When the board
-    // lands: match apps/web/src/screens/MyOffers.tsx to it, place the entry point (PostOffer, the
-    // Profile tab) as the board says, add expectParity to e2e/myOffers.spec.ts, and delete this.
-    expect(has('design/x2f-app/MyOffers.dc.html'), 'The My offers board landed: build MyOffers.tsx to it and add parity').toBe(false);
+  it('NEEDS_DESIGN_MYOFFERS: the MyOffers board is not on the main line yet', () => {
+    // The screen follows the board's behaviour (a tick box per offer, Select all only ticks, the
+    // Selected offers bar with Clear / Turn on / Turn off, a switch per offer, its words) but is built
+    // from the existing kit only: no CSS of its own, kit Buttons for the tick boxes (role="checkbox")
+    // and the switch (role="switch"), no Edit link (no edit screen until Task 35), no parity entry.
+    // When the board lands: match apps/web/src/screens/MyOffers.tsx to it (the switch track, the
+    // dashed card of an Off offer, the 22 px tick box in its 44 px tile), add expectParity for
+    // MyOffers and MyOffers-Wide to e2e/myOffers.spec.ts, and delete this. Review M4's hidden-reason
+    // line ("On, hidden while trading is paused") is not on the board: ask Claude Design.
+    for (const b of BOARDS) expect(has(b), `The My offers board landed at ${b}: build MyOffers.tsx to it and add parity`).toBe(false);
   });
 
   it('NEEDS_CANTDOTHAT_MYOFFERS: refusals are inline text until the shared CantDoThat popup is on the line', () => {
