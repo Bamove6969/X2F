@@ -6,7 +6,7 @@ import { addAlert } from '../src/alerts.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import { startSession } from '../src/auth/sessions.js';
 import { isLoginNameClash } from '../src/routes/account.js';
-import { seedAccount } from './helpers/accounts.js';
+import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser } from './helpers/totp.js';
 
@@ -118,7 +118,7 @@ async function me(b: Browser): Promise<Me> {
 describe('GET /v1/account/me', () => {
   it('an account from before login names reads needsLoginName: true until POST /v1/account/login-name sets a distinct one (review I3)', async () => {
     const id = await seedAccount(deps, { loginName: null, displayName: 'Old.Timer1' });
-    const { id: other } = await account();
+    const { id: other, username: otherLogin } = await account();
     const b = await loggedIn(id);
     expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: true });
     // Re-review 2: a stolen session must not quietly change how the account logs in.
@@ -132,21 +132,26 @@ describe('GET /v1/account/me', () => {
     expect(errorOf(await set('old.TIMER1'))).toBe('names-same');
     expect(errorOf(await set('bad name'))).toBe('login-name-invalid');
     expect(errorOf(await set(42))).toBe('login-name-invalid');
-    const { rows: taken } = await deps.db.query<{ login_name: string; display_name: string }>('select login_name, display_name from accounts where id = $1', [other]);
-    expect(errorOf(await set(taken[0]!.login_name))).toBe('names-unavailable'); // another account's login name
+    const { rows: taken } = await deps.db.query<{ display_name: string }>('select display_name from accounts where id = $1', [other]);
+    expect(errorOf(await set(otherLogin.toUpperCase()))).toBe('names-unavailable'); // another account's login name
     expect(errorOf(await set(taken[0]!.display_name))).toBe('names-unavailable'); // another account's display name
     expect(await me(b)).toMatchObject({ needsLoginName: true });
     const ok = await set('Private.OT1');
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ ok: true });
     expect(await me(b)).toMatchObject({ displayName: 'Old.Timer1', needsLoginName: false });
-    const { rows } = await deps.db.query('select login_name, login_key, legacy_login_name from accounts where id = $1', [id]);
-    expect(rows).toEqual([{ login_name: 'Private.OT1', login_key: 'private.ot1', legacy_login_name: false }]);
+    // FU-D: stored only as its tag under the current key.
+    const { rows } = await deps.db.query('select login_name, login_key, login_tag, login_tag_key_id, legacy_login_name from accounts where id = $1', [id]);
+    expect(rows).toEqual([{
+      login_name: null, login_key: null, login_tag: currentLoginTag(deps, 'private.ot1'), login_tag_key_id: deps.config.loginNameKeys.current,
+      legacy_login_name: false,
+    }]);
     // One alert, without the name (refusals wrote none).
     const { rows: alerts } = await deps.db.query("select kind, detail from alerts where account_id = $1 and kind = 'login-name-set'", [id]);
     expect(alerts).toEqual([{ kind: 'login-name-set', detail: {} }]);
+    // name_keys keeps the public display key only: the login name is in no table in plaintext.
     expect((await deps.db.query('select key, kind from name_keys where account_id = $1 order by key', [id])).rows).toEqual([
-      { key: 'old.timer1', kind: 'display' }, { key: 'private.ot1', kind: 'login' },
+      { key: 'old.timer1', kind: 'display' },
     ]);
     // Once set, the route is closed (changing a login name is not this route's job).
     const again = await set('Another.OT1');
@@ -183,6 +188,7 @@ describe('GET /v1/account/me', () => {
     expect(isLoginNameClash({ code: '40P01' })).toBe(true);
     expect(isLoginNameClash({ code: '23505', constraint: 'name_keys_pkey' })).toBe(true);
     expect(isLoginNameClash({ code: '23505', constraint: 'accounts_login_key_key' })).toBe(true);
+    expect(isLoginNameClash({ code: '23505', constraint: 'accounts_login_tag_key' })).toBe(true);
     expect(isLoginNameClash({ code: '23505', constraint: 'accounts_display_key_key' })).toBe(false);
     expect(isLoginNameClash({ code: '23514' })).toBe(false);
     expect(isLoginNameClash(new Error('x'))).toBe(false);
