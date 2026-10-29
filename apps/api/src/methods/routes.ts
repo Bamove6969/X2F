@@ -1,14 +1,19 @@
 import type { Side } from '@x2f/trade';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
-import { liveOfferStats } from '../offers/routes.js';
+import { liveOfferStats, viewer } from '../offers/routes.js';
 import { catalog, isAvailable, type CatalogMethod } from './profiles.js';
 
 /** Which live offers to count: the ads' own side (what the poster does with XMR) and currency. */
 export interface LiveOfferQuery {
   side: Side;
   currency: string;
+  /**
+   * The signed-in trader asking, or null (logged out). Offers between them and someone either of
+   * them blocked are not counted, nor their rates (Task 37 review I1).
+   */
+  viewerId?: string | null;
 }
 
 /** Live offers for one method in the queried side and currency. */
@@ -70,10 +75,11 @@ function compareRate(side: Side, a: bigint | null, b: bigint | null): number {
 
 export function methodListRoutes(app: FastifyInstance): void {
   // Browsing needs no session (P3-M9).
-  app.get('/v1/methods', async (req) => {
+  app.get('/v1/methods', async (req: FastifyRequest, reply: FastifyReply) => {
     const q = parseQuery(req);
     const source = req.server.deps.liveOffers ?? liveOfferStats(req.server.deps);
-    const stats = await source({ side: q.side, currency: q.currency });
+    const viewerId = await viewer(req.server, req, reply);
+    const stats = await source({ side: q.side, currency: q.currency, viewerId });
     const byId = new Map<string, LiveOfferStat>();
     for (const s of stats) if (s.offers > 0 && isAvailable(s.methodId) && !byId.has(s.methodId)) byId.set(s.methodId, s);
 

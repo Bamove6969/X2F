@@ -107,7 +107,7 @@ export function PgpChallenge() {
             Every login works this way from now on. X2F shows a message locked to your key, your PGP app unlocks it with your private key, and you
             paste in the code.
           </p>
-          <p className="x2f-start__help">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
+          <p className="x2f-start__help">{/* not-a-refusal: explains the login code */}Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
         </section>
       ) : (
         <>

@@ -209,7 +209,7 @@ export function refusalText(err: unknown): string {
       return 'A dispute is already open on this trade.'; // COPY-UNSIGNED
     case 'wrong-state':
     case 'wrong-party':
-      return "This trade can't take that right now."; // COPY-UNSIGNED
+      return "This trade can't take that right now."; // COPY-UNSIGNED; not-a-refusal: the trade state machine (wrong-state, wrong-party)
     default:
       return "Something went wrong. Try again in a moment."; // COPY-UNSIGNED
   }

@@ -372,8 +372,9 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await page.route('**/v1/price?*', json({ currency: B.currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr }));
   await page.route('**/v1/offers?*', json([B.offer]));
   await page.route('**/v1/offers/*/take', (r) => {
-    takes.push(r.request().postDataJSON());
-    return json({ code: B.code })(r);
+    const body = r.request().postDataJSON() as { centsPerXmr: string; fiatCents: string };
+    takes.push(body);
+    return json({ code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents })(r);
   });
 
   const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;
@@ -705,6 +706,8 @@ test.describe('review fix round', () => {
   });
 
   test('M3: /terms reloads the version when the Terms change before I accept, and the retry posts the new one', async ({ page }) => {
+    // The server's version is the one this page carries, but the accept is refused once: the page
+    // re-reads the version, finds the same text, and asks for it to be read again.
     let gets = 0;
     const posts: unknown[] = [];
     await page.route('**/v1/terms', (r) => {
@@ -719,11 +722,62 @@ test.describe('review fix round', () => {
     await page.goto('/terms?returnTo=%2Fpost');
     await acceptTerms(page);
     await expect(page.locator('[data-screen="terms"] [role="alert"]')).toContainText('The Terms changed while you were reading');
+    await expect(page.locator('[data-part="terms-stale"]')).toHaveCount(0);
     await expect(page.locator('[data-part="terms-tick"]')).not.toBeChecked();
     expect(gets).toBeGreaterThanOrEqual(2);
     await acceptTerms(page);
     await expect(page).toHaveURL(/\/post$/);
     expect(posts).toHaveLength(2);
+  });
+
+  test('M3 (review m2): Terms that move to a NEW version at accept say only "Reload"; after the reload (a page carrying the new text) I read and accept the new version', async ({ page }) => {
+    const NEW = '2026-11-02';
+    let serverVersion = TERMS_VERSION;
+    // The deploy that moves the server to NEW also ships the page carrying NEW: once the server
+    // has moved, the page's scripts are served as that new build (the constant rewritten).
+    let newBuild = false;
+    const posts: { version?: string }[] = [];
+    await page.route('**/assets/*.js', async (r) => {
+      if (!newBuild) return r.continue();
+      const res = await r.fetch();
+      let body = await res.text();
+      // The minifier writes the constant in any of the three quote styles.
+      for (const q of ['"', "'", '`']) body = body.replaceAll(`${q}${TERMS_VERSION}${q}`, `${q}${NEW}${q}`);
+      return r.fulfill({ response: res, body });
+    });
+    await page.route('**/v1/terms', (r) => json({ version: serverVersion })(r));
+    await page.route('**/v1/account/me', json({ displayName: 'nightowl', kind: 'trader', level: 'full', methods: ['pgp'], termsCurrent: true }));
+    await page.route('**/v1/account/terms', (r) => {
+      const body = JSON.parse(r.request().postData() ?? 'null') as { version?: string };
+      posts.push(body);
+      if (body.version !== serverVersion) {
+        serverVersion = NEW;
+        newBuild = true;
+        return json({ error: 'terms-not-accepted', version: NEW }, 400)(r);
+      }
+      return r.fulfill({ status: 204 });
+    });
+    await page.goto('/terms?returnTo=%2Fpost');
+    await expect(page.locator('[data-part="terms-text"]')).toContainText(`Version ${TERMS_VERSION}.`);
+    // The Terms move to NEW while the person reads; the first accept still names the old version.
+    serverVersion = NEW;
+    newBuild = true;
+    await acceptTerms(page);
+    expect(posts).toEqual([{ version: TERMS_VERSION }]);
+    // One message, the one the person can act on: reload. No "read them again" next to it.
+    const stale = page.locator('[data-part="terms-stale"]');
+    await expect(stale).toHaveText('The Terms have been updated. Reload the page to read the new version.');
+    await expect(page.locator('[data-screen="terms"] [role="alert"]')).toHaveCount(1);
+    await expect(page.locator('[data-screen="terms"]')).not.toContainText('Read them to the end again');
+    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    await stale.getByRole('button', { name: 'Reload the page' }).click();
+    // The reloaded page carries NEW: no stale notice, the box ends with NEW, and I can read and accept.
+    await expect(page.locator('[data-part="terms-text"]')).toContainText(`Version ${NEW}.`);
+    await expect(page.locator('[data-part="terms-stale"]')).toHaveCount(0);
+    await expect(page.locator('[data-part="terms-tick"]')).toBeDisabled();
+    await acceptTerms(page);
+    await expect(page).toHaveURL(/\/post$/);
+    expect(posts).toEqual([{ version: TERMS_VERSION }, { version: NEW }]);
   });
 
   test('M4: when the server names Terms this page does not carry, the page says to reload and I accept stays off', async ({ page }) => {
