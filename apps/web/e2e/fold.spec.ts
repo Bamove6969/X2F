@@ -1,7 +1,7 @@
 // Plan 3 Task 40: foldable phones in the app shell and the trade room (Fold-* boards). Width rules
 // at the board sizes (390, 600, 700, 840, 1000, 1100 px), a book fold's two segments and a
-// tabletop emulated through CDP `Emulation.setDisplayFeaturesOverride` (Chromium's own emulation
-// of a hinge), the flip cover screen, and state kept across a fold. On a fixtures-mode build
+// tabletop emulated through CDP (Chromium's own hinge emulation, setDeviceMetricsOverride's
+// displayFeature), the flip cover screen, and state kept across a fold. On a fixtures-mode build
 // (e2e/fixtures-serve.ts) with the real CSP; the trade room is BuyerPay (Task 23) with the fixture
 // chat (src/fixtures/payChat.tsx), the API stubbed as in pay.spec.ts.
 import { expect, test, type CDPSession, type Page } from '@playwright/test';
@@ -46,17 +46,29 @@ const box = async (page: Page, selector: string) => {
   return b;
 };
 
-/** Emulates a hinge: 'vertical' splits left and right (a book fold open), 'horizontal' top and bottom (tabletop). */
-async function hinge(page: Page, orientation: 'vertical' | 'horizontal', offset: number, maskLength = HINGE.mask): Promise<CDPSession> {
+/**
+ * Emulates a hinge on a `width` x `height` screen: 'vertical' splits left and right (a book fold
+ * open), 'horizontal' top and bottom (tabletop). Chromium takes a display feature through
+ * `Emulation.setDeviceMetricsOverride` (`Emulation.setDisplayFeaturesOverride` alone reports no
+ * segments in the pinned build); `flat()` takes it away again.
+ */
+async function hinge(
+  page: Page,
+  size: { width: number; height: number },
+  orientation: 'vertical' | 'horizontal',
+  offset: number,
+  maskLength = HINGE.mask,
+): Promise<{ cdp: CDPSession; flat: () => Promise<void> }> {
   const cdp = await page.context().newCDPSession(page);
-  await cdp.send('Emulation.setDisplayFeaturesOverride', { features: [{ orientation, offset, maskLength }] });
-  return cdp;
+  const metrics = { ...size, deviceScaleFactor: 1, mobile: false };
+  await cdp.send('Emulation.setDeviceMetricsOverride', { ...metrics, displayFeature: { orientation, offset, maskLength } });
+  return { cdp, flat: () => cdp.send('Emulation.setDeviceMetricsOverride', metrics).then(() => undefined) };
 }
 
 /** Skips with the reason when this Chromium does not report viewport segments (lead default, Task 40 Step 1). */
 async function needSegments(page: Page, query: string): Promise<void> {
   const ok = await page.evaluate((q) => matchMedia(q).matches, query);
-  test.skip(!ok, `this Chromium does not report ${query} under Emulation.setDisplayFeaturesOverride`);
+  test.skip(!ok, `this Chromium does not report ${query} under an emulated display feature`);
 }
 
 /** Every visible element whose box overlaps [from, to) on the axis (x for a vertical hinge, y for a horizontal one). */
@@ -143,7 +155,7 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
 test.describe('a book fold open: two segments (Chrome on Android)', () => {
   test('the gutter sits on the hinge, nothing crosses it, and a sheet stays in one pane', async ({ page }) => {
     await page.setViewportSize({ width: 840, height: 900 });
-    await hinge(page, 'vertical', HINGE.offset);
+    await hinge(page, { width: 840, height: 900 }, 'vertical', HINGE.offset);
     await openRoom(page);
     await needSegments(page, '(horizontal-viewport-segments: 2)');
     expect(await fold(page)).toBe('two');
@@ -159,7 +171,7 @@ test.describe('a book fold open: two segments (Chrome on Android)', () => {
 
   test('a hinge off the middle moves the panes with it', async ({ page }) => {
     await page.setViewportSize({ width: 900, height: 900 });
-    await hinge(page, 'vertical', 500, 0);
+    await hinge(page, { width: 900, height: 900 }, 'vertical', 500, 0);
     await openRoom(page);
     await needSegments(page, '(horizontal-viewport-segments: 2)');
     const main = await box(page, '[data-pane="main"] > .x2f-pay');
@@ -171,7 +183,7 @@ test.describe('a book fold open: two segments (Chrome on Android)', () => {
 
   test('a screen without panes stays in the first pane, its bottom nav too', async ({ page }) => {
     await page.setViewportSize({ width: 840, height: 900 });
-    await hinge(page, 'vertical', HINGE.offset);
+    await hinge(page, { width: 840, height: 900 }, 'vertical', HINGE.offset);
     await page.route('**/v1/**', (r) => r.fulfill({ status: 401, json: { error: 'not-authenticated' } }));
     await page.goto(`${ORIGIN}/sell`);
     await needSegments(page, '(horizontal-viewport-segments: 2)');
@@ -185,7 +197,7 @@ test.describe('tabletop: half folded', () => {
     await page.setViewportSize({ width: 1000, height: 840 });
     await openRoom(page);
     expect(await fold(page)).toBe('wide');
-    const cdp = await hinge(page, 'horizontal', 412);
+    const halfFold = await hinge(page, { width: 1000, height: 840 }, 'horizontal', 412);
     await needSegments(page, '(vertical-viewport-segments: 2)');
     await expect(page.locator('html')).toHaveAttribute('data-fold', 'tabletop');
     const glance = page.locator('[data-pane="glance"]');
@@ -207,7 +219,7 @@ test.describe('tabletop: half folded', () => {
     expect((await box(page, '[role="dialog"]')).y).toBeGreaterThanOrEqual(428 - 0.5);
     await page.keyboard.press('Escape');
     // Flat again: off by itself.
-    await cdp.send('Emulation.clearDisplayFeaturesOverride');
+    await halfFold.flat();
     await expect(page.locator('html')).toHaveAttribute('data-fold', 'wide');
     await expect(page.locator('[data-pane="glance"]')).toHaveCount(0);
   });

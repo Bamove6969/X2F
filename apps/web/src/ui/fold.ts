@@ -7,7 +7,7 @@
  * | `tabletop` | the browser reports a top and a bottom segment (`vertical-viewport-segments: 2`): half folded |
  * | `three`    | three side-by-side segments (`horizontal-viewport-segments: 3`): a tri-fold fully open |
  * | `two`      | two side-by-side segments, or no segments and 600-999 px wide                 |
- * | `cover`    | under 600 px wide and under 480 px tall: a flip phone's small cover screen    |
+ * | `cover`    | under 600 px wide, under 480 px tall and near square: a flip phone's cover screen |
  * | `phone`    | under 600 px wide (a book fold's cover screen is a phone)                     |
  * | `wide`     | no segments and 1000 px and wider (the Desktop board)                         |
  *
@@ -32,7 +32,8 @@ export const FOLD_QUERIES = {
   two: '(horizontal-viewport-segments: 2)',
   panes: '(min-width: 600px)',
   wide: '(min-width: 1000px)',
-  cover: '(max-width: 599px) and (max-height: 479px)',
+  // Flip covers are near square; a small phone on its side (568x320) is not one.
+  cover: '(max-width: 599px) and (max-height: 479px) and (max-aspect-ratio: 4/3)',
 } as const;
 
 type Matches = Record<keyof typeof FOLD_QUERIES, boolean>;
