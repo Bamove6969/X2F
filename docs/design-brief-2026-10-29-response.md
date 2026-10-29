@@ -102,3 +102,9 @@ The owner uses fold phones. The app must be laid out properly for them; fold-onl
 
 - During the 24-hour wait after an authenticator-code login, trades that were already open can still be finished (mark paid, release, dispute). New trades, new logins and wallet changes stay blocked.
 - No wait for strong logins: a security key, a recovery code, or a PGP signature plus a passkey (or PGP plus a security key).
+- Decided (owner, 2026-10-29):
+  - **Tabletop:** the layout turns on by itself when the phone is half-folded, and off when it is opened flat. There is no setting for it.
+  - **Flip cover screen:** shows the most urgent trade, plus a "+2 more trades" line when there are others.
+  - **Folding mid-trade:** the chat pane moves behind the phone header's Chat link, and any text being typed is kept.
+  - **Unfolded quote button:** says "Trade", matching the phone board.
+- Boards on the canvas: Fold-Notes, Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover and Fold-TriFold, in the "Foldables" row.
