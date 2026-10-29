@@ -1,8 +1,9 @@
 /*
  * Foldable phones (Plan 3 Task 40; Fold-Notes board). Layout only: colours, type and spacing come
  * from the design tokens and the screens' own styles. `<html data-fold>` is the layout
- * (src/ui/fold.ts). Every rule here starts from it, so no class is defined at the top level
- * (test/css-collisions.test.ts) and nothing changes in the phone and wide layouts.
+ * (src/ui/fold.ts). The pane rules start from it, so nothing changes in the phone and wide
+ * layouts. The only top-level rules are the phone frame's body (`display: contents`) and the
+ * glance card's own `.x2f-fold-*` classes (unique: test/css-collisions.test.ts).
  *
  * Where the panes go, as lengths from the viewport's left edge (top edge for tabletop):
  *   --x2f-fold-a   where the first pane ends
@@ -154,21 +155,10 @@
   max-height: none;
 }
 
-/* The flip cover screen: the glance card only; the screen stays mounted underneath. */
-:root[data-fold='cover'] .x2f-panes > [data-pane='main'] {
-  display: none;
-}
-
+/* The flip cover screen: the glance card first; the room stays under it, never hidden. */
 :root[data-fold='cover'] .x2f-panes {
   display: flex;
   flex-direction: column;
-  min-height: 100dvh;
-}
-
-:root[data-fold='cover'] .x2f-panes > [data-pane='glance'] {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
 }
 
 /* The chat is beside the room: its Chat link would only open it a second time. */
@@ -178,27 +168,34 @@
   display: none;
 }
 
-/* ---- Sheets and dialogs stay inside one pane (src/ui/Sheet.tsx) ---- */
+/* ---- Sheets and dialogs stay inside one pane (src/ui/Sheet.tsx) ----
+   Only where the hinge is real (reported segments): the backdrop still covers the whole screen, so
+   nothing behind a sheet can be tapped, and only the panel keeps to the pane that opened it. With
+   the width rules alone there is no hinge to keep off, and a sheet is as wide as on a phone
+   viewport (review I3). */
 
-:root[data-fold='two'] .x2f-sheet-layer,
-:root[data-fold='three'] .x2f-sheet-layer {
-  right: auto;
+@media (horizontal-viewport-segments: 2) {
+  :root[data-fold='two'] .x2f-sheet-layer > .x2f-sheet {
+    width: var(--x2f-fold-a);
+  }
+
+  :root[data-fold='two'] .x2f-sheet-layer[data-pane-of='side'] > .x2f-sheet {
+    width: auto;
+    margin-left: var(--x2f-fold-b);
+  }
+}
+
+:root[data-fold='three'] .x2f-sheet-layer > .x2f-sheet {
   width: var(--x2f-fold-a);
 }
 
-:root[data-fold='two'] .x2f-sheet-layer[data-pane-of='side'] {
-  left: var(--x2f-fold-b);
-  right: 0;
-  width: auto;
-}
-
-:root[data-fold='three'] .x2f-sheet-layer[data-pane-of='side'] {
-  left: var(--x2f-fold-b);
+:root[data-fold='three'] .x2f-sheet-layer[data-pane-of='side'] > .x2f-sheet {
   width: calc(var(--x2f-fold-b-end) - var(--x2f-fold-b));
+  margin-left: var(--x2f-fold-b);
 }
 
-:root[data-fold='tabletop'] .x2f-sheet-layer {
-  top: var(--x2f-fold-bottom);
+:root[data-fold='tabletop'] .x2f-sheet-layer > .x2f-sheet {
+  max-height: calc(100dvh - var(--x2f-fold-bottom));
 }
 
 /* ---- The trade at a glance (src/screens/trade/TradeGlance.tsx): layout only ---- */
@@ -210,14 +207,6 @@
   gap: var(--x2f-space-4);
   padding: var(--x2f-space-4);
   min-width: 0;
-}
-
-.x2f-fold-glance[data-cover] {
-  flex-grow: 1;
-}
-
-.x2f-fold-glance[data-cover] > [role='status'] {
-  margin-top: auto;
 }
 
 .x2f-fold-glance__fact {

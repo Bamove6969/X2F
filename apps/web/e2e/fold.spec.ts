@@ -68,7 +68,7 @@ async function hinge(
 /** Skips with the reason when this Chromium does not report viewport segments (lead default, Task 40 Step 1). */
 async function needSegments(page: Page, query: string): Promise<void> {
   const ok = await page.evaluate((q) => matchMedia(q).matches, query);
-  test.skip(!ok, `this Chromium does not report ${query} under an emulated display feature`);
+  test.skip(!ok, `this Chromium does not report ${query} under CDP emulation`);
 }
 
 /** Every visible element whose box overlaps [from, to) on the axis (x for a vertical hinge, y for a horizontal one). */
@@ -146,14 +146,48 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
     }
   });
 
-  test("a sheet opened from the room stays in the room's pane", async ({ page }) => {
-    await page.setViewportSize({ width: 840, height: 900 });
+  test('no hinge reported: a sheet and its backdrop cover the whole screen, nothing behind it can be tapped (review I3)', async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
     await openRoom(page);
+    expect(await fold(page)).toBe('two');
     await page.locator('[data-primary]').first().click();
+    await expect(page.getByRole('dialog')).toBeVisible();
+    const backdrop = await box(page, '.x2f-sheet-backdrop');
+    expect(backdrop.x).toBeLessThanOrEqual(0.5);
+    expect(backdrop.width).toBeGreaterThanOrEqual(799.5);
     const dialog = await box(page, '[role="dialog"]');
-    const main = await box(page, '[data-pane="main"] > .x2f-pay');
-    expect(dialog.x).toBeGreaterThanOrEqual(-0.5);
-    expect(dialog.x + dialog.width).toBeLessThanOrEqual(main.x + main.width + 0.5);
+    expect(dialog.width).toBeGreaterThanOrEqual(799.5);
+    // The chat pane and the room behind the sheet are under the backdrop.
+    for (const [x, y] of [
+      [700, 450],
+      [100, 100],
+      [600, 50],
+    ] as const) {
+      expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.x2f-sheet-layer') !== null, [x, y])).toBe(true);
+    }
+  });
+
+  test('a Chat sheet open on the phone closes on unfold: one draft, one composer (review M3)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openRoom(page);
+    await page.locator('[data-chat-link]').click();
+    await page.getByRole('dialog').locator('#msg').fill('two minutes');
+    await page.setViewportSize({ width: 840, height: 844 });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('#msg')).toHaveCount(1);
+    await expect(page.locator('[data-pane="side"] #msg')).toHaveValue('two minutes');
+  });
+
+  test("the seller's waiting room keeps its one primary in two panes: Chat goes to the chat pane (review M4)", async ({ page }) => {
+    await page.setViewportSize({ width: 840, height: 900 });
+    await openRoom(page, { ...PAY_SECURED, role: 'seller' });
+    const primary = page.locator('[data-primary]');
+    await expect(primary).toHaveCount(1);
+    await expect(primary).toBeVisible();
+    await expect(primary).toHaveText('Chat');
+    await primary.click();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('[data-pane="side"] #msg')).toBeFocused();
   });
 });
 
@@ -230,24 +264,96 @@ test.describe('tabletop: half folded', () => {
   });
 });
 
+/** Emulates a folded posture with no segments (a flip phone on its cover screen; Device Posture API). */
+async function folded(page: Page, size: { width: number; height: number }): Promise<CDPSession> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Emulation.setDeviceMetricsOverride', { ...size, deviceScaleFactor: 1, mobile: false, devicePosture: { type: 'folded' } });
+  return cdp;
+}
+
 test.describe('the flip cover screen', () => {
-  test('shows the trade as a small card with no trade actions; opening the phone brings the room back as it was', async ({ page }) => {
+  test('a folded posture on a small screen: the trade card first, the room still under it, the chat draft kept', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await openRoom(page);
     await page.locator('[data-chat-link]').click();
     await page.locator('#msg').fill('sent it');
     await page.keyboard.press('Escape');
-    await page.setViewportSize({ width: 360, height: 380 });
+    const cdp = await folded(page, { width: 360, height: 380 });
+    await needSegments(page, '(device-posture: folded)');
     await expect(page.locator('html')).toHaveAttribute('data-fold', 'cover');
     const card = page.locator('[data-pane="glance"]');
     await expect(card).toContainText('Buying from');
-    await expect(card).toContainText('Open your phone to keep going.');
-    await expect(page.locator('[data-pane="main"]')).toBeHidden();
-    expect(await page.locator('a[href], button, input').filter({ visible: true }).count()).toBe(0);
-    await page.setViewportSize({ width: 390, height: 844 });
-    await expect(page.locator('.x2f-pay[data-layout="phone"]')).toBeVisible();
+    await expect(card).toContainText('$412.50');
+    // Information only, and the device's own figures; never the API's escrow chip.
+    expect(await card.locator('a, button, input, select, textarea').count()).toBe(0);
+    await expect(card.locator('.x2f-chip')).toHaveCount(0);
+    // A wrong guess costs nothing: the room and its primary action are right under the card.
+    await expect(page.locator('[data-pane="main"] .x2f-pay[data-layout="phone"]')).toBeAttached();
+    await page.locator('[data-primary]').first().scrollIntoViewIfNeeded();
+    await expect(page.locator('[data-primary]').first()).toBeVisible();
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 1, mobile: false });
+    await expect(page.locator('html')).toHaveAttribute('data-fold', 'phone');
     await page.locator('[data-chat-link]').click();
     await expect(page.locator('#msg')).toHaveValue('sent it');
+  });
+
+  test("the device's own warning shows on the card: a stopped escrow (review I1)", async ({ page }) => {
+    await folded(page, { width: 360, height: 380 });
+    await openRoom(page);
+    await needSegments(page, '(device-posture: folded)');
+    await page.evaluate(() => window.__x2fSetFixtureEscrow!({ phase: 'error', error: 'escrow-failed', retryable: true }));
+    await expect(page.locator('[data-pane="glance"] [data-glance-warning]')).toContainText("Don't send any money until it runs again.");
+  });
+
+  test('an integrity failure shows its alert in every layout, the cover included (review I1)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openRoom(page);
+    await page.evaluate(() => window.__x2fSetFixtureEscrow!({ phase: 'error', error: 'participants-mismatch' }));
+    const alert = page.getByText('Security check failed', { exact: false }).first();
+    await expect(alert).toBeVisible();
+    for (const size of [
+      { width: 840, height: 900 },
+      { width: 1100, height: 900 },
+      { width: 412, height: 430 },
+    ]) {
+      await page.setViewportSize(size);
+      await expect(alert).toBeVisible();
+    }
+    const cdp = await folded(page, { width: 360, height: 380 });
+    await needSegments(page, '(device-posture: folded)');
+    await expect(page.locator('html')).toHaveAttribute('data-fold', 'cover');
+    await expect(alert).toBeVisible();
+    await cdp.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 840, deviceScaleFactor: 1, mobile: false, displayFeature: { orientation: 'horizontal', offset: 412, maskLength: 16 } });
+    await expect(page.locator('html')).toHaveAttribute('data-fold', 'tabletop');
+    await expect(alert).toBeVisible();
+  });
+
+  for (const [what, size] of [
+    ['a phone in split screen (412x430)', { width: 412, height: 430 }],
+    ['a small desktop window (500x450)', { width: 500, height: 450 }],
+  ] as const) {
+    test(`size alone is never the cover screen: ${what} keeps the phone layout (review I2)`, async ({ page }) => {
+      await page.setViewportSize(size);
+      await openRoom(page);
+      expect(await fold(page)).toBe('phone');
+      await expect(page.locator('[data-pane="glance"]')).toHaveCount(0);
+      await page.locator('[data-primary]').first().scrollIntoViewIfNeeded();
+      await expect(page.locator('[data-primary]').first()).toBeVisible();
+      await expect(page.locator('[data-primary]').first()).toBeEnabled();
+    });
+  }
+
+  test('the keyboard shrinking the viewport (360x640 to 360x360) keeps the phone layout and the focused input (review I2)', async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await openRoom(page);
+    await page.locator('[data-chat-link]').click();
+    const input = page.getByRole('dialog').locator('#msg');
+    await input.focus();
+    await page.setViewportSize({ width: 360, height: 360 });
+    expect(await fold(page)).toBe('phone');
+    await expect(input).toBeFocused();
+    await input.pressSequentially('ok');
+    await expect(input).toHaveValue('ok');
   });
 });
 

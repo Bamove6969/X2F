@@ -7,7 +7,7 @@
  * | `tabletop` | the browser reports a top and a bottom segment (`vertical-viewport-segments: 2`): half folded |
  * | `three`    | three side-by-side segments (`horizontal-viewport-segments: 3`): a tri-fold fully open |
  * | `two`      | two side-by-side segments, or no segments and 600-999 px wide                 |
- * | `cover`    | under 600 px wide, under 480 px tall and near square: a flip phone's cover screen |
+ * | `cover`    | the browser reports a folded posture, no segments, under 600x480: a flip's cover screen |
  * | `phone`    | under 600 px wide (a book fold's cover screen is a phone)                     |
  * | `wide`     | no segments and 1000 px and wider (the Desktop board)                         |
  *
@@ -32,8 +32,10 @@ export const FOLD_QUERIES = {
   two: '(horizontal-viewport-segments: 2)',
   panes: '(min-width: 600px)',
   wide: '(min-width: 1000px)',
-  // Flip covers are near square; a small phone on its side (568x320) is not one.
-  cover: '(max-width: 599px) and (max-height: 479px) and (max-aspect-ratio: 4/3)',
+  // Never by size alone (review I2): a split-screen phone, a small window or a phone with the
+  // keyboard open is the same size as a flip's cover screen. Only a folded posture reported by the
+  // browser (Device Posture API) turns it on; and even then the room stays under the card.
+  cover: '(device-posture: folded) and (max-width: 599px) and (max-height: 479px)',
 } as const;
 
 type Matches = Record<keyof typeof FOLD_QUERIES, boolean>;
@@ -120,7 +122,7 @@ export function useKeptText(key: string): [string, (text: string) => void] {
   return [value, set];
 }
 
-/** Forgets every kept text (tests). */
+/** Forgets every kept text: on log-out (push/usePush.ts `logOut`), and in tests. */
 export function forgetKeptText(): void {
   kept.clear();
   for (const set of listeners.values()) for (const l of set) l();

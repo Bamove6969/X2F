@@ -35,6 +35,26 @@
   }
 }
 
+/* The same in a foldable's panes at 1000 px and wider (a tri-fold, a wide tabletop), where the room
+   draws its phone layout too (Task 40 review M2). */
+:root[data-fold='two'] .x2f-trade,
+:root[data-fold='three'] .x2f-trade {
+  height: 100dvh;
+  min-height: 0;
+}
+
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='main'] > .x2f-trade {
+  height: 100%;
+}
+
+:root[data-fold='two'] .x2f-trade-body,
+:root[data-fold='three'] .x2f-trade-body,
+:root[data-fold='tabletop'] .x2f-trade-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .x2f-trade-chip-row,
 .x2f-setup__row {
   display: flex;

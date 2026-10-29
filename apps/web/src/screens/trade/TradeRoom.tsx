@@ -64,7 +64,9 @@
  *   `PHONE_VIEWPORTS` (e2e/phone.ts, the one standard: 390x844 and 360x800) must fit with no
  *   horizontal scroll.
  * - Mark the header's Chat link or button with `data-chat-link`: it is hidden while the chat has a
- *   pane of its own.
+ *   pane of its own (`useChatPane`), and a Chat sheet it opened closes. A Chat button that is the
+ *   screen's one `[data-primary]` (SellerWaiting) is never marked: it stays visible and moves the
+ *   focus to the chat pane (`focusChatPane`), so every layout keeps exactly one primary.
  *
  * ### Foldables (Task 40, src/ui/fold.ts, src/ui/Panes.tsx)
  * The room, not the screen, lays out the panes, and the screen stays mounted in every layout:
@@ -83,7 +85,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
-import { hasPanes, useFoldLayout } from '../../ui/fold.js';
+import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { useTradeChat } from './paySeams.js';
@@ -268,7 +270,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const Chat = useTradeChat();
   // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
   const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
-  const chatPane = chat !== null && hasPanes(layout);
+  const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
       <Panes
@@ -300,17 +302,32 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   );
 }
 
+/** Whether the room shows the chat in a pane of its own (so a screen's Chat sheet is not needed). */
+export function chatPaneFor(layout: FoldLayout, chatInstalled: boolean, view: Pick<TradeView, 'state'>, broken = false): boolean {
+  return chatInstalled && view.state !== 'disputed' && !broken && hasPanes(layout);
+}
+
+/** `chatPaneFor` for a screen: true while the room's chat pane is showing. */
+export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
+  return chatPaneFor(useFoldLayout(), useTradeChat() !== null, view);
+}
+
+/** Moves the focus to the composer of the room's chat pane. */
+export function focusChatPane(): void {
+  document.querySelector<HTMLElement>("[data-pane='side'] :is(input, textarea, [contenteditable='true'])")?.focus();
+}
+
 /**
  * `#chat` (the Chat links of SellerConfirm and SellerRefund): folded, the chat opens in a sheet over
  * the room and closing it drops the hash; with a chat pane the composer gets the focus. Its draft
  * is the same either way (useKeptText).
  */
-function ChatHash({ hash, layout, chat, chatPane, name }: { hash: string; layout: ReturnType<typeof useFoldLayout>; chat: ReactNode; chatPane: boolean; name: string }) {
+function ChatHash({ hash, layout, chat, chatPane, name }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string }) {
   const navigate = useNavigate();
   const wanted = hash === '#chat' && chat !== null;
   useEffect(() => {
     if (!wanted || !chatPane) return;
-    document.querySelector<HTMLElement>("[data-pane='side'] :is(input, textarea, [contenteditable='true'])")?.focus();
+    focusChatPane();
   }, [wanted, chatPane]);
   if (!wanted || chatPane || layout === 'wide' || layout === 'cover') return null;
   return (

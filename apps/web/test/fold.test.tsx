@@ -147,7 +147,20 @@ describe('styles/fold.css', () => {
 
   it('adds no colours or type of its own: layout only', () => {
     const body = css.replace(/\/\*[\s\S]*?\*\//g, '');
-    expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
-    expect(body).not.toMatch(/\b(color|background|font|border|box-shadow|text-transform|letter-spacing)\s*:/);
+    expect(body).not.toMatch(/#[0-9a-f]{3,8}\b|\b(rgba?|hsla?|hwb|oklch|oklab|lab|lch|color-mix)\(/i);
+    // Longhands too (review M1): background-color, font-size, border-radius, outline, opacity, …
+    expect(body).not.toMatch(
+      /(^|[\s;{])(color|accent-color|caret-color|background(-[a-z]+)?|font(-[a-z]+)?|border(-[a-z]+)*|box-shadow|outline(-[a-z]+)?|opacity|fill|stroke(-[a-z]+)?|text-(decoration|transform|shadow)(-[a-z]+)?|letter-spacing|line-height|filter|backdrop-filter)\s*:/m,
+    );
+    // No named colours either.
+    expect(body).not.toMatch(/:\s*(transparent|currentcolor|white|black|red|orange|gray|grey)\b/i);
+  });
+
+  it('the property check catches longhands', () => {
+    const banned = /(^|[\s;{])(color|accent-color|caret-color|background(-[a-z]+)?|font(-[a-z]+)?|border(-[a-z]+)*|box-shadow|outline(-[a-z]+)?|opacity|fill|stroke(-[a-z]+)?|text-(decoration|transform|shadow)(-[a-z]+)?|letter-spacing|line-height|filter|backdrop-filter)\s*:/m;
+    for (const decl of ['background-color: x;', 'font-size: 1px;', 'border-radius: 2px;', 'outline: 0;', 'opacity: 0.5;', 'line-height: 1;', 'text-decoration: none;']) {
+      expect(`.a {\n  ${decl}\n}`).toMatch(banned);
+    }
+    expect('.a {\n  max-height: 1px;\n  gap: 2px;\n}').not.toMatch(banned);
   });
 });

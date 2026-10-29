@@ -8,7 +8,8 @@
  *   scroll position.
  * - `tabletop`: `glance` (information only) in the top segment; `main` (every control) and `side`
  *   in the bottom one.
- * - `cover`: only `glance`; `main` stays mounted but hidden, so nothing it holds is lost.
+ * - `cover`: `glance` first and `main` under it, never hidden: a wrong guess costs nothing, and the
+ *   screen's own alerts (the integrity check) always show.
  *
  * The three slots keep their places in the tree in every layout, so a fold or unfold never
  * remounts the screen: its state, its typed text and its escrow stay as they are.
