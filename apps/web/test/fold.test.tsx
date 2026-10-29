@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 // Plan 3 Task 40: the fold layout reader, the panes and the kept text (src/ui/fold.ts, Panes.tsx).
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -133,7 +134,7 @@ describe('Sheet in a pane', () => {
 });
 
 describe('styles/fold.css', () => {
-  const css = readFileSync(fileURLToPath(new URL('../src/styles/fold.css', import.meta.url)), 'utf8');
+  const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/styles/fold.css'), 'utf8');
 
   it('places the panes from the reported segments, with the width rules first', () => {
     expect(css).toContain('@media (horizontal-viewport-segments: 2)');
