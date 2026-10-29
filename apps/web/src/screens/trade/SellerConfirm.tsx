@@ -26,10 +26,12 @@ import './release/release.css';
  * POST and `release()`), and offers "Finish the release on this device" if that fails. Without
  * the marker (another device, a cleared store, or an API that moved the trade alone) the seller
  * gets the box and an explicit "Hold to finish the release": the API's word is never consent
- * (round-2 review 2026-10-28, Important 1).
+ * (round-2 review 2026-10-28, Important 1). The marker is keyed by `escrowCode`, the trade the
+ * room's escrow runs for, never by the API's `trade.code` (round-3 review, Important 1).
  * The smart proof card is Plan 5 (`proofSlot`, masked on the board comparison).
  */
 export function SellerConfirm({
+  escrowCode,
   trade,
   method,
   escrow,
@@ -38,6 +40,12 @@ export function SellerConfirm({
   proofSlot,
   serverClock,
 }: {
+  /**
+   * The trade code the room's escrow runs for (TradeScreenProps `code`, the route's): the release
+   * marker, the POST and the dispute links use it, never `trade.code` (API data; round-3 review,
+   * Important 1).
+   */
+  escrowCode: string;
   trade: ReleaseTrade;
   method: MethodInfo;
   escrow: ReleaseEscrow;
@@ -54,7 +62,8 @@ export function SellerConfirm({
   const clock = serverClock ?? ownClock;
   const [checked, setChecked] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState<'start' | 'sign' | null>(null);
+  /** 'start': the API refused release-started; 'unknown': it did not answer (it may have started); 'sign': the device refused. */
+  const [failed, setFailed] = useState<'start' | 'unknown' | 'sign' | null>(null);
   /** The API took `release-started` on this mount (its answer reached us), before the room refreshes (Minor 11). */
   const [started, setStarted] = useState(false);
   // A new key gives a fresh HoldButton after a failed attempt (it fires onComplete once per mount).
@@ -75,15 +84,17 @@ export function SellerConfirm({
   const blocked = sums === null || escrow.refusal !== null || stopped;
   const notReleasable = !trade.releasable && !releasing;
   /** This device asked for this release (round-2 I1): only then may it sign without a hold here. */
-  const askedHere = started || releaseAsked(trade.code);
+  const askedHere = started || releaseAsked(escrowCode);
   /**
    * The API says a release is settling that this device did not ask for (another device, a cleared
    * store, or an API that moved the trade alone): the box and an explicit hold, never a silent
    * signature (round-2 review 2026-10-28, Important 1).
    */
   const foreign = apiReleasing && !askedHere && !signed && escrow.phase !== 'signing' && !busy;
-  /** This device does not (yet) run the trade's escrow (round-2 Minor 2). */
-  const notHere = ['idle', 'registering', 'verifying', 'setting-up'].includes(escrow.phase);
+  /** This device does not run the trade's escrow (round-2 Minor 2): only `idle`, never the boot phases after a reload (round-3 Minor 3). */
+  const notHere = escrow.phase === 'idle';
+  /** The device's escrow is still starting (after a reload: registering → verifying → ready). */
+  const starting = ['registering', 'verifying', 'setting-up'].includes(escrow.phase);
 
   const sign = async () => {
     asked.current = true;
@@ -104,16 +115,17 @@ export function SellerConfirm({
     setBusy(true);
     setFailed(null);
     // Before the POST, so a lost answer or a reload still lets this device finish what it asked.
-    markReleaseAsked(trade.code);
+    markReleaseAsked(escrowCode);
     let next: ReleaseTrade;
     try {
-      next = await postTradeEvent(trade.code, { type: 'release-started' });
+      next = await postTradeEvent(escrowCode, { type: 'release-started' });
     } catch (err) {
       // Refused (the API answered): nothing was started, so the marker goes. Unreachable: it may
       // have been applied (a lost answer); the marker stays and the room's next read resumes it.
-      if (err instanceof ApiCallError) clearReleaseAsked(trade.code);
+      const refused = err instanceof ApiCallError;
+      if (refused) clearReleaseAsked(escrowCode);
       asked.current = false;
-      setFailed('start');
+      setFailed(refused ? 'start' : 'unknown');
       setAttempt((n) => n + 1);
       setBusy(false);
       return;
@@ -125,7 +137,7 @@ export function SellerConfirm({
 
   /** The explicit hold for a release this device did not ask for: no new POST (the API is already settling). */
   const finish = async () => {
-    markReleaseAsked(trade.code);
+    markReleaseAsked(escrowCode);
     await sign();
   };
 
@@ -133,16 +145,17 @@ export function SellerConfirm({
   // the POST), the device is ready and has not signed, and nothing was asked on this mount: sign it
   // now (reload, lost POST answer). Once per mount. Without the marker, the hold above (`foreign`).
   useEffect(() => {
-    if (!apiReleasing || asked.current || busy || !releaseAsked(trade.code)) return;
+    if (!apiReleasing || asked.current || busy || !releaseAsked(escrowCode)) return;
     if (escrow.phase !== 'ready' || escrow.refusal !== null || escrow.error !== null) return;
     void sign();
-  }, [apiReleasing, busy, escrow.phase, escrow.refusal, escrow.error, trade.code]);
+  }, [apiReleasing, busy, escrow.phase, escrow.refusal, escrow.error, escrowCode]);
 
-  // The marker goes once this device has signed, or once the trade has ended.
-  const ended = !['paid', 'settling', 'secured'].includes(trade.state);
+  // The marker goes once this device has signed (and on the dispute taps below; else after the settle window).
   useEffect(() => {
-    if (signed || ended) clearReleaseAsked(trade.code);
-  }, [signed, ended, trade.code]);
+    if (signed) clearReleaseAsked(escrowCode);
+  }, [signed, escrowCode]);
+  /** "Payment not received" / "Open dispute": the seller's last act retracts the release (round-3 Minor 1). */
+  const retract = () => clearReleaseAsked(escrowCode);
 
   const problem = stopped ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, buyer) : null;
 
@@ -163,6 +176,8 @@ export function SellerConfirm({
       ? 'This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.'
       : foreign
       ? `X2F shows a release under way that wasn’t started on this device. Check ${place} first.`
+      : releasing && starting
+      ? 'Starting this device’s escrow…'
       : releasing
       ? signing || escrow.keepOpen
         ? 'Signing the release on this device. Keep this page open.'
@@ -263,7 +278,11 @@ export function SellerConfirm({
           </span>
         ) : failed !== null && !done ? (
           <span role="alert" className="x2f-release__error">
-            {failed === 'start' ? 'The release didn’t start. Try again.' : 'The release didn’t finish on this device. Keep this page open.'}
+            {failed === 'start'
+              ? 'The release didn’t start. Try again.'
+              : failed === 'unknown'
+                ? 'We couldn’t confirm the release started. If it did, this phone will finish it.'
+                : 'The release didn’t finish on this device. Keep this page open.'}
           </span>
         ) : null}
         {releasing && !done && !busy && failed === 'sign' && escrow.phase === 'ready' && escrow.refusal === null ? (
@@ -273,10 +292,10 @@ export function SellerConfirm({
         ) : null}
         {releasing && !foreign ? null : (
           <div className="x2f-release__actions">
-            <Link className="x2f-button x2f-button--quiet" to={`/trade/${trade.code}/dispute`}>
+            <Link className="x2f-button x2f-button--quiet" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
               Payment not received
             </Link>
-            <Link className="x2f-button x2f-button--danger" to={`/trade/${trade.code}/dispute`}>
+            <Link className="x2f-button x2f-button--danger" to={`/trade/${escrowCode}/dispute`} onClick={retract}>
               Open dispute
             </Link>
           </div>

@@ -2,7 +2,7 @@
 // SellerConfirm and Released (Task 24): behaviour with a stubbed API and a stubbed escrow. Board
 // parity, phone sizes and the real build are in e2e/release.spec.ts.
 import { act } from 'react';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, Route, Routes } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Released } from '../src/screens/trade/Released.js';
 import { SellerConfirm } from '../src/screens/trade/SellerConfirm.js';
@@ -11,7 +11,8 @@ import { RELEASE_ASKED_MAX_MS, markReleaseAsked, releaseAsked } from '../src/scr
 import { ReleaseRoomScreen, releaseScreenOf } from '../src/screens/trade/release/slots.js';
 import type { ReleaseEscrow, ReleaseTrade } from '../src/screens/trade/release/view.js';
 import '../src/screens/trade/screens.js';
-import { screenFor } from '../src/screens/trade/TradeRoom.js';
+import { screenFor, TradeRoom } from '../src/screens/trade/TradeRoom.js';
+import { POLL_MS, setTradeEscrowHook, type TradeEscrow } from '../src/screens/trade/seams.js';
 import { advance, pointer, render } from './render.js';
 
 const ZELLE = { name: 'Zelle', giftCard: false, whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' };
@@ -105,7 +106,7 @@ function escrowStub(order: string[] = [], over: Partial<ReleaseEscrow> = {}): St
 function sellerConfirm(t: ReleaseTrade, escrow = escrowStub(), onTrade = vi.fn()) {
   const ui = (tr: ReleaseTrade, e: ReleaseEscrow) => (
     <MemoryRouter>
-      <SellerConfirm trade={tr} method={ZELLE} escrow={e} onTrade={onTrade} />
+      <SellerConfirm escrowCode={tr.code} trade={tr} method={ZELLE} escrow={e} onTrade={onTrade} />
     </MemoryRouter>
   );
   const r = render(ui(t, escrow));
@@ -252,7 +253,9 @@ describe('SellerConfirm', () => {
     pointer(s.hold(), 'pointerdown');
     advance(1500, vi);
     await flush();
-    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The release didn’t start. Try again.');
+    // No answer: the outcome is unknown, so the screen says the device may still finish it (round-3 Minor 2).
+    expect(s.host.querySelector('[role=alert]')!.textContent).toBe('We couldn’t confirm the release started. If it did, this phone will finish it.');
+    expect(s.text()).not.toContain('didn’t start');
     expect(s.escrow.release).not.toHaveBeenCalled();
     // The POST was applied after all: the room's next read shows the release settling.
     s.update(trade({ state: 'settling', settling: 'release' }));
@@ -329,6 +332,36 @@ describe('SellerConfirm', () => {
     expect(s.text()).toContain('This device doesn’t hold this trade’s escrow yet. If you set the trade up on another device, open it there.');
     expect(s.hold().disabled).toBe(true);
     expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
+  it('settling while the device escrow is still starting (a reload): no "open it on the other device" hint (round-3 Minor 3)', async () => {
+    for (const phase of ['registering', 'verifying', 'setting-up'] as const) {
+      const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase }));
+      await flush();
+      expect(s.text()).not.toContain('If you set the trade up on another device');
+      expect(s.text()).not.toContain('doesn’t hold this trade’s escrow');
+      s.unmount();
+    }
+    markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
+    const s = sellerConfirm(trade({ state: 'settling', settling: 'release' }), escrowStub([], { phase: 'verifying' }));
+    await flush();
+    expect(s.text()).toContain('Starting this device’s escrow…');
+    expect(s.escrow.release).not.toHaveBeenCalled();
+  });
+
+  it('"Payment not received" and "Open dispute" clear the release marker, so a later settling view signs nothing (round-3 Minor 1)', async () => {
+    for (const label of ['Payment not received', 'Open dispute']) {
+      markReleaseAsked('K7M2-9QXA-4FTR-8WPN');
+      const s = sellerConfirm(trade());
+      const link = [...s.host.querySelectorAll('a')].find((a) => a.textContent === label)!;
+      act(() => link.click());
+      expect(releaseAsked('K7M2-9QXA-4FTR-8WPN')).toBe(false);
+      s.unmount();
+      const again = sellerConfirm(trade({ state: 'settling', settling: 'release' }));
+      await flush();
+      expect(again.escrow.release).not.toHaveBeenCalled();
+      again.unmount();
+    }
   });
 
   it('when release() throws, offers to finish the release on this device (I1)', async () => {
@@ -659,7 +692,7 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     const view = trade({ counterparty: who('mira.k') });
     const r = render(
       <MemoryRouter>
-        <ReleaseRoomScreen view={view} escrow={escrow} refresh={refresh} serverClock={() => new Date('2026-10-25T12:00:00Z')} wide={false} />
+        <ReleaseRoomScreen code={view.code} view={view} escrow={escrow} refresh={refresh} serverClock={() => new Date('2026-10-25T12:00:00Z')} wide={false} />
       </MemoryRouter>,
     );
     expect(r.host.textContent).toContain('Selling to mira.k');
@@ -684,5 +717,102 @@ describe('ReleaseRoomScreen (the trade room\'s props)', () => {
     advance(1500, vi);
     await flush();
     expect(s.host.querySelector('[role=alert]')!.textContent).toBe('The release didn’t finish on this device. Keep this page open.');
+  });
+});
+
+/**
+ * Round-3 review, Important 1: the marker must be the route's trade, not the API's `view.code`.
+ * Seller S held on trade Y, Y's answer was lost (the marker for Y stays), then S opens trade X and
+ * the API answers GET /v1/trades/X with Y's code in settling/release.
+ */
+describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
+  const X = 'K7M2-9QXA-4FTR-8WPN';
+  const Y = 'Z3H8-6RNB-2DWC-5JTE';
+  let started: string[];
+  let roomEscrow: StubEscrow;
+
+  beforeEach(() => {
+    started = [];
+    roomEscrow = escrowStub();
+    setTradeEscrowHook((code) => {
+      started.push(code);
+      return roomEscrow as unknown as TradeEscrow;
+    });
+  });
+  afterEach(() => setTradeEscrowHook(null));
+
+  /** S holds to release Y; the release-started answer never arrives (a connection reset). */
+  async function holdOnYAndLoseTheAnswer(): Promise<void> {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', async () => {
+      throw new TypeError('network');
+    });
+    const y = sellerConfirm(trade({ code: Y }));
+    act(() => y.box().click());
+    pointer(y.hold(), 'pointerdown');
+    advance(1500, vi);
+    await flush();
+    expect(releaseAsked(Y)).toBe(true);
+    y.unmount();
+    vi.useRealTimers();
+  }
+
+  it('the room shows a refusal for X, renders no slot and starts no escrow; nothing is signed', async () => {
+    await holdOnYAndLoseTheAnswer();
+    const seen: string[] = [];
+    vi.stubGlobal('fetch', async (url: string) => {
+      seen.push(url);
+      return new Response(JSON.stringify(trade({ code: Y, state: 'settling', settling: 'release' })), { status: 200, headers: { 'content-type': 'application/json' } });
+    });
+    const r = render(
+      <MemoryRouter initialEntries={[`/trade/${X}`]}>
+        <Routes>
+          <Route path="/trade/:code" element={<TradeRoom />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(seen).toEqual([`/v1/trades/${X}`]);
+    expect(r.host.querySelector('[data-screen=seller-confirm]')).toBeNull();
+    expect(r.host.querySelector('[role=alert]')!.textContent).toContain('X2F answered with a different trade');
+    expect(started).toEqual([]);
+    expect(roomEscrow.release).not.toHaveBeenCalled();
+  });
+
+  it('a later re-read that carries Y\'s code takes the slot away and signs nothing', async () => {
+    await holdOnYAndLoseTheAnswer();
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(trade({ code: X, state: 'paid' })), { status: 200, headers: { 'content-type': 'application/json' } }));
+    const r = render(
+      <MemoryRouter initialEntries={[`/trade/${X}`]}>
+        <Routes>
+          <Route path="/trade/:code" element={<TradeRoom />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(r.host.querySelector('[data-screen=seller-confirm]')).not.toBeNull();
+    expect(started).toContain(X);
+    // The API now answers X with Y's code, settling/release; the room's poll reads it.
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(trade({ code: Y, state: 'settling', settling: 'release' })), { status: 200, headers: { 'content-type': 'application/json' } }));
+    act(() => void vi.advanceTimersByTime(POLL_MS));
+    await flush();
+    expect(r.host.querySelector('[data-screen=seller-confirm]')).toBeNull();
+    expect(r.host.querySelector('[role=alert]')!.textContent).toContain('X2F answered with a different trade');
+    expect(roomEscrow.release).not.toHaveBeenCalled();
+  });
+
+  it('even handed Y\'s view directly, the release screen for X\'s escrow keys the marker by X: no signature without a hold', async () => {
+    await holdOnYAndLoseTheAnswer();
+    vi.useFakeTimers();
+    const r = render(
+      <MemoryRouter>
+        <ReleaseRoomScreen code={X} view={trade({ code: Y, state: 'settling', settling: 'release' })} escrow={roomEscrow} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(roomEscrow.release).not.toHaveBeenCalled();
+    expect(r.host.textContent).toContain('wasn’t started on this device');
+    expect(releaseAsked(X)).toBe(false);
   });
 });

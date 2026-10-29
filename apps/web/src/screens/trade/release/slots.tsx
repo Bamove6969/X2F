@@ -27,6 +27,8 @@ export function releaseScreenOf(t: Pick<ReleaseTrade, 'role' | 'state' | 'settli
  * handle (Task 12's `useEscrow`); a screen never starts its own.
  */
 export interface ReleaseRoomProps {
+  /** The trade code the room's escrow runs for (the route's): the release marker's key, never `view.code`. */
+  code: string;
   view: ReleaseTrade;
   escrow: ReleaseEscrow;
   refresh(): Promise<void>;
@@ -44,18 +46,19 @@ function ChatLink({ code }: { code: string }) {
 }
 
 /** SellerConfirm or Released for the room's view; nothing for a state that is not Task 24's. */
-export function ReleaseRoomScreen({ view, escrow, refresh, serverClock }: ReleaseRoomProps) {
+export function ReleaseRoomScreen({ code, view, escrow, refresh, serverClock }: ReleaseRoomProps) {
   const screen = releaseScreenOf(view);
   if (screen === 'released') return <Released trade={view} escrow={escrow} />;
   if (screen === 'seller-confirm') {
     return (
       <SellerConfirm
+        escrowCode={code}
         trade={view}
         method={methodOf(view)}
         escrow={escrow}
         onTrade={() => void refresh()}
         serverClock={serverClock}
-        headerAction={<ChatLink code={view.code} />}
+        headerAction={<ChatLink code={code} />}
       />
     );
   }

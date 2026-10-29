@@ -72,7 +72,7 @@ function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow;
   let current = view;
   const tree = () => (
     <MemoryRouter>
-      <SellerRefund view={current} escrow={o.fresh ? { ...e.escrow } : e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
+      <SellerRefund code={current.code} view={current} escrow={o.fresh ? { ...e.escrow } : e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
     </MemoryRouter>
   );
   const refresh = vi.fn(async () => {

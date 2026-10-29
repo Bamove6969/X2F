@@ -9,7 +9,10 @@ import { TIMERS } from '@x2f/trade';
  * just before the POST, in this device's storage (localStorage: it must survive a reload and a
  * closed tab), with the device's own time; it is ignored after RELEASE_ASKED_MAX_MS (the API's
  * settle window, after which an unsigned release falls back to `paid`), and cleared when the POST
- * is refused, when this device has signed, and when the trade has ended.
+ * is refused, when this device has signed, and when the seller taps "Payment not received" or
+ * "Open dispute" (their last act retracts the release). It is keyed by the trade the device's
+ * escrow runs for (the room's route code), never by a code the API sent (round-3 review 2026-10-29,
+ * Important 1).
  *
  * Cross-task note (Task 12): an EscrowStatus flag "a release intent from this device is pending"
  * would let the screen drop this marker.
