@@ -18,6 +18,7 @@ import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
+import { newsRoutes } from './news/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
@@ -255,6 +256,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
   confirmationsRoute(app, options.txConfirmations);
+  // Plan 4, Task 28: the News inbox (reading needs no session).
+  newsRoutes(app);
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
 
