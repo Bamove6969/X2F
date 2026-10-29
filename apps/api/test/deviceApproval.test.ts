@@ -10,7 +10,7 @@ import {
   APPROVAL_COOKIE, APPROVAL_TTL_MS, APPROVALS_PER_HOUR, approvalRandom, coarseDeviceLabel, drawNumbers,
 } from '../src/auth/approval.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { DEVICE_COOKIE } from '../src/auth/device.js';
+import { DEVICE_COOKIE, ensureDeviceCookie } from '../src/auth/device.js';
 import { completeLogin, type LoginFactor } from '../src/auth/login.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -46,6 +46,7 @@ beforeAll(async () => {
     return { ok: true };
   });
   app.post('/t/complete', async (req, reply) => {
+    ensureDeviceCookie(req, reply);
     const { accountId, factor, pendingId } = req.body as { accountId: string; factor: LoginFactor; pendingId?: string };
     const { rows } = await deps.db.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [accountId]);
     return completeLogin(deps, req, reply, {
@@ -328,7 +329,10 @@ describe('limits on approvals', () => {
   it('at most 3 open per account: a 4th expires the oldest', async () => {
     const { a, name } = await signUp();
     const ws = [];
-    for (let i = 0; i < 4; i++) ws.push(await waitFor(new Browser(), name));
+    for (let i = 0; i < 4; i++) {
+      setNow(new Date(now.getTime() + 1000)); // each a second apart, so "oldest" is defined
+      ws.push(await waitFor(new Browser(), name));
+    }
     const open = ((await a.get('/v1/account/approvals')).json() as Array<{ id: string }>).map((v) => v.id);
     expect(open.sort()).toEqual(ws.slice(1).map((w) => w.approvalId).sort());
   });

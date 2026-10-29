@@ -19,7 +19,7 @@ import {
   withConfirm,
   type AuthApi,
 } from '../src/index.js';
-import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
+import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
 const GOOD = 'Correct-Horse-9';
@@ -128,7 +128,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
 
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     srv.advance(10_000);
 
     const address = fakeAddress();
@@ -156,7 +157,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
     await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     const token = await confirmWithWebAuthn(fresh.api, await walletAction(fakeAddress()), ceremonyOf(soft));
     const e = apiError(await failure(fresh.api.addWallet({ app: 'cake', label: 'Other', address: fakeAddress(), confirmToken: token })));
     expect(e.code).toBe('confirm-invalid');
@@ -222,7 +224,8 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
 
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     await expect(fresh.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: ['pgp', 'passkey'], password: 'none', waitHours: 24 });
     const list = [fakeAddress(), fakeAddress()];
     const added = await withConfirm(

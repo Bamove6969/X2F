@@ -331,7 +331,7 @@ describe('password login with TOTP (second factor)', () => {
     const code = codeOf(await decrypt(encryptedMessage, key.privateKey));
     const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });
     expect(fin.statusCode).toBe(200);
-    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, fin, (u) => owner.post(u))).toEqual({ status: 'ok' });
   });
 
   it('a correct passkey login still succeeds while TOTP is throttled', async () => {

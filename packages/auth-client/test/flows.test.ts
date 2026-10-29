@@ -18,7 +18,7 @@ import {
   type AuthApi,
 } from '../src/index.js';
 import { ROUTES, callSample, methodNames } from './helpers/routes.js';
-import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
+import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
 const GOOD = 'Correct-Horse-9';
@@ -152,8 +152,10 @@ describe('the client covers the API', () => {
 describe('onboarding', () => {
   it('PGP sign-up, then a passkey as backup without a confirm prompt; both log in', async () => {
     const { username, key, soft } = await pgpUserWithPasskey();
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
-    await expect(loginPgp(jar().api, username, key)).resolves.toEqual({ status: 'ok' });
+    // Task 16: the sign-up browser is still logged in, so each new browser is approved first.
+    const [j1, j2] = [jar(), jar()];
+    await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
+    await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
   });
 
   it('passkey sign-up through the ceremony wrapper', async () => {
@@ -162,7 +164,8 @@ describe('onboarding', () => {
     await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
     });
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
+    const fresh = jar();
+    await expect(approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
   });
 
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
@@ -265,8 +268,10 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // At once, with no time passing: the user's own browser (trusted device cookie) logs in with the password,
     await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok' });
     // a fresh browser logs in with the passkey (discoverable) and with PGP,
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
-    await expect(loginPgp(jar().api, username, key)).resolves.toEqual({ status: 'ok' });
+    // Task 16: the sign-up browser is still logged in, so each new browser is approved first.
+    const [j1, j2] = [jar(), jar()];
+    await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
+    await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
     // and the live session gets a confirm token by passkey and uses it.
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);

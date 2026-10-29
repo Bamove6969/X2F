@@ -530,7 +530,7 @@ describe('expired keys and refreshed keys', () => {
     expect(await isDecoy(s3)).toBe(false);
     await expect(dec(s3.json().encryptedMessage, s2Only)).rejects.toThrow();
     const c3 = codeOf(await dec(s3.json().encryptedMessage, k.privateKey));
-    expect((await loginFinish(b3, s3.json().challengeId, c3)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b3, s3.json().challengeId, c3), (u) => b3.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('a key whose only encryption subkey expired (primary still valid) → key-expired, no fallback', async () => {

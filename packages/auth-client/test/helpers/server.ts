@@ -143,3 +143,21 @@ export async function failure(p: Promise<unknown>): Promise<unknown> {
 let seq = 0;
 /** A fresh valid username per call (5-20 characters). */
 export const uniqueName = (prefix = 'user'): string => `${prefix}${String(++seq).padStart(4, '0')}x`;
+
+/**
+ * Plan 2 Task 16, for flows about something else: a trader login from a new browser while the
+ * account is logged in elsewhere answers `approve-on-device`. This approves it as a logged-in device
+ * would (straight in the database; the real decision is covered in flows-t11-t12 and the API's
+ * deviceApproval.test.ts) and collects the session with `j`'s own poll. Other answers pass through.
+ */
+export async function approved(srv: Server, j: Jar, login: Promise<unknown>): Promise<unknown> {
+  const r = (await login) as { status?: string; approvalId?: string };
+  if (r.status !== 'approve-on-device' || r.approvalId === undefined) return r;
+  const now = srv.now();
+  await srv.deps.db.query(
+    `update login_approvals set outcome = 'approved', decided_at = $2, expires_at = $3 where id = $1 and outcome is null`,
+    [r.approvalId, now, new Date(now.getTime() + 60_000)],
+  );
+  const polled = await j.api.pollLoginApproval(r.approvalId);
+  return polled.status === 'ok' ? { status: 'ok' } : polled;
+}
