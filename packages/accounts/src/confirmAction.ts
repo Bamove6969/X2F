@@ -17,7 +17,13 @@ export type ConfirmAction =
   /** A pre-009 account sets its private login name (FU-A re-review 2). */
   | { kind: 'set-login-name' }
   | { kind: 'new-recovery-codes' }
-  | { kind: 'add-device-key'; signPublicHash: string };
+  | { kind: 'add-device-key'; signPublicHash: string }
+  /** Plan 2 Task 18: the account owner invites a team member (`roles`: the roles, comma-separated in a fixed order). */
+  | { kind: 'team-invite'; roles: string }
+  /** Changes one member's roles to exactly `roles`. */
+  | { kind: 'team-roles'; memberId: string; roles: string }
+  /** Removes one member (or cancels an invite). */
+  | { kind: 'team-remove'; memberId: string };
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
 function canonical(a: ConfirmAction): string {
@@ -58,7 +64,19 @@ export function describeAction(a: ConfirmAction): string {
       return 'make new recovery codes';
     case 'add-device-key':
       return 'add a trade signing key';
+    case 'team-invite':
+      return `invite a team member (${teamRoleWords(a.roles)})`;
+    case 'team-roles':
+      return `change a team member's roles to ${teamRoleWords(a.roles)}`;
+    case 'team-remove':
+      return 'remove a team member';
   }
+}
+
+/** "Offers", "Trades" or "Offers and Trades" from a comma-separated roles list. */
+function teamRoleWords(roles: string): string {
+  const words = roles.split(',').map((r) => (r === 'offers' ? 'Offers' : r === 'trades' ? 'Trades' : r));
+  return words.join(' and ');
 }
 
 /** SHA-256 hex (WebCrypto) of the trimmed address. */

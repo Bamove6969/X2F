@@ -203,7 +203,7 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -783,6 +783,53 @@ async function addKeyFinish(req: FastifyRequest) {
   return { fingerprint: pending.fingerprint };
 }
 
+// ---------------------------------------------------------------------------------------------
+// Plan 2 Task 18: a team member's sign-up (apps/api/src/team/members.ts)
+
+/**
+ * Checks a member's pasted key (400 with the key's refusal) and issues a `team-join` challenge to
+ * it, keeping the sealed storable key in the payload for `checkTeamJoinCode`. `accountId` is null
+ * for the first factor (no member account yet) and the member's account for a second PGP key.
+ */
+export async function issueTeamJoinChallenge(
+  deps: Deps,
+  req: FastifyRequest,
+  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown> },
+): Promise<IssuedChallenge & { fingerprint: string }> {
+  const now = deps.clock();
+  const inspection = await inspectOrRefuse(a.publicKey, now);
+  const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
+  const issued = await issuePgpChallenge(deps, req, {
+    accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
+    armoredKeys: [storable], payload: { ...a.payload, key: pending },
+  });
+  return { ...issued, fingerprint: inspection.fingerprint };
+}
+
+/**
+ * Uses up a `team-join` challenge and checks its code (as `checkPgpCode`), from the same device
+ * that started it and for the same `accountId` (null or the member's). Returns its payload and
+ * the proven key.
+ */
+export async function checkTeamJoinCode(
+  deps: Deps,
+  req: FastifyRequest,
+  challengeId: string,
+  code: string,
+  accountId: string | null,
+): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
+  const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'team-join' });
+  const device = deviceHash(req);
+  const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
+  if (row.account_id !== accountId || !sameDevice) throw new ApiError(400, 'challenge-expired');
+  const pending = readPendingKey(row.payload, 'key');
+  return {
+    payload: row.payload,
+    fingerprint: pending.fingerprint,
+    armored: openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint),
+  };
+}
+
 /**
  * Every PGP route: `GET /v1/pgp/signing-key`, register, login (mounted at `/v1/login/pgp` for all
  * kinds), confirm, and adding a key to the account.
@@ -796,7 +843,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   app.post('/v1/register/pgp/finish', registerFinish);
 
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['trader', 'staff', 'owner'] }), { prefix: '/v1/login/pgp' });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['trader', 'staff', 'owner', 'member'] }), { prefix: '/v1/login/pgp' });
 
   app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
   app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);

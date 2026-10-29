@@ -5,6 +5,9 @@ const METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'passw
 const HEX64 = /^[0-9a-f]{64}$/;
 const ADDRESS_END = /^[1-9A-HJ-NP-Za-km-z]{1,6}$/; // base58, as Monero addresses are written
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// Plan 2 Task 18: a team member's roles, in their fixed order.
+const TEAM_ROLES = /^(offers|trades|offers,trades)$/;
 // 1 to MAX_WALLET_BATCH (10) address ends, comma-separated.
 const ADDRESS_ENDS = /^[1-9A-HJ-NP-Za-km-z]{1,6}(,[1-9A-HJ-NP-Za-km-z]{1,6}){0,9}$/;
 
@@ -18,6 +21,9 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'set-login-name': {},
   'new-recovery-codes': {},
   'add-device-key': { signPublicHash: (v) => HEX64.test(v) },
+  'team-invite': { roles: (v) => TEAM_ROLES.test(v) },
+  'team-roles': { memberId: (v) => UUID.test(v), roles: (v) => TEAM_ROLES.test(v) },
+  'team-remove': { memberId: (v) => UUID.test(v) },
 };
 
 /**

@@ -1,0 +1,301 @@
+/**
+ * Team members (Plan 2 Task 18; spec 6.7, R44; owner 2026-10-29c): invites, the member's own
+ * sign-up, roles and removal. Routes are in routes/team.ts.
+ *
+ * - The account owner (a trader) invites up to `MAX_TEAM_MEMBERS` members (open invites count). An
+ *   invite is a one-time code that lives 24 hours (as staff invites, Plan 4); only its SHA-256 is
+ *   stored. The owner passes it on by hand; the web puts it in the link's #fragment, so it never
+ *   reaches a server log or a Referer.
+ * - The member signs up with the code: a login name of their own and two factors by the staff rule
+ *   (*lead default*, owner may change): always a PGP key first, then a security key, a passkey or a
+ *   second PGP key. Never a password, an authenticator code or recovery codes. Their login is an
+ *   `accounts` row of kind `member`; its display name is a random placeholder nobody sees.
+ * - Removing a member ends their sessions at once and closes their login for good.
+ */
+import { createHash, randomBytes } from 'node:crypto';
+import { checkDisplayName, checkLoginName, lookAlikeKey } from '@x2f/accounts';
+import type pg from 'pg';
+import type { Deps } from '../app.js';
+import { addAlert } from '../alerts.js';
+import { createAccount } from '../accounts.js';
+import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
+import type { EventBus } from '../events/bus.js';
+import { MAX_TEAM_MEMBERS, type TeamRole } from './perms.js';
+
+/** An invite lives this long (as Plan 4's staff invites). */
+export const INVITE_TTL_MS = 24 * 3_600_000;
+/** A member who proved their PGP key has at least this long to add the second factor. */
+export const SETUP_MIN_MS = 30 * 60_000;
+/** The invite code: 32 random bytes, base64url without padding. */
+const CODE = /^[A-Za-z0-9_-]{43}$/;
+
+export const inviteHash = (code: string): Buffer => createHash('sha256').update(`team-invite/${code}`).digest();
+
+/** A member's status as the account owner sees it. */
+export type MemberStatus = 'invited' | 'joining' | 'active';
+
+export interface TeamMemberView {
+  id: string;
+  displayName: string;
+  roles: TeamRole[];
+  status: MemberStatus;
+  /** Until when the invite (or an unfinished sign-up) can be used; null once joined. */
+  inviteExpiresAt: string | null;
+  joinedAt: string | null;
+  createdAt: string;
+}
+
+/** Live members: not removed, and joined or still inside their invite's time. */
+export const LIVE_MEMBER = `removed_at is null and (joined_at is not null or invite_expires_at > $2)`;
+
+interface MemberRow {
+  id: string;
+  display_name: string;
+  roles: TeamRole[];
+  member_account_id: string | null;
+  joined_at: Date | null;
+  invite_expires_at: Date;
+  created_at: Date;
+}
+
+function toView(r: MemberRow): TeamMemberView {
+  const status: MemberStatus = r.joined_at !== null ? 'active' : r.member_account_id !== null ? 'joining' : 'invited';
+  return {
+    id: r.id,
+    displayName: r.display_name,
+    roles: r.roles,
+    status,
+    inviteExpiresAt: r.joined_at === null ? r.invite_expires_at.toISOString() : null,
+    joinedAt: r.joined_at?.toISOString() ?? null,
+    createdAt: r.created_at.toISOString(),
+  };
+}
+
+/** The account's live members and open invites, oldest first. */
+export async function listMembers(db: Queryable, accountId: string, now: Date): Promise<TeamMemberView[]> {
+  const { rows } = await db.query<MemberRow>(
+    `select id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at
+       from team_members where account_id = $1 and ${LIVE_MEMBER} order by created_at, id`,
+    [accountId, now],
+  );
+  return rows.map(toView);
+}
+
+/**
+ * A member's name, as chat labels show it: the display-name rules (5–20 ASCII letters, digits,
+ * `.`, `-`, `_`; no reserved words, with look-alikes) and no look-alike of a staff or owner name
+ * (F4), so a label can never read like X2F staff. 400 `display-name-invalid` / `display-name-reserved`.
+ * Unique within the team only (the unique index; 409 `display-name-taken`).
+ */
+export async function checkMemberName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
+  const r = checkDisplayName(typeof raw === 'string' ? raw : '');
+  if (!r.ok) throw new ApiError(400, r.reason === 'reserved' ? 'display-name-reserved' : 'display-name-invalid');
+  const folded = lookAlikeKey(r.key);
+  const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
+  if (rows.some((s) => lookAlikeKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
+  return { name: r.name, key: r.key };
+}
+
+async function inTransaction<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const client = await db.connect();
+  try {
+    await client.query('begin');
+    try {
+      const out = await fn(client);
+      await client.query('commit');
+      return out;
+    } catch (e) {
+      await client.query('rollback');
+      throw e;
+    }
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Creates an invite for the account (the account owner's session; `requireSession` already
+ * refused members). The account row is locked first, so two invites cannot both pass the count.
+ * Invites past their time are closed first (they no longer count and free their names). 409
+ * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `display-name-taken` for a name already in the team.
+ */
+export async function createInvite(
+  deps: Pick<Deps, 'db' | 'clock'>,
+  accountId: string,
+  a: { name: { name: string; key: string }; roles: TeamRole[] },
+): Promise<{ id: string; code: string; expiresAt: string }> {
+  const now = deps.clock();
+  const code = randomBytes(32).toString('base64url');
+  const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+  try {
+    const id = await inTransaction(deps.db, async (c) => {
+      await c.query('select 1 from accounts where id = $1 for update', [accountId]);
+      await c.query(
+        `update team_members set removed_at = $2, invite_hash = null
+          where account_id = $1 and removed_at is null and joined_at is null and invite_expires_at <= $2`,
+        [accountId, now],
+      );
+      const count = await c.query<{ n: number }>(`select count(*)::int as n from team_members where account_id = $1 and ${LIVE_MEMBER}`, [accountId, now]);
+      if (count.rows[0]!.n >= MAX_TEAM_MEMBERS) throw new ApiError(409, 'too-many-members', { max: MAX_TEAM_MEMBERS });
+      const { rows } = await c.query<{ id: string }>(
+        `insert into team_members (account_id, display_name, display_key, roles, invite_hash, invite_expires_at, created_at)
+         values ($1, $2, $3, $4, $5, $6, $7) returning id`,
+        [accountId, a.name.name, a.name.key, a.roles, inviteHash(code), expiresAt, now],
+      );
+      return rows[0]!.id;
+    });
+    return { id, code, expiresAt: expiresAt.toISOString() };
+  } catch (e) {
+    if ((e as { code?: string; constraint?: string }).code === '23505' && (e as { constraint?: string }).constraint === 'team_members_live_name') {
+      throw new ApiError(409, 'display-name-taken');
+    }
+    throw e;
+  }
+}
+
+/** Sets a live member's roles (takes effect on their next request). 404 for anyone else's or a removed member. */
+export async function setRoles(deps: Pick<Deps, 'db' | 'clock'>, accountId: string, memberId: string, roles: TeamRole[]): Promise<TeamMemberView> {
+  const { rows } = await deps.db.query<MemberRow>(
+    `update team_members set roles = $3
+      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
+    [memberId, deps.clock(), roles, accountId],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  return toView(row);
+}
+
+/**
+ * Removes a member or cancels an invite: the row is marked removed, the invite code dies, the
+ * member's login account is disabled and every session of theirs is revoked, in one transaction;
+ * their live streams are closed after the commit. 404 for anyone else's or an already removed one.
+ */
+export async function removeMember(
+  deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
+  accountId: string,
+  memberId: string,
+): Promise<void> {
+  const now = deps.clock();
+  const ended = await inTransaction(deps.db, async (c) => {
+    const { rows } = await c.query<{ member_account_id: string | null }>(
+      `update team_members set removed_at = $3, invite_hash = null
+        where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
+      [memberId, accountId, now],
+    );
+    const row = rows[0];
+    if (!row) throw new ApiError(404, 'not-found');
+    if (row.member_account_id !== null) {
+      await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [row.member_account_id, now]);
+    }
+    const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [
+      memberId, now,
+    ]);
+    return s.rows.map((r) => r.id);
+  });
+  for (const id of ended) deps.events.closeSession(accountId, id);
+}
+
+// ---------------------------------------------------------------------------------------------
+// The member's side: an invite and the sign-up
+
+export interface InviteView {
+  /** The team account's public display name. */
+  team: string;
+  displayName: string;
+  roles: TeamRole[];
+  expiresAt: string;
+}
+
+interface InviteRow {
+  id: string;
+  account_id: string;
+  team: string;
+  display_name: string;
+  roles: TeamRole[];
+  invite_expires_at: Date;
+}
+
+/**
+ * The open invite a code names: not used, not removed, not past its time, of a live trader
+ * account. Anything else → 404 `not-found` (one answer for a wrong, used and expired code).
+ * `lock` takes the row `for update` (inside a transaction).
+ */
+export async function openInvite(q: Queryable, by: { code: unknown } | { id: string }, now: Date, lock = false): Promise<InviteRow> {
+  let hash: Buffer | null = null;
+  if ('code' in by) {
+    if (typeof by.code !== 'string' || !CODE.test(by.code)) throw new ApiError(404, 'not-found');
+    hash = inviteHash(by.code);
+  }
+  const { rows } = await q.query<InviteRow>(
+    `select tm.id, tm.account_id, t.display_name as team, tm.display_name, tm.roles, tm.invite_expires_at
+       from team_members tm join accounts t on t.id = tm.account_id
+      where ($1::bytea is null or tm.invite_hash = $1) and ($3::uuid is null or tm.id = $3) and tm.invite_hash is not null
+        and tm.removed_at is null and tm.member_account_id is null and tm.invite_expires_at > $2
+        and t.kind = 'trader' and t.disabled_at is null
+      ${lock ? 'for update of tm' : ''}`,
+    [hash, now, 'id' in by ? by.id : null],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  return row;
+}
+
+export function inviteView(r: InviteRow): InviteView {
+  return { team: r.team, displayName: r.display_name, roles: r.roles, expiresAt: r.invite_expires_at.toISOString() };
+}
+
+/**
+ * The member's private login name: the login-name rules, and never any account's public display
+ * name (one namespace, as at sign-up). 400 `login-name-invalid`, 409 `names-unavailable`. A login
+ * name already taken is found only by `createAccount` at the end (the same generic answer).
+ */
+export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise<{ name: string; key: string }> {
+  const r = checkLoginName(typeof raw === 'string' ? raw : '');
+  if (!r.ok) throw new ApiError(400, 'login-name-invalid');
+  const { rows } = await db.query('select 1 from accounts where display_key = $1', [r.key]);
+  if (rows.length > 0) throw new ApiError(409, 'names-unavailable');
+  return { name: r.name, key: r.key };
+}
+
+/**
+ * The first factor proved: creates the member's login account with that PGP key, binds it to the
+ * invite (the code dies), and gives the member at least `SETUP_MIN_MS` to add the second factor.
+ * Returns the member account and the time the setup must finish by. The invite is locked and
+ * checked again here, so one code makes one member.
+ */
+export async function startMember(
+  c: Queryable,
+  a: { inviteId: string; loginName: { name: string; key: string }; now: Date; addKey: (memberAccountId: string) => Promise<void> },
+): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
+  const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
+  // The placeholder display name: random, never shown (accounts.display_name is not null and unique).
+  const placeholder = `m-${randomBytes(8).toString('hex')}`;
+  const memberAccountId = await createAccount(c, {
+    displayName: placeholder, displayKey: placeholder, loginName: a.loginName.name, loginKey: a.loginName.key,
+    kind: 'member', termsVersion: null, now: a.now,
+  });
+  await a.addKey(memberAccountId);
+  const setupUntil = new Date(Math.max(invite.invite_expires_at.getTime(), a.now.getTime() + SETUP_MIN_MS));
+  await c.query('update team_members set member_account_id = $2, invite_hash = null, invite_expires_at = $3 where id = $1', [
+    invite.id, memberAccountId, setupUntil,
+  ]);
+  return { memberId: invite.id, memberAccountId, teamId: invite.account_id, setupUntil };
+}
+
+/**
+ * Marks the member joined once their second factor is stored, and tells the account owner. 404
+ * when the member was removed (or had already joined) meanwhile.
+ */
+export async function finishMember(c: Queryable, memberAccountId: string, now: Date): Promise<void> {
+  const { rows } = await c.query<{ account_id: string; display_name: string }>(
+    `update team_members set joined_at = $2
+      where member_account_id = $1 and joined_at is null and removed_at is null and invite_expires_at > $2
+      returning account_id, display_name`,
+    [memberAccountId, now],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  await addAlert(c, row.account_id, 'team-member-joined', { member: row.display_name }, now);
+}

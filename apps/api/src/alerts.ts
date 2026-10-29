@@ -13,6 +13,9 @@ export type AlertKind =
   | 'wallet-added'
   | 'wallet-removed'
   | 'device-key-added'
+  // Plan 2 Task 18: to the account owner, about the team.
+  | 'team-member-joined'
+  | 'team-member-login'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).
   | 'price-source-failing'
   | 'price-source-recovered'

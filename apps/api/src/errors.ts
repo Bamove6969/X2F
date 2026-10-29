@@ -77,7 +77,12 @@ export type ApiErrorCode =
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
-  | 'no-shared-context';
+  | 'no-shared-context'
+  // Plan 2, Task 18: team members.
+  | 'owner-only'
+  | 'forbidden'
+  | 'too-many-members'
+  | 'member-cannot-sign';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

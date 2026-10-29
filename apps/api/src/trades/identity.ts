@@ -5,8 +5,19 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
-/** Trader sessions only (Plan 2 `requireSession({ kinds: ['trader'] })`; 403 `wrong-account-kind`). */
-const requireTrader = requireSession({ kinds: ['trader'] });
+/** Reading the attestation: the account owner, or a team member with Trades (Plan 2 Task 18). */
+const requireTradesRead = requireSession({ kinds: ['trader'], member: 'trades' });
+/**
+ * Registering a trade identity puts that trade's signing key on the device (R44, spec 3.1): no team
+ * member may, until a per-member key scheme exists (Plan 3 Task 42). A Trades member gets 403
+ * `member-cannot-sign` (other members `forbidden`), the account owner passes.
+ */
+const requireSigner = [
+  requireSession({ kinds: ['trader'], member: 'trades' }),
+  async (req: FastifyRequest) => {
+    if (req.auth.memberId !== null) throw new ApiError(403, 'member-cannot-sign');
+  },
+];
 
 /** Only buyer and seller register a trade identity; the mod identity is the moderation service's. */
 export type TraderRole = Extract<Role, 'buyer' | 'seller'>;
@@ -50,7 +61,7 @@ async function roleInTrade(db: Queryable, rawCode: string, accountId: string): P
 }
 
 export function tradeIdentityRoutes(app: FastifyInstance): void {
-  app.post('/v1/trades/:code/identity', { preHandler: requireTrader }, async (req, reply) => {
+  app.post('/v1/trades/:code/identity', { preHandler: requireSigner }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
     const { code: normalized, role } = await roleInTrade(deps.db, code, req.auth.accountId);
@@ -91,7 +102,7 @@ export function tradeIdentityRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ ok: true, role });
   });
 
-  app.get('/v1/trades/:code/attestation', { preHandler: requireTrader }, async (req, reply) => {
+  app.get('/v1/trades/:code/attestation', { preHandler: requireTradesRead }, async (req, reply) => {
     const deps = req.server.deps;
     const { code } = req.params as { code: string };
     const { code: normalized } = await roleInTrade(deps.db, code, req.auth.accountId);

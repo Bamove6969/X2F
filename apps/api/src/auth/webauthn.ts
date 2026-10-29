@@ -95,7 +95,7 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
   const ok =
     accountKind === 'trader'
       ? info.kind === 'passkey' || info.kind === 'security-key'
-      : (info.kind === 'security-key' && info.attested) || (accountKind === 'staff' && info.kind === 'passkey');
+      : (info.kind === 'security-key' && info.attested) || ((accountKind === 'staff' || accountKind === 'member') && info.kind === 'passkey');
   if (!ok) throw new ApiError(403, 'method-not-allowed');
 }
 
@@ -575,7 +575,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       // query count does not reveal a staff login name (second review).
       afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
     }
-    const withPasskeys = afterPgp && found?.kind === 'staff';
+    // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
+    const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
     );

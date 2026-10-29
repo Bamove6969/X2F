@@ -5,6 +5,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
 import { acceptedEvent } from '../events/publicName.js';
 import { getProfile, isAvailable } from '../methods/profiles.js';
 import type { MarketPrices } from '../price/market.js';
@@ -215,7 +216,8 @@ function raceRefusal(e: unknown): ApiError | null {
   return null;
 }
 
-const requireTrader = requireSession({ kinds: ['trader'] });
+// The account owner, or a team member with Trades (Plan 2 Task 18).
+const requireTrader = requireSession({ kinds: ['trader'], member: 'trades' });
 
 export function takeRoutes(app: FastifyInstance): void {
   app.post('/v1/offers/:id/take', { preHandler: requireTrader }, async (req) => {
@@ -301,6 +303,8 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      // Task 18: a team member's take is in the account owner's audit log, in this transaction.
+      await auditMember(c, req.auth, { action: 'trade-taken', tradeCode: t.code, detail: { offerId: id } }, now);
       return t;
     });
 
@@ -358,6 +362,7 @@ export function takeRoutes(app: FastifyInstance): void {
               [code, me, w.address],
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
     });
     return reply.code(204).send();
   });

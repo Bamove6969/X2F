@@ -37,7 +37,8 @@ const RETRY_MS = 3000;
 export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamOptions = {}): void {
   const heartbeatMs = o.heartbeatMs ?? HEARTBEAT_MS;
   const maxStreamMs = o.maxStreamMs ?? MAX_STREAM_MS;
-  const requireTrader = requireSession({ kinds: ['trader'], touch: false });
+  // The account owner, or a team member with Trades (Plan 2 Task 18): the stream carries the account's trade events.
+  const requireTrader = requireSession({ kinds: ['trader'], touch: false, member: 'trades' });
 
   app.get('/v1/events', { preHandler: requireTrader }, async (req: FastifyRequest, reply: FastifyReply) => {
     const raw = reply.raw;

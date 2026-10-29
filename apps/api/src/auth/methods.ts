@@ -30,7 +30,8 @@ const ALL: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password'
 /** The methods an account kind may hold, in display order. */
 export function allowedMethods(kind: AccountKind): MethodType[] {
   if (kind === 'trader') return [...ALL];
-  if (kind === 'staff') return ['pgp', 'security-key', 'passkey'];
+  // A team member logs in by the staff rule (Plan 2 Task 18, lead default): always two factors.
+  if (kind === 'staff' || kind === 'member') return ['pgp', 'security-key', 'passkey'];
   return ['pgp', 'security-key'];
 }
 
@@ -82,7 +83,7 @@ const isPasskey = (f: LoginFactor): boolean => f.method === 'passkey';
 export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor): boolean {
   const pgpWith = (other: (f: LoginFactor) => boolean) => (isPgp(a) && other(b)) || (other(a) && isPgp(b));
   if (kind === 'owner') return pgpWith(isAttestedKey);
-  if (kind === 'staff') {
+  if (kind === 'staff' || kind === 'member') {
     if (pgpWith(isAttestedKey) || pgpWith(isPasskey)) return true;
     if (!isPgp(a) || !isPgp(b)) return false;
     const first = pgpSet(a);
@@ -99,7 +100,7 @@ export function needsAfter(kind: AccountKind, first: LoginFactor): MethodType[] 
     if (isAttestedKey(first)) return ['pgp'];
     return [];
   }
-  if (kind === 'staff') {
+  if (kind === 'staff' || kind === 'member') {
     if (isPgp(first)) return ['pgp', 'security-key', 'passkey'];
     if (isAttestedKey(first) || isPasskey(first)) return ['pgp'];
     return [];
@@ -273,7 +274,7 @@ function leavesLogin(kind: AccountKind, c: Counts): boolean {
   const primary = c.pgp + c.keys + c.passkeys + (passwordAllowed(kind) ? c.password : 0);
   if (primary === 0) return false;
   if (kind === 'owner') return c.attestedKeys >= 2 && c.usablePgp >= 1;
-  if (kind === 'staff') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
+  if (kind === 'staff' || kind === 'member') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
   return true;
 }
 
