@@ -393,3 +393,47 @@ test('the TOTP backup daily cap says when to try again', async ({ page }) => {
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[role="alert"]')).toContainText('Too many tries. Try again after');
 });
+
+// Plan 2 Task 16: a login from a new device while the account is logged in elsewhere waits for
+// that device's approval: this browser shows the number and polls until it is let in.
+test('new-device approval: the number shows, the poll lets it in, and Continue goes on', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview()));
+  const id = '11111111-1111-4111-8111-111111111111';
+  await page.route('**/v1/login/password', json({
+    status: 'approve-on-device', approvalId: id, number: 47,
+    expiresAt: new Date(Date.now() + 120_000).toISOString(), devices: { loggedIn: 1, max: 3, oneDevice: false },
+  }));
+  let polls = 0;
+  await page.route(`**/v1/login/approval/${id}/poll`, (r) => {
+    polls++;
+    return json(polls < 2 ? { status: 'waiting', expiresAt: new Date(Date.now() + 60_000).toISOString() } : { status: 'ok', loggedOut: [] })(r);
+  });
+
+  await page.goto('/login?returnTo=%2Fbuy');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
+  await expect(page.locator('[data-part="approve-room"]')).toContainText("there's room for this one");
+  await expect(page.locator('[data-part="approve-in"]')).toBeVisible();
+  await page.click('[data-part="approve-continue"]');
+  await expect(page).toHaveURL(/\/buy$/);
+});
+
+test('new-device approval: a blocked login says so and offers a backup login', async ({ page }) => {
+  const id = '22222222-2222-4222-8222-222222222222';
+  await page.route('**/v1/login/password', json({
+    status: 'approve-on-device', approvalId: id, number: 12,
+    expiresAt: new Date(Date.now() + 120_000).toISOString(), devices: { loggedIn: 3, max: 3, oneDevice: false },
+  }));
+  await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'blocked' }));
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page.locator('[data-part="approve-blocked"]')).toContainText('This login was blocked');
+  await page.click('[data-part="approve-retry"]');
+  await expect(page.locator('[data-method="password"]')).toBeVisible();
+});

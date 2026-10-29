@@ -258,3 +258,51 @@ test('removing the only login method is refused at once, without a confirm or a 
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
   expect(deletes).toBe(0);
 });
+
+// Plan 2 Task 16: the device limit, "One device at a time" (confirm-it's-you) and the approval
+// sheet a logged-in device shows when a new device asks to log in.
+test('Devices shows the count against the limit; One device at a time needs confirm-it’s-you', async ({ page }) => {
+  await base(page, {
+    sessions: [{ id: 's1', deviceLabel: 'Browser on Linux', level: 'full', createdAt: '2026-10-20T00:00:00.000Z', lastSeenAt: '2026-10-23T00:00:00.000Z', current: true }],
+  });
+  await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
+  await page.route('**/v1/confirm/password', json({ confirmToken: 't1' }));
+  let sent: unknown = null;
+  await page.route('**/v1/account/security/one-device', async (r) => {
+    const body = JSON.parse(r.request().postData() ?? '{}') as { on?: boolean; confirmToken?: string };
+    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'set-one-device' }, 403)(r);
+    sent = body;
+    return json({ oneDevice: true, maxDevices: 3 })(r);
+  });
+
+  await page.goto('/settings/security');
+  await expect(page.locator('[data-part="devices-count"]')).toHaveText('Logged in · 1 of 3');
+  await page.click('[data-part="one-device-toggle"]');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+  await page.fill('#confirm-password', 'Correct-Horse-9!');
+  await page.click('[data-method="password"] >> text=Confirm');
+  await expect(page.locator('[data-part="one-device-toggle"]')).toHaveText('On');
+  expect(sent).toEqual({ on: true, confirmToken: 't1' });
+});
+
+test('a logged-in device asked "Is this you?" taps the number and lets the new device in', async ({ page }) => {
+  await base(page);
+  const id = '22222222-2222-4222-8222-222222222222';
+  await page.route('**/v1/account/approvals', json([
+    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false },
+  ]));
+  let decision: unknown = null;
+  await page.route(`**/v1/account/approvals/${id}`, async (r) => {
+    decision = JSON.parse(r.request().postData() ?? '{}');
+    return json({ outcome: 'approved' })(r);
+  });
+  await page.goto('/settings/security');
+  const sheet = page.locator('[role="dialog"]');
+  await expect(sheet).toContainText('Someone is logging in on Chrome on Windows. Is this you?');
+  await sheet.locator('[data-part="approve-choice"]', { hasText: '47' }).click();
+  await sheet.locator('[data-part="approve-yes"]').click();
+  await expect(sheet.locator('[data-part="approve-done"]')).toContainText('Chrome on Windows is logged in');
+  expect(decision).toEqual({ choice: 47 });
+  await sheet.locator('[data-part="approve-ok"]').click();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});

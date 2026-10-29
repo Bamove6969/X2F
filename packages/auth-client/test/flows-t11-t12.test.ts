@@ -258,3 +258,48 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     });
   });
 });
+
+describe('new-device approval (Plan 2 Task 16)', () => {
+  async function passwordUser(): Promise<{ own: Jar; username: string }> {
+    const own = jar();
+    const { version } = await own.api.getTerms();
+    const username = uniqueName('appr');
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    return { own, username };
+  }
+
+  it('a new browser waits; the logged-in one taps the number; the poll lets it in', async () => {
+    const { own, username } = await passwordUser();
+    const other = jar();
+    const wait = await other.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: 'Browser on Android' });
+    if (wait.status !== 'approve-on-device') throw new Error(`expected a wait, got ${wait.status}`);
+    await expect(other.api.pollLoginApproval(wait.approvalId)).resolves.toEqual({ status: 'waiting', expiresAt: wait.expiresAt });
+    const [view] = await own.api.listApprovals();
+    expect(view).toMatchObject({ id: wait.approvalId, deviceLabel: 'Browser on Android', atLimit: false, oneDevice: false });
+    await expect(own.api.getApproval(wait.approvalId)).resolves.toEqual(view);
+    expect(view!.choices).toContain(wait.number);
+    await expect(own.api.decideApproval(wait.approvalId, { choice: wait.number })).resolves.toEqual({ outcome: 'approved' });
+    await expect(other.api.pollLoginApproval(wait.approvalId)).resolves.toEqual({ status: 'ok', loggedOut: [] });
+    expect((await other.api.me()).level).toBe('full');
+    const ended = apiError(await failure(own.api.decideApproval(wait.approvalId, { block: true })));
+    expect(ended.code).toBe('approval-ended');
+    expect(ended.outcome).toBe('approved');
+  });
+
+  it('a block ends it; cancel ends it too; the device settings read back', async () => {
+    const { own, username } = await passwordUser();
+    const b = jar();
+    const w1 = await b.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL });
+    if (w1.status !== 'approve-on-device') throw new Error('expected a wait');
+    await expect(own.api.decideApproval(w1.approvalId, { block: true })).resolves.toEqual({ outcome: 'blocked' });
+    await expect(b.api.pollLoginApproval(w1.approvalId)).resolves.toEqual({ status: 'blocked' });
+    const w2 = await b.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL });
+    if (w2.status !== 'approve-on-device') throw new Error('expected a wait');
+    await b.api.cancelLoginApproval(w2.approvalId);
+    await expect(own.api.listApprovals()).resolves.toEqual([]);
+    await expect(own.api.getDeviceSettings()).resolves.toEqual({ oneDevice: false, maxDevices: 3 });
+    const refused = apiError(await failure(own.api.setOneDevice({ on: true })));
+    expect(refused.code).toBe('confirm-required');
+    expect(refused.action).toBe('set-one-device');
+  });
+});

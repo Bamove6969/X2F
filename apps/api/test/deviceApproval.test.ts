@@ -1,7 +1,7 @@
 // Plan 2 Task 16: new-device approval, number matching, the 3-device limit and "One device at a
 // time". Logins here use passwords (the gate is the same function for PGP, passkeys and security
 // keys: `completeLogin`'s trader branch; the passkey case below proves that path too).
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import type { AccountKind } from '@x2f/accounts';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -374,9 +374,11 @@ describe('the 3-device limit', () => {
     await deps.db.query(`insert into owner_settings (key, value, updated_at) values ('max_devices', 1, now()) on conflict (key) do update set value = 1`);
     try {
       const { a, name } = await signUp();
-      const b = new Browser();
-      await approveAndCollect(a, b, await waitFor(b, name));
       expect((await a.get('/v1/account/security/devices')).json()).toEqual({ oneDevice: false, maxDevices: 1 });
+      const w = await waitFor(new Browser(), name);
+      expect(w.devices).toEqual({ loggedIn: 1, max: 1, oneDevice: false });
+      expect((await a.get(`/v1/account/approvals/${w.approvalId}`)).json()).toMatchObject({ atLimit: true });
+      expect((await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toMatchObject({ error: 'too-many-devices' });
     } finally {
       await deps.db.query(`delete from owner_settings where key = 'max_devices'`);
     }
@@ -506,5 +508,30 @@ describe('who it applies to', () => {
     expect((await b.me()).statusCode).toBe(200);
     const { rows } = await deps.db.query('select 1 from login_approvals where account_id = $1', [id]);
     expect(rows).toHaveLength(0);
+  });
+});
+
+describe('one gate', () => {
+  // login.ts keeps one: the staff and owner two-factor finish, which Task 16 leaves alone.
+  it("every later full login goes through traderLogin: no other source file starts a full session with firstSession false", () => {
+    const root = new URL('../src/', import.meta.url).pathname;
+    const files: string[] = [];
+    const walk = (d: string) => {
+      for (const f of readdirSync(d)) {
+        const p = `${d}${f}`;
+        if (statSync(p).isDirectory()) walk(`${p}/`);
+        else if (p.endsWith('.ts')) files.push(p);
+      }
+    };
+    walk(root);
+    const offenders = files.filter((f) => !f.endsWith('auth/approval.ts') && !f.endsWith('auth/login.ts')).filter((f) => {
+      const src = readFileSync(f, 'utf8');
+      return /startSession\([^;]*level: 'full'[^;]*firstSession: false/s.test(src);
+    });
+    expect(offenders).toEqual([]);
+    // login.ts: its one full session comes after the trader branch has returned.
+    const login = readFileSync(`${root}auth/login.ts`, 'utf8');
+    expect(login.indexOf('return traderLogin(')).toBeGreaterThan(0);
+    expect(login.indexOf('return traderLogin(')).toBeLessThan(login.indexOf('await startSession('));
   });
 });

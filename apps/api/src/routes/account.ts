@@ -1,4 +1,4 @@
-import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
+import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
@@ -6,7 +6,6 @@ import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { maxDevices } from '../auth/approval.js';
 import { maxDevices } from '../auth/approval.js';
 import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
@@ -176,14 +175,6 @@ export function isLoginNameClash(e: unknown): boolean {
   const err = e as { code?: unknown; constraint?: unknown };
   if (err.code === '40P01') return true;
   return err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey');
-}
-
-/** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
-function oneDeviceAction(req: FastifyRequest): ConfirmAction {
-  const body = req.body;
-  const on = body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as { on?: unknown }).on : undefined;
-  if (typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
-  return { kind: 'set-one-device', on: on ? 'on' : 'off' };
 }
 
 /** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
