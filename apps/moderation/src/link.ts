@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Role } from '@x2f/core';
 import { canonicalJson } from '@x2f/protocol';
-import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, type AttestedTerms } from '@x2f/trade';
+import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, SETTLE_KINDS, type AttestedTerms, type SettleKind } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 
 /**
@@ -25,13 +25,22 @@ export interface WorkItem {
   terms: AttestedTerms;
 }
 
+/** One trade on the API's watch list. */
+export interface WatchItem {
+  state: string;
+  /** settleKindFor(trade): the kind a `settled` report would be applied as, or null (review I1). */
+  settleKind: SettleKind | null;
+  /** Paused for maintenance (review M3). */
+  paused: boolean;
+}
+
 export interface Link {
   pullWork(): Promise<WorkItem[]>;
   postReport(report: unknown): Promise<number>;
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
-  /** The API's state for every attested trade it still lists (Task 9 watcher). */
-  pullWatch(): Promise<Map<string, string>>;
+  /** The API's view of every attested trade it still lists (Task 9 watcher). Malformed items are left out. */
+  pullWatch(): Promise<Map<string, WatchItem>>;
   registerChannel(channel: string, signPublics: Record<Role, string>): Promise<number>;
   /** The signed relay close of one channel (Task 7's `closeTrade`); 200 when done. */
   closeChannel(channel: string): Promise<number>;
@@ -107,10 +116,12 @@ export function createLink(o: {
       const res = await internal('GET', '/internal/v1/watch');
       if (res.status !== 200) throw new LinkError(res.status, 'pull watch');
       const body = (await res.json()) as { trades?: unknown };
-      const out = new Map<string, string>();
+      const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown }>) {
-        if (typeof t?.trade === 'string' && typeof t.state === 'string') out.set(t.trade, t.state);
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown }>) {
+        if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
+        const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
+        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true });
       }
       return out;
     },

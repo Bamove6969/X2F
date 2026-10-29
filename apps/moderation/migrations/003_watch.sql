@@ -1,4 +1,6 @@
 -- Plan 3, Task 9: the moderator party's saved escrow session and the chain watcher's state.
+-- Numbered 003 (review M7): 002 is Task 20's 002_chat.sql (wip/second-p3-task20-rest); Task 10's
+-- 003_signals.sql moves to 004 when it re-merges this branch.
 --
 -- mod_escrow_state: each trade's escrow PartyState (the saved multisig wallet, its keys encrypted
 --   by the trade's R27 wallet password, plus the protocol state), sealed with AES-256-GCM under

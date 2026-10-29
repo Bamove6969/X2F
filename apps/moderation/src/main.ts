@@ -12,9 +12,9 @@ import { createWatcher } from './watcher.js';
 
 export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
-export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type Watcher } from './watcher.js';
+export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type SweepContext, type Watcher } from './watcher.js';
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)

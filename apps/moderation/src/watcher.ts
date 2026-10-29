@@ -1,9 +1,12 @@
-import type { Outgoing, PartyHandle } from '@x2f/escrow';
+import type { Funds, Outgoing, PartyHandle } from '@x2f/escrow';
 import {
   channelFor,
   modPartyPlan,
   newWatchState,
+  sweepMinimums,
   watchStep,
+  type AttestedTerms,
+  type SettleKind,
   type EscrowFunds,
   type ModPartyArgs,
   type SpendEvidence,
@@ -12,7 +15,7 @@ import {
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
-import type { Link } from './link.js';
+import type { Link, WatchItem } from './link.js';
 
 /**
  * The moderation service's chain watcher (Plan 3 Task 9), the I/O around `@x2f/trade`'s pure
@@ -134,7 +137,7 @@ export function reviveWatchState(j: unknown): WatchState {
 }
 
 /** The escrow facts `watchStep` takes, or null when the engine gave no heights (never guessed). */
-function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: EscrowFunds; outgoing: Outgoing[]; claimed: boolean } | null {
+function escrowFacts(f: Funds): { funds: EscrowFunds; outgoing: Outgoing[]; claimed: boolean } | null {
   if (typeof f.chainHeight !== 'number' || !Array.isArray(f.outgoing)) return null;
   if (f.incoming.some((i) => i.height === undefined)) return null;
   return {
@@ -151,24 +154,63 @@ function escrowFacts(f: Awaited<ReturnType<PartyHandle['funds']>>): { funds: Esc
   };
 }
 
+/** What spendEvidence needs besides the wallet facts: the API's kind, this service's OWN terms, and the party's proof check. */
+export interface SweepContext {
+  /** settleKindFor(trade) from the API's watch list; null when the trade alone does not name it. */
+  settleKind: SettleKind | null;
+  /** The terms this service signed (signed_terms), never an API read. */
+  terms: AttestedTerms;
+  feeWallet: string;
+  /** PartyHandle.proveSweep (absent: nothing shown only through an import is ever proven). */
+  prove?: PartyHandle['proveSweep'];
+  log: (e: { reason: string }) => void;
+}
+
 /**
  * The spend evidence `watchStep` may use. It is ONLY a tx this mod's own wallet records as spending
- * the escrow (Outgoing): one it co-signed, or one it found by its own key images after importing a
- * party's post-release multisig info (lead decision A, 2026-10-29: a buyer or seller whose release
- * is done sends `spend.info` on the escrow channel until the mod's party acks; the party syncs and
- * imports it, packages/escrow party.ts). A tx hash seen in a block or reported by a party or the API
- * never counts (coordination.md, Task 9 I/O notes): the info only completes key images for this
- * wallet's own outputs, and the wallet then finds those key images among the inputs of txs in blocks,
- * so a forged or wrong info cannot show a spend that did not happen (at worst it shows nothing, and
- * the 6 h `spend-unshown` fallback in watchStep escalates). Picks the oldest sweep not yet counted,
- * a block before the pool.
+ * the escrow (Outgoing), and then only when either
+ * - the mod's own party signed it (`ownTxs`: a release it co-signed, or built and saw done), or
+ * - (review I1, 2026-10-29) it was shown only after importing a buyer's or seller's post-release
+ *   multisig info (lead decision A: `spend.info`, packages/escrow party.ts) AND the tx key that party
+ *   sent with it proves, through the mod's own wallet (`proveSweep`, monero check_tx_key), that the tx
+ *   is in a block and pays at least `sweepMinimums` for the API's `settleKind`, computed from this
+ *   service's OWN signed terms and fee wallet (never an API read).
+ * Why the import alone is not proof: wallet2 builds the escrow's composite key image by adding the
+ * peer's partial key images without checking them, and a trade party already holds every partial
+ * but the mod's (it received the other signer's in the release's export round). It could therefore
+ * send partials that make the mod's wallet attribute ANY in-block tx to the escrow. With the proof,
+ * such a "forged" sweep is harmless: that tx really paid the right parties what they are owed.
+ * A tx hash seen in a block or reported by a party or the API never counts. Picks the oldest sweep
+ * not yet counted, a block before the pool; one that cannot be proven is logged (`sweep-unproven`)
+ * and skipped, so it never settles anything (the 6 h `spend-unshown` fallback escalates instead).
  */
-export function spendEvidence(outgoing: readonly Outgoing[], state: WatchState): SpendEvidence | null {
-  const fresh = outgoing
+export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepContext): Promise<SpendEvidence | null> {
+  const fresh = (f.outgoing ?? [])
     .filter((o) => !state.sweepTxs.includes(o.txHash))
     .sort((a, b) => (a.height ?? Number.MAX_SAFE_INTEGER) - (b.height ?? Number.MAX_SAFE_INTEGER));
-  const o = fresh[0];
-  return o ? { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic } : null;
+  for (const o of fresh) {
+    const evidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic };
+    if ((f.ownTxs ?? []).includes(o.txHash)) return evidence;
+    if (o.height !== null && (await proven(o, f, ctx))) return evidence;
+    ctx.log({ reason: 'sweep-unproven' });
+  }
+  return null;
+}
+
+async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean> {
+  if (ctx.settleKind === null || !ctx.prove || o.spentAtomic <= 0n) return false;
+  let minimums;
+  try {
+    minimums = sweepMinimums({ kind: ctx.settleKind, terms: ctx.terms, feeWallet: ctx.feeWallet, sweptAtomic: o.spentAtomic });
+  } catch {
+    return false;
+  }
+  if (minimums === null) return false;
+  for (const p of f.spendProofs ?? []) {
+    if (p.txHash !== o.txHash || p.txKey === '' || (p.from !== 'buyer' && p.from !== 'seller')) continue;
+    if (await ctx.prove(o.txHash, p.txKey, minimums)) return true;
+  }
+  return false;
 }
 
 const reportBody = (trade: string, r: WatchReport): Record<string, unknown> => {
@@ -185,6 +227,10 @@ const accepted = (r: { status: number; error: string | null }): boolean => r.sta
 
 export function createWatcher(o: WatcherOptions): Watcher {
   const running = new Map<string, PartyHandle>();
+  /** The ModPartyArgs each running party was started with (this service's own records: terms, fee wallet). */
+  const argsOf = new Map<string, ModPartyArgs>();
+  /** When this watcher started: the 6 h fallback waits WATCH_RESTART_GRACE_MS after it (review M3). */
+  const upSince = o.now();
   const starting = new Map<string, Promise<void>>();
   /** settle-kind-unknown back-off per trade (in memory: a restart retries at once, then backs off again). */
   const backoff = new Map<string, { until: number; delayMs: number }>();
@@ -203,6 +249,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
           return;
         }
         running.set(code, handle);
+        argsOf.set(code, a);
         handle.ready().then(
           async (address) => {
             await o.db.query('update mod_watch set escrow_address = coalesce(escrow_address, $2), updated_at = now() where trade = $1', [code, address]);
@@ -222,6 +269,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
   const stopParty = async (code: string): Promise<void> => {
     const h = running.get(code);
     running.delete(code);
+    argsOf.delete(code);
     await h?.stop().catch(() => undefined);
   };
 
@@ -245,16 +293,34 @@ export function createWatcher(o: WatcherOptions): Watcher {
     return true;
   };
 
-  const watchOne = async (row: Row, apiState: TradeState, handle: PartyHandle): Promise<boolean> => {
+  const watchOne = async (row: Row, item: WatchItem, handle: PartyHandle): Promise<boolean> => {
     const b = backoff.get(row.trade);
     if (b && o.now().getTime() < b.until) return true;
-    const facts = escrowFacts(await handle.funds());
+    const args = argsOf.get(row.trade);
+    if (!args) return true; // unreachable: a running party always has its args
+    const f = await handle.funds();
+    const facts = escrowFacts(f);
     if (facts === null) {
       o.log({ reason: 'escrow-facts-incomplete' });
       return true;
     }
     const state = reviveWatchState(row.state);
-    const step = watchStep({ trade: { state: apiState }, funds: facts.funds, spend: spendEvidence(facts.outgoing, state), state, now: o.now(), claimed: facts.claimed });
+    const spend = await spendEvidence(f, state, {
+      settleKind: item.settleKind,
+      terms: args.terms,
+      feeWallet: args.feeWallet,
+      ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
+      log: o.log,
+    });
+    const step = watchStep({
+      trade: { state: item.state as TradeState, paused: item.paused },
+      funds: facts.funds,
+      spend,
+      state,
+      now: o.now(),
+      claimed: facts.claimed,
+      upSince,
+    });
     if (!(await post(row.trade, step.reports))) return true;
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {
@@ -281,7 +347,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     },
 
     async tick() {
-      let api: Map<string, string>;
+      let api: Map<string, WatchItem>;
       try {
         api = await o.link.pullWatch();
       } catch {
@@ -297,8 +363,22 @@ export function createWatcher(o: WatcherOptions): Watcher {
       const { rows } = await o.db.query<Row>('select trade, escrow_address, setup_done_at, state, watching from mod_watch where watching order by trade');
       for (const row of rows) {
         if (stopped) return;
-        const apiState = api.get(row.trade) as TradeState | undefined;
-        if (apiState === undefined) continue; // not listed (yet, or any more): nothing to decide
+        let item = api.get(row.trade);
+        if (item === undefined) {
+          // Not listed. Not yet (a race with a fresh attestation): nothing to decide. Any more (review
+          // M6): the API lists every open attested trade, so an unlisted one this watcher saw close is
+          // closed, and its watch still runs out its own 30 days (late coins in that gap are still
+          // reported). watchStep treats every closed state alike.
+          let closedHere = false;
+          try {
+            closedHere = reviveWatchState(row.state).closedAt !== null;
+          } catch {
+            closedHere = false;
+          }
+          if (!closedHere) continue;
+          item = { state: 'cancelled', settleKind: null, paused: false };
+        }
+        const apiState = item.state as TradeState;
         try {
           let watching = row.watching;
           const plan = modPartyPlan({
@@ -340,7 +420,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
             if (apiState === 'setup') continue;
             await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
           }
-          watching = await watchOne(row, apiState, handle);
+          watching = await watchOne(row, item, handle);
           if (!watching) {
             await stopParty(row.trade);
             o.log({ reason: 'watch-ended' });
