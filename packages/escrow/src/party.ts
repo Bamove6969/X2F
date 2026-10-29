@@ -615,7 +615,12 @@ export function runParty(a: PartyArgs): PartyHandle {
   const offerSpendInfo = async (): Promise<void> => {
     const rel = state.release;
     if (a.role === 'mod' || !rel || rel.phase !== 'done' || rel.counterpart === 'mod' || state.sent[SPEND_INFO]) return;
-    await exportSpendInfo();
+    try {
+      await exportSpendInfo();
+    } catch {
+      // Never fatal after a release that is done: nothing was sent, tried again on the next tick.
+      return ignored('spend-info-export-failed');
+    }
     if (spendInfoSendable()) await send(SPEND_INFO, ['mod']);
   };
 
@@ -629,7 +634,12 @@ export function runParty(a: PartyArgs): PartyHandle {
     const hex = await session.exportState();
     if (hex.length > SPEND_INFO_MAX_HEX) ignored('spend-info-too-large');
     state.sent[SPEND_INFO] = { hex };
-    await persist(); // the export's fresh nonces are saved with the wallet before it leaves
+    try {
+      await persist(); // the export's fresh nonces are saved with the wallet before it leaves
+    } catch (e) {
+      delete state.sent[SPEND_INFO]; // never sent unsaved; exported afresh next time
+      throw e;
+    }
     return hex;
   };
 
