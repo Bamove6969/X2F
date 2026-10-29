@@ -33,7 +33,7 @@ export const NOTE_MAX = 1000;
 /** The board's appeal form enables "Send appeal" from 10 characters (not counting spaces at the ends). */
 export const APPEAL_MIN = 10;
 
-const DAY_MS = 24 * 60 * 60_000;
+const HOUR_MS = 60 * 60_000;
 const ms = (iso: string | null): number | null => (iso === null ? null : Date.parse(iso));
 
 /**
@@ -42,7 +42,7 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * - securing or secured: either side;
  * - paid: the seller at once, the buyer only from the end of the seller's confirm window;
  * - settling: either side once the signing window has passed;
- * - refunded: the buyer, until 90 days after the refund (spec 2.3, dispute after refund).
+ * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
  */
 export type Entry = { kind: 'open' } | { kind: 'wait'; text: string; until: Date } | { kind: 'opened' } | { kind: 'none' };
@@ -76,10 +76,10 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       if (t.dispute !== null) return { kind: 'opened' };
       // A cancel itself can't be disputed (owner 2026-10-29, question 4): the buyer's own cancel or
       // one both agreed to. Disputing a refund of the wrong amount is not built yet (coordination.md).
-      if (isCancelRefund(t.settling ?? null, t.dispute)) return { kind: 'none' };
+      if (isCancelRefund(t.settling ?? null, t.dispute, t.paidAt)) return { kind: 'none' };
       const closed = ms(t.closedAt);
       if (t.role !== 'buyer' || closed === null) return { kind: 'none' };
-      return n <= closed + TIMERS.disputeAfterRefundDays * DAY_MS ? { kind: 'open' } : { kind: 'none' };
+      return n <= closed + TIMERS.disputeAfterRefundHours * HOUR_MS ? { kind: 'open' } : { kind: 'none' };
     }
     default:
       return { kind: 'none' };
@@ -126,10 +126,11 @@ export function refundReason(settling: SettleKind | null, dispute: DisputeTrade[
  * The refund came from a cancel (the buyer's, or both sides'), with no dispute. A cancel itself
  * can't be disputed (owner 2026-10-29, question 4; this replaces Revision 2026-10-29b's "Did you
  * pay before you cancelled? Open a dispute."). Not a no-show (auto) refund, a lapse or a dispute
- * decision.
+ * decision, and not a cancel's refund that landed after the buyer marked paid (it keeps the
+ * dispute: review I1, the seller holding the refund back until the buyer paid).
  */
-export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrade['dispute']): boolean {
-  return dispute === null && (settling === 'buyer-cancel' || settling === 'mutual-cancel');
+export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrade['dispute'], paidAt: string | null): boolean {
+  return dispute === null && paidAt === null && (settling === 'buyer-cancel' || settling === 'mutual-cancel');
 }
 
 /**

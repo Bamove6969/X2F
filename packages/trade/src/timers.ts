@@ -8,7 +8,8 @@ export const TIMERS = {
   finalAlertMin: 15,
   settleMin: 15,
   lapseCosignMin: 30,
-  disputeAfterRefundDays: 90,
+  /** Owner 2026-10-29: the buyer may dispute a refund (to prove they paid) for 48 hours after it lands (was 90 days). */
+  disputeAfterRefundHours: 48,
 } as const;
 
 /** Confirmations after which Monero coins unlock. */

@@ -106,7 +106,7 @@ export function SellerCancelConfirm({ code, view, refresh }: TradeScreenProps) {
           <p className="x2f-room__grown" role="status" data-input-needed="">
             Your input is needed to cancel this trade.
             {closesAt !== null
-              ? ` If you don't confirm, it closes as cancelled by itself on ${closesAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`
+              ? ` If you don't confirm, it closes as cancelled by itself on ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(closesAt)}.`
               : ''}
           </p>
         ) : null}

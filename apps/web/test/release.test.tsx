@@ -156,6 +156,14 @@ describe('SellerConfirm', () => {
     // Ticking before going past the warning brings it back; the hold stays locked.
     expect(alert()).not.toBeNull();
     expect(s.hold().disabled).toBe(true);
+    act(() => btn("I'll check again").click());
+    // Review M6: the caption names the warning, and it can be shown again from there.
+    expect(s.text()).toContain('Read the warning before you release');
+    act(() => btn('Show the warning again').click());
+    expect(alert()).not.toBeNull();
+    // Review M5: the safe action has focus, and the warning text describes the dialog.
+    expect(document.activeElement?.textContent).toBe("I'll check again");
+    expect(document.getElementById(alert()!.getAttribute('aria-describedby')!)?.textContent).toContain('Only release once the money is really in your account.');
     act(() => btn("It's in my account").click());
     expect(alert()).toBeNull();
     expect(s.hold().disabled).toBe(false);

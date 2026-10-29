@@ -6,6 +6,7 @@
  * SellerConfirm opens it when the screen opens, and again when the box is ticked, until the seller
  * goes past it once for that trade on this device (warned.ts); the hold stays locked until then.
  */
+import { useId } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import './warn.css';
@@ -29,29 +30,26 @@ export function ReleaseWarning({
   onOk(): void;
   onBack(): void;
 }) {
+  const textId = useId();
   return (
-    <Sheet open={open} eyebrow="Before you release" title={fiat !== null ? `Is the ${fiat} really in your account?` : 'Is the payment really in your account?'} onClose={onBack}>
+    <Sheet open={open} eyebrow="Before you release" describedBy={textId} initialFocus="[data-safe]" title={fiat !== null ? `Is the ${fiat} really in your account?` : 'Is the payment really in your account?'} onClose={onBack}>
       <div className="x2f-sheet__body x2f-warn" data-warning="release">
+        <div id={textId} className="x2f-warn">
         <p className="x2f-warn__text x2f-warn__text--strong">Only release once the money is really in your account.</p>
         {/* COPY-UNSIGNED: the board says "Zelle app" for its Zelle trade; other methods name their own app the same way. */}
         <p className="x2f-warn__text">Check your own bank or {methodName} app, not a screenshot. Screenshots can be faked.</p>
         <p className="x2f-warn__text x2f-warn__text--muted">
-          {amount !== null && fiat !== null ? (
-            <>
-              Once released, the {amount} (about {fiat}) goes to <span data-username="">{buyer}</span> and can't be taken back.
-            </>
-          ) : (
-            // COPY-UNSIGNED: before this device has the amount (the board always has it).
-            <>
-              Once released, the XMR goes to <span data-username="">{buyer}</span> and can't be taken back.
-            </>
-          )}
+          {/* "the XMR" (COPY-UNSIGNED) only before this device has the amount; the board always has it. */}
+          Once released, {amount !== null && fiat !== null ? `the ${amount} (about ${fiat})` : 'the XMR'} goes to{' '}
+          {/* not-a-refusal: the warning explains that a release is final; nothing is refused here */}
+          <span data-username="">{buyer}</span> and can't be taken back.
         </p>
+        </div>
         <div className="x2f-warn__actions">
           <Button variant="primary" onClick={onOk}>
             It's in my account
           </Button>
-          <Button variant="secondary" onClick={onBack}>
+          <Button variant="secondary" data-safe="" onClick={onBack}>
             I'll check again
           </Button>
         </div>

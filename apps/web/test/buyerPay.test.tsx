@@ -442,6 +442,9 @@ describe('the pay warning (Task 38; board Warn-IvePaid)', () => {
     );
     expect(t).toContain('Escrow confirmations');
     expect(t).toContain('3 of 10 · about 14 min');
+    // Review M5: "I'll wait" (the safe action) has focus; the owner's words describe the dialog.
+    expect(document.activeElement?.textContent).toBe("I'll wait");
+    expect(document.getElementById(alert()!.getAttribute('aria-describedby')!)?.textContent).toContain(PAY_WARNING_LEAD);
     await click(byText("I'll wait", 'button'));
     expect(alert()).toBeNull();
     expect(calls).toEqual([]);

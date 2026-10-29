@@ -143,9 +143,9 @@ describe('DisputeSlot', () => {
 });
 
 describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
-  const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * DAY), ...over }) as TradeView;
+  const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * 60 * MIN), ...over }) as TradeView;
 
-  it('offers "Open a dispute" within 90 days of the refund, linking to the dispute page', () => {
+  it('offers "Open a dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
     const { host } = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded())} />
@@ -156,10 +156,10 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('offers nothing after 90 days, and the way to the dispute once one was opened', () => {
+  it('offers nothing after 48 hours, and the way to the dispute once one was opened', () => {
     const late = render(
       <MemoryRouter>
-        <RefundedSlot {...props(refunded({ closedAt: at(-91 * DAY) }))} />
+        <RefundedSlot {...props(refunded({ closedAt: at(-48 * 60 * MIN - 1) }))} />
       </MemoryRouter>,
     );
     expect(late.host.textContent).not.toContain('Open a dispute');
@@ -189,10 +189,32 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       );
       expect(host.querySelector('h1')?.textContent, JSON.stringify(over)).toBe(title);
       expect(host.textContent).toContain(text);
-      // The 90-day line only while a dispute can still be opened: never after a cancel (owner 2026-10-29, question 4).
+      // The 48-hour line only while a dispute can still be opened: never after a cancel (owner 2026-10-29, question 4).
       const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
       expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
     }
+  });
+
+  it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {
+    for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
+      const { host } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded({ settling, paidAt: at(-11 * 60 * MIN) }))} />
+        </MemoryRouter>,
+      );
+      expect(host.querySelector('h1')?.textContent).toBe('The XMR went back to the seller after you paid');
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(1);
+      expect(host.textContent).not.toContain('Cancelling');
+    }
+  });
+
+  it('the dispute window line names its end (48 hours after the refund)', () => {
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('[data-dispute-window]')?.textContent).toContain('for 48 hours after the refund, until');
   });
 
   it("a cancel itself can't be disputed (owner 2026-10-29, question 4): no Open a dispute after a cancel's refund; a no-show refund keeps it", () => {

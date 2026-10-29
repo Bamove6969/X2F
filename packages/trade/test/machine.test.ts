@@ -3,6 +3,7 @@ import { feeFor } from '@x2f/core';
 import {
   CLIENT_EVENTS,
   SELLER_CONFIRM_CANCEL_TIMEOUT_H,
+  awaitingCancelConfirm,
   amountForFunds,
   payoutsFor,
   SYSTEM_EVENTS,
@@ -95,7 +96,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
 
 describe('constants', () => {
   test('TIMERS', () => {
-    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundDays: 90 });
+    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48 });
   });
 
   test('every event type is exactly one of system or client', () => {
@@ -498,6 +499,19 @@ describe("the seller's Confirm cancel after a buyer's cancel (owner 2026-10-29, 
     expect(rule(() => apply(closed, confirm(10), 'seller', at(80 + 48 * 60 + 1)))).toBe('wrong-state');
   });
 
+  test('review M1: once the full count is recorded, Confirm cancel no longer depends on a fresh count', () => {
+    const c = apply(refunded(), { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
+    expect(apply(c, confirm(0), 'seller', at(90)).cancelConfirmedAt).toEqual(at(90));
+  });
+
+  test('review M3: an unconfirmed buyer cancel can be escalated to a moderator whatever the escrow reads', () => {
+    const r = apply(refunded(), chain(0n, 0n, 0), 'system', at(70));
+    expect(r.receivedAtomic).toBe(0n);
+    const d = apply(r, { type: 'escalate' }, 'system', at(71));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute?.by).toBe('system');
+  });
+
   test('the seller confirming first stops the auto-close', () => {
     const c = apply(refunded(), { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
     const done = apply(c, confirm(10), 'seller', at(90));
@@ -745,16 +759,16 @@ describe('open-dispute', () => {
     expect(rule(() => apply(waiting, { type: 'open-dispute' }, 'buyer', at(500)))).toBe('too-early');
   });
 
-  test('buyer in refunded within 90 days (a no-show refund; a cancel itself can\'t be disputed)', () => {
+  test('buyer in refunded within 48 hours (owner 2026-10-29; a no-show refund; a cancel itself can\'t be disputed)', () => {
     // The no-show refund: request-refund at 121, the auto-refund lands at 140; the window counts from it.
     const f = run([[{ type: 'request-refund' }, 'seller', 121], [{ type: 'settled', kind: 'auto-refund', txHash: 'dd'.repeat(32) }, 'system', 140]], secured());
     expect(f.state).toBe('refunded');
     expect(rule(() => apply(f, { type: 'open-dispute' }, 'seller', at(141)))).toBe('wrong-party');
-    const day = 24 * 60;
-    const d = apply(f, { type: 'open-dispute' }, 'buyer', at(140 + 90 * day));
+    const hours48 = 48 * 60;
+    const d = apply(f, { type: 'open-dispute' }, 'buyer', at(140 + hours48));
     expect(d.state).toBe('disputed');
     expect(d.closedAt).toBeNull();
-    expect(rule(() => apply(f, { type: 'open-dispute' }, 'buyer', at(140 + 90 * day, 1)))).toBe('too-late');
+    expect(rule(() => apply(f, { type: 'open-dispute' }, 'buyer', at(140 + hours48, 1)))).toBe('too-late');
     // A buyer's cancel, or one both agreed to: no dispute (owner 2026-10-29, question 4).
     expect(rule(() => apply(refunded(), { type: 'open-dispute' }, 'buyer', at(62)))).toBe('wrong-state');
     const mutual = run(
@@ -766,6 +780,38 @@ describe('open-dispute', () => {
       secured(),
     );
     expect(rule(() => apply(mutual, { type: 'open-dispute' }, 'buyer', at(41)))).toBe('wrong-state');
+  });
+
+  test("review I1: a cancel's refund that lands after I've paid keeps the buyer's dispute (the seller-holds-the-refund scam)", () => {
+    // Mutual cancel accepted at 36 (settleBy 51); the seller holds the signed refund back, the window
+    // lapses to secured, the buyer pays at 55, then the refund is broadcast.
+    const back = run(
+      [
+        [{ type: 'propose-cancel' }, 'seller', 35],
+        [{ type: 'accept-cancel' }, 'buyer', 36],
+        [{ type: 'tick' }, 'system', 52],
+        [{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 55],
+        [{ type: 'settled', kind: 'mutual-cancel', txHash: 'cc'.repeat(32) }, 'system', 60],
+      ],
+      secured(),
+    );
+    expect(back.state).toBe('refunded');
+    expect(back.paidAt).toEqual(at(55));
+    expect(apply(back, { type: 'open-dispute' }, 'buyer', at(61)).state).toBe('disputed');
+    // The same with the buyer's own cancel.
+    const bc = run(
+      [
+        [{ type: 'buyer-cancel' }, 'buyer', 40],
+        [{ type: 'tick' }, 'system', 56],
+        [{ type: 'mark-paid', fiatCents: 41250n }, 'buyer', 57],
+        [{ type: 'settled', kind: 'buyer-cancel', txHash: 'cd'.repeat(32) }, 'system', 60],
+      ],
+      secured(),
+    );
+    expect(apply(bc, { type: 'open-dispute' }, 'buyer', at(61)).state).toBe('disputed');
+    // Not "awaiting the seller's Confirm cancel": the buyer had paid.
+    expect(awaitingCancelConfirm(bc)).toBe(false);
+    expect(rule(() => apply(bc, { type: 'return-confirmed', confirmations: 10 }, 'system', at(70)))).toBe('wrong-state');
   });
 
   test('other states → wrong-state; tick in disputed changes nothing', () => {

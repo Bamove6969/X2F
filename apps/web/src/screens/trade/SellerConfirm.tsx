@@ -200,8 +200,11 @@ export function SellerConfirm({
       ? signing || escrow.keepOpen
         ? 'Signing the release on this device. Keep this page open.'
         : 'The release isn’t signed on this device yet. Keep this page open.'
-      : !checked || !acked
+      : !checked
         ? 'Tick the box above to unlock this release button.'
+        : !acked
+          ? // COPY-UNSIGNED (review M6): the box is ticked but the warning was not answered yet.
+            'Read the warning before you release: the hold works once you answer it.'
         : sums === null && problem === null
           ? 'Waiting for this device to confirm the trade amount.'
           : blocked
@@ -296,6 +299,11 @@ export function SellerConfirm({
           }
         />
         {hint !== null ? <span className="x2f-release__hint">{hint}</span> : null}
+        {checked && !acked && !warnOpen && warnDue ? (
+          <button type="button" className="x2f-button x2f-button--quiet" onClick={() => setWarnOpen(true)}>
+            Show the warning again
+          </button>
+        ) : null}
         {problem !== null && !done ? (
           <span role="alert" className="x2f-release__error">
             {problem}

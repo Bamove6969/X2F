@@ -53,8 +53,13 @@ describe('cosignPolicy: the shapes each side may settle', () => {
   });
 
   it('buyer builds its own buyer-cancel with the moderator as co-signer', () => {
-    const c = ctx('buyer', { state: 'paid' });
+    const c = ctx('buyer', { state: 'secured' });
     expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod'))).toBe(true);
+  });
+
+  it("never a buyer-cancel once the trade is paid: no cancel after I've paid (Task 39 review I2)", () => {
+    const c = ctx('buyer', { state: 'paid' });
+    expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod'))).toBe(false);
   });
 
   it('buyer builds a mutual cancel for the seller to co-sign', () => {
@@ -246,9 +251,10 @@ describe('the trade size comes from this device, never the API', () => {
 
 describe('outcomeFor', () => {
   it('derives the outcomes the policy allows, and null when it would not', () => {
-    const b = ctx('buyer', { state: 'paid' });
+    const b = ctx('buyer', { state: 'secured' });
     const cancel = outcomeFor('buyer-cancel', b);
     expect(cancel).toEqual(out(expected('buyer-cancel', b), 'buyer', 'mod'));
+    expect(outcomeFor('buyer-cancel', ctx('buyer', { state: 'paid' }))).toBeNull();
     expect(outcomeFor('release', ctx('seller', { state: 'paid' }))).toEqual(out(expected('release', b), 'seller', 'buyer'));
     expect(outcomeFor('buyer-cancel', ctx('seller', { state: 'paid' }))).toBeNull();
     expect(outcomeFor('release', { ...b, balance: 1n })).toBeNull();

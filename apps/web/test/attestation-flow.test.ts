@@ -556,13 +556,30 @@ describe('settling', () => {
       expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
     });
 
-    it('after paid, an API amount lie never blocks a refund: the buyer cancel still settles', async () => {
+    it("after paid, no buyer cancel at all, whatever the API's amount (no cancel after I've paid, Task 39 review I2)", async () => {
       const t = await paidAtMiddle();
       t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: AMOUNT.toString() });
       expect(await t.buyer.status((x) => x.refusal === 'amount-changed')).toBeTruthy();
+      await expect(t.buyer.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.filter((x) => x.o.cosigner === 'mod')).toEqual([]);
+    });
+
+    it('a buyer cancel tapped before paying is dropped by I\'ve paid and never signed in paid (Task 39 review I2)', async () => {
+      const t = await ready();
+      t.state.view = tradeView({ state: 'securing' });
+      t.parties.funds = { balance: fundsFor(AMOUNT), unlocked: 0n, incoming: [] };
+      // Tapped while securing (the coins are not unlocked: nothing can be signed yet).
       await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
-      await until(() => t.parties.settles.some((x) => x.role === 'buyer' && x.o.cosigner === 'mod'));
-      expect(t.parties.settles.find((x) => x.o.cosigner === 'mod')!.o.to).toEqual([{ address: ADDR.seller, amountAtomic: fundsFor(grown) }]);
+      expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'buyer-cancel', auto: false });
+      // The signing window lapsed back to secured, and the buyer paid.
+      t.state.view = tradeView({ state: 'secured', amountAtomic: AMOUNT.toString() });
+      await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) });
+      expect((await t.buyer.store.load(CODE))?.intent?.kind).not.toBe('buyer-cancel');
+      t.state.view = tradeView({ state: 'paid', paidAt, amountAtomic: AMOUNT.toString() });
+      t.parties.funds = { balance: fundsFor(AMOUNT), unlocked: fundsFor(AMOUNT), incoming: [] };
+      await t.parties.ticks('buyer', 3);
+      expect(t.parties.settles.filter((x) => x.o.builder === 'buyer' && x.o.cosigner === 'mod')).toEqual([]);
     });
 
     it('the seller fixes the amount from the buyer’s signed trade.paid, never from its own API view', async () => {
@@ -892,12 +909,14 @@ describe('settling', () => {
   it('a tapped mutual cancel stays while the proposal stands, and falls back once it is withdrawn', async () => {
     const t = await ready();
     t.parties.funds = funded();
-    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: 'seller' });
-    await pay(t.buyer);
+    // Before "I've paid" (no cancel after it, Task 39): the buyer has not paid here.
+    t.state.view = tradeView({ state: 'secured', cancelProposedBy: 'seller' });
     await t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' });
     await until(() => t.parties.settles.some((s) => s.role === 'buyer' && s.o.cosigner === 'seller'));
     expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
-    // The proposal is gone (withdrawn): the standing release co-sign comes back.
+    // The proposal is gone (withdrawn) and the buyer pays: the standing release co-sign comes back.
+    t.state.view = tradeView({ state: 'secured', cancelProposedBy: null });
+    await pay(t.buyer);
     t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z', cancelProposedBy: null });
     await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release');
     await until(() => t.parties.settles.at(-1)?.role === 'buyer' && t.parties.settles.at(-1)?.o.builder === 'seller');

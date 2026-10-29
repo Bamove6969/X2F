@@ -261,8 +261,9 @@ export function newTrade(
  * 2026-10-29): it stays among the seller's active trades ("Your input is needed to cancel this
  * trade."), and timers and maintenance still apply to it although it is closed.
  */
-export function awaitingCancelConfirm(t: Pick<Trade, 'state' | 'settling' | 'cancelConfirmedAt' | 'dispute'>): boolean {
-  return t.state === 'refunded' && t.settling === 'buyer-cancel' && t.cancelConfirmedAt === null && t.dispute === null;
+export function awaitingCancelConfirm(t: Pick<Trade, 'state' | 'settling' | 'cancelConfirmedAt' | 'dispute' | 'paidAt'>): boolean {
+  // Never once the buyer marked paid: that refund keeps the buyer's dispute instead (review I1).
+  return t.state === 'refunded' && t.settling === 'buyer-cancel' && t.cancelConfirmedAt === null && t.dispute === null && t.paidAt === null;
 }
 
 /** When an unconfirmed buyer's cancel closes by itself, or null before Confirm cancel became available. */
@@ -420,11 +421,13 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
     case 'refunded': {
       if (by !== 'buyer') return fail('wrong-party');
       // A cancel itself can't be disputed (owner 2026-10-29, question 4): the buyer's own cancel,
-      // or one both agreed to. (A moderator's refund to the seller is also built as mutual-cancel,
-      // but only after a dispute, which this leaves as it was.)
-      if (t.dispute === null && (t.settling === 'buyer-cancel' || t.settling === 'mutual-cancel')) return fail('wrong-state');
+      // or one both agreed to, with the buyer never having marked paid. A cancel refund that lands
+      // after "I've paid" (a held-back refund broadcast once the buyer paid) keeps the dispute
+      // (review I1). A moderator's refund to the seller is built as mutual-cancel, but only after
+      // a dispute, which this leaves as it was.
+      if (t.dispute === null && t.paidAt === null && (t.settling === 'buyer-cancel' || t.settling === 'mutual-cancel')) return fail('wrong-state');
       const closed = t.closedAt ?? fail('wrong-state');
-      const limit = closed.getTime() + TIMERS.disputeAfterRefundDays * 24 * 60 * 60_000;
+      const limit = closed.getTime() + TIMERS.disputeAfterRefundHours * 60 * 60_000;
       if (now.getTime() > limit) return fail('too-late');
       return open();
     }
@@ -478,7 +481,9 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'escalate': {
       // Only when the escrow holds coins: a lapse nobody refunded, or late funds after the end.
       if (s !== 'lapsed' && !CLOSED.includes(s)) return fail('wrong-state');
-      if (t.receivedAtomic <= 0n) return fail('wrong-state');
+      // A buyer's cancel whose refund never showed all its confirmations (Task 39 review M3) goes to a
+      // moderator whatever the escrow reads: nobody knows where the coins are.
+      if (t.receivedAtomic <= 0n && !awaitingCancelConfirm(t)) return fail('wrong-state');
       return { ...t, state: 'disputed', dispute: { by: 'system', at: now }, closedAt: null };
     }
 
@@ -562,10 +567,12 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'confirm-cancel':
       if (by !== 'seller') return fail('wrong-party');
-      if (s !== 'refunded' || t.settling !== 'buyer-cancel' || t.cancelConfirmedAt !== null) return fail('wrong-state');
+      if (!awaitingCancelConfirm(t)) return fail('wrong-state');
       if (!Number.isSafeInteger(e.returnConfirmations) || e.returnConfirmations < 0) throw new RangeError('bad confirmations');
-      // Greyed out until the return has the same confirmations the trade uses everywhere (10).
-      if (e.returnConfirmations < UNLOCK_CONFIRMATIONS) return fail('too-early');
+      // Greyed out until the return has the same confirmations the trade uses everywhere (10). Once
+      // the server recorded that count (cancelConfirmableAt) it is trusted: a node that is briefly
+      // down when the seller taps does not take the button away again (review M1).
+      if (t.cancelConfirmableAt === null && e.returnConfirmations < UNLOCK_CONFIRMATIONS) return fail('too-early');
       return { ...t, cancelConfirmedAt: now };
 
     case 'release-started':

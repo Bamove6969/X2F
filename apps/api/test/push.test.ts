@@ -463,6 +463,7 @@ describe('sendPush', () => {
   it('the three payloads are exactly the fixed strings: no code, amount, name, detail or URL', () => {
     expect(PUSH_PAYLOADS).toEqual({
       nudge: 'Someone nudged you on X2F', trade: 'Something changed in a trade on X2F', alert: 'Something needs your attention',
+      'cancel-confirm': 'Your input is needed to cancel this trade.',
     });
   });
 

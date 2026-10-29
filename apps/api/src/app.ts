@@ -259,7 +259,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
-  confirmationsRoute(app, options.txConfirmations);
+  confirmationsRoute(app, options.txConfirmations, tradePublish);
   // Plan 4, Task 28: the News inbox (reading needs no session).
   newsRoutes(app);
   // Plan 3 Task 39 (owner 2026-10-29): records when a buyer's cancel refund is fully confirmed, so

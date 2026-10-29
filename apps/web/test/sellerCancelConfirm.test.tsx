@@ -129,8 +129,10 @@ describe("the seller's Confirm cancel", () => {
     );
     await flush();
     expect(confirmButton(host)!.disabled).toBe(false);
+    // In the viewer's own time zone and locale (review M7): 48 hours after the recorded moment.
+    const local = new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date('2026-10-27T12:00:00.000Z'));
     expect(host.querySelector('[data-input-needed]')?.textContent).toBe(
-      "Your input is needed to cancel this trade. If you don't confirm, it closes as cancelled by itself on 2026-10-27 12:00 UTC.",
+      `Your input is needed to cancel this trade. If you don't confirm, it closes as cancelled by itself on ${local}.`,
     );
   });
 

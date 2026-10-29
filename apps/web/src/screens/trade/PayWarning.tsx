@@ -9,7 +9,7 @@
  * it is not shown again for that trade on this device, across reloads (`warned`, warned.ts; lead default
  * 2026-10-29: "once per trade"). I'll wait only closes it, so it comes back the next time.
  */
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import { Button } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import type { EscrowChip } from './payModel.js';
@@ -22,14 +22,17 @@ export const PAY_WARNING_WHY =
   "The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.";
 
 export function PayWarning({ open, bar, onWait, onPaid }: { open: boolean; bar: EscrowChip['bar']; onWait(): void; onPaid(): void }) {
+  const textId = useId();
   return (
-    <Sheet open={open} eyebrow="Before you pay" title="Wait until the XMR is fully in escrow" onClose={onWait}>
+    <Sheet open={open} eyebrow="Before you pay" title="Wait until the XMR is fully in escrow" describedBy={textId} initialFocus="[data-safe]" onClose={onWait}>
       <div className="x2f-sheet__body x2f-warn" data-warning="pay">
-        <p className="x2f-warn__text">{PAY_WARNING_LEAD}</p>
-        <p className="x2f-warn__text x2f-warn__text--muted">{PAY_WARNING_WHY}</p>
+        <div id={textId} className="x2f-warn">
+          <p className="x2f-warn__text">{PAY_WARNING_LEAD}</p>
+          <p className="x2f-warn__text x2f-warn__text--muted">{PAY_WARNING_WHY}</p>
+        </div>
         {bar ? <WarnBar bar={bar} /> : null}
         <div className="x2f-warn__actions">
-          <Button variant="primary" onClick={onWait}>
+          <Button variant="primary" data-safe="" onClick={onWait}>
             I'll wait
           </Button>
           <Button variant="secondary" onClick={onPaid}>

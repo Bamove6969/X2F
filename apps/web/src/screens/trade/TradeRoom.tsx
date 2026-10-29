@@ -53,7 +53,7 @@
  * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
  *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
  * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
- *   90-day "Open a dispute", spec 2.3; lead 2026-10-28).
+ *   48-hour "Open a dispute", owner 2026-10-29; was 90 days).
  * - Task 39: seller in `settling` and `refunded` with `when` buyer-cancel (SellerCancelConfirm: the
  *   seller's Confirm cancel once the returned XMR has all its confirmations; owner 2026-10-29).
  *

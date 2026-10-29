@@ -92,8 +92,8 @@ const ROUTE: Record<SettleKind, { builder: Party; cosigner: Party }> = {
   'mutual-cancel': { builder: 'buyer', cosigner: 'seller' },
 };
 
-/** Open states in which the buyer may cancel alone after funding (Task 2). */
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested', 'settling'];
+/** Open states in which the buyer may cancel alone after funding (Task 2); never `paid` (no cancel after "I've paid", Task 39 review I2). */
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested', 'settling'];
 const RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];
 
 function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {

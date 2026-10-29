@@ -28,17 +28,41 @@ export async function recordReturnConfirmed(
   }
 }
 
+/** How long the watch keeps asking about a refund (review M3): 10 confirmations take about 20 min. */
+export const CANCEL_RETURN_MAX_WAIT_H = 24;
+/** At most this many refunds per pass (oldest first); the rest wait for the next pass. */
+export const CANCEL_RETURN_BATCH = 100;
+
+const AWAITING = `state = 'refunded' and settling = 'buyer-cancel' and cancel_confirmed_at is null
+        and cancel_confirmable_at is null and dispute_by is null and paid_at is null and tx_hash is not null`;
+
 /**
  * One pass over the buyer's cancels waiting for the seller (refunded, `buyer-cancel`, not
  * confirmed, the moment not recorded yet): asks the node for each refund's confirmations and
  * records the moment for those that have them all. A failed lookup leaves that trade for the next
- * pass. Returns how many it recorded.
+ * pass. Bounded (review M3): at most CANCEL_RETURN_BATCH per pass, and only refunds that settled
+ * within CANCEL_RETURN_MAX_WAIT_H; one still not fully confirmed after that (the node never finds
+ * the tx: dropped, reorged) is escalated to a moderator (`escalate`, the trade becomes `disputed`)
+ * instead of being polled forever. Returns how many it recorded.
  */
 export async function watchCancelReturns(deps: Pick<Deps, 'db' | 'clock'> & { publish?: TradePublisher }, lookup: TxConfirmations): Promise<number> {
-  const { rows } = await deps.db.query<TradeRow>(
-    `select * from trades where state = 'refunded' and settling = 'buyer-cancel' and cancel_confirmed_at is null
-        and cancel_confirmable_at is null and dispute_by is null and tx_hash is not null`,
-  );
+  const cutoff = new Date(deps.clock().getTime() - CANCEL_RETURN_MAX_WAIT_H * 3_600_000);
+  const stale = await deps.db.query<{ code: string }>(`select code from trades where ${AWAITING} and closed_at < $1 order by closed_at limit $2`, [
+    cutoff,
+    CANCEL_RETURN_BATCH,
+  ]);
+  for (const { code } of stale.rows) {
+    try {
+      await applyEvent(deps, code, { type: 'escalate' }, 'system');
+    } catch (err) {
+      // A race (another pass, a confirm) is a rule refusal: nothing to do.
+      if (!(err instanceof TradeRuleError)) throw err;
+    }
+  }
+  const { rows } = await deps.db.query<TradeRow>(`select * from trades where ${AWAITING} and closed_at >= $1 order by closed_at limit $2`, [
+    cutoff,
+    CANCEL_RETURN_BATCH,
+  ]);
   let n = 0;
   for (const row of rows) {
     let count: number | null = null;

@@ -73,6 +73,7 @@ export function PaidConfirmSheet({
             I sent exactly <strong>{fiatText}</strong> by {methodName} with the memo <span className="x2f-mono">{code}</span>.
           </span>
         </label>
+        {/* not-a-refusal: the board's plain notice before the buyer confirms (no cancel after "I've paid"); nothing is refused here */}
         <p className="x2f-paid__note">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
         {error !== null ? (
           <p className="x2f-paid__error" role="alert">

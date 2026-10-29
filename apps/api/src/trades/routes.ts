@@ -134,7 +134,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const by = roleOf(rowToTrade(row), req.auth.accountId);
     if (by === null) throw new ApiError(404, 'not-found');
     const deps = req.server.deps;
-    if (e.type === 'confirm-cancel' && row.tx_hash !== null) {
+    // Once the server recorded the full count (cancel_confirmable_at) the node is not asked again (review M1).
+    if (e.type === 'confirm-cancel' && row.tx_hash !== null && row.cancel_confirmable_at === null) {
       // "Confirm cancel" stays greyed out until the returned XMR has all its confirmations (owner
       // 2026-10-29): the count is X2F's node's for this trade's own refund tx; unknown counts as 0.
       let n: number | null = null;
@@ -176,8 +177,16 @@ export interface ConfirmationsView {
  * settled (no tx yet) → 409 `wrong-state`. The buyer of a release also gets their own payout
  * address ending; nobody gets an address, an amount or the tx hash.
  */
-export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations): void {
+export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations, hook: TradePublisher = noPublish): void {
   const session = requireSession({ kinds: ['trader'] });
+  // A recorded `return-confirmed` (Task 39) is delivered after the response, as tradeRoutes does.
+  const publish: TradePublisher = async (t, e, by) => {
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => hook(t, e, by))
+        .catch((err: unknown) => app.log.error({ err }, 'trade publish failed'));
+    });
+  };
   app.get('/v1/trades/:code/confirmations', { preHandler: session }, async (req): Promise<ConfirmationsView> => {
     const row = await tradeFor(req);
     const t = rowToTrade(row);
@@ -192,7 +201,7 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
       req.log.warn({ err }, 'confirmations lookup failed');
     }
     // A buyer's cancel: the first full count makes the seller's Confirm cancel available (owner 2026-10-29).
-    await recordReturnConfirmed(req.server.deps, row, confirmations);
+    await recordReturnConfirmed({ db: req.server.deps.db, clock: req.server.deps.clock, publish }, row, confirmations);
     const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
     if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);
     return out;
