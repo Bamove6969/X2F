@@ -58,7 +58,7 @@ function Header({ view }: Pick<RefundScreenProps, 'view'>) {
       method={methodOf(view)}
       backTo="/sell"
       action={
-        <Link to={`/trade/${encodeURIComponent(view.code)}#chat`} className="x2f-refund__chat">
+        <Link to={`/trade/${encodeURIComponent(view.code)}#chat`} className="x2f-refund__chat" data-chat-link="">
           Chat
         </Link>
       }

@@ -22,7 +22,7 @@
 }
 
 /* Phones: the body scrolls between the header and the footer, so the primary action stays on screen. */
-@media (max-width: 1023px) {
+@media (max-width: 999px) {
   .x2f-trade {
     height: 100dvh;
     min-height: 0;

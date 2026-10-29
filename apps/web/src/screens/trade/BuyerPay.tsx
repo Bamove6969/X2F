@@ -341,11 +341,11 @@ function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
   return (
     <>
       {primary ? (
-        <Button variant="primary" onClick={() => setOpen(true)}>
+        <Button variant="primary" onClick={() => setOpen(true)} data-chat-link="">
           Chat
         </Button>
       ) : (
-        <button type="button" className="x2f-room__chat" onClick={() => setOpen(true)}>
+        <button type="button" className="x2f-room__chat" onClick={() => setOpen(true)} data-chat-link="">
           Chat
         </button>
       )}
