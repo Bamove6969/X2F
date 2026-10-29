@@ -28,7 +28,8 @@ const LABEL = 'Browser on Linux';
 /**
  * API routes the auth client deliberately does not cover: Plan 3's web-app routes, called by
  * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
- * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 6: the trade view
+ * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 5:
+ * taking an offer and the poster's wallet; Task 6: the trade view
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
  * Push and the final-alert receipts; Task 26: nudges, nudge settings and blocks; Task 27: the dispute
  * and the appeal). Any other new
@@ -55,11 +56,13 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
   'POST /v1/offers',
+  'POST /v1/offers/:id/take',
   'POST /v1/trades/:code/appeal',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/final-alert-seen',
   'POST /v1/trades/:code/identity',
+  'POST /v1/trades/:code/wallet',
   'PUT /v1/account/nudges',
 ] as const;
 

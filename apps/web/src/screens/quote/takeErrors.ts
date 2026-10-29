@@ -11,6 +11,12 @@ function ownStage(extra: Record<string, unknown>): 'starter' | 'building' | null
   return extra.stage === 'starter' || extra.stage === 'building' ? extra.stage : null;
 }
 
+/** The open-trade limit from a Starter open-count refusal (Task 5: `maxOpen`), or null. */
+function maxOpen(extra: Record<string, unknown>): number | null {
+  const v = extra.maxOpen;
+  return typeof v === 'number' && Number.isSafeInteger(v) && v > 0 && v <= 1000 ? v : null;
+}
+
 function capCents(extra: Record<string, unknown>): bigint | null {
   const v = extra.capUsdCents;
   return typeof v === 'string' && /^\d{1,15}$/.test(v) ? BigInt(v) : null;
@@ -21,7 +27,10 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
   switch (e.code) {
     case 'starter-limit': {
       const stage = ownStage(e.extra);
-      if (stage === null) return 'That amount is above what your account can trade right now. Try a smaller amount.';
+      // No stage: the limit is the other side's, which is never named (Task 5 sends nothing about it).
+      if (stage === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
+      const open = maxOpen(e.extra);
+      if (open !== null) return `Your account is on ${STAGE_NAMES[stage]} limits: at most ${open} open ${open === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
       const cap = capCents(e.extra);
       const limit = cap === null ? '' : ` up to ${fiatWhole(cap, 'USD')} per trade`;
       return `Your account is on ${STAGE_NAMES[stage]} limits${limit}. Try a smaller amount.`;
@@ -47,6 +56,9 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       return 'That wallet is still waiting before it can be used. Pick another.';
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
+    case 'offer-busy':
+      // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
+      return "This offer can't take more trades right now. Try again later or pick another offer.";
     case 'ad-busy':
       return 'Someone is already taking this offer for that amount. Try again in a few minutes.';
     default:
