@@ -17,7 +17,7 @@ import {
   type Outcome,
   type Transport,
 } from '../src/index.js';
-import { minedWhile, partyKit, type MemoryStore, type Trade } from './harness.js';
+import { minedWhile, partyKit, tapped, type MemoryStore, type Trade } from './harness.js';
 
 const engine = new MoneroMultisigEngine({ network: 'regtest' });
 const XMR = 1_000_000_000_000n;
@@ -69,7 +69,7 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
     await new Promise((r) => setTimeout(r, 2000)); // the relay drops the old connection first (else 4409)
     let deaf = true;
     const inner = wsTransport({ url: relayUrl, code: t.code, role: 'mod', me: t.ids.mod });
-    const deafTransport: Transport = {
+    const deafInner: Transport = {
       send: (e) => inner.send(e),
       next: async () => {
         for (;;) {
@@ -80,6 +80,7 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       onReconnect: (cb) => inner.onReconnect(cb),
       close: () => inner.close(),
     };
+    const deafTransport = tapped(deafInner);
     const modIgnored: string[] = [];
     // runParty directly: kit.startParty would open a second mod socket, and the relay keeps one per role (4409).
     const mod = runParty({
@@ -108,7 +109,11 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       expect(info).toMatch(/^[0-9a-f]+$/);
       expect(info.length).toBeLessThanOrEqual(SPEND_INFO_MAX_HEX);
       expect(await t.parties.buyer.spendInfo()).toBe(info); // exported once, saved
-      expect(t.stores.buyer.current()!.sent['spend.info:0']).toEqual({ hex: info });
+      // Review I1: the info goes with the release's tx and its secret key. The co-signer (buyer)
+      // submitted the tx, so its wallet stores the key; the builder (seller) kept it from the build.
+      const buyerSent = t.stores.buyer.current()!.sent['spend.info:0']!;
+      expect(buyerSent).toMatchObject({ hex: info, txHash: hash });
+      expect(buyerSent.txKey).toMatch(/^[0-9a-f]{64}$/);
       await expect(other.parties.mod.importSpendInfo(info)).rejects.toMatchObject({ code: 'bad-spend-info' });
       const flipped = info.slice(0, -4) + (info.slice(-4) === '0000' ? '0001' : '0000');
       await expect(mod.importSpendInfo(flipped)).rejects.toMatchObject({ code: 'bad-spend-info' });
@@ -133,6 +138,46 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       expect(modIgnored).not.toContain('spend-info-refused');
       expect([...(await mod.funds()).spendClaims!].sort()).toEqual(['buyer', 'seller']);
       expect([...t.stores.mod.current()!.claims!].sort()).toEqual(['buyer', 'seller']);
+
+      // Review I1: the mod did not sign this tx; both parties sent the tx key, and both prove the payout.
+      f = await mod.funds();
+      expect(f.ownTxs).toEqual([]);
+      const proofs = [...f.spendProofs!].sort((x, y) => x.from.localeCompare(y.from));
+      expect(proofs.map((p) => [p.from, p.txHash])).toEqual([['buyer', hash], ['seller', hash]]);
+      expect(proofs[0]!.txKey).toBe(proofs[1]!.txKey);
+      const key = proofs[0]!.txKey;
+      const destAddress = await dest.getPrimaryAddress();
+      // the payout is short by the network fee, which comes off payout 0: still proven
+      expect(await mod.proveSweep!(hash!, key, [{ address: destAddress, amountAtomic: XMR }])).toBe(true);
+      // one atomic unit more than was paid, another address, a wrong key: not proven
+      expect(await mod.proveSweep!(hash!, key, [{ address: destAddress, amountAtomic: XMR + 1n }])).toBe(false);
+      expect(await mod.proveSweep!(hash!, key, [{ address: funderAddress, amountAtomic: XMR / 2n }])).toBe(false);
+      expect(await mod.proveSweep!(hash!, '1'.repeat(64), [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false); // not a reduced scalar: refused before monero-ts sees it
+      expect(await mod.proveSweep!(hash!, '01' + '0'.repeat(62), [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false); // a scalar, but not this tx's key
+      expect(await mod.proveSweep!(hash!, 'zz', [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false);
+      // An unrelated real tx (e.g. one a forger points the mod's key images at) proves only what it
+      // really paid: paying the right party is harmless, paying anyone else is refused.
+      const otherWallet = await newTestWallet(node.rpcUri);
+      try {
+        await funder.sync();
+        const t2 = await funder.createTx({ accountIndex: 0, address: await otherWallet.getPrimaryAddress(), amount: XMR / 2n, relay: true });
+        await mine(node.rpcUri, 1, funderAddress);
+        const k2 = await funder.getTxKey(t2.getHash());
+        expect(await mod.proveSweep!(t2.getHash(), k2, [{ address: destAddress, amountAtomic: XMR }])).toBe(false);
+        expect(await mod.proveSweep!(t2.getHash(), k2, [{ address: await otherWallet.getPrimaryAddress(), amountAtomic: XMR / 2n }])).toBe(true);
+      } finally {
+        await otherWallet.close();
+      }
+
+      // Review M2: a later, different info from a sender already imported is acked but never imported,
+      // and the sweep the mod's wallet showed stays shown.
+      deafTransport.inject(await seal({
+        trade: t.code, from: 'buyer', seq: 1_000_000, type: 'spend.info',
+        payload: { key: 'spend.info:0', hex: '00'.repeat(200), txHash: hash!, txKey: '' }, to: ['mod'], me: t.ids.buyer, participants: t.participants,
+      }));
+      await expect.poll(() => modIgnored.includes('spend-info-again'), { timeout: 30_000 }).toBe(true);
+      expect((await mod.funds()).outgoing?.map((x) => x.txHash)).toEqual([hash]);
+      expect(t.stores.mod.current()!.shown?.map((x) => x.txHash)).toEqual([hash]);
     } finally {
       await mod.stop();
       await dest.close();
@@ -180,7 +225,9 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       expect(Object.keys(t.stores.mod.current()!.received['spend.claim:0'] ?? {})).toEqual(['seller']);
       await expect.poll(() => t.stores.seller.current()!.received['spend.ack:0']?.mod !== undefined, { timeout: 60_000 }).toBe(true);
       expect(t.stores.buyer.current()!.received['spend.ack:0']).toBeUndefined();
-      expect(t.stores.seller.current()!.sent['spend.info:0']).toEqual({ hex: big }); // kept, never sent
+      expect(t.stores.seller.current()!.sent['spend.info:0']).toMatchObject({ hex: big }); // kept, never sent
+      // Review M2: the buyer's refused info is resent every 0.5 s but tried again at most every 30 s.
+      expect(kit.ignoredBy.mod).toContain('spend-info-throttled');
       // The mod's own wallet still shows nothing: only the fallback covers these.
       expect((await t.parties.mod.funds()).outgoing).toEqual([]);
     } finally {

@@ -46,6 +46,17 @@ async function timed<T>(p: Promise<T>, what: string, code: 'daemon-unavailable' 
   }
 }
 
+/** The ed25519 group order: a secret key is a 32-byte little-endian scalar below it (monero sc_check). */
+const GROUP_ORDER = 2n ** 252n + 27742317777372353535851937790883648493n;
+
+/** 64 lower-case hex chars encoding a non-zero, reduced scalar. */
+export function isScalar(hex: string): boolean {
+  if (!TX_HASH.test(hex)) return false;
+  let v = 0n;
+  for (let i = 31; i >= 0; i--) v = (v << 8n) | BigInt(parseInt(hex.slice(2 * i, 2 * i + 2), 16));
+  return v !== 0n && v < GROUP_ORDER;
+}
+
 function walletConfig(network: EscrowNetwork, daemonUri: string, password: string): MoneroWalletConfig {
   return new MoneroWalletConfig({
     // regtest uses the mainnet address format
@@ -147,6 +158,43 @@ export class MoneroMultisigSession implements EscrowSession {
     return out;
   }
 
+  async txKey(txHash: string): Promise<string | null> {
+    if (!TX_HASH.test(txHash)) return null;
+    try {
+      const k = await this.wallet.getTxKey(txHash);
+      return typeof k === 'string' && TX_HASH.test(k) ? k : null;
+    } catch {
+      return null; // "No tx secret key is stored for this tx"
+    }
+  }
+
+  async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[] } | null> {
+    // A key that is not a reduced scalar aborts monero-ts's WebAssembly (an assertion in
+    // generate_key_derivation), which breaks every later wallet call: refuse it here.
+    if (!TX_HASH.test(txHash) || !isScalar(txKey)) return null;
+    let tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>;
+    try {
+      tx = await timed((async () => (await this.daemonClient()).getTx(txHash))(), 'tx lookup');
+    } catch (e) {
+      if (e instanceof EscrowError) throw e;
+      throw new EscrowError('daemon-unavailable', `tx lookup failed: ${e instanceof Error ? e.message.slice(0, 120) : 'error'}`);
+    }
+    if (!tx || tx.getHash() !== txHash) return null;
+    const fee = tx.getFee();
+    const received: bigint[] = [];
+    for (const address of addresses) {
+      try {
+        const c = await timed(this.wallet.checkTxKey(txHash, txKey, address), 'check tx key');
+        if (c.getIsGood() !== true) return null;
+        received.push(c.getReceivedAmount() ?? 0n);
+      } catch (e) {
+        if (e instanceof EscrowError) throw e;
+        return null; // a key that does not fit, or an address of another network
+      }
+    }
+    return { inBlock: tx.getIsConfirmed() === true && tx.getInTxPool() !== true, feeAtomic: typeof fee === 'bigint' ? fee : 0n, received };
+  }
+
   exportState(): Promise<string> {
     return this.wallet.exportMultisigHex();
   }
@@ -184,7 +232,8 @@ export class MoneroMultisigSession implements EscrowSession {
     if (!txSet) throw new EscrowError('build-failed', 'no multisig tx set');
     const decoded = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
     checkTxSet(decoded, payouts, balance);
-    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations) };
+    const txKey = txs[0]!.getKey();
+    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations), ...(typeof txKey === 'string' && TX_HASH.test(txKey) ? { txKey } : {}) };
   }
 
   async checkRelease(txSet: string, expected: Payout[]): Promise<void> {

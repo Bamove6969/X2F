@@ -12,7 +12,7 @@ import {
 import sodium from 'libsodium-wrappers';
 import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
-import { sumPayouts } from './verify.js';
+import { MAX_NETWORK_FEE, sumPayouts } from './verify.js';
 
 /** How a trade's escrow is paid out: `builder` builds, `cosigner` checks and signs. */
 export interface Outcome {
@@ -50,6 +50,8 @@ interface ReleaseState {
   committed?: boolean;
   phase: ReleasePhase;
   txSet?: string;
+  /** Builder: the secret key of the tx in `txSet` (its wallet stores none), sent with spend.info (review I1). */
+  txKey?: string;
   signedHex?: string;
   txHash?: string;
 }
@@ -73,6 +75,12 @@ export interface PartyState {
    * `release-claimed`). Saved before the import is tried. Absent in states saved before it.
    */
   claims?: Role[];
+  /**
+   * Moderator only (review M2): every in-block tx its wallet has ever shown as spending the escrow.
+   * A later import replaces the wallet's composite key images and can make it forget a sweep it
+   * showed; funds().outgoing is the union of these and the wallet's current view. Absent before.
+   */
+  shown?: Outgoing[];
 }
 
 export interface PartyStore {
@@ -95,9 +103,9 @@ export interface PartyHandle {
    * answers after the relay connection ended for good (ready() and settle() reject with the
    * TransportClosedError): the wallet needs no peer. Rejects after a PartyError or stop().
    * `chainHeight` and `outgoing` (Task 9's watcher) come from the same sync when the engine
-   * provides them (the Monero engine does). `spendClaims` (moderator only): PartyState.claims.
+   * provides them (the Monero engine does). `spendClaims`, `ownTxs`, `spendProofs`: moderator only.
    */
-  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] }>;
+  funds(): Promise<Funds>;
   /**
    * This party's post-release multisig info (hex), for the moderator, who takes no part in a
    * seller–buyer release and so cannot see that spend on its own (Task 9, lead decision A). The
@@ -111,16 +119,42 @@ export interface PartyHandle {
   /**
    * Imports a peer's post-release multisig info (the moderator's side of spendInfo()), so this
    * wallet can compute the escrow's key images and its own outgoing view (funds().outgoing)
-   * shows a spend that really is in a block. The import is the proof: the info only completes
-   * key images for this wallet's own outputs; the wallet then finds those key images among the
-   * inputs of txs in blocks. Nothing a peer sends names a tx. Rejects with
+   * shows the spend. The import is NOT proof on its own (review I1): wallet2 adds the peer's
+   * partial key images unchecked, and a trade party knows every partial but the mod's, so a forged
+   * info can make the wallet attribute an unrelated in-block tx to the escrow. The watcher counts
+   * such a sweep only once the tx key sent with spend.info proves the payouts (proveSweep). Rejects with
    * EscrowError('bad-spend-info') for anything that is not a well-formed export of this escrow
    * (not hex, over SPEND_INFO_MAX_HEX, another wallet, a bad signature), PartyError('bad-state')
    * before setup ended or while this party's own release is under way (an import replaces the
    * peer nonces it is signing with). Saved with the wallet afterwards.
    */
   importSpendInfo(info: string): Promise<void>;
+  /**
+   * Review I1: true only when the tx is in a block and its secret key proves it pays at least
+   * `minimums` (payout 0 may be short by exactly the tx's network fee, which comes off it). Read in
+   * the party's work queue. Optional so that test doubles may leave it out (then nothing is proven).
+   */
+  proveSweep?(txHash: string, txKey: string, minimums: Payout[]): Promise<boolean>;
   stop(): Promise<void>;
+}
+
+/** What funds() reads (see PartyHandle.funds). */
+export interface Funds {
+  balance: bigint;
+  unlocked: bigint;
+  incoming: Incoming[];
+  chainHeight?: number;
+  outgoing?: Outgoing[];
+  /** Moderator only: PartyState.claims. */
+  spendClaims?: Role[];
+  /**
+   * Moderator only (review I1): the txs its own party signed (as co-signer, or built and saw done).
+   * Its wallet shows these without any import; every other outgoing tx was shown only through an
+   * import and needs a proof (`spendProofs`, `proveSweep`).
+   */
+  ownTxs?: string[];
+  /** Moderator only (review I1): per trade party whose spend.info it imported, the tx and the tx key it sent ('' when it had none). */
+  spendProofs?: { from: Role; txHash: string; txKey: string }[];
 }
 
 /** The longest post-release multisig info importSpendInfo() takes (hex characters). */
@@ -152,8 +186,9 @@ const ADDR = 'msig.addr:0';
 /** "I have checked all three addresses": nobody funds until both peers confirm too. */
 const READY = 'msig.ready:0';
 /**
- * Post-release multisig info (Task 9, lead decision A): a buyer or seller whose release is done
- * sends it to the moderator, and resends it (timer, reconnect) until the moderator's SPEND_ACK;
+ * Post-release multisig info (Task 9, lead decision A): `{ hex, txHash, txKey }`: the info, the
+ * release's tx and its secret key ('' when this party has none; review I1). A buyer or seller whose
+ * release is done sends it to the moderator, and resends it (timer, reconnect) until the moderator's SPEND_ACK;
  * the moderator imports it and acks. Outside the release's attempt tags: it is about a spend
  * that already happened.
  */
@@ -165,6 +200,9 @@ const SPEND_ACK = 'spend.ack:0';
  * reports `release-claimed` and the 6 h fallback escalates (lead decision b). Acked by SPEND_ACK.
  */
 const SPEND_CLAIM = 'spend.claim:0';
+/** Review M2: a refused spend.info from one sender is tried again at most this often. */
+export const SPEND_IMPORT_RETRY_MS = 30_000;
+const KEY_HEX = /^[0-9a-f]{64}$/;
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
@@ -216,7 +254,9 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === MAKE) return Object.keys(p).length === 3 && typeof p.hex === 'string' && echoOk();
   if (key === ADDR) return Object.keys(p).length === 4 && typeof p.address === 'string' && typeof p.prev === 'string' && echoOk();
   if (key === READY) return exactStrings(p, ['key', 'address']);
-  if (key === SPEND_INFO) return from !== 'mod' && exactStrings(p, ['key', 'hex']);
+  if (key === SPEND_INFO) {
+    return from !== 'mod' && exactStrings(p, ['key', 'hex', 'txHash', 'txKey']) && KEY_HEX.test(p.txHash as string) && (p.txKey === '' || KEY_HEX.test(p.txKey as string));
+  }
   if (key === SPEND_ACK) return from === 'mod' && exactStrings(p, ['key']);
   if (key === SPEND_CLAIM) return from !== 'mod' && exactStrings(p, ['key']);
   const rel = RELEASE_KEY.exec(key);
@@ -462,6 +502,7 @@ export function runParty(a: PartyArgs): PartyHandle {
     rel.attempt += 1;
     rel.committed = false;
     delete rel.txSet;
+    delete rel.txKey;
     if (rel.attempt > MAX_ATTEMPT) {
       // Give up on this outcome only; the party stays alive and can settle another.
       rel.phase = 'exhausted';
@@ -522,10 +563,11 @@ export function runParty(a: PartyArgs): PartyHandle {
         try {
           await importPeer(exp);
           if (!(await fundsReady(o))) throw new EscrowError('not-ready');
-          const { txSet } = await session.buildRelease(o.to);
+          const { txSet, txKey } = await session.buildRelease(o.to);
           rel.phase = 'built';
           rel.committed = true;
           rel.txSet = txSet;
+          if (txKey !== undefined) rel.txKey = txKey;
           state.sent[txSetKey(rel)] = { txSet };
           await persist(); // the set is saved before it leaves the device; never rebuilt
           await send(txSetKey(rel), [cp]);
@@ -653,9 +695,12 @@ export function runParty(a: PartyArgs): PartyHandle {
   };
 
   const exportSpendInfo = async (): Promise<string> => {
+    const rel = state.release!;
+    // The co-signer submitted the tx, so its wallet stores the key; the builder kept it from the build.
+    const txKey = rel.txKey ?? (rel.txHash && session.txKey ? await session.txKey(rel.txHash) : null) ?? '';
     const hex = await session.exportState();
     if (hex.length > SPEND_INFO_MAX_HEX) ignored('spend-info-too-large');
-    state.sent[SPEND_INFO] = { hex };
+    state.sent[SPEND_INFO] = { hex, txHash: rel.txHash ?? '', txKey };
     try {
       await persist(); // the export's fresh nonces are saved with the wallet before it leaves
     } catch (e) {
@@ -696,6 +741,26 @@ export function runParty(a: PartyArgs): PartyHandle {
     await persist();
   };
 
+  /** Moderator: when each sender's last spend.info import was tried (in memory; review M2). */
+  const importTried = new Map<Role, number>();
+
+  /**
+   * Moderator (review M2): the wallet's outgoing view now, plus every in-block tx it ever showed
+   * (PartyState.shown, saved), so a later import that changes the composite key images cannot
+   * make a shown sweep disappear.
+   */
+  const shownOutgoing = async (now: Outgoing[]): Promise<Outgoing[]> => {
+    const shown = state.shown ?? [];
+    const fresh = now.filter((o) => o.height !== null && !shown.some((x) => x.txHash === o.txHash));
+    if (fresh.length > 0) {
+      state.shown = [...shown, ...fresh];
+      await saveState();
+    }
+    const out = [...now];
+    for (const o of state.shown ?? []) if (!out.some((x) => x.txHash === o.txHash)) out.push(o);
+    return out;
+  };
+
   /** A spend message (opened, well-formed): the moderator imports info and acks; a party records the ack. */
   const onSpend = async (key: string, from: Role, payload: Received['payload']): Promise<void> => {
     const digest = digestOf(key, payload);
@@ -714,7 +779,13 @@ export function runParty(a: PartyArgs): PartyHandle {
     }
     if (key === SPEND_CLAIM) {
       (state.received[SPEND_CLAIM] ??= {})[from] ??= { payload, digest };
-    } else if (state.received[SPEND_INFO]?.[from]?.digest !== digest) {
+    } else if (state.received[SPEND_INFO]?.[from] === undefined) {
+      // Review M2: one import per sender. A later, different info from a sender already imported is
+      // only acked (below), never imported; a refused one is tried again at most every
+      // SPEND_IMPORT_RETRY_MS, so resends cannot make the mod sync and import on every frame.
+      const last = importTried.get(from);
+      if (last !== undefined && Date.now() - last < SPEND_IMPORT_RETRY_MS) return ignored('spend-info-throttled');
+      importTried.set(from, Date.now());
       const hex = payload.hex;
       if (importRefusal(hex) !== null) return ignored('spend-info-refused');
       try {
@@ -725,6 +796,8 @@ export function runParty(a: PartyArgs): PartyHandle {
         return ignored(e instanceof EscrowError && e.code === 'daemon-unavailable' ? 'daemon-unavailable' : 'spend-info-refused');
       }
       (state.received[SPEND_INFO] ??= {})[from] = { payload, digest };
+    } else if (state.received[SPEND_INFO][from]!.digest !== digest) {
+      ignored('spend-info-again');
     }
     state.guard = guard.toJSON();
     state.sent[SPEND_ACK] = {};
@@ -931,10 +1004,20 @@ export function runParty(a: PartyArgs): PartyHandle {
           try {
             const { balance, unlocked } = await session.sync();
             const incoming = await session.incoming();
-            const extra: { chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] } = {};
-            if (a.role === 'mod') extra.spendClaims = [...(state.claims ?? [])];
+            const extra: Omit<Funds, 'balance' | 'unlocked' | 'incoming'> = {};
             if (session.chainHeight) extra.chainHeight = await session.chainHeight();
             if (session.outgoing) extra.outgoing = await session.outgoing();
+            if (a.role === 'mod') {
+              extra.spendClaims = [...(state.claims ?? [])];
+              if (extra.outgoing) extra.outgoing = await shownOutgoing(extra.outgoing);
+              const rel = state.release;
+              extra.ownTxs = rel?.txHash && (rel.phase === 'signed' || rel.phase === 'done' || rel.phase === 'superseded') ? [rel.txHash] : [];
+              extra.spendProofs = Object.entries(state.received[SPEND_INFO] ?? {}).map(([from, r]) => ({
+                from: from as Role,
+                txHash: String(r!.payload.txHash ?? ''),
+                txKey: String(r!.payload.txKey ?? ''),
+              }));
+            }
             resolve({ balance, unlocked, incoming, ...extra });
           } catch (e) {
             reject(e);
@@ -968,6 +1051,25 @@ export function runParty(a: PartyArgs): PartyHandle {
           try {
             await importSpendInfo(info);
             resolve();
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    proveSweep(txHash, txKey, minimums) {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
+          try {
+            if (!session.proveTx || minimums.length === 0) return resolve(false);
+            const r = await session.proveTx(txHash, txKey, minimums.map((m) => m.address));
+            if (r === null || !r.inBlock || r.received.length !== minimums.length) return resolve(false);
+            // Payout 0 bears the network fee (buildRelease subtracts it from output 0), up to the
+            // largest fee a release may carry: a tx cannot "pay" payout 0 by burning a huge fee.
+            const fee = r.feeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : r.feeAtomic;
+            resolve(minimums.every((m, i) => r.received[i]! + (i === 0 ? fee : 0n) >= m.amountAtomic));
           } catch (e) {
             reject(e);
           }

@@ -147,3 +147,18 @@ describe('checkTxSet', () => {
     expect(() => checkTxSet([goodTx()], [expected[0]!, expected[0]!], BALANCE)).toThrow(/bad-payouts/);
   });
 });
+
+describe('isScalar (review I1: a tx key from a party must be a reduced scalar before monero-ts sees it)', () => {
+  it('accepts a reduced non-zero scalar, refuses the rest', async () => {
+    const { isScalar } = await import('../src/index.js');
+    expect(isScalar('01' + '0'.repeat(62))).toBe(true);
+    // l - 1 (little-endian) is the largest scalar; l itself and 0 are not
+    expect(isScalar('ecd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')).toBe(true);
+    expect(isScalar('edd3f55c1a631258d69cf7a2def9de1400000000000000000000000000000010')).toBe(false);
+    expect(isScalar('0'.repeat(64))).toBe(false);
+    expect(isScalar('1'.repeat(64))).toBe(false);
+    expect(isScalar('ff'.repeat(32))).toBe(false);
+    expect(isScalar('AB'.repeat(32))).toBe(false);
+    expect(isScalar('ab'.repeat(31))).toBe(false);
+  });
+});
