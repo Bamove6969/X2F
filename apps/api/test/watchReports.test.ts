@@ -80,10 +80,21 @@ describe('GET /internal/v1/watch', () => {
     const res = await signed('GET', '/internal/v1/watch');
     expect(res.statusCode).toBe(200);
     const trades = (res.json() as { trades: Array<{ trade: string; state: string }> }).trades;
-    expect(trades).toContainEqual({ trade: open.code, state: 'setup' });
-    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled' });
+    expect(trades).toContainEqual({ trade: open.code, state: 'setup', settleKind: null, paused: false });
+    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled', settleKind: null, paused: false });
     expect(trades.map((t) => t.trade)).not.toContain(unattested.code);
     expect(trades.map((t) => t.trade)).not.toContain(old.code);
+  });
+
+  it('names the kind a sweep would settle (settleKindFor) and whether the trade is paused (review I1, M3)', async () => {
+    const settling = await trade();
+    await deps.db.query(`update trades set state = 'settling', settling = 'release', settle_from = 'paid', paused_at = $2 where code = $1`, [settling.code, NOW]);
+    const lapsed = await trade();
+    await deps.db.query(`update trades set state = 'lapsed' where code = $1`, [lapsed.code]);
+    const res = await signed('GET', '/internal/v1/watch');
+    const trades = (res.json() as { trades: unknown[] }).trades;
+    expect(trades).toContainEqual({ trade: settling.code, state: 'settling', settleKind: 'release', paused: true });
+    expect(trades).toContainEqual({ trade: lapsed.code, state: 'lapsed', settleKind: 'lapse-refund', paused: false });
   });
 
   it('refuses an unsigned request', async () => {
