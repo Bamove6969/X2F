@@ -269,3 +269,7 @@ Decisions for the lead:
 Seams for later tasks:
 - Plan 4: replace `verifyRuling` and add the ruling path to `desk.ts` (the static test pins `settle()` to desk.ts).
 - Task 31 (regtest E2E): the plan's regtest scenarios for Task 10 (real relay, Node buyer and seller parties) are not built here.
+
+Waiting on the Task 9 I/O fix round (review 2026-10-29, CHANGES REQUIRED; coordinator asked to pause the dependent parts):
+- `apps/moderation/migrations/003_signals.sql` is numbered after `002_watch.sql`; if the fix renumbers the watch migration (review M7, e.g. to 003), this one moves after it.
+- The desk feeds the shadow trade from the watcher's accepted `settled` report (spend evidence, review I1) and its signals loop ends when the watcher closes the channels (review I2). Neither decides a signature (the refunds need balance == unlocked > 0 from the mod's own party), but both are re-checked after the re-merge.
