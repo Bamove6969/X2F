@@ -582,6 +582,32 @@ describe('after the cancel: the buyer builds the refund (review I4)', () => {
     expect(calls).toEqual(['escrow:proposeCancelSign']);
   });
 
+  // Task 23 round-3 review, Minor 1: a refusal while the refund waits was never shown, so the
+  // card said "Keep this page open" forever. The refusal sentence (with its next step) shows once.
+  it.each([
+    ['buyer-cancel', 'attempts-exhausted', "Your device couldn't settle this trade. Open a dispute."],
+    ['buyer-cancel', 'view-mismatch', "The trade's details on the server don't match what you agreed to."],
+    ['mutual-cancel', 'attempts-exhausted', "Your device couldn't settle this trade. Open a dispute."],
+  ] as const)('round-3 Minor 1: %s with refusal %s shows the refusal and the next step, phone and wide', (kind, refusal, sentence) => {
+    for (const wide of [false, true]) {
+      const r = mount(props({ view: settling(kind), escrow: fakeEscrow({ phase: 'ready', intentKind: kind, refusal }), wide }), BuyerCancelling);
+      expect(text().split(sentence).length - 1).toBe(1);
+      expect(document.querySelector(`[data-escrow-refusal="${refusal}"]`)).not.toBeNull();
+      expect(text()).toContain('Open a dispute');
+      expect(maybe('Try again')).toBeUndefined();
+      expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+      r.unmount();
+    }
+  });
+
+  it('round-3 Minor 1: no refusal sentence once done, or while a stopped escrow already says why', () => {
+    const r = mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'done', refusal: 'attempts-exhausted' }) }), BuyerCancelling);
+    expect(document.querySelector('[data-escrow-refusal]')).toBeNull();
+    r.unmount();
+    mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'error', error: 'escrow-failed', retryable: true, refusal: 'attempts-exhausted' }) }), BuyerCancelling);
+    expect(document.querySelector('[data-escrow-refusal]')).toBeNull();
+  });
+
   it('done: the refund is settled from this device', () => {
     mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'done' }) }), BuyerCancelling);
     expect(text()).toContain('The XMR is on its way back to satoshi_ghost.');

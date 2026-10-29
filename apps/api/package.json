@@ -11,7 +11,8 @@
     "migrate": "tsx src/db/migrate.ts",
     "start": "tsx src/main.ts",
     "rewrap-totp": "tsx src/tools/rewrap-totp.ts",
-    "tag-login-names": "tsx src/tools/tag-login-names.ts"
+    "tag-login-names": "tsx src/tools/tag-login-names.ts",
+    "news": "tsx src/tools/news.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",
