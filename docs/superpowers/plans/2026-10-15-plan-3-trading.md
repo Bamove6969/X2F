@@ -60,7 +60,7 @@ Owner decision of 2026-10-20 (spec 11.1, item 1) and the Tasks 1–2 review fixe
 Owner decisions of 2026-10-17 and the built Plan 1 code applied before building. Authority: spec > `rulings-and-lessons.md` > this revision > earlier text (including Revision 2026-10-15 below, which stays as history).
 
 - **No buyer deposits** (spec 2.5, 11.4): `depositFor`, `DEPOSIT_RULE`, `depositReceived`, `toUsdCents`, subaddress 1, `depositAddress`, `depositBy`, `depositMin`, `deposit-missing`, `DepositFund`, the Deposit quote row, `depositRequired` and every deposit branch in `escrowPlan`, `payoutsFor`, the state machine and the tests are removed. P3-C3's deposit parts, P3-I7 and OD-3 are void (Tasks 1, 2, 4, 5, 7, 9, 18, 22, 31).
-- **Buyer cancels alone** (spec 2.3): new client event `buyer-cancel` (buyer only, any state after funding; before funding the trade just ends) and `SettleKind` `'buyer-cancel'`. The buyer's app builds the refund and the moderation service co-signs it automatically, only to the seller-signed refund address, through a new pure guard `buyerCancelDecision` next to `autoRefundDecision`. One tap before I've paid, the strong warning after. The seller can never cancel alone after funding (Tasks 2, 6, 7, 10, 12, 23, 31).
+- **Buyer cancels alone** (spec 2.3): new client event `buyer-cancel` (buyer only, any state after funding; before funding the trade just ends) and `SettleKind` `'buyer-cancel'`. The buyer's app builds the refund and the moderation service co-signs it automatically, only to the seller-signed refund address, through a new pure guard `buyerCancelDecision` next to `autoRefundDecision`. One tap before I've paid, the strong warning after. The seller can never cancel alone after funding (Tasks 2, 6, 7, 10, 12, 23, 31). *2026-10-29b: no cancel after I've paid; the buyer's cancel after funding is OPEN (option A or B); see Revision 2026-10-29b.*
 - **Surplus to the ad poster** (spec 11.1; rulings Task 5 I1; plan-1-review finding 3): payouts sweep the observed escrow balance; anything above `sellerFundsAtomic` goes to the poster as its own output, or is added to their payout when they receive; the fee output stays exact. Settlement and `secured` wait until balance == unlocked (10 confirmations), with no time cap; `settleBy` only runs while the escrow is fully unlocked (Tasks 1, 2, 7, 9, 12, 31).
 - **Network fees** (spec 11.1): the seller pays the funding fee in their own wallet; the release or refund fee comes off payout index 0, which is always the party receiving the trade's XMR, never the fee output. A seller-poster funds amount + 1% (Tasks 1, 22; OD-4 decided).
 - **A payout wallet before trading or posting** (spec 6.4): `POST /v1/offers`, `take` and the accepted sheet refuse an account with no usable wallet (409 `no-wallet`), and the app sends the user to Add a wallet with `returnTo`. The first wallet in setup skips confirm-it's-you (Plan 2 R12); later ones go through `ConfirmSheet` (Tasks 4, 5, 18, 19, 21, 28).
@@ -179,7 +179,7 @@ Plan 3 makes these additive amendments to Plan 1 code, all in Task 7: (1) `Escro
 - Monero amounts are `bigint` atomic units everywhere; fiat is `bigint` cents. Shown as XMR with 6 decimals and fiat beside it in `ink-muted`.
 - Fee: 1% (`feeFor`), paid only by the ad poster, on completed trades only. The taker never sees a fee line anywhere (quote, fund, pay, released). The poster sees `X2F fee (1%, your ad) −0.012500 XMR` above `You receive` on the released screen.
 - Money in the escrow (spec 2.5, 11.1): only the seller funds it; there are no buyer deposits. The seller pays the funding fee in their own wallet; the release or refund fee comes off payout index 0, the party receiving the trade's XMR, never the fee output. Any surplus above `sellerFundsAtomic` goes to the ad poster; the fee output is always exact. Payouts sweep the whole escrow once balance == unlocked, with no time cap.
-- Who may cancel after funding: the buyer alone at any time (moderator co-signs, seller's signed refund address only), both together (mutual cancel), or the moderator service after a no-show. The seller never alone.
+- Who may cancel after funding: the buyer alone at any time (moderator co-signs, seller's signed refund address only), both together (mutual cancel), or the moderator service after a no-show. The seller never alone. *2026-10-29b: no cancel of any kind after "I've paid"; the seller never cancels after tapping "Fund escrow"; the buyer's cancel before "I've paid" is OPEN (option A or B, Revision 2026-10-29b).*
 - Timers (server clock only): setup **15 min**; seller funds within **30 min**; escrow secured when the whole balance is unlocked (10 blocks for Monero, 12 in tests); buyer pays within **90 min** from secured; extend by **30 min, at most twice**; final alert **15 min**, sent only after the payment window ended; signing (`settling`) **15 min**, counted only while the escrow is fully unlocked; seller confirm window from the method profile (**120** min instant apps, up to **1440** wires); maintenance pauses all of them.
 - Trade codes come from `newTradeCode()`. The code is the trade's ID in URLs, memos and the UI. Relay channels use `await channelFor(code, kind)` (async; Revision 2026-10-23), never the code.
 - Who may trade: posting, taking, every trade write and every chat write need `requireTrader` (full session, `kind = 'trader'`, not disabled, current Terms). Posting and taking also need at least one usable payout wallet (409 `no-wallet`; spec 6.4). Starter limits apply (spec 2.3; revision 2026-10-24 below), plus the offer's own "Minimum completed trades". Browsing (`/v1/methods`, `/v1/offers`, `/v1/price`) needs no session.
@@ -262,8 +262,8 @@ Rules the tests pin (one test each):
 - `mark-paid` (buyer) in `securing`, `secured`, `refund_requested`; sets `paidAt`, `confirmBy = now + confirmWindowMin`, clears `finalAlertAt`.
 - `extend` (seller) only in `secured` with `now ≥ payBy` and `extensions < 2`; then `payBy = now + 30 min`. A third time → `no-extensions-left`.
 - `request-refund` (seller) only when unpaid and `now > payBy` strictly (`too-early` at exactly `payBy`) → `refund_requested`, `finalAlertAt = now`, so `finalAlertAt > payBy` always holds (rulings Task 9).
-- `buyer-cancel` (buyer only; the seller → `wrong-party`) in `setup`, or `funding` with nothing received → `cancelled`; in `funding` with part received, `securing`, `secured`, `paid` or `refund_requested` → `settling`/`buyer-cancel` (spec 2.3). It is accepted before the escrow unlocks; `settleBy` starts when it does.
-- `propose-cancel` by either side in `funding` … `paid`. `accept-cancel` by the other side → `settling`/`mutual-cancel` only when `releasable` (`not-releasable` otherwise), or straight to `cancelled` when nothing was ever received. A proposer cannot accept their own.
+- `buyer-cancel` (buyer only; the seller → `wrong-party`) in `setup`, or `funding` with nothing received → `cancelled`; in `funding` with part received, `securing`, `secured`, ~~`paid`~~ or `refund_requested` → `settling`/`buyer-cancel` (spec 2.3). *2026-10-29b: refused in `paid` (no cancel after I've paid); option A would drop the post-funding path entirely (Task 39).* It is accepted before the escrow unlocks; `settleBy` starts when it does.
+- `propose-cancel` by either side in `funding` … `paid` (*2026-10-29b:* except `paid` itself; no cancel after I've paid, Task 39). `accept-cancel` by the other side → `settling`/`mutual-cancel` only when `releasable` (`not-releasable` otherwise), or straight to `cancelled` when nothing was ever received. A proposer cannot accept their own.
 - `release-started` (seller) in `secured` or `paid`, only when `releasable` → `settling`/`release`, `settleFrom` = previous state, `settleBy = now + 15 min`. In `settling`, a `chain` that clears `releasable` clears `settleBy`, and the next releasable `chain` sets `settleBy = now + 15 min`. `tick` past `settleBy` returns to `settleFrom` (P3-I5).
 - `open-dispute`: either side in `securing` or `secured` (OD-8); seller in `paid` any time; buyer in `paid` only after `confirmBy` (`too-early` before); either side in `settling` after `settleBy`; buyer in `refunded` within 90 days → `disputed`. In `disputed`, `tick` changes nothing.
 - `escalate` (system) from `lapsed` with funds, or from `released`, `refunded` or `cancelled` (late funds) → `disputed` with `dispute.by = 'system'`.
@@ -362,7 +362,9 @@ Rules the tests pin (one test each):
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): take with wallet choice and race-safe limits`.
 
-Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `centsPerXmr` and `fiatCents`; it refuses with 409 `price-changed` when the offer's rate now (`offerRate`, market plus the offer's margin) differs from the quote by more than 0.5%; fixed-price offers compare exactly. When it accepts, it locks exactly the quoted `centsPerXmr` and `fiatCents` (never its own fresh rate), because the attested `deal.centsPerXmr` must equal the taker's `confirmed.deal.centsPerXmr` or the trade fails `deal-mismatch` (Task 18 re-review, 2026-10-27).
+Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `centsPerXmr` and `fiatCents`; it refuses with 409 `price-changed` when the offer's rate now (`offerRate`, market plus the offer's margin) differs from the quote by more than 0.5%; fixed-price offers compare exactly. ~~When it accepts, it locks exactly the quoted `centsPerXmr` and `fiatCents` (never its own fresh rate), because the attested `deal.centsPerXmr` must equal the taker's `confirmed.deal.centsPerXmr` or the trade fails `deal-mismatch` (Task 18 re-review, 2026-10-27).~~ *Superseded by the lead, 2026-10-29 07:39:* the take locks the server's live price; the quoted price only detects a move (Revision 2026-10-29b).
+
+Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly the quoted" above): the client's rate is never locked. The take always locks the server's own rate now (`offerRate`: market plus margin, or the fixed price) and that rate's total, and answers `{ code, centsPerXmr, fiatCents }` with them. The client's `centsPerXmr` only detects a move: more than 0.5% from the server's rate (fixed: any difference) → 409 `price-changed`. So the taker gets the live price within 0.5% of what they saw and can never pick a better one. The device records its confirmed deal at the rate in the answer, after checking it is within 0.5% of the quote it showed (else it records nothing), so the attested `deal.centsPerXmr` still equals `confirmed.deal.centsPerXmr`. Also (lead decisions, same review): the Starter cap counts the larger of the fiat total and the XMR amount at the live market price (M5); the poster's open-trade limit refuses with a generic 409 `offer-busy` (M6); a blocked pair (either way) gets 404 `not-found` before any other refusal (M3, Task 37).
 
 ### Task 6: Trade store, view, events route, retention and log hygiene (`apps/api`)
 
@@ -812,14 +814,14 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
   - Escrow chips: amber "Securing escrow" with "Confirmations 3 of 10 · about 14 min"; amber "Releasable in N min" while funds are confirmed but not yet unlocked (spec 7, P3-I4); teal "Escrow secured". "Time to pay 90 min / Clock starts when escrow settles…", then the countdown.
   - Payment details from the profile `fields`, Memo = trade code, the own-name warning. The proof slot (Plan 5) is masked.
   - **I've paid** opens `PaidConfirmSheet` (checkbox "I sent exactly $412.50 via Zelle with K7M2-9QXA-4FTR-8WPN in the memo", **Yes, I've paid** / **Not yet**, plus "Sending without proof makes disputes harder."). Yes posts `mark-paid` with `fiatCents` = the total the sheet showed **and** sends the `trade.paid` signal, and shows "Marked as paid" only after the mod's `trade.ack`. On 409 `total-changed` (the trade grew while the sheet was open) nothing is sent: the sheet re-reads the trade and asks again with the new total (Revision 2026-10-21).
-  - Buyer **Cancel** (spec 2.3): before I've paid it is one tap, posting `buyer-cancel` and calling `buyerCancel()`; the XMR goes back to the seller with no agreement needed. After I've paid, `CancelSheet` first shows the danger warning "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid." and cancels only on its confirm button. The seller's room has no cancel-alone action after funding, only **Propose cancel** (mutual cancel), which gives the buyer an accept/decline card.
+  - Buyer **Cancel** (spec 2.3): before I've paid it is one tap, posting `buyer-cancel` and calling `buyerCancel()`; the XMR goes back to the seller with no agreement needed. ~~After I've paid, `CancelSheet` first shows the danger warning "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid." and cancels only on its confirm button.~~ *2026-10-29b: no cancel after I've paid; the buyer's cancel before it is OPEN (A or B); Task 39.* The seller's room has no cancel-alone action after funding, only **Propose cancel** (mutual cancel), which gives the buyer an accept/decline card.
   - Desktop: `TradeTimeline`, counterparty card and `ChatPanel` per the Desktop board.
 
 - [ ] **Step 1: Write the failing tests:**
   - Parity BuyerPay at 390×844 and Desktop at 1280×800.
   - The box unticked → nothing happens. Not yet → state stays `secured`. Yes → `paid`, the seller gets the system card, and the signal is sent.
   - A growth while the sheet is open → Yes gets `total-changed`, no signal is sent, the state stays `secured`, and the sheet shows the new total.
-  - Before paid, one tap on Cancel → `settling`/`buyer-cancel` and the `trade.cancel` signal is sent. The post-paid cancel shows the warning first and does nothing until confirmed.
+  - Before paid, one tap on Cancel → `settling`/`buyer-cancel` and the `trade.cancel` signal is sent. ~~The post-paid cancel shows the warning first and does nothing until confirmed.~~ *2026-10-29b: after I've paid no cancel is offered (Task 39).*
   - The seller's funded room offers no cancel-alone control in any state.
   - "Releasable in N min" shows at 10 confirmations before unlock.
 - [ ] **Step 2:** Run; expect FAIL.
@@ -993,7 +995,7 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
   - Taker buyer, poster seller: the seller funds amount + 1%; the buyer receives within the network fee of the full amount and never sees a fee.
   - Surplus: the taker seller on a buyer's ad overpays by 0.0001 XMR → the buyer-poster receives amount − 1% + 0.0001 − network fee; the fee wallet receives exactly 1%. Extra coins sent after `secured` hold the release until they have 12 blocks, then everything is swept.
   - Mutual cancel after funding: no fee output.
-  - Buyer cancel: before I've paid, one tap → the seller's signed refund address receives the balance minus the network fee **with the seller's page closed**; after I've paid, the warning shows first. The seller's room never offers a cancel-alone action.
+  - Buyer cancel: before I've paid, one tap → the seller's signed refund address receives the balance minus the network fee **with the seller's page closed**; ~~after I've paid, the warning shows first~~ after I've paid, no cancel is offered (2026-10-29b). *If the owner picks option A, this case becomes "Ask to cancel" + the seller's Cancel (Task 39 Step 0).* The seller's room never offers a cancel-alone action.
   - Buyer no-show: clock past `payBy`; Cancel & get refund; buyer silent with an open SSE stream; after 15 min the refund lands **with the seller's page closed**.
   - Lapse: the seller never funds; the buyer's room says the trade ended with no penalty.
   - **Reload the seller's page during signing and the buyer's page during co-signing:** both resume, exactly one release tx, ending `released` (Review Focus 1).
@@ -1106,7 +1108,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - Test: `apps/web/e2e/flexOffer.spec.ts`
 
 **Interfaces:**
-- Produces: PostOffer "+" adds a tier (amount range, margin, optional "buyer must have X completed trades"), with overlap shown inline; "Add payment method" adds a method with its own instructions and optional price adjustment. The offer lists show each offer's final price for the buyer's amount and method. The quote has a method dropdown when the offer has more than one method. Hitting the cap shows the `CantDoThat` popup: "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 Task 21).
+- Produces: PostOffer "+" adds a tier (amount range, margin, optional "buyer must have X completed trades"), with overlap shown inline; "Add payment method" adds a method with its own instructions and optional price adjustment. *2026-10-29b (design reports the owner's answer):* the adjustment is a percent only; on the quote, a method outside the buyer's amount is greyed out with the reason ("PayPal: up to $500"), never hidden. The offer lists show each offer's final price for the buyer's amount and method. The quote has a method dropdown when the offer has more than one method. Hitting the cap shows the `CantDoThat` popup: "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 Task 21).
 - [ ] **Step 1: Write the failing tests:** parity at 390×844; an overlapping tier is refused inline; the list price changes with the amount and the method; the take sends the chosen method; the cap popup has the feedback link.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -1172,3 +1174,99 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(web): warnings before paying and releasing`.
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Sources: the owner's words of 2026-10-29 07:55–08:03 (`~/x2f-comms/owner-answers-2026-10-28.md`), the lead's calls of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-29-lead-calls.md`) and Claude Design's update (`origin/wip/design-brief`: `docs/design-update-2026-10-29-for-lead.md`, `docs/design-brief-2026-10-29-response.md`). The owner's words win over the design's summary. Built and in-review tasks are not reopened; the changes are new Tasks 39–41 and the notes below.
+
+- **Cancelling (Tasks 2, 7, 10, 12, 22, 23, 27, 31).** Decided: before funding either side can walk away; **the seller can never cancel after tapping "Fund escrow"**; **no cancel of any kind after "I've paid"**. **OPEN (owner choosing; lead recommends B):** the buyer's cancel after funding and before "I've paid".
+  - **Option A (the design's):** the buyer's link becomes **"Ask to cancel"** and posts `propose-cancel`; the cancel happens only when the seller taps Cancel (`accept-cancel`, the existing mutual cancel, co-signed by both apps). Then drop the `buyer-cancel` event, `SettleKind 'buyer-cancel'`, `buyerCancelDecision` (Task 7), the moderation co-sign for it (Task 10, `apps/moderation/src/buyerCancel.ts`), `useEscrow().buyerCancel()` and its `cosignPolicy` branch (Task 12), and `refund_reason 'buyer-cancel'`; the moderator's automatic signature stays only for the no-show refund (spec 3.3).
+  - **Option B (lead's recommendation):** keep the built `buyer-cancel` path (one tap, the buyer's app plus the moderation service's automatic signature, only to the seller-signed refund address; the seller need not tap or be online), but refuse it in `paid`, in the API **and** in the moderation service: Task 10's buyer-cancel co-sign refuses once the mod holds a valid `trade.paid` from the buyer (as the auto-refund already does). "Cancelled" shows only once the returned XMR has all confirmations (10) (owner's description of B). *Lead default:* the link stays "Cancel trade".
+  - Under option A, "Cancelled" only once the returned XMR has all confirmations is a *lead default* (the owner described it for B), and the "Ask to cancel" name is the design's.
+  - Until the owner picks, nothing option-specific is built; new Task 39 builds only the decided parts, and its option step waits.
+- **Two-step "I've paid" (Task 23's `PaidConfirmSheet`, built).** The owner wants two steps to avoid accidental taps; Task 23 already has a confirm sheet with a tick. New Task 39 changes it to the owner's and the design's sheet: the owner's question "Are you sure you want to tell the seller you've sent their payment in the requested format?" (final words by Claude Design), the title "Mark this trade as paid?", the **required** tick "I sent exactly $412.50 by Zelle with the memo K7M2-…", "After this you can't cancel the trade. If something goes wrong, open a dispute.", **Yes, mark as paid** (disabled until ticked) and **Not yet**. Task 23's post-paid `CancelSheet` warning goes (there is no cancel after "I've paid").
+- **Task 2 (state machine), as decided:** `buyer-cancel`, `propose-cancel` and `accept-cancel` in `paid` → `wrong-state`; a cancel proposal still open when the buyer marks paid is withdrawn in the same transition. New seller event `walk-away` (seller only) in `setup`, or in `funding` with nothing received and before the seller tapped "Fund escrow" → `cancelled`. *Lead default (2026-10-29b):* "tapped Fund escrow" is recorded by a new client event `fund-started` (seller, `funding`, once), posted when TradeFund's press-and-hold completes; after it, `walk-away` → `wrong-state`. The buyer's walk-away before funding is the existing `buyer-cancel` in `setup` or `funding` with nothing received.
+- **Task 27 (refunded screen, built):** for `refund_reason` `buyer-cancel` or `mutual-cancel`, the screen adds "Did you pay before you cancelled? Open a dispute." (inside the dispute-after-refund window). Built in new Task 39.
+- **Task 38 (warnings):** the buyer's "don't pay until escrow is complete" warning (the design's title "Wait until the XMR is fully in escrow", with the confirmations bar) also shows **when the pay screen opens while the escrow is still confirming** (`securing`, or `secured` before every coin is unlocked), not only before "I've paid" or a proof.
+- **Task 36 (My offers):** tick offers one by one, or tap **Select all**, which **only selects**; a bar with **Turn on** and **Turn off** applies to the ticked offers. An offer turned off stays off until its owner turns it on (nothing turns it back on by itself). *Lead:* turning off works with stale Terms (`allowStaleTerms`); turning on needs the current Terms (`terms-required`). Board: MyOffers (the design has not checked it in a real browser yet).
+- **Task 37 (block):** blocking is **silent** (owner): no alert, push or chat card ever tells the blocked person, and open trades finish normally (already the task's rule; now the owner's). *Lead call 2026-10-29:* Task 5 already refuses a blocked user's take of the blocker's offers (404 `not-found`), so Task 37 reuses that check instead of adding its own.
+- **Task 5 (lead calls 2026-10-29; Task 5 in review on `wip/lead-p3-task5`):**
+  - **The take locks the server's live price,** never the quoted one. The quoted `centsPerXmr` only detects a move: more than 0.5% for a market offer, any change for a fixed one → 409 `price-changed`. A taker can no longer lock a price up to 0.5% better for themselves. This supersedes "locks exactly the quoted `centsPerXmr` and `fiatCents`" in Task 5's Revision 2026-10-27; the app takes the locked price from the attested terms (`deal-mismatch` handling in Tasks 12 and 18 follows that).
+  - **The Starter cap counts the larger of** the trade's cash value (USD at the locked rate) and its XMR amount at the market price, so a below-market fixed-price offer can't move extra XMR.
+- **Completed trades (R38, lead call):** released trades plus refunded trades that had a dispute; a settled dispute counts whoever won.
+- **News (Plan 4 Task 28):** the menu-link question is settled by the design's **Site news** bell beside the logo on Main and BuyMain (Plan 4 Revision 2026-10-29b). The browse screens (Tasks 16–17) host the bell.
+- **Foldable phones (owner):** new Task 40, on the Task 13 web shell.
+- **New-device approval and the backup-login cooling-off (Plan 2 new Tasks 16–17):** their screens are new Task 41, on top of Task 30.
+- **Team members: OPEN** (owner has not confirmed; lawyer item 2). Nothing is planned.
+- **The design session reports that the owner answered these later on 2026-10-29** (`docs/design-brief-2026-10-29-response.md` @b0190d5, "Remaining open questions, answered"). They don't conflict with the owner's words to the lead, so they are recorded as decided:
+  - **Tasks 34–35 (flexible offers):** a method's price adjustment is a **percent of the market rate only** (`adjustBps`), never a fixed amount. A method whose range doesn't cover the buyer's amount is **greyed out with the reason** (for example "PayPal: up to $500"), never hidden. The whole-offer fixed price is unchanged.
+  - **Maintenance:** the emergency version pauses all trade timers (Task 2's `pause` already does).
+- **OPEN conflict (Task 27, dispute after refund):** the design reports the owner said either side can open a dispute for **48 hours after a trade ends**. The lead's question A (the refund-dispute window, 90 days in Task 27, longer than the 30-day delete) recommends 30 days. Not picked here; `disputeAfterRefundDays` stays until the owner answers.
+- **OPEN conflict (appeal window):** owner to the lead 72 hours (Task 27's `appeal_until`, Plan 4 Task 24); the design reports 48 hours. Unchanged until settled.
+
+### Task 39: Cancel rules of 2026-10-29b and the two-step "I've paid" (`@x2f/trade`, `apps/api`, `apps/web`) — NEW 2026-10-29b
+
+**Scope:** the decided parts of Revision 2026-10-29b's cancelling rules, the owner's two-step "I've paid", and the refunded screen's dispute line. **Step 0 waits for the owner's A/B choice; Steps 1–5 do not.**
+
+**Files:**
+- Modify: `packages/trade/src/machine.ts` (Task 2), `apps/api/src/trades/events.ts` (Task 6), `apps/web/src/screens/trade/{PaidConfirmSheet,CancelSheet,BuyerPay,TradeFund}.tsx` (Tasks 22–23), the buyer's refunded screen (Task 27), the room's settling view
+- Test: `packages/trade/test/machine.test.ts`, `apps/api/test/tradeEvents.test.ts`, `apps/web/e2e/{pay,fund,cancel}.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - Task 2 rules as in Revision 2026-10-29b: no cancel events in `paid`; `walk-away` and `fund-started` for the seller.
+  - `PaidConfirmSheet`: the sheet of Revision 2026-10-29b (owner's question, required tick, the can't-cancel line, **Yes, mark as paid** disabled until ticked, **Not yet**). `// COPY-UNSIGNED` until Claude Design gives the final words.
+  - The refunded screen: "Did you pay before you cancelled? Open a dispute." for `refund_reason` `buyer-cancel` or `mutual-cancel`, linking to DisputeOpen.
+  - **Step 0 (waits for the owner): option A or B,** as listed in Revision 2026-10-29b. A: rename the link "Ask to cancel", route it to `propose-cancel`, drop the buyer-cancel path and its moderator co-sign (Tasks 7, 10, 12), and remove the buyer-cancel row from Task 31's e2e list. B: keep the path; Task 10's moderation guard refuses a buyer `trade.cancel` once it holds a valid `trade.paid` (test: mod opened `trade.paid`, then `trade.cancel` → nothing signed). Both (B by the owner's words, A as a lead default): `TradeView.returnConfirmations: number | null` on a trade settling or settled as `mutual-cancel` or `buyer-cancel` (from the Task 9 chain watcher); "Cancelled" shows only at 10, before that "Sending the XMR back to <seller> · 3 of 10" `// COPY-UNSIGNED`.
+- [ ] **Step 1: Write the failing tests:** `buyer-cancel`, `propose-cancel` and `accept-cancel` in `paid` → `wrong-state`; an open proposal is withdrawn by `mark-paid`; the seller's `walk-away` in `setup` → `cancelled`, after `fund-started` → `wrong-state`, after any coins are seen → `wrong-state`; `fund-started` twice → `wrong-state`; the buyer's room after "I've paid" has no cancel control; "Yes, mark as paid" is disabled until the tick; the refunded screen shows the dispute line for a cancel and not for a no-show refund; parity for BuyerPay.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: no cancel after I've paid, seller walk-away before funding, two-step I've paid`.
+
+### Task 40: Foldable phones — panes at the hinge, tabletop and the cover screen (`apps/web`) — NEW 2026-10-29b
+
+**Scope:** the owner's foldables requirement (spec 1 and Revision 2026-10-29b) in the web app shell (Task 13), so the installable web app and the native wrappers (Plan 6 Task 20) both get it.
+
+**Boards:** Fold-Notes, Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover, Fold-TriFold ("Foldables" row; **controller step (design):** the design checks them in a real browser and adds the fold rules to the existing boards first).
+
+**Files:**
+- Create: `apps/web/src/ui/fold.ts` (posture and segment reader), `apps/web/src/ui/Panes.tsx`, `apps/web/src/styles/fold.css`
+- Modify: the shell layout (Task 13), the browse lists (Tasks 16–17), the trade room (Task 22), sheets and dialogs (Task 14's UI kit), `apps/web/e2e/viewports.ts` (`PHONE_VIEWPORTS` stays the phone standard; add `FOLD_VIEWPORTS`)
+- Test: `apps/web/test/fold.test.ts`, `apps/web/e2e/fold.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - Layout by width: under 600 px (and the cover screen) the phone layout; 600–999 px two panes split at the hinge; 1000 px and over the wide layout, or three panes on a tri-fold.
+  - Where supported (Chrome on Android): `@media (horizontal-viewport-segments: 2)` / `(vertical-viewport-segments: 2)` and `env(viewport-segment-left 0 0)` … `env(viewport-segment-right 1 0)` place the panes on either side of the hinge. Elsewhere (Safari on the iPhone Fold): width-only breakpoints.
+  - **Tabletop** (`vertical-viewport-segments: 2`): turns on by itself when half-folded and off when flat, with no setting; the top half shows information only, the bottom half every control and the chat.
+  - **Flip cover screen:** the most urgent trade as a small card, plus "+2 more trades" when there are others.
+  - **Rules:** nothing is drawn across the hinge (no text, control or dialog crosses the segment gap); dialogs and sheets open inside one pane; folding or unfolding keeps the route, the scroll position and any typed text (form state lives above the layout switch, not in the pane); folded mid-trade, the chat moves behind the header's Chat link with its draft kept; the unfolded quote button says "Trade".
+- [ ] **Step 1: Write the failing tests:** at 390, 700 and 1100 px wide the layout is phone, two panes and wide; with emulated two segments no element's box crosses the hinge gap and a sheet stays in one pane; a resize from 840 to 390 px mid-trade keeps the route, the scroll position, the chat draft and a half-typed amount; the tabletop layout puts every control in the bottom segment; parity for the six Fold boards. (Playwright emulates segments through the CDP `Emulation.setDisplayFeaturesOverride`; *lead default:* if the pinned Chromium lacks it, the segment tests skip with a reason and the width tests still run.)
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): foldable layouts with panes at the hinge`.
+
+### Task 41: LoginApprove, Devices and Login-Backup screens (`apps/web`) — NEW 2026-10-29b
+
+**Scope:** the screens for Plan 2 new Tasks 16 (new-device approval, 3 devices, "One device at a time") and 17 (backup-login cooling-off), on top of Task 30.
+
+**Boards:** LoginApprove, Devices, Login-Backup (each with a -Wide version).
+
+**Files:**
+- Create: `apps/web/src/screens/auth/{ApproveWaiting,ApproveSheet}.tsx`
+- Modify: `apps/web/src/screens/auth/{Login,BackupLogin}.tsx`, `apps/web/src/screens/settings/{Devices,Security}.tsx` (Task 30), the live-events listener (Task 19)
+- Test: `apps/web/e2e/{loginApprove,devices,backupLogin}.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - **New device:** after `approve-on-device`, "Approve this login on your other device" with the 2-digit number large, polling Plan 2's `/v1/login/approval/:id/poll` until `ok`, `blocked` or `expired`.
+  - **Logged-in device:** the `login-approval` event opens `ApproveSheet`: "Someone is logging in on <browser, OS>. Is this you?", the three numbers, **Yes, let them in** (taps the chosen number) and **No, block it**. After "No": the login is blocked and the sheet suggests changing the login method (link to Security).
+  - **Devices:** the session list (Task 30) with "3 of 3 devices" when full, remote log-out, and the **One device at a time** toggle (confirm-it's-you).
+  - **Login-Backup:** says before the user chooses which ways get in at once (two factors) and which start the 24-hour cooling-off; during the cooling-off a banner names the end time and what still works ("You can finish your open trades").
+- [ ] **Step 1: Write the failing tests:** the number shown on the new device equals the one the approving device must tap; "No, block it" ends the new device's wait with the blocked message; the 4th device shows the "Log out a device first" popup with the feedback link; the cooling-off banner shows the exact end time and the open trade's Release still works; parity for the three boards at 390×844 and their -Wide versions.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): new-device approval, devices and the backup-login wait`.
