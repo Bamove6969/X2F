@@ -342,7 +342,29 @@ describe('non-retryable escrow errors are said, never endless setup (review 2026
     expect(host.querySelector('[data-keep-open]')).toBeNull();
   });
 
-  it('a non-retryable escrow-failed: the cancel path (the seller proposes a cancel)', async () => {
+  it('a non-retryable escrow-failed before "Fund escrow": the seller walks away alone (walk-away, Revision 2026-10-29b)', async () => {
+    setTradeEscrowHook(() => escrow({ phase: 'error', error: 'escrow-failed', retryable: false }));
+    const host = await room();
+    expect([...host.querySelectorAll('button')].find((b) => b.textContent === 'Propose cancel')).toBeUndefined();
+    const cancel = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
+    await act(async () => cancel.click());
+    await flush();
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'walk-away' } }]);
+  });
+
+  it('copying the escrow address records "Fund escrow" (fund-started)', async () => {
+    const copied: string[] = [];
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText: async (t: string) => void copied.push(t) } });
+    const host = await room();
+    const copy = [...host.querySelectorAll('button')].find((b) => b.textContent === 'Copy address')!;
+    await act(async () => copy.click());
+    await flush();
+    expect(copied).toEqual([ADDRESS]);
+    expect(posted).toEqual([{ path: `/v1/trades/${CODE}/events`, body: { type: 'fund-started' } }]);
+  });
+
+  it('a non-retryable escrow-failed after "Fund escrow": the cancel path (the seller proposes a cancel)', async () => {
+    current = { ...base, fundStartedAt: '2026-10-25T11:59:00.000Z' };
     setTradeEscrowHook(() => escrow({ phase: 'error', error: 'escrow-failed', retryable: false }));
     const host = await room();
     expect(host.textContent).toContain("The escrow can't be set up on this device.");

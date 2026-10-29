@@ -45,8 +45,8 @@
  *
  * ### Who owns which slot (lead's plan; register only your own)
  * - Task 22: buyer and seller in `setup`, `funding`; seller in `securing` (TradeFund, SetupStatus).
- * - Task 23: buyer in `securing`, `secured`, `paid` (BuyerPay: "Marked as paid", Finish, the warned
- *   cancel); seller in `secured` (SellerWaiting); buyer in `settling` with `when` buyer-cancel /
+ * - Task 23: buyer in `securing`, `secured`, `paid` (BuyerPay: "Marked as paid", Finish; no cancel
+ *   after "I've paid", Task 39); seller in `secured` (SellerWaiting); buyer in `settling` with `when` buyer-cancel /
  *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
  *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
@@ -54,6 +54,8 @@
  *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
  * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
  *   90-day "Open a dispute", spec 2.3; lead 2026-10-28).
+ * - Task 39: seller in `settling` and `refunded` with `when` buyer-cancel (SellerCancelConfirm: the
+ *   seller's Confirm cancel once the returned XMR has all its confirmations; owner 2026-10-29).
  *
  * ### Rules for every screen
  * - Show the other trader only as `publicName(view.counterparty)` inside `data-username`; never a
