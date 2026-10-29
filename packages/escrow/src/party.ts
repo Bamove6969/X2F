@@ -119,9 +119,10 @@ export interface PartyHandle {
   /**
    * Imports a peer's post-release multisig info (the moderator's side of spendInfo()), so this
    * wallet can compute the escrow's key images and its own outgoing view (funds().outgoing)
-   * shows a spend that really is in a block. The import is the proof: the info only completes
-   * key images for this wallet's own outputs; the wallet then finds those key images among the
-   * inputs of txs in blocks. Nothing a peer sends names a tx. Rejects with
+   * shows the spend. The import is NOT proof on its own (review I1): wallet2 adds the peer's
+   * partial key images unchecked, and a trade party knows every partial but the mod's, so a forged
+   * info can make the wallet attribute an unrelated in-block tx to the escrow. The watcher counts
+   * such a sweep only once the tx key sent with spend.info proves the payouts (proveSweep). Rejects with
    * EscrowError('bad-spend-info') for anything that is not a well-formed export of this escrow
    * (not hex, over SPEND_INFO_MAX_HEX, another wallet, a bad signature), PartyError('bad-state')
    * before setup ended or while this party's own release is under way (an import replaces the
