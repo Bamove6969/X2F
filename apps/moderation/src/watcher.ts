@@ -257,6 +257,12 @@ export function createWatcher(o: WatcherOptions): Watcher {
         o.log({ reason: 'watch-unavailable' });
         return;
       }
+      // Every trade whose attestation was posted has a watch row, even if the process stopped
+      // between posting it and registering the party (the trade is no longer work after that).
+      await o.db.query(
+        `insert into mod_watch (trade, state) select trade, $1 from signed_terms where posted_at is not null on conflict (trade) do nothing`,
+        [JSON.stringify(dumpWatchState(newWatchState()))],
+      );
       const { rows } = await o.db.query<Row>('select trade, escrow_address, setup_done_at, state, watching from mod_watch where watching order by trade');
       for (const row of rows) {
         if (stopped) return;
@@ -296,7 +302,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
             continue;
           }
           const handle = running.get(row.trade);
-          if (!handle || row.escrow_address === null || row.setup_done_at === null) continue;
+          if (!handle || row.escrow_address === null) continue;
+          if (row.setup_done_at === null) {
+            // Still in setup: setup-done has not been accepted yet. Past setup: the API took it
+            // (we may have stopped before recording that), so record it and watch.
+            if (apiState === 'setup') continue;
+            await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
+          }
           watching = await watchOne(row, apiState, handle);
           if (!watching) {
             await stopParty(row.trade);

@@ -257,6 +257,36 @@ describe('the moderator party', () => {
     await again.handle.stop();
   });
 
+  it('a posted attestation with no watch row (e.g. a crash between the two writes) still gets its party after a restart', async () => {
+    const { net, fetch } = fakeNetwork();
+    const first = await moderation(fetch);
+    const code = newTradeCode();
+    net.work = [await work(code)];
+    await first.handle.tick();
+    net.work = [];
+    await first.handle.stop();
+    await db.query('delete from mod_watch where trade = $1', [code]);
+    net.states.set(code, 'setup');
+    const again = await moderation(fetch);
+    await again.handle.watch();
+    expect(again.started.filter((a) => a.trade === code)).toHaveLength(1);
+    expect(again.started[0]!.terms).toEqual(TERMS);
+    await again.handle.stop();
+  });
+
+  it('setup-done accepted by the API but not recorded here: once the API is past setup the escrow is watched anyway', async () => {
+    const { net, fetch } = fakeNetwork();
+    const m = await moderation(fetch);
+    const code = await inFunding(m, net);
+    await db.query('update mod_watch set setup_done_at = null where trade = $1', [code]);
+    const p = m.parties.get(code)!;
+    p.funds = { ...p.funds, balance: XMR, incoming: [incoming(hash('a'), XMR, 99)] };
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'chain' && r.trade === code)).toHaveLength(1);
+    expect(net.reports.filter((r) => r.kind === 'setup-done' && r.trade === code)).toHaveLength(1);
+    await m.handle.stop();
+  });
+
   it('reports setup-done once, with the address ready() resolved with', async () => {
     const { net, fetch } = fakeNetwork();
     const m = await moderation(fetch);
