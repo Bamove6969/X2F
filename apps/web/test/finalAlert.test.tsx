@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOARD, SERVER_NOW, buyerAlertView } from '../e2e/refundViews.js';
 import { FinalAlert, setFinalAlertPaidSheet, type PaidSheetProps } from '../src/screens/trade/FinalAlert.js';
 import type { RefundView } from '../src/screens/trade/refundSlot.js';
+import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import { advance, fire, render } from './render.js';
 
 const MIN = 60_000;
@@ -26,7 +27,7 @@ afterEach(() => {
   setFinalAlertPaidSheet(null);
 });
 
-const escrow = { signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined), amountAtomic: null };
+const escrow = { ...PENDING_ESCROW, signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined), amountAtomic: null };
 
 function mount(view: RefundView, clock: () => Date) {
   const r = render(
