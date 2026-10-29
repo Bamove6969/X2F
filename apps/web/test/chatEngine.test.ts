@@ -118,7 +118,7 @@ beforeEach(async () => {
 });
 
 describe('chat engine: device binding and the attestation', () => {
-  it('makes, saves and registers this device's identity, then waits for the attestation', async () => {
+  it("makes, saves and registers this device's identity, then waits for the attestation", async () => {
     const snap = await engine().sync(chat);
     expect(snap).toMatchObject({ phase: 'waiting', role: 'buyer', counterparty: 'Sam', lines: [] });
     expect(made).toHaveLength(1);
