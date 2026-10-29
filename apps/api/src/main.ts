@@ -1,4 +1,5 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
+import { buildInternalListener } from './internal/routes.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -84,9 +85,24 @@ prices.start();
 if (web) await serveWeb(app, web);
 await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1', port: port(process.env.X2F_PORT) });
 
+// Plan 3 Task 8: the private internal listener (moderation pulls work and posts reports). It binds
+// to a private interface only (default 127.0.0.1) and holds no secret beyond MOD_SIGNING_PUBLIC.
+const modSigningPublic = process.env.X2F_MOD_SIGNING_PUBLIC;
+const internal = modSigningPublic
+  ? await buildInternalListener({ db, modSigningPublic, now: () => deps.clock().getTime() })
+  : null;
+if (internal) {
+  await internal.listen({
+    ...LISTEN_OPTIONS,
+    host: process.env.X2F_INTERNAL_HOST || '127.0.0.1',
+    port: port(process.env.X2F_INTERNAL_PORT || '8081'),
+  });
+}
+
 const shutdown = async () => {
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
+  if (internal) await internal.close();
   await app.close();
   await db.end();
 };

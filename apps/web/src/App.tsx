@@ -4,6 +4,7 @@ import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { PostOffer } from './screens/PostOffer.js';
+import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -16,6 +17,8 @@ import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
 import { Security } from './screens/settings/Security.js';
+import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -146,9 +149,9 @@ export function App() {
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
-          <Route path="/setup/*" element={<Screen name="setup" />} />
-          <Route path="/terms" element={<Screen name="terms" />} />
+          <Route path="/wallets" element={<Wallets />} />
+          <Route path="/setup/*" element={<SetupFlow />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
