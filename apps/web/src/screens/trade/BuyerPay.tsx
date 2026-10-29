@@ -517,6 +517,7 @@ export function BuyerPay(p: TradeScreenProps) {
           {finishOk
             ? null
             : finishBlocked === 'escrow-refused'
+              // not-a-refusal: an escrow safety check on this device (view-mismatch)
               ? " The trade's details on the server don't match what you agreed to, so your device can't record it yet. Don't pay again. Open a dispute if this doesn't clear."
               : " Your device can't confirm the total the trade shows. Don't pay again. Ask in the chat, or open a dispute if it doesn't clear."}
           {finishError !== null ? ` ${finishError}` : null}

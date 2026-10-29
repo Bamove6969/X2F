@@ -18,7 +18,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
-import { useSession } from '../session/useSession.js';
+import { displayNameOf, useSession } from '../session/useSession.js';
+import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
 import { waitSentence } from './auth/refusals.js';
 import './screens.css';
@@ -42,6 +43,8 @@ const KINDS: readonly { id: FeedbackKind; label: string }[] = [
 ];
 
 /** The refusal code from `?from=`, when it has the API's shape; anything else is dropped. */
+export { clearFeedbackDraft, loadFeedbackDraft };
+
 export function fromCode(search: string): string | null {
   const v = new URLSearchParams(search).get('from');
   return v !== null && /^[a-z0-9-]{1,40}$/.test(v) ? v : null;
@@ -52,53 +55,6 @@ export function sendFeedback(b: { kind: FeedbackKind; text: string; anonymous: b
   return api('/v1/feedback/form', { method: 'POST', body: b.from === null || b.anonymous ? { kind: b.kind, text: b.text, anonymous: b.anonymous } : b });
 }
 
-const DRAFT_KEY = 'x2f.feedback-draft';
-
-interface Draft {
-  kind: FeedbackKind;
-  text: string;
-  anonymous: boolean;
-}
-
-function storage(): Storage | null {
-  try {
-    return window.sessionStorage;
-  } catch {
-    return null;
-  }
-}
-
-/** The draft kept through a log-in round trip (this tab only), or null. */
-export function loadFeedbackDraft(): Draft | null {
-  try {
-    const raw = storage()?.getItem(DRAFT_KEY);
-    if (!raw) return null;
-    const d = JSON.parse(raw) as Partial<Draft>;
-    const kind = KINDS.find((k) => k.id === d.kind)?.id;
-    if (kind === undefined || typeof d.text !== 'string' || typeof d.anonymous !== 'boolean') return null;
-    return { kind, text: d.text.slice(0, FEEDBACK_TEXT_MAX * 2), anonymous: d.anonymous };
-  } catch {
-    return null;
-  }
-}
-
-function saveDraft(d: Draft): void {
-  try {
-    if (d.text === '') storage()?.removeItem(DRAFT_KEY);
-    else storage()?.setItem(DRAFT_KEY, JSON.stringify(d));
-  } catch {
-    // Storage can be off (private mode); the form still works without a draft.
-  }
-}
-
-function clearDraft(): void {
-  try {
-    storage()?.removeItem(DRAFT_KEY);
-  } catch {
-    // As saveDraft.
-  }
-}
-
 type State = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'signed-out' } | { kind: 'failed'; message: string };
 
 export function Feedback() {
@@ -106,7 +62,10 @@ export function Feedback() {
   const navigate = useNavigate();
   const from = fromCode(search);
   const session = useSession();
-  const [draft] = useState(loadFeedbackDraft);
+  // The signed-in account's public name, or null while signed out or loading; a draft another
+  // account wrote is never shown (round-2 review N-M6).
+  const owner = session.status === 'signed-in' ? displayNameOf(session.me) || null : null;
+  const [draft, setDraft] = useState(() => loadFeedbackDraft(null));
   const [kind, setKind] = useState<FeedbackKind>(draft?.kind ?? 'feedback');
   const [text, setText] = useState(draft?.text ?? '');
   const [anonymous, setAnonymous] = useState(draft?.anonymous ?? false);
@@ -115,9 +74,19 @@ export function Feedback() {
   const hintId = useId();
   const thanks = useRef<HTMLHeadingElement>(null);
 
+  // Once the account is known, a draft written by a different account is dropped.
   useEffect(() => {
-    if (state.kind !== 'sent') saveDraft({ kind, text, anonymous });
-  }, [kind, text, anonymous, state.kind]);
+    if (owner === null || draft === null || draft.owner === null || draft.owner === owner) return;
+    clearFeedbackDraft();
+    setDraft(null);
+    setKind('feedback');
+    setText('');
+    setAnonymous(false);
+  }, [owner, draft]);
+  useEffect(() => {
+    const foreign = owner !== null && draft !== null && draft.owner !== null && draft.owner !== owner;
+    if (state.kind !== 'sent' && session.status !== 'loading' && !foreign) saveFeedbackDraft({ kind, text, anonymous, owner });
+  }, [kind, text, anonymous, state.kind, owner, session.status, draft]);
   useEffect(() => {
     if (state.kind === 'sent') thanks.current?.focus();
   }, [state.kind]);
@@ -133,7 +102,7 @@ export function Feedback() {
     setState({ kind: 'sending' });
     try {
       await sendFeedback({ kind, text: clean, anonymous, from });
-      clearDraft();
+      clearFeedbackDraft();
       setState({ kind: 'sent' });
     } catch (err) {
       if (err instanceof ApiCallError && err.status === 401) setState({ kind: 'signed-out' });

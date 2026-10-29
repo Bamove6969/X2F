@@ -25,8 +25,9 @@
 //       says `not-a-refusal: <why>` (an explanation, an input check, a fault, not a rule that
 //       stops the user) or `cant-do-that-todo: <why>` (a refusal still shown inline). Tests count
 //       both kinds of pragma, so neither can grow unnoticed.
-//   Importing CantDoThat exempts nothing: each refusal must be routed or marked. Wording in a
-//   sentence that asks the person to "try again" is a fault report and is not judged (TRY_AGAIN).
+//   Importing CantDoThat exempts nothing: each refusal must be routed or marked. A piece that
+//   starts like a fault report ("Could not load ...", "Your device can't ...") and holds no strong
+//   rule word is not judged (isFault).
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -54,11 +55,17 @@ export const OWNER_WORDING: ReadonlySet<string> = new Set([
 export const REFUSAL_WORDS =
   /\b(?:can['’]t|cannot|can not|couldn['’]t|could not|unable|not able|not allowed|isn['’]t allowed|aren['’]t allowed|not permitted|you['’]re limited|limited to|sorry|no longer|too many|at most|maximum|only \d|once every|already have|(?:isn['’]t|is not|aren['’]t|are not|not) available|is blocked|you must|needs at least)\b/i;
 /**
- * A sentence that reports a fault, not a rule: it asks the person to try again or reload, says
- * something could not load, or is the device's own safety check ("Your device can't ..."). A rule
- * refusal does not go away by retrying. Its wording is not judged; a refusal code literal still is.
+ * A fault report, not a rule (round-2 review N-M1): the piece STARTS with a fault opener ("Could
+ * not ...", "Couldn't ...", "X2F could not ...", "Offers could not be loaded ...", "Your device
+ * can't ...", "Too many tries") AND holds
+ * no strong rule word (STRONG_RULE). Its wording is not judged; a refusal code literal still is.
+ * Anything else with refusal wording is judged, "Try again" or not.
  */
-const TRY_AGAIN = /\b(?:try (?:it )?again|reload the page|could(?:n['’]t| not) (?:load|read|copy|reach)|your device)\b/i;
+// "Could not ...", "X2F could not ...", "Your wallets could not be loaded ..." (at most five words
+// before it), "Your device can't ...", "Too many tries".
+const FAULT_OPENER = /^\s*(?:(?:\S+\s+){0,5}?could(?:n['’]t| not)\b|your device (?:can['’]t|couldn['’]t|is still)\b|too many tries\b)/i;
+const STRONG_RULE = /\b(?:sorry|limited|only|once every|maximum|at most|hold|not allowed|not permitted|already have|can['’]t post)\b/i;
+const isFault = (t: string): boolean => FAULT_OPENER.test(t) && !STRONG_RULE.test(t);
 const CODES: ReadonlySet<string> = new Set(CANT_DO_CODES);
 /** The two files that hold refusal wording by design: the text map and the popup. */
 const CANT_DO_HOME = /(?:^|\/)apps\/web\/src\/ui\/(?:cantDoCodes\.ts|CantDoThat\.tsx)$|^(?:cantDoCodes\.ts|CantDoThat\.tsx)$/;
@@ -230,7 +237,7 @@ export function lintSource(src: string, file: string): Finding[] {
       for (let l = first; l <= last + 1; l++) pragmaLines.add(l);
     }
     for (const p of pieces) {
-      if (!home && !p.toCantDo && ((REFUSAL_WORDS.test(decodeEntities(p.text)) && !TRY_AGAIN.test(p.text)) || (p.literal && CODES.has(p.text)))) {
+      if (!home && !p.toCantDo && ((REFUSAL_WORDS.test(decodeEntities(p.text)) && !isFault(p.text)) || (p.literal && CODES.has(p.text)))) {
         const at = position(src, p.start);
         if (!pragmaLines.has(at.line)) found.push({ file, ...at, rule: 'refusal', text: p.text.trim() });
       }

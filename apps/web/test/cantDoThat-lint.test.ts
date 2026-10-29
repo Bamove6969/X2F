@@ -61,8 +61,30 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     ]) {
       expect(lint(`export const a = ${JSON.stringify(s)};\n`, 'a.ts'), s).toEqual([s]);
     }
-    // A fault that asks the person to try again or reload is not a rule refusal.
-    expect(lint('export const a = "Could not save that. Try again.";\n', 'a.ts')).toEqual([]);
+    // A piece that starts like a fault report and holds no strong rule word is not judged.
+    for (const fault of [
+      'Could not save that. Try again.',
+      'Offers could not be loaded right now. Try again in a moment.',
+      "X2F could not use that key. Check that you pasted the whole public key.",
+      "Your device can't settle this trade as the server shows it. Don't send any money.",
+      'Too many tries. Try again in 5 minutes.',
+    ]) {
+      expect(lint(`export const a = ${JSON.stringify(fault)};\n`, 'a.ts'), fault).toEqual([]);
+    }
+  });
+
+  it('round-2 N-M1: a refusal that merely ends with "Try again" or mentions a device is still judged', () => {
+    for (const s of [
+      'You can only nudge once every 10 minutes. Try again later.',
+      "You can't post more than 2 offers per side. Try again once one ends.",
+      "Your account is on a trading hold, so you can't trade. Try again after the dispute.",
+      "You can't add another security key to your device list: the limit is 5.",
+      "Sorry, you're limited to 2 offers per side. Reload the page after removing one.",
+      // A fault opener with a strong rule word in it is judged too.
+      "Could not post: you're limited to 2 offers per side.",
+    ]) {
+      expect(lint(`export const a = ${JSON.stringify(s)};\n`, 'a.ts'), s).toEqual([s]);
+    }
     // A literal type is never shown.
     expect(lint("export type R = { result: 'too-soon' };\n", 'a.ts')).toEqual([]);
   });
@@ -97,7 +119,7 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // sentence, login-name-set), listed with their owner in docs/coordination.md. Lower these as
     // refusals move into CantDoThat; raise one only with a reviewed reason.
     expect(todo).toBeLessThanOrEqual(4);
-    expect(notARefusal).toBeLessThanOrEqual(34);
+    expect(notARefusal).toBeLessThanOrEqual(35);
   });
 });
 

@@ -132,6 +132,7 @@ export const CANT_DO_TITLE = {
   wallets: "Wallets can't be added",
   methods: "That login method can't be removed",
   nudge: "You can't nudge yet",
+  extend: "You can't give more time",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -179,6 +180,14 @@ export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;
 
 /** 409 `last-login-method` (and the client's own check before asking): the account's only way to log in. */
 export const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
+
+/** 409 `no-extensions-left` (Plan 3 Task 6): the payment time was already extended as often as allowed. */
+export const NO_EXTENSIONS_LEFT = 'This trade has had all the extra time it can get. Cancel and get your refund, or keep waiting for the payment.';
+
+/** What a refused extend says, for the codes that have their own words (else null). */
+export function extendCantDoText(code: CantDoCode): string | null {
+  return code === 'no-extensions-left' ? NO_EXTENSIONS_LEFT : null;
+}
 
 /** The nudge limit's code. */
 export const NUDGE_TOO_SOON_CODE = 'too-soon' satisfies CantDoCode;

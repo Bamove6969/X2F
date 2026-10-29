@@ -6,6 +6,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { FEEDBACK_ANON_HINT, FEEDBACK_BAD_TEXT, FEEDBACK_THANKS, Feedback, fromCode } from '../src/screens/Feedback.js';
 import { refreshSession } from '../src/session/useSession.js';
+import { logOut } from '../src/push/usePush.js';
 import { CANT_DO_CODES, CantDoThat, feedbackHref } from '../src/ui/CantDoThat.js';
 import { fire, render } from './render.js';
 
@@ -151,6 +152,20 @@ describe('Feedback form', () => {
     expect(back.host.querySelector('[data-part="feedback-login-first"]')).toBeNull();
     await send(back.host);
     expect(back.sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'recommendation', text: 'Keep this.', anonymous: false } }]);
+  });
+
+  it('round-2 N-M6: a draft another account wrote is dropped, and log-out clears the draft', async () => {
+    window.sessionStorage.setItem('x2f.feedback-draft', JSON.stringify({ kind: 'complaint', text: 'from someone else', anonymous: true, owner: 'other_user' }));
+    const b = await open('/feedback', { status: 202, json: {} });
+    expect(b.host.querySelector('textarea')!.value).toBe('');
+    expect(b.host.querySelector<HTMLInputElement>('input[value="feedback"]')!.checked).toBe(true);
+    expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
+    // The signed-in account's own draft is kept, under its name.
+    type(b.host.querySelector('textarea')!, 'mine');
+    expect(JSON.parse(window.sessionStorage.getItem('x2f.feedback-draft')!)).toMatchObject({ text: 'mine', owner: 'nightowl_44' });
+    b.unmount();
+    await logOut({ serviceWorker: undefined, hasPushManager: false, Notification: undefined, api: (async () => ({})) as never });
+    expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
   });
 
   it('a session that ran out while typing is asked to log in; a 429 says when; a 400 says why (review M5)', async () => {

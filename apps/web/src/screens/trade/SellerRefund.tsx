@@ -24,7 +24,8 @@ import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE, extendCantDoText, isCantDoCode, type CantDoCode } from '../../ui/cantDoCodes.js';
+import { ApiCallError } from '../../api/client.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
@@ -103,6 +104,8 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const [error, setError] = useState(false);
   const [nudge, setNudge] = useState<string | null>(null);
   const [nudgeLimit, setNudgeLimit] = useState(false);
+  // 409 `no-extensions-left` (a second tab, a stale view): CantDoThat, not "try again" (round-2 N-M4).
+  const [extendRefused, setExtendRefused] = useState<{ code: CantDoCode; text: string } | null>(null);
 
   const deps = useFlowDeps(view.code, escrow);
   // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it; it
@@ -121,8 +124,11 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
     setError(false);
     try {
       await run();
-    } catch {
-      setError(true);
+    } catch (e) {
+      const code = which === 'extend' && e instanceof ApiCallError && isCantDoCode(e.code) ? e.code : null;
+      const text = code === null ? null : extendCantDoText(code);
+      if (code !== null && text !== null) setExtendRefused({ code, text });
+      else setError(true);
     } finally {
       setBusy(null);
       await refresh().catch(() => undefined);
@@ -199,6 +205,9 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
           <p role="status" className="x2f-refund__note">
             {nudge}
           </p>
+        ) : null}
+        {extendRefused !== null ? (
+          <CantDoThat title={CANT_DO_TITLE.extend} body={extendRefused.text} from={extendRefused.code} onClose={() => setExtendRefused(null)} />
         ) : null}
         {nudgeLimit ? <CantDoThat title={CANT_DO_TITLE.nudge} body={NUDGE_TOO_SOON} from={NUDGE_TOO_SOON_CODE} onClose={() => setNudgeLimit(false)} /> : null}
       </footer>
