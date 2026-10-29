@@ -332,6 +332,8 @@ Rules the tests pin (one test each):
 
 **Revision 2026-10-27 (lead):** offers for gift-card methods carry `country` (ISO 3166-1 alpha-2); the API refuses a gift-card offer without it.
 
+**Revision 2026-10-29 (owner):** the offer caps change to 2 per side per currency and 20 in total when flexible offers land (new Task 34); until then the built 3 per (side, method, currency) and 20 stay. Pause and resume of all offers is new Task 36. See "Revision 2026-10-29 (owner)" at the end.
+
 ### Task 5: Taking an offer (`apps/api`)
 
 **Files:**
@@ -389,6 +391,8 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): trade store, role-aware view, guarded events, retention`.
+
+**Revision 2026-10-29 (owner):** retention changes: an undisputed trade is deleted whole 30 days after it ends; a disputed trade is kept 90 days from the dispute button. `purgeTradeAddresses` moves from 90 to 30 days now; the whole-trade delete is Plan 7 Task 2. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 7: Plan 1 amendments — incoming funds, buyer-cancel guard, security follow-ups, relay registration and close
 
@@ -743,6 +747,8 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: end-to-end encrypted chat`.
 
+**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after the dispute button for a disputed trade, not 90 days after close. See "Revision 2026-10-29 (owner)" at the end.
+
 ### Task 21: PostOffer
 
 **Board:** `PostOffer.dc.html`.
@@ -860,6 +866,8 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 - [ ] **Step 4:** Run the spec and `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(web): seller refund, extend, final alert`.
 
+**Revision 2026-10-29 (owner):** every refund path records its reason on the trade for Task 27's buyer refunded screen. See "Revision 2026-10-29 (owner)" at the end.
+
 ### Task 26: Nudges
 
 **Board:** Nudge on `SellOffers.dc.html`.
@@ -912,6 +920,8 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the specs and `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: trader-side disputes`.
+
+**Revision 2026-10-29 (owner):** the buyer's refunded screen shows every refund reason; a settled dispute counts as a completed trade whoever won, with no stage drop; the appeal window is 72 hours. See "Revision 2026-10-29 (owner)" at the end.
 
 ### Task 28: Getting started (onboarding)
 
@@ -1034,3 +1044,131 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Sour
 - **Task 20 must store each envelope's sender role** (`sender_role 'buyer'|'seller'|'mod'|'system'`, taken from the session's role as `checkChatEnvelope(body, channel, sessionRole)` already checks it), and `purgeChats` must take its due-time from a function so Plan 7's self-delete (per-side hide and destroy times) can plug in without a schema change. Add a test that the stored role equals the session role, never a body field.
 - **Task 19 push stays as built.** Plan 7 Task 5 wraps `sendPush` in a `notify()` fan-out for the new Nostr and email channels; the push payloads do not change.
 - **Comparison gaps the owner has not decided** ("Full block" extending Task 26's `blocks`, "Pause all my offers" on Task 4's per-offer pause) are listed with costs in Plan 7's "Owner questions". Nothing is built for them until the owner says yes.
+
+
+## Revision 2026-10-29 (owner)
+
+Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`), recorded in the spec's "Revision 2026-10-29 (owner)" and `HANDOFF.md` "Decided 2026-10-29 (owner)".
+
+- **Task 4 (offers).**
+  - **Caps.** The owner set **2 offers per side (buy or sell) per currency, and 20 in total**, as part of flexible offers (one offer can carry several methods and price tiers). The built cap of 3 per (side, method, currency) and 20 in total stays until new Task 34 lands; Task 34 changes the count to (side, currency) and the default `offers_max_per_market` to 2. Plan 4's Settings screen shows both numbers.
+  - **The cap refusal** (409 `too-many-offers`) is a "can't do that" case: the web shows "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 new Task 21).
+  - **Pause and resume all offers** is new Task 36, built on the existing per-offer `PATCH status`.
+- **Task 6 (retention).**
+  - **An undisputed trade self-destructs 30 days after it ends** (`closed_at`). This is the advertised self-destruct. There are no user-chosen delete times and no early or manual delete.
+  - **A disputed trade is kept 90 days from the moment the dispute button was pressed** (`disputes.opened_at`), then deleted (Plan 4 Task 23).
+  - `purgeTradeAddresses` changes from 90 to 30 days after `closed_at` (constant `TRADE_KEEP_DAYS = 30`), still skipping a trade with a dispute. Task 20's `chatPurgeDue` takes the same 30 days.
+  - **No per-trade stub.** Plan 7 Task 2 deletes the trade row itself, with its events, identities, attestations and chat, after first adding the trade to the account's running totals (completed trades and so on). So every table with a foreign key to `trades(code)` needs `on delete cascade`, or the purge deletes children first; the `trade_events` trigger already lets `x2f_purge` delete.
+  - **Open (not decided here):** P3-M10 `disputeAfterRefundDays: 90` is longer than the 30-day delete. Either the window shrinks to 30 days or less, or a refunded trade is kept until its window closes. The lead or the owner decides; until then Plan 7 Task 2 skips a refunded trade still inside that window.
+- **Tasks 25 and 27 (refund reasons).** Decision 7 (approved): Task 27 owns the buyer's `refunded` screen. It covers **every refund reason** and shows it:
+  - payment time ran out and the seller cancelled (no-show auto-refund): "Payment time ran out, the seller cancelled; everything in escrow went back to the original owner." (owner wording; final copy `// COPY-UNSIGNED`);
+  - the buyer cancelled; a mutual cancel; a ruling that refunded the seller; a setup or funding lapse.
+  - Each refund path (Tasks 10, 23, 25 and the ruling path) records `refund_reason` on the trade when it starts the refund (`'no-show' | 'buyer-cancel' | 'mutual-cancel' | 'ruling' | 'lapse'`), and `toTradeView` returns it. Tests: each path stores its reason and the screen shows the matching line.
+- **Task 27 (dispute counting).**
+  - **A settled dispute counts toward completed trades, whoever won** (owner: money likely changed hands, and disputes are common). There is **no automatic stage drop**. This supersedes "Completed means completed with no lost dispute; each lost dispute drops one stage" in Revision 2026-10-24 and Task 4's `tradeCap`. Lost disputes are still counted (a running total, for Plan 5's Clean record badge and for staff).
+  - A moderator can recommend account limits to a senior moderator instead (Plan 4 new Task 26).
+  - **Appeals:** `appeal_until` holds Plan 4's `appealEndsAt` = the ruling's publish time + **72 hours** (setting `appeal_window_h`, default 72). The dispute outcome notice, the File appeal button and the reviewer rule are Plan 4 new Task 24.
+  - **Disputes are settled within 48 hours, goal 24 hours** (Plan 4 A2). The DisputeRoom deadline line uses the 48-hour deadline.
+- **Lead decisions approved by the owner (recorded, no change needed):** decision 1, a trade waits until both addresses are in and they are locked after (Revision 2026-10-24, Task 8); decision 2, Task 8 uses migration 111; decision 3, `trade-closed` returns the escrow runtime to `idle`; decision 4, Task 23's `paidRecorded` field; decision 5, the 44px `.x2f-method-name` goes to Claude Design with the canvas copy fixes; decision 6, `PHONE_VIEWPORTS` is the single phone-size standard; decision 7, Task 27 owns the buyer's `refunded` screen.
+- **Revision 2026-10-28 corrections.** Plan 7's `notify()` fan-out now adds only OMEMO Jabber (no Nostr, no email). "Full block" and "Pause all my offers" are now decided: new Tasks 37 and 36.
+- **Shared "can't do that" popup.** Every refusal shown to a trader as "you can't do this" (caps, starter limit, trading hold, review pending, and so on) uses Plan 5 new Task 21's `CantDoThat` popup, which carries the feedback link. Tasks already built adopt it when Task 21 lands.
+
+### Task 34: Flexible offers — tiers, several methods and the new cap (`@x2f/trade`, `apps/api`) — NEW 2026-10-29
+
+**Scope:** the owner's flexible offers, API and rules. Built right after Tasks 4 and 5 are merged.
+
+**Files:**
+- Create: `packages/trade/src/flexOffer.ts`, `apps/api/migrations/1xx_flex_offers.sql` (next free 1xx number)
+- Modify: `apps/api/src/offers/routes.ts`, `apps/api/src/trades/take.ts`, the Task 8 signed terms (`terms.deal` gains `methodId`)
+- Test: `packages/trade/test/flexOffer.test.ts`, `apps/api/test/flexOffers.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `type Tier = { minFiatCents: string; maxFiatCents: string; marginBps: number; minTrades: 0|5|10|50 }` (*lead default (2026-10-29), owner may change:* the owner said "buyer must have X completed trades"; the four values match the existing offer rule); `type OfferMethod = { methodId: string; instructions: string; adjustBps: number }`.
+  - `tiersValid(tiers)`: ranges never overlap; gaps are allowed; at least one tier. `tierFor(tiers, fiatCents)` → the tier or `null` (a gap).
+  - `finalRate(offer, fiatCents, methodId, marketRate)` = market + the tier's margin + the method's adjustment (fixed-price offers: the fixed price + the method's adjustment).
+  - Tables `offer_tiers(offer_id, min_fiat_cents, max_fiat_cents, margin_bps, min_trades)` and `offer_methods(offer_id, method_id, instructions, adjust_bps)`; the old single `method_id`, margin and range become the first rows (migration copies them).
+  - `POST /v1/offers` accepts `tiers` and `methods`; `GET /v1/offers?amount&method` returns each card's final rate for that amount and method (`null` when the amount falls in a gap).
+  - `POST /v1/offers/:id/take` requires `methodId` (one of the offer's methods); the chosen method, its instructions and the final rate are **locked into the signed trade terms**.
+  - **Cap:** 2 per (side, currency) and 20 in total (`offers_max_per_market` default 2, counted per side and currency). Refusal 409 `too-many-offers`.
+- [ ] **Step 1: Write the failing tests:** overlapping tiers → 400; a gap amount gets no rate and a take in a gap → 409 `out-of-range`; a tier rule (`minTrades`) refuses a taker below it; the take locks the chosen method and the attested terms carry it; a method not on the offer → 400; the third offer on one side and currency → `too-many-offers`; the 21st offer → `too-many-offers`; an old single-method offer still lists and takes after the migration.
+- [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade` and `--project @x2f/api`; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: flexible offers with tiers and several methods`.
+
+### Task 35: Flexible offers — PostOffer tiers and methods, final prices and the method dropdown (`apps/web`) — NEW 2026-10-29
+
+**Scope:** the screens for Task 34. **Controller step (design):** the PostOffer board gains the "+" tier rows and the method list; the quote gains the method dropdown; owner signs off the copy.
+
+**Files:**
+- Modify: `apps/web/src/screens/PostOffer.tsx`, the browse lists (Tasks 16–17), the quotes (Task 18)
+- Test: `apps/web/e2e/flexOffer.spec.ts`
+
+**Interfaces:**
+- Produces: PostOffer "+" adds a tier (amount range, margin, optional "buyer must have X completed trades"), with overlap shown inline; "Add payment method" adds a method with its own instructions and optional price adjustment. The offer lists show each offer's final price for the buyer's amount and method. The quote has a method dropdown when the offer has more than one method. Hitting the cap shows the `CantDoThat` popup: "Sorry, you're limited to 2 offers per side ..." `// COPY-UNSIGNED` with the feedback link (Plan 5 Task 21).
+- [ ] **Step 1: Write the failing tests:** parity at 390×844; an overlapping tier is refused inline; the list price changes with the amount and the method; the take sends the chosen method; the cap popup has the feedback link.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): flexible offers on PostOffer and the quotes`.
+
+### Task 36: My offers — on/off per offer and "Select all" (`apps/api`, `apps/web`) — NEW 2026-10-29
+
+**Scope:** a list of all my offers, each with an on/off toggle, plus "Select all" to turn all on or all off.
+
+**Files:**
+- Create: `apps/web/src/screens/MyOffers.tsx`
+- Modify: `apps/api/src/offers/routes.ts`
+- Test: `apps/api/test/offersBulk.test.ts`, `apps/web/e2e/myOffers.spec.ts`
+
+**Interfaces:**
+- Produces: `GET /v1/account/offers` (`requireTrader`) → my live and paused offers; `POST /v1/account/offers/status { ids: string[] | 'all', status: 'live'|'paused' }` in one transaction (only my own offers; removed offers untouched). Turning an offer on still runs every posting guard (hold, paused site, wallet, caps); refused offers stay off and are named in the reply. The screen shows each offer with a toggle, a "Select all" checkbox and "Turn on" / "Turn off" for the selection. **Controller step (design):** a My offers board.
+- [ ] **Step 1: Write the failing tests:** "all" pauses every own offer and none of another account's; turning all on while held → every offer stays off and the reply says why; the list and toggles round-trip; parity.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: my offers with pause and resume for all`.
+
+### Task 37: Trader-to-trader block (`apps/api`, `apps/web`) — NEW 2026-10-29
+
+**Scope:** the owner's full block ("right to do business with who you choose, safe from bullying"). Extends Task 26's `blocks` table.
+
+**Files:**
+- Modify: `apps/api/src/nudge/routes.ts` (blocks), `apps/api/src/offers/routes.ts`, `apps/api/src/trades/take.ts`, the chat routes (Task 20), `apps/api/src/traders/summary.ts`, the profile and offer card (block / unblock)
+- Create: `apps/web/src/screens/settings/Blocked.tsx`
+- Test: `apps/api/test/blocks.test.ts`, `apps/web/e2e/block.spec.ts`
+
+**Interfaces:**
+- Produces: `POST /v1/account/blocks { displayName }`, `DELETE /v1/account/blocks/:displayName`, `GET /v1/account/blocks`. While A blocks B (either direction counts for B's actions toward A):
+  - B's `GET /v1/offers` leaves out A's offers; *lead default (2026-10-29), owner may change:* `GET /v1/traders/:name` for A answers 404 to B;
+  - B's take of A's offer → 404 `not-found` (as if it does not exist); *lead default (2026-10-29), owner may change:* A's take of B's offer is also refused;
+  - B can't open a chat with A or send to an existing one; nudges stay silently dropped (P3-M5);
+  - **B never sees A online:** `online` and `lastSeenAt` are left out for B.
+  - Trades already open continue to the end (escrow must finish); blocking never touches coins.
+  - Nothing tells B they are blocked. Blocks are private. *Lead default (2026-10-29), owner may change:* staff see them only in a dispute between the two.
+- [ ] **Step 1: Write the failing tests:** each bullet above as a route test; an open trade still completes after a block; unblock restores everything; parity for the Blocked screen.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: trader-to-trader block`.
+
+### Task 38: Warning popups before "I've paid" and before release (`apps/web`) — NEW 2026-10-29
+
+**Scope:** the owner's two warnings before the big actions. A new task so Tasks 23 and 24 (in review) are not reopened.
+
+**Files:**
+- Create: `apps/web/src/screens/trade/{PayWarning,ReleaseWarning}.tsx`
+- Modify: `BuyerPay` (Task 23), `SellerConfirm` (Task 24), the proof upload entry (Plan 5 Task 15 when built)
+- Test: `apps/web/e2e/warnings.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - **Buyer, before "I've paid" or a proof upload:** "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow. The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible." (owner wording). It reads the escrow state from `TradeView` (the app already blocks paying until funded and confirmed); it shows once per trade, before the payment details.
+  - **Seller, before the release hold:** don't release until the money is really in your account; check your own bank or app, not a screenshot; once released, the XMR can't be taken back. `// COPY-UNSIGNED` (owner gave the meaning, not the words).
+  - **Controller step (design):** both popups on the canvas; owner signs off the seller wording.
+- [ ] **Step 1: Write the failing tests:** the buyer sees the warning before the payment details and I've paid; the seller sees the release warning before the hold works; each shows once per trade (survives reload; *lead default (2026-10-29), owner may change:* the owner said "before major actions" and gave no frequency); parity.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(web): warnings before paying and releasing`.

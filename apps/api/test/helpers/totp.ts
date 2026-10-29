@@ -46,6 +46,12 @@ export class Browser {
     );
   }
 
+  async patch(url: string, payload: unknown = {}): Promise<LightMyRequestResponse> {
+    return this.keep(
+      await this.app.inject({ method: 'PATCH', url, headers: { origin: ORIGIN }, cookies: this.cookies, payload: payload as Record<string, unknown> }),
+    );
+  }
+
   async get(url: string): Promise<LightMyRequestResponse> {
     return this.keep(await this.app.inject({ method: 'GET', url, cookies: this.cookies }));
   }

@@ -31,7 +31,7 @@ const base: TradeView = {
   role: 'seller',
   poster: 'buyer',
   state: 'funding',
-  counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+  counterparty: { displayName: 'mira.k', completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' },
   methodId: 'ZELLE',
   profile: { name: 'Zelle', whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' },
   amountAtomic: '1250000000000',

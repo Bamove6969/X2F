@@ -100,9 +100,9 @@ describe('TRIPWIRES: trade room', () => {
   });
 
   // FU-A's tripwire retired 2026-10-28 (Task 22 landing, after FU-A merged): TraderSummary has
-  // only displayName, and publicName reads only it.
+  // only displayName, and publicName reads only it. Task 4 moved it to traders/summary.ts and added stage.
   it("the web TraderSummary has the API's fields (displayName, no username)", () => {
-    expect(fields(new URL('api/trade.ts', web), 'TraderSummary')).toEqual(fields(new URL('trades/view.ts', api), 'TraderSummary'));
+    expect(fields(new URL('api/trade.ts', web), 'TraderSummary')).toEqual(fields(new URL('traders/summary.ts', api), 'TraderSummary'));
   });
 
   it('Task 3 (method profiles) is merged but not wired into the trade view: methodOf still falls back to the method id', () => {

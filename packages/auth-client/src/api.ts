@@ -123,6 +123,8 @@ export interface AccountOverview {
   kind: AccountKind;
   level: 'full' | 'recovery';
   holdUntil: string | null;
+  /** A trader's starter-limits stage (spec 2.3), null for staff and owner. Optional: older API builds do not send it. */
+  stage?: 'starter' | 'building' | 'graduated' | null;
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];

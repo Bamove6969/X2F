@@ -79,6 +79,76 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  SetupTerms: [
+    {
+      text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: eligibility, one person per account, keeping your login keys safe.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: how 2-of-3 escrow works, funding is a commitment, releases can\'t be undone.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: when moderators can read chats, rulings, appeals, trading holds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: no IP logging; dispute records 30 days; anonymized training copies 6 months.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: changes to these terms are shown at your next login.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
+      why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
+    },
+    {
+      text: 'End of Terms. Version [DATE].',
+      why: 'The page shows the real version from GET /v1/terms in place of [DATE] (Task 28).',
+    },
+  ],
+  SetupPgpKey: [
+    {
+      text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The board\'s example key, shortened with "…", is not a key: the key check (type, expiry, fingerprint) needs a real pasted key, so the page shows the key the test pastes (Task 28).',
+    },
+    {
+      text: '-----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The same example key inside the textarea (see above).',
+    },
+    {
+      text: '3F2A 9C41 7B0E D5A2 61C8 0E4B 92D7 1F6A C3B8 0D15',
+      why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
+    },
+  ],
+  SetupPgpChallenge: [
+    {
+      text: '4:12',
+      why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
+    },
+  ],
+  SetupUsername: [
+    {
+      text: 'lumen.k is available',
+      why: 'No API answers whether a name is free before sign-up (Plan 2 and FU-A have none), so the page cannot claim it; a taken name comes back from the register call and returns the person to this screen. The page shows how the name will look instead (Task 28; open question for the lead).',
+    },
+  ],
+  SetupWallet: [
+    {
+      text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
+      why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',
+    },
+  ],
   SellOffers: [
     {
       text: '$20 – $200Deposit required',
