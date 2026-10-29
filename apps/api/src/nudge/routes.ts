@@ -25,13 +25,20 @@ export interface NudgeEvent {
 /**
  * What nudges need from other tasks, injected through `Deps.nudges`:
  * - `hasSharedContext`: the two accounts share the open chat (Task 20) or active trade (Task 6)
- *   named by `context`, a chat or trade code.
+ *   named by `context`, a chat or trade code. It answers `'open-trade'` when `context` is an open
+ *   trade between them: a block does not stop those nudges (Task 37 review N1, lead decision (a):
+ *   open trades with a blocked person finish normally, so a buyer who paid can still wake the
+ *   seller to release). `true` is any other shared context (an offer chat), where a block either
+ *   way drops the nudge.
  * - `publish` / `sendPush`: left out in production, so delivery is Task 19's own (`liveDelivery`);
  *   tests pass fakes. `sendPush` takes only the kind, so the payload can only be the generic
  *   "Someone nudged you on X2F": never a name, an amount or a trade detail.
  */
+/** `false`: nothing shared (403). `'open-trade'`: an open trade, which a block does not stop. `true`: any other shared context. */
+export type SharedContext = boolean | 'open-trade';
+
 export interface NudgeWiring {
-  hasSharedContext(fromId: string, toId: string, context: string): Promise<boolean>;
+  hasSharedContext(fromId: string, toId: string, context: string): Promise<SharedContext>;
   publish?(accountId: string, ev: NudgeEvent): void | Promise<void>;
   sendPush?(accountId: string, kind: 'nudge'): Promise<boolean>;
 }
@@ -90,7 +97,7 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
 /**
  * `POST /v1/nudges { to, context }`. The sender's own refusals are distinct: 403
  * `no-shared-context` (also for an unknown name or yourself) and 429 `too-soon`. Everything about
- * the recipient (a block either way (Task 37 review M6), nudges off, quiet hours, 3 already this hour, disabled) is decided after
+ * the recipient (a block either way outside an open trade (Task 37 review M6, N1), nudges off, quiet hours, 3 already this hour, disabled) is decided after
  * the same queries in the same order and answers the same 202 as a delivered nudge, so the
  * sender learns nothing about the recipient's settings or blocks.
  */
@@ -102,9 +109,10 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
   const fromId = req.auth.accountId;
 
   const recipient = await findByPublicName(deps.db, to);
-  if (recipient === null || recipient.id === fromId || !(await deps.nudges.hasSharedContext(fromId, recipient.id, context))) {
-    throw new ApiError(403, 'no-shared-context');
-  }
+  const shared = recipient === null || recipient.id === fromId ? false : await deps.nudges.hasSharedContext(fromId, recipient.id, context);
+  if (recipient === null || shared === false) throw new ApiError(403, 'no-shared-context');
+  // Review N1: inside an open trade a block does not drop the nudge (the trade finishes normally).
+  const blockApplies = shared !== 'open-trade';
 
   const now = deps.clock();
   let deliverIt = false;
@@ -136,7 +144,7 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       const f = rows[0]!;
       fromName = f.from_name;
       const quiet = inQuietHours({ quietFrom: f.quiet_from, quietTo: f.quiet_to, tz: f.tz }, now);
-      deliverIt = !recipient.disabled && f.enabled && !quiet && !f.blocked && f.recent < RECIPIENT_LIMIT_PER_HOUR;
+      deliverIt = !recipient.disabled && f.enabled && !quiet && !(blockApplies && f.blocked) && f.recent < RECIPIENT_LIMIT_PER_HOUR;
       // Recorded either way: a dropped nudge still starts the sender's 10 minutes.
       await client.query('insert into nudges (from_id, to_id, sent_at, delivered) values ($1, $2, $3, $4)', [
         fromId, recipient.id, now, deliverIt,

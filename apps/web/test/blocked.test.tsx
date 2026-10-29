@@ -74,6 +74,7 @@ describe('Blocked (settings)', () => {
     expect(byPart(host, 'blocked-count')?.textContent).toBe('2 blocked traders');
     expect(host.textContent).toContain('Blocked 29 Oct 2026');
     const first = host.querySelector<HTMLButtonElement>('[data-part="unblock"]')!;
+    expect(first.textContent).toBe('Unblock');
     expect(first.getAttribute('aria-label')).toBe('Unblock mira.k');
     first.focus();
     fire(first, new MouseEvent('click', { bubbles: true }));
@@ -83,7 +84,9 @@ describe('Blocked (settings)', () => {
     const again = host.querySelector<HTMLButtonElement>('[data-part="unblock"]')!;
     expect(again).toBe(first);
     expect(document.activeElement).toBe(first);
-    expect(again.getAttribute('aria-label')).toBe('Block mira.k again');
+    // Review N2 (WCAG 2.5.3): the accessible name starts with the visible label.
+    expect(again.textContent).toBe('Undo');
+    expect(again.getAttribute('aria-label')).toBe('Undo: block mira.k again');
     expect(host.textContent).toContain('Unblocked. They can see your offers again.');
     expect(byPart(host, 'blocked-said')?.getAttribute('role')).toBe('status');
     expect(byPart(host, 'blocked-said')?.textContent).toBe('Unblocked mira.k.');

@@ -141,11 +141,11 @@ export function Blocked() {
                     variant="secondary"
                     // Not `disabled`: disabling the focused button would drop focus to the page.
                     aria-disabled={busy !== null}
-                    aria-label={r.unblocked ? C.blockAgain(r.displayName) : C.unblock(r.displayName)}
+                    aria-label={r.unblocked ? C.undo(r.displayName) : C.unblock(r.displayName)}
                     onClick={() => void toggle(r)}
                     data-part="unblock"
                   >
-                    {r.unblocked ? 'Undo' : 'Unblock'}
+                    {r.unblocked ? C.undoButton : C.unblockButton}
                   </Button>
                 </li>
               ))}

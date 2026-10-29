@@ -28,8 +28,12 @@ export const BLOCK_COPY = {
   blockedOn: (iso: string) =>
     `Blocked ${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`,
   unblockedRow: 'Unblocked. They can see your offers again.',
+  // The row button: the accessible name starts with the visible word, so a voice user saying
+  // "click Undo" or "click Unblock" finds it (WCAG 2.5.3, review N2).
+  unblockButton: 'Unblock',
   unblock: (name: string) => `Unblock ${name}`,
-  blockAgain: (name: string) => `Block ${name} again`,
+  undoButton: 'Undo',
+  undo: (name: string) => `Undo: block ${name} again`,
   unblocked: (name: string) => `Unblocked ${name}.`,
   reblocked: (name: string) => `Blocked ${name} again.`,
   empty: "You haven't blocked anyone.",

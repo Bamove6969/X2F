@@ -87,7 +87,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       await unblock.focus();
       await unblock.click();
       await expect(page.locator('[data-part="blocked-said"]')).toHaveText(`Unblocked ${poster}.`);
-      await expect(page.getByRole('button', { name: `Block ${poster} again` })).toBeFocused();
+      await expect(page.getByRole('button', { name: `Undo: block ${poster} again` })).toBeFocused();
       expect(seen.deletes).toEqual([poster]);
       await expectPhoneLayout(page);
 
