@@ -13,7 +13,7 @@ import { createWatcher } from './watcher.js';
 
 export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WatchItem, type WorkItem } from './link.js';
 export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
 export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
 export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
@@ -21,7 +21,7 @@ export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
 export { verifyRuling } from './rulings.js';
 export { newShadow } from './shadow.js';
 export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
-export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type Watcher } from './watcher.js';
+export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type SweepContext, type Watcher } from './watcher.js';
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)

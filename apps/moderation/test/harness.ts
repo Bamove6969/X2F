@@ -74,6 +74,7 @@ export function fakeNetwork(ctx: Ctx) {
     work: [] as WorkItem[],
     states: new Map<string, string>(),
     seen: new Map<string, Date>(),
+    paused: new Set<string>(),
     reports: [] as Report[],
     unsigned: [] as string[],
     answer: (_r: Report): { status: number; error?: string } => ({ status: 201 }),
@@ -93,7 +94,7 @@ export function fakeNetwork(ctx: Ctx) {
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: net.work });
       if (init.method === 'GET' && u.pathname === '/internal/v1/watch') {
         return reply(200, {
-          trades: [...net.states].map(([trade, state]) => ({ trade, state, finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null })),
+          trades: [...net.states].map(([trade, state]) => ({ trade, state, paused: net.paused.has(trade), finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null })),
         });
       }
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {

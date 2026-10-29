@@ -34,7 +34,7 @@ export interface AutoRefundInputs {
   now: Date;
   /** Null when the attested deal could not make a shadow trade: then nothing is ever signed alone. */
   shadow: Trade | null;
-  api: { state: string; finalAlertSeenAt: Date | null };
+  api: { state: string; finalAlertSeenAt: Date | null; paused?: boolean };
   /** When this service first saw the API show `refund_requested` (this episode), or null. */
   apiRefundSince: Date | null;
   /** A valid `trade.paid` from the buyer's identity was opened, ever. */
@@ -52,7 +52,8 @@ export type AutoRefundWait =
   | 'final-alert-pending'
   | 'receipt-too-recent'
   | 'not-unlocked'
-  | 'unverified';
+  | 'unverified'
+  | 'paused';
 
 export type AutoRefundStep =
   | { action: 'wait'; reason: AutoRefundWait | 'buyer-paid' | 'no-seller-terms' | 'shadow-not-refund-requested' }
@@ -62,6 +63,8 @@ export type AutoRefundStep =
 
 export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
   if (f.api.state !== 'refund_requested') return { action: 'wait', reason: 'api-not-refund-requested' };
+  // Maintenance: nothing is decided while paused (every window is frozen).
+  if (f.api.paused === true || (f.shadow !== null && f.shadow.pausedAt !== null)) return { action: 'wait', reason: 'paused' };
   const now = f.now.getTime();
   const overdue = f.apiRefundSince !== null && now >= f.apiRefundSince.getTime() + REFUND_UNVERIFIED_MS;
   const notYet = <S extends AutoRefundStep>(s: S): AutoRefundStep => (overdue ? { action: 'escalate', report: 'refund-unverified' } : s);

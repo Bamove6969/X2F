@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   SPEND_UNSHOWN_MS,
   WATCH_CLOSED_DAYS,
+  WATCH_RESTART_GRACE_MS,
   WATCH_INTERVAL_MS,
   newWatchState,
   settleKindFor,
@@ -46,12 +47,13 @@ const sweep = (sweptAtomic: bigint, conf: number, txHash = SETTLE, chain = CHAIN
   sweptAtomic,
 });
 
-function step(o: { state?: WatchState; apiState?: TradeState; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean }) {
+function step(o: { state?: WatchState; apiState?: TradeState; paused?: boolean; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean; upSince?: Date }) {
   return watchStep({
-    trade: { state: o.apiState ?? 'funding' },
+    trade: { state: o.apiState ?? 'funding', ...(o.paused !== undefined ? { paused: o.paused } : {}) },
     funds: o.f,
     spend: o.spend ?? null,
     ...(o.claimed !== undefined ? { claimed: o.claimed } : {}),
+    ...(o.upSince !== undefined ? { upSince: o.upSince } : {}),
     state: o.state ?? newWatchState(),
     now: o.now ?? at(0),
   });
@@ -256,7 +258,9 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 31 },
       { kind: 'late-funds' },
     ]);
-    expect(r.closeChannels).toBe(true);
+    // Review I2: the API alone never makes the mod close the channels of an escrow its wallet saw funded.
+    expect(r.closeChannels).toBe(false);
+    expect(r.state.channelsClosed).toBe(false);
     expect(r.state.swept).toEqual([]);
     // once the sweep is shown, later facts count only the coins it did not take
     const known = step({
@@ -270,6 +274,40 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     // A is now accounted for; LATE is a new late tx, so it escalates on its own
     expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
     expect(known.state.lateReported).toEqual([HASH_A, LATE]);
+    // ...and only now, with a sweep its own wallet showed, does the mod close the channels (once)
+    expect(known.closeChannels).toBe(true);
+    expect(known.state.channelsClosed).toBe(true);
+    expect(step({ apiState: 'released', state: known.state, f: funds([inc(HASH_A, 1000n, 33), inc(LATE, 2n, 1)], 0n, 0n), now: at(7) }).closeChannels).toBe(false);
+  });
+
+  describe('closing the relay channels (review I2): only after a sweep shown, or a close with no coins ever seen', () => {
+    for (const apiState of ['released', 'refunded', 'cancelled'] as TradeState[]) {
+      test(`the API says ${apiState} while the escrow holds coins and no sweep is shown: channels stay open, coins escalate`, () => {
+        let r = step({ apiState: 'secured', f: funds([inc(HASH_A, 1000n, 30)]) });
+        for (let i = 1; i <= 3; i++) {
+          r = step({ apiState, state: r.state, f: funds([inc(HASH_A, 1000n, 30 + i)]), now: at(i) });
+          expect(r.closeChannels).toBe(false);
+        }
+        expect(r.state.channelsClosed).toBe(false);
+        expect(r.state.lateReported).toEqual([HASH_A]);
+      });
+    }
+
+    test('a coin in the pool counts as seen: no close on the API word', () => {
+      const r = step({ apiState: 'cancelled', f: funds([inc(LATE, 50n, 0)]) });
+      expect(r.closeChannels).toBe(false);
+    });
+
+    test('a coin that came and went in a shown sweep: the shown sweep allows the close', () => {
+      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 5) });
+      expect(r.closeChannels).toBe(true);
+    });
+
+    test('a close by the API with no coin ever seen closes once', () => {
+      const r = step({ apiState: 'cancelled', f: funds([]) });
+      expect(r.closeChannels).toBe(true);
+      expect(step({ apiState: 'cancelled', state: r.state, f: funds([]), now: at(1) }).closeChannels).toBe(false);
+    });
   });
 
   test('a cancelled trade: close both channels; any coin arriving is late', () => {
@@ -282,10 +320,10 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     expect(r2.closeChannels).toBe(false);
   });
 
-  test('a cancel the API reports while coins sit in the escrow: those coins are late too', () => {
+  test('a cancel the API reports while coins sit in the escrow: those coins are late too, and the channels stay open (I2)', () => {
     const r = step({ apiState: 'cancelled', f: funds([inc(LATE, 50n, 0)]) });
     expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 50n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
-    expect(r.closeChannels).toBe(true);
+    expect(r.closeChannels).toBe(false);
   });
 
   test('a cancelled trade swept nothing: even an unlocked coin found at the cancel is late', () => {
@@ -488,6 +526,42 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(2 * HOURS6) }).reports).toEqual([]);
     });
 
+    test('the 6 h never run while the API trade is paused (review M3): they count from the end of the pause', () => {
+      let r = step({ apiState: 'settling', f: coins, now: at(0) });
+      r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(60) });
+      expect(r.state.settlingSince).toEqual(at(60));
+      // a maintenance of 7 h: nothing escalates while paused
+      for (let m = 61; m <= 7 * 60; m += 59) {
+        r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(m) });
+        expect(r.reports).toEqual([]);
+      }
+      r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(7 * 60) });
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + 1) });
+      expect(r.reports).toEqual([]);
+      expect(r.state.settlingSince).toEqual(at(7 * 60));
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + HOURS6 - 1) });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + HOURS6) });
+      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
+    });
+
+    test('after a watcher restart the fallback waits WATCH_RESTART_GRACE_MS (review M3): parties resend their info to a mod that was down', () => {
+      expect(WATCH_RESTART_GRACE_MS).toBe(30 * 60_000);
+      let r = step({ apiState: 'settling', f: coins, now: at(0) });
+      // the moderation service was down for 8 h and started again at 8 h
+      const upSince = at(8 * 60);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60), upSince });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60 + 29), upSince });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60 + 30), upSince });
+      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
+      // a watcher up for longer than the grace changes nothing
+      let q = step({ apiState: 'settling', f: coins, now: at(0), upSince: at(-60) });
+      q = step({ apiState: 'settling', state: q.state, f: coins, now: at(HOURS6), upSince: at(-60) });
+      expect(q.reports).toEqual([{ kind: 'spend-unshown' }]);
+    });
+
     test('a state persisted before these fields counts as never seen settling', () => {
       const old = { ...newWatchState() } as Partial<WatchState>;
       delete old.settlingSince;
@@ -524,12 +598,17 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       expect(r.reports).toEqual([]);
     });
 
-    test('reported whatever state the watcher last read (the API decides); never after a shown sweep', () => {
-      // the watcher's read can lag the API by a pass: the claim goes to the API, which refuses it outside settling
-      expect(step({ apiState: 'paid', f: coins, now: at(0), claimed: true }).reports).toEqual([
-        { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 },
-        { kind: 'release-claimed' },
-      ]);
+    test('only while the trade is settling (review M1): a claim that arrives early is kept and reported once settling starts; never after a shown sweep', () => {
+      // A claim sent while the trade is secured (or mid-setup) is not consumed: the API would refuse it.
+      let early = step({ apiState: 'secured', f: coins, now: at(0), claimed: true });
+      expect(early.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
+      expect(early.state.claimReported).toBe(false);
+      early = step({ apiState: 'paid', state: early.state, f: coins, now: at(1), claimed: true });
+      expect(early.reports).toEqual([]);
+      // the real release starts: the claim is reported then
+      early = step({ apiState: 'settling', state: early.state, f: coins, now: at(2), claimed: true });
+      expect(early.reports).toEqual([{ kind: 'release-claimed' }]);
+      expect(early.state.claimedAt).toEqual(at(2));
       const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(1), claimed: true });
       expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
       expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), now: at(2), claimed: true }).reports).toEqual([]);

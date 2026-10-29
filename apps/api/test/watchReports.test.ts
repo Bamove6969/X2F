@@ -80,8 +80,8 @@ describe('GET /internal/v1/watch', () => {
     const res = await signed('GET', '/internal/v1/watch');
     expect(res.statusCode).toBe(200);
     const trades = (res.json() as { trades: Array<{ trade: string; state: string }> }).trades;
-    expect(trades).toContainEqual({ trade: open.code, state: 'setup', finalAlertSeenAt: null });
-    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled', finalAlertSeenAt: null });
+    expect(trades).toContainEqual({ trade: open.code, state: 'setup', settleKind: null, paused: false, finalAlertSeenAt: null });
+    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null });
     expect(trades.map((t) => t.trade)).not.toContain(unattested.code);
     expect(trades.map((t) => t.trade)).not.toContain(old.code);
   });
@@ -92,13 +92,24 @@ describe('GET /internal/v1/watch', () => {
     await deps.db.query(`update trades set state = 'refund_requested', final_alert_at = $2 where code = $1`, [t.code, NOW]);
     const item = async () =>
       ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: null });
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null });
     // a seen time without the delivered flag is not a receipt (null = false, Task 19 review)
     const seen = new Date(NOW.getTime() + 60_000);
     await deps.db.query(`update trades set final_alert_seen_at = $2 where code = $1`, [t.code, seen]);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: null });
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: null });
     await deps.db.query(`update trades set final_alert_delivered = true where code = $1`, [t.code]);
-    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: seen.toISOString() });
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', settleKind: 'auto-refund', paused: false, finalAlertSeenAt: seen.toISOString() });
+  });
+
+  it('names the kind a sweep would settle (settleKindFor) and whether the trade is paused (review I1, M3)', async () => {
+    const settling = await trade();
+    await deps.db.query(`update trades set state = 'settling', settling = 'release', settle_from = 'paid', paused_at = $2 where code = $1`, [settling.code, NOW]);
+    const lapsed = await trade();
+    await deps.db.query(`update trades set state = 'lapsed' where code = $1`, [lapsed.code]);
+    const res = await signed('GET', '/internal/v1/watch');
+    const trades = (res.json() as { trades: unknown[] }).trades;
+    expect(trades).toContainEqual({ trade: settling.code, state: 'settling', settleKind: 'release', paused: true, finalAlertSeenAt: null });
+    expect(trades).toContainEqual({ trade: lapsed.code, state: 'lapsed', settleKind: 'lapse-refund', paused: false, finalAlertSeenAt: null });
   });
 
   it('refuses an unsigned request', async () => {

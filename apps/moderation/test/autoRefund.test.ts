@@ -187,6 +187,29 @@ describe('the auto-refund', () => {
     await m.handle.stop();
   });
 
+  it('maintenance during the final alert: nothing is decided while paused, and the window moves by the pause', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.seen.set(l.code, alertAt);
+    ctx.clock.now = at(alertAt, 5 * MIN);
+    net.paused.add(l.code);
+    await m.handle.watch();
+    ctx.clock.now = at(alertAt, 25 * MIN); // past the unpaused window, still paused
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    net.paused.delete(l.code); // resumed after a 20 min pause: the window now ends at alertAt + 35 min
+    await m.handle.watch();
+    ctx.clock.now = at(alertAt, 35 * MIN - 1);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([]);
+    ctx.clock.now = at(alertAt, 35 * MIN + 1);
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([REFUND]);
+    await m.handle.stop();
+  });
+
   it('the seller’s refund request opened before the shadow’s own payBy is retried, not lost', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);
@@ -264,6 +287,7 @@ describe('autoRefundStep (pure)', () => {
   it('refuses or waits on every other missing fact', () => {
     expect(autoRefundStep(base({ api: { state: 'paid', finalAlertSeenAt: atMin(101) } })).action).toBe('wait');
     expect(autoRefundStep(base({ paidSeen: true }))).toEqual({ action: 'wait', reason: 'buyer-paid' });
+    expect(autoRefundStep(base({ api: { state: 'refund_requested', finalAlertSeenAt: atMin(101), paused: true } }))).toEqual({ action: 'wait', reason: 'paused' });
     expect(autoRefundStep(base({ recordedRefundAddress: null }))).toEqual({ action: 'wait', reason: 'no-seller-terms' });
     expect(autoRefundStep(base({ shadow: null }))).toEqual({ action: 'wait', reason: 'shadow-not-refund-requested' });
     expect(autoRefundStep(base({ now: atMin(116, -1) }))).toEqual({ action: 'wait', reason: 'final-alert-pending' });

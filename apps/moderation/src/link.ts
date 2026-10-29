@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Role } from '@x2f/core';
 import { canonicalJson } from '@x2f/protocol';
-import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, type AttestedTerms } from '@x2f/trade';
+import { INTERNAL_AT_HEADER, INTERNAL_SIG_HEADER, internalSignedBytes, SETTLE_KINDS, type AttestedTerms, type SettleKind } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 
 /**
@@ -28,6 +28,10 @@ export interface WorkItem {
 /** One trade on the API's watch list. */
 export interface WatchItem {
   state: string;
+  /** settleKindFor(trade): the kind a `settled` report would be applied as, or null (review I1). */
+  settleKind: SettleKind | null;
+  /** Paused for maintenance (review M3). */
+  paused: boolean;
   /** `trades.final_alert_seen_at` when `final_alert_delivered` is true; null otherwise. */
   finalAlertSeenAt: Date | null;
 }
@@ -38,8 +42,8 @@ export interface Link {
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
   /**
-   * The API's view of every attested trade it still lists (Task 9 watcher): its state, and the
-   * buyer's final-alert seen-receipt time (Task 10; null when not seen or absent).
+   * The API's view of every attested trade it still lists (Task 9 watcher), plus the buyer's
+   * final-alert seen-receipt time (Task 10; null when not seen or absent). Malformed items are left out.
    */
   pullWatch(): Promise<Map<string, WatchItem>>;
   registerChannel(channel: string, signPublics: Record<Role, string>): Promise<number>;
@@ -119,14 +123,15 @@ export function createLink(o: {
       const body = (await res.json()) as { trades?: unknown };
       const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; finalAlertSeenAt?: unknown }>) {
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown }>) {
         if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
+        const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
         let seen: Date | null = null;
         if (typeof t.finalAlertSeenAt === 'string') {
           const d = new Date(t.finalAlertSeenAt);
           if (!Number.isNaN(d.getTime())) seen = d;
         }
-        out.set(t.trade, { state: t.state, finalAlertSeenAt: seen });
+        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true, finalAlertSeenAt: seen });
       }
       return out;
     },

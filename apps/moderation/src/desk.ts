@@ -54,7 +54,8 @@ export interface DeskRecord {
 
 export interface DeskStep {
   handle: PartyHandle;
-  api: { state: string; finalAlertSeenAt: Date | null };
+  /** The API's watch-list item: its state, the final-alert receipt, and maintenance (`paused`). */
+  api: { state: string; finalAlertSeenAt: Date | null; paused?: boolean };
   escrowAddress: string | null;
   /** The watcher reports this pass posted (all accepted). */
   reports: readonly WatchReport[];
@@ -287,6 +288,10 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       }
       r = { ...r, pending: keep };
     }
+    // Maintenance: the shadow pauses and resumes with the API (as seen by this service), so a resume
+    // moves its deadlines and windows too; a window is never shorter here than at the API.
+    if (r.shadow && s.api.paused === true && r.shadow.pausedAt === null) r = { ...r, shadow: feed(r.shadow, { type: 'pause' }, 'system', now).trade };
+    if (r.shadow && s.api.paused !== true && r.shadow.pausedAt !== null) r = { ...r, shadow: feed(r.shadow, { type: 'resume' }, 'system', now).trade };
     if (r.shadow) r = { ...r, shadow: feed(r.shadow, { type: 'tick' }, 'system', now).trade };
     r = { ...r, apiRefundSince: s.api.state === 'refund_requested' ? (r.apiRefundSince ?? now) : null };
 

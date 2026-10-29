@@ -11,7 +11,9 @@ import {
   TradeRuleError,
   type Attestation,
   type AttestedTerms,
+  type SettleKind,
   type TradeEvent,
+  type TradeState,
 } from '@x2f/trade';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import sodium from 'libsodium-wrappers';
@@ -282,12 +284,15 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   };
 
   // Every attested trade that is open, or closed within WATCH_LIST_CLOSED_DAYS, with its state:
-  // the moderation watcher's view of the API trade (Task 9). States only: no addresses or terms.
-  // Task 10: plus the buyer's final-alert seen-receipt time (`final_alert_seen_at`), only when
-  // `final_alert_delivered` is true (null and false both mean not seen); otherwise null.
+  // the moderation watcher's view of the API trade (Task 9). No addresses or terms. Also
+  // Task 10: `finalAlertSeenAt` (`final_alert_seen_at` only while `final_alert_delivered` is true, else null).
+  // Also
+  // `settleKind` (settleKindFor: the kind a `settled` report would be applied as; the watcher checks
+  // a sweep it saw only through an import against it, review I1) and `paused` (maintenance: the
+  // watcher's 6 h fallback does not run, review M3).
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: string; seen: Date | null }>(
-      `select t.code, t.state,
+    const { rows } = await o.db.query<{ code: string; state: TradeState; settling: SettleKind | null; paused_at: Date | null; seen: Date | null }>(
+      `select t.code, t.state, t.settling, t.paused_at,
               case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen
          from trades t
          join trade_attestations a on a.code = t.code
@@ -295,7 +300,15 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         order by t.taken_at, t.code`,
       [new Date(now() - WATCH_LIST_CLOSED_DAYS * 86_400_000)],
     );
-    return reply.send({ trades: rows.map((r) => ({ trade: r.code, state: r.state, finalAlertSeenAt: r.seen ? r.seen.toISOString() : null })) });
+    return reply.send({
+      trades: rows.map((r) => ({
+        trade: r.code,
+        state: r.state,
+        settleKind: settleKindFor({ state: r.state, settling: r.settling }),
+        paused: r.paused_at !== null,
+        finalAlertSeenAt: r.seen ? r.seen.toISOString() : null,
+      })),
+    });
   }));
 
   // The open trades in setup that both traders have registered an identity for, with both addresses on record,
