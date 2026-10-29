@@ -72,7 +72,7 @@ beforeEach(() => {
     rate: '33000',
     wallets: WALLETS,
     takes: [],
-    take: () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN' } }),
+    take: (body) => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } }),
   };
   globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(String(input), 'http://x2f.test');
@@ -207,7 +207,7 @@ describe('BuyQuote', () => {
     expect(host.textContent).toContain('$330.00 / XMR');
     // The feed moved after the quote's last poll: the server refuses the stale rate.
     stub.rate = '34000';
-    stub.take = (body) => (body.centsPerXmr === stub.rate ? { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN' } } : { status: 409, json: { error: 'price-changed' } });
+    stub.take = (body) => (body.centsPerXmr === stub.rate ? { status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } } : { status: 409, json: { error: 'price-changed' } });
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(stub.takes).toHaveLength(1);
@@ -244,6 +244,29 @@ describe('BuyQuote', () => {
     // Stored before navigating, so a reload of the room (or a tab opened on it) can read it back.
     expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
     expect(host.textContent).not.toContain('4AAAAk3Fz0a');
+  });
+
+  it("records the deal at the rate the server locked (within 0.5% of the quote), not the quoted one", async () => {
+    // The server locks its own rate now (lead decision 2026-10-29): here 0.3% above the quote.
+    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33099', fiatCents: '41373' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')?.deal.centsPerXmr).toBe(33_099n);
+    expect((arrivedState as { confirmed: { deal: { centsPerXmr: bigint } } }).confirmed.deal.centsPerXmr).toBe(33_099n);
+  });
+
+  it('a locked rate farther than 0.5% from the quote is not recorded: no trade room, the generic refusal', async () => {
+    stub.take = () => ({ status: 200, json: { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: '33200', fiatCents: '41500' } });
+    const { host } = await open(`${BUY}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(where(host)).not.toBe('/trade/K7M2-9QXA-4FTR-8WPN');
+    expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toBeNull();
+    expect(host.textContent).toContain('The trade could not start. Try again.');
   });
 
   it('a market offer with the feed down is disabled with "Price unavailable right now"; a fixed-price offer still quotes', async () => {
@@ -437,8 +460,9 @@ describe('a 0-decimal currency', () => {
       if (url.pathname === '/v1/wallets') return json(200, WALLETS);
       const take = /^\/v1\/offers\/([^/]+)\/take$/.exec(url.pathname);
       if (take && init?.method === 'POST') {
-        stub.takes.push(JSON.parse(String(init.body)) as TakeBody);
-        return json(200, { code: 'K7M2-9QXA-4FTR-8WPN' });
+        const body = JSON.parse(String(init.body)) as TakeBody;
+        stub.takes.push(body);
+        return json(200, { code: 'K7M2-9QXA-4FTR-8WPN', centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents });
       }
       return json(404, { error: 'not-found' });
     }) as typeof fetch;
