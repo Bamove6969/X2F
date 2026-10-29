@@ -4,24 +4,79 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { TODO_PRAGMA, lintSource } from '../../../tools/copy-lint.js';
+import { TODO_PRAGMA, countPragmas, lintSource } from '../../../tools/copy-lint.js';
+import { CANT_DO_CODES, NOT_REFUSAL_CODES } from '../src/ui/cantDoCodes.js';
 import { FEEDBACK_THANKS } from '../src/screens/Feedback.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 
-describe('copy-lint: refusals go through CantDoThat', () => {
-  it('flags refusal wording or a refusal code in a file that does not import CantDoThat', () => {
-    expect(lintSource('export const a = "You can\'t post offers.";\n', 'a.ts').map((f) => f.rule)).toEqual(['refusal']);
-    expect(lintSource('export const A = () => <p>Sorry, you are limited to 2 offers.</p>;\n', 'a.tsx').map((f) => f.rule)).toEqual(['refusal']);
-    expect(lintSource("export const f = (c: string) => c === 'trading-hold';\n", 'a.ts').map((f) => f.rule)).toEqual(['refusal']);
+const lint = (src: string, file = 'a.tsx') => lintSource(src, file).filter((f) => f.rule === 'refusal').map((f) => f.text);
+const IMPORT = "import { CantDoThat } from '../ui/CantDoThat.js';\nimport { isCantDoCode } from '../ui/cantDoCodes.js';\n";
+
+describe('copy-lint: every refusal goes through CantDoThat, judged piece by piece', () => {
+  it('flags refusal wording and refusal code literals', () => {
+    expect(lint('export const a = "You can\'t post offers.";\n', 'a.ts')).toEqual(["You can't post offers."]);
+    expect(lint('export const A = () => <p>Sorry, you are limited to 2 offers.</p>;\n')).toEqual(['Sorry, you are limited to 2 offers.']);
+    expect(lint("export const f = (c: string) => c === 'trading-hold';\n", 'a.ts')).toEqual(['trading-hold']);
   });
 
-  it('passes the same file once it imports CantDoThat (or cantDoCodes), or a line is marked', () => {
-    expect(lintSource("import { CantDoThat } from '../ui/CantDoThat.js';\nexport const a = \"You can't post offers.\";\n", 'a.ts')).toEqual([]);
-    expect(lintSource("import { isCantDoCode } from '../../ui/cantDoCodes.js';\nexport const f = (c: string) => c === 'trading-hold';\n", 'a.ts')).toEqual([]);
-    expect(lintSource('// not-a-refusal: explains storage\nexport const a = "It can\'t be undone.";\n', 'a.ts')).toEqual([]);
-    expect(lintSource(`export const a = "You can't post offers."; // ${TODO_PRAGMA} later\n`, 'a.ts')).toEqual([]);
+  it('review I2: importing CantDoThat or cantDoCodes exempts nothing, a type-only or bare import least of all', () => {
+    const refusal = "export const A = () => <p>Sorry, you're limited to 2 offers per side.</p>;\n";
+    expect(lint(IMPORT + refusal)).toEqual(["Sorry, you're limited to 2 offers per side."]);
+    expect(lint("import type { CantDoCode } from '../ui/cantDoCodes.js';\n" + refusal)).toHaveLength(1);
+    expect(lint("import '../ui/CantDoThat.js';\n" + refusal)).toHaveLength(1);
+  });
+
+  it('review I2: takeErrors.ts\'s old already-waiting line is caught; the real file now takes it from the text map', () => {
+    const old = `${IMPORT}export function t(code: string) {\n  switch (code) {\n    case 'already-waiting':\n      return 'You already have a trade on this offer waiting to be funded.';\n  }\n}\n`;
+    expect(lint(old, 'takeErrors.ts')).toEqual(['already-waiting', 'You already have a trade on this offer waiting to be funded.']);
+    const real = readFileSync(join(SRC, 'screens/quote/takeErrors.ts'), 'utf8');
+    expect(real).not.toContain('You already have a trade');
+    expect(lintSource(real, 'apps/web/src/screens/quote/takeErrors.ts')).toEqual([]);
+  });
+
+  it('passes text written straight into <CantDoThat title= body=>, and the text map itself', () => {
+    expect(lint(`${IMPORT}export const A = () => <CantDoThat title="You can't do that" body={"Sorry, you're limited to 2."} from="too-many-offers" onClose={() => {}} />;\n`)).toEqual([]);
+    // ...but not text beside it.
+    expect(lint(`${IMPORT}export const A = () => <><CantDoThat title="x" body="y" from="lien" onClose={() => {}} /><p>You can't trade.</p></>;\n`)).toEqual(["You can't trade."]);
+    expect(lint('export const a = "You can\'t post offers.";\n', 'apps/web/src/ui/cantDoCodes.ts')).toEqual([]);
+  });
+
+  it('review I3: the wider refusal wording is caught', () => {
+    for (const s of [
+      'You are unable to post.',
+      'You are not able to post.',
+      "You couldn't post that offer.",
+      'You can nudge once every 10 minutes.',
+      'You already have 5 security keys.',
+      'A maximum of 20 offers.',
+      'That is not permitted.',
+      'Too many offers.',
+      "This method isn't available for you.",
+      'This offer needs at least 5 completed trades.',
+      'You have at most 2 offers.',
+      'Only 2 offers per side.',
+      'Your account is blocked.',
+    ]) {
+      expect(lint(`export const a = ${JSON.stringify(s)};\n`, 'a.ts'), s).toEqual([s]);
+    }
+    // A fault that asks the person to try again or reload is not a rule refusal.
+    expect(lint('export const a = "Could not save that. Try again.";\n', 'a.ts')).toEqual([]);
+    // A literal type is never shown.
+    expect(lint("export type R = { result: 'too-soon' };\n", 'a.ts')).toEqual([]);
+  });
+
+  it('review M8: a pragma counts only in a real comment, and covers its own line and the next', () => {
+    expect(lint('// not-a-refusal: explains storage\nexport const a = "It can\'t be undone.";\n', 'a.ts')).toEqual([]);
+    expect(lint(`export const a = "You can't post offers."; // ${TODO_PRAGMA} later\n`, 'a.ts')).toEqual([]);
+    expect(lint('export const A = () => <p>{/* not-a-refusal: explains */}It can\'t be undone.</p>;\n')).toEqual([]);
+    // Inside a string it is just text.
+    expect(lint('export const p = "not-a-refusal: sneaky";\nexport const a = "You can\'t post offers.";\n', 'a.ts')).toEqual(["You can't post offers."]);
+    expect(lint('export const A = () => <p>not-a-refusal: sneaky</p>;\nexport const a = "You can\'t.";\n')).toEqual(["You can't."]);
+    // Two lines down is out of reach.
+    expect(lint('// not-a-refusal: x\nconst b = 1;\nexport const a = "You can\'t.";\n', 'a.ts')).toEqual(["You can't."]);
+    expect(countPragmas('// not-a-refusal: x\nconst s = "not-a-refusal: y";\n// cant-do-that-todo: z\n', 'a.ts')).toEqual({ notARefusal: 1, todo: 1 });
   });
 
   it('lets the owner\'s exact thank-you keep its "!", and nothing else', () => {
@@ -29,14 +84,66 @@ describe('copy-lint: refusals go through CantDoThat', () => {
     expect(lintSource('export const t = "Thank you!";\n', 'a.ts').map((f) => f.rule)).toEqual(['exclamation']);
   });
 
-  it(`keeps the refusals still shown inline (marked ${TODO_PRAGMA}) from growing`, () => {
-    let count = 0;
+  it('counts both pragmas, so neither can grow unnoticed (review M8)', () => {
+    let notARefusal = 0;
+    let todo = 0;
     for (const e of readdirSync(SRC, { recursive: true, withFileTypes: true })) {
-      if (e.isFile() && /\.(tsx?|jsx?)$/.test(e.name)) count += readFileSync(join(e.parentPath, e.name), 'utf8').split(TODO_PRAGMA).length - 1;
+      if (!e.isFile() || !/\.(tsx?|jsx?)$/.test(e.name) || /^(cantDoCodes\.ts|CantDoThat\.tsx)$/.test(e.name)) continue;
+      const c = countPragmas(readFileSync(join(e.parentPath, e.name), 'utf8'), e.name);
+      notARefusal += c.notARefusal;
+      todo += c.todo;
     }
-    // 2026-10-29: auth/refusals.ts (recovery-hold, security-key-limit, login-name-set) and
-    // SetupStatus's 409 on cancel. Lower this number as each moves into CantDoThat.
-    expect(count).toBeLessThanOrEqual(4);
+    // 2026-10-29. `cant-do-that-todo`: auth/refusals.ts (recovery-hold, security-key-limit and its
+    // sentence, login-name-set), listed with their owner in docs/coordination.md. Lower these as
+    // refusals move into CantDoThat; raise one only with a reviewed reason.
+    expect(todo).toBeLessThanOrEqual(4);
+    expect(notARefusal).toBeLessThanOrEqual(34);
+  });
+});
+
+describe('review I3: every error code the web knows is classified', () => {
+  const API = readFileSync(join(ROOT, 'apps/api/src/errors.ts'), 'utf8');
+  const KEYS = readFileSync(join(ROOT, 'packages/accounts/src/pgp.ts'), 'utf8');
+  const union = (src: string, name: string) => {
+    const at = src.indexOf(`export type ${name} =`);
+    expect(at, name).toBeGreaterThan(-1);
+    const body = src.slice(at, src.indexOf(';', at));
+    return [...body.matchAll(/\| '([a-z0-9-]+)'/g)].map((m) => m[1]!);
+  };
+
+  /** Codes the web compares against: `.code === 'x'`, `.code !== 'x'`, and `case 'x':` in a `switch (….code)`. */
+  function webCodes(): Set<string> {
+    const out = new Set<string>();
+    for (const e of readdirSync(SRC, { recursive: true, withFileTypes: true })) {
+      if (!e.isFile() || !/\.(tsx?|jsx?)$/.test(e.name)) continue;
+      const src = readFileSync(join(e.parentPath, e.name), 'utf8');
+      for (const m of src.matchAll(/(typeof [\w.]+)?\.code\s*[!=]==\s*'([a-z0-9-]+)'/g)) if (m[1] === undefined) out.add(m[2]!);
+      for (const sw of src.matchAll(/switch \((?:[\w.]+\.)?code\) \{/g)) {
+        let depth = 0;
+        let i = sw.index + sw[0].length - 1;
+        for (; i < src.length; i++) {
+          if (src[i] === '{') depth++;
+          else if (src[i] === '}' && --depth === 0) break;
+        }
+        for (const c of src.slice(sw.index, i).matchAll(/case '([a-z0-9-]+)':/g)) out.add(c[1]!);
+      }
+    }
+    return out;
+  }
+
+  it('in CANT_DO_CODES or NOT_REFUSAL_CODES, never both', () => {
+    const cant = new Set<string>(CANT_DO_CODES);
+    for (const c of Object.keys(NOT_REFUSAL_CODES)) expect(cant.has(c), c).toBe(false);
+    const known = new Set([...union(API, 'ApiErrorCode'), ...union(KEYS, 'KeyRefusal'), ...webCodes()]);
+    expect(known.size).toBeGreaterThan(60);
+    const unclassified = [...known].filter((c) => !cant.has(c) && !Object.hasOwn(NOT_REFUSAL_CODES, c));
+    expect(unclassified, 'classify each new code in apps/web/src/ui/cantDoCodes.ts').toEqual([]);
+  });
+
+  it('the review I1 code is the API\'s own', () => {
+    expect(union(API, 'ApiErrorCode')).toContain('last-login-method');
+    expect(CANT_DO_CODES).toContain('last-login-method');
+    expect(CANT_DO_CODES).not.toContain('only-login' as never);
   });
 });
 

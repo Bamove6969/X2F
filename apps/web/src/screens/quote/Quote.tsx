@@ -173,6 +173,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     return (
       <main className="x2f-quote" data-screen="quote">
         <p className="x2f-quote__note">
+          {/* not-a-refusal: the offer is gone */}
           {offer.kind === 'failed' ? 'The offer could not be loaded right now. Try again in a moment.' : 'This offer is no longer listed.'}
         </p>
         <Link to={backHref} className="x2f-quote__add">

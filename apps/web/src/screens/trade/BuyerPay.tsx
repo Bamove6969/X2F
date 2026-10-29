@@ -53,6 +53,7 @@ export const TASK23_SLOTS: readonly TradeSlot[] = [
 
 const REFUSALS: Record<string, string> = {
   'too-late': "It's too late for that now.",
+  // not-a-refusal: the trade state machine (see NOT_REFUSAL_CODES)
   'wrong-state': "The trade has moved on. It can't do that now.",
   'trading-paused': 'Trading is paused for maintenance. Try again soon.',
   'not-releasable': 'The escrow is not unlocked yet. Try again in a few minutes.',
@@ -755,6 +756,7 @@ export function SellerWaiting(p: TradeScreenProps) {
                 Chat
               </Button>
               <span id="x2f-room-chat-hint" className="x2f-room__hint">
+                {/* not-a-refusal: a feature not built yet (Plan 3 Task 20) */}
                 Chat isn't available here yet.
               </span>
             </>

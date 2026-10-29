@@ -78,12 +78,30 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
 test('a named send carries the refusal code; the form works at desktop width too', async ({ page }) => {
   const sent = await stub(page);
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto('/feedback');
+  await page.goto('/feedback?from=too-many-offers');
   await expect(page.getByRole('radio', { name: 'Feedback' })).toBeChecked();
   await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
   await page.getByLabel('Your comment').fill('Love it.');
   await page.getByRole('button', { name: 'Send' }).click();
   await expect(page.locator('[data-part="feedback-thanks"]')).toHaveText(THANKS);
-  expect(sent).toEqual([{ kind: 'feedback', text: 'Love it.', anonymous: false }]);
+  expect(sent).toEqual([{ kind: 'feedback', text: 'Love it.', anonymous: false, from: 'too-many-offers' }]);
+  // Focus moves to the thank-you heading (review M7).
+  await expect(page.locator('[data-part="feedback-thanks-heading"]')).toBeFocused();
   await noSideScroll(page);
+});
+
+test('signed out: told before typing, and the draft is kept through the log-in round trip', async ({ page }) => {
+  await stub(page);
+  await page.unroute('**/v1/account/me');
+  let signedIn = false;
+  await page.route('**/v1/account/me', (r) => (signedIn ? json(ME)(r) : json({ error: 'not-authenticated' }, 401)(r)));
+  await page.goto('/feedback?from=trading-hold');
+  await expect(page.locator('[data-part="feedback-login-first"]')).toContainText('Log in to send feedback');
+  await expect(page.getByRole('button', { name: 'Send' })).toBeDisabled();
+  await page.getByLabel('Your comment').fill('Hold rules are unclear.');
+  signedIn = true;
+  // The person logs in elsewhere in this tab and comes back: the words are still there.
+  await page.goto('/feedback?from=trading-hold');
+  await expect(page.getByLabel('Your comment')).toHaveValue('Hold rules are unclear.');
+  await expect(page.locator('[data-part="feedback-login-first"]')).toHaveCount(0);
 });

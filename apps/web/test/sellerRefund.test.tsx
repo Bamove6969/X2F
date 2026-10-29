@@ -247,7 +247,9 @@ describe('SellerRefund: Nudge', () => {
     const m = mount(sellerView());
     fire(m.button('Nudge mira.k')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(m.host.querySelector('[role="status"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+    // Plan 5 Task 21: the nudge limit opens CantDoThat (a portal on the body) with its feedback link.
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+    expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=too-soon');
   });
 });
 

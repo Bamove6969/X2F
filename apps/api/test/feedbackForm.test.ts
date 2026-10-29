@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { requireSession } from '../src/auth/sessions.js';
 import { FEEDBACK_FORM_BUCKET, FEEDBACK_FORM_DAILY, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -30,6 +31,8 @@ const rows = async () =>
 beforeAll(async () => {
   ({ app, deps, setNow, logs } = await testApp());
   addTestLogin(app, deps);
+  // A recovery-allowed route without allowHeld, to show a held session really is held.
+  app.post('/t/held-check', { preHandler: requireSession({ allowRecovery: true }) }, async () => ({}));
 });
 afterAll(async () => app.close());
 beforeEach(async () => {
@@ -106,8 +109,10 @@ describe('POST /v1/feedback/form', () => {
     [{ kind: 'feedback', text: 42, anonymous: true }],
     [{ kind: 'feedback', text: 'ok' }],
     [{ kind: 'feedback', text: 'ok', anonymous: 'true' }],
-    [{ kind: 'feedback', text: 'bidi‮text', anonymous: true }],
-    [{ kind: 'feedback', text: 'tab\there', anonymous: true }],
+    [{ kind: 'feedback', text: 'bidi\u202etext', anonymous: true }],
+    [{ kind: 'feedback', text: 'isolate\u2066text', anonymous: true }],
+    [{ kind: 'feedback', text: 'bell\u0007here', anonymous: true }],
+    [{ kind: 'feedback', text: 'zero\u200bwidth space', anonymous: true }],
     [{ kind: 'feedback', text: 'ok', anonymous: true, from: 'Starter Limit' }],
     [{ kind: 'feedback', text: 'ok', anonymous: true, from: 'x'.repeat(41) }],
     [{ kind: 'feedback', text: 'ok', anonymous: true, from: 7 }],
@@ -119,6 +124,43 @@ describe('POST /v1/feedback/form', () => {
     expect(res.statusCode).toBe(400);
     expect(res.json()).toEqual({ error: 'bad-request' });
     expect(await rows()).toEqual([]);
+  });
+
+  it('takes a tab, ZWNJ (Persian) and ZWJ (emoji sequences): review M5', async () => {
+    const { b } = await login('script1');
+    for (const text of ['tab\there', 'می\u200cخواهم', 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}']) {
+      expect((await b.post('/v1/feedback/form', { kind: 'feedback', text, anonymous: true })).statusCode, JSON.stringify(text)).toBe(202);
+    }
+  });
+
+  it('does not touch the session: no fresh last_seen_at beside the row (review M1)', async () => {
+    const { b, id } = await login('untouched1');
+    const before = await deps.db.query<{ last_seen_at: Date }>('select last_seen_at from sessions where account_id = $1', [id]);
+    setNow(new Date(T0.getTime() + 60_000));
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(202);
+    const after = await deps.db.query<{ last_seen_at: Date }>('select last_seen_at from sessions where account_id = $1', [id]);
+    expect(after.rows[0]!.last_seen_at.getTime()).toBe(before.rows[0]!.last_seen_at.getTime());
+  });
+
+  it('takes a HELD backup session too: the recorded allowHeld exception (review M2)', async () => {
+    const { b, id } = await login('held1', { level: 'recovery' });
+    await deps.db.query("update sessions set hold_until = $2 where account_id = $1", [id, new Date(T0.getTime() + 86_400_000)]);
+    // The hold is real: a held route refuses this session.
+    expect((await b.post('/t/held-check')).json()).toMatchObject({ error: 'recovery-hold' });
+    expect((await b.post('/v1/feedback/form', { kind: 'complaint', text: 'held', anonymous: false })).statusCode).toBe(202);
+    expect((await rows()).map((r) => r.account_id)).toEqual([id]);
+  });
+
+  it('a failed insert does not use up a send (review M3)', async () => {
+    setNow(new Date('2026-11-15T12:00:00Z'));
+    const { b } = await login('dbfail1');
+    await deps.db.query('alter table feedback_form rename to feedback_form_away');
+    try {
+      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+    } finally {
+      await deps.db.query('alter table feedback_form_away rename to feedback_form');
+    }
+    for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `ok${i}`, anonymous: true })).statusCode).toBe(202);
   });
 
   it('accepts 2000 characters, counted as characters, and a null from', async () => {
@@ -142,6 +184,8 @@ describe('POST /v1/feedback/form', () => {
   });
 
   it(`takes ${FEEDBACK_FORM_DAILY} a day per account, named or not, then 429 until midnight UTC; the count is not stored`, async () => {
+    // A later day of its own: the shared bucket has refilled whatever earlier tests took.
+    setNow(new Date('2026-12-01T15:30:00Z'));
     const { b } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
@@ -154,14 +198,14 @@ describe('POST /v1/feedback/form', () => {
     expect(over.headers['retry-after']).toBe(String(8.5 * 3600));
     expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'other', anonymous: true })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_FORM_DAILY + 1);
-    setNow(new Date('2026-10-30T00:00:01Z'));
+    setNow(new Date('2026-12-02T00:00:01Z'));
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'next day', anonymous: true })).statusCode).toBe(202);
   });
 
   // Last in this block: it empties the app's shared bucket.
   it('one shared budget for everyone on top of the daily count (503 busy when spent)', async () => {
-    // A week on: the bucket has refilled whatever earlier tests took.
-    setNow(new Date('2026-11-05T12:00:00Z'));
+    // A month on: the bucket has refilled whatever earlier tests took.
+    setNow(new Date('2027-01-05T12:00:00Z'));
     const senders = await Promise.all(Array.from({ length: Math.ceil((FEEDBACK_FORM_BUCKET.capacity + 5) / FEEDBACK_FORM_DAILY) }, (_, i) => login(`flood${i}`)));
     const codes: number[] = [];
     for (const { b } of senders) {
@@ -173,6 +217,23 @@ describe('POST /v1/feedback/form', () => {
 });
 
 describe('listFeedbackForm and purgeFeedbackForm', () => {
+  it('pages a day with more than a page of rows without losing any (review M4)', async () => {
+    await deps.db.query(
+      `insert into feedback_form (kind, body, created_on) select 'feedback', 'r' || g, '2026-10-20' from generate_series(1, 80) g`,
+    );
+    await deps.db.query(`insert into feedback_form (kind, body, created_on) values ('feedback', 'older', '2026-10-19')`);
+    const seen: string[] = [];
+    let page = await listFeedbackForm(deps.db);
+    while (page.length > 0) {
+      seen.push(...page.map((r) => r.text));
+      const last = page[page.length - 1]!;
+      page = await listFeedbackForm(deps.db, { before: { createdOn: last.createdOn, id: last.id } });
+    }
+    expect(seen).toHaveLength(81);
+    expect(new Set(seen).size).toBe(81);
+    expect(seen[80]).toBe('older');
+  });
+
   it('lists newest day first with both kinds of row, and pages by day', async () => {
     const id = await seedAccount(deps, { loginName: 'lister1' });
     await deps.db.query(
@@ -185,7 +246,7 @@ describe('listFeedbackForm and purgeFeedbackForm', () => {
       ['new', id, 'offer-cap', '2026-10-28'],
       ['old', null, null, '2026-10-01'],
     ]);
-    expect((await listFeedbackForm(deps.db, { before: '2026-10-28' })).map((r) => r.text)).toEqual(['old']);
+    expect((await listFeedbackForm(deps.db, { before: { createdOn: all[0]!.createdOn, id: all[0]!.id } })).map((r) => r.text)).toEqual(['old']);
   });
 
   it('deletes rows older than 365 days (as P5-A19)', async () => {

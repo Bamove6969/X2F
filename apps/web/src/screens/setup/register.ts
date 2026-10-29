@@ -74,6 +74,7 @@ export interface SetupError {
 /** The password rules in the board's words, for a 400 `password-weak` `{ missing }`. */
 const PASSWORD_RULES: Record<string, string> = {
   length: '10 characters or more',
+  // not-a-refusal: an input check on a typed password
   'too-long': 'at most 256 characters',
   upper: 'an upper case letter',
   lower: 'a lower case letter',

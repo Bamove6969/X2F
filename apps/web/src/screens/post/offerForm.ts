@@ -1,7 +1,7 @@
 // PostOffer's form logic (Task 21; board PostOffer.dc.html; spec 2.2 step 5, 2.3, 11.6). Fiat is
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
-import { isCantDoCode, type CantDoCode } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -190,6 +190,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   const amountError = 'Enter an amount, like 50 or 2,000.';
   if (min === null || min === 0n) errors.min = amountError;
   if (max === null || max === 0n) errors.max = amountError;
+  // not-a-refusal: an input check on the two amounts
   if (min !== null && max !== null && min > 0n && max > 0n && min > max) errors.min = "The smallest trade can't be more than the largest.";
   let fixed: bigint | null = null;
   if (f.priceMode === 'fixed') {
@@ -221,8 +222,8 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
 }
 
 /** The API refusals a poster can meet (plan Task 4), as plain text. */
-/** CantDoThat's title when Post offer is refused by a rule (Plan 5 Task 21). COPY-UNSIGNED */
-export const POST_CANT_TITLE = "This offer can't be posted";
+/** CantDoThat's title when Post offer is refused by a rule (Plan 5 Task 21; in the refusal text map). */
+export const POST_CANT_TITLE = CANT_DO_TITLE.post;
 
 /** The refusal code when Post offer was refused by a rule (shown in CantDoThat), else null. */
 export function postCantDo(code: string): CantDoCode | null {
@@ -231,15 +232,13 @@ export function postCantDo(code: string): CantDoCode | null {
 
 /** The words for a refused Post offer; a CANT_DO_CODES refusal is shown in CantDoThat, the rest inline. */
 export function refusalText(code: string): string {
+  if (isCantDoCode(code)) return postCantDoText(code);
   switch (code) {
-    case 'trading-hold':
-      return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'trading-paused':
       return 'Trading is paused for maintenance. Your offer was not posted. Try again soon.';
     case 'method-unavailable':
+      // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return "This payment method isn't available right now. Choose another one.";
-    case 'too-many-offers':
-      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
     default:
       return "Something went wrong and your offer wasn't posted. Try again.";
   }

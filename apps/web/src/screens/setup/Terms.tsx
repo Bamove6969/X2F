@@ -202,6 +202,7 @@ export function SetupTerms() {
       back={returnTo}
       after={
         <p className="x2f-start__help">
+          {/* not-a-refusal: a link to log in */}
           Already have an account?{' '}
           <Link className="x2f-link" to={`/login?returnTo=${encodeURIComponent(returnTo)}`} data-part="setup-login">
             Log in

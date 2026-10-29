@@ -167,6 +167,7 @@ function SecondPgpKey({ prove, onDone, onCancel }: { prove: Prove; onDone: () =>
       );
       setCode('');
     } catch (e) {
+      // not-a-refusal: an input check on a pasted key
       if (!isConfirmAbort(e)) setError(setupError(e, 'X2F could not use that key. Check that you pasted the whole public key.').text);
     } finally {
       setBusy(false);

@@ -23,6 +23,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { sendNudge } from '../../nudge/useNudge.js';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE } from '../../ui/cantDoCodes.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
@@ -34,7 +36,6 @@ import { postTradeEvent, TRY_AGAIN, useServerNow, xmrText } from './refundUi.js'
 import './refund.css';
 
 const NUDGE_SENT = 'Nudge sent.';
-const NUDGE_TOO_SOON = 'You can nudge once every 10 minutes.';
 
 /** The buyer's public name, marked for the username rules (Global Constraints). */
 function Name({ name }: { name: string }) {
@@ -101,6 +102,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const [busy, setBusy] = useState<'refund' | 'extend' | null>(null);
   const [error, setError] = useState(false);
   const [nudge, setNudge] = useState<string | null>(null);
+  const [nudgeLimit, setNudgeLimit] = useState(false);
 
   const deps = useFlowDeps(view.code, escrow);
   // One refund run per trade, kept in refundFlow.ts so the refund_requested view can finish it; it
@@ -130,7 +132,11 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
   const onNudge = async () => {
     try {
       const r = await sendNudge(name, view.code);
-      setNudge(r.result === 'sent' ? NUDGE_SENT : r.result === 'too-soon' ? NUDGE_TOO_SOON : TRY_AGAIN);
+      // The nudge limit is a rule: CantDoThat with its feedback link (Plan 5 Task 21).
+      if (r.result === NUDGE_TOO_SOON_CODE) {
+        setNudge(null);
+        setNudgeLimit(true);
+      } else setNudge(r.result === 'sent' ? NUDGE_SENT : TRY_AGAIN);
     } catch {
       setNudge(TRY_AGAIN);
     }
@@ -194,6 +200,7 @@ function WindowEnded({ view, escrow, refresh, serverClock }: RefundScreenProps) 
             {nudge}
           </p>
         ) : null}
+        {nudgeLimit ? <CantDoThat title={CANT_DO_TITLE.nudge} body={NUDGE_TOO_SOON} from={NUDGE_TOO_SOON_CODE} onClose={() => setNudgeLimit(false)} /> : null}
       </footer>
     </div>
   );

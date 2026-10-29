@@ -112,7 +112,7 @@ export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | '
       await postTradeEvent(view.code, { type: buyer ? 'buyer-cancel' : 'propose-cancel' });
       await refresh();
     } catch (e) {
-      // cant-do-that-todo: 409 on cancel: the trade has moved on; shown inline in the setup status
+      // not-a-refusal: 409 on cancel: the trade has moved on (wrong-state, see NOT_REFUSAL_CODES)
       setErr(e instanceof ApiCallError && e.status === 409 ? "This trade can't be cancelled from here any more." : "Couldn't cancel. Try again.");
     } finally {
       setBusy(false);

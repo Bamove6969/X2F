@@ -15,13 +15,18 @@
 //   (★ · … – −) are not emoji. lintSource throws on a file extension it has no rule for.
 // - The owner's own wording wins over the "!" rule where he gave a sentence exactly: OWNER_WORDING
 //   lists each one (2026-10-29: the feedback form's thank-you), matched as the whole string.
-// - Refusals go through `CantDoThat` (Plan 5 Task 21; owner, 2026-10-29): in JS/TS files, user
-//   text that words a refusal ("can't", "cannot", "not allowed", "limited to", "Sorry", ...) or a
-//   string literal equal to one of the API's refusal codes (CANT_DO_CODES in
-//   apps/web/src/ui/cantDoCodes.ts) is refused unless the file imports `ui/CantDoThat` or
-//   `ui/cantDoCodes`, or that line or the one above carries `not-a-refusal: <why>` in a comment
-//   (an explanation, a fault such as a broken browser, not a rule that stops the user) or
-//   `cant-do-that-todo: <why>` (a real refusal still shown inline; a test caps how many there are).
+// - Refusals go through `CantDoThat` (Plan 5 Task 21; owner, 2026-10-29). In JS/TS files, every
+//   piece of user text that words a refusal (REFUSAL_WORDS: "can't", "unable", "too many",
+//   "already have", ...) and every string literal equal to one of the API's refusal codes
+//   (CANT_DO_CODES in apps/web/src/ui/cantDoCodes.ts) is judged on its own. It passes only when:
+//     - it lives in the refusal text map itself (ui/cantDoCodes.ts) or in ui/CantDoThat.tsx;
+//     - it is written straight into a `<CantDoThat title=... body=...>` attribute; or
+//     - a real comment (not text inside a string) on the same line, or ending on the line above,
+//       says `not-a-refusal: <why>` (an explanation, an input check, a fault, not a rule that
+//       stops the user) or `cant-do-that-todo: <why>` (a refusal still shown inline). Tests count
+//       both kinds of pragma, so neither can grow unnoticed.
+//   Importing CantDoThat exempts nothing: each refusal must be routed or marked. Wording in a
+//   sentence that asks the person to "try again" is a fault report and is not judged (TRY_AGAIN).
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -46,10 +51,18 @@ export const OWNER_WORDING: ReadonlySet<string> = new Set([
 ]);
 
 /** Wording that tells the user they can't do something. */
-export const REFUSAL_WORDS = /\b(?:can['’]t|cannot|can not|not allowed|isn['’]t allowed|aren['’]t allowed|you['’]re limited|limited to|sorry)\b/i;
+export const REFUSAL_WORDS =
+  /\b(?:can['’]t|cannot|can not|couldn['’]t|could not|unable|not able|not allowed|isn['’]t allowed|aren['’]t allowed|not permitted|you['’]re limited|limited to|sorry|no longer|too many|at most|maximum|only \d|once every|already have|(?:isn['’]t|is not|aren['’]t|are not|not) available|is blocked|you must|needs at least)\b/i;
+/**
+ * A sentence that reports a fault, not a rule: it asks the person to try again or reload, says
+ * something could not load, or is the device's own safety check ("Your device can't ..."). A rule
+ * refusal does not go away by retrying. Its wording is not judged; a refusal code literal still is.
+ */
+const TRY_AGAIN = /\b(?:try (?:it )?again|reload the page|could(?:n['’]t| not) (?:load|read|copy|reach)|your device)\b/i;
 const CODES: ReadonlySet<string> = new Set(CANT_DO_CODES);
-const CANT_DO_IMPORT = /(?:^|\/)(?:CantDoThat|cantDoCodes)(?:\.js|\.tsx?)?$/;
-const PRAGMA = 'not-a-refusal:';
+/** The two files that hold refusal wording by design: the text map and the popup. */
+const CANT_DO_HOME = /(?:^|\/)apps\/web\/src\/ui\/(?:cantDoCodes\.ts|CantDoThat\.tsx)$|^(?:cantDoCodes\.ts|CantDoThat\.tsx)$/;
+export const PRAGMA = 'not-a-refusal:';
 /** A refusal still shown inline, waiting to move into CantDoThat (counted by a ratchet test). */
 export const TODO_PRAGMA = 'cant-do-that-todo:';
 
@@ -116,25 +129,74 @@ function emojiFindings(src: string, file: string): { out: Finding[]; literal: Se
   return { out, literal };
 }
 
+interface Piece {
+  text: string;
+  start: number;
+  end: number;
+  /** A string literal (so it can be an API code), as opposed to JSX text or template text. */
+  literal: boolean;
+  /** Written straight into `<CantDoThat title=... body=...>`. */
+  toCantDo: boolean;
+}
+
 /** Every piece of text a user could see: string literals, template literal text and JSX text, with its offset. */
-function textPieces(node: unknown, out: { text: string; start: number; literal: boolean }[]): void {
+function textPieces(node: unknown, out: Piece[], ranges: [number, number][], toCantDo = false): void {
   if (Array.isArray(node)) {
-    for (const n of node) textPieces(n, out);
+    for (const n of node) textPieces(n, out, ranges, toCantDo);
     return;
   }
   if (node === null || typeof node !== 'object') return;
-  const n = node as { type?: unknown; value?: unknown; start?: unknown; regex?: unknown };
+  // A literal type (`{ result: 'too-soon' }`) is never shown to anyone.
+  if ((node as { type?: unknown }).type === 'TSLiteralType') return;
+  const n = node as { type?: unknown; value?: unknown; start?: unknown; end?: unknown; regex?: unknown; name?: unknown; attributes?: unknown };
   const start = typeof n.start === 'number' ? n.start : 0;
-  if (n.type === 'Literal' && typeof n.value === 'string' && n.regex === undefined) out.push({ text: n.value, start, literal: true });
-  else if (n.type === 'JSXText' && typeof n.value === 'string') out.push({ text: n.value, start, literal: false });
+  const end = typeof n.end === 'number' ? n.end : start;
+  if (n.type === 'Literal' && typeof n.value === 'string' && n.regex === undefined) out.push({ text: n.value, start, end, literal: true, toCantDo });
+  else if (n.type === 'JSXText' && typeof n.value === 'string') out.push({ text: n.value, start, end, literal: false, toCantDo });
   else if (n.type === 'TemplateElement') {
     const v = n.value as { cooked?: unknown; raw?: unknown } | undefined;
     const text = typeof v?.cooked === 'string' ? v.cooked : typeof v?.raw === 'string' ? v.raw : '';
-    out.push({ text, start, literal: false });
+    out.push({ text, start, end, literal: false, toCantDo });
+  }
+  // Strings, template text, JSX text and regexes: a "//" inside them is not a comment.
+  if ((n.type === 'Literal' && (typeof n.value === 'string' || n.regex !== undefined)) || n.type === 'TemplateElement' || n.type === 'JSXText') ranges.push([start, end]);
+  if (n.type === 'JSXOpeningElement' && Array.isArray(n.attributes)) {
+    const name = (n.name as { name?: unknown } | undefined)?.name;
+    for (const a of n.attributes as { type?: unknown; name?: { name?: unknown } }[]) {
+      const routed = name === 'CantDoThat' && a.type === 'JSXAttribute' && (a.name?.name === 'title' || a.name?.name === 'body');
+      textPieces(a, out, ranges, toCantDo || routed);
+    }
+    textPieces(n.name, out, ranges, toCantDo);
+    return;
   }
   for (const [key, value] of Object.entries(n)) {
-    if (key !== 'value' || n.type !== 'TemplateElement') textPieces(value, out);
+    if (key !== 'value' || n.type !== 'TemplateElement') textPieces(value, out, ranges, toCantDo);
   }
+}
+
+/** Real comments (outside strings, template text, JSX text and regexes): [start, end, text]. */
+function comments(src: string, ranges: [number, number][]): { start: number; end: number; text: string }[] {
+  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
+  const inside = (i: number) => sorted.some(([a, b]) => i >= a && i < b);
+  const out: { start: number; end: number; text: string }[] = [];
+  for (let i = 0; i < src.length - 1; i++) {
+    if (src[i] !== '/' || (src[i + 1] !== '/' && src[i + 1] !== '*') || inside(i)) continue;
+    const close = src[i + 1] === '/' ? src.indexOf('\n', i) : src.indexOf('*/', i + 2);
+    const end = close === -1 ? src.length : src[i + 1] === '/' ? close : close + 2;
+    out.push({ start: i, end, text: src.slice(i, end) });
+    i = end - 1;
+  }
+  return out;
+}
+
+/** How many pragmas of each kind a source holds, in real comments only (the ratchet tests count them). */
+export function countPragmas(src: string, file: string): { notARefusal: number; todo: number } {
+  const ext = extname(file);
+  const lang = ext === '.tsx' ? 'tsx' : ext === '.jsx' ? 'jsx' : ext === '.js' || ext === '.mjs' || ext === '.cjs' ? 'js' : 'ts';
+  const ranges: [number, number][] = [];
+  textPieces(parseAst(src, { lang }, file), [], ranges);
+  const cs = comments(src, ranges);
+  return { notARefusal: cs.filter((c) => c.text.includes(PRAGMA)).length, todo: cs.filter((c) => c.text.includes(TODO_PRAGMA)).length };
 }
 
 /**
@@ -155,20 +217,22 @@ export function lintSource(src: string, file: string): Finding[] {
       found.push({ file, line: 1, column: 1, rule: 'parse', text: e instanceof Error ? e.message.split('\n')[0]! : String(e) });
       return found;
     }
-    const pieces: { text: string; start: number; literal: boolean }[] = [];
-    textPieces(program, pieces);
-    const body = (program as { body?: unknown }).body;
-    const usesCantDo =
-      CANT_DO_IMPORT.test(file.replace(/\.[^./]+$/, '')) ||
-      (Array.isArray(body) &&
-        body.some((n: { type?: unknown; source?: { value?: unknown } }) => n.type === 'ImportDeclaration' && typeof n.source?.value === 'string' && CANT_DO_IMPORT.test(n.source.value)));
-    const lines = src.split('\n');
-    const marked = (l: string) => l.includes(PRAGMA) || l.includes(TODO_PRAGMA);
-    const excused = (line: number) => marked(lines[line - 1] ?? '') || marked(lines[line - 2] ?? '');
+    const pieces: Piece[] = [];
+    const ranges: [number, number][] = [];
+    textPieces(program, pieces, ranges);
+    const home = CANT_DO_HOME.test(file);
+    // A pragma counts only in a real comment; it covers its own line(s) and the line after it.
+    const pragmaLines = new Set<number>();
+    for (const c of comments(src, ranges)) {
+      if (!c.text.includes(PRAGMA) && !c.text.includes(TODO_PRAGMA)) continue;
+      const first = position(src, c.start).line;
+      const last = position(src, c.end).line;
+      for (let l = first; l <= last + 1; l++) pragmaLines.add(l);
+    }
     for (const p of pieces) {
-      if (!usesCantDo && (REFUSAL_WORDS.test(decodeEntities(p.text)) || (p.literal && CODES.has(p.text)))) {
+      if (!home && !p.toCantDo && ((REFUSAL_WORDS.test(decodeEntities(p.text)) && !TRY_AGAIN.test(p.text)) || (p.literal && CODES.has(p.text)))) {
         const at = position(src, p.start);
-        if (!excused(at.line)) found.push({ file, ...at, rule: 'refusal', text: p.text.trim() });
+        if (!pragmaLines.has(at.line)) found.push({ file, ...at, rule: 'refusal', text: p.text.trim() });
       }
       // JSX text and attribute strings are entity-decoded by React (`Done&#33;` shows "Done!"), so
       // every piece is checked decoded; a plain string literal holding an entity is rare enough

@@ -3,7 +3,8 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AuthApiError, walletsAction, withConfirm } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
-import { CantDoThat, isCantDoCode, type CantDoCode } from '../ui/CantDoThat.js';
+import { CantDoThat } from '../ui/CantDoThat.js';
+import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, walletsCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
@@ -36,30 +37,30 @@ function when(iso: string): string {
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-/** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2). */
-export const RECOVERY_SESSION_WALLETS =
-  "You logged in with a backup, so you can't add wallets in this session. Log in with your usual method to add one.";
+/** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
+export { RECOVERY_SESSION_WALLETS };
 /** 403 `confirm-invalid`: the confirm ran out (or was used) before the save went through. */
 export const CONFIRM_INVALID_WALLETS = 'Your confirmation ran out before the wallets were saved. Save again and confirm once more.';
 
-/** CantDoThat's title when adding wallets is refused by a rule (Plan 5 Task 21). COPY-UNSIGNED */
-export const WALLETS_CANT_TITLE = "Wallets can't be added";
+/** CantDoThat's title when adding wallets is refused by a rule (Plan 5 Task 21; in the refusal text map). */
+export const WALLETS_CANT_TITLE = CANT_DO_TITLE.wallets;
 
 /** The refusal code when the add was refused by a rule (shown in CantDoThat), else null. */
 function addCantDo(e: unknown): CantDoCode | null {
   return (e instanceof ApiCallError || e instanceof AuthApiError) && isCantDoCode(e.code) ? e.code : null;
 }
 
+const ADD_FAILED = 'That could not be saved. Check the addresses and try again.';
+
 function addError(e: unknown): string {
   if (e instanceof ApiCallError || e instanceof AuthApiError) {
     if (e.code === 'address-invalid') return "One of those doesn't look like a Monero address on this network.";
     if (e.code === 'address-integrated') return 'Use a plain address, not an integrated address.';
     if (e.code === 'wallet-exists') return 'One of those wallets is already linked.';
-    if (e.code === 'recovery-session') return RECOVERY_SESSION_WALLETS;
     if (e.code === 'confirm-invalid') return CONFIRM_INVALID_WALLETS;
   }
   // Task 30's wording for a held backup session, a wait after too many tries, and the rest.
-  return refusalText(e, 'That could not be saved. Check the addresses and try again.');
+  return refusalText(e, ADD_FAILED);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -365,7 +366,7 @@ export function Wallets() {
     } catch (e) {
       if (!isConfirmAbort(e)) {
         const code = addCantDo(e);
-        if (code !== null) setCantDo({ code, text: addError(e) });
+        if (code !== null) setCantDo({ code, text: walletsCantDoText(code) ?? refusalText(e, ADD_FAILED) });
         else setError(addError(e));
       }
     } finally {
