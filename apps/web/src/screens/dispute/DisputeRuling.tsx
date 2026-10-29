@@ -159,7 +159,7 @@ export function DisputeRuling({
           </Link>
         }
       />
-      <main className="dispute-main">
+      <div className="dispute-main">
         <section aria-label="Ruling" className="dispute-ruling">
           <div className="dispute-row-between wrap">
             <ModeratorTag from="mod" inDispute={trade.dispute !== null} moderator={r.moderatorName} />
@@ -197,7 +197,7 @@ export function DisputeRuling({
         </section>
         <AppealSection dispute={dispute} me={trade.role} other={trade.counterparty} serverClock={serverClock} onAppeal={onAppeal} />
         <p className="dispute-footnote">{copy.footer}</p>
-      </main>
+      </div>
     </div>
   );
 }

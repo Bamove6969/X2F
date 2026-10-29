@@ -21,7 +21,7 @@ function tradeView(o: Partial<Record<string, unknown>> & { role?: 'buyer' | 'sel
     role,
     poster: 'seller',
     state: 'paid',
-    counterparty: { username: role === 'buyer' ? 'satoshi_ghost' : 'mira.k', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { displayName: role === 'buyer' ? 'satoshi_ghost' : 'mira.k', completedTrades: 12, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
     methodId: 'ZELLE',
     profile: { id: 'ZELLE', whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' },
     amountAtomic: '1250000000000',

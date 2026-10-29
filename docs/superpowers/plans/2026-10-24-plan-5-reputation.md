@@ -155,7 +155,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - Plan 5 adds `pastrep.approved`, `pastrep.rejected`, `pastrep.revoked` and `proof.opened` to that file, with their detail schemas, in the tasks that first use them (11 and 14).
   - `proof.unblurred-requested` and `proof.unblurred-opened` already exist in Plan 4.
 - `buildStaffApi`, staff route `Perm` declaration, `apps/staff-web` shell (Task 16), ModCase (Task 18).
-- Dispute records: `disputes.state.status` (closed or not, closed time) and final `rulings` outcomes. Plan 5 consumes `lostDisputeCount(db, accountId): Promise<number>` in `apps/api/src/disputes/lost.ts` (the Plan 3 starter-limit revision needs the same count; whichever lands first owns it).
+- Dispute records: `disputes.state.status` (closed or not, closed time) and final `rulings` outcomes. Plan 5 consumes `lostDisputeCount(db, accountId): Promise<number>` in `apps/api/src/disputes/lost.ts` (the Plan 3 starter limits no longer use it: owner 2026-10-29, a lost dispute still counts as a completed trade and drops no stage; Plan 5 owns it).
 - `proof-requested { username }` SSE to the uploader (Task 11); moderation `/internal/proof/read` (Task 11) uses Plan 5's `readProof`.
   - **Review 2026-10-24: three mismatches.**
     - Plan 4's moderation internal API listens on a Unix socket with an HMAC header. `/internal/proof/read {code, logEntryId}` takes **no proof id**, accepts only log action `proof.unblurred-opened`, and returns the unblurred image.

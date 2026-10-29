@@ -1,18 +1,18 @@
 // /trade/:code/dispute (Plan 3 Task 27): loads the trade and its dispute, then shows DisputeOpen
 // (no dispute yet), DisputeRoom (open, or ?view=chat) or DisputeRuling (once there is a ruling).
-// It re-reads on Task 19's live `trade` event for this code, when the page comes back into view,
-// and every 30 s (a moderator's join or ruling is Plan 4's and has no live event yet).
+// Inside the trade room a disputed trade shows the same screens through DisputeSlot.tsx; this route
+// stays for DisputeOpen and the ?view=chat link. It re-reads on the room's one live source
+// (useTradeLive: Task 19's connection fanned out, never a second EventSource), when the page comes
+// back into view, and every POLL_MS (a moderator's join or ruling is Plan 4's, no live event yet).
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useServerClock } from '../../api/client.js';
-import { useLiveEvents } from '../../api/events.js';
+import { POLL_MS, useTradeLive } from '../trade/seams.js';
 import { fetchDispute, fetchMethodName, fetchTrade, openDispute, refusalText, sendAppeal, type DisputeTrade, type DisputeView } from './api.js';
 import { DisputeOpen } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling } from './DisputeRuling.js';
 import './dispute.css';
-
-const REFRESH_MS = 30_000;
 
 interface Loaded {
   trade: DisputeTrade;
@@ -125,12 +125,10 @@ export function DisputeScreen() {
     return () => ac.abort();
   }, [code, n]);
 
-  useLiveEvents((e) => {
-    if (e.type === 'trade' && e.code === code) reload();
-  });
+  useTradeLive(code, reload);
 
   useEffect(() => {
-    const id = setInterval(reload, REFRESH_MS);
+    const id = setInterval(reload, POLL_MS);
     const onShow = () => {
       if (document.visibilityState === 'visible') reload();
     };
@@ -155,5 +153,10 @@ export function DisputeScreen() {
       </main>
     );
   }
-  return <Ready data={data} reload={reload} setDispute={(d) => setData((cur) => (cur ? { ...cur, dispute: d } : cur))} />;
+  // The page's one <main> (inside the trade room, DisputeSlot renders in the room's <main>).
+  return (
+    <main data-screen="dispute">
+      <Ready data={data} reload={reload} setDispute={(d) => setData((cur) => (cur ? { ...cur, dispute: d } : cur))} />
+    </main>
+  );
 }

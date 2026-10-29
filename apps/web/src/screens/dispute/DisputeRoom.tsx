@@ -35,6 +35,7 @@ export function DisputeRoom({
   serverClock,
   chat,
   unblurred,
+  backTo,
 }: {
   trade: DisputeTrade;
   methodName: string;
@@ -44,13 +45,15 @@ export function DisputeRoom({
   chat?: ReactNode;
   /** Plan 5's unblurred-proof request card (nothing until then). */
   unblurred?: ReactNode;
+  /** The header's back link: the trade room by default (the room's own slot passes the list instead). */
+  backTo?: string;
 }) {
   const now = serverClock();
   const proofs = tradeProofs(trade);
   const ruling = `/trade/${encodeURIComponent(trade.code)}/dispute`;
   return (
     <div className="dispute-screen">
-      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: methodName, whatItIs: trade.whatItIs }} backTo={`/trade/${encodeURIComponent(trade.code)}`} />
+      <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: methodName, whatItIs: trade.whatItIs }} backTo={backTo ?? `/trade/${encodeURIComponent(trade.code)}`} />
       <section className="dispute-status" aria-label="Dispute status">
         <div className="dispute-chips">
           <StatusChip tone="danger" icon="clock" label="In dispute" />
@@ -64,7 +67,7 @@ export function DisputeRoom({
         <DeadlineLine dispute={dispute} now={now} />
       </section>
 
-      <main className="dispute-main dispute-main--room">
+      <div className="dispute-main dispute-main--room">
         {dispute.moderator !== null ? (
           <section aria-label="Moderator joined" className="dispute-joined">
             <Icon name="shield" size={22} stroke={1.75} />
@@ -107,7 +110,7 @@ export function DisputeRoom({
 
         {chat ?? <FallbackChat trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute)} />}
         {unblurred ?? <UnblurredRequest trade={trade} dispute={dispute} />}
-      </main>
+      </div>
     </div>
   );
 }

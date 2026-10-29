@@ -1,9 +1,10 @@
 // The dispute screens' API calls (Plan 3 Task 27). Each answer is parsed strictly, so a renamed or
 // missing field fails loudly instead of showing something wrong. Shapes:
-// - GET /v1/trades/:code: Task 6's TradeView (apps/api/src/trades/view.ts), the fields used here;
+// - GET /v1/trades/:code: Task 22's getTrade/parseTradeView (api/trade.ts), mapped by tradeFromView;
 // - GET|POST /v1/trades/:code/dispute, POST /v1/trades/:code/appeal: apps/api/src/disputes/routes.ts;
 // - GET /v1/methods?side&currency: Task 3 (wip/second-p3-t3), only to name the method.
 import { api, ApiCallError } from '../../api/client.js';
+import { getTrade, methodOf, publicName, type TradeView } from '../../api/trade.js';
 
 export type Party = 'buyer' | 'seller';
 export type Reason = 'paid' | 'silent' | 'terms' | 'other';
@@ -84,34 +85,27 @@ const oneOf = <T extends string>(v: unknown, list: readonly T[], what: string): 
 };
 const PARTIES = ['buyer', 'seller'] as const;
 
-export function parseTrade(v: unknown): DisputeTrade {
-  const t = rec(v, 'trade');
-  const cp = rec(t.counterparty, 'counterparty');
-  const rate = rec(t.lockedRate, 'lockedRate');
-  const profile = t.profile !== null && typeof t.profile === 'object' ? (t.profile as Rec) : null;
-  const amount = str(t.amountAtomic, 'amountAtomic');
-  if (!/^\d+$/.test(amount)) throw new ShapeError('amountAtomic');
-  let dispute: DisputeTrade['dispute'] = null;
-  if (t.dispute !== null) {
-    const d = rec(t.dispute, 'dispute');
-    dispute = { by: oneOf(d.by, ['buyer', 'seller', 'system'] as const, 'dispute.by'), at: iso(d.at, 'dispute.at') };
-  }
+/**
+ * The dispute screens' view of a trade, mapped from Task 22's TradeView (one parser of the trade
+ * view: `getTrade`/`parseTradeView` in api/trade.ts). The counterparty is `publicName` (FU-A's
+ * public display name), the method sentence `methodOf(view).whatItIs`.
+ */
+export function tradeFromView(v: TradeView): DisputeTrade {
   return {
-    code: str(t.code, 'code'),
-    role: oneOf(t.role, PARTIES, 'role'),
-    state: str(t.state, 'state'),
-    // TODO(FU-A): `username` is the public display name column today; it becomes `displayName`.
-    counterparty: str(cp.username, 'counterparty.username'),
-    methodId: str(t.methodId, 'methodId'),
-    whatItIs: profile !== null && typeof profile.whatItIs === 'string' ? profile.whatItIs : '',
-    amountAtomic: amount,
-    currency: str(rate.currency, 'lockedRate.currency'),
-    paidAt: isoOrNull(t.paidAt, 'paidAt'),
-    confirmBy: isoOrNull(t.confirmBy, 'confirmBy'),
-    settleBy: isoOrNull(t.settleBy, 'settleBy'),
-    closedAt: isoOrNull(t.closedAt, 'closedAt'),
-    dispute,
-    serverNow: iso(t.serverNow, 'serverNow'),
+    code: v.code,
+    role: v.role,
+    state: v.state,
+    counterparty: publicName(v.counterparty),
+    methodId: v.methodId,
+    whatItIs: methodOf(v).whatItIs,
+    amountAtomic: v.amountAtomic,
+    currency: v.lockedRate.currency,
+    paidAt: v.paidAt,
+    confirmBy: v.confirmBy,
+    settleBy: v.settleBy,
+    closedAt: v.closedAt,
+    dispute: v.dispute,
+    serverNow: v.serverNow,
   };
 }
 
@@ -167,7 +161,7 @@ export function parseDispute(v: unknown): DisputeView {
 const path = (code: string) => `/v1/trades/${encodeURIComponent(code)}`;
 
 export async function fetchTrade(code: string, signal?: AbortSignal): Promise<DisputeTrade> {
-  return parseTrade(await api(path(code), signal ? { signal } : {}));
+  return tradeFromView(await getTrade(code, signal));
 }
 
 /** The dispute, or null when none is open on this trade (404). */

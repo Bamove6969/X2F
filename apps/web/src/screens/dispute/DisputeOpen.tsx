@@ -65,7 +65,7 @@ export function DisputeOpen({
   return (
     <div className="dispute-screen">
       <TradeHeader title={<TradeTitle trade={trade} />} code={trade.code} method={{ name: methodName, whatItIs: trade.whatItIs }} backTo={back} />
-      <main className="dispute-main">
+      <div className="dispute-main">
         {timedOut ? (
           <span className="dispute-flag" data-tone="caution">
             <Icon name="clock" size={16} />
@@ -150,7 +150,7 @@ export function DisputeOpen({
             {error}
           </p>
         ) : null}
-      </main>
+      </div>
 
       <footer className="dispute-footer">
         <Button variant="primary" disabled={!allowed || busy} onClick={() => void submit()}>
