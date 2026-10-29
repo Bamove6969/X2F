@@ -226,7 +226,9 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
 });
 
 describe('backup login with a recovery code', () => {
-  it('logs in once as a recovery session with no hold; regenerating invalidates the old set', async () => {
+  // Plan 2 Task 17 (owner, 2026-10-29; RECOVERY_CODE_ALONE_WAITS): a recovery code alone is one weak
+  // way, so it is now held for 24 hours like a TOTP backup login (it used to have no hold).
+  it('logs in once as a recovery session held 24 hours; regenerating invalidates the old set', async () => {
     const { id, username } = await account();
     const owner = await loggedIn(id);
     const codes = await newCodes(owner);
@@ -235,11 +237,12 @@ describe('backup login with a recovery code', () => {
     // Typed in lower case without dashes still works.
     const res = await backup(b, username, 'recovery-code', codes[0]!.toLowerCase().replaceAll('-', ''));
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok', level: 'recovery', holdUntil: null });
+    const holdUntil = new Date(now.getTime() + RECOVERY_HOLD_MS);
+    expect(res.json()).toEqual({ status: 'ok', level: 'recovery', holdUntil: holdUntil.toISOString() });
     const row = await sessionRow(b);
     expect(row.level).toBe('recovery');
-    expect(row.hold_until).toBeNull();
-    expect(await alerts(id, 'recovery-login')).toEqual([{ method: 'recovery-code', deviceLabel: 'Backup browser' }]);
+    expect(row.hold_until).toEqual(holdUntil);
+    expect(await alerts(id, 'recovery-login')).toEqual([{ method: 'recovery-code', deviceLabel: 'Backup browser', holdUntil: holdUntil.toISOString() }]);
 
     const again = await backup(new Browser(app), username, 'recovery-code', codes[0]!);
     expect(again.statusCode).toBe(401);
@@ -386,13 +389,14 @@ describe('backup login with TOTP (P2-I1)', () => {
     }
   });
 
-  it('a recovery-code session has no hold', async () => {
+  it('a recovery-code session is held too (Task 17, RECOVERY_CODE_ALONE_WAITS)', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
     const b = new Browser(app);
     await backup(b, username, 'recovery-code', codes[0]!);
     const res = await b.post('/v1/account/pgp/start', { publicKey: key.publicKey });
-    expect(res.statusCode).toBe(200);
+    expect(res.statusCode).toBe(403);
+    expect(res.json()).toMatchObject({ error: 'recovery-hold' });
   });
 
   it('any full session of the account can end it', async () => {

@@ -159,22 +159,31 @@ export const COOLING_BLOCKED_ROUTES: readonly string[] = [
 /** Registers the hook that starts the cooling-off after a weak session's security change. */
 export function securityChangeHook(app: FastifyInstance): void {
   const routes = new Set(SECURITY_CHANGE_ROUTES);
-  app.addHook('onSend', async (req: FastifyRequest, reply, payload) => {
-    if (reply.statusCode >= 300 || !req.auth) return payload;
-    const route = `${req.method} ${req.routeOptions.url ?? ''}`;
-    if (!routes.has(route)) return payload;
-    const deps = req.server.deps;
-    const now = deps.clock();
-    const { rows } = await deps.db.query<{ strength: SessionStrength | null; kind: string; onboarding_until: Date | null }>(
-      'select s.strength, s.onboarding_until, a.kind from sessions s join accounts a on a.id = s.account_id where s.id = $1',
-      [req.auth.sessionId],
-    );
-    const row = rows[0];
-    // The sign-up session's first 30 minutes set the new account up: nothing there to protect yet.
-    const onboarding = row?.onboarding_until != null && row.onboarding_until.getTime() > now.getTime();
-    if (row && row.kind === 'trader' && row.strength !== 'strong' && !onboarding) {
-      await startCooling(deps.db, req.auth.accountId, now, 'weak-login-changed-security');
+  // Callback style, answering at once for every other route: an async hook on every reply would
+  // change how fastify handles a handler that replies twice.
+  app.addHook('onSend', (req: FastifyRequest, reply, payload, done) => {
+    if (reply.statusCode >= 300 || !req.auth || !routes.has(`${req.method} ${req.routeOptions.url ?? ''}`)) {
+      done(null, payload);
+      return;
     }
-    return payload;
+    coolIfWeak(req).then(
+      () => done(null, payload),
+      (e: unknown) => done(e as Error),
+    );
   });
+}
+
+async function coolIfWeak(req: FastifyRequest): Promise<void> {
+  const deps = req.server.deps;
+  const now = deps.clock();
+  const { rows } = await deps.db.query<{ strength: SessionStrength | null; kind: string; onboarding_until: Date | null }>(
+    'select s.strength, s.onboarding_until, a.kind from sessions s join accounts a on a.id = s.account_id where s.id = $1',
+    [req.auth.sessionId],
+  );
+  const row = rows[0];
+  // The sign-up session's first 30 minutes set the new account up: nothing there to protect yet.
+  const onboarding = row?.onboarding_until != null && row.onboarding_until.getTime() > now.getTime();
+  if (row && row.kind === 'trader' && row.strength !== 'strong' && !onboarding) {
+    await startCooling(deps.db, req.auth.accountId, now, 'weak-login-changed-security');
+  }
 }

@@ -205,7 +205,7 @@ describe('GET /v1/account/me', () => {
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
-      suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true,
+      suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true, coolingUntil: null,
     });
     await addTotp(id);
     const after = await me(b);
