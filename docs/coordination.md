@@ -171,6 +171,13 @@ From the lead's answers of 2026-10-24 and the Task 12 fix round. Each line names
 - Methods → Add a PGP key has no "Send a new message" after an expired code (M5 reached login only).
 - 2026-10-27 lead: **Task 30 merged** (`wip/t3-p3-task30` @56b3b65; re-review APPROVED: TOTP code required before Confirm, hold surfaced after backup login and as a Security banner, `refusalText` with honest wait sentences and named PGP refusals, SecurityKeyLogin honours `needs`, last-method pre-check). Clashes with Task 16/17 (App.tsx imports, apps/web deps, lockfile) resolved by union; lockfile regenerated with the pinned npm (only qrcode-generator added). On the merge result apps/web typecheck clean, 19 files / 265 vitest green. Reviewer notes: Devices.tsx:31 and the logout-timer catch can never see `recovery-hold` (those routes refuse recovery sessions first), so the round-one listing of them was wrong; `void afterLogin()` in BackupLogin's Continue has no catch (navigate only); the staff second-step sentence is clunky. Task 30 follow-ups 5, 6, 8, 9 stand; the FU-A tripwires in task30-tripwires.test.ts will fail tsc when FU-A lands, as designed.
 
+## Task 29 follow-ups (review 2026-10-26, `docs/superpowers/reviews/2026-10-26-p3-task29.md`; not done in the fix round)
+- Fix round 2026-10-28 (`wip/t3-p3-task29`, lead took over from claude3): items 1, 2, 4, 7, 8 fixed; item 10 done by wiring Task 30's ConfirmSheet (`withConfirm(walletsAction(addresses), ...)`, the stub and its tripwire gone). The Wallet board parity test runs in the board's state; its fixed rule sentence is `KNOWN_EXCEPTIONS.Wallet` (the note follows GET /v1/wallets/rule).
+- 3: no device-side address check (length 95/106, base58 alphabet, which batch row failed); the "4… or 8…" placeholder is mainnet-only while the API runs mainnet/stagenet/testnet. Derive the prefixes from the network via /v1/wallets/rule or me.
+- 5: the escrow key row (Wallets.tsx `readOpenEscrowCodes`) reads IndexedDB `x2f-escrow` directly and guesses the store; the e2e invents its own schema. Task 12's `apps/web/src/escrow/store.ts` is on the main line now: read through escrowStore and drop the guess.
+- 6: removal is one tap with no undo, and the screen never says an alert is recorded (spec 6.3); no e2e exercises DELETE. Add an inline "Remove <label>?" step or undo, plus a test.
+- 9: no test for the exactly-10 batch rule, nor for the `address-invalid` / `wallet-exists` refusals.
+
 ## Task 25 (review 2026-10-27, `docs/superpowers/reviews/2026-10-27-p3-task25.md`; fix round on `wip/lead-p3-task25`)
 - Task 22 merge note: add the seller × refund_requested slot (refundScreens.ts:30) to TradeRoom.tsx's ownership list; Tasks 23/24 do not claim it.
 - Task 25 follow-ups:

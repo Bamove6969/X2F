@@ -4,6 +4,7 @@ import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { PostOffer } from './screens/PostOffer.js';
+import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -148,7 +149,7 @@ export function App() {
           <Route path="/trade/:code" element={<TradeRoom />} />
           {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
           <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
+          <Route path="/wallets" element={<Wallets />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
           <Route path="/terms" element={<Screen name="terms" />} />
           <Route path="/login" element={<Login />} />
