@@ -109,6 +109,21 @@ export interface EscrowStatus {
   /** The deal this device stored from what the user confirmed (never the API's), or null before the record exists. */
   deal: Deal | null;
   /**
+   * Buyer only: this device recorded the buyer's own "I've paid" (the tap fixed the amount, saved
+   * before `trade.paid` left). False for the seller, and for a buyer that knows of paid only from
+   * the API (then `refusal` is `amount-unknown`, and the tap must be finished on this device).
+   * "Marked as paid" reads this (Task 23 review 2026-10-27, I2/I3; there is no ack of trade.paid).
+   */
+  paidRecorded: boolean;
+  /**
+   * The settle the user TAPPED on this device and that is saved (`buyer-cancel`, `mutual-cancel`,
+   * `release`, a refund), done or not; null when there is none or the runtime chose it itself.
+   * A screen offering "Try again" for a tap compares this with what the trade view asks for: the
+   * same kind means the tap is saved and only waits (for unlocked coins, the other side), so there
+   * is nothing to try again (Task 23 round 2, Minor 1).
+   */
+  intentKind: SettleKind | null;
+  /**
    * The escrow `balance` exactly as this device's party read it with `funds()` on the last tick
    * (the wallet's own figure), or null until the first reading. Before any settlement it is what
    * has arrived; after one it falls to what is left.
@@ -340,6 +355,11 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         fiatCents: amountAtomic === null ? null : fiatCents(amountAtomic, { currency: this.rec.deal.currency, centsPerXmr: this.rec.deal.centsPerXmr }),
         escrowAddress: this.address,
         deal: (this.rec as EscrowRecord | undefined)?.deal ?? null,
+        paidRecorded: this.rec?.role === 'buyer' && this.rec.paidSeen === true && (this.rec.acceptedAtomic ?? null) !== null,
+        intentKind: (() => {
+          const i = (this.rec as EscrowRecord | undefined)?.intent ?? null;
+          return i !== null && !i.auto ? i.kind : null;
+        })(),
         receivedAtomic: this.reading?.balance ?? null,
         confirmedAtomic: this.reading?.confirmed ?? null,
       };
@@ -1097,6 +1117,10 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (r.role !== 'buyer') throw new Error('only the buyer marks paid');
           await this.loadView();
           const v = this.view;
+          // A view that disagrees with the deal this device signed (role, poster, currency, rate,
+          // maximum) is the shown `view-mismatch`: no tap is taken on it, even when the total
+          // agrees (Task 23 round 2, I1), since nothing settles while it lasts.
+          if (v && !viewMatches(v, r.role, r.deal)) throw new Error('escrow: the trade view does not match this device\'s deal');
           // The tap itself fixes the amount: the one already fixed, or the API's within [take, device size].
           const fixed = r.acceptedAtomic ?? null;
           const inRange = (x: bigint): boolean => x >= r.deal.takeAmountAtomic && x <= r.sizeAtomic;

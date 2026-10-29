@@ -394,7 +394,9 @@ export function PostOffer() {
             placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo."
             value={form.terms}
             onChange={text('terms')}
+            {...invalid('terms')}
           />,
+          'terms',
         )}
 
         <section className="post-section">

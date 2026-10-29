@@ -2,6 +2,7 @@ import type { Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
+import { liveOfferStats } from '../offers/routes.js';
 import { catalog, isAvailable, type CatalogMethod } from './profiles.js';
 
 /** Which live offers to count: the ads' own side (what the poster does with XMR) and currency. */
@@ -18,7 +19,7 @@ export interface LiveOfferStat {
   bestCentsPerXmr: bigint | null;
 }
 
-/** Counts live offers per method. Task 4 supplies it from the `offers` table; until then nothing is live. */
+/** Counts live offers per method; by default Task 4's `liveOfferStats` over the `offers` table. */
 export type LiveOfferStats = (q: LiveOfferQuery) => Promise<LiveOfferStat[]>;
 
 export interface MethodRow {
@@ -71,8 +72,8 @@ export function methodListRoutes(app: FastifyInstance): void {
   // Browsing needs no session (P3-M9).
   app.get('/v1/methods', async (req) => {
     const q = parseQuery(req);
-    const source = req.server.deps.liveOffers;
-    const stats = source ? await source({ side: q.side, currency: q.currency }) : [];
+    const source = req.server.deps.liveOffers ?? liveOfferStats(req.server.deps);
+    const stats = await source({ side: q.side, currency: q.currency });
     const byId = new Map<string, LiveOfferStat>();
     for (const s of stats) if (s.offers > 0 && isAvailable(s.methodId) && !byId.has(s.methodId)) byId.set(s.methodId, s);
 
