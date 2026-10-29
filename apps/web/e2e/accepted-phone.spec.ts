@@ -12,10 +12,24 @@ const PHONES = [
 const CODE = 'X2F-7KQ4-M9TD';
 const ME = { kind: 'trader', level: 'full', termsCurrent: true };
 
-/** A signed-in trader whose live events stream sends one `accepted` event; `wallets` is GET /v1/wallets. */
+/** The poster's own trade view (Task 6), the fields the sheet shows and confirms (the seller posted). */
+const VIEW = {
+  role: 'seller',
+  poster: 'seller',
+  amountAtomic: '1250000000000',
+  grown: null,
+  lockedRate: { currency: 'EUR', centsPerXmr: '15000' },
+  maxFiatCents: '20000',
+};
+
+/**
+ * A signed-in trader whose live events stream sends one `accepted` event; `wallets` is GET
+ * /v1/wallets and the trade view is GET /v1/trades/:code (the sheet loads both before it offers a pick).
+ */
 async function signedIn(page: Page, wallets: unknown[]) {
   await page.route('**/v1/account/me', (r) => r.fulfill({ json: ME }));
   await page.route('**/v1/wallets', (r) => r.fulfill({ json: wallets }));
+  await page.route(`**/v1/trades/${CODE}`, (r) => r.fulfill({ json: VIEW }));
   await page.route('**/v1/events', (r) =>
     r.fulfill({
       status: 200,
@@ -26,10 +40,12 @@ async function signedIn(page: Page, wallets: unknown[]) {
   );
 }
 
+// Placeholder addresses (not real Monero addresses): the sheet keeps the full address for the trade
+// room and shows only its last 6 characters.
 const WALLETS = [
-  { id: 'w1', app: 'Cake Wallet', label: 'Cake Wallet (main)', addressEnd: '9QxA', usable: true },
-  { id: 'w2', app: 'Feather', label: 'Feather on my laptop, the long-named one', addressEnd: '4FtR', usable: true },
-  { id: 'w3', app: 'Edge', label: 'Edge', addressEnd: '8WpN', usable: false },
+  { id: 'w1', app: 'Cake Wallet', label: 'Cake Wallet (main)', address: '4TESTADDRESSCAKE00009QxA', addressEnd: '009QxA', usable: true },
+  { id: 'w2', app: 'Feather', label: 'Feather on my laptop, the long-named one', address: '4TESTADDRESSFEATHER04FtR', addressEnd: '004FtR', usable: true },
+  { id: 'w3', app: 'Edge', label: 'Edge', address: '4TESTADDRESSEDGE00008WpN', addressEnd: '008WpN', usable: false },
 ];
 
 /** Elements whose box pokes out past the viewport's left or right edge. */
@@ -89,17 +105,24 @@ test.describe('AcceptedSheet at phone sizes', () => {
         await r.fulfill({ status: 204, body: '' });
       });
       await page.goto('/sell');
-      await expect(page.getByRole('dialog', { name: 'mira.k accepted your offer' })).toBeVisible();
-      // Only usable wallets are offered; the first is picked.
-      await expect(page.getByRole('radio')).toHaveCount(2);
-      await expect(page.getByRole('radio', { name: /Cake Wallet \(main\)/ })).toBeChecked();
-      await expect(page.getByRole('button', { name: 'Use this wallet' })).toBeInViewport();
+      // The page behind the sheet has radios of its own (currency, sort), so look inside the sheet only.
+      const sheet = page.getByRole('dialog', { name: 'mira.k accepted your offer' });
+      await expect(sheet).toBeVisible();
+      // Only usable wallets are offered, and none is picked for the poster (OD-11, X-2: no default
+      // payout wallet; always ask), so the button waits for a pick.
+      await expect(sheet.getByText(/^You sell .* XMR at /)).toBeVisible();
+      await expect(sheet.getByRole('radio')).toHaveCount(2);
+      await expect(sheet.getByRole('radio', { checked: true })).toHaveCount(0);
+      const use = sheet.getByRole('button', { name: 'Use this wallet' });
+      await expect(use).toBeDisabled();
+      await expect(use).toBeInViewport();
       await expectFitsPhone(page);
       await expectSheetOnScreen(page);
 
-      await page.getByText('Feather on my laptop, the long-named one').tap();
-      await expect(page.getByRole('radio', { name: /Feather/ })).toBeChecked();
-      await page.getByRole('button', { name: 'Use this wallet' }).tap();
+      await sheet.getByText('Feather on my laptop, the long-named one').tap();
+      await expect(sheet.getByRole('radio', { name: /Feather/ })).toBeChecked();
+      await expect(use).toBeEnabled();
+      await use.tap();
       await expect(page).toHaveURL(new RegExp(`/trade/${CODE}$`));
       expect(posted).toEqual({ walletId: 'w2' });
     });
@@ -108,8 +131,9 @@ test.describe('AcceptedSheet at phone sizes', () => {
       await page.setViewportSize(vp);
       await signedIn(page, [WALLETS[2]]);
       await page.goto('/sell');
-      await expect(page.getByRole('dialog', { name: 'mira.k accepted your offer' })).toBeVisible();
-      const add = page.getByRole('link', { name: 'Add a wallet' });
+      const sheet = page.getByRole('dialog', { name: 'mira.k accepted your offer' });
+      await expect(sheet).toBeVisible();
+      const add = sheet.getByRole('link', { name: 'Add a wallet' });
       await expect(add).toBeInViewport();
       await expect(add).toHaveAttribute('href', `/wallets?add=1&returnTo=${encodeURIComponent(`/trade/${CODE}`)}`);
       await expectFitsPhone(page);

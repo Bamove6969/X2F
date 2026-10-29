@@ -42,6 +42,7 @@ describe('migrations', () => {
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
         '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '111_trade_identities.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -63,7 +64,7 @@ describe('migrations', () => {
       );
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
-        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql', '111_trade_identities.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
       expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
@@ -129,7 +130,7 @@ describe('migrations', () => {
 
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
-        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
+        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql', '111_trade_identities.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
