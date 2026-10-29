@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } 
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { MyOffers } from './screens/MyOffers.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -140,6 +141,7 @@ export function App() {
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
+          <Route path="/profile/offers" element={<MyOffers />} />
         </Route>
         <Route element={<Layout nav={false} />}>
           <Route path="/post" element={<PostOffer />} />
