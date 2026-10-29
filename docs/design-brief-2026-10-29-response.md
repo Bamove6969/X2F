@@ -172,4 +172,4 @@ Devices and team boards are now on the canvas: LoginApprove, Devices and Team, e
   - Suggested apps: Conversations (Android), Monal (iPhone), Gajim (computer).
   - The battery-saver tip is shown on Android only.
 - **Matrix/Telegram appeal contacts:** to be decided later; placeholders stay.
-- **Flexible offers, buyer amount outside one payment method's range:** recommended greying that method out with the reason (e.g. "PayPal: up to $500"). Explained again to the owner and awaiting a final answer.
+- **Flexible offers, buyer amount outside one payment method's range:** that method is shown greyed out with the reason (e.g. "PayPal: up to $500"), never hidden (owner agreed).
