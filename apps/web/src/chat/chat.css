@@ -35,6 +35,12 @@
   color: var(--x2f-moderator);
 }
 
+.x2f-chat__statusbox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
 .x2f-chat__status--danger {
   color: var(--x2f-danger);
 }
@@ -107,7 +113,13 @@
   position: absolute;
   width: 1px;
   height: 1px;
+  margin: -1px;
+  padding: 0;
+  border: 0;
   overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .x2f-chat__input {
@@ -134,7 +146,7 @@
   font: inherit;
 }
 
-.x2f-chat__send:disabled {
+.x2f-chat__send[aria-disabled='true'] {
   color: var(--x2f-ink-muted);
 }
 

@@ -11,13 +11,18 @@
  *   gets no composer (the chat identity lives on the device that made it).
  * - A sender whose seq skipped shows "A message is missing" before the next line (review M5).
  * - Re-syncs on the chat's live event (App.tsx's one connection, live.ts), on the trade's live
- *   event (a dispute opening), and on a timer as a backstop.
+ *   event (a dispute opening), and on a timer as a backstop. A sync that stopped at the engine's
+ *   page cap (`more`) is followed by another at once while it keeps showing new lines (review M8).
+ * - Accessibility (review M3): the composer stays focusable while sending (read-only and
+ *   aria-disabled, never disabled) and gets focus back after a send; only new lines from the other
+ *   side are announced, in a visually hidden status region; each line reads "Sam: hello"; the list
+ *   is a labelled, focusable scroll region kept at its newest line; the waiting states are a status.
  *
  * `TradeChatPanel` resolves a trade's chat (`POST /v1/trades/:code/chat`) and is the component
  * Task 23's `setTradeChat` seam takes (`{ code, name }`); `OfferChatPanel` opens the pre-trade chat
  * on an offer (the quote's Chat button).
  */
-import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEvent } from 'react';
 import { ApiCallError } from '../api/client.js';
 import { ModeratorBadge } from '../ui/ModeratorBadge.js';
 import { useTradeLive } from '../screens/trade/seams.js';
@@ -35,6 +40,7 @@ const SEND_ERRORS: Record<ChatFailure, string> = {
   'not-ready': "This chat isn't ready yet. Try again in a moment.",
   'bad-text': 'Type a message first. Some hidden characters are not allowed.',
   'too-large': 'This message is too long.',
+  'slow-down': "You're sending messages too fast. Wait a minute and try again.",
   refused: "Couldn't send. Check your connection and try again.",
   unavailable: "Couldn't send. Check your connection and try again.",
   'not-found': 'This chat is no longer available.',
@@ -56,22 +62,47 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState<ChatFailure | null>(null);
+  const [announce, setAnnounce] = useState('');
   const alive = useRef(true);
   const seq = useRef(0);
+  const box = useRef<HTMLTextAreaElement>(null);
+  const list = useRef<HTMLOListElement>(null);
+  /** The newest line id seen so far (null before the first snapshot: the history is never announced). */
+  const seen = useRef<bigint | null>(null);
+  const nameRef = useRef(name);
+  nameRef.current = name;
 
-  const sync = useCallback(async () => {
+  /** Announces the newest line from the other side that arrived since the last snapshot. */
+  const take = useCallback((s: ChatSnapshot): boolean => {
+    let newest: bigint | null = seen.current;
+    let incoming: ChatSnapshot['lines'][number] | null = null;
+    for (const l of s.lines) {
+      const id = BigInt(l.id);
+      if (seen.current !== null && id > seen.current && !l.mine) incoming = l;
+      if (newest === null || id > newest) newest = id;
+    }
+    const grew = newest !== seen.current;
+    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'X2F Moderator' : nameRef.current}: ${incoming.text}`);
+    seen.current = newest ?? -1n;
+    return grew;
+  }, []);
+
+  const sync = useCallback(async (): Promise<void> => {
     const mine = ++seq.current;
     try {
       const s = await chatClient().sync(chat);
       if (alive.current && mine === seq.current) {
+        const grew = take(s);
         setSnap(s);
         setLoadFailed(null);
+        // Stopped at the page cap: read on at once, but only while it keeps finding new lines.
+        if (s.more && grew) void sync();
       }
     } catch (e) {
       // A failed re-sync keeps the last lines on screen.
       if (alive.current && mine === seq.current) setLoadFailed(failureOf(e));
     }
-  }, [chat]);
+  }, [chat, take]);
 
   useEffect(() => {
     alive.current = true;
@@ -93,23 +124,44 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
     if (tradeCode) void sync();
   });
 
+  // Keep the list at its newest line.
+  const lineCount = snap?.lines.length ?? 0;
+  useLayoutEffect(() => {
+    const el = list.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [lineCount]);
+
+  const empty = draft.trim() === '';
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (sending) return;
+    if (sending || empty) return;
     setSending(true);
     setSendError(null);
     try {
       const s = await chatClient().send(chat, draft);
       seq.current++;
       if (!alive.current) return;
+      take(s);
       setSnap(s);
       setDraft('');
     } catch (err) {
       if (alive.current) setSendError(failureOf(err));
     } finally {
-      if (alive.current) setSending(false);
+      if (alive.current) {
+        setSending(false);
+        // Back to the box, unless the person has moved on to something outside the composer.
+        const active = document.activeElement;
+        const form = box.current?.form ?? null;
+        if (box.current && (active === null || active === document.body || (form !== null && form.contains(active)))) box.current.focus();
+      }
     }
   };
+
+  let status: string | null = null;
+  if (snap === null && loadFailed === null) status = 'Opening the chat…';
+  else if (phase === 'waiting') status = 'Securing this chat…';
+  else if (phase === 'other-device') status = OTHER_DEVICE;
+  else if (phase === 'ready' && snap?.more) status = 'Loading more messages…';
 
   return (
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={phase ?? 'loading'}>
@@ -120,7 +172,7 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
         </p>
       ) : null}
 
-      <ol className="x2f-chat__lines" aria-live="polite">
+      <ol ref={list} className="x2f-chat__lines" tabIndex={0} aria-label="Messages">
         {(snap?.lines ?? []).flatMap((l) => {
           const items = [];
           if (l.gapBefore) {
@@ -134,6 +186,7 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
             <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined}>
               <span className="x2f-chat__who">
                 {l.from === 'mod' ? <ModeratorBadge /> : l.mine ? 'You' : <span data-username="">{name}</span>}
+                <span className="x2f-chat__hidden">: </span>
               </span>
               <span className="x2f-chat__text">{l.text}</span>
             </li>,
@@ -142,13 +195,17 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
         })}
       </ol>
 
-      {snap === null && loadFailed === null ? <p className="x2f-chat__status">Opening the chat…</p> : null}
+      <p className="x2f-chat__hidden" role="status" data-chat-announce="">
+        {announce}
+      </p>
+      <div className="x2f-chat__statusbox" role="status">
+        {status === null ? null : <p className="x2f-chat__status">{status}</p>}
+      </div>
       {snap === null && loadFailed !== null ? (
         <p role="alert" className="x2f-chat__status">
           {loadFailed === 'not-found' ? 'This chat is no longer available.' : "Couldn't open the chat. Check your connection and try again."}
         </p>
       ) : null}
-      {phase === 'waiting' ? <p className="x2f-chat__status">Securing this chat…</p> : null}
       {phase === 'failed' && snap?.problem === 'security' ? (
         <p role="alert" className="x2f-chat__status x2f-chat__status--danger">
           Security check failed. Don't share payment details in this chat.
@@ -159,22 +216,23 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
           This chat couldn't be secured.
         </p>
       ) : null}
-      {phase === 'other-device' ? <p className="x2f-chat__status">{OTHER_DEVICE}</p> : null}
 
       {phase === 'ready' ? (
         <form className="x2f-chat__composer" onSubmit={(e) => void onSubmit(e)}>
           <label className="x2f-chat__label">
             <span className="x2f-chat__hidden">Message {name}</span>
             <textarea
+              ref={box}
               className="x2f-chat__input"
               value={draft}
               rows={2}
               placeholder="Message"
               onChange={(e) => setDraft(e.target.value)}
-              disabled={sending}
+              readOnly={sending}
+              aria-disabled={sending ? 'true' : undefined}
             />
           </label>
-          <button type="submit" className="x2f-chat__send" disabled={sending || draft.trim() === ''}>
+          <button type="submit" className="x2f-chat__send" aria-disabled={sending || empty ? 'true' : undefined}>
             Send
           </button>
           {sendError ? (
@@ -226,7 +284,9 @@ function Resolving({ r, name, tradeCode }: { r: Resolved; name: string; tradeCod
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' ? 'loading' : 'failed'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
       {r.kind === 'loading' ? (
-        <p className="x2f-chat__status">Opening the chat…</p>
+        <div className="x2f-chat__statusbox" role="status">
+          <p className="x2f-chat__status">Opening the chat…</p>
+        </div>
       ) : (
         <p role="alert" className="x2f-chat__status">
           {r.message}

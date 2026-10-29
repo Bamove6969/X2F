@@ -7,7 +7,7 @@ import { ChatSendFailed, type ChatEngine, type ChatSnapshot } from './engine.js'
 
 export type ToChatWorker = { t: 'chat-sync'; id: number; chat: string } | { t: 'chat-send'; id: number; chat: string; text: string };
 
-export type ChatFailure = 'not-ready' | 'bad-text' | 'too-large' | 'refused' | 'unavailable' | 'not-found';
+export type ChatFailure = 'not-ready' | 'bad-text' | 'too-large' | 'slow-down' | 'refused' | 'unavailable' | 'not-found';
 
 export type FromChatWorker = { t: 'chat'; id: number; ok: true; snapshot: ChatSnapshot } | { t: 'chat'; id: number; ok: false; error: ChatFailure };
 

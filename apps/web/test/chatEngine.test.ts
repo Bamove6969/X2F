@@ -208,6 +208,37 @@ describe('chat engine: messages', () => {
     expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['a', false], ['c', true]]);
   });
 
+  it("marks a gap before a sender's first line when it is not seq 0 (review M1: the server dropped their first lines)", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('c', parts, 'seller', 2);
+    await fromSeller('d', parts);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['c', true], ['d', false]]);
+  });
+
+  it('says when a sync stopped with more envelopes to read, and the next sync goes on from there (review M8)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    // The fake serves 2 a page; one sync reads at most 20 pages (40 envelopes).
+    for (let i = 0; i < 45; i++) await fromSeller(`m${i}`, parts);
+    const first = await engine().sync(chat);
+    expect(first.more).toBe(true);
+    expect(first.lines).toHaveLength(40);
+    const second = await engine().sync(chat);
+    expect(second.more).toBe(false);
+    expect(second.lines).toHaveLength(45);
+  });
+
+  it('a rate-limited post is slow-down, not a connection problem (review M7)', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 429'), { status: 429, code: 'slow-down' });
+    };
+    await expect(e.send(chat, 'hi')).rejects.toMatchObject({ code: 'slow-down' });
+  });
+
   it('a moderator line shows only while a dispute is open, and then appears in order', async () => {
     await engine().sync(chat);
     const parts = attest();

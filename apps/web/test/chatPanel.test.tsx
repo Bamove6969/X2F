@@ -15,6 +15,7 @@ const snap = (over: Partial<ChatSnapshot> = {}): ChatSnapshot => ({
   counterparty: 'Sam',
   disputeOpen: false,
   lines: [],
+  more: false,
   ...over,
 });
 
@@ -71,7 +72,7 @@ describe('ChatPanel', () => {
     const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
     await flush();
     const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
-    expect(items).toEqual(['YouSent', 'SamNot yet', 'A message is missing here.', 'SamGot it', 'X2F ModeratorModerator here']);
+    expect(items).toEqual(['You: Sent', 'Sam: Not yet', 'A message is missing here.', 'Sam: Got it', 'X2F Moderator: Moderator here']);
     expect(host.querySelector('[data-from="seller"] [data-username]')?.textContent).toBe('Sam');
     expect(host.querySelector('[data-from="mod"] .x2f-moderator-badge')).not.toBeNull();
     expect(host.querySelectorAll('.x2f-moderator-badge')).toHaveLength(1);
@@ -106,7 +107,7 @@ describe('ChatPanel', () => {
     await flush();
     expect(client.send).toHaveBeenCalledWith(CHAT, 'Sending via Zelle now');
     expect(host.querySelector('textarea')!.value).toBe('');
-    expect(host.querySelector('li')?.textContent).toBe('YouSending via Zelle now');
+    expect(host.querySelector('li')?.textContent).toBe('You: Sending via Zelle now');
 
     type(host.querySelector('textarea')!, 'x'.repeat(10));
     client.send.mockRejectedValueOnce(new ChatFailed('too-large'));
@@ -114,6 +115,105 @@ describe('ChatPanel', () => {
     await flush();
     expect(host.querySelector('.x2f-chat__error')?.textContent).toBe('This message is too long.');
     expect(host.querySelector('textarea')!.value).toBe('x'.repeat(10));
+  });
+
+  it('keeps the composer focusable while sending and puts focus back in the box after a send (review M3a)', async () => {
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    const box = host.querySelector('textarea')!;
+    box.focus();
+    type(box, 'hello');
+    let release!: (s: ChatSnapshot) => void;
+    client.send.mockImplementationOnce(() => new Promise((r) => (release = r)));
+    act(() => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await flush();
+    const during = host.querySelector('textarea')!;
+    expect(during.disabled).toBe(false);
+    expect(during.readOnly).toBe(true);
+    expect(during.getAttribute('aria-disabled')).toBe('true');
+    expect(host.querySelector<HTMLButtonElement>('.x2f-chat__send')!.disabled).toBe(false);
+    expect(host.querySelector('.x2f-chat__send')!.getAttribute('aria-disabled')).toBe('true');
+    // A second submit while sending sends nothing.
+    act(() => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(client.send).toHaveBeenCalledTimes(1);
+    await act(async () => release(snap({ lines: [{ id: '1', from: 'buyer', text: 'hello', at: null, mine: true, gapBefore: false }] })));
+    await flush();
+    expect(host.querySelector('textarea')!.readOnly).toBe(false);
+    expect(document.activeElement).toBe(host.querySelector('textarea'));
+    // An empty box sends nothing (the button is aria-disabled, not disabled).
+    act(() => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    expect(client.send).toHaveBeenCalledTimes(1);
+  });
+
+  it('announces only new lines from the other side, never the history or my own lines (review M3b)', async () => {
+    current = snap({ lines: [{ id: '1', from: 'seller', text: 'old', at: null, mine: false, gapBefore: false }] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    const list = host.querySelector('ol')!;
+    expect(list.hasAttribute('aria-live')).toBe(false);
+    const announcer = host.querySelector('[data-chat-announce]')!;
+    expect(announcer.getAttribute('role')).toBe('status');
+    expect(announcer.textContent).toBe('');
+    current = snap({
+      lines: [
+        { id: '1', from: 'seller', text: 'old', at: null, mine: false, gapBefore: false },
+        { id: '2', from: 'buyer', text: 'mine', at: null, mine: true, gapBefore: false },
+      ],
+    });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(announcer.textContent).toBe('');
+    current = snap({
+      lines: [...current.lines, { id: '3', from: 'seller', text: 'new one', at: null, mine: false, gapBefore: false }],
+    });
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(announcer.textContent).toBe('Sam: new one');
+  });
+
+  it('the message list is a labelled, focusable scroll region; the waiting states are in a status region (review M3d/e)', async () => {
+    current = snap({ phase: 'waiting' });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    const list = host.querySelector('ol')!;
+    expect(list.getAttribute('tabindex')).toBe('0');
+    expect(list.getAttribute('aria-label')).toBe('Messages');
+    expect(host.querySelector('[role="status"].x2f-chat__statusbox')?.textContent).toBe('Opening the chat…');
+    await flush();
+    expect(host.querySelector('[role="status"].x2f-chat__statusbox')?.textContent).toBe('Securing this chat…');
+  });
+
+  it('a sync that stopped early says it is loading more and syncs again at once (review M8)', async () => {
+    const a = { id: '1', from: 'seller' as const, text: 'a', at: null, mine: false, gapBefore: false };
+    const b = { ...a, id: '2', text: 'b' };
+    let release!: (s: ChatSnapshot) => void;
+    client.sync.mockResolvedValueOnce(snap({ more: true, lines: [a] })).mockImplementationOnce(() => new Promise((r) => (release = r)));
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect(client.sync.mock.calls.length).toBe(2);
+    expect(host.querySelector('.x2f-chat__statusbox')?.textContent).toBe('Loading more messages…');
+    await act(async () => release(snap({ more: false, lines: [a, b] })));
+    await flush();
+    expect(client.sync.mock.calls.length).toBe(2);
+    expect(host.querySelectorAll('li')).toHaveLength(2);
+    expect(host.querySelector('.x2f-chat__statusbox')?.textContent).toBe('');
+  });
+
+  it('a sync that stops early with nothing new does not loop (it waits for the timer)', async () => {
+    current = snap({ more: true, lines: [{ id: '1', from: 'seller', text: 'a', at: null, mine: false, gapBefore: false }] });
+    render(<ChatPanel chat={CHAT} name="Sam" />);
+    for (let i = 0; i < 6; i++) await flush();
+    // The first sync showed a new line, so one more at once; that one added nothing, so it stops.
+    expect(client.sync.mock.calls.length).toBe(2);
+  });
+
+  it('a rate-limited send says to wait', async () => {
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    type(host.querySelector('textarea')!, 'hi');
+    client.send.mockRejectedValueOnce(new ChatFailed('slow-down'));
+    act(() => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })));
+    await flush();
+    expect(host.querySelector('.x2f-chat__error')?.textContent).toBe("You're sending messages too fast. Wait a minute and try again.");
   });
 
   it("re-syncs on the chat's live event (any spelling) and not on another chat's", async () => {

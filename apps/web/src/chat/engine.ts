@@ -68,9 +68,14 @@ export interface ChatSnapshot {
   counterparty: string | null;
   disputeOpen: boolean;
   lines: ChatLine[];
+  /**
+   * The sync stopped at its page cap with envelopes still unread (review M8): the next sync goes on
+   * from the saved cursor, and the panel says "Loading more messages…".
+   */
+  more: boolean;
 }
 
-export type ChatSendError = 'not-ready' | 'bad-text' | 'too-large' | 'refused';
+export type ChatSendError = 'not-ready' | 'bad-text' | 'too-large' | 'slow-down' | 'refused';
 
 export class ChatSendFailed extends Error {
   constructor(readonly code: ChatSendError) {
@@ -117,8 +122,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     return next;
   };
 
-  const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null): ChatSnapshot => ({
+  const snapshot = (rec: ChatRecord | null, view: ChatApiView, phase: ChatPhase, problem: ChatSnapshot['problem'] = null, more = false): ChatSnapshot => ({
     phase,
+    more,
     problem,
     role: view.role,
     counterparty: view.counterparty,
@@ -178,14 +184,18 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
     return (a.attestation as Attestation).participants;
   }
 
-  /** Reads and opens every envelope past the cursor, saving after each one it shows. */
-  async function readAll(rec: ChatRecord, view: ChatApiView, parts: Participants): Promise<ChatRecord> {
+  /**
+   * Reads and opens the envelopes past the cursor (at most MAX_PAGES pages), saving after each one
+   * it shows; `more` when it stopped at the cap with envelopes still unread.
+   */
+  async function readAll(rec: ChatRecord, view: ChatApiView, parts: Participants): Promise<{ rec: ChatRecord; more: boolean }> {
     const me = toIdentity(rec.identity);
     let state: ChatState = rec.state ?? newChatState(await chatChannel(rec.chat));
     let cursor = rec.cursor;
     let held = false;
     let after = rec.cursor;
     const messages = [...rec.messages];
+    let unread = false;
     const lastSeq = new Map<Role, number>();
     for (const m of messages) lastSeq.set(m.from, Math.max(lastSeq.get(m.from) ?? -1, m.seq));
     for (let page = 0; page < MAX_PAGES; page++) {
@@ -206,7 +216,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             seq: r.message.seq,
             text: r.message.text,
             at: typeof e.at === 'string' ? e.at : null,
-            gapBefore: prev !== undefined && r.message.seq > prev + 1,
+            // Senders start at seq 0, so a first line above 0 also follows missing ones (review M1).
+            gapBefore: r.message.seq > (prev ?? -1) + 1,
           };
           lastSeq.set(m.from, m.seq);
           messages.push(m);
@@ -221,9 +232,10 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
         rec = { ...rec, state, cursor, messages: [...messages] };
         await d.store.save(rec);
       }
+      unread = more;
       if (!more) break;
     }
-    return rec;
+    return { rec, more: unread };
   }
 
   async function syncLocked(chat: string): Promise<{ snap: ChatSnapshot; rec: ChatRecord | null; parts: Participants | null; view: ChatApiView }> {
@@ -251,8 +263,9 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
       throw e;
     }
     await d.store.save(rec);
-    rec = await readAll(rec, view, parts);
-    return { snap: snapshot(rec, view, 'ready'), rec, parts, view };
+    const read = await readAll(rec, view, parts);
+    rec = read.rec;
+    return { snap: snapshot(rec, view, 'ready', null, read.more), rec, parts, view };
   }
 
   return {
@@ -277,6 +290,8 @@ export function createChatEngine(d: ChatEngineDeps): ChatEngine {
             const code = (e as { code?: unknown }).code;
             if (code === 'stale-seq' && attempt === 0) continue;
             if (code === 'too-large' || (e as { status?: unknown }).status === 413) throw new ChatSendFailed('too-large');
+            // The per-account envelope budget (review M7). The seq stays used: the next line follows a gap.
+            if ((e as { status?: unknown }).status === 429) throw new ChatSendFailed('slow-down');
             throw new ChatSendFailed('refused');
           }
           return (await syncLocked(chat)).snap;
