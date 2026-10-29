@@ -56,7 +56,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useLocation, useParams } from 'react-router';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
-import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
+import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
+import { TradeChatPanel } from '../../chat/ChatPanel.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 
@@ -197,11 +198,11 @@ export function TradeRoom() {
   // The escrow starts only once the API has shown this trade to this account (review of the
   // landing, Minor 1): a visitor, a staff account or a wrong code never boots the escrow worker or
   // leaves a run polling GET /v1/trades/:code.
-  return <ReadyRoom key={code} code={code} view={load.view} refresh={refresh} navState={location.state} />;
+  return <ReadyRoom key={code} code={code} view={load.view} refresh={refresh} navState={location.state} hash={location.hash} />;
 }
 
 /** The room once the trade has loaded: owns the trade's one escrow handle and picks the screen. */
-function ReadyRoom({ code, view, refresh, navState }: { code: string; view: TradeView; refresh: () => Promise<void>; navState: unknown }) {
+function ReadyRoom({ code, view, refresh, navState, hash }: { code: string; view: TradeView; refresh: () => Promise<void>; navState: unknown; hash: string }) {
   // What the user confirmed on the take or accept screen: the navigation's history state, else the
   // copy the quote or the accept sheet stored in this tab before navigating (history state is gone
   // in a new tab or when the trade is opened from a push notification). Task 12 needs it only for
@@ -241,6 +242,12 @@ function ReadyRoom({ code, view, refresh, navState }: { code: string; view: Trad
       ) : (
         <StatusCard view={view} />
       )}
+      {/* Task 20: `/trade/<code>#chat` (the Chat link of screens without a chat of their own) opens the trade's chat here. */}
+      {hash === '#chat' ? (
+        <section id="chat" className="x2f-trade-chat">
+          <TradeChatPanel code={view.code} name={publicName(view.counterparty)} />
+        </section>
+      ) : null}
     </main>
   );
 }

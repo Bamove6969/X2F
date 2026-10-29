@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { posterRole, type Price } from '@x2f/trade';
+import { goLogin } from '../../api/client.js';
+import { OfferChatPanel } from '../../chat/ChatPanel.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { Button } from '../../ui/Button.js';
 import { Icon } from '../../ui/icons.js';
+import { Sheet } from '../../ui/Sheet.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
@@ -153,6 +156,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   // they confirm must be the one they see (spec 2.2 step 3). With exactly one usable wallet it is
   // picked for them; with more, they pick (OD-11).
   const [back, setBack] = useState(false);
+  const [chatOpen, setChatOpen] = useState(false);
   useEffect(() => {
     const nonce = params.get('resume');
     if (resumed.current || nonce === null || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
@@ -238,8 +242,13 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency, exponent)}` : ''}
           </span>
         </div>
-        {/* TODO(Task 20): opens the pre-trade chat with the poster. */}
-        <button type="button" className="x2f-quote__chat" disabled>
+        {/* Task 20: the pre-trade chat with the poster (signing in first when signed out). */}
+        <button
+          type="button"
+          className="x2f-quote__chat"
+          disabled={signedIn === null}
+          onClick={() => (signedIn === true ? setChatOpen(true) : goLogin())}
+        >
           Chat
         </button>
       </header>
@@ -354,6 +363,9 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         )}
         <span className="x2f-quote__fine x2f-quote__fine--center">Taking an offer is free. No X2F fee is added.</span>
       </footer>
+      <Sheet open={chatOpen} title={`Chat with ${poster}`} onClose={() => setChatOpen(false)}>
+        {chatOpen ? <OfferChatPanel offerId={offerId} name={poster} /> : null}
+      </Sheet>
     </div>
   );
 }

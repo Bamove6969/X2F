@@ -47,8 +47,4 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
       'Task 29 landed: use APP_LABELS and takeableWallets in WalletPicker, and check /wallets?add=1&returnTo comes back here after confirm-it\'s-you',
     ).toBe(false);
   });
-
-  it('NEEDS_TASK_20: the quote header Chat button is a placeholder', () => {
-    expect(has('apps/web/src/chat/ChatPanel.tsx'), "Task 20 landed: wire the quote header's Chat to the poster's pre-trade chat").toBe(false);
-  });
 });

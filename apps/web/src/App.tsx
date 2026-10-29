@@ -2,6 +2,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -86,7 +87,8 @@ function RouterBridge() {
 /**
  * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
  * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade, and
- * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut).
+ * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut) and each `chat`
+ * event to the open chat panels (Task 20, chat/live.ts).
  * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
  * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
@@ -102,6 +104,7 @@ function LiveAccepted() {
   useLiveEvents((e) => {
     if (e.type === 'accepted') setAccepted(e);
     else if (e.type === 'trade') liveFanOut.emit(e);
+    else if (e.type === 'chat') emitChatLive(e.chat);
   });
   if (!accepted) return null;
   return (
