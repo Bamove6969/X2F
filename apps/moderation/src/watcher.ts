@@ -12,7 +12,8 @@ import {
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
-import type { Link } from './link.js';
+import type { Desk } from './desk.js';
+import type { Link, WatchItem } from './link.js';
 
 /**
  * The moderation service's chain watcher (Plan 3 Task 9), the I/O around `@x2f/trade`'s pure
@@ -38,6 +39,11 @@ export interface WatcherOptions {
   argsFor: (trade: string) => Promise<ModPartyArgs | null>;
   now: () => Date;
   log: (e: { reason: string }) => void;
+  /**
+   * Opens the trade's moderator desk (Task 10: signals, shadow trade, guarded refunds) once its
+   * party runs. Absent: no desk (Task 9's tests).
+   */
+  openDesk?: (a: ModPartyArgs) => Promise<Desk>;
 }
 
 export interface Watcher {
@@ -185,6 +191,7 @@ const accepted = (r: { status: number; error: string | null }): boolean => r.sta
 
 export function createWatcher(o: WatcherOptions): Watcher {
   const running = new Map<string, PartyHandle>();
+  const desks = new Map<string, Desk>();
   const starting = new Map<string, Promise<void>>();
   /** settle-kind-unknown back-off per trade (in memory: a restart retries at once, then backs off again). */
   const backoff = new Map<string, { until: number; delayMs: number }>();
@@ -203,6 +210,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
           return;
         }
         running.set(code, handle);
+        if (o.openDesk) {
+          try {
+            desks.set(code, await o.openDesk(a));
+          } catch {
+            o.log({ reason: 'desk-open-failed' });
+          }
+        }
         handle.ready().then(
           async (address) => {
             await o.db.query('update mod_watch set escrow_address = coalesce(escrow_address, $2), updated_at = now() where trade = $1', [code, address]);
@@ -222,6 +236,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
   const stopParty = async (code: string): Promise<void> => {
     const h = running.get(code);
     running.delete(code);
+    const d = desks.get(code);
+    desks.delete(code);
+    await d?.stop().catch(() => undefined);
     await h?.stop().catch(() => undefined);
   };
 
@@ -245,7 +262,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     return true;
   };
 
-  const watchOne = async (row: Row, apiState: TradeState, handle: PartyHandle): Promise<boolean> => {
+  const watchOne = async (row: Row, apiState: TradeState, item: WatchItem, handle: PartyHandle): Promise<boolean> => {
     const b = backoff.get(row.trade);
     if (b && o.now().getTime() < b.until) return true;
     const facts = escrowFacts(await handle.funds());
@@ -256,6 +273,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
     const state = reviveWatchState(row.state);
     const step = watchStep({ trade: { state: apiState }, funds: facts.funds, spend: spendEvidence(facts.outgoing, state), state, now: o.now(), claimed: facts.claimed });
     if (!(await post(row.trade, step.reports))) return true;
+    // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
+    const desk = desks.get(row.trade);
+    if (desk) {
+      await desk
+        .step({ handle, api: item, escrowAddress: row.escrow_address, reports: step.reports, funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked } })
+        .catch(() => o.log({ reason: 'desk-step-failed' }));
+    }
     if (step.closeChannels) {
       for (const kind of ['escrow', 'signals'] as const) {
         const status = await o.link.closeChannel(await channelFor(row.trade, kind));
@@ -281,7 +305,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
     },
 
     async tick() {
-      let api: Map<string, string>;
+      let api: Map<string, WatchItem>;
       try {
         api = await o.link.pullWatch();
       } catch {
@@ -297,8 +321,9 @@ export function createWatcher(o: WatcherOptions): Watcher {
       const { rows } = await o.db.query<Row>('select trade, escrow_address, setup_done_at, state, watching from mod_watch where watching order by trade');
       for (const row of rows) {
         if (stopped) return;
-        const apiState = api.get(row.trade) as TradeState | undefined;
-        if (apiState === undefined) continue; // not listed (yet, or any more): nothing to decide
+        const item = api.get(row.trade);
+        if (item === undefined) continue; // not listed (yet, or any more): nothing to decide
+        const apiState = item.state as TradeState;
         try {
           let watching = row.watching;
           const plan = modPartyPlan({
@@ -340,7 +365,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
             if (apiState === 'setup') continue;
             await o.db.query('update mod_watch set setup_done_at = now(), updated_at = now() where trade = $1', [row.trade]);
           }
-          watching = await watchOne(row, apiState, handle);
+          watching = await watchOne(row, apiState, item, handle);
           if (!watching) {
             await stopParty(row.trade);
             o.log({ reason: 'watch-ended' });

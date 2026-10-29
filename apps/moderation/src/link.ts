@@ -25,13 +25,23 @@ export interface WorkItem {
   terms: AttestedTerms;
 }
 
+/** One trade on the API's watch list. */
+export interface WatchItem {
+  state: string;
+  /** `trades.final_alert_seen_at` when `final_alert_delivered` is true; null otherwise. */
+  finalAlertSeenAt: Date | null;
+}
+
 export interface Link {
   pullWork(): Promise<WorkItem[]>;
   postReport(report: unknown): Promise<number>;
   /** Like postReport, with the API's refusal code (`{ error }`) when it gives one. */
   report(report: unknown): Promise<{ status: number; error: string | null }>;
-  /** The API's state for every attested trade it still lists (Task 9 watcher). */
-  pullWatch(): Promise<Map<string, string>>;
+  /**
+   * The API's view of every attested trade it still lists (Task 9 watcher): its state, and the
+   * buyer's final-alert seen-receipt time (Task 10; null when not seen or absent).
+   */
+  pullWatch(): Promise<Map<string, WatchItem>>;
   registerChannel(channel: string, signPublics: Record<Role, string>): Promise<number>;
   /** The signed relay close of one channel (Task 7's `closeTrade`); 200 when done. */
   closeChannel(channel: string): Promise<number>;
@@ -107,10 +117,16 @@ export function createLink(o: {
       const res = await internal('GET', '/internal/v1/watch');
       if (res.status !== 200) throw new LinkError(res.status, 'pull watch');
       const body = (await res.json()) as { trades?: unknown };
-      const out = new Map<string, string>();
+      const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown }>) {
-        if (typeof t?.trade === 'string' && typeof t.state === 'string') out.set(t.trade, t.state);
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; finalAlertSeenAt?: unknown }>) {
+        if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
+        let seen: Date | null = null;
+        if (typeof t.finalAlertSeenAt === 'string') {
+          const d = new Date(t.finalAlertSeenAt);
+          if (!Number.isNaN(d.getTime())) seen = d;
+        }
+        out.set(t.trade, { state: t.state, finalAlertSeenAt: seen });
       }
       return out;
     },

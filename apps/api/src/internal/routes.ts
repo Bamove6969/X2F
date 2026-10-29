@@ -215,7 +215,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
    * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
    * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
-   * Task 9 I/O fallback; both applied as `escalate`) and `release-claimed` (the moderation
+   * Task 9 I/O fallback), `alert-unseen` and `refund-unverified` (a requested refund the moderator
+   * will not sign alone, Task 10), all applied as `escalate`, and `release-claimed` (the moderation
    * service received a trade party's sealed post-release info: the signing window no longer
    * reverts the settling trade, lead decision b 2026-10-29), each for an attested trade only. Applied through the
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
@@ -244,6 +245,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
         break;
       case 'late-funds':
       case 'spend-unshown':
+      // Task 10: a requested refund the moderator will not sign alone: no seen-receipt for the
+      // buyer's final alert 15 min after it, or its own records (signals, shadow trade) disagree.
+      case 'alert-unseen':
+      case 'refund-unverified':
         if (!keysAre(body, ['kind', 'trade'])) break;
         event = { type: 'escalate' };
         break;
@@ -278,16 +283,19 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
 
   // Every attested trade that is open, or closed within WATCH_LIST_CLOSED_DAYS, with its state:
   // the moderation watcher's view of the API trade (Task 9). States only: no addresses or terms.
+  // Task 10: plus the buyer's final-alert seen-receipt time (`final_alert_seen_at`), only when
+  // `final_alert_delivered` is true (null and false both mean not seen); otherwise null.
   app.get('/internal/v1/watch', guard('/internal/v1/watch', async (_req, reply) => {
-    const { rows } = await o.db.query<{ code: string; state: string }>(
-      `select t.code, t.state
+    const { rows } = await o.db.query<{ code: string; state: string; seen: Date | null }>(
+      `select t.code, t.state,
+              case when t.final_alert_delivered is true then t.final_alert_seen_at end as seen
          from trades t
          join trade_attestations a on a.code = t.code
         where t.closed_at is null or t.closed_at > $1
         order by t.taken_at, t.code`,
       [new Date(now() - WATCH_LIST_CLOSED_DAYS * 86_400_000)],
     );
-    return reply.send({ trades: rows.map((r) => ({ trade: r.code, state: r.state })) });
+    return reply.send({ trades: rows.map((r) => ({ trade: r.code, state: r.state, finalAlertSeenAt: r.seen ? r.seen.toISOString() : null })) });
   }));
 
   // The open trades in setup that both traders have registered an identity for, with both addresses on record,

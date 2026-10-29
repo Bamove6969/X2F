@@ -1,6 +1,6 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import type { PartyHandle } from '@x2f/escrow';
+import type { PartyHandle, Transport } from '@x2f/escrow';
 import { channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
@@ -8,12 +8,19 @@ import { AttestRefused, attestTrade, BadTerms } from './attest.js';
 import { loadParty, saveParty, walletPassword } from './keystore.js';
 import { createLink, type Fetch, type Link, type WorkItem } from './link.js';
 import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
+import { openDesk } from './desk.js';
 import { createWatcher } from './watcher.js';
 
 export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
 export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
 export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
+export { autoRefundStep, REFUND_UNVERIFIED_MS, type AutoRefundInputs, type AutoRefundStep } from './autoRefund.js';
+export { buyerCancelStep, type BuyerCancelInputs, type BuyerCancelStep } from './buyerCancel.js';
+export { openDesk, type Desk, type DeskRecord, type DeskStep } from './desk.js';
+export { verifyRuling } from './rulings.js';
+export { newShadow } from './shadow.js';
+export { readSignal, sealAck, termsMatch, type ModSignal } from './signals.js';
 export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type Watcher } from './watcher.js';
 
 /**
@@ -58,6 +65,12 @@ export interface ModerationDeps {
   startParty?: (a: ModPartyArgs) => Promise<PartyHandle>;
   /** The party's I/O for the default `startParty`. Default: monero-ts and the relay (`defaultPartyIO`). */
   partyIO?: PartyIO;
+  /**
+   * The signals channel transport for one trade's desk (Task 10), on `channelFor(code, 'signals')`
+   * as `mod`. Default: the production relay transport (`wsTransport`), but only when `startParty`
+   * is not replaced either; a caller that replaces `startParty` without this runs no desks.
+   */
+  signalsTransport?: (a: { channel: string; me: Identity }) => Transport | Promise<Transport>;
   /** Watcher period; 0 runs no watcher loop (callers drive `watch`). Default WATCH_INTERVAL_MS (15 s). */
   watchIntervalMs?: number;
   newIdentity?: () => Promise<Identity>;
@@ -125,7 +138,36 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   const startParty =
     deps.startParty ??
     (async (a: ModPartyArgs) => startModParty(a, (io ??= await defaultPartyIO({ relayUrl: o.relayUrl, network: o.network })), o.db, o.keystoreKey));
-  const watcher = createWatcher({ db: o.db, link, startParty, argsFor: (code) => partyArgsFor(o, code), now, log });
+  const signalsTransport =
+    deps.signalsTransport ??
+    (deps.startParty
+      ? undefined
+      : async (a: { channel: string; me: Identity }) => {
+          io ??= await defaultPartyIO({ relayUrl: o.relayUrl, network: o.network });
+          return io.transport({ url: io.relayUrl, code: a.channel, role: 'mod', me: a.me });
+        });
+  const watcher = createWatcher({
+    db: o.db,
+    link,
+    startParty,
+    argsFor: (code) => partyArgsFor(o, code),
+    now,
+    log,
+    ...(signalsTransport
+      ? {
+          openDesk: async (a: ModPartyArgs) =>
+            openDesk({
+              db: o.db,
+              args: a,
+              feeWallet: o.feeWallet,
+              transport: await signalsTransport({ channel: await channelFor(a.trade, 'signals'), me: a.me }),
+              link,
+              now,
+              log,
+            }),
+        }
+      : {}),
+  });
   const runParty = deps.runParty ?? ((a: ModPartyArgs) => watcher.runParty(a));
   const started = new Set<string>();
 

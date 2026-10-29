@@ -80,10 +80,25 @@ describe('GET /internal/v1/watch', () => {
     const res = await signed('GET', '/internal/v1/watch');
     expect(res.statusCode).toBe(200);
     const trades = (res.json() as { trades: Array<{ trade: string; state: string }> }).trades;
-    expect(trades).toContainEqual({ trade: open.code, state: 'setup' });
-    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled' });
+    expect(trades).toContainEqual({ trade: open.code, state: 'setup', finalAlertSeenAt: null });
+    expect(trades).toContainEqual({ trade: recent.code, state: 'cancelled', finalAlertSeenAt: null });
     expect(trades.map((t) => t.trade)).not.toContain(unattested.code);
     expect(trades.map((t) => t.trade)).not.toContain(old.code);
+  });
+
+  it('carries the buyer’s final-alert seen-receipt time only once the receipt is in (Task 10)', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'secured');
+    await deps.db.query(`update trades set state = 'refund_requested', final_alert_at = $2 where code = $1`, [t.code, NOW]);
+    const item = async () =>
+      ((await signed('GET', '/internal/v1/watch')).json() as { trades: Array<Record<string, unknown>> }).trades.find((x) => x.trade === t.code);
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: null });
+    // a seen time without the delivered flag is not a receipt (null = false, Task 19 review)
+    const seen = new Date(NOW.getTime() + 60_000);
+    await deps.db.query(`update trades set final_alert_seen_at = $2 where code = $1`, [t.code, seen]);
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: null });
+    await deps.db.query(`update trades set final_alert_delivered = true where code = $1`, [t.code]);
+    expect(await item()).toEqual({ trade: t.code, state: 'refund_requested', finalAlertSeenAt: seen.toISOString() });
   });
 
   it('refuses an unsigned request', async () => {
@@ -208,5 +223,21 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     expect(await loadTrade(deps.db, u.code)).toMatchObject({ state: 'paid', releaseClaimedAt: null });
     const v = await trade(false);
     expect((await report({ kind: 'release-claimed', trade: v.code })).json()).toEqual({ error: 'not-attested' });
+  });
+
+  it('alert-unseen and refund-unverified escalate a refund_requested trade (Task 10); elsewhere wrong-state', async () => {
+    for (const kind of ['alert-unseen', 'refund-unverified'] as const) {
+      const t = await trade();
+      await driveTo(deps, t, 'secured');
+      await deps.db.query(`update trades set state = 'refund_requested', final_alert_at = $2 where code = $1`, [t.code, NOW]);
+      const res = await report({ kind, trade: t.code });
+      expect(res.statusCode).toBe(201);
+      expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'disputed', dispute: { by: 'system' }, closedAt: null });
+      expect((await report({ kind, trade: t.code })).json()).toEqual({ error: 'wrong-state' });
+      const u = await trade();
+      await driveTo(deps, u, 'paid');
+      expect((await report({ kind, trade: u.code })).json()).toEqual({ error: 'wrong-state' });
+      expect((await report({ kind, trade: u.code, reason: 'x' })).statusCode).toBe(400);
+    }
   });
 });

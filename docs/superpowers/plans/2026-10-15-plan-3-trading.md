@@ -2,6 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-29 (Task 10 as built, second, `wip/second-p3-task10`; not reviewed yet)
+
+Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Details: `docs/coordination.md`, "Plan 3 Task 10".
+- **`escalate` from `refund_requested`** (Task 2): a system `escalate` with coins in the escrow is also allowed from `refund_requested`, for the moderation service's two new reports `alert-unseen { trade }` (no seen-receipt 15 min after the shadow's final alert) and `refund-unverified { trade }` (the API has shown `refund_requested` for 60 min and the moderator's own records do not allow the auto-refund: a `trade.paid` was opened, no seller-signed terms, the shadow is not `refund_requested`, or the guard refused). Both are internal reports applied as `escalate` (exact keys, attested trades only).
+- **The watch list carries the receipt**: `GET /internal/v1/watch` items are `{ trade, state, finalAlertSeenAt }`, the last being `final_alert_seen_at` only while `final_alert_delivered` is true, else null.
+- **Receipt younger than 15 min = wait** (decision for the lead, see coordination.md): the moderator signs only at `max(shadow.finalAlertAt, final_alert_seen_at) + 15 min`; it escalates only when no receipt exists at `shadow.finalAlertAt + 15 min`.
+- **Signal schema in `@x2f/trade`** (`signals.ts`: `SIGNAL_TYPES`, `SIGNAL_SENDERS`, `signalPayloadOk`, `parseSignalDeal`, `signalAddressKey`), used by apps/web and apps/moderation. `trade.ack { of }` is sealed to the sender alone and `of` must name a signal type. The moderator acks every signal it accepts, including each copy of matching `trade.terms`; terms that differ from the attestation are never adopted and never acked.
+- **Moderation**: migration `003_signals.sql` (`signed_terms.seller_terms` / `buyer_terms`: the address and the sealed envelope; `mod_trade_desk`: guard, seq, shadow trade, flags, armed refund). The desk (`desk.ts`) is opened with each party and stepped by the watcher after its reports were accepted. A refund once armed is kept and re-derived from the party's balance; buyer cancel is checked before the auto-refund and is not stopped by an earlier escalation.
+
 ## Revision 2026-10-29 (lead decisions A and b, Task 9 I/O; Task 2 state machine)
 
 - **`escalate` from `settling`** (Task 2): a system `escalate` is also allowed from `settling` while the escrow holds coins: the moderation watcher's `spend-unshown` (a settlement the moderator was not shown spending the escrow 6 h after it started, or after the release was claimed).

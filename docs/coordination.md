@@ -247,3 +247,25 @@ Open, for the lead (no protocol change was made):
 - **settle-kind-unknown.** A sweep in a state where `settleKindFor` is null (a signing window that timed out back to `settleFrom`) is refused by the API. The watcher logs it and backs off (1 min, doubling up to 1 h, in memory) instead of retrying every pass. The kind should come from the tx's payouts (owed).
 - `escalationPending` is never cleared if `disputed` is never observed (Task 9 merge follow-up): unchanged, fail-safe.
 - Not built: the plan's regtest end-to-end watcher scenarios (Node buyer and seller parties, real relay). The watcher is tested hermetically, and the escrow additions on regtest (`packages/escrow/test/incoming.test.ts`).
+
+## Plan 3 Task 10 (2026-10-29, second, `wip/second-p3-task10`): auto-refund, buyer-cancel refund, signed terms, signals
+
+Built on the main line @0e92cb6 with Task 9 I/O (`wip/second-p3-task9-io` @dd55fcd) merged in. Not reviewed yet. Hermetic tests only (no escrow code changed, so no regtest run): `apps/moderation/test/{autoRefund,buyerCancel}.test.ts` with the real service, desks and envelopes and a recording party.
+
+Landed:
+- **`@x2f/trade` `signals.ts`**: the one signal schema (`SIGNAL_TYPES`, `SIGNAL_SENDERS`, `signalPayloadOk`, `parseSignalDeal`, `signalAddressKey`). `apps/web/src/escrow/signals.ts` now imports it (its guesses are gone; `NEEDS_TASK_10` and `apps/web/test/adapters-tripwire.test.ts` deleted). Payloads exactly as the Task 12 notes above: terms with `deal`, `trade.paid { amountAtomic, fiatCents }`, `trade.ack { of }`. New: `of` must be a signal type other than `trade.ack`.
+- **Machine (Task 2)**: system `escalate` also from `refund_requested` (coins in the escrow).
+- **API internal**: watch items gain `finalAlertSeenAt` (only while `final_alert_delivered` is true); reports `alert-unseen` and `refund-unverified` → `escalate`. Push test's Task 10 `it.todo` retired (superseded by Revision 2026-10-25).
+- **Moderation**: `signals.ts` (open as mod with the channel's guard, read against the schema, `trade.ack` sealed to the sender only), `shadow.ts` (shadow `Trade` from the attested deal; fed by setup-done, the watcher's accepted `chain`/`settled` reports, signals and `tick`, on the mod clock), `autoRefund.ts` / `buyerCancel.ts` (pure steps around `autoRefundDecision` / `buyerCancelDecision`), `rulings.ts` (`verifyRuling` → false), `desk.ts` (per trade; the only `settle()` caller, checked by a static test), migration `003_signals.sql`. `ModerationDeps.signalsTransport` (default: the relay's `wsTransport`, unless `startParty` is replaced, then no desks). `Link.pullWatch` returns `{ state, finalAlertSeenAt }` per trade.
+- `recordedRefundAddress` = the seller-signed `trade.terms`, adopted only when equal to the attested `sellerRefund` and deal, stored in `signed_terms.seller_terms` with its envelope. Nothing is ever signed alone before it arrives.
+
+Decisions for the lead:
+1. **"A receipt younger than 15 min → escalate" (plan text) vs wait (built).** Read literally, the receipt is always some seconds after `finalAlertAt`, so the auto-refund could never happen. Built: wait until `seen + 15 min`, escalate only with no receipt at `finalAlertAt + 15 min`. But the machine's `mark-paid` is `too-late` from `finalAlertAt + 15 min` (not from the receipt), so the wait gives a late-alerted buyer nothing to do. Options: (a) keep as built; (b) escalate whenever `seen > finalAlertAt + δ` (δ e.g. 2 min), i.e. a person decides every delayed alert; (c) Task 2 change: the `mark-paid` window runs to `max(finalAlertAt, seen) + 15 min` (the API would need the receipt in the machine).
+2. **Escalation fallback `refund-unverified` (60 min)**: added so an API in `refund_requested` that the moderator's records do not support (a `trade.paid` opened, no seller terms, shadow disagreement, a guard refusal) goes to a person instead of hanging. Alternative: escalate at once on a `buyer-paid` disagreement.
+3. **`ok:false` "reported with its reason only"**: logged (`auto-refund-<reason>`, `buyer-cancel-<reason>`, once per change), not posted to the API. Say if the API should store it.
+4. **Armed refund is final**: once the moderator handed an auto-refund or buyer-cancel outcome to its party it never switches to the other (re-derived only for a changed balance). Buyer cancel is checked first and still works after an escalation (it pays only the seller).
+5. **Still open (Task 12 TODO `afterClose`)**: a signed txHash/OutProof signal for `settled-without-device` was not added (not in Task 10's text). Owner: unassigned.
+
+Seams for later tasks:
+- Plan 4: replace `verifyRuling` and add the ruling path to `desk.ts` (the static test pins `settle()` to desk.ts).
+- Task 31 (regtest E2E): the plan's regtest scenarios for Task 10 (real relay, Node buyer and seller parties) are not built here.

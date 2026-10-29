@@ -85,3 +85,13 @@ export {
   type ChatEnvelopeErrorCode,
   type ChatRetentionFacts,
 } from './chat.js';
+export {
+  SIGNAL_MAX_ADDRESS,
+  SIGNAL_SENDERS,
+  SIGNAL_TYPES,
+  isSignalType,
+  parseSignalDeal,
+  signalAddressKey,
+  signalPayloadOk,
+  type SignalType,
+} from './signals.js';

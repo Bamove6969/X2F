@@ -684,6 +684,20 @@ describe('escalate', () => {
     expect(rule(() => apply(empty, { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
   });
 
+  test('from refund_requested with funds: the buyer never showed the final alert (Task 10)', () => {
+    // payBy at minute 120; the seller asks for the refund at 121, the final alert runs to 136.
+    const t = apply(secured(), { type: 'request-refund' }, 'seller', at(121));
+    expect(t.state).toBe('refund_requested');
+    const d = apply(t, { type: 'escalate' }, 'system', at(137));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'system', at: at(137) });
+    expect(d.closedAt).toBeNull();
+    expect(rule(() => apply(t, { type: 'escalate' }, 'seller', at(137)))).toBe('wrong-party');
+    expect(rule(() => apply({ ...t, receivedAtomic: 0n }, { type: 'escalate' }, 'system', at(137)))).toBe('wrong-state');
+    // still not from the payment states themselves
+    expect(rule(() => apply(paid(), { type: 'escalate' }, 'system', at(137)))).toBe('wrong-state');
+  });
+
   test('a closed trade still records late funds', () => {
     const released = apply(settling(), { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(60));
     const t = apply(released, chain(7n, 0n, 0), 'system', at(70));
