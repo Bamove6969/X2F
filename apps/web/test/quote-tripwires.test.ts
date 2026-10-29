@@ -7,7 +7,10 @@
 // tripwire is retired. Task 4 also serves GET /v1/offers/:id, which the quote may use instead of the list. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the trade room (Task 22) passes location.state.confirmed,
-// else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 5's take route
+// else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 28's setup is on the
+// line since 2026-10-29: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
+// trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
+// re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome. Task 5's take route
 // landed 2026-10-28 and matches takeOffer's body (amountAtomic, walletId, centsPerXmr, fiatCents) → { code },
 // price-changed and takeRefusal's codes; its starter-limit refusal carries { stage, capUsdCents } or
 // { stage: 'starter', maxOpen } for the caller's own limit and nothing for the other side's (takeErrors.ts);
@@ -24,18 +27,6 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 18 guesses still stand in for missing tasks', () => {
-  it("NEEDS_TASK_28: setup does not yet come back to the quote with `resume=<nonce>` and this tab's pending-take marker", () => {
-    // useTake sends a logged-out Trade to /setup/terms?returnTo=<quote with resume=<nonce>> after
-    // writing the single-use pending-take marker to this tab's sessionStorage (pendingTake.ts). Setup
-    // must end on returnTo IN THE SAME TAB (the marker is per tab; a new tab or window is a plain
-    // quote) with a fresh session (useSession reads /v1/account/me once per page load today). Back on
-    // the quote, a matching marker re-shows the quote at the price now and asks for a tap; it never takes.
-    expect(
-      has('apps/web/src/screens/setup/SetupFlow.tsx'),
-      'Task 28 landed: check Start trading → returnTo in the same tab re-shows the quote with "You\'re back" (e2e quote.spec.ts)',
-    ).toBe(false);
-  });
-
   it('NEEDS_TASK_20: the quote header Chat button is a placeholder', () => {
     expect(has('apps/web/src/chat/ChatPanel.tsx'), "Task 20 landed: wire the quote header's Chat to the poster's pre-trade chat").toBe(false);
   });
