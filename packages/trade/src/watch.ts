@@ -34,6 +34,10 @@
  *   escalates again while the first does not. A later sweep that is shown (e.g. a ruling's) takes,
  *   by the same exact-prefix rule, the oldest of the coins not yet swept. A sweep tx itself is never
  *   counted as a late coin.
+ * - Fallback (lead 2026-10-29): `spend-unshown` (the API turns it into `escalate`) once the trade
+ *   has been settling for SPEND_UNSHOWN_MS with no sweep shown, counted from the first step that
+ *   saw it settling (`settlingSince`, persisted). Once per settling episode; an episode ends when
+ *   the trade is seen in any other open state (a signing window that timed out, or the dispute).
  */
 import type { TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
@@ -41,6 +45,8 @@ import { UNLOCK_CONFIRMATIONS } from './timers.js';
 
 export const WATCH_INTERVAL_MS = 15_000;
 export const WATCH_CLOSED_DAYS = 30;
+/** A trade settling this long with no sweep shown to the moderator escalates (Task 9 I/O fallback). */
+export const SPEND_UNSHOWN_MS = 6 * 60 * 60_000;
 
 /**
  * One transaction paying the escrow, by absolute block height (null while in the pool). The I/O
@@ -86,7 +92,7 @@ export interface ChainFacts {
   confirmations: number;
 }
 
-export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' };
+export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' } | { kind: 'spend-unshown' };
 
 /** Persisted per escrow by the watcher (moderation database). */
 export interface WatchState {
@@ -106,6 +112,13 @@ export interface WatchState {
   /** A `late-funds` was reported and the API has not yet been seen `disputed`: the watch never ends meanwhile. */
   escalationPending: boolean;
   channelsClosed: boolean;
+  /**
+   * When this watcher first saw the current settling episode (null when not settling). Optional so
+   * that a state persisted before the field reads as never seen settling.
+   */
+  settlingSince?: Date | null;
+  /** `spend-unshown` was reported for the current settling episode. */
+  spendUnshownReported?: boolean;
 }
 
 export interface WatchStepResult {
@@ -131,6 +144,8 @@ export function newWatchState(): WatchState {
     reopened: false,
     escalationPending: false,
     channelsClosed: false,
+    settlingSince: null,
+    spendUnshownReported: false,
   };
 }
 
@@ -232,12 +247,26 @@ export function watchStep(a: {
       // Closed by the API alone: nothing is shown to be swept, so every coin is unaccounted.
       s = { ...s, closedAt: a.now, swept: [] };
     } else {
+      // Fallback: settling with no sweep shown for SPEND_UNSHOWN_MS escalates, once per episode
+      // (after any chain facts, so the API holds the coins it escalates on).
+      let escalate = false;
+      if (a.trade.state === 'settling') {
+        const since = s.settlingSince ?? a.now;
+        s = { ...s, settlingSince: since, spendUnshownReported: s.spendUnshownReported === true };
+        escalate = !s.spendUnshownReported && a.now.getTime() - since.getTime() >= SPEND_UNSHOWN_MS;
+      } else {
+        s = { ...s, settlingSince: null, spendUnshownReported: false };
+      }
       // wallet2's balance leaves pool deposits out: compare with what came in in blocks.
       const spending = spend !== null || funds.balance < sum(funds.incoming.filter((i) => i.height !== null));
       const facts: ChainFacts = { receivedAtomic: funds.balance, unlockedAtomic: funds.unlocked, confirmations: lowest(funds.incoming, chainHeight) };
       if (!spending && !same(s.lastChain, facts)) {
         reports.push({ kind: 'chain', ...facts });
         s = { ...s, lastChain: facts };
+      }
+      if (escalate) {
+        reports.push({ kind: 'spend-unshown' });
+        s = { ...s, spendUnshownReported: true };
       }
       return { reports, closeChannels: false, state: s, watching: true };
     }

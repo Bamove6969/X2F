@@ -631,6 +631,20 @@ describe('escalate', () => {
     expect(rule(() => apply(secured(), { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
   });
 
+  test('from settling with funds: a release the moderator was not shown (Task 9 I/O fallback)', () => {
+    const t = settling();
+    expect(t.receivedAtomic).toBeGreaterThan(0n);
+    const d = apply(t, { type: 'escalate' }, 'system', at(500));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'system', at: at(500) });
+    expect(d.closedAt).toBeNull();
+    // only the system escalates
+    expect(rule(() => apply(t, { type: 'escalate' }, 'buyer', at(500)))).toBe('wrong-party');
+    // and only with coins in the escrow
+    const empty: Trade = { ...t, receivedAtomic: 0n };
+    expect(rule(() => apply(empty, { type: 'escalate' }, 'system', at(40)))).toBe('wrong-state');
+  });
+
   test('a closed trade still records late funds', () => {
     const released = apply(settling(), { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(60));
     const t = apply(released, chain(7n, 0n, 0), 'system', at(70));

@@ -412,8 +412,9 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     }
 
     case 'escalate': {
-      // Only when the escrow holds coins: a lapse nobody refunded, or late funds after the end.
-      if (s !== 'lapsed' && !CLOSED.includes(s)) return fail('wrong-state');
+      // Only when the escrow holds coins: a lapse nobody refunded, late funds after the end, or a
+      // settlement the moderator was not shown spending the escrow 6 h after it started (Task 9 I/O).
+      if (s !== 'lapsed' && s !== 'settling' && !CLOSED.includes(s)) return fail('wrong-state');
       if (t.receivedAtomic <= 0n) return fail('wrong-state');
       return { ...t, state: 'disputed', dispute: { by: 'system', at: now }, closedAt: null };
     }

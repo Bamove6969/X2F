@@ -56,6 +56,7 @@ export {
 } from './machine.js';
 export { TIMER_LOOP_MS, timerEvents, type TimerEvent, type TimerPass } from './timerLoop.js';
 export {
+  SPEND_UNSHOWN_MS,
   WATCH_CLOSED_DAYS,
   WATCH_INTERVAL_MS,
   newWatchState,

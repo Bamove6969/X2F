@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
+  SPEND_UNSHOWN_MS,
   WATCH_CLOSED_DAYS,
   WATCH_INTERVAL_MS,
   newWatchState,
@@ -440,6 +441,60 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     }
     // closed again at day 31 without the watcher ever seeing the dispute: the escalation is unconfirmed, keep watching
     expect(step({ apiState: 'refunded', state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: day31 }).watching).toBe(true);
+  });
+
+  describe('no spend shown 6 h after settling started (Task 9 I/O fallback, lead 2026-10-29)', () => {
+    const coins = funds([inc(HASH_A, 1000n, 30)]);
+    const HOURS6 = SPEND_UNSHOWN_MS / 60_000;
+
+    test('escalates once, 6 h after the watcher first saw the trade settling, never earlier', () => {
+      expect(SPEND_UNSHOWN_MS).toBe(6 * 60 * 60_000);
+      let r = step({ apiState: 'paid', f: coins, now: at(0) });
+      expect(r.state.settlingSince).toBeNull();
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10) });
+      expect(r.state.settlingSince).toEqual(at(10));
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 - 1) });
+      expect(r.reports).toEqual([]);
+      expect(r.state.settlingSince).toEqual(at(10)); // the anchor never moves while settling
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6) });
+      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
+      expect(r.state.spendUnshownReported).toBe(true);
+      // once: a later step while still settling (the API not caught up) reports nothing again
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 + 1) });
+      expect(r.reports).toEqual([]);
+      // the dispute: the episode is over
+      r = step({ apiState: 'disputed', state: r.state, f: coins, now: at(10 + HOURS6 + 2) });
+      expect(r.state.settlingSince).toBeNull();
+      expect(r.state.spendUnshownReported).toBe(false);
+      expect(r.watching).toBe(true);
+    });
+
+    test('a settling episode that ends before 6 h (signing window timed out) starts the clock again next time', () => {
+      let r = step({ apiState: 'settling', f: coins, now: at(0) });
+      r = step({ apiState: 'paid', state: r.state, f: coins, now: at(16) });
+      expect(r.state.settlingSince).toBeNull();
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(HOURS6) });
+      expect(r.state.settlingSince).toEqual(at(HOURS6));
+      expect(r.reports).toEqual([]);
+      expect(step({ apiState: 'settling', state: r.state, f: coins, now: at(2 * HOURS6) }).reports).toEqual([{ kind: 'spend-unshown' }]);
+    });
+
+    test('a shown sweep settles instead; nothing escalates', () => {
+      let r = step({ apiState: 'settling', f: coins, now: at(0) });
+      r = step({ apiState: 'settling', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(HOURS6 + 5) });
+      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
+      expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(2 * HOURS6) }).reports).toEqual([]);
+    });
+
+    test('a state persisted before these fields counts as never seen settling', () => {
+      const old = { ...newWatchState() } as Partial<WatchState>;
+      delete old.settlingSince;
+      delete old.spendUnshownReported;
+      const r = step({ apiState: 'settling', state: old as WatchState, f: coins, now: at(0) });
+      expect(r.state.settlingSince).toEqual(at(0));
+      expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
+    });
   });
 
   test('a lapse is not a close: chain facts keep flowing (the timer loop escalates it)', () => {
