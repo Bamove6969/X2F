@@ -11,7 +11,8 @@
 // line since 2026-10-29: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
 // trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
 // re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome. Task 5's take route
-// landed 2026-10-28 and matches takeOffer's body (amountAtomic, walletId, centsPerXmr, fiatCents) → { code },
+// landed 2026-10-28 and matches takeOffer's body (amountAtomic, walletId, centsPerXmr, fiatCents) → { code, centsPerXmr, fiatCents }
+// (the rate and total that locked: the server's own, lead decision 2026-10-29),
 // price-changed and takeRefusal's codes; its starter-limit refusal carries { stage, capUsdCents } or
 // { stage: 'starter', maxOpen } for the caller's own limit and nothing for the other side's (takeErrors.ts);
 // that tripwire is retired. Task 29 is on the line since

@@ -56,6 +56,9 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       return 'That wallet is still waiting before it can be used. Pick another.';
     case 'already-waiting':
       return 'You already have a trade on this offer waiting to be funded.';
+    case 'offer-busy':
+      // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
+      return "This offer can't take more trades right now. Try again later or pick another offer.";
     case 'ad-busy':
       return 'Someone is already taking this offer for that amount. Try again in a few minutes.';
     default:

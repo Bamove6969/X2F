@@ -244,7 +244,7 @@ describe('take refusals', () => {
   });
 
   it('every known refusal has its own words, and none carries "!"', () => {
-    const codes = ['own-offer', 'out-of-range', 'not-enough-trades', 'trading-hold', 'trading-paused', 'price-unavailable', 'price-changed', 'method-unavailable', 'wallet-not-ready', 'already-waiting', 'ad-busy', 'starter-limit'];
+    const codes = ['own-offer', 'out-of-range', 'not-enough-trades', 'trading-hold', 'trading-paused', 'price-unavailable', 'price-changed', 'method-unavailable', 'wallet-not-ready', 'already-waiting', 'ad-busy', 'offer-busy', 'starter-limit'];
     const seen = new Set<string>();
     for (const c of codes) {
       const m = takeRefusal(new ApiCallError(409, c, { stage: 'starter' }), SELL_AD);

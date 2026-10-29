@@ -372,8 +372,9 @@ test('a visitor who taps Trade comes back to the same quote, amount kept, throug
   await page.route('**/v1/price?*', json({ currency: B.currency, centsPerXmr: B.marketCentsPerXmr, exponent: 2, at: new Date().toISOString(), usdCentsPerXmr: B.marketCentsPerXmr }));
   await page.route('**/v1/offers?*', json([B.offer]));
   await page.route('**/v1/offers/*/take', (r) => {
-    takes.push(r.request().postDataJSON());
-    return json({ code: B.code })(r);
+    const body = r.request().postDataJSON() as { centsPerXmr: string; fiatCents: string };
+    takes.push(body);
+    return json({ code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents })(r);
   });
 
   const quote = `/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`;
