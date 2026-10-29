@@ -20,8 +20,8 @@ afterAll(async () => {
 });
 
 async function pair() {
-  const seller = await seedAccount(deps, { username: `seller${++n}x` });
-  const buyer = await seedAccount(deps, { username: `buyer${n}x` });
+  const seller = await seedAccount(deps, { loginName: `seller${++n}x` });
+  const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
   return { seller, buyer };
 }
 

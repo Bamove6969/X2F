@@ -7,9 +7,13 @@ export type ApiErrorCode =
   | 'unsupported-media-type'
   | 'internal'
   | 'busy'
-  | 'username-invalid'
-  | 'username-reserved'
-  | 'username-taken'
+  | 'display-name-invalid'
+  | 'display-name-reserved'
+  | 'display-name-taken'
+  | 'login-name-invalid'
+  | 'names-unavailable'
+  | 'names-same'
+  | 'login-name-set'
   | 'password-weak'
   | 'password-leaked'
   | KeyRefusal
@@ -29,6 +33,7 @@ export type ApiErrorCode =
   | 'method-not-allowed'
   | 'last-login-method'
   | 'webauthn-failed'
+  | 'security-key-limit'
   | 'origin-refused'
   | 'address-invalid'
   | 'address-integrated'
@@ -46,6 +51,12 @@ export type ApiErrorCode =
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
+  // Plan 3, Task 8: participant identities and the moderation attestation.
+  | 'identity-exists'
+  | 'identity-conflict'
+  | 'bad-proof'
+  | 'attestation-refused'
+  | 'trade-closed'
   // Plan 3, Task 27: a second dispute on one trade.
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.

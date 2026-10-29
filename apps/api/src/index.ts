@@ -24,16 +24,17 @@ export {
   requireSession, sessionPolicy, startSession, type AuthContext, type LoginMethod, type SessionLevel,
 } from './auth/sessions.js';
 export {
-  dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset, type ThrottledMethod,
+  QUIET_LOCK_AT, QUIET_LOCK_MS, VISITOR_MISSES_BEFORE_LEAVING, claimPasswordTry, dailyCap, passwordMiss, throttleCheck, throttleFail, throttleKey,
+  throttleReset, visitorMiss, visitorReset, type ThrottledMethod,
 } from './auth/throttle.js';
-export { assertTermsAccepted, assertUsername, createAccount } from './accounts.js';
+export { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from './accounts.js';
 export { openLeakedList } from './auth/leaked.js';
 export { parseConfirmAction } from './auth/actionInput.js';
 export {
   DUMMY_HASH, PASSWORD_BODY_LIMIT, assertNewPassword, hashPassword, passwordRoutes, pepperedPassword, verifyPassword, type StoredPassword,
 } from './auth/password.js';
 export {
-  PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, decoyPrivateKeys, insertPgpKey, issuePgpChallenge, loadPgpSigner,
+  PGP_BODY_LIMIT, PGP_CHALLENGE_TTL_MS, checkPgpCode, decoyPgpChallenge, insertPgpKey, issuePgpChallenge, loadPgpSigner,
   openKey, pgpLoginRoutes, pgpRoutes, pgpSignerFromArmored, sealKey, storableKey, type IssuedChallenge, type PgpLoginOptions,
 } from './auth/pgp.js';
 export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
@@ -50,7 +51,7 @@ export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';
 export { fileAttestationPolicy, hasCertificateChain, parseAllowlist } from './auth/attestation.js';
 export {
-  WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
+  MAX_SECURITY_KEYS, WEBAUTHN_TTL_MS, assertCredentialAllowed, decoyCredentialIds, registrationOptionsFor, securityKeyLoginRoutes,
   verifyWebAuthnAssertion, verifyWebAuthnRegistration, webauthnAssertionOptions, webauthnLoginRoutes,
   webauthnRegistrationOptions, webauthnRoutes, type CredentialKind,
 } from './auth/webauthn.js';
@@ -70,6 +71,8 @@ export {
 } from './price/feed.js';
 export { DEFAULT_PRICE_SOURCES, PRICE_SOURCE_NAMES, parsePriceSources, priceSources, type PriceSourceName } from './price/sources.js';
 export { priceRoutes } from './price/routes.js';
+export { tradeIdentityRoutes, type TraderRole } from './trades/identity.js';
+export { buildInternalListener, INTERNAL_MAX_AGE_MS, type InternalOptions } from './internal/routes.js';
 export { RETENTION_JOBS } from './retentionJobs.js';
 export {
   applyEvent, eventRecord, insertTrade, loadTrade, loadTradeRow, noPublish, rowToTrade,

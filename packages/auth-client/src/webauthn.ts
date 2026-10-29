@@ -32,21 +32,21 @@ const BROWSER_AUTHENTICATION: AuthenticationCeremony = { startAuthentication };
  */
 export async function registerWithWebAuthn(
   api: AuthApi,
-  username: string,
+  names: { displayName: string; loginName: string },
   kind: WebAuthnKind,
   deviceLabel: string,
   acceptedTerms: string,
   ceremony: RegistrationCeremony = BROWSER_REGISTRATION,
   o: { label?: string } = {},
-): Promise<{ username: string }> {
-  const { challengeId, options } = await api.registerWebAuthnStart({ username, kind });
+): Promise<{ displayName: string }> {
+  const { challengeId, options } = await api.registerWebAuthnStart({ displayName: names.displayName, loginName: names.loginName, kind });
   const response = await ceremony.startRegistration({ optionsJSON: options });
   return api.registerWebAuthnFinish({
     challengeId, response, deviceLabel, acceptedTerms, ...(o.label !== undefined ? { label: o.label } : {}),
   });
 }
 
-/** Passkey login without a username: the authenticator picks the account (traders). */
+/** Passkey login without a name: the authenticator picks the account (traders). */
 export async function loginWithPasskey(
   api: AuthApi,
   deviceLabel: string,
@@ -58,18 +58,18 @@ export async function loginWithPasskey(
 }
 
 /**
- * Security-key login by username. Staff and the owner get `second-factor` with a `pendingId`
+ * Security-key login by the private login name. Staff and the owner get `second-factor` with a `pendingId`
  * (R1); the second step (PGP, or after PGP a security key) passes it back in `o.pendingId`.
  */
 export async function loginWithSecurityKey(
   api: AuthApi,
-  username: string,
+  loginName: string,
   deviceLabel: string,
   ceremony: AuthenticationCeremony = BROWSER_AUTHENTICATION,
   o: { pendingId?: string } = {},
 ): Promise<LoginResult> {
   const pending = o.pendingId !== undefined ? { pendingId: o.pendingId } : {};
-  const { challengeId, options } = await api.loginWebAuthnStart({ username, ...pending });
+  const { challengeId, options } = await api.loginWebAuthnStart({ loginName, ...pending });
   const response = await ceremony.startAuthentication({ optionsJSON: options });
   return api.loginWebAuthnFinish({ challengeId, response, deviceLabel, ...pending });
 }

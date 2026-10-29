@@ -186,7 +186,7 @@ describe('POST /v1/method-suggestions', () => {
     ({ app, deps } = await testApp());
     addTestLogin(app, deps);
     trader = new Browser(app);
-    const accountId = await seedAccount(deps, { username: 'suggester' });
+    const accountId = await seedAccount(deps, { loginName: 'suggester' });
     expect((await trader.post('/t/login', { accountId })).statusCode).toBe(200);
   });
   afterAll(async () => app.close());
@@ -250,7 +250,7 @@ describe('POST /v1/method-suggestions', () => {
     expect(anon.json()).toEqual({ error: 'not-authenticated' });
 
     const staff = new Browser(app);
-    const staffId = await seedAccount(deps, { username: 'staffer', kind: 'staff' });
+    const staffId = await seedAccount(deps, { loginName: 'staffer', kind: 'staff' });
     await staff.post('/t/login', { accountId: staffId });
     const res = await staff.post('/v1/method-suggestions', { name: 'Staff pay' });
     expect(res.statusCode).toBe(403);

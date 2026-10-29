@@ -10,6 +10,8 @@ import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
+import { hashPassword } from '../src/auth/password.js';
+import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { VAPID_ENV } from './helpers/vapid.js';
 
 const VAPID = VAPID_ENV;
@@ -38,12 +40,56 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
+        '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
       await db.end();
+    }
+  });
+
+  it('009: an existing username becomes the display name and, until the person picks one, the login name too (review I3)', async () => {
+    const db = await emptyDb();
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-mig-'));
+    let close: (() => Promise<void>) | null = null;
+    try {
+      const all = await readdir(MIGRATIONS_DIR);
+      for (const f of all.filter((n) => n < '009')) await copyFile(join(MIGRATIONS_DIR, f), join(dir, f));
+      await migrate(db, dir);
+      const { rows: inserted } = await db.query<{ id: string }>(
+        `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ('Old.Trader', 'old.trader', 'trader', $1, now()) returning id`,
+        [randomBytes(32)],
+      );
+      expect(await migrate(db)).toEqual([
+        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
+        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql', '111_trade_identities.sql',
+      ]);
+      const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
+      expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
+      // The one key is reserved once, in both namespaces.
+      expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
+      // Only a legacy row may have equal names.
+      await expect(db.query('update accounts set legacy_login_name = false where id = $1', [inserted[0]!.id])).rejects.toMatchObject({ code: '23514' });
+
+      // A pre-009 password account logs in after the migration with its old name, and is asked for a login name.
+      const { app, deps } = await testApp({ db });
+      close = () => app.close();
+      const pw = await hashPassword(deps.config, 'Correct-Horse-9');
+      await db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [inserted[0]!.id, pw.hash, pw.pepperId]);
+      const login = await app.inject({
+        method: 'POST', url: '/v1/login/password', headers: { origin: 'https://x2f.test' },
+        payload: { loginName: 'Old.Trader', password: 'Correct-Horse-9', deviceLabel: 'Old browser' },
+      });
+      expect(login.statusCode).toBe(200);
+      const session = login.cookies.find((c) => c.name === SESSION_COOKIE)?.value;
+      const me = await app.inject({ method: 'GET', url: '/v1/account/me', headers: { origin: 'https://x2f.test' }, cookies: { [SESSION_COOKIE]: session! } });
+      expect(me.json()).toMatchObject({ displayName: 'Old.Trader', needsLoginName: true });
+    } finally {
+      if (close) await close();
+      await db.end();
+      await rm(dir, { recursive: true, force: true });
     }
   });
 
@@ -57,7 +103,7 @@ describe('migrations', () => {
       const ins = async (sql: string, args: unknown[]) => (await db.query<{ id: string }>(sql, args)).rows[0]?.id;
       const account = async (name: string, kind: string, wait: boolean) =>
         ins(
-          `insert into accounts (username, username_key, kind, webauthn_user_id, payout_wait, payout_wait_off_at, created_at)
+          `insert into accounts (display_name, display_key, kind, webauthn_user_id, payout_wait, payout_wait_off_at, created_at)
            values ($1, $2, $3, $4, $5, $6, $7) returning id`,
           [name, name.toLowerCase(), kind, randomBytes(32), wait, wait ? new Date(t.getTime() + 3_600_000) : null, t],
         );
@@ -85,13 +131,14 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
+        '111_trade_identities.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
       expect((await db.query('select usable_from from wallets')).rows).toEqual([{ usable_from: waiting }]);
       const cols = await db.query(`select column_name from information_schema.columns where table_name = 'accounts' and column_name like 'payout%'`);
       expect(cols.rows).toEqual([]);
-      expect((await db.query('select idle_hours from accounts order by username')).rows).toEqual([{ idle_hours: 12 }, { idle_hours: 12 }]);
+      expect((await db.query('select idle_hours from accounts order by display_name')).rows).toEqual([{ idle_hours: 12 }, { idle_hours: 12 }]);
       const expires = async (id: string | undefined) =>
         (await db.query<{ expires_at: Date }>('select expires_at from sessions where id = $1', [id])).rows[0]!.expires_at;
       expect(await expires(full)).toEqual(new Date(t.getTime() + 12 * 3_600_000));
@@ -125,10 +172,11 @@ describe('schema', () => {
     expect(bad).toEqual([]);
   });
 
-  const insertAccount = (kind: string, name: string) =>
+  const insertAccount = (kind: string, name: string, login: string | null = `${name}.login`) =>
     db.query(
-      `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ($1, $2, $3, $4, now())`,
-      [name, name.toLowerCase(), kind, randomBytes(32)],
+      `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+       values ($1, $2, $3, $4, $5, $6, now())`,
+      [name, name.toLowerCase(), login, login?.toLowerCase() ?? null, kind, randomBytes(32)],
     );
 
   it('allows only one owner account', async () => {
@@ -138,10 +186,117 @@ describe('schema', () => {
     await insertAccount('trader', 'Trader02');
   });
 
-  it('refuses unknown account kinds and duplicate username keys', async () => {
+  it('refuses unknown account kinds and duplicate display or login name keys', async () => {
     await expect(insertAccount('admin', 'Someone1')).rejects.toMatchObject({ code: '23514' });
-    await insertAccount('trader', 'Alice123');
-    await expect(insertAccount('trader', 'ALICE123')).rejects.toMatchObject({ code: '23505' });
+    await insertAccount('trader', 'Alice123', 'alice.secret');
+    await expect(insertAccount('trader', 'ALICE123', 'other.secret')).rejects.toMatchObject({
+      code: '23505', constraint: 'accounts_display_key_key',
+    });
+    await expect(insertAccount('trader', 'Bob12345', 'ALICE.secret')).rejects.toMatchObject({
+      code: '23505', constraint: 'accounts_login_key_key',
+    });
+  });
+
+  it('keeps the login name and its key together, and different from the display name', async () => {
+    await expect(insertAccount('trader', 'Carol123', 'CAROL123')).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      db.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Dave1234', 'dave1234', 'dave.login', null, 'trader', $1, now())`,
+        [randomBytes(32)],
+      ),
+    ).rejects.toMatchObject({ code: '23514' });
+    await insertAccount('trader', 'Erin1234', null);
+    await insertAccount('trader', 'Fred1234', null);
+  });
+
+  it('ties each key to the lower-cased name (review Minor 8)', async () => {
+    const ins = (display: string, displayKey: string, login: string, loginKey: string) =>
+      db.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ($1, $2, $3, $4, 'trader', $5, now())`,
+        [display, displayKey, login, loginKey, randomBytes(32)],
+      );
+    await expect(ins('Gina1234', 'Gina1234', 'gina.login', 'gina.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_display_key_lower' });
+    await expect(ins('Gina1234', 'gina1234', 'GINA.login', 'GINA.login')).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_key_lower' });
+    await ins('Gina1234', 'gina1234', 'GINA.login', 'gina.login');
+  });
+
+  it('one namespace for both names (review I1): a login key never equals any display key and vice versa, under a race too', async () => {
+    await insertAccount('trader', 'Mira.K', 'mira.private');
+    // Bob's login name is Alice's public display name.
+    await expect(insertAccount('trader', 'Bob.Trades', 'MIRA.K')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+    // Carol's display name is Bob's private login name.
+    await insertAccount('trader', 'Bob.Trades', 'night.owl');
+    await expect(insertAccount('trader', 'Night.Owl', 'carol.private')).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+    expect((await db.query("select kind from name_keys where key in ('mira.k', 'mira.private', 'bob.trades', 'night.owl') order by key")).rows).toEqual([
+      { kind: 'display' }, { kind: 'display' }, { kind: 'login' }, { kind: 'login' },
+    ]);
+
+    // Two inserts racing: the second waits for the first to commit, then fails.
+    const a = await db.connect();
+    const b = await db.connect();
+    try {
+      await a.query('begin');
+      await b.query('begin');
+      await a.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Race.One', 'race.one', 'race.two', 'race.two', 'trader', $1, now())`,
+        [randomBytes(32)],
+      );
+      const second = b.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+         values ('Race.Two', 'race.two', 'race.three', 'race.three', 'trader', $1, now())`,
+        [randomBytes(32)],
+      );
+      await new Promise((r) => setTimeout(r, 100));
+      await a.query('commit');
+      await expect(second).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+      await b.query('rollback');
+    } finally {
+      a.release();
+      b.release();
+    }
+    expect((await db.query("select display_key from accounts where display_key like 'race.%'")).rows).toEqual([{ display_key: 'race.one' }]);
+
+    // Crossing names (re-review 1): T1 (display x, login y) and T2 (display y, login x) both wait on
+    // the same first key, so the loser fails 23505 on name_keys_pkey, never 40P01 (deadlock).
+    for (let round = 0; round < 5; round++) {
+      const t1 = await db.connect();
+      const t2 = await db.connect();
+      try {
+        await t1.query('begin');
+        await t2.query('begin');
+        const ins = (c: pg.PoolClient, display: string, login: string) =>
+          c.query(
+            `insert into accounts (display_name, display_key, login_name, login_key, kind, webauthn_user_id, created_at)
+             values ($1, $1, $2, $2, 'trader', $3, now())`,
+            [display, login, randomBytes(32)],
+          );
+        // Lower keys first and second in each order, so either trigger order would cross.
+        const [x, y] = round % 2 === 0 ? [`cross.a${round}`, `cross.b${round}`] : [`cross.b${round}`, `cross.a${round}`];
+        const r1 = ins(t1, x, y).then(() => 'ok', (e: { code?: string; constraint?: string }) => `${e.code}:${e.constraint ?? ''}`);
+        const r2 = ins(t2, y, x).then(() => 'ok', (e: { code?: string; constraint?: string }) => `${e.code}:${e.constraint ?? ''}`);
+        const first = await Promise.race([r1, r2]);
+        // Whichever finished first commits (or rolls back); the other then resolves.
+        if (first === 'ok') await ((await Promise.race([r1.then(() => t1), r2.then(() => t2)])).query('commit'));
+        const results = [await r1, await r2].sort();
+        expect(results).toEqual(['23505:name_keys_pkey', 'ok']);
+      } finally {
+        await t1.query('rollback').catch(() => undefined);
+        await t2.query('rollback').catch(() => undefined);
+        t1.release();
+        t2.release();
+      }
+    }
+
+    // Renaming keeps the table in step; deleting the account removes its keys.
+    await db.query("update accounts set login_name = 'mira.other', login_key = 'mira.other' where display_key = 'mira.k'");
+    expect((await db.query("select key from name_keys where account_id = (select id from accounts where display_key = 'mira.k') order by key")).rows).toEqual([
+      { key: 'mira.k' }, { key: 'mira.other' },
+    ]);
+    await db.query("delete from accounts where display_key = 'mira.k'");
+    expect((await db.query("select 1 from name_keys where key in ('mira.k', 'mira.other')")).rows).toEqual([]);
   });
 });
 
@@ -475,7 +630,7 @@ describe('app', () => {
       app.get('/dup', async () => {
         const insert = () =>
           deps.db.query(
-            `insert into accounts (username, username_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
+            `insert into accounts (display_name, display_key, kind, webauthn_user_id, created_at) values ($1, $2, 'trader', $3, now())`,
             [marker, marker.toLowerCase(), randomBytes(32)],
           );
         await insert();

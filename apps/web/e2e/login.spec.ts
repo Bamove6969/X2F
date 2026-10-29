@@ -10,7 +10,7 @@ const FAKE_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEtest\n-----END PGP
 type Overview = Record<string, unknown>;
 function overview(over: Overview = {}): Overview {
   return {
-    username: 'nightowl',
+    displayName: 'nightowl',
     kind: 'trader',
     level: 'full',
     holdUntil: null,

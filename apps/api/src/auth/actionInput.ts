@@ -15,6 +15,7 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'add-method': { method: (v) => (METHODS as readonly string[]).includes(v) },
   'remove-method': { method: (v) => (METHODS as readonly string[]).includes(v), id: (v) => ID.test(v) },
   'set-password': {},
+  'set-login-name': {},
   'new-recovery-codes': {},
   'add-device-key': { signPublicHash: (v) => HEX64.test(v) },
 };

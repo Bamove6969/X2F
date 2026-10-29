@@ -20,6 +20,7 @@ import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { tradeIdentityRoutes } from './trades/identity.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 import { EventBus, type EventBusOptions } from './events/bus.js';
@@ -40,10 +41,14 @@ export interface LeakedList {
 export interface AddressValidator {
   check(address: string): Promise<'ok' | 'invalid' | 'integrated'>;
 }
-/** Task 8: FIDO metadata snapshot and AAGUID allowlist for staff and owner keys. */
+/**
+ * Task 8: FIDO metadata snapshot and AAGUID allowlists for staff and owner keys. `kind` picks the
+ * allowlist: the owner's (YubiKey 5 on firmware 5.7 or newer) or staff's (certified YubiKey 5, the
+ * Yubico Security Key series, Google Titan), owner's rules of 2026-10-20.
+ */
 export interface AttestationPolicy {
   init(): Promise<void>;
-  isAllowed(aaguid: string, fmt: string): boolean;
+  isAllowed(aaguid: string, fmt: string, kind: 'owner' | 'staff'): boolean;
 }
 /** Task 7: the official X2F PGP signing key (R7). */
 export type { PgpSigner } from './auth/pgp.js';
@@ -222,7 +227,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
-  // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (username-based + discoverable).
+  // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   webauthnRoutes(app);
   await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
@@ -238,6 +243,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   tradeRoutes(app, { publish: tradePublish });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
+  // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
+  tradeIdentityRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
 
