@@ -71,3 +71,13 @@ Variants the brief asked for are tweaks on the same board.
 14. Login-Backup: during the 24-hour hold, is trading blocked (we wrote yes)?
 15. A1: method price adjustment % only, or also a fixed amount with fixed-price offers? Amount-range mismatches treated like tier rules (greyed/hidden)?
 16. A3: Select all with mixed states turns all on (built) or all off?
+
+## Owner decisions, 2026-10-29 (answers to the open questions)
+- Q1: all orange selected outlines → ink on every board (done, canvas v62). Stars are amber (caution) everywhere; setup progress segments ink; Feedback checkbox ink.
+- Q2: 44px minimum hit area everywhere (industry standard: Apple 44pt / Android 48dp / WCAG); small controls keep their look with an enlarged invisible hit area (done).
+- Q3: setup example username → `juniper.oak` (on no other board) (done).
+- Q4 (A6): the "don't pay until escrow is complete" warning also shows when the pay screen opens while escrow is still confirming, as well as before "I've paid".
+- Q5 (A5): staff reply to non-anonymous feedback inside the app (Support tickets / alerts). No email.
+- Q6 (A9): decided appeal shows either "Decision overruled" or "Decision stands", each with a plain explanation of what happens next.
+- **Cancel rule change (replaces the 2026-10-17 "buyer cancels alone"):** before funding either side can walk away. After the seller funds, the buyer can ask to cancel but it takes effect only when the seller also taps Cancel (mutual cancel); all XMR returns to the seller. The seller can never cancel alone after funding. A silent/non-paying buyer still ends in the no-show auto-refund. The moderator's automatic signature is now only for the no-show refund. **Lead: update spec 2.3, 3.1 table and 3.3 (remove "Buyer cancels (automatic)"), and Plan 3 (drop the buyer-cancel event/buyerCancelDecision and the moderator co-sign for it; mutual cancel already exists).**
+- Q7 (A8): the Refunded screen for a cancelled trade offers "Did you pay before you cancelled? Open a dispute."
