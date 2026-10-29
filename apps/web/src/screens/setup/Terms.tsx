@@ -53,14 +53,21 @@ function TermsScreen({
   const [error, setError] = useState<string | null>(null);
   const box = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(() => {
+  /** Loads the server's version; resolves to it, or to null when the load failed. */
+  const load = useCallback(async (): Promise<string | null> => {
     setLoadFailed(false);
-    authApi.getTerms().then(
-      (t) => setVersion(t.version),
-      () => setLoadFailed(true),
-    );
+    try {
+      const t = await authApi.getTerms();
+      setVersion(t.version);
+      return t.version;
+    } catch {
+      setLoadFailed(true);
+      return null;
+    }
   }, []);
-  useEffect(load, [load]);
+  useEffect(() => {
+    void load();
+  }, [load]);
 
   const checkEnd = useCallback(() => {
     const el = box.current;
@@ -90,8 +97,13 @@ function TermsScreen({
         setTicked(false);
         setRead(false);
         if (box.current !== null) box.current.scrollTop = 0;
-        load();
-        setError('The Terms changed while you were reading. Read them to the end again, then accept.');
+        // A box that shows everything has no scroll to wait for: it counts as read again at once.
+        checkEnd();
+        const now = await load();
+        // In real use the server moved to a version this page does not carry, so the stale notice
+        // ("Reload the page") is the one thing to say; "read them again" only when the reloaded
+        // version is this page's own text (review m2, Task 28 round 2).
+        if (now === TERMS_TEXT_VERSION) setError('The Terms changed while you were reading. Read them to the end again, then accept.');
       } else setError('Could not save that. Try again.');
       setBusy(false);
     }
@@ -143,7 +155,7 @@ function TermsScreen({
       {loadFailed ? (
         <p className="x2f-error" role="alert">
           Could not load the Terms version.{' '}
-          <button type="button" className="x2f-start__textbutton" onClick={load}>
+          <button type="button" className="x2f-start__textbutton" onClick={() => void load()}>
             Try again
           </button>
         </p>
@@ -155,7 +167,11 @@ function TermsScreen({
       ) : null}
       {stale ? (
         <p className="x2f-error" role="alert" id="terms-stale" data-part="terms-stale">
-          The Terms have been updated. Reload the page to read the new version.
+          The Terms have been updated.{' '}
+          <button type="button" className="x2f-start__textbutton" onClick={() => window.location.reload()}>
+            Reload the page
+          </button>{' '}
+          to read the new version.
         </p>
       ) : null}
       {!read ? (
