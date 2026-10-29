@@ -45,7 +45,7 @@
 - ~~P7-A7 (mail route)~~: dropped 2026-10-29 (no email).
 - **P7-A8 Which events alert** (kept, for Jabber): two switches, "Trade changes" (default on) and "Nudges" (default off). The final alert (Plan 3 Task 25) always goes to every channel that is on.
 - **P7-A11 Loud alarm (NEW 2026-10-29).** Default sound `alarm-default.ogg`, default volume 80%; a custom sound file at most `ALARM_MAX_BYTES = 1 MiB`, audio types only, kept **on the device**, never uploaded. Which events ring the alarm: the final alert and "payment marked" by default; the user can add trade changes and nudges.
-- **P7-A12 Account deletion (NEW 2026-10-29).** Refused while a trade, a dispute, an appeal window, a lien or the dispute-after-refund window is open. Deletes the login methods, wallets, settings, offers and alert channels; reviews by and about the account stay and show "Deleted user"; the running totals go with the account.
+- **P7-A12 Account deletion (NEW 2026-10-29).** Refused while a trade or a dispute is open (owner). *Lead default (2026-10-29), owner may change:* also refused during an appeal window, a lien or the dispute-after-refund window. Deletes the login methods, wallets, settings, offers and alert channels; reviews by and about the account stay and show "Deleted user"; the running totals go with the account.
 - **P7-A9 Public site address.** The public pages live under `/about`, `/faq`, `/help`, `/guides/<slug>`, `/download`, `/legal/requests` and `/security` (Plan 6 Task 24) on the app's own origin (clearnet, onion, and I2P if the owner approves it after research). The app's home screen stays at `/` with a "New to X2F?" link to `/about`. Option: make `/about` the home for visitors. Owner to choose.
 - **P7-A10 Statistics kept.** Daily, per currency and method: offers live at midnight UTC, trades started, trades completed, trades refunded or cancelled, disputes opened and closed, completed XMR volume; and new accounts per day (site-wide only). Kept indefinitely (they hold no personal data). Owner-only view. Any later publication hides every figure built from fewer than `STATS_PUBLISH_MIN_COUNT = 5` trades.
 
@@ -82,7 +82,7 @@ Rewritten 2026-10-29. Old Tasks 1–4 (per-side and whole-trade self-delete sett
 - Produces:
   - `TRADE_KEEP_DAYS = 30`, `DISPUTE_KEEP_DAYS = 90`.
   - `interface RetentionFacts { closedAt: Date | null; disputeOpenedAt: Date | null; disputeClosed: boolean; refundDisputeWindowEndsAt: Date | null }`
-  - `tradeDeleteAt(f): Date | null`: `null` while the trade is open; `closedAt + 30 d` with no dispute; `disputeOpenedAt + 90 d` with a dispute; never before the dispute is closed; never before `refundDisputeWindowEndsAt` (the dispute-after-refund window, open point in Plan 3 Revision 2026-10-29).
+  - `tradeDeleteAt(f): Date | null`: `null` while the trade is open; `closedAt + 30 d` with no dispute; `disputeOpenedAt + 90 d` with a dispute; never before the dispute is closed; **OPEN pending the owner's answer to question A:** never before `refundDisputeWindowEndsAt` (the dispute-after-refund window; the lead recommends 30 days; open point in Plan 3 Revision 2026-10-29).
   - `tradeDeleteDue(f, now): boolean`.
 - [ ] **Step 1: Write the failing tests:** a released trade is due at close + 30 d and not 1 ms before; a dispute opened at day 29 moves it to the button + 90 d; a dispute still open at day 90 is not due; an open trade is never due.
 - [ ] **Step 2:** Run `flock ~/x2f-comms/check.lock npm test -- --project @x2f/trade`; expect FAIL.
@@ -130,7 +130,7 @@ Rewritten 2026-10-29. Old Tasks 1–4 (per-side and whole-trade self-delete sett
 
 **Interfaces:**
 - **Controller step (design):** a Privacy board.
-- Produces: no choices, only plain statements: "Every trade self-destructs 30 days after it ends. If a dispute is opened, the trade is kept 90 days from that moment, for moderator training, then deleted. Nobody can delete a trade early or keep it longer, not even X2F. Your reviews and your trade count stay on your profile. Backups are cleared within <D6> days." `// COPY-UNSIGNED`. A link to the lawful-requests page (Task 12) and to Delete my account (Task 18).
+- Produces: no choices, only plain statements: "Every trade self-destructs 30 days after it ends. If a dispute is opened, the trade is kept 90 days from that moment, for moderator training, then deleted. Nobody can delete a trade early or keep it longer, not even X2F. [OPEN: this line waits for the owner's answer on the dispute-after-refund window (question A); it may need to name that exception.] Your reviews and your trade count stay on your profile. Backups are cleared within <D6> days." `// COPY-UNSIGNED`. A link to the lawful-requests page (Task 12) and to Delete my account (Task 18).
 - [ ] **Step 1: Write the failing tests:** the page shows the numbers from the shared constants (not typed copies); parity at 390×844.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -356,7 +356,7 @@ Rewritten 2026-10-29. Phone push with an optional loud alarm and an optional bat
 
 - Tasks 1, 5, 9, 12 can start now (pure or self-contained).
 - Task 2 needs Plan 3 Tasks 5, 6 and 20, Plan 4's dispute records and Task 23, Plan 5 Task 20 (running totals) and Plan 4 Task 32 (revenue ledger); its proof part needs Plan 5 Task 14. It must not go live before those, or a purge would lose counts.
-- Task 3 needs Task 2's `deleteAt`. Task 18 needs Plan 4 Task 25 (liens) for its lien refusal.
+- Task 3 needs Task 1's `tradeDeleteAt` (Task 3 exposes it as `TradeView.deleteAt`). Task 18 needs Plan 4 Task 25 (liens) for its lien refusal.
 - Task 6 needs Plan 6 Task 28 (Tor egress) before production; it can be built and tested against a local server first.
 - Task 16's Android part and Task 17 need Plan 6 Task 20.
 - Task 13 needs Plan 6 Task 22. Task 14's panel needs Plan 4 Task 17; the collector does not.

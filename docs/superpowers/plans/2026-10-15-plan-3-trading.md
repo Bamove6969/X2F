@@ -747,6 +747,8 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: end-to-end encrypted chat`.
 
+**Revision 2026-10-29 (owner):** `purgeChats` deletes envelopes 30 days after the trade closes (`TRADE_KEEP_DAYS`), or 90 days after the dispute button for a disputed trade, not 90 days after close. See "Revision 2026-10-29 (owner)" at the end.
+
 ### Task 21: PostOffer
 
 **Board:** `PostOffer.dc.html`.
@@ -1065,7 +1067,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - **Task 27 (dispute counting).**
   - **A settled dispute counts toward completed trades, whoever won** (owner: money likely changed hands, and disputes are common). There is **no automatic stage drop**. This supersedes "Completed means completed with no lost dispute; each lost dispute drops one stage" in Revision 2026-10-24 and Task 4's `tradeCap`. Lost disputes are still counted (a running total, for Plan 5's Clean record badge and for staff).
   - A moderator can recommend account limits to a senior moderator instead (Plan 4 new Task 26).
-  - **Appeals:** `appeal_until` = ruling time + **72 hours** (Plan 4 setting `appeal_window_h`, default 72). The dispute outcome notice, the File appeal button and the reviewer rule are Plan 4 new Task 24.
+  - **Appeals:** `appeal_until` holds Plan 4's `appealEndsAt` = the ruling's publish time + **72 hours** (setting `appeal_window_h`, default 72). The dispute outcome notice, the File appeal button and the reviewer rule are Plan 4 new Task 24.
   - **Disputes are settled within 48 hours, goal 24 hours** (Plan 4 A2). The DisputeRoom deadline line uses the 48-hour deadline.
 - **Lead decisions approved by the owner (recorded, no change needed):** decision 1, a trade waits until both addresses are in and they are locked after (Revision 2026-10-24, Task 8); decision 2, Task 8 uses migration 111; decision 3, `trade-closed` returns the escrow runtime to `idle`; decision 4, Task 23's `paidRecorded` field; decision 5, the 44px `.x2f-method-name` goes to Claude Design with the canvas copy fixes; decision 6, `PHONE_VIEWPORTS` is the single phone-size standard; decision 7, Task 27 owns the buyer's `refunded` screen.
 - **Revision 2026-10-28 corrections.** Plan 7's `notify()` fan-out now adds only OMEMO Jabber (no Nostr, no email). "Full block" and "Pause all my offers" are now decided: new Tasks 37 and 36.
@@ -1082,7 +1084,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 
 **Interfaces:**
 - Produces:
-  - `type Tier = { minFiatCents: string; maxFiatCents: string; marginBps: number; minTrades: 0|5|10|50 }`; `type OfferMethod = { methodId: string; instructions: string; adjustBps: number }`.
+  - `type Tier = { minFiatCents: string; maxFiatCents: string; marginBps: number; minTrades: 0|5|10|50 }` (*lead default (2026-10-29), owner may change:* the owner said "buyer must have X completed trades"; the four values match the existing offer rule); `type OfferMethod = { methodId: string; instructions: string; adjustBps: number }`.
   - `tiersValid(tiers)`: ranges never overlap; gaps are allowed; at least one tier. `tierFor(tiers, fiatCents)` → the tier or `null` (a gap).
   - `finalRate(offer, fiatCents, methodId, marketRate)` = market + the tier's margin + the method's adjustment (fixed-price offers: the fixed price + the method's adjustment).
   - Tables `offer_tiers(offer_id, min_fiat_cents, max_fiat_cents, margin_bps, min_trades)` and `offer_methods(offer_id, method_id, instructions, adjust_bps)`; the old single `method_id`, margin and range become the first rows (migration copies them).
@@ -1139,12 +1141,12 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 
 **Interfaces:**
 - Produces: `POST /v1/account/blocks { displayName }`, `DELETE /v1/account/blocks/:displayName`, `GET /v1/account/blocks`. While A blocks B (either direction counts for B's actions toward A):
-  - B's `GET /v1/offers` leaves out A's offers, and `GET /v1/traders/:name` for A answers 404 to B;
-  - B's take of A's offer → 404 `not-found` (as if it does not exist); A's take of B's offer is also refused;
+  - B's `GET /v1/offers` leaves out A's offers; *lead default (2026-10-29), owner may change:* `GET /v1/traders/:name` for A answers 404 to B;
+  - B's take of A's offer → 404 `not-found` (as if it does not exist); *lead default (2026-10-29), owner may change:* A's take of B's offer is also refused;
   - B can't open a chat with A or send to an existing one; nudges stay silently dropped (P3-M5);
   - **B never sees A online:** `online` and `lastSeenAt` are left out for B.
   - Trades already open continue to the end (escrow must finish); blocking never touches coins.
-  - Nothing tells B they are blocked. Blocks are private; staff see them only in a dispute between the two.
+  - Nothing tells B they are blocked. Blocks are private. *Lead default (2026-10-29), owner may change:* staff see them only in a dispute between the two.
 - [ ] **Step 1: Write the failing tests:** each bullet above as a route test; an open trade still completes after a block; unblock restores everything; parity for the Blocked screen.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -1165,7 +1167,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
   - **Buyer, before "I've paid" or a proof upload:** "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow. The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible." (owner wording). It reads the escrow state from `TradeView` (the app already blocks paying until funded and confirmed); it shows once per trade, before the payment details.
   - **Seller, before the release hold:** don't release until the money is really in your account; check your own bank or app, not a screenshot; once released, the XMR can't be taken back. `// COPY-UNSIGNED` (owner gave the meaning, not the words).
   - **Controller step (design):** both popups on the canvas; owner signs off the seller wording.
-- [ ] **Step 1: Write the failing tests:** the buyer sees the warning before the payment details and I've paid; the seller sees the release warning before the hold works; each shows once per trade (survives reload); parity.
+- [ ] **Step 1: Write the failing tests:** the buyer sees the warning before the payment details and I've paid; the seller sees the release warning before the hold works; each shows once per trade (survives reload; *lead default (2026-10-29), owner may change:* the owner said "before major actions" and gave no frequency); parity.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.

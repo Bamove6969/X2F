@@ -195,10 +195,10 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 From the OpenMonero comparison (`research/openmonero-parity-2026-10-27.md`; owner's goal: every OpenMonero feature that fits our values, done better and simpler):
 - **No guest buying.** It complicates disputes. Instead, sign-up stays easy and fast.
 - ~~**Message and trade self-delete (a user setting).**~~ *Superseded 2026-10-29: one fixed rule, trades self-destruct 30 days after they end; see "Decided 2026-10-29 (owner)".*
-  - Each user can choose how long their own typed messages and details last in a completed trade: 1 hour, 1 day, 1 week or 1 month. After that, their part disappears from the trade.
-  - A separate option deletes the whole trade 1 week or 1 month after it ends, but only when both parties have it on.
-  - A dispute opened before the 1-week mark keeps the trade's information until the dispute is resolved.
-  - Owner's note: all trades auto-delete after 90 days, and are kept that long only for training, with confidential user data stripped. (Lead to reconcile with the existing rules: dispute records 30 days after close, anonymized training copies 6 months.)
+  - ~~Each user can choose how long their own typed messages and details last in a completed trade: 1 hour, 1 day, 1 week or 1 month. After that, their part disappears from the trade.~~
+  - ~~A separate option deletes the whole trade 1 week or 1 month after it ends, but only when both parties have it on.~~
+  - ~~A dispute opened before the 1-week mark keeps the trade's information until the dispute is resolved.~~
+  - ~~Owner's note: all trades auto-delete after 90 days, and are kept that long only for training, with confidential user data stripped. (Lead to reconcile with the existing rules: dispute records 30 days after close, anonymized training copies 6 months.)~~
 - **Encrypted alerts outside the app: yes.** Nostr and PGP-encrypted email, alongside phone push. *Superseded 2026-10-29: OMEMO Jabber over Tor only.*
 - **I2P address: yes,** next to the Tor .onion (Plan 6). *Reopened 2026-10-29: undecided until research and in-house testing.*
 - **Android: direct APK download from the website and F-Droid,** plus the web app. Google plans to restrict sideloading, so the web app stays the main path.
