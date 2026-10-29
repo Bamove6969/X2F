@@ -8,3 +8,6 @@ dist-fixtures-*/
 test-results/
 playwright-report/
 design/x2f-app/support.js
+
+# Helpers keep their scratch files here (helper-common.md).
+.scratch/
