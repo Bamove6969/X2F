@@ -7,6 +7,8 @@ import { parseMethods, parsePrice } from '../src/screens/post/api.js';
 import { COUNTRIES } from '../src/screens/post/countries.js';
 import {
   COUNTRY_REQUIRED,
+  TERMS_BAD_TEXT,
+  TERMS_LONG_TEXT,
   DEFAULT_FORM,
   FIXED_STALE_WARNING,
   POST_CURRENCIES,
@@ -227,6 +229,21 @@ describe('validate', () => {
   });
 });
 
+describe('validate: terms (the API rule, Task 4 review M2)', () => {
+  it('refuses control and bidi characters with a message the user can act on', () => {
+    for (const t of ['nul \u0000', 'c1 \u0085', 'bidi \u202e', 'isolate \u2066x\u2069', 'esc \u001b']) {
+      expect(validate(form({ terms: t })).errors.terms, JSON.stringify(t)).toBe(TERMS_BAD_TEXT);
+    }
+    expect(validate(form({ terms: 'x'.repeat(4001) })).errors.terms).toBe(TERMS_LONG_TEXT);
+  });
+
+  it('allows emoji with a zero-width joiner, soft hyphens and tabs, and sends CRLF as LF', () => {
+    const r = validate(form({ terms: 'Team \u{1F469}\u200D\u{1F4BB} ok\u00ADay\r\nline two\rthree\tend' }));
+    expect(r.errors).toEqual({});
+    expect(r.body?.terms).toBe('Team \u{1F469}\u200D\u{1F4BB} ok\u00ADay\nline two\nthree\tend');
+  });
+});
+
 describe('preview and navigation', () => {
   it('says who can trade openly, never a name (the board says "you")', () => {
     expect(previewLine('sell', 'Zelle', 'USD', 0)).toBe('Selling XMR via Zelle · USD · you');
@@ -280,8 +297,9 @@ describe('refusalText', () => {
     expect(refusalText('trading-hold')).toMatch(/trading hold/);
     expect(refusalText('trading-paused')).toMatch(/paused/);
     expect(refusalText('method-unavailable')).toMatch(/payment method/);
+    expect(refusalText('too-many-offers')).toMatch(/Remove one/);
     expect(refusalText('something-new')).toMatch(/wasn't posted/);
-    for (const code of ['trading-hold', 'trading-paused', 'method-unavailable', 'x']) expect(refusalText(code)).not.toContain('!');
+    for (const code of ['trading-hold', 'trading-paused', 'method-unavailable', 'too-many-offers', 'x']) expect(refusalText(code)).not.toContain('!');
   });
 });
 

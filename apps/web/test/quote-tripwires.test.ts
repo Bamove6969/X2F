@@ -2,7 +2,9 @@
 // (Task 3's /v1/price and /v1/methods are on the line since 2026-10-26 and were checked against
 // api.ts on 2026-10-27: same fields, `exponent` always sent; Tasks 16 and 17's offer lists are on
 // the line and App.tsx hands their Trade button to the quote, which reads offers through browse's
-// parseOffers; those tripwires are retired. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
+// parseOffers; those tripwires are retired. Task 4's GET /v1/offers landed 2026-10-28 and matches
+// quoteOffer and parseOffers (poster.displayName is the public name, stage, opensAt, bigint strings); its
+// tripwire is retired. Task 4 also serves GET /v1/offers/:id, which the quote may use instead of the list. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the trade room (Task 22) passes location.state.confirmed,
 // else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 28's setup is on the
@@ -21,15 +23,6 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 18 guesses still stand in for missing tasks', () => {
-  it('NEEDS_TASK_4: the offer card the quote reads is guessed', () => {
-    // Guessed (plan Task 4 + Revision 2026-10-24, as Task 16 reads it): GET /v1/offers?side&method&currency&sort
-    // → [{ id; poster: { displayName (the public display name); stage: 'starter'|'building'|'graduated'; … };
-    // pricing: { mode: 'market'; marginBps } | { mode: 'fixed'; centsPerXmr: string }; minFiatCents: string;
-    // maxFiatCents: string; minTrades: number; opensAt?: 'building'|'graduated' }]. There is no single-offer
-    // route, so the quote finds its offer in that list.
-    expect(has('apps/api/src/offers/routes.ts'), 'Task 4 landed: check quoteOffer and browse parseOffers (poster.displayName, stage, opensAt, bigint strings)').toBe(false);
-  });
-
   it('NEEDS_TASK_5: the take route and its starter-limit refusal are guessed', () => {
     // Guessed: POST /v1/offers/:id/take { amountAtomic: string; walletId; centsPerXmr: string; fiatCents:
     // string } → { code } (plan Task 5 with Revision 2026-10-27: the quoted rate and total travel with the

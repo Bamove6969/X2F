@@ -37,7 +37,8 @@ describe('GET /v1/trades/:code', () => {
         expect(p.fee).toEqual({ atomic: FEE });
         expect(tk.role).not.toBe(poster);
         expect('fee' in tk, tk.state).toBe(false);
-        expect(JSON.stringify(tk)).not.toMatch(/fee/i);
+        // The random hex tx hash can spell "fee" (a flake seen 2026-10-28), so it is left out of this check.
+        expect(JSON.stringify({ ...tk, txHash: null })).not.toMatch(/fee/i);
         const step = steps[i];
         if (step) await applyEvent(deps, trade.code, step.e, step.by);
       }
@@ -119,7 +120,7 @@ describe('toTradeView', () => {
     const seller = await trader();
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
-    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] };
+    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'starter' };
     expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toThrow();
     expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null }).fee).toEqual({ atomic: FEE });
     expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toBe(false);
