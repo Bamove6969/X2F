@@ -63,7 +63,8 @@ export const REFUSAL_WORDS =
  */
 // "Could not ...", "X2F could not ...", "Your wallets could not be loaded ..." (at most five words
 // before it), "Your device can't ...", "Too many tries".
-const FAULT_OPENER = /^\s*(?:(?:\S+\s+){0,5}?could(?:n['’]t| not)\b|your device (?:can['’]t|couldn['’]t|is still)\b|too many tries\b)/i;
+// A sentence about the person ("You couldn't post ...") is never a fault opener.
+const FAULT_OPENER = /^\s*(?:(?:(?!you\b)\S+\s+){0,5}?could(?:n['’]t| not)\b|your device (?:can['’]t|couldn['’]t|is still)\b|too many tries\b)/i;
 const STRONG_RULE = /\b(?:sorry|limited|only|once every|maximum|at most|hold|not allowed|not permitted|already have|can['’]t post)\b/i;
 const isFault = (t: string): boolean => FAULT_OPENER.test(t) && !STRONG_RULE.test(t);
 const CODES: ReadonlySet<string> = new Set(CANT_DO_CODES);
