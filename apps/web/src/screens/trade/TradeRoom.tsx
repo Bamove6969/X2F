@@ -41,8 +41,11 @@
  *
  * ### Who owns which slot (lead's plan; register only your own)
  * - Task 22: buyer and seller in `setup`, `funding`; seller in `securing` (TradeFund, SetupStatus).
- * - Task 23: buyer in `securing`, `secured`; seller in `secured` (BuyerPay, the seller's waiting room).
+ * - Task 23: buyer in `securing`, `secured`, `paid` (BuyerPay: "Marked as paid", Finish, the warned
+ *   cancel); seller in `secured` (SellerWaiting); buyer in `settling` with `when` buyer-cancel /
+ *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
+ *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
  * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
  *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
  * - Task 27: both in `disputed`.
