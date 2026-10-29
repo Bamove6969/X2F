@@ -76,6 +76,7 @@ for (const viewport of PHONE_VIEWPORTS) {
       // The offer is gone for them: Trade is off.
       await expect(page.locator('[data-primary]')).toBeDisabled();
 
+      await expectPhoneLayout(page);
       await page.getByRole('link', { name: 'Blocked traders' }).click();
       await expect(page).toHaveURL('/settings/blocked');
       await expect(page.locator('[data-part="blocked-list"] [data-username]')).toHaveText([poster]);

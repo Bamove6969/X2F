@@ -33,9 +33,15 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
 
   if (state.kind === 'done') {
     return (
-      <p className="x2f-note" role="status" data-part="block-done">
-        {C.done(displayName)} <Link to={BLOCKED_PATH}>{C.manage}</Link>
-      </p>
+      <div data-part="block-done">
+        <p className="x2f-note" role="status">
+          {C.done(displayName)}
+        </p>
+        {/* The kit's quiet button look on a router link (no new CSS). */}
+        <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
+          {C.manage}
+        </Link>
+      </div>
     );
   }
   if (state.kind === 'asking' || state.kind === 'busy') {

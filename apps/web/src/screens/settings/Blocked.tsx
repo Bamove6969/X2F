@@ -53,9 +53,13 @@ export function Blocked() {
       <section className="x2f-card" data-part="blocked" aria-labelledby="blocked-h">
         <p className="x2f-sheet__body">{C.intro}</p>
         {session.status === 'signed-out' ? (
-          <p className="x2f-note">
-            {C.signedOut} <Link to="/login?returnTo=%2Fsettings%2Fblocked">Log in</Link>
-          </p>
+          <>
+            <p className="x2f-note">{C.signedOut}</p>
+            {/* The kit's secondary button look on a router link (no new CSS). */}
+            <Link className="x2f-button x2f-button--secondary" to="/login?returnTo=%2Fsettings%2Fblocked">
+              Log in
+            </Link>
+          </>
         ) : null}
         {loadFailed ? (
           <p className="x2f-error" role="alert">
