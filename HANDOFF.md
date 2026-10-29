@@ -52,7 +52,7 @@ Editing the canvas: publish changed `.dc.html` files to the X2F App URL with the
 - **Buyer cancels alone** (owner, 2026-10-17; spec 2.3): any buyer can cancel after funding without the seller and without a dispute. The refund always goes to the seller's recorded refund address (the moderator key signs automatically, only to that address). A strong warning shows first if they already tapped I've paid. **A seller never cancels alone** after funding.
 - **Buyer no-show:** the seller can **extend the timer** (+30 min, at most twice) or **Cancel & get refund**. The buyer gets a 15-minute final alert. If they stay silent, the **moderator key signs the refund automatically**, and only to the seller's refund address.
 - **Dispute after refund:** if the buyer paid anyway, they can dispute. The moderator can place a **trading hold** (it blocks new ads and trades, never coins). If the payment arrived, the seller must **send the XMR as agreed**, not a fiat refund, with an in-app payment proof. Refusing means suspension and a possible lifetime ban. Only if the seller provably can't send the XMR may the moderator order the fiat returned.
-- **Disputes:** human moderators, a published deadline, appeal to a second moderator, and two-moderator approval above a threshold.
+- **Disputes:** human moderators, a published deadline, appeal to a second moderator, and two-moderator approval above a threshold. *Updated 2026-10-29: settled within 48 h (goal 24 h); 72-hour appeals decided by someone not involved; see "Decided 2026-10-29 (owner)".*
 - **Starter limits for new accounts** (owner, 2026-10-24; spec 2.3; replaces the 2026-10-17 "no limits" decision). New accounts graduate from $200 to $1,000 to no platform cap per trade (see Badges); ad posters can still require a minimum number of completed trades.
 - **No buyer deposits** (owner, 2026-10-17; spec 2.5). Only the seller funds the escrow.
 - **Extra XMR in an escrow:** see "Decided 2026-10-20" below. **Late extra XMR** waits until every coin has 10 confirmations (about 20 minutes), then everything is paid out; no separate time cap (owner, 2026-10-17; spec 11.1).
@@ -120,7 +120,7 @@ The **escrow feasibility test passed** on 2026-10-14 (`spikes/escrow-multisig/`)
 
 - **Roles:** Owner (creates and removes moderators, sets the large-trade limit, sees every log, co-approves every ruling above the limit) and Moderator (rules alone below the limit). Later the owner can tick "Can co-approve large rulings" on trusted moderators. Helpers (questions only, no evidence) come with the community room.
 - **Chats are encrypted but moderators can read them** when a dispute is opened on that trade; every read is logged; users are told in every chat.
-- **Dispute records are kept 30 days after the dispute closes, for training, then deleted** (owner, 2026-10-17). Training uses anonymized copies (Buyer/Seller, personal details masked), kept 6 months, then deleted; trainees never see real details. **No IP addresses are logged, even in disputes** (owner, 2026-10-17).
+- ~~**Dispute records are kept 30 days after the dispute closes, for training, then deleted** (owner, 2026-10-17).~~ *Superseded 2026-10-29: kept 90 days from the dispute button.* Training uses anonymized copies (Buyer/Seller, personal details masked), kept 6 months, then deleted; trainees never see real details. **No IP addresses are logged, even in disputes** (owner, 2026-10-17).
 - **Staff log in with two factors** (owner, 2026-10-17; spec 6.6): security key + PGP, two different PGP keys, or PGP + passkey. Idle timeout **2 hours**; a session also ends after **12 hours** at most (Plan 2 Task 4, unchanged by the owner, conversation 2026-10-18 03:19) and when login hours end.
 - **Approved by owner 2026-10-17:** owner logs in with a hardware security key and a PGP key, both on every login (the key must be a YubiKey 5 on firmware 5.7 or newer, see below); staff accounts separate from trading accounts; a violet shield "X2F Moderator" badge shown only in disputed trade rooms, with a hard-to-copy look such as a holographic shimmer (to design on the canvas); the moderator dashboard (queue, case view, ruling tools, training library).
 - Community room ideas are parked in `docs/community-room-plan.md`.
@@ -194,16 +194,32 @@ Since 2026-10-21 two Claude sessions work on X2F; see `docs/coordination.md` for
 
 From the OpenMonero comparison (`research/openmonero-parity-2026-10-27.md`; owner's goal: every OpenMonero feature that fits our values, done better and simpler):
 - **No guest buying.** It complicates disputes. Instead, sign-up stays easy and fast.
-- **Message and trade self-delete (a user setting).**
+- ~~**Message and trade self-delete (a user setting).**~~ *Superseded 2026-10-29: one fixed rule, trades self-destruct 30 days after they end; see "Decided 2026-10-29 (owner)".*
   - Each user can choose how long their own typed messages and details last in a completed trade: 1 hour, 1 day, 1 week or 1 month. After that, their part disappears from the trade.
   - A separate option deletes the whole trade 1 week or 1 month after it ends, but only when both parties have it on.
   - A dispute opened before the 1-week mark keeps the trade's information until the dispute is resolved.
   - Owner's note: all trades auto-delete after 90 days, and are kept that long only for training, with confidential user data stripped. (Lead to reconcile with the existing rules: dispute records 30 days after close, anonymized training copies 6 months.)
-- **Encrypted alerts outside the app: yes.** Nostr and PGP-encrypted email, alongside phone push.
-- **I2P address: yes,** next to the Tor .onion (Plan 6).
+- **Encrypted alerts outside the app: yes.** Nostr and PGP-encrypted email, alongside phone push. *Superseded 2026-10-29: OMEMO Jabber over Tor only.*
+- **I2P address: yes,** next to the Tor .onion (Plan 6). *Reopened 2026-10-29: undecided until research and in-house testing.*
 - **Android: direct APK download from the website and F-Droid,** plus the web app. Google plans to restrict sideloading, so the web app stays the main path.
 - **Public pages: very important.** A site that introduces X2F with well-written pages, a FAQ, a searchable support centre of real questions with good answers, and guides. Statistics are collected; whether to publish them is decided later. A published policy on lawful requests: warrants are answered with what little X2F holds, and X2F can't hand over what it never collects.
 - **Not open source for now.** Instead: outside testing groups and a bug bounty.
 - **Affiliates and sponsored ads:** revisit later.
 - **Chat encryption: keep it as is.** Moderators can read a trade's chat once a dispute opens. Before that, they're stopped by rules and the audit log, not by encryption (spec 6.6).
 - **No worker session reports to the owner directly.** claude2 and claude3 report to the lead, who is the owner's single contact.
+
+## Decided 2026-10-29 (owner)
+
+The owner answered all 16 questions of 2026-10-28 and reviewed the lead's 7 decisions. Full list: spec "Revision 2026-10-29 (owner)". Source: `~/x2f-comms/owner-answers-2026-10-28.md`.
+- **Trades self-destruct 30 days after they end.** This is the advertised self-destruct. No user-chosen times, no early delete. Disputed trades are kept 90 days from the dispute button. No per-trade stub. (Plan 7 Part A rewritten; Plan 3 Task 6, Plan 4 Task 23.)
+- **Disputes settled within 48 hours, goal 24.** A settled dispute still counts as a completed trade; no automatic stage drop; a moderator can recommend limits to a senior moderator. (Plan 3 Revision 2026-10-29; Plan 4 Tasks 24–27.)
+- **Appeals:** 72 hours with the exact deadline shown, a File appeal button, decided by a senior moderator or the owner, never by anyone involved in the original dispute (enforced in code). A won appeal fixes the record and puts a lien on the other account until it repays through an X2F repayment trade. (Plan 4 Tasks 24–25.)
+- **Staff bans:** trade ban; timed site ban with the exact reinstate time, automatic reinstatement and a moderator contact link. (Plan 4 Task 27.)
+- **Reviews are permanent** (comment, templated comments, trade badges, stars 1–5 or 1–10 to be decided); the rated person can dispute a review. (Plan 5 Tasks 19–20.)
+- **Traders:** trader-to-trader block, including hiding online status; My offers with on/off and Select all; flexible offers (tiers, several methods, 2 per side per currency, 20 total); warning popups before paying and before releasing; the buyer's refunded screen shows every refund reason. (Plan 3 Tasks 34–38, Task 27.)
+- **Feedback link on every "can't do that" popup,** named or anonymous, with the owner's thank-you text. (Plan 5 Task 21.)
+- **Alerts:** phone push, a loud alarm with a custom sound and volume, optional unrestricted battery on Android, and OMEMO Jabber over Tor as the only extra. No email, no Nostr. (Plan 7 Part B.)
+- **News inbox** at login; **emergency-stop message** on the offer lists; **support tickets** in categories plus "Everything else"; **delete my account**; **revenue ledger** of 1% of completed trades, a second tier for large trades later. (Plan 4 Tasks 28–32; Plan 7 Task 18.)
+- **Own F-Droid repo; Titan v2 only; YubiKey Bio allowed for staff.** (Plan 6 Revision 2026-10-29.)
+- **Undecided:** I2P (research and in-house testing first); warrant canary (lawyer, `~/x2f-comms/lawyer-questions.md`); News "don't show again"; star scale; anonymized training copies (6 months not revisited).
+- **Lead decisions 1–7 approved:** trade waits for both addresses, then locked; migration 111 for Task 8; `trade-closed` → idle; `paidRecorded`; 44px method name to Claude Design; `PHONE_VIEWPORTS`; Task 27 owns the buyer's refunded screen.
