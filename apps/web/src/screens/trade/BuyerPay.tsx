@@ -39,15 +39,15 @@ import './pay.css';
 
 /**
  * Task 23's trade-room slots (Task 22's slot interface, TradeRoom.tsx), registered at import
- * (screens.ts imports this file). `paid` for the buyer is not in Task 22's ownership list; Task 23
- * takes it ("Marked as paid", the warned cancel).
+ * (screens.ts imports this file). Task 23 also takes `paid` for the buyer ("Marked as paid", Finish,
+ * the warned cancel); both extra slots are in TradeRoom.tsx's ownership list and docs/coordination.md.
  */
 export const TASK23_SLOTS: readonly TradeSlot[] = [
   { owner: 'Task 23', role: 'buyer', states: ['securing', 'secured', 'paid'], screen: BuyerPay },
   { owner: 'Task 23', role: 'seller', states: ['secured'], screen: SellerWaiting },
   // After the buyer's cancel or an accepted mutual cancel the BUYER builds the refund (policy.ts
-  // ROUTE), and only from a tapped intent: this screen keeps it in view (review I4; not in Task
-  // 22's ownership list yet; the release is Task 24's).
+  // ROUTE), and only from a tapped intent: this screen keeps it in view (review I4; the release is
+  // Task 24's).
   { owner: 'Task 23', role: 'buyer', states: ['settling'], when: (v) => v.settling === 'buyer-cancel' || v.settling === 'mutual-cancel', screen: BuyerCancelling },
 ];
 
