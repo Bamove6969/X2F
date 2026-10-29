@@ -741,6 +741,9 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
   });
   afterEach(() => setTradeEscrowHook(null));
 
+  /** A whole GET /v1/trades/:code answer (the room parses every amount). */
+  const full = (over: Over) => JSON.stringify({ ...trade(over), maxFiatCents: '50000', receivedAtomic: '1250000000000', funding: null, nextDeadline: null });
+
   /** S holds to release Y; the release-started answer never arrives (a connection reset). */
   async function holdOnYAndLoseTheAnswer(): Promise<void> {
     vi.useFakeTimers();
@@ -754,7 +757,7 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
     await flush();
     expect(releaseAsked(Y)).toBe(true);
     y.unmount();
-    vi.useRealTimers();
+    // Fake timers stay on: a fresh fake clock would start before the marker's time (and drop it).
   }
 
   it('the room shows a refusal for X, renders no slot and starts no escrow; nothing is signed', async () => {
@@ -762,7 +765,7 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
     const seen: string[] = [];
     vi.stubGlobal('fetch', async (url: string) => {
       seen.push(url);
-      return new Response(JSON.stringify(trade({ code: Y, state: 'settling', settling: 'release' })), { status: 200, headers: { 'content-type': 'application/json' } });
+      return new Response(full({ code: Y, state: 'settling', settling: 'release' }), { status: 200, headers: { 'content-type': 'application/json' } });
     });
     const r = render(
       <MemoryRouter initialEntries={[`/trade/${X}`]}>
@@ -772,6 +775,7 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
       </MemoryRouter>,
     );
     await flush();
+    expect(roomEscrow.release).not.toHaveBeenCalled();
     expect(seen).toEqual([`/v1/trades/${X}`]);
     expect(r.host.querySelector('[data-screen=seller-confirm]')).toBeNull();
     expect(r.host.querySelector('[role=alert]')!.textContent).toContain('X2F answered with a different trade');
@@ -781,8 +785,7 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
 
   it('a later re-read that carries Y\'s code takes the slot away and signs nothing', async () => {
     await holdOnYAndLoseTheAnswer();
-    vi.useFakeTimers();
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(trade({ code: X, state: 'paid' })), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', async () => new Response(full({ code: X, state: 'paid' }), { status: 200, headers: { 'content-type': 'application/json' } }));
     const r = render(
       <MemoryRouter initialEntries={[`/trade/${X}`]}>
         <Routes>
@@ -794,7 +797,7 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
     expect(r.host.querySelector('[data-screen=seller-confirm]')).not.toBeNull();
     expect(started).toContain(X);
     // The API now answers X with Y's code, settling/release; the room's poll reads it.
-    vi.stubGlobal('fetch', async () => new Response(JSON.stringify(trade({ code: Y, state: 'settling', settling: 'release' })), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', async () => new Response(full({ code: Y, state: 'settling', settling: 'release' }), { status: 200, headers: { 'content-type': 'application/json' } }));
     act(() => void vi.advanceTimersByTime(POLL_MS));
     await flush();
     expect(r.host.querySelector('[data-screen=seller-confirm]')).toBeNull();
@@ -804,7 +807,6 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
 
   it('even handed Y\'s view directly, the release screen for X\'s escrow keys the marker by X: no signature without a hold', async () => {
     await holdOnYAndLoseTheAnswer();
-    vi.useFakeTimers();
     const r = render(
       <MemoryRouter>
         <ReleaseRoomScreen code={X} view={trade({ code: Y, state: 'settling', settling: 'release' })} escrow={roomEscrow} refresh={async () => undefined} serverClock={() => new Date(NOW)} wide={false} />
