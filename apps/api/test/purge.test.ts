@@ -57,7 +57,8 @@ describe('purgeTradeAddresses (P3-I12)', () => {
     const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
     const { trade } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
     await driveTo(deps, trade, 'secured');
-    const refunded = await applyEvent(deps, trade.code, { type: 'settled', kind: 'mutual-cancel', txHash: 'ab'.repeat(32) }, 'system');
+    // A no-show refund (a cancel's refund can't be disputed, owner 2026-10-29).
+    const refunded = await applyEvent(deps, trade.code, { type: 'settled', kind: 'auto-refund', txHash: 'ab'.repeat(32) }, 'system');
     expect(refunded.state).toBe('refunded');
     const edge = at(refunded.closedAt!, TRADE_ADDRESS_RETENTION_MS);
     // The purge runs first at that exact millisecond, then the buyer's dispute arrives in it too.

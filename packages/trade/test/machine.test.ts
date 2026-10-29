@@ -83,6 +83,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   'fund-started': { type: 'fund-started' },
   'walk-away': { type: 'walk-away' },
   'confirm-cancel': { type: 'confirm-cancel', returnConfirmations: 10 },
+  'return-confirmed': { type: 'return-confirmed', confirmations: 10 },
   'release-started': { type: 'release-started' },
   settled: { type: 'settled', kind: 'release', txHash: 'aa'.repeat(32) },
   'open-dispute': { type: 'open-dispute' },

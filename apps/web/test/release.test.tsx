@@ -780,6 +780,8 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
 
   /** S holds to release Y; the release-started answer never arrives (a connection reset). */
   async function holdOnYAndLoseTheAnswer(): Promise<void> {
+    // S went past Y's release warning (Task 38) before holding.
+    setWarned('release', Y);
     vi.useFakeTimers();
     vi.stubGlobal('fetch', async () => {
       throw new TypeError('network');

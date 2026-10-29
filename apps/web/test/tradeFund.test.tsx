@@ -396,12 +396,14 @@ describe('non-retryable escrow errors are said, never endless setup (review 2026
 });
 
 describe("the seller's cancel on the danger screen is a proposal (review 2026-10-27, Minor 4)", () => {
-  it('is labelled "Propose cancel", and afterwards says the buyer must accept', async () => {
+  it('after "Fund escrow" it is labelled "Propose cancel", and afterwards says the buyer must accept', async () => {
+    // Before the tap the seller may still walk away alone (walk-away, Revision 2026-10-29b; tested above).
+    current = { ...base, fundStartedAt: '2026-10-25T11:59:00.000Z' };
     setTradeEscrowHook(() => escrow({ phase: 'error', error: 'participants-mismatch' }));
     let host = await room();
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Propose cancel')).toBe(true);
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Cancel')).toBe(false);
-    current = { ...base, cancelProposedBy: 'seller' };
+    current = { ...base, fundStartedAt: '2026-10-25T11:59:00.000Z', cancelProposedBy: 'seller' };
     host = await room();
     expect(host.textContent).toContain('Cancel proposed, waiting for the buyer');
     expect([...host.querySelectorAll('button')].some((b) => b.textContent === 'Propose cancel')).toBe(false);
