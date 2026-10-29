@@ -193,7 +193,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('a change 10 seconds after a fresh login goes through withConfirm: one proof, and the token is single-use', async () => {
     const { soft } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     srv.advance(10_000);
 
     let token: string | undefined;
@@ -213,7 +213,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('without a token the API asks for one, naming the action', async () => {
     const { soft } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     const e = apiError(await failure(fresh.api.newRecoveryCodes({})));
     expect(e.code).toBe('confirm-required');
     expect(e.action).toBe('new-recovery-codes');
@@ -222,7 +222,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('PGP proof: the challenge names the action and the code buys a token for it alone', async () => {
     const { username, key } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginPgp(fresh.api, username, key);
+    await approved(srv, fresh, loginPgp(fresh.api, username, key));
     const prove = vi.fn(async (action: Parameters<AuthApi['confirmPgpStart']>[0]['action']) => {
       const start = await fresh.api.confirmPgpStart({ action });
       const text = await decrypt(start.encryptedMessage, key.privateKey, srv.deps.pgpSigner.publicArmored, srv.now());
