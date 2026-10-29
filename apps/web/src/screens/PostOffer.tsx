@@ -7,6 +7,7 @@ import { useEffect, useId, useMemo, useState, type ChangeEvent, type ReactNode }
 import { Link, useLocation, useNavigate } from 'react-router';
 import { ApiCallError, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
+import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
 import { Icon } from '../ui/icons.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
@@ -32,6 +33,8 @@ import {
   parseAmount,
   previewLine,
   priceWithMargin,
+  POST_CANT_TITLE,
+  postCantDo,
   refusalText,
   saveDraft,
   stepMargin,
@@ -136,6 +139,8 @@ export function PostOffer() {
   const [methods, retryMethods] = useMethods();
   const [errors, setErrors] = useState<Partial<Record<FieldError, string>>>({});
   const [refusal, setRefusal] = useState<string | null>(null);
+  // A refusal by a rule (trading hold, maintenance) opens CantDoThat until closed (Plan 5 Task 21).
+  const [cantDo, setCantDo] = useState<CantDoCode | null>(null);
   const [busy, setBusy] = useState(false);
   const quote = usePrice(form.currency);
   const ids = useId();
@@ -157,6 +162,7 @@ export function PostOffer() {
   const set = <K extends keyof FormState>(key: K, value: FormState[K]) => {
     setForm((f) => ({ ...f, [key]: value }));
     setRefusal(null);
+    setCantDo(null);
   };
   const text = (key: 'min' | 'max' | 'fixed' | 'terms') => (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => set(key, e.target.value);
 
@@ -183,6 +189,7 @@ export function PostOffer() {
     const r = validate(form, { giftCard, market });
     setErrors(r.errors);
     setRefusal(null);
+    setCantDo(null);
     if (!r.body) return;
     // Kept until the offer is posted, in case the API sends the page to setup or Add a wallet.
     const s = storage();
@@ -201,7 +208,9 @@ export function PostOffer() {
       }
       // terms-required and no-wallet have already sent the page on (api client); the draft waits.
       if (e instanceof ApiCallError && (e.code === 'terms-required' || e.code === 'no-wallet')) return;
-      setRefusal(refusalText(e instanceof ApiCallError ? e.code : 'network'));
+      const code = e instanceof ApiCallError ? e.code : 'network';
+      setRefusal(refusalText(code));
+      setCantDo(postCantDo(code));
     }
   }
 
@@ -419,11 +428,12 @@ export function PostOffer() {
       </main>
 
       <footer className="post-footer">
-        {refusal ? (
+        {refusal && cantDo === null ? (
           <p role="alert" className="post-refusal">
             {refusal}
           </p>
         ) : null}
+        {refusal && cantDo !== null ? <CantDoThat title={POST_CANT_TITLE} body={refusal} from={cantDo} onClose={() => setCantDo(null)} /> : null}
         <Button variant="primary" className="post-submit" onClick={() => void submit()} disabled={busy} aria-busy={busy}>
           Post offer
         </Button>

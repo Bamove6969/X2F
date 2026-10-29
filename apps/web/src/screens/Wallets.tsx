@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AuthApiError, walletsAction, withConfirm } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
+import { CantDoThat, isCantDoCode, type CantDoCode } from '../ui/CantDoThat.js';
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
@@ -40,6 +41,14 @@ export const RECOVERY_SESSION_WALLETS =
   "You logged in with a backup, so you can't add wallets in this session. Log in with your usual method to add one.";
 /** 403 `confirm-invalid`: the confirm ran out (or was used) before the save went through. */
 export const CONFIRM_INVALID_WALLETS = 'Your confirmation ran out before the wallets were saved. Save again and confirm once more.';
+
+/** CantDoThat's title when adding wallets is refused by a rule (Plan 5 Task 21). COPY-UNSIGNED */
+export const WALLETS_CANT_TITLE = "Wallets can't be added";
+
+/** The refusal code when the add was refused by a rule (shown in CantDoThat), else null. */
+function addCantDo(e: unknown): CantDoCode | null {
+  return (e instanceof ApiCallError || e instanceof AuthApiError) && isCantDoCode(e.code) ? e.code : null;
+}
 
 function addError(e: unknown): string {
   if (e instanceof ApiCallError || e instanceof AuthApiError) {
@@ -239,6 +248,7 @@ export function Wallets() {
   const [batch, setBatch] = useState<WalletDraft[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
   const codes = useOpenEscrowKeys();
@@ -353,7 +363,11 @@ export function Wallets() {
       }
       void api<WalletRule>('/v1/wallets/rule').then(setRule, () => setRule(null));
     } catch (e) {
-      if (!isConfirmAbort(e)) setError(addError(e));
+      if (!isConfirmAbort(e)) {
+        const code = addCantDo(e);
+        if (code !== null) setCantDo({ code, text: addError(e) });
+        else setError(addError(e));
+      }
     } finally {
       setSaving(false);
     }
@@ -532,6 +546,18 @@ export function Wallets() {
           <p className="x2f-wallets__error" role="alert">
             {error}
           </p>
+        ) : null}
+        {cantDo !== null ? (
+          <CantDoThat
+            title={WALLETS_CANT_TITLE}
+            body={cantDo.text}
+            from={cantDo.code}
+            onClose={() => {
+              // Closed, the reason stays on the screen as a plain line.
+              setError(cantDo.text);
+              setCantDo(null);
+            }}
+          />
         ) : null}
       </main>
 

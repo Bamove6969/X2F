@@ -43,9 +43,10 @@ export function errorCode(e: unknown): string | null {
 const NAME_ERRORS: Record<string, string> = {
   'display-name-taken': 'That username is taken. Pick another.',
   'display-name-reserved': 'That username is kept for X2F. Pick another.',
+  // not-a-refusal: an input check on the names typed
   'display-name-invalid': 'That username cannot be used. Pick another.',
-  'login-name-invalid': 'That login name cannot be used. Pick another.',
-  'names-unavailable': 'Those names cannot be used. Pick others.',
+  'login-name-invalid': 'That login name cannot be used. Pick another.', // not-a-refusal: an input check
+  'names-unavailable': 'Those names cannot be used. Pick others.', // not-a-refusal: an input check
   'names-same': 'Your login name must be different from your username.',
 };
 

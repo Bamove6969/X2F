@@ -53,6 +53,7 @@ export function waitSentence(seconds: number | undefined, now: Date = new Date()
 }
 
 export const KEY_EXPIRED = 'That key has expired. Extend it in your PGP app, then paste it again.';
+// not-a-refusal: the pasted key itself is revoked
 export const KEY_REVOKED = 'That key has been revoked, so it cannot be used to log in. Use a key that is still valid.';
 export const STEP_EXPIRED = 'That step has expired. Start again.';
 /** 409 `security-key-limit` (FU-A review I2): the account already holds the most security keys allowed. */
@@ -69,12 +70,15 @@ export function isExpired(e: unknown): boolean {
 export function refusalText(e: unknown, fallback: string, o: { expired?: string; now?: Date } = {}): string {
   const r = refusalOf(e);
   if (r === null) return fallback;
+  // cant-do-that-todo: shown inline by every security screen through refusalText
   if (r.code === 'recovery-hold') return holdSentence(r.holdUntil);
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
   if (r.code === 'key-expired') return KEY_EXPIRED;
   if (r.code === 'key-revoked') return KEY_REVOKED;
   if (r.code === 'challenge-expired') return o.expired ?? STEP_EXPIRED;
+  // cant-do-that-todo: shown inline by Security (add a key) through refusalText
   if (r.code === 'security-key-limit') return SECURITY_KEY_LIMIT;
+  // cant-do-that-todo: shown inline by the login and security screens through refusalText
   if (r.code === 'login-name-set') return LOGIN_NAME_SET;
   if (typeof r.detail === 'string' && r.detail.trim() !== '') return r.detail;
   return fallback;

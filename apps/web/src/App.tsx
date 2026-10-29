@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } 
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { Feedback } from './screens/Feedback.js';
 import { PostOffer } from './screens/PostOffer.js';
 import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
@@ -155,6 +156,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/feedback" element={<Feedback />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>

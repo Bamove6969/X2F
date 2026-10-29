@@ -13,10 +13,20 @@
 //   (Emoji_Presentation), any pictograph forced to emoji style with U+FE0F, a regional-indicator
 //   flag letter or a keycap. Text-style marks the boards use
 //   (★ · … – −) are not emoji. lintSource throws on a file extension it has no rule for.
+// - The owner's own wording wins over the "!" rule where he gave a sentence exactly: OWNER_WORDING
+//   lists each one (2026-10-29: the feedback form's thank-you), matched as the whole string.
+// - Refusals go through `CantDoThat` (Plan 5 Task 21; owner, 2026-10-29): in JS/TS files, user
+//   text that words a refusal ("can't", "cannot", "not allowed", "limited to", "Sorry", ...) or a
+//   string literal equal to one of the API's refusal codes (CANT_DO_CODES in
+//   apps/web/src/ui/cantDoCodes.ts) is refused unless the file imports `ui/CantDoThat` or
+//   `ui/cantDoCodes`, or that line or the one above carries `not-a-refusal: <why>` in a comment
+//   (an explanation, a fault such as a broken browser, not a rule that stops the user) or
+//   `cant-do-that-todo: <why>` (a real refusal still shown inline; a test caps how many there are).
 import { readdirSync, readFileSync } from 'node:fs';
 import { extname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseAst } from 'rolldown/parseAst';
+import { CANT_DO_CODES } from '../apps/web/src/ui/cantDoCodes.js';
 
 export const WEB_SRC = fileURLToPath(new URL('../apps/web/src/', import.meta.url));
 const REPO = fileURLToPath(new URL('..', import.meta.url));
@@ -25,9 +35,23 @@ export interface Finding {
   file: string;
   line: number;
   column: number;
-  rule: 'exclamation' | 'emoji' | 'parse';
+  rule: 'exclamation' | 'emoji' | 'parse' | 'refusal';
   text: string;
 }
+
+/** Sentences the owner gave word for word, "!" included (whole string, after trimming). */
+export const OWNER_WORDING: ReadonlySet<string> = new Set([
+  // Plan 5 Task 21, spec 5.2 (owner, 2026-10-29): shown after the feedback form is sent.
+  'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.',
+]);
+
+/** Wording that tells the user they can't do something. */
+export const REFUSAL_WORDS = /\b(?:can['’]t|cannot|can not|not allowed|isn['’]t allowed|aren['’]t allowed|you['’]re limited|limited to|sorry)\b/i;
+const CODES: ReadonlySet<string> = new Set(CANT_DO_CODES);
+const CANT_DO_IMPORT = /(?:^|\/)(?:CantDoThat|cantDoCodes)(?:\.js|\.tsx?)?$/;
+const PRAGMA = 'not-a-refusal:';
+/** A refusal still shown inline, waiting to move into CantDoThat (counted by a ratchet test). */
+export const TODO_PRAGMA = 'cant-do-that-todo:';
 
 const EMOJI = /\p{Emoji_Presentation}|\p{Extended_Pictographic}️|\p{Regional_Indicator}|⃣/u;
 const EMOJI_ALL = new RegExp(EMOJI.source, 'gu');
@@ -93,7 +117,7 @@ function emojiFindings(src: string, file: string): { out: Finding[]; literal: Se
 }
 
 /** Every piece of text a user could see: string literals, template literal text and JSX text, with its offset. */
-function textPieces(node: unknown, out: { text: string; start: number }[]): void {
+function textPieces(node: unknown, out: { text: string; start: number; literal: boolean }[]): void {
   if (Array.isArray(node)) {
     for (const n of node) textPieces(n, out);
     return;
@@ -101,12 +125,12 @@ function textPieces(node: unknown, out: { text: string; start: number }[]): void
   if (node === null || typeof node !== 'object') return;
   const n = node as { type?: unknown; value?: unknown; start?: unknown; regex?: unknown };
   const start = typeof n.start === 'number' ? n.start : 0;
-  if (n.type === 'Literal' && typeof n.value === 'string' && n.regex === undefined) out.push({ text: n.value, start });
-  else if (n.type === 'JSXText' && typeof n.value === 'string') out.push({ text: n.value, start });
+  if (n.type === 'Literal' && typeof n.value === 'string' && n.regex === undefined) out.push({ text: n.value, start, literal: true });
+  else if (n.type === 'JSXText' && typeof n.value === 'string') out.push({ text: n.value, start, literal: false });
   else if (n.type === 'TemplateElement') {
     const v = n.value as { cooked?: unknown; raw?: unknown } | undefined;
     const text = typeof v?.cooked === 'string' ? v.cooked : typeof v?.raw === 'string' ? v.raw : '';
-    out.push({ text, start });
+    out.push({ text, start, literal: false });
   }
   for (const [key, value] of Object.entries(n)) {
     if (key !== 'value' || n.type !== 'TemplateElement') textPieces(value, out);
@@ -131,13 +155,25 @@ export function lintSource(src: string, file: string): Finding[] {
       found.push({ file, line: 1, column: 1, rule: 'parse', text: e instanceof Error ? e.message.split('\n')[0]! : String(e) });
       return found;
     }
-    const pieces: { text: string; start: number }[] = [];
+    const pieces: { text: string; start: number; literal: boolean }[] = [];
     textPieces(program, pieces);
+    const body = (program as { body?: unknown }).body;
+    const usesCantDo =
+      CANT_DO_IMPORT.test(file.replace(/\.[^./]+$/, '')) ||
+      (Array.isArray(body) &&
+        body.some((n: { type?: unknown; source?: { value?: unknown } }) => n.type === 'ImportDeclaration' && typeof n.source?.value === 'string' && CANT_DO_IMPORT.test(n.source.value)));
+    const lines = src.split('\n');
+    const marked = (l: string) => l.includes(PRAGMA) || l.includes(TODO_PRAGMA);
+    const excused = (line: number) => marked(lines[line - 1] ?? '') || marked(lines[line - 2] ?? '');
     for (const p of pieces) {
+      if (!usesCantDo && (REFUSAL_WORDS.test(decodeEntities(p.text)) || (p.literal && CODES.has(p.text)))) {
+        const at = position(src, p.start);
+        if (!excused(at.line)) found.push({ file, ...at, rule: 'refusal', text: p.text.trim() });
+      }
       // JSX text and attribute strings are entity-decoded by React (`Done&#33;` shows "Done!"), so
       // every piece is checked decoded; a plain string literal holding an entity is rare enough
       // that being stricter there costs nothing.
-      if (decodeEntities(p.text).includes('!')) found.push({ file, ...position(src, p.start), rule: 'exclamation', text: p.text.trim() });
+      if (decodeEntities(p.text).includes('!') && !OWNER_WORDING.has(p.text.trim())) found.push({ file, ...position(src, p.start), rule: 'exclamation', text: p.text.trim() });
       // Emoji written as a string/template escape (`"\u{1F600}"`) only shows in the cooked text.
       for (const e of p.text.matchAll(EMOJI_ALL)) if (!literal.has(e[0])) found.push({ file, ...position(src, p.start), rule: 'emoji', text: e[0] });
     }
@@ -162,7 +198,14 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const root = process.argv[2] ? resolve(process.argv[2]) : WEB_SRC;
   const found = lintTree(root);
   for (const f of found) {
-    const what = f.rule === 'exclamation' ? 'no "!" in copy' : f.rule === 'emoji' ? 'no emoji' : 'cannot parse';
+    const what =
+      f.rule === 'exclamation'
+        ? 'no "!" in copy'
+        : f.rule === 'emoji'
+          ? 'no emoji'
+          : f.rule === 'refusal'
+            ? 'a refusal must be shown with CantDoThat (or mark the line `// not-a-refusal: <why>`)'
+            : 'cannot parse';
     console.error(`${f.file}:${f.line}:${f.column}  ${what}: ${JSON.stringify(f.text)}`);
   }
   if (found.length > 0) {

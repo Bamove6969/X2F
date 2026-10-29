@@ -398,8 +398,10 @@ describe('BuyQuote', () => {
     pick(host, 'w-cake');
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     await settle();
-    const alert = host.querySelector('[role="alert"]')!.textContent ?? '';
+    // A rule refused it: the reason opens in CantDoThat (a portal on the body), with its feedback link.
+    const alert = document.querySelector('[role="dialog"] [role="alert"]')!.textContent ?? '';
     expect(alert).toBe('Your account is on Starter limits up to $200 per trade. Try a smaller amount.');
+    expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=starter-limit');
     expect(where(host)).toBeNull();
   });
 

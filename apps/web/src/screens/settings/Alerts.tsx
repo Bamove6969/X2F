@@ -17,6 +17,7 @@ const KIND_WORDS: Record<string, string> = {
   'recovery-hold-cancelled': 'A backup login was cancelled',
   'login-locked': 'Logins paused after too many tries',
   'login-method-added': 'A login method was added',
+  // not-a-refusal: an alert kind, not a refusal code
   'login-name-set': 'Your login name was set',
   'login-method-removed': 'A login method was removed',
   'sessions-ended': 'Other devices were logged out',

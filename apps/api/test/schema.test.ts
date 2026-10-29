@@ -42,7 +42,7 @@ describe('migrations', () => {
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
         '101_method_suggestions.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '109_owner_settings.sql',
-        '111_trade_identities.sql',
+        '111_trade_identities.sql', '114_feedback_form.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {

@@ -2,6 +2,7 @@
 // noted). The words name only the caller's own situation: a starter-limit refusal names the
 // caller's own stage and cap and nothing about the other side (spec 2.3, Revision 2026-10-24).
 import { ApiCallError } from '../../api/client.js';
+import { isCantDoCode, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { STAGE_NAMES, fiatWhole, type QuoteOffer } from './quoteModel.js';
 
 const GENERIC = 'The trade could not start. Try again.';
@@ -15,6 +16,17 @@ function capCents(extra: Record<string, unknown>): bigint | null {
   const v = extra.capUsdCents;
   return typeof v === 'string' && /^\d{1,15}$/.test(v) ? BigInt(v) : null;
 }
+
+/**
+ * The refusal code when the take was refused by a rule (shown in CantDoThat, Plan 5 Task 21),
+ * else null (shown inline: a moved price, a busy offer, a network failure).
+ */
+export function takeCantDo(e: unknown): CantDoCode | null {
+  return e instanceof ApiCallError && isCantDoCode(e.code) ? e.code : null;
+}
+
+/** CantDoThat's title on the quote. COPY-UNSIGNED */
+export const TAKE_CANT_TITLE = "This trade can't start";
 
 export function takeRefusal(e: unknown, offer: QuoteOffer): string {
   if (!(e instanceof ApiCallError)) return GENERIC;

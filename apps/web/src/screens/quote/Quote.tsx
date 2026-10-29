@@ -3,12 +3,13 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { posterRole, type Price } from '@x2f/trade';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
 import { Icon } from '../../ui/icons.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
-import { takeRefusal } from './takeErrors.js';
+import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import './quote.css';
@@ -103,6 +104,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
   const { market, refresh: refreshMarket } = useMarket(currency);
   const { signedIn, state, take } = useTake(offerId, refreshMarket);
+  const [closedError, setClosedError] = useState<unknown>(null);
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
@@ -219,6 +221,9 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         }
       : null;
   const refusal = state.error === null ? null : takeRefusal(state.error, o);
+  // A refusal by a rule opens CantDoThat (with its feedback link) until closed; others stay inline.
+  const cantDo = state.error === null ? null : takeCantDo(state.error);
+  const cantDoOpen = cantDo !== null && closedError !== state.error;
 
   let walletLine: ReactNode = copy.noWalletLine;
   if (signedIn === false) walletLine = copy.signedOutWalletLine;
@@ -334,10 +339,13 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             You&apos;re back. Check the total, then tap Trade.
           </p>
         ) : null}
-        {refusal !== null ? (
+        {refusal !== null && !cantDoOpen ? (
           <p role="alert" className="x2f-quote__help x2f-quote__help--bad">
             {refusal}
           </p>
+        ) : null}
+        {cantDo !== null && refusal !== null ? (
+          <CantDoThat open={cantDoOpen} title={TAKE_CANT_TITLE} body={refusal} from={cantDo} onClose={() => setClosedError(state.error)} />
         ) : null}
         {noWallet ? (
           <Button variant="primary" onClick={() => void navigate(addWalletHref(true))}>

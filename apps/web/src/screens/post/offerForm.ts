@@ -1,6 +1,7 @@
 // PostOffer's form logic (Task 21; board PostOffer.dc.html; spec 2.2 step 5, 2.3, 11.6). Fiat is
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
+import { isCantDoCode, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -202,6 +203,15 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
 }
 
 /** The API refusals a poster can meet (plan Task 4), as plain text. */
+/** CantDoThat's title when Post offer is refused by a rule (Plan 5 Task 21). COPY-UNSIGNED */
+export const POST_CANT_TITLE = "This offer can't be posted";
+
+/** The refusal code when Post offer was refused by a rule (shown in CantDoThat), else null. */
+export function postCantDo(code: string): CantDoCode | null {
+  return isCantDoCode(code) ? code : null;
+}
+
+/** The words for a refused Post offer; a CANT_DO_CODES refusal is shown in CantDoThat, the rest inline. */
 export function refusalText(code: string): string {
   switch (code) {
     case 'trading-hold':
