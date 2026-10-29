@@ -68,6 +68,7 @@ export type ApiErrorCode =
   | 'stale-seq'
   | 'wrong-channel'
   | 'wrong-sender'
+  | 'chat-unavailable'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

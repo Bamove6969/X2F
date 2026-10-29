@@ -1,3 +1,4 @@
+import { newTradeCode } from '@x2f/core';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -7,7 +8,7 @@ import { canonicalTimeZone, FORMATTER_CAP, formatterCacheSize, inQuietHours, loc
 import {
   NUDGE_GAP_MS, NUDGE_RETENTION_MS, RECIPIENT_LIMIT_PER_HOUR, purgeNudges, type NudgeEvent, type NudgeWiring,
 } from '../src/nudge/routes.js';
-import { pendingNudgeWiring, productionNudgeWiring, tradeSharedContext } from '../src/nudge/wiring.js';
+import { chatSharedContext, pendingNudgeWiring, productionNudgeWiring, tradeSharedContext } from '../src/nudge/wiring.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { testDb } from './helpers/db.js';
@@ -670,18 +671,53 @@ describe('shared context from real trades (Task 6)', () => {
   });
 });
 
-describe('TRIPWIRES: real wiring for Task 20 (Task 19 delivery is wired)', () => {
-  it('until then, no chat code is a shared context; delivery is left to Task 19 (no publish or sendPush stub)', async () => {
-    expect(await pendingNudgeWiring.hasSharedContext('a', 'b', 'K7Q2-M9XW')).toBe(false);
+describe('shared context from open chats (Task 20)', () => {
+  /** A chat between `seller` (who posted a sell offer) and `buyer`, inserted directly. */
+  async function seedChat(sellerId: string, buyerId: string, tradeCode: string | null = null): Promise<string> {
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
+       values ($1, 'sell', 'zelle', 'USD', 'market', 100, 1000, 100000, 0, '', 'live', now(), now()) returning id`,
+      [sellerId],
+    );
+    const code = newTradeCode();
+    await deps.db.query(
+      'insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, now())',
+      [code, rows[0]!.id, buyerId, sellerId, tradeCode],
+    );
+    return code;
+  }
+
+  it('the two sides of an open pre-trade chat share it, either way round and in any spelling', async () => {
+    const a = await trader();
+    const b = await trader();
+    const c = await trader();
+    const chat = await seedChat(a.id, b.id);
+    const shares = chatSharedContext(deps.db);
+    expect(await shares(a.id, b.id, chat)).toBe(true);
+    expect(await shares(b.id, a.id, chat.toLowerCase().replace(/-/g, ''))).toBe(true);
+    expect(await shares(a.id, c.id, chat)).toBe(false);
+    expect(await shares(a.id, a.id, chat)).toBe(false);
+    expect(await shares(a.id, b.id, 'K7Q2-M9XW')).toBe(false);
+    expect(await productionNudgeWiring(deps.db).hasSharedContext(b.id, a.id, chat)).toBe(true);
+    expect(await pendingNudgeWiring.hasSharedContext(a.id, b.id, chat)).toBe(false);
+  });
+
+  it("a chat whose trade closed is no longer a shared context; an open trade's chat still is", async () => {
+    const a = await trader();
+    const b = await trader();
+    const shares = chatSharedContext(deps.db);
+    const done = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    await driveTo(deps, done.trade, 'released');
+    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, done.code))).toBe(false);
+    const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, open.code))).toBe(true);
+  });
+
+  it('delivery is left to Task 19 (no publish or sendPush stub)', () => {
     // Left out on purpose: nudge/routes.ts then delivers over app.events and app.push (test/nudge-delivery.test.ts).
     expect(pendingNudgeWiring.publish).toBeUndefined();
     expect(pendingNudgeWiring.sendPush).toBeUndefined();
     expect(productionNudgeWiring(deps.db).publish).toBeUndefined();
     expect(productionNudgeWiring(deps.db).sendPush).toBeUndefined();
-  });
-
-  it('Task 20 (chats) is not merged yet: wire hasSharedContext to open chats in nudge/wiring.ts', async () => {
-    const { rows } = await deps.db.query<{ t: string | null }>(`select to_regclass('public.chats')::text as t`);
-    expect(rows[0]!.t, 'Task 20 merged: hasSharedContext must check open chats (apps/api/src/nudge/wiring.ts)').toBeNull();
   });
 });

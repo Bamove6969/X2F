@@ -23,15 +23,35 @@ export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext
 }
 
 /**
- * Stand-in for what is not merged yet (tripwire in test/nudge.test.ts): Task 20 (open chats), so
- * a chat code is not yet a shared context. Delivery is Task 19's real SSE bus and Web Push
- * (`liveDelivery` in routes.ts), used whenever `publish` / `sendPush` are left out, as here.
+ * Task 20: the two accounts are the buyer and the seller of the chat `context` names, and it is
+ * open: a pre-trade chat, or one linked to a trade that has not closed. The chat code has the
+ * trade code's form, so any spelling the normaliser accepts names the same chat.
+ */
+export function chatSharedContext(db: Queryable): NudgeWiring['hasSharedContext'] {
+  return async (fromId, toId, context) => {
+    const code = normalizeTradeCode(context);
+    if (code === null) return false;
+    const { rows } = await db.query(
+      `select 1 from chats c left join trades t on t.code = c.trade_code
+        where c.code = $1 and (c.trade_code is null or t.closed_at is null)
+          and ((c.seller_account_id = $2 and c.buyer_account_id = $3) or (c.seller_account_id = $3 and c.buyer_account_id = $2))`,
+      [code, fromId, toId],
+    );
+    return rows.length > 0;
+  };
+}
+
+/**
+ * No shared context at all (tests). Delivery is Task 19's real SSE bus and Web Push (`liveDelivery`
+ * in routes.ts), used whenever `publish` / `sendPush` are left out, as here.
  */
 export const pendingNudgeWiring: NudgeWiring = {
   hasSharedContext: async () => false,
 };
 
-/** What main.ts uses: real trades (Task 6) and real delivery (Task 19); chats (Task 20) still pending. */
+/** What main.ts uses: real trades (Task 6), open chats (Task 20) and real delivery (Task 19). */
 export function productionNudgeWiring(db: Queryable): NudgeWiring {
-  return { ...pendingNudgeWiring, hasSharedContext: tradeSharedContext(db) };
+  const trade = tradeSharedContext(db);
+  const chat = chatSharedContext(db);
+  return { ...pendingNudgeWiring, hasSharedContext: async (a, b, c) => (await trade(a, b, c)) || (await chat(a, b, c)) };
 }

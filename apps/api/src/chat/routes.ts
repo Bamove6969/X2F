@@ -4,6 +4,10 @@
  * - `POST /v1/chats { offerId }` → 201 `{ chat, role }` (200 with the same chat when the caller
  *   already has an open one on the offer). The code comes from `newTradeCode`; the roles are fixed
  *   by the offer side (a 'sell' offer's poster is the seller, the taker the buyer).
+ * - `POST /v1/trades/:code/chat` → `{ chat, role }`: the trade's chat for its buyer or seller. The
+ *   chat a take linked, else the pair's open pre-trade chat on the offer (linked now: "a take
+ *   reuses the chat"), else a new one linked to the trade. 404 for anyone else; 409
+ *   `chat-unavailable` when the trade's offer is not in the offers table.
  * - `GET /v1/chats` → `{ chats: ChatSummary[] }`, the caller's chats, newest first.
  * - `GET /v1/chats/:chat` → `ChatView`.
  * - `POST /v1/chats/:chat/identity { signPublic, boxPublic, proof }` → 201: one per role, the role
@@ -12,7 +16,10 @@
  * - `POST /v1/chats/:chat/envelopes` (an `Envelope`, at most 16 KiB, 413 above) → 201 `{ id }`.
  *   `checkChatEnvelope(body, channelFor(chat, 'chat'), sessionRole)`; the stored `sender_role` is
  *   the session's role (Revision 2026-10-28). A seq not above that sender's last is 409 `stale-seq`.
- * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope }], more }`.
+ * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
+ *
+ * A stored envelope sends the live event `{ type: 'chat', chat }` to both traders' open streams
+ * (Task 19's bus): a hint to re-read, carrying nothing but the chat code.
  *
  * Every chat route needs a trader session; a chat that does not exist or does not include the
  * caller is the same 404 `not-found`. Nothing here logs a chat code, a key or a ciphertext.
@@ -41,6 +48,11 @@ export interface ChatView {
   disputeOpen: boolean;
   /** The moderation service's attestation is ready. */
   attested: boolean;
+  /**
+   * The signing key registered for the caller's own role, or null: a device that holds no chat
+   * identity, or another key, knows the chat is open on another device (read-only).
+   */
+  mySignPublic: string | null;
   createdAt: string;
   lastMessageAt: string | null;
 }
@@ -147,7 +159,54 @@ export async function linkChatToTrade(
   return rows[0]?.code ?? null;
 }
 
+/** Unique and foreign-key violations (Postgres SQLSTATE). */
+const pgCode = (e: unknown): unknown => (e as { code?: unknown } | null)?.code;
+
 export function chatRoutes(app: FastifyInstance): void {
+  app.post('/v1/trades/:code/chat', { preHandler: requireTrader }, async (req) => {
+    const deps = req.server.deps;
+    const code = normalizeTradeCode((req.params as { code: string }).code);
+    if (code === null) throw notFound();
+    const me = req.auth.accountId;
+    const client = await deps.db.connect();
+    try {
+      await client.query('begin');
+      try {
+        // The trade row is locked so two first opens (both sides at once) make one chat.
+        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string }>(
+          'select offer_id, buyer_account_id, seller_account_id from trades where code = $1 for update',
+          [code],
+        );
+        const t = rows[0];
+        if (!t || (t.buyer_account_id !== me && t.seller_account_id !== me)) throw notFound();
+        const role: ChatRole = t.buyer_account_id === me ? 'buyer' : 'seller';
+        const linked = await client.query<{ code: string }>('select code from chats where trade_code = $1', [code]);
+        let chat = linked.rows[0]?.code ?? null;
+        chat ??= await linkChatToTrade(client, { offerId: t.offer_id, buyerAccountId: t.buyer_account_id, sellerAccountId: t.seller_account_id, tradeCode: code });
+        if (chat === null) {
+          chat = newTradeCode();
+          try {
+            await client.query(
+              `insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, $6)`,
+              [chat, t.offer_id, t.buyer_account_id, t.seller_account_id, code, deps.clock()],
+            );
+          } catch (e) {
+            // No offers row for the trade (only before Task 5's foreign key from trades to offers).
+            if (pgCode(e) === '23503') throw new ApiError(409, 'chat-unavailable');
+            throw e;
+          }
+        }
+        await client.query('commit');
+        return { chat, role };
+      } catch (e) {
+        await client.query('rollback');
+        throw e;
+      }
+    } finally {
+      client.release();
+    }
+  });
+
   app.post('/v1/chats', { preHandler: requireTrader }, async (req, reply) => {
     const deps = req.server.deps;
     const body = req.body;
@@ -208,10 +267,11 @@ export function chatRoutes(app: FastifyInstance): void {
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const other = role === 'buyer' ? row.seller_account_id : row.buyer_account_id;
     const names = await traderSummaries(deps.db, [other], deps.clock());
-    const facts = await deps.db.query<{ disputed: boolean; attested: boolean }>(
+    const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null }>(
       `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
-              exists (select 1 from chat_attestations a where a.chat = $1) as attested`,
-      [row.code, row.trade_code],
+              exists (select 1 from chat_attestations a where a.chat = $1) as attested,
+              (select sign_public from chat_identities i where i.chat = $1 and i.role = $3) as mine`,
+      [row.code, row.trade_code, role],
     );
     const view: ChatView = {
       chat: row.code,
@@ -221,6 +281,7 @@ export function chatRoutes(app: FastifyInstance): void {
       tradeCode: row.trade_code,
       disputeOpen: facts.rows[0]!.disputed,
       attested: facts.rows[0]!.attested,
+      mySignPublic: facts.rows[0]!.mine,
       createdAt: row.created_at.toISOString(),
       lastMessageAt: row.last_message_at?.toISOString() ?? null,
     };
@@ -287,6 +348,7 @@ export function chatRoutes(app: FastifyInstance): void {
       await q.query('update chats set last_message_at = $2 where code = $1', [row.code, now]);
       return ins.rows[0]!.id;
     });
+    for (const account of [row.buyer_account_id, row.seller_account_id]) req.server.events.publish(account, { type: 'chat', chat: row.code });
     return reply.code(201).send({ id });
   });
 
@@ -296,13 +358,13 @@ export function chatRoutes(app: FastifyInstance): void {
     const raw = (req.query as Record<string, unknown> | null)?.after;
     if (raw !== undefined && (typeof raw !== 'string' || !AFTER.test(raw))) throw new ApiError(400, 'bad-request');
     const after = raw ?? '0';
-    const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown }>(
-      `select id::text as id, sender_role, envelope from chat_envelopes where chat = $1 and id > $2 order by id limit $3`,
+    const { rows } = await deps.db.query<{ id: string; sender_role: string; envelope: unknown; created_at: Date }>(
+      `select id::text as id, sender_role, envelope, created_at from chat_envelopes where chat = $1 and id > $2 order by id limit $3`,
       [row.code, after, ENVELOPE_PAGE + 1],
     );
     const page = rows.slice(0, ENVELOPE_PAGE);
     return {
-      envelopes: page.map((r) => ({ id: r.id, senderRole: r.sender_role, envelope: r.envelope })),
+      envelopes: page.map((r) => ({ id: r.id, senderRole: r.sender_role, envelope: r.envelope, at: r.created_at.toISOString() })),
       more: rows.length > ENVELOPE_PAGE,
     };
   });

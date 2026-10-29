@@ -203,7 +203,7 @@ describe('GET /v1/chats/:chat', () => {
     const res = await o.taker.b.get(`/v1/chats/${o.chat}`);
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
-    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false });
+    expect(body).toMatchObject({ chat: o.chat, role: 'buyer', offerId: o.offerId, tradeCode: null, disputeOpen: false, attested: false, mySignPublic: null });
     expect((body.counterparty as { displayName: string }).displayName).toMatch(/^Dchl/);
     expect(JSON.stringify(body)).not.toContain(`"chl`);
     const stranger = await trader();
@@ -231,6 +231,9 @@ describe('chat identities and the attestation', () => {
     const first = await o.taker.b.post(`/v1/chats/${o.chat}/identity`, identityBody(o.chat, 'buyer'));
     expect(first.statusCode).toBe(201);
     expect(first.json()).toEqual({ ok: true, role: 'buyer' });
+    const mine = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { mySignPublic: string | null };
+    expect(mine.mySignPublic).toMatch(/^[0-9a-f]{64}$/);
+    expect(((await o.poster.b.get(`/v1/chats/${o.chat}`)).json() as { mySignPublic: string | null }).mySignPublic).toBeNull();
     expect((await o.taker.b.post(`/v1/chats/${o.chat}/identity`, identityBody(o.chat, 'buyer'))).json()).toMatchObject({ error: 'identity-exists' });
     const stranger = await trader();
     expect((await stranger.b.post(`/v1/chats/${o.chat}/identity`, identityBody(o.chat, 'buyer'))).statusCode).toBe(404);
@@ -313,6 +316,7 @@ describe('envelopes', () => {
     const list = (got.json() as { envelopes: { id: string; senderRole: string; envelope: Envelope }[] }).envelopes;
     expect(list).toHaveLength(1);
     expect(list[0]!.senderRole).toBe('buyer');
+    expect((list[0] as unknown as { at: string }).at).toBe(now.toISOString());
     for (const [role, me] of [['seller', r.seller], ['mod', r.mod]] as const) {
       const opened = await open(list[0]!.envelope, { me, myRole: role, participants: r.participants, trade: r.channel, guard: new ReplayGuard(r.channel) });
       expect(opened.payload).toEqual({ text: 'Sending via Zelle now' });
@@ -385,6 +389,29 @@ describe('envelopes', () => {
     expect(rows[0]!.last_message_at.toISOString()).toBe(now.toISOString());
   });
 
+  it("tells both traders' open streams to re-read, with the chat code only", async () => {
+    const r = await readyChat();
+    const frames: Record<string, string[]> = { buyer: [], seller: [], stranger: [] };
+    const stranger = await trader();
+    const detach = [
+      app.events.attach(r.taker.id, { send: (f) => frames.buyer!.push(f), close: () => undefined }),
+      app.events.attach(r.poster.id, { send: (f) => frames.seller!.push(f), close: () => undefined }),
+      app.events.attach(stranger.id, { send: (f) => frames.stranger!.push(f), close: () => undefined }),
+    ];
+    try {
+      expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+      const want = `data: ${JSON.stringify({ type: 'chat', chat: r.chat })}\n\n`;
+      expect(frames.buyer).toEqual([want]);
+      expect(frames.seller).toEqual([want]);
+      expect(frames.stranger).toEqual([]);
+      // A refused post sends nothing.
+      await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0));
+      expect(frames.seller).toHaveLength(1);
+    } finally {
+      for (const d of detach) d?.();
+    }
+  });
+
   it('never logs the chat code or the ciphertext', async () => {
     const r = await readyChat();
     const env = await envelope(r, 'buyer', 0);
@@ -393,6 +420,57 @@ describe('envelopes', () => {
     const text = logs.join('\n');
     expect(text).not.toContain(r.chat);
     expect(text).not.toContain(env.ct.slice(0, 40));
+  });
+});
+
+describe('POST /v1/trades/:code/chat', () => {
+  /** A trade between the two traders of a chat-less pair, from a real offer of the poster. */
+  async function tradeOn(offerId: string, seller: { id: string }, buyer: { id: string }): Promise<string> {
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await deps.db.query('update trades set offer_id = $2 where code = $1', [t.code, offerId]);
+    return t.code;
+  }
+
+  it("links the pair's pre-trade chat (a take reuses the chat) and gives both sides the same one", async () => {
+    const o = await openChat('sell');
+    const code = await tradeOn(o.offerId, o.poster, o.taker);
+    const buyer = await o.taker.b.post(`/v1/trades/${code}/chat`, {});
+    expect(buyer.statusCode).toBe(200);
+    expect(buyer.json()).toEqual({ chat: o.chat, role: 'buyer' });
+    expect((await o.poster.b.post(`/v1/trades/${code.toLowerCase()}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'seller' });
+    const { rows } = await deps.db.query('select trade_code from chats where code = $1', [o.chat]);
+    expect(rows).toEqual([{ trade_code: code }]);
+    // The next chat on the same offer between the same two is a new pre-trade chat.
+    const next = await o.taker.b.post('/v1/chats', { offerId: o.offerId });
+    expect(next.statusCode).toBe(201);
+    expect((next.json() as { chat: string }).chat).not.toBe(o.chat);
+  });
+
+  it('makes one chat for a trade with none, the same for both sides', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const offerId = await seedOffer(seller.id);
+    const code = await tradeOn(offerId, seller, buyer);
+    const [a, b] = await Promise.all([buyer.b.post(`/v1/trades/${code}/chat`, {}), seller.b.post(`/v1/trades/${code}/chat`, {})]);
+    expect(a.statusCode).toBe(200);
+    const chat = (a.json() as { chat: string }).chat;
+    expect(b.json()).toEqual({ chat, role: 'seller' });
+    const view = (await buyer.b.get(`/v1/chats/${chat}`)).json() as { tradeCode: string; role: string };
+    expect(view).toMatchObject({ tradeCode: code, role: 'buyer' });
+  });
+
+  it('is 404 for anyone else or an unknown code, and 409 chat-unavailable without an offers row', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const offerId = await seedOffer(seller.id);
+    const code = await tradeOn(offerId, seller, buyer);
+    const stranger = await trader();
+    expect((await stranger.b.post(`/v1/trades/${code}/chat`, {})).statusCode).toBe(404);
+    expect((await buyer.b.post(`/v1/trades/${newTradeCode()}/chat`, {})).statusCode).toBe(404);
+    expect((await buyer.b.post('/v1/trades/nope/chat', {})).statusCode).toBe(404);
+    const orphan = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    expect((await buyer.b.post(`/v1/trades/${orphan.code}/chat`, {})).json()).toEqual({ error: 'chat-unavailable' });
+    expect((await new Browser(app).post(`/v1/trades/${code}/chat`, {})).statusCode).toBe(401);
   });
 });
 
