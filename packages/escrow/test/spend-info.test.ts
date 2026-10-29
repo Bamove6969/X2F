@@ -87,6 +87,7 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       // The gap: the mod took no part, so its own wallet does not show the spend.
       let f = await mod.funds();
       expect(f.outgoing).toEqual([]);
+      expect(f.balance).toBe(XMR); // without the key images it still counts the coins as its own
 
       // Strict input: garbage, wrong size, another escrow's info and a tampered one are refused.
       await expect(mod.importSpendInfo('zz')).rejects.toMatchObject({ code: 'bad-spend-info' });
