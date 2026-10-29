@@ -87,11 +87,23 @@ export interface EscrowSession {
   chainHeight?(): Promise<number>;
   /** Every tx this wallet records as spending the escrow (see Outgoing), from the last sync. Optional for test doubles. */
   outgoing?(): Promise<Outgoing[]>;
+  /** The secret key of a tx this wallet submitted (hex), or null when it stores none. Optional for test doubles. */
+  txKey?(txHash: string): Promise<string | null>;
+  /**
+   * What a tx provably pays (review I1): with its secret key, the amount each address received
+   * (monero check_tx_key), the tx's network fee and whether it is in a block. Null when the key does
+   * not fit the tx or the tx is unknown. Optional for test doubles.
+   */
+  proveTx?(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[] } | null>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;
-  /** Sweep the whole escrow to `payouts`; the network fee comes off payouts[0]. */
-  buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[] }>;
+  /**
+   * Sweep the whole escrow to `payouts`; the network fee comes off payouts[0]. `txKey` (hex) is the
+   * tx's secret key when the engine gives it: the builder's wallet does not store it (only the
+   * submitter's does), so the party keeps it to prove the payment later (review I1).
+   */
+  buildRelease(payouts: Payout[]): Promise<{ txSet: string; payouts: Payout[]; txKey?: string }>;
   /** Check the tx set against `expected`, then sign exactly that set and broadcast it. */
   cosign(txSet: string, expected: Payout[]): Promise<string>;
   /** Decode and check a tx set without signing. Any failure is EscrowError('payout-mismatch'). */
