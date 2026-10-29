@@ -37,7 +37,8 @@ export function fromCode(search: string): string | null {
 }
 
 export function sendFeedback(b: { kind: FeedbackKind; text: string; anonymous: boolean; from: string | null }): Promise<unknown> {
-  return api('/v1/feedback/form', { method: 'POST', body: b.from === null ? { kind: b.kind, text: b.text, anonymous: b.anonymous } : b });
+  // An anonymous send leaves the refusal code off (the API would drop it anyway).
+  return api('/v1/feedback/form', { method: 'POST', body: b.from === null || b.anonymous ? { kind: b.kind, text: b.text, anonymous: b.anonymous } : b });
 }
 
 type State = { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent' } | { kind: 'signed-out' } | { kind: 'failed'; message: string };
