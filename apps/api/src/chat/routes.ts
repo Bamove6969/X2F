@@ -18,6 +18,10 @@
  *   the session's role (Revision 2026-10-28). A seq not above that sender's last is 409 `stale-seq`.
  * - `GET /v1/chats/:chat/envelopes?after=<id>` → `{ envelopes: [{ id, senderRole, envelope, at }], more }`.
  *
+ * Write budgets per account (review M7, limits.ts): a new pre-trade chat takes from
+ * CHAT_OPEN_BUCKET (reopening one does not), a stored envelope from CHAT_POST_BUCKET; an empty
+ * bucket is 429 `slow-down` with `retryAfterSeconds`, after the 404 and readiness checks.
+ *
  * A stored envelope sends the live event `{ type: 'chat', chat }` to both traders' open streams
  * (Task 19's bus): a hint to re-read, carrying nothing but the chat code.
  *
@@ -224,6 +228,17 @@ export function chatRoutes(app: FastifyInstance): void {
     const role: ChatRole = offer.side === 'sell' ? 'buyer' : 'seller';
     const buyer = role === 'buyer' ? me : offer.account_id;
     const seller = role === 'seller' ? me : offer.account_id;
+    const openChat = async (): Promise<string | null> => {
+      const { rows: open } = await deps.db.query<{ code: string }>(
+        'select code from chats where offer_id = $1 and buyer_account_id = $2 and seller_account_id = $3 and trade_code is null',
+        [offerId, buyer, seller],
+      );
+      return open[0]?.code ?? null;
+    };
+    // Reopening the chat already open costs nothing; a new one takes from the caller's budget.
+    const open = await openChat();
+    if (open !== null) return reply.send({ chat: open, role });
+    req.server.budgets.chatOpen.take(me);
     // One open chat per offer and pair (chats_open_pair): a racing second insert finds the first.
     const inserted = await deps.db.query<{ code: string }>(
       `insert into chats (code, offer_id, buyer_account_id, seller_account_id, created_at)
@@ -233,12 +248,9 @@ export function chatRoutes(app: FastifyInstance): void {
       [newTradeCode(), offerId, buyer, seller, deps.clock()],
     );
     if (inserted.rows[0]) return reply.code(201).send({ chat: inserted.rows[0].code, role });
-    const existing = await deps.db.query<{ code: string }>(
-      'select code from chats where offer_id = $1 and buyer_account_id = $2 and seller_account_id = $3 and trade_code is null',
-      [offerId, buyer, seller],
-    );
-    if (!existing.rows[0]) throw new ApiError(503, 'busy');
-    return reply.send({ chat: existing.rows[0].code, role });
+    const existing = await openChat();
+    if (existing === null) throw new ApiError(503, 'busy');
+    return reply.send({ chat: existing, role });
   });
 
   app.get('/v1/chats', { preHandler: requireTrader }, async (req) => {
@@ -324,6 +336,7 @@ export function chatRoutes(app: FastifyInstance): void {
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
     if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
+    req.server.budgets.chatPost.take(req.auth.accountId);
     let env;
     try {
       env = checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);

@@ -16,6 +16,7 @@ import sodium from 'libsodium-wrappers';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeChats } from '../src/chat/retention.js';
+import { CHAT_OPEN_BUCKET, CHAT_POST_BUCKET } from '../src/limits.js';
 import { buildInternalListener } from '../src/internal/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -420,6 +421,49 @@ describe('envelopes', () => {
     const text = logs.join('\n');
     expect(text).not.toContain(r.chat);
     expect(text).not.toContain(env.ct.slice(0, 40));
+  });
+});
+
+describe('chat write budgets (review M7)', () => {
+  it('a trader opens at most CHAT_OPEN_BUCKET new chats at once (429 slow-down); reopening an existing chat costs nothing', async () => {
+    const taker = await trader();
+    let first: { offerId: string; chat: string } | null = null;
+    for (let i = 0; i < CHAT_OPEN_BUCKET.capacity; i++) {
+      const poster = await trader();
+      const offerId = await seedOffer(poster.id);
+      const res = await taker.b.post('/v1/chats', { offerId });
+      expect(res.statusCode).toBe(201);
+      first ??= { offerId, chat: (res.json() as { chat: string }).chat };
+    }
+    const poster = await trader();
+    const offerId = await seedOffer(poster.id);
+    const over = await taker.b.post('/v1/chats', { offerId });
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: expect.any(Number) });
+    // The chat already open on an offer is answered with no new budget.
+    const again = await taker.b.post('/v1/chats', { offerId: first!.offerId });
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ chat: first!.chat });
+    // Another trader's budget is their own.
+    expect((await (await trader()).b.post('/v1/chats', { offerId })).statusCode).toBe(201);
+    // It refills with time.
+    setNow(new Date(now.getTime() + 60 * 60_000));
+    expect((await taker.b.post('/v1/chats', { offerId })).statusCode).toBe(201);
+  });
+
+  it('a trader posts at most CHAT_POST_BUCKET envelopes at once (429 slow-down, nothing stored); the other side is not affected', async () => {
+    const r = await readyChat();
+    for (let i = 0; i < CHAT_POST_BUCKET.capacity; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', i))).statusCode).toBe(201);
+    const over = await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', CHAT_POST_BUCKET.capacity));
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down' });
+    const { rows } = await deps.db.query<{ n: number }>(`select count(*)::int as n from chat_envelopes where chat = $1 and sender_role = 'buyer'`, [r.chat]);
+    expect(rows[0]!.n).toBe(CHAT_POST_BUCKET.capacity);
+    expect((await r.poster.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'seller', 0))).statusCode).toBe(201);
+    // A stranger is still a 404, never a 429.
+    expect((await (await trader()).b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 99))).statusCode).toBe(404);
+    setNow(new Date(now.getTime() + 60_000));
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', CHAT_POST_BUCKET.capacity))).statusCode).toBe(201);
   });
 });
 

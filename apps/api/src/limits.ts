@@ -73,10 +73,71 @@ export const START_BUCKET: BucketSize = { capacity: 120, perMinute: 120 };
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
+/**
+ * Per-account token buckets (in memory, never persisted, like TokenBucket): one bucket per key,
+ * created full. An empty bucket throws 429 `slow-down` with `retryAfterSeconds` (the caller's own
+ * pace, so not 503 `busy`). At most `maxKeys` buckets are kept: past that, buckets that have
+ * refilled are forgotten first (a forgotten bucket is a full one, so nothing changes for its key),
+ * then the oldest.
+ */
+export class KeyedBuckets {
+  private readonly buckets = new Map<string, { tokens: number; last: number }>();
+
+  constructor(
+    private readonly bucket: BucketSize,
+    private readonly clock: () => Date,
+    private readonly maxKeys = 100_000,
+  ) {}
+
+  get size(): number {
+    return this.buckets.size;
+  }
+
+  private level(b: { tokens: number; last: number }, now: number): number {
+    return Math.min(this.bucket.capacity, b.tokens + (Math.max(0, now - b.last) * this.bucket.perMinute) / 60_000);
+  }
+
+  take(key: string): void {
+    const now = this.clock().getTime();
+    const old = this.buckets.get(key);
+    const tokens = old ? this.level(old, now) : this.bucket.capacity;
+    const last = old ? Math.max(old.last, now) : now;
+    if (tokens < 1) {
+      this.buckets.set(key, { tokens, last });
+      const retryAfterSeconds = Math.ceil(((1 - tokens) * 60) / this.bucket.perMinute);
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds });
+    }
+    // Re-inserted so the Map's order is least recently used first.
+    this.buckets.delete(key);
+    this.buckets.set(key, { tokens: tokens - 1, last });
+    if (this.buckets.size > this.maxKeys) this.prune(now);
+  }
+
+  private prune(now: number): void {
+    for (const [k, b] of this.buckets) {
+      if (this.buckets.size <= this.maxKeys) return;
+      if (this.level(b, now) >= this.bucket.capacity) this.buckets.delete(k);
+    }
+    for (const k of this.buckets.keys()) {
+      if (this.buckets.size <= this.maxKeys) return;
+      this.buckets.delete(k);
+    }
+  }
+}
+
+/** `POST /v1/chats` (Task 20 review M7): new pre-trade chats per trader, 20 an hour. */
+export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 };
+/** `POST /v1/chats/:chat/envelopes` (Task 20 review M7): chat lines per trader across all chats, 30 a minute. */
+export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
   suggest: TokenBucket;
+  /** Per account. */
+  chatOpen: KeyedBuckets;
+  /** Per account. */
+  chatPost: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -85,5 +146,7 @@ export function newBudgets(clock: () => Date): Budgets {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
+    chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
+    chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),
   };
 }
