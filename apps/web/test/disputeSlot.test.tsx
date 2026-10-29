@@ -172,7 +172,8 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   });
   it('says why the XMR went back to the seller, for every kind of refund (owner 2026-10-29)', () => {
     const cases: [Partial<TradeView>, string, string][] = [
-      [{ settling: 'buyer-cancel' }, 'You cancelled this trade', 'You cancelled'],
+      [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'You cancelled this trade', 'You cancelled'],
+      [{ settling: 'buyer-cancel' }, 'Cancelling: returning the XMR to the seller', 'The trade is cancelled once the seller confirms'],
       [{ settling: 'auto-refund' }, 'The payment time ran out', 'Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.'],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
       [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
@@ -188,8 +189,33 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       );
       expect(host.querySelector('h1')?.textContent, JSON.stringify(over)).toBe(title);
       expect(host.textContent).toContain(text);
-      // The 90-day line only while a dispute can still be opened.
-      expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined);
+      // The 90-day line only while a dispute can still be opened; after a cancel, the board's box instead.
+      const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
+      expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
+      expect(host.textContent.includes('Did you pay before you cancelled?')).toBe(cancel);
     }
+  });
+
+  it('after a cancel: "Did you pay before you cancelled?" with Open a dispute (Refunded board, Revision 2026-10-29b); not after a no-show refund', () => {
+    for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
+      const { host } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded({ settling }))} />
+        </MemoryRouter>,
+      );
+      const box = host.querySelector('[data-paid-before-cancel]');
+      expect(box?.querySelector('h2')?.textContent).toBe('Did you pay before you cancelled?');
+      expect(box?.textContent).toContain('Open a dispute and add your payment proof.');
+      expect([...box!.querySelectorAll('a')].find((a) => a.textContent === 'Open a dispute')?.getAttribute('href')).toBe(`/trade/${encodeURIComponent(refunded().code)}/dispute`);
+      // One way into the dispute, not two.
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute')).toHaveLength(1);
+    }
+    const noShow = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
+      </MemoryRouter>,
+    );
+    expect(noShow.host.textContent).not.toContain('Did you pay before you cancelled?');
+    expect(noShow.host.querySelector('[data-paid-before-cancel]')).toBeNull();
   });
 });

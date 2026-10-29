@@ -14,6 +14,7 @@ import '../src/screens/trade/screens.js';
 import { screenFor, TradeRoom } from '../src/screens/trade/TradeRoom.js';
 import { POLL_MS, setTradeEscrowHook, type TradeEscrow } from '../src/screens/trade/seams.js';
 import { advance, pointer, render } from './render.js';
+import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
 
 const ZELLE = { name: 'Zelle', giftCard: false, whatItIs: 'Zelle: a US bank-to-bank instant transfer built into most US banking apps.' };
 const PROFILE = {
@@ -69,6 +70,9 @@ let answer: (c: Call) => { status: number; body: unknown };
 
 beforeEach(() => {
   localStorage.clear();
+  // Task 38's release warning is tested on its own (below); elsewhere the seller went past it already.
+  resetWarned();
+  setWarned('release', 'K7M2-9QXA-4FTR-8WPN');
   calls = [];
   answer = () => ({ status: 200, body: {} });
   vi.stubGlobal('fetch', async (url: string, init?: RequestInit) => {
@@ -131,6 +135,36 @@ describe('SellerConfirm', () => {
     for (const el of s.host.querySelectorAll('[data-username]')) expect(el.textContent).toBe('mira.k');
     expect(s.host.querySelectorAll('[data-username]').length).toBeGreaterThanOrEqual(2);
     expect(s.host.querySelectorAll('[data-primary]')).toHaveLength(1);
+  });
+
+  it('the release warning (Task 38, board Warn-Release) opens first and keeps the hold locked until "It\'s in my account", once per trade', () => {
+    resetWarned();
+    localStorage.clear();
+    const alert = () => document.body.querySelector<HTMLElement>('[role="alertdialog"]');
+    const btn = (label: string) => [...document.body.querySelectorAll('button')].find((b) => b.textContent === label)!;
+    const s = sellerConfirm(trade());
+    expect(alert()).not.toBeNull();
+    const t = (alert()!.textContent ?? '').replace(/\s+/g, ' ');
+    expect(t).toContain('Before you release');
+    expect(t).toContain('Is the $412.50 really in your account?');
+    expect(t).toContain('Only release once the money is really in your account.');
+    expect(t).toContain('Check your own bank or Zelle app, not a screenshot. Screenshots can be faked.');
+    expect(t).toContain("Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back.");
+    act(() => btn("I'll check again").click());
+    expect(alert()).toBeNull();
+    act(() => s.box().click());
+    // Ticking before going past the warning brings it back; the hold stays locked.
+    expect(alert()).not.toBeNull();
+    expect(s.hold().disabled).toBe(true);
+    act(() => btn("It's in my account").click());
+    expect(alert()).toBeNull();
+    expect(s.hold().disabled).toBe(false);
+    s.unmount();
+    // Once per trade: a reload (memory gone, store kept) shows it no more.
+    resetWarned();
+    const again = sellerConfirm(trade());
+    expect(alert()).toBeNull();
+    again.unmount();
   });
 
   it('keeps the release locked until the box is ticked', () => {
