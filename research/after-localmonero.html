@@ -1,0 +1,209 @@
+<title>After LocalMonero</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: single reading column; a status ledger for each platform; evidence links inline */
+:root{
+  --bg:#f5f6f4; --surface:#ffffff; --fg:#1b1f24; --muted:#5b636d; --line:#dfe2e0;
+  --accent:#d9561b; --accent-soft:#fbe9df;
+  --dead:#9b2c2c; --dead-soft:#f7e3e3; --live:#2f6b3f; --live-soft:#e2f0e5; --warn:#8a5a00; --warn-soft:#f6ecd4;
+  --display:"Bricolage Grotesque",ui-sans-serif,system-ui,sans-serif;
+  --body:"Instrument Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#14171b; --surface:#1c2026; --fg:#e7e9ec; --muted:#9aa3ad; --line:#2c323a;
+  --accent:#f07a3e; --accent-soft:#3a2418;
+  --dead:#f19a9a; --dead-soft:#3a1f22; --live:#8fd3a0; --live-soft:#1d3324; --warn:#e9c46a; --warn-soft:#3a3018; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#14171b; --surface:#1c2026; --fg:#e7e9ec; --muted:#9aa3ad; --line:#2c323a;
+  --accent:#f07a3e; --accent-soft:#3a2418;
+  --dead:#f19a9a; --dead-soft:#3a1f22; --live:#8fd3a0; --live-soft:#1d3324; --warn:#e9c46a; --warn-soft:#3a3018; color-scheme:dark}
+body{background:var(--bg);color:var(--fg);font:16px/1.6 var(--body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:40px 64px}
+main{max-width:760px;margin:0 auto;display:flex;flex-direction:column;gap:48px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;line-height:1.15;margin:0}
+h1{font-size:clamp(2rem,6vw,2.9rem);font-weight:700;letter-spacing:-.02em}
+h2{font-size:1.5rem;font-weight:700;margin-bottom:12px}
+h3{font-size:1.08rem;font-weight:500}
+p{margin:0}
+section{display:flex;flex-direction:column;gap:14px}
+.eyebrow{font:500 .75rem/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+.lede{font-size:1.12rem;color:var(--muted);max-width:62ch}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+.verdict{background:var(--accent-soft);border-radius:10px;padding:20px 22px;display:flex;flex-direction:column;gap:10px}
+.verdict ul{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:6px}
+.ledger{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.row{display:grid;grid-template-columns:150px 1fr;gap:6px 18px;padding:14px 0;border-bottom:1px solid var(--line)}
+.row>div{min-width:0}
+.name{font-weight:600}
+.dates{font:400 .8rem/1.4 var(--mono);color:var(--muted);font-variant-numeric:tabular-nums}
+.pill{display:inline-block;font:500 .7rem/1 var(--mono);letter-spacing:.05em;text-transform:uppercase;padding:4px 7px;border-radius:4px;margin-top:6px}
+.dead{background:var(--dead-soft);color:var(--dead)}
+.live{background:var(--live-soft);color:var(--live)}
+.warn{background:var(--warn-soft);color:var(--warn)}
+.note{font-size:.92rem;color:var(--muted)}
+ol.pains{margin:0;padding-left:22px;display:flex;flex-direction:column;gap:10px}
+ol.pains strong{font-weight:600}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:560px;font-size:.93rem}
+th,td{text-align:left;vertical-align:top;padding:10px 12px;border-bottom:1px solid var(--line)}
+th{font:500 .72rem/1.2 var(--mono);text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+tr:last-child td{border-bottom:0}
+.wins{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}
+.win{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:16px;display:flex;flex-direction:column;gap:6px}
+.win p{font-size:.93rem;color:var(--muted)}
+.sources{font-size:.85rem;color:var(--muted);columns:2 260px;column-gap:24px;margin:0;padding-left:18px}
+.sources li{break-inside:avoid;margin-bottom:4px}
+@media (max-width:520px){.row{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+
+<main>
+<header style="display:flex;flex-direction:column;gap:12px">
+  <span class="eyebrow">Competitor research · 14 Oct 2026</span>
+  <h1>After LocalMonero</h1>
+  <p class="lede">Who used to let people sell Monero for cash or bank transfer with escrow, why they died, what is left, and where a new app can win.</p>
+</header>
+
+<div class="verdict">
+  <h3>The short version</h3>
+  <ul>
+    <li>Every company that held users' coins in the middle is gone. Regulation, compliance cost or the operators themselves ended each one.</li>
+    <li>The survivors that hold no coins (Haveno and its RetoSwap network, Bisq) keep working, but they are desktop-only, clunky and short on traders. RetoSwap also lost about $2.7M to protocol exploits in 2026.</li>
+    <li>The slick, phone-first experience exists only for Bitcoin (Peach, Vexl, RoboSats). Nobody offers it for Monero. That gap is the opening.</li>
+    <li>Escrow is the hard part. Monero has no smart contracts, so escrow means either holding the coins yourself (the LocalMonero model that died) or 2-of-3 multisig (Haveno's model). Monero's upcoming FCMP++ upgrade has no confirmed multisig support yet.</li>
+  </ul>
+</div>
+
+<section>
+  <span class="eyebrow">The graveyard</span>
+  <h2>Platforms that closed</h2>
+  <div class="ledger">
+    <div class="row"><div><div class="name">LocalMonero / AgoraDesk</div><div class="dates">2017 – May 2024</div><span class="pill dead">Closed</span></div>
+      <div>The direct model to replace. Announced 7 May 2024 with only "internal and external factors" as the reason. Trading ended 14 May and the site went offline 7 Nov 2024. The shutdown came weeks after the Samourai Wallet founders were arrested. Sellers paid a 1% fee and posted an arbitration bond. Old forum complaints describe disputes that admins never answered. <a href="https://localmonero.co/blog/announcements/winding-down?language=en">Announcement</a>, <a href="https://protos.com/the-rise-and-fall-of-localmonero/">Protos</a>
+      <p class="note">Some 2026 vendor blogs say AgoraDesk still runs. That contradicts the official shutdown, so I treat it as wrong.</p></div></div>
+    <div class="row"><div><div class="name">LocalBitcoins</div><div class="dates">2012 – Feb 2023</div><span class="pill dead">Closed</span></div>
+      <div>Blamed the "crypto winter". It had been under Finnish regulation since 2019, and in June 2025 regulators fined it €500,000 for weak identity checks. Once you are regulated, compliance is a permanent cost. <a href="https://www.theblock.co/news/ecosystems/2023-02-09-localbitcoins-shuts-down-after-a-decade-in-operation-210117">The Block</a>, <a href="https://en.wikipedia.org/wiki/LocalBitcoins">Wikipedia</a></div></div>
+    <div class="row"><div><div class="name">Paxful</div><div class="dates">2015 – Nov 2025</div><span class="pill dead">Closed</span></div>
+      <div>Wound down on 1 Nov 2025, blaming misconduct by its former co-founders and unsustainable compliance costs. <a href="https://www.theblock.co/post/224844/bitcoin-paxful-shut-down">The Block</a>, <a href="https://www.financemagnates.com/cryptocurrency/crypto-community-reacts-as-p2p-platform-paxful-shuts-down/">Finance Magnates</a></div></div>
+    <div class="row"><div><div class="name">LocalCryptos</div><div class="dates">– Oct 2022</div><span class="pill dead">Closed</span></div>
+      <div>Ceased operations in October 2022; I found no stated reason. <a href="https://www.cbinsights.com/company/localcryptos">CB Insights</a></div></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Still standing</span>
+  <h2>What people use now</h2>
+  <div class="ledger">
+    <div class="row"><div><div class="name">Haveno / RetoSwap</div><div class="dates">Monero-native</div><span class="pill live">Active</span></div>
+      <div>The closest match to LocalMonero: non-custodial 2-of-3 multisig escrow over Tor, with no accounts. Weak spots: desktop-only, low liquidity, both sides must post a security deposit (a first-time buyer has to own crypto before they can buy), and arbitration takes 24–48 hours. An attacker who could impersonate the arbitrator drained about $2.7M on 20 May 2026, and a second exploit halted trading on 17 Jun 2026. Versions 1.9 and 1.10 (Oct 2026) add security hardening and basic features like trade history and notifications. A 2025 academic study also found that Haveno trades can sometimes be traced on-chain. A mobile app is Haveno's most-requested feature. Two community projects are attempting one: an unofficial Android app, and a cross-platform app funded through Monero's crowdfunding system. On iOS, users have to run a remote Haveno node. <a href="https://github.com/atsamd21/Haveno-app">Android app</a>, <a href="https://repo.getmonero.org/monero-project/ccs-proposals/-/merge_requests/570">CCS proposal</a> <a href="https://www.halborn.com/blog/post/explained-the-retoswap-hack-may-2026">Halborn</a>, <a href="https://www.mexc.com/news/1153876">MEXC</a>, <a href="https://freedom.tech/posts/2026-10-10-haveno-1-10-0/">1.10 release</a>, <a href="https://arxiv.org/html/2505.02392v2">arXiv</a>, <a href="https://kycnot.me/service/retoswap">kycnot.me reviews</a></div></div>
+    <div class="row"><div><div class="name">LocalCoinSwap</div><div class="dates">multi-coin</div><span class="pill live">Active</span></div>
+      <div>The closest working copy of the LocalMonero model, run as a company. Users keep their own keys: a trade locks the seller's coins in an on-chain escrow, and one reviewer had to deposit a little BNB to accept escrow, which points to smart contracts. Monero support is unconfirmed; sources contradict each other, and one lists it as not accepted. 2026 reviews report surprise identity checks as trading volume grows, funds held until ID was provided, blocked accounts, and some disputes decided in a scammer's favour. The UK Financial Conduct Authority lists it as possibly providing financial services without permission, even though it never holds users' coins. <a href="https://kycnot.me/service/localcoinswap">kycnot.me</a>, <a href="https://nokycindex.com/service/localcoinswap">NoKYC Index</a>, <a href="https://uk.trustpilot.com/review/www.localcoinswap.com?page=2">Trustpilot</a>, <a href="https://www.gncrypto.news/news/localcoinswap-p2p-review/">GNcrypto</a></div></div>
+    <div class="row"><div><div class="name">Bisq</div><div class="dates">BTC-first</div><span class="pill live">Active</span></div>
+      <div>Slow trades and a clunky app; Monero isn't native. Bisq 2 is a rewrite in progress. <a href="https://kycnot.me/service/bisq">kycnot.me</a></div></div>
+    <div class="row"><div><div class="name">Peach, Vexl, RoboSats, Hodl Hodl, Mostro</div><div class="dates">Bitcoin only</div><span class="pill warn">Not Monero</span></div>
+      <div>Worth copying for UX ideas, not competing with. Peach is a beginner-friendly mobile app where the buyer posts no deposit. RoboSats uses small Lightning bonds and no accounts. Vexl matches trades through your phone contacts. Mostro runs over Nostr. <a href="https://www.spark.money/tools/bitcoin-p2p-exchange-comparison">Spark comparison</a>, <a href="https://bitcoinramps.com/best/p2p">BitcoinRamps</a></div></div>
+    <div class="row"><div><div class="name">Instant swap services</div><div class="dates">crypto ↔ crypto</div><span class="pill warn">Not P2P</span></div>
+      <div>ChangeNOW, FixedFloat and similar services swap one coin for another. They don't pay out fiat and often enforce identity checks above limits. <a href="https://ghostswap.io/no-kyc-monero-exchanges/">Overview</a></div></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Pain points</span>
+  <h2>What hurts when you sell XMR for fiat</h2>
+  <p>The seller carries most of the risk in an off-ramp trade, because the fiat side can be reversed or turn out to be dirty money.</p>
+  <ol class="pains">
+    <li><strong>Chargebacks.</strong> The buyer pays with a reversible method, receives the XMR, then disputes the payment with their bank.</li>
+    <li><strong>Frozen bank accounts.</strong> A scammer pays with money stolen from a fraud victim. When the victim reports it, the seller's account gets frozen. Third-party payers are the red flag. <a href="https://techcabal.com/2025/03/03/how-p2p-traders-navigate-daily-scams-fraud-and-frozen-accounts/">TechCabal</a>, <a href="https://www.binance.com/en/support/faq/how-to-prevent-my-bank-account-from-being-frozen-in-p2p-transactions-360037619471">Binance guidance</a></li>
+    <li><strong>Fake payment confirmations.</strong> Screenshots or SMS messages that look like bank alerts when no money arrived.</li>
+    <li><strong>No one to trade with.</strong> Few buyers, and fewer still who use your payment method in your country.</li>
+    <li><strong>Getting started is hard.</strong> Desktop installs, Tor setup, and deposits required before your first trade.</li>
+    <li><strong>Slow or silent disputes.</strong> Arbitration takes 24–48 hours on Haveno, and some LocalMonero disputes reportedly got no answer at all.</li>
+    <li><strong>Surprise identity checks.</strong> Counterparties on "no-KYC" platforms ask for ID on larger trades.</li>
+    <li><strong>Protocol security.</strong> Two RetoSwap exploits in 2026 drained escrowed funds.</li>
+  </ol>
+</section>
+
+<section>
+  <span class="eyebrow">Voice of the user</span>
+  <h2>Complaints and requests, and our answer to each</h2>
+  <p class="note">Collected from reviews, forum threads and GitHub issues about LocalBitcoins, LocalMonero, Paxful, Bisq, Haveno and Peach. These are anecdotes, but they repeat across platforms.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Goal</th><th>What people complained about or asked for</th><th>What our app does</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Easier</strong></td><td>Haveno and Bisq are desktop-only, and mobile is Haveno's most-requested feature. Setup is technical. Users ask for a seed phrase shown one word per line, dark mode, translations and clear startup progress.</td><td>A phone-first app that works in the browser with nothing to install. A guided first trade, and the network connection handled for you.</td></tr>
+      <tr><td><strong>Easier</strong></td><td>Haveno wants more payment methods. Many sellers can't find buyers who use their bank or app.</td><td>A broad list of payment methods from day one, with offers filtered to the methods you actually have.</td></tr>
+      <tr><td><strong>Faster</strong></td><td>Counterparties disappear for hours or days. One Bisq seller took 6 hours to send payment details, and a Bisq 2 GitHub request asks for trade time limits. Disputes take 24–48 hours on Haveno, up to 3 days on LocalBitcoins, and some ran past 10 days with no reply.</td><td>A countdown on every trade step, reminders, and automatic escalation when someone goes quiet. A published dispute deadline with a live status for each case.</td></tr>
+      <tr><td><strong>Safer</strong></td><td>Peach users praise its UI but report too many fraudulent buyers. Sellers fear chargebacks, fake payment alerts and frozen bank accounts from third-party payments.</td><td>Warnings ranked by payment method, a check that the payer's name matches the buyer, and a "confirm in your bank app" step before Release. Each trade's chat and proof are saved for disputes.</td></tr>
+      <tr><td><strong>Safer</strong></td><td>Arbitrators froze escrow over unrelated behaviour, one user alleged a counterparty had a contact inside the company, and some disputes went unanswered.</td><td>Arbitrators post a bond, every ruling records the evidence behind it, and users can appeal to a second arbitrator.</td></tr>
+      <tr><td><strong>Fairer</strong></td><td>Reputation was lost when a platform closed: "everything was deleted." Feedback gets locked during disputes, and one complaint can freeze an account.</td><td>Portable reputation: a signed trade history the user owns and can take elsewhere.</td></tr>
+      <tr><td><strong>Cheaper</strong></td><td>LocalBitcoins charged 1% plus a monthly fee, and one Peach review cites total fees near 11% (other sources say far less). Haveno's deposit locks up capital before your first trade.</td><td>A low, clearly shown fee and a total cost on every offer. Small first trades need no deposit.</td></tr>
+      <tr><td><strong>Private</strong></td><td>"No-KYC" sellers ask for ID on large trades. Peach added identity checks for sellers. Haveno trades can sometimes be traced on-chain.</td><td>Each offer states up front what it requires, and the coin handling avoids the known tracing patterns.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Sources: <a href="https://github.com/haveno-dex/haveno/issues">Haveno issues</a>, <a href="https://github.com/atsamd21/Haveno-app/issues">Haveno Android app issues</a>, <a href="https://github.com/bisq-network/bisq2/issues/2768">Bisq 2 #2768</a>, <a href="https://www.trustpilot.com/review/peachbitcoin.com">Peach on Trustpilot</a>, <a href="https://neverkyc.io/blog/peach-bitcoin-app-review-2026">neverkyc Peach review</a>, <a href="https://kycnot.me/service/peach-bitcoin">kycnot.me Peach</a>, <a href="https://bitcointalk.org/index.php?topic=343932.0">LocalBitcoins dispute thread</a>, <a href="https://bitcointalk.org/index.php?topic=2369978.0">10-day dispute thread</a>, <a href="https://uk.trustpilot.com/review/localbitcoins.net">LocalBitcoins on Trustpilot</a>, <a href="https://bitcointalk.org/index.php?topic=5372981.0">LocalMonero dispute thread</a>.</p>
+</section>
+
+<section>
+  <span class="eyebrow">Escrow</span>
+  <h2>How escrow can work for Monero</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Model</th><th>How it works</th><th>User experience</th><th>Risk</th></tr></thead>
+    <tbody>
+      <tr><td><strong>We hold the coins</strong><br><span class="note">LocalMonero</span></td><td>The seller deposits XMR with us; we release it to the buyer.</td><td>The simplest flow.</td><td>The operator is a money transmitter needing licences and identity checks. This is the model that died.</td></tr>
+      <tr><td><strong>2-of-3 multisig</strong><br><span class="note">Haveno</span></td><td>Buyer, seller and arbitrator each hold one key, and any two can release the coins. We never hold funds alone.</td><td>Complex today, but good design can hide that.</td><td>Large attack surface (see RetoSwap). Multisig is unavailable on the FCMP++ test network, and the upgrade has no mainnet date. <a href="https://www.tokenpost.com/news/technology/25090">TokenPost</a></td></tr>
+      <tr><td><strong>Bonds and reputation only</strong><br><span class="note">Vexl-style</span></td><td>No escrow; parties post bonds or rely on trust.</td><td>The lightest flow.</td><td>Weak protection for strangers.</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note">Legal caution: in the US, a jury convicted Tornado Cash developer Roman Storm in 2025 of conspiring to run an unlicensed money-transmitting business, even though his code never held users' funds. His retrial is set for April 2027. Not holding custody lowers the risk; it doesn't remove it. Talk to a lawyer before launch. <a href="https://www.jdsupra.com/legalnews/the-tornado-cash-trial-s-mixed-verdict-7781950/">JD Supra</a>, <a href="https://www.theblock.co/news/regulation/2026-08-26-tornado-cash-roman-storm-retrial-april-2027-412761">The Block</a></p>
+</section>
+
+<section>
+  <span class="eyebrow">The opening</span>
+  <h2>Where a new app can win</h2>
+  <div class="wins">
+    <div class="win"><h3>Peach-quality UX for Monero</h3><p>A phone-first web app with a guided sell flow, plain language and no setup. Nobody offers this for XMR.</p></div>
+    <div class="win"><h3>Seller protection built in</h3><p>Rank payment methods by how easily they can be reversed, and prompt the seller to check that the payer's name matches. Show "check your bank app" before Release unlocks. Gather evidence for disputes automatically.</p></div>
+    <div class="win"><h3>Borrow liquidity</h3><p>Build a better client on top of the existing Haveno network instead of starting with an empty marketplace.</p></div>
+    <div class="win"><h3>Fast, visible disputes</h3><p>A published dispute deadline, a live status for each case, and arbitrators who post bonds of their own.</p></div>
+    <div class="win"><h3>Cheaper first trade</h3><p>Small or no buyer deposit for low-value trades, as Peach does, to fix the problem of needing crypto before you can buy any.</p></div>
+    <div class="win"><h3>Security as a feature</h3><p>Independent audits and a public bug bounty before launch, given RetoSwap's record.</p></div>
+  </div>
+</section>
+
+<section>
+  <span class="eyebrow">Sources</span>
+  <h2>Where this came from</h2>
+  <p class="note">Several "best alternatives" lists are vendor blogs, and some 2026 dates in the coverage conflict. Claims marked unverified need a direct check.</p>
+  <ul class="sources">
+    <li><a href="https://localmonero.co/blog/announcements/winding-down?language=en">LocalMonero shutdown notice</a></li>
+    <li><a href="https://www.nobsbitcoin.com/agoradesk-localmonero-shutting-down/">No BS Bitcoin</a></li>
+    <li><a href="https://decrypt.co/229844/monero-exchange-localmonero-is-winding-down-its-operations">Decrypt</a></li>
+    <li><a href="https://protos.com/the-rise-and-fall-of-localmonero/">Protos</a></li>
+    <li><a href="https://www.theblock.co/news/ecosystems/2023-02-09-localbitcoins-shuts-down-after-a-decade-in-operation-210117">The Block: LocalBitcoins</a></li>
+    <li><a href="https://en.wikipedia.org/wiki/LocalBitcoins">Wikipedia: LocalBitcoins</a></li>
+    <li><a href="https://www.theblock.co/post/224844/bitcoin-paxful-shut-down">The Block: Paxful</a></li>
+    <li><a href="https://www.mariblock.com/paxful-shuts-down-blames-ex-co-founders-youssef-and-schaback/">Mariblock: Paxful</a></li>
+    <li><a href="https://www.cbinsights.com/company/localcryptos">CB Insights: LocalCryptos</a></li>
+    <li><a href="https://www.halborn.com/blog/post/explained-the-retoswap-hack-may-2026">Halborn: RetoSwap hack</a></li>
+    <li><a href="https://www.mexc.com/news/1153876">MEXC: second exploit</a></li>
+    <li><a href="https://freedom.tech/posts/2026-10-10-haveno-1-10-0/">Haveno 1.10.0</a></li>
+    <li><a href="https://github.com/haveno-dex/haveno/issues">Haveno issues</a></li>
+    <li><a href="https://arxiv.org/html/2505.02392v2">arXiv: Monero P2P traceability</a></li>
+    <li><a href="https://kycnot.me/service/retoswap">kycnot.me: RetoSwap</a></li>
+    <li><a href="https://kycnot.me/service/bisq">kycnot.me: Bisq</a></li>
+    <li><a href="https://www.spark.money/tools/bitcoin-p2p-exchange-comparison">Spark: BTC P2P comparison</a></li>
+    <li><a href="https://bitcoinramps.com/best/p2p">BitcoinRamps</a></li>
+    <li><a href="https://techcabal.com/2025/03/03/how-p2p-traders-navigate-daily-scams-fraud-and-frozen-accounts/">TechCabal: P2P fraud</a></li>
+    <li><a href="https://www.binance.com/en/support/faq/how-to-prevent-my-bank-account-from-being-frozen-in-p2p-transactions-360037619471">Binance: frozen accounts</a></li>
+    <li><a href="https://www.tokenpost.com/news/technology/25090">TokenPost: FCMP++ stressnet</a></li>
+    <li><a href="https://cryptoticker.io/en/monero-fcmp-stressnet-fork-october-2026/">CryptoTicker: FCMP++</a></li>
+    <li><a href="https://www.jdsupra.com/legalnews/the-tornado-cash-trial-s-mixed-verdict-7781950/">JD Supra: Tornado Cash</a></li>
+    <li><a href="https://www.theblock.co/news/regulation/2026-08-26-tornado-cash-roman-storm-retrial-april-2027-412761">The Block: Storm retrial</a></li>
+    <li><a href="https://arnoldnakamura.codeberg.page/guide/">LocalMonero alternatives guide</a></li>
+    <li><a href="https://ghostswap.io/no-kyc-monero-exchanges/">GhostSwap overview (vendor)</a></li>
+  </ul>
+</section>
+</main>

@@ -1,0 +1,10 @@
+
+node_modules/
+dist/
+dist-fixtures/
+dist-fixtures-*/
+.regtest/
+.claude/worktrees/
+test-results/
+playwright-report/
+design/x2f-app/support.js

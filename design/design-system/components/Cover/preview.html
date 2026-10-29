@@ -1,0 +1,44 @@
+<!-- @dsCard height=288 -->
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@700&family=Atkinson+Hyperlegible+Next:wght@400&display=swap">
+<style>
+  html, body { margin: 0; background: var(--ground); }
+  .cover { position: relative; width: 960px; height: 288px; overflow: hidden; background: var(--ground); }
+  .cover svg { position: absolute; left: 0; top: 0; }
+  .brand { fill: var(--monero); }
+  .esc { fill: var(--escrow); }
+  .deep { fill: var(--ink); }
+  .wait { fill: var(--caution); }
+  .r-md { rx: var(--radius-md); }
+  .dot { fill: var(--ground); }
+  .ring { fill: none; stroke: var(--ground); stroke-width: 2; }
+  .text { position: absolute; left: 48px; bottom: 36px; max-width: 440px; display: flex; flex-direction: column; gap: 8px; }
+  .name { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 120px; line-height: .92; letter-spacing: -0.02em; color: var(--ink); }
+  .tag { margin: 0; font-family: var(--font-sans); font-size: 14px; line-height: 20px; color: var(--ink-muted); }
+</style>
+<div class="cover">
+  <svg width="960" height="288" viewBox="0 0 960 288" aria-hidden="true">
+    <!--
+      blocks: monero slab 168x312 (7 x space-6 wide, bleeds top and bottom); escrow 216x120; ink 120x104; caution 80x56; corners radius-md
+      arrangement: one tall slab with satellites, everything right of x=480
+      pattern: 2-of-3 triads cut from the slab in ground; "any two of three keys move the coins" is X2F's own idea, so the literal-motif row
+      scales: dot pitch space-6 (24px), dot radius 6px, row pitch 40px, gaps space-4 (16px), corners radius-md
+    -->
+    <rect class="brand r-md" x="528" y="-12" width="168" height="312"/>
+    <rect class="esc r-md" x="712" y="24" width="216" height="120"/>
+    <rect class="deep r-md" x="712" y="160" width="120" height="104"/>
+    <rect class="wait r-md" x="848" y="208" width="80" height="56"/>
+    <g>
+      <circle class="dot" cx="588" cy="44" r="6"/><circle class="dot" cx="612" cy="44" r="6"/><circle class="ring" cx="636" cy="44" r="5"/>
+      <circle class="dot" cx="588" cy="84" r="6"/><circle class="ring" cx="612" cy="84" r="5"/><circle class="dot" cx="636" cy="84" r="6"/>
+      <circle class="ring" cx="588" cy="124" r="5"/><circle class="dot" cx="612" cy="124" r="6"/><circle class="dot" cx="636" cy="124" r="6"/>
+      <circle class="dot" cx="588" cy="164" r="6"/><circle class="dot" cx="612" cy="164" r="6"/><circle class="ring" cx="636" cy="164" r="5"/>
+      <circle class="dot" cx="588" cy="204" r="6"/><circle class="ring" cx="612" cy="204" r="5"/><circle class="dot" cx="636" cy="204" r="6"/>
+      <circle class="ring" cx="588" cy="244" r="5"/><circle class="dot" cx="612" cy="244" r="6"/><circle class="dot" cx="636" cy="244" r="6"/>
+    </g>
+  </svg>
+  <div class="text">
+    <p class="name">X2F</p>
+    <p class="tag">Trade Monero for cash, privately. Fiat to believe it.</p>
+  </div>
+</div>
+<script></script>

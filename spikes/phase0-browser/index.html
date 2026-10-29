@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>X2F Phase 0 test</title>
+<style>
+  body { margin: 0; padding: 16px; background: #0e1116; color: #eef1f5; font: 16px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 8px; }
+  a.big, button { display: block; padding: 14px; margin: 10px 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-weight: 600; text-align: center; text-decoration: none; border: 0; font-size: 17px; width: 100%; }
+  a.alt { background: #20262f; color: #eef1f5; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 12px; }
+  td { padding: 6px 4px; border-bottom: 1px solid #20262f; }
+  td.num { text-align: right; font-family: monospace; white-space: nowrap; }
+  p.note { color: #9aa4b2; font-size: 14px; }
+  input { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 8px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: monospace; }
+  section { margin-top: 28px; padding-top: 16px; border-top: 1px solid #20262f; }
+</style>
+</head>
+<body>
+  <h1>X2F Phase 0 escrow test</h1>
+  <p class="note">Throwaway test on a private test chain. No real coins.</p>
+
+  <div id="pick">
+    <a class="big" href="?role=seller">I'm the seller (phone)</a>
+    <a class="big alt" href="?role=buyer">I'm the buyer (laptop)</a>
+  </div>
+
+  <div id="run" hidden>
+    <p><strong id="who"></strong> · <span id="status">Starting…</span></p>
+    <p class="note">Keep this page open and the screen on until it says All done.</p>
+    <table><tbody id="log"></tbody></table>
+  </div>
+
+  <section>
+    <h1>Wallet link test</h1>
+    <p class="note">Paste your own Cake or Edge receive address. The button opens your wallet with 0.0001 XMR to yourself filled in. Check the address and amount, then cancel. Don't send.</p>
+    <form id="deeplink">
+      <input id="addr" placeholder="Your own Monero address" autocomplete="off">
+      <button type="submit">Open in my wallet</button>
+    </form>
+  </section>
+
+  <script src="/client.js"></script>
+</body>
+</html>

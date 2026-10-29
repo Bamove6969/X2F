@@ -1,0 +1,53 @@
+{
+  "name": "x2f",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "tools/*"
+  ],
+  "engines": {
+    "node": ">=24.22.1 <25"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "tokens": "tsx tools/tokens-to-css.ts",
+    "copy-lint": "tsx tools/copy-lint.ts",
+    "audit": "npm audit --omit=dev",
+    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off packages apps tools",
+    "separation-check": "tsx tools/separation-check.ts",
+    "check": "bash tools/check.sh"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.1",
+    "rolldown": "1.2.12",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vite": "7.3.7",
+    "vitest": "5.0.3"
+  },
+  "overrides": {
+    "serialize-javascript": "7.1.2",
+    "uuid": "11.1.1",
+    "fastify-plugin": "6.0.0",
+    "rolldown": "1.2.12",
+    "@fastify/send": "4.1.1",
+    "@fastify/accept-negotiator": "2.1.0",
+    "@peculiar/asn1-android": "2.10.0",
+    "@peculiar/asn1-asym-key": "2.10.0",
+    "@peculiar/asn1-cms": "2.10.0",
+    "@peculiar/asn1-csr": "2.10.0",
+    "@peculiar/asn1-ecc": "2.10.0",
+    "@peculiar/asn1-pfx": "2.10.0",
+    "@peculiar/asn1-pkcs8": "2.10.0",
+    "@peculiar/asn1-pkcs9": "2.10.0",
+    "@peculiar/asn1-rsa": "2.10.0",
+    "@peculiar/asn1-schema": "2.10.0",
+    "@peculiar/asn1-x509": "2.10.0",
+    "@peculiar/asn1-x509-attr": "2.10.0",
+    "@peculiar/asn1-x509-post-quantum": "2.10.0",
+    "@peculiar/x509": "2.1.0",
+    "asn1js": "3.0.10"
+  }
+}
