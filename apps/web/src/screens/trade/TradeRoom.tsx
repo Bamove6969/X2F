@@ -52,13 +52,15 @@
  *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
  * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
  *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
- * - Task 27: both in `disputed`.
+ * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
+ *   90-day "Open a dispute", spec 2.3; lead 2026-10-28).
  *
  * ### Rules for every screen
  * - Show the other trader only as `publicName(view.counterparty)` inside `data-username`; never a
  *   login name (FU-A), and no text-transform on it.
- * - Exactly one `[data-primary]` per screen (parity, Task 15); phone sizes 360×640, 390×844,
- *   430×932 must fit with no horizontal scroll.
+ * - Exactly one `[data-primary]` per screen (parity, Task 15); every phone size in Task 15's
+ *   `PHONE_VIEWPORTS` (e2e/phone.ts, the one standard: 390x844 and 360x800) must fit with no
+ *   horizontal scroll.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useLocation, useParams } from 'react-router';

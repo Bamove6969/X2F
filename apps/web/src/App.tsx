@@ -17,6 +17,7 @@ import { Login } from './screens/auth/Login.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
+import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Security } from './screens/settings/Security.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
@@ -150,7 +151,8 @@ export function App() {
           <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
-          <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
+          {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
+          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
           <Route path="/wallets" element={<Wallets />} />
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
