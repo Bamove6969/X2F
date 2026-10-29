@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { FastifyInstance } from 'fastify';
 import type { TradeView } from '../src/api/trade.js';
+import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { startFixtures } from './fixtures-serve.js';
 import { expectParity } from './parity.js';
 import { BOARD, SERVER_NOW, buyerAlertView, sellerView } from './refundViews.js';
@@ -103,11 +104,15 @@ test('parity with SellerRefund at 1280x800, in the desktop shell', async ({ page
 
 test('parity with the Desktop board at 1280x800', async ({ page }) => {
   // The Desktop board is the buyer's paying room (TradeTimeline, counterparty card, chat): Task
-  // 23's, inside this room. Runs once Task 23's BuyerPay is here.
-  const buyerPay = fileURLToPath(new URL('../src/screens/trade/BuyerPay.tsx', import.meta.url));
-  test.skip(!existsSync(buyerPay), "needs Task 23's desktop trade room (BuyerPay)");
-  await stubTrade(page, sellerView());
-  await open(page);
+  // 23's BuyerPay in this room, with the device's own figures and deal (e2e/pay.spec.ts has the rest).
+  await page.route('**/v1/account/me', (r) => r.fulfill({ json: { kind: 'trader' } }));
+  await page.route(`**/v1/trades/${CODE}`, (r) => json(PAY_SECURED)(r));
+  await page.addInitScript((e) => {
+    window.__x2fFixtureEscrow = e;
+  }, { phase: 'ready' as const, amountAtomic: PAY_SECURED.amountAtomic, fiatCents: PAY_SECURED.fiatCents, deal: { poster: 'seller' as const, takeAmountAtomic: PAY_SECURED.amountAtomic } });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto(`${BASE}/trade/${CODE}`);
+  await expect(page.locator('[data-layout="wide"]')).toBeVisible();
   await parity(page, 'Desktop', '1280x800');
 });
 
@@ -147,9 +152,9 @@ test('Give 30 more min twice, then it is gone', async ({ page }) => {
   await open(page);
   for (let n = 1; n <= 2; n += 1) {
     await button(page, 'Give 30 more min').click();
-    // The window is open again: the room leaves SellerRefund (seller × secured before payBy is
-    // Task 23's waiting room; until it lands, the plain status card), so nothing can be cancelled.
-    await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
+    // The window is open again: the room leaves SellerRefund for Task 23's waiting room (seller ×
+    // secured before payBy), so nothing can be cancelled.
+    await expect(page.getByRole('region', { name: 'Waiting for payment' })).toBeVisible();
     await expect(button(page, 'Give 30 more min')).toHaveCount(0);
     await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
     expect(s.trade.view.extensions).toBe(n);
@@ -217,9 +222,9 @@ test('before payBy by the server clock nothing can be cancelled, with the device
   await page.clock.install({ time: new Date(Date.parse(SERVER_NOW) + 10 * MIN) });
   const s = await stubTrade(page, sellerView({ payBy: later(SERVER_NOW, 3), nextDeadline: later(SERVER_NOW, 3) }));
   await open(page);
-  // Before payBy the room shows no refund screen at all (Task 23's waiting room, or until it lands
-  // the plain status card), though the device clock is already past payBy.
-  await expect(page.locator('.x2f-trade-status[data-trade-state="secured"]')).toBeVisible();
+  // Before payBy the room shows no refund screen at all (Task 23's waiting room), though the
+  // device clock is already past payBy.
+  await expect(page.getByRole('region', { name: 'Waiting for payment' })).toBeVisible();
   await expect(button(page, 'Cancel & get refund')).toHaveCount(0);
   await expect(button(page, 'Give 30 more min')).toHaveCount(0);
   // payBy passes on the server; the room re-reads the trade at its next deadline.
@@ -294,8 +299,8 @@ for (const [width, height] of [
       }
       const scroll = await page.evaluate(() => ({ wide: document.documentElement.scrollWidth, view: document.documentElement.clientWidth }));
       expect(scroll.wide).toBeLessThanOrEqual(scroll.view);
-      // The header's method name is an inline text button (Task 14's TradeHeader), not an action.
-      const heights = await page.locator('button:visible:not(.x2f-method-name)').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
+      // Every button, the header's method name included (44 px since the shared fix, 2026-10-28).
+      const heights = await page.locator('button:visible').evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height));
       for (const h of heights) expect(h).toBeGreaterThanOrEqual(44);
     });
   }
