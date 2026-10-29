@@ -132,7 +132,8 @@ if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage =
       api: httpChatApi(),
       store: await openChatStore(),
       newIdentity: generateIdentity,
-      ...chatConfig(import.meta.env as unknown as Record<string, string | undefined>),
+      // Named, never the whole env object (see below): only this one key is inlined.
+      ...chatConfig({ VITE_MOD_SIGNING_PUBLIC: import.meta.env.VITE_MOD_SIGNING_PUBLIC as string | undefined }),
     }),
   );
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
