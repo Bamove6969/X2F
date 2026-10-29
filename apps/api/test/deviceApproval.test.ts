@@ -40,6 +40,18 @@ beforeAll(async () => {
     now = d;
     set(d);
   };
+  app.post('/t/session', async (req, reply) => {
+    const { accountId } = req.body as { accountId: string };
+    await startSession(deps, req, reply, { accountId, level: 'full', deviceLabel: 'Test', method: 'pgp', firstSession: false });
+    return { ok: true };
+  });
+  app.post('/t/complete', async (req, reply) => {
+    const { accountId, factor, pendingId } = req.body as { accountId: string; factor: LoginFactor; pendingId?: string };
+    const { rows } = await deps.db.query<{ kind: AccountKind }>('select kind from accounts where id = $1', [accountId]);
+    return completeLogin(deps, req, reply, {
+      account: { id: accountId, kind: rows[0]!.kind }, factor, deviceLabel: 'Desk', ...(pendingId !== undefined ? { pendingId } : {}),
+    });
+  });
 });
 
 afterAll(async () => {

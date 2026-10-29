@@ -11,6 +11,7 @@ import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/aut
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { approvedLogin } from './helpers/approval.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
@@ -501,7 +502,7 @@ describe('expired keys and refreshed keys', () => {
     expect(s1.statusCode).toBe(200);
     await expect(dec(s1.json().encryptedMessage, s2Only)).rejects.toThrow();
     const c1 = codeOf(await dec(s1.json().encryptedMessage, k.privateKey));
-    expect((await loginFinish(b, s1.json().challengeId, c1)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b, s1.json().challengeId, c1), (u) => b.post(u, {}))).toEqual({ status: 'ok' });
 
     // Someone sends the old public copy (no revocation) as a refresh: S2 stays revoked on the
     // server. The pasted copy picks S2, which the stored copy no longer accepts (M-2), so it gets
@@ -606,7 +607,7 @@ describe('binding', () => {
     const a = home;
     const b = new Browser();
     const sb = await loginStart(b, key);
-    await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey)));
+    await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey))), (u) => b.post(u, {}));
 
     const action = { kind: 'set-password' };
     const ca = await a.post('/v1/confirm/pgp/start', { action });
@@ -677,7 +678,7 @@ describe('confirm and adding a key', () => {
       const s = await loginStart(b2, mine);
       await expect(dec(s.json().encryptedMessage, theirs.privateKey)).rejects.toThrow();
       const fin = await loginFinish(b2, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, mine.privateKey)));
-      expect(fin.json()).toEqual({ status: 'ok' });
+      expect(await approvedLogin(deps, fin, (u) => b2.post(u, {}))).toEqual({ status: 'ok' });
     }
   });
 
@@ -740,7 +741,7 @@ describe('user IDs (R16)', () => {
     const b = new Browser();
     const s = await loginStart(b, v6);
     const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, v6.privateKey)));
-    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
 
     const signing = await app.inject({ method: 'GET', url: '/v1/pgp/signing-key' });
     expect(signing.body).not.toContain('a@b.c');
@@ -1012,7 +1013,7 @@ describe('review fixes', () => {
     const flood = new Browser();
     for (let i = 0; i < 6; i++) await loginStart(flood, known);
     const code = codeOf(await dec(sb.json().encryptedMessage, known.privateKey));
-    expect((await loginFinish(b, sb.json().challengeId, code)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, code), (u) => b.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('M1: a challenge started on one origin cannot be finished from another', async () => {

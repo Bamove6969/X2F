@@ -21,6 +21,7 @@ import {
 } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -182,12 +183,13 @@ describe('passkey sign-up and discoverable login', () => {
     const { rows: before } = await deps.db.query('select kind, attested, backed_up from webauthn_credentials where account_id = $1', [accountId]);
     expect(before).toEqual([{ kind: 'passkey', attested: false, backed_up: true }]);
 
-    const { res, start } = await discoverableLogin(auth);
+    const { res, start, b } = await discoverableLogin(auth);
     expect(start.json().options.allowCredentials).toEqual([]);
     expect(start.json().options.userVerification).toBe('required');
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ status: 'ok' });
-    expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeDefined();
+    // Task 16: the sign-up browser is still logged in, so this new one is approved first.
+    expect(await approvedLogin(deps, res, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
+    expect(b.cookies[SESSION_COOKIE]).toBeDefined();
     const { rows } = await deps.db.query('select last_used_at from webauthn_credentials where account_id = $1', [accountId]);
     expect(rows[0].last_used_at).toEqual(now);
     const alerts = await deps.db.query("select detail from alerts where account_id = $1 and kind = 'new-login'", [accountId]);
@@ -324,7 +326,8 @@ describe('WebAuthn security checks (P2-I4)', () => {
     });
     expect(errorOf(res)).toBe('webauthn-failed');
     // B's own key on its own challenge works.
-    expect((await usernameLogin(bAcct.auth, bAcct.username)).res.json()).toEqual({ status: 'ok' });
+    const own = await usernameLogin(bAcct.auth, bAcct.username);
+    expect(await approvedLogin(deps, own.res, (u) => own.b.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('does not let a discoverable login use a security key or a wrong user handle', async () => {
@@ -666,7 +669,8 @@ describe('confirm and adding a credential', () => {
 
     const login = (await new Browser().post('/v1/login/webauthn/start', { loginName: t.username })).json();
     expect(login.options.allowCredentials.map((c: { id: string }) => c.id)).toEqual(expect.arrayContaining([t.auth.credentialId, second.credentialId]));
-    expect((await usernameLogin(second, t.username)).res.json()).toEqual({ status: 'ok' });
+    const own = await usernameLogin(second, t.username);
+    expect(await approvedLogin(deps, own.res, (u) => own.b.post(u, {}))).toEqual({ status: 'ok' });
 
     const passkeyToken = await confirm({ kind: 'add-method', method: 'passkey' });
     const wallet = await t.b.post('/t/add-wallet', { confirmToken: passkeyToken });
