@@ -1029,11 +1029,11 @@ Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `cents
 
 The owner replaced "no trade limits for new accounts" with starter limits (spec 2.3).
 - **Task 1 (schema):** a new migration adds the owner settings `starter_cap_usd` (200), `building_cap_usd` (1000), `building_min_trades` (5), `building_min_days` (7), `graduated_min_trades` (20), `graduated_min_days` (30) and `starter_max_open_trades` (3). Each is stored as a row the owner can change, and every change is logged.
-- **Shared helper:** `tradeCap(deps, accountId, now)` returns `{ stage, capUsd | null, maxOpen | null }`. "Completed" means completed with no lost dispute; each lost dispute drops one stage.
+- **Shared helper:** `tradeCap(deps, accountId, now)` returns `{ stage, capUsd | null, maxOpen | null }`. "Completed" means released trades plus trades whose dispute settled, whoever won (R38; `COMPLETED_TRADES_SQL`: `state = 'released' or (state = 'refunded' and dispute_by is not null)`); a lost dispute drops no stage (owner 2026-10-29, replacing "completed with no lost dispute; each lost dispute drops one stage").
 - **Task 4 (offers):** an offer list for a signed-in viewer marks offers whose minimum exceeds the viewer's cap (`opensAt: 'building' | 'graduated'`). Posting an offer clamps nothing; the cap is checked per trade.
 - **Task 5 (taking an offer):** the USD equivalent of the trade amount at the locked rate must be within both sides' caps (409 `starter-limit`, naming only the caller's own stage, never the other side's). The Starter open-trade count is enforced in the same transaction as the trade insert.
 - **Escrow growth (overfunding):** growth may not push the trade above either side's cap. Otherwise the trade amount stays fixed and the extra returns to the seller, as for "above the offer's maximum".
-- Tests cover each stage boundary, the day thresholds, the lost-dispute drop, the open-trade count, and a cap error that never reveals the other side's stage.
+- Tests cover each stage boundary, the day thresholds, a lost dispute that still counts and drops no stage (owner 2026-10-29), the open-trade count, and a cap error that never reveals the other side's stage.
 
 
 ## Revision 2026-10-28 (lead, from the owner's decisions of 2026-10-27)

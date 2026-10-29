@@ -19,7 +19,7 @@ import { boardTexts, boardViewport, missingTexts, reportPixels } from './parity.
 import { PHONE_VIEWPORTS, expectPhoneLayout } from './phone.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
-const PORT = 4320;
+const PORT = 4322;
 const BASE = `http://127.0.0.1:${PORT}`;
 
 let server: FastifyInstance;
