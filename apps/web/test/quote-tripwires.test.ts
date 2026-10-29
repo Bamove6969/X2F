@@ -11,7 +11,9 @@
 // landed 2026-10-28 and matches takeOffer's body (amountAtomic, walletId, centsPerXmr, fiatCents) → { code },
 // price-changed and takeRefusal's codes; its starter-limit refusal carries { stage, capUsdCents } or
 // { stage: 'starter', maxOpen } for the caller's own limit and nothing for the other side's (takeErrors.ts);
-// that tripwire is retired.) Each one below fails once the named module lands: then
+// that tripwire is retired. Task 29 is on the line since
+// 2026-10-29: WalletPicker names and filters wallets through wallets-model.ts (APP_LABELS,
+// takeableWallets), and e2e/quote.spec.ts drives the real /wallets?add=1&returnTo screen back here.) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
@@ -31,13 +33,6 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     expect(
       has('apps/web/src/screens/setup/SetupFlow.tsx'),
       'Task 28 landed: check Start trading → returnTo in the same tab re-shows the quote with "You\'re back" (e2e quote.spec.ts)',
-    ).toBe(false);
-  });
-
-  it('NEEDS_TASK_29: the wallet names and the usable filter mirror the unmerged wallets model', () => {
-    expect(
-      has('apps/web/src/screens/wallets-model.ts'),
-      'Task 29 landed: use APP_LABELS and takeableWallets in WalletPicker, and check /wallets?add=1&returnTo comes back here after confirm-it\'s-you',
     ).toBe(false);
   });
 

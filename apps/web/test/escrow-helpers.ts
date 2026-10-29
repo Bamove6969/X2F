@@ -2,10 +2,9 @@
 import type { Role } from '@x2f/core';
 import { TransportClosedError, type EscrowEngine, type Incoming, type Outcome, type PartyArgs, type PartyHandle, type Transport } from '@x2f/escrow';
 import { canonicalJson, type Envelope, type Identity, type Participants } from '@x2f/protocol';
-import { channelFor, escrowPlan } from '@x2f/trade';
+import { attestationBytes, channelFor, escrowPlan, type Attestation } from '@x2f/trade';
 import { IDBFactory } from 'fake-indexeddb';
 import sodium from 'libsodium-wrappers';
-import { attestationBytes, type Attestation } from '../src/escrow/adapters.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowRuntime, type EscrowStatus } from '../src/escrow/runtime.js';
 import { openEscrowStore, type EscrowStore } from '../src/escrow/store.js';
 
@@ -183,6 +182,8 @@ export interface ApiState {
   /** Replaces the attestation the API serves (for the mismatch tests). */
   tamper?: (a: Attestation) => Attestation;
   resign?: Uint8Array;
+  /** Final 409 answers of the Task 8 routes: `identity-conflict` on register, `attestation-refused` or `trade-closed` on fetch. */
+  refuse?: { identity?: 'identity-conflict'; attestation?: 'attestation-refused' | 'trade-closed' };
   /** Per-role fields laid over the view (a lying API telling each side something else). */
   roleView?: Partial<Record<'buyer' | 'seller', Record<string, unknown>>>;
 }
@@ -231,9 +232,13 @@ export async function makeApi(mod: { publicHex: string; secret: Uint8Array }, st
   const forRole = (role: 'buyer' | 'seller') => ({
     getTrade: async () => ({ ...state.view, role, ...(state.roleView?.[role] ?? {}) }),
     registerIdentity: async (_code: string, body: { signPublic: string; boxPublic: string; proof: string }) => {
+      if (state.refuse?.identity) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.identity });
       state.identities[role] ??= body;
     },
-    getAttestation: async () => attest(),
+    getAttestation: async () => {
+      if (state.refuse?.attestation) throw Object.assign(new Error('api 409'), { status: 409, code: state.refuse.attestation });
+      return attest();
+    },
   });
   return { modId, forRole };
 }

@@ -4,6 +4,7 @@ import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { PostOffer } from './screens/PostOffer.js';
+import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -146,7 +147,7 @@ export function App() {
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
           <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
+          <Route path="/wallets" element={<Wallets />} />
           <Route path="/setup/*" element={<Screen name="setup" />} />
           <Route path="/terms" element={<Screen name="terms" />} />
           <Route path="/login" element={<Login />} />

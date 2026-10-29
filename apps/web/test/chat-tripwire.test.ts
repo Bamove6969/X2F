@@ -1,11 +1,10 @@
 // TRIPWIRES for Task 20's wiring (only the pure parts are built: apps/web/src/chat/chatCrypto.ts
 // and packages/trade/src/chat.ts). Task 20's routes, migration and panel are unblocked: Task 4's
-// offers table (102_offers.sql) and Task 6's trades and startRetention exist; the chat's mod identity waits for Task 8's
+// offers table (102_offers.sql) and Task 6's trades and startRetention exist; the chat's mod identity can now use Task 8's
 // attestation; the device store for Task 12. Each check fails once its dependency lands: then
 // build that part against the real module and delete it.
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import * as trade from '@x2f/trade';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -24,13 +23,14 @@ describe('Task 20 wiring still waits for its dependencies', () => {
     expect(has('apps/api/src/chat/retention.ts')).toBe(false);
   });
 
-  it('NEEDS_TASK_8: the chat mod identity comes from the attestation (channels.chat)', () => {
-    // Then: verify the chat attestation (channels.chat === chatChannel(chat)) before the first
-    // sealChatMessage, and pass its participants; never participants straight from the API.
-    // Review M4: apps/moderation verifies chat identities with chatIdentityProofBytes (the
-    // x2f/chat-identity/v1 domain), never the trade identity domain.
-    expect(has('packages/trade/src/attestation.ts'), 'Task 8 landed: wire the chat attestation').toBe(false);
-    expect('verifyAttestation' in trade).toBe(false);
+  it('NEEDS_TASK_20_ATTEST: the chat does not verify the chat attestation yet (Task 8 is on the line)', () => {
+    // Task 8's verifyAttestation(..., { context: 'chat' }) is in @x2f/trade. Then: verify the chat
+    // attestation (channels.chat === chatChannel(chat)) before the first sealChatMessage, and pass
+    // its participants; never participants straight from the API. Review M4: apps/moderation
+    // verifies chat identities with chatIdentityProofBytes (the x2f/chat-identity/v1 domain), never
+    // the trade identity domain. Delete this check when the chat code calls verifyAttestation.
+    const chat = readdirSync(`${ROOT}apps/web/src/chat`).map((f) => readFileSync(`${ROOT}apps/web/src/chat/${f}`, 'utf8')).join('\n');
+    expect(chat, 'the chat verifies its attestation now: delete this check').not.toMatch(/\bverifyAttestation\b/);
   });
 
   it('NEEDS_TASK_12: ChatState and the chat identity are not stored on the device yet', () => {
