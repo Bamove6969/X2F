@@ -19,7 +19,8 @@ export async function tradeApp(options: Omit<BuildOptions, 'logStream'> = {}, ov
   let n = 0;
   const trader = async (kind: 'trader' | 'staff' = 'trader') => {
     const loginName = `trader${String(++n).padStart(4, '0')}x`;
-    const displayName = `D${loginName}`;
+    // Not a superstring of the login name, so a test can check that no answer contains the login name.
+    const displayName = `Pub${String(n).padStart(4, '0')}x`;
     const id = await seedAccount(t.deps, { loginName, displayName, kind });
     const browser = new Browser(t.app);
     const res = await browser.post('/t/login', { accountId: id });
