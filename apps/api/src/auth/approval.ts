@@ -42,6 +42,7 @@ import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
+import { coolingOf, endCoolingIfOwner, provenBeforeCooling, loginStrength, sessionStrength, startCooling, type LoginFactorKind, type ProvenMethod } from './strength.js';
 import { assertNotDisabled, cleanLabel, endOtherSessions, endSession, presentedTokenHash, requireSession, startSession } from './sessions.js';
 
 /** How long the new device waits for a decision, and how long an approved login may take to collect its session. */
@@ -168,14 +169,24 @@ export async function traderLogin(
   deps: Deps,
   req: FastifyRequest,
   reply: FastifyReply,
-  a: { accountId: string; method: ApprovalMethod; deviceLabel: string },
+  a: {
+    accountId: string;
+    method: ApprovalMethod;
+    deviceLabel: string;
+    /** Task 17: the factors this login proved (one, or password and TOTP). */
+    factors: LoginFactorKind[];
+    /** Task 17: what a strong login proved, so it can end a cooling-off started before that method was added. */
+    proven?: ProvenMethod;
+  },
 ): Promise<{ status: 'ok' } | ApprovalWait> {
+  const strength = sessionStrength(loginStrength(a.factors));
   ensureDeviceCookie(req, reply);
   const device = deviceHash(req)!;
   const now = deps.clock();
   const presented = presentedTokenHash(req);
   const secret = randomBytes(32).toString('base64url');
 
+  let noApprover = false;
   const wait = await withTx(deps, async (db) => {
     await lockAccount(db, a.accountId);
     const acct = await db.query<{ kind: string; one_device: boolean }>('select kind, one_device from accounts where id = $1', [a.accountId]);
@@ -193,8 +204,14 @@ export async function traderLogin(
       `select count(*)::int as n from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2`,
       [a.accountId, now],
     );
-    // OPEN (Revision 2026-10-29b): no logged-in device to approve it, so the login works as today.
-    if (open.rows[0]!.n === 0) return null;
+    // No logged-in device to approve it: the login goes on; a weak one on a new device cools the
+    // account off for 24 hours (Task 17, owner 2026-10-29).
+    if (open.rows[0]!.n === 0) {
+      if (strength === 'weak' && !(await isTrusted(deps, a.accountId, device))) noApprover = true;
+      return null;
+    }
+    // Task 17: the real owner's strong login during a cooling-off goes straight in and ends it.
+    if (strength === 'strong' && a.proven !== undefined && (await provenBeforeCooling(db, a.accountId, a.proven, now))) return null;
     const max = row.one_device ? 1 : await maxDevices(db);
     const inUse = await devicesInUse(db, a.accountId, now, presented);
     const trusted = await isTrusted(deps, a.accountId, device);
@@ -226,9 +243,9 @@ export async function traderLogin(
     const deviceLabel = coarseDeviceLabel(a.deviceLabel);
     const expiresAt = new Date(now.getTime() + APPROVAL_TTL_MS);
     const ins = await db.query<{ id: string }>(
-      `insert into login_approvals (account_id, device_hash, secret_hash, device_label, session_label, method, number, choices, created_at, expires_at)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) returning id`,
-      [a.accountId, device, sha256(secret), deviceLabel, cleanLabel(a.deviceLabel), a.method, number, choices, now, expiresAt],
+      `insert into login_approvals (account_id, device_hash, secret_hash, device_label, session_label, method, number, choices, created_at, expires_at, strength)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) returning id`,
+      [a.accountId, device, sha256(secret), deviceLabel, cleanLabel(a.deviceLabel), a.method, number, choices, now, expiresAt, strength],
     );
     const approvalId = ins.rows[0]!.id;
     await addAlert(db, a.accountId, 'login-approval', { approvalId, deviceLabel, method: a.method }, now);
@@ -239,7 +256,11 @@ export async function traderLogin(
   });
 
   if (wait === null) {
-    await startSession(deps, req, reply, { accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false });
+    await startSession(deps, req, reply, {
+      accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
+    });
+    if (noApprover) await startCooling(deps.db, a.accountId, now, 'weak-login-new-device');
+    else if (strength === 'strong' && a.proven !== undefined) await endCoolingIfOwner(deps.db, a.accountId, a.proven, now);
     return { status: 'ok' };
   }
   void reply.setCookie(APPROVAL_COOKIE, secret, { ...COOKIE_ATTRS, maxAge: Math.ceil((2 * APPROVAL_TTL_MS) / 1000) });
@@ -274,6 +295,7 @@ interface ApprovalRow {
   ends: 'one-device' | 'session' | null;
   end_session: string | null;
   used_at: Date | null;
+  strength: 'strong' | 'weak';
 }
 
 /**
@@ -322,7 +344,7 @@ async function poll(req: FastifyRequest, reply: FastifyReply): Promise<PollResul
   if (!won) return { status: 'expired' };
   await assertNotDisabled(deps.db, won.account_id);
   const sessionId = await startSession(deps, req, reply, {
-    accountId: won.account_id, level: 'full', deviceLabel: won.session_label, method: won.method, firstSession: false,
+    accountId: won.account_id, level: 'full', deviceLabel: won.session_label, method: won.method, firstSession: false, strength: won.strength,
   });
   const loggedOut = await endForNewDevice(deps, req, won, sessionId);
   return { status: 'ok', loggedOut };
@@ -442,6 +464,9 @@ async function decide(req: FastifyRequest) {
       }, now);
       return { outcome: 'blocked' as const };
     }
+    // Task 17: an account cooling off approves no new device (blocking stays possible).
+    const cooling = await coolingOf(db, accountId, now);
+    if (cooling !== null) throw new ApiError(403, 'cooling-off', { coolingUntil: cooling.until.toISOString() });
     let ends: 'one-device' | 'session' | null = null;
     let endId: string | null = null;
     if (row.one_device) {

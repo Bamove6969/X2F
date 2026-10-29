@@ -40,6 +40,8 @@ export class AuthApiError extends Error {
   readonly sessions?: Array<{ id: string; deviceLabel: string; lastSeenAt: string; current: boolean }>;
   /** How a decided approval ended (409 `approval-ended`, Task 16). */
   readonly outcome?: 'approved' | 'blocked' | 'expired';
+  /** When the account's cooling-off ends (403 `cooling-off`, Task 17). */
+  readonly coolingUntil?: string;
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -63,6 +65,7 @@ export class AuthApiError extends Error {
           typeof s.lastSeenAt === 'string' && typeof s.current === 'boolean',
       );
     }
+    if (typeof extra.coolingUntil === 'string') this.coolingUntil = extra.coolingUntil;
     if (extra.outcome === 'approved' || extra.outcome === 'blocked' || extra.outcome === 'expired') this.outcome = extra.outcome;
   }
 }
@@ -164,6 +167,8 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
+  /** Task 17: when the account's 24-hour cooling-off ends, while one runs. Optional: older API builds do not send it. */
+  coolingUntil?: string | null;
 }
 
 /** Task 11: one signed-in device. */

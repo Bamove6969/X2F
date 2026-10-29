@@ -28,6 +28,9 @@ const KIND_WORDS: Record<string, string> = {
   'login-blocked': 'A login was blocked',
   'logged-out-by-new-device': 'A new device logged other devices out',
   'one-device-set': 'One device at a time was changed',
+  // Plan 2 Task 17.
+  'cooling-off-started': 'A 24-hour wait started',
+  'cooling-off-ended': 'The 24-hour wait ended',
 };
 
 export function alertWords(kind: string): string {

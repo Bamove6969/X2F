@@ -3,6 +3,7 @@ import { fiatCents, newTrade, offerRate, posterRole, type Price, type Pricing, t
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
+import { requireNotCooling } from '../auth/strength.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { acceptedEvent } from '../events/publicName.js';
@@ -232,7 +233,7 @@ async function assertNotBlocked(q: Queryable, actor: string, other: string): Pro
 const requireTrader = requireSession({ kinds: ['trader'] });
 
 export function takeRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers/:id/take', { preHandler: requireTrader }, async (req) => {
+  app.post('/v1/offers/:id/take', { preHandler: [requireTrader, requireNotCooling] }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw notFound();

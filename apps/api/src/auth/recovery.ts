@@ -25,6 +25,7 @@ import { allowedMethods, methodAllowed } from './methods.js';
 import { loginNameLookup } from '../accounts.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
+import { loginStrength, startCooling } from './strength.js';
 import { verifyTotp } from './totp.js';
 
 export const RECOVERY_HOLD_MS = 24 * 3_600_000;
@@ -146,8 +147,15 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
     const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
     if ((used.rowCount ?? 0) === 0) return refuse(key);
     await throttleReset(deps, key);
-    await startSession(deps, req, reply, { accountId, level: 'recovery', deviceLabel, method: 'recovery-code', firstSession: false });
-    return { status: 'ok' as const, level: 'recovery' as const, holdUntil: null };
+    // Task 17 (owner, 2026-10-29): a recovery code alone is one weak way: held like a TOTP backup
+    // login, and the account cools off for 24 hours.
+    const now = deps.clock();
+    const hold = loginStrength(['recovery-code']) === 'weak-single' ? new Date(now.getTime() + RECOVERY_HOLD_MS) : undefined;
+    await startSession(deps, req, reply, {
+      accountId, level: 'recovery', deviceLabel, method: 'recovery-code', firstSession: false, ...(hold ? { holdUntil: hold } : {}),
+    });
+    if (hold) await startCooling(deps.db, accountId, now, 'weak-backup-login');
+    return { status: 'ok' as const, level: 'recovery' as const, holdUntil: hold?.toISOString() ?? null };
   }
 
   // TOTP: at most 5 tries a day per account, right or wrong, before the per-guess throttle.
@@ -162,6 +170,8 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
   // startSession writes the `recovery-login` alert { method, holdUntil } in the same transaction.
   await startSession(deps, req, reply, { accountId, level: 'recovery', deviceLabel, method: 'totp', firstSession: false, holdUntil });
+  // Task 17: an authenticator code alone is one weak way: the account cools off for 24 hours too.
+  await startCooling(deps.db, accountId, deps.clock(), 'weak-backup-login');
   return { status: 'ok' as const, level: 'recovery' as const, holdUntil: holdUntil.toISOString() };
 }
 

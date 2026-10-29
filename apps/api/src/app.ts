@@ -8,6 +8,7 @@ import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
+import { securityChangeHook } from './auth/strength.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -204,6 +205,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
+
+  // Plan 2 Task 17: a weak session's password or login-method change starts the 24-hour cooling-off.
+  securityChangeHook(app);
 
   // Only JSON bodies: the built-in text/plain parser would let a cross-site form post a JSON body.
   app.removeContentTypeParser('text/plain');

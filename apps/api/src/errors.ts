@@ -43,6 +43,8 @@ export type ApiErrorCode =
   // Plan 2 Task 16: new-device approval.
   | 'approval-ended'
   | 'too-many-devices'
+  // Plan 2 Task 17: the 24-hour cooling-off.
+  | 'cooling-off'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
   // Plan 3, Task 4: posting and relisting offers.

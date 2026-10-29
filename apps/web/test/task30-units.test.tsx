@@ -105,7 +105,7 @@ describe('one confirm at a time', () => {
 
 describe('alert labels', () => {
   it('names every kind the server sends, in plain words', () => {
-    for (const k of ['new-login', 'recovery-login', 'recovery-hold-cancelled', 'login-locked', 'login-method-added', 'login-method-removed', 'sessions-ended', 'wallet-added', 'wallet-removed', 'device-key-added', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'one-device-set']) {
+    for (const k of ['new-login', 'recovery-login', 'recovery-hold-cancelled', 'login-locked', 'login-method-added', 'login-method-removed', 'sessions-ended', 'wallet-added', 'wallet-removed', 'device-key-added', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'one-device-set', 'cooling-off-started', 'cooling-off-ended']) {
       const w = alertWords(k);
       expect(w, k).not.toMatch(/[a-z]-[a-z]/);
       expect(w, k).not.toBe('Security alert');

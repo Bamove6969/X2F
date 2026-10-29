@@ -336,7 +336,7 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
   await assertNotDisabled(deps.db, accountId);
   const deviceLabel = typeof row.payload.deviceLabel === 'string' ? row.payload.deviceLabel : '';
   // Task 16: a session now, or an approval from a logged-in device first.
-  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel });
+  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password', 'totp'], proven: { kind: 'password-totp' } });
 }
 
 /**

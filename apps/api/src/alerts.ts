@@ -18,6 +18,9 @@ export type AlertKind =
   | 'login-blocked'
   | 'logged-out-by-new-device'
   | 'one-device-set'
+  // Task 17: the 24-hour cooling-off.
+  | 'cooling-off-started'
+  | 'cooling-off-ended'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).
   | 'price-source-failing'
   | 'price-source-recovered'

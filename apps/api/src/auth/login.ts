@@ -65,7 +65,10 @@ export async function completeLogin(
   if (a.account.kind === 'trader') {
     if (a.pendingId !== undefined) throw new ApiError(400, 'challenge-expired');
     // Task 16: a session now, or an approval from a logged-in device first.
-    return traderLogin(deps, req, reply, { accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel });
+    return traderLogin(deps, req, reply, {
+      accountId: a.account.id, method: a.factor.method, deviceLabel: a.deviceLabel, factors: [a.factor.method],
+      proven: a.factor.method === 'pgp' ? { kind: 'pgp', fingerprints: a.factor.fingerprints } : { kind: 'webauthn', credentialId: a.factor.credentialId },
+    });
   } else if (a.pendingId === undefined) {
     const needs = needsAfter(a.account.kind, a.factor);
     if (needs.length === 0) throw new ApiError(403, 'method-not-allowed');

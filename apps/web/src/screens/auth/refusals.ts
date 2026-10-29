@@ -22,6 +22,7 @@ interface Refusal {
   detail?: string;
   retryAfterSeconds?: number;
   holdUntil?: string;
+  coolingUntil?: string;
 }
 
 /** The refusal fields of an error from either client, or null for anything else (a network failure). */
@@ -40,6 +41,16 @@ export function holdSentence(holdUntil: string | null | undefined): string {
   const at = holdUntil ? new Date(holdUntil) : null;
   if (at === null || Number.isNaN(at.getTime())) return 'You logged in with a backup, so changes to your account wait for a day.';
   return `You logged in with a backup, so changes to your account wait until ${localTime(at)}.`;
+}
+
+/**
+ * Plan 2 Task 17: the 24-hour cooling-off after a login with one weak way (owner, 2026-10-29).
+ * COPY-UNSIGNED: no board yet (Plan 3 Task 41).
+ */
+export function coolingSentence(until: string | null | undefined): string {
+  const at = until ? new Date(until) : null;
+  const when = at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
+  return `You logged in with only one way of proving it's you, so new trades, wallet changes and new devices wait ${when}. Trades already open can still be finished. Log in with a passkey, security key or PGP key to end the wait.`;
 }
 
 /** How long to wait after too many tries: minutes up to an hour, else the clock time it ends. */
@@ -70,6 +81,7 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   const r = refusalOf(e);
   if (r === null) return fallback;
   if (r.code === 'recovery-hold') return holdSentence(r.holdUntil);
+  if (r.code === 'cooling-off') return coolingSentence(r.coolingUntil);
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
   if (r.code === 'key-expired') return KEY_EXPIRED;
   if (r.code === 'key-revoked') return KEY_REVOKED;

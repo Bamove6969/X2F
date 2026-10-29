@@ -31,6 +31,8 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
+  /** Task 17: the end of the account's 24-hour cooling-off while one runs, else null. */
+  coolingUntil: string | null;
 }
 
 /**
@@ -126,8 +128,9 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     terms_version: string | null;
     level: SessionLevel;
     hold_until: Date | null;
+    cooling_until: Date | null;
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until
+    `select a.display_name, a.legacy_login_name, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until, a.cooling_until
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -150,6 +153,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     logoutTimer: logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
+    coolingUntil: row.cooling_until !== null && row.cooling_until.getTime() > now.getTime() ? row.cooling_until.toISOString() : null,
   };
 }
 

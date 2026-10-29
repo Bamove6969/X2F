@@ -12,6 +12,8 @@ export class ApiCallError extends Error {
   readonly retryAfterSeconds?: number;
   readonly missing?: string[];
   readonly holdUntil?: string;
+  /** Plan 2 Task 17: when the cooling-off ends (403 `cooling-off`). */
+  readonly coolingUntil?: string;
   readonly version?: string;
   readonly extra: Record<string, unknown>;
 
@@ -25,6 +27,7 @@ export class ApiCallError extends Error {
     if (typeof extra.retryAfterSeconds === 'number') this.retryAfterSeconds = extra.retryAfterSeconds;
     if (Array.isArray(extra.missing)) this.missing = extra.missing.filter((m): m is string => typeof m === 'string');
     if (typeof extra.holdUntil === 'string') this.holdUntil = extra.holdUntil;
+    if (typeof extra.coolingUntil === 'string') this.coolingUntil = extra.coolingUntil;
     if (typeof extra.version === 'string') this.version = extra.version;
   }
 }

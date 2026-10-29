@@ -256,7 +256,7 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
     return { status: 'second-factor' as const, pendingId, needs: ['totp'] };
   }
   // Task 16: a session now, or an approval from a logged-in device first.
-  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel });
+  return traderLogin(deps, req, reply, { accountId, method: 'password', deviceLabel, factors: ['password'] });
 }
 
 async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {

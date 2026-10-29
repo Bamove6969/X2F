@@ -4,10 +4,10 @@ import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { canonicalEndpoint, publicOnlyLookup, type LookupFn } from './endpoint.js';
 
-export type PushKind = 'nudge' | 'trade' | 'alert' | 'login';
+export type PushKind = 'nudge' | 'trade' | 'alert' | 'login' | 'new-login';
 
 /**
- * The only four things a push can ever say (spec 4; Global Constraints). Pushes pass through
+ * The only five things a push can ever say (spec 4; Global Constraints). Pushes pass through
  * Apple's, Google's and Mozilla's servers, so they never carry a trade code, an amount, a name, an
  * alert detail or a link; the service worker opens `/` on a tap. `alert` is the owner's price
  * health push (spec 11.6; push/ownerAlert.ts); `login` asks a logged-in device to approve a new
@@ -19,6 +19,8 @@ export const PUSH_PAYLOADS: Readonly<Record<PushKind, string>> = Object.freeze({
   alert: 'Something needs your attention',
   // Plan 2 Task 16: a new device waits for approval (the push names nothing else).
   login: 'Someone is logging in. Is this you?',
+  // Plan 2 Task 17 (owner, 2026-10-29): every new login.
+  'new-login': 'New login to your account',
 });
 
 /** Subscriptions kept per account (browsers and devices); posting one more drops the oldest. */

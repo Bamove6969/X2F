@@ -7,6 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
+import type { SessionStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
 /** 32 random bytes, base64url without padding. */
@@ -100,8 +101,14 @@ export async function startSession(
     method: LoginMethod;
     firstSession: boolean;
     holdUntil?: Date;
+    /**
+     * Task 17: how strong the login was. Default: a recovery session or a password alone is weak,
+     * a PGP key, passkey or security key strong; a password with its TOTP code passes 'strong'.
+     */
+    strength?: SessionStrength;
   },
 ): Promise<string> {
+  const strength: SessionStrength = a.strength ?? (a.level === 'recovery' || a.method === 'password' || a.method === 'totp' || a.method === 'recovery-code' ? 'weak' : 'strong');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -135,14 +142,15 @@ export async function startSession(
         replaced = old.rows[0] ?? null;
       }
       const { rows } = await client.query<{ id: string }>(
-        `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until)
-         values ($1, $2, $3, $4, $5, $6, $6, $7, $8) returning id`,
+        `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength)
+         values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9) returning id`,
         [
           a.accountId, tokenHash(token), a.level, label,
           a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
           now, expiresAt,
           // Task 9: only a recovery session carries a hold (see `requireSession`'s `allowHeld`).
           a.level === 'recovery' ? (a.holdUntil ?? null) : null,
+          strength,
         ],
       );
       sessionId = rows[0]!.id;
@@ -165,6 +173,8 @@ export async function startSession(
     client.release();
   }
   if (replaced) req.server.events.closeSession(replaced.account_id, replaced.id);
+  // Task 17 (owner, 2026-10-29): every new login is pushed to the account's devices ("New login to your account").
+  if (!a.firstSession) void req.server.push.send(a.accountId, 'new-login').catch(() => undefined);
 
   void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(absoluteMs / 1000) });
   return sessionId;
