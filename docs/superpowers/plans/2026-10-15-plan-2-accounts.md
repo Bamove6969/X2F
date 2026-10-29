@@ -108,6 +108,7 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R42) > earlie
 - **Every new login sends a push alert** to the account's other devices (`new-login`), as well as the in-app alert. The real owner finds a thief through the new-device approval prompt (block), these alerts and the Devices list.
 - **PGP alone** is in neither list (*lead reading*): no hold.
 - Staff and owner logins are unaffected (29b lead default stands).
+- **Team members: YES, at launch if possible** (owner, later on 2026-10-29): up to 3 members per account, roles Offers and Trades, an audit log for the account owner, labelled chat messages. Accounts and permissions are new Task 18; the trade side is Plan 3 new Task 42. Lawyer item 2 (business or exchange status) still applies.
 
 ## Plan 4 reconciliation
 
@@ -715,3 +716,27 @@ Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) bu
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(api): 24-hour hold by login strength`.
+
+### Task 18: Team members — accounts, roles, member logins and the owner's audit log — NEW 2026-10-29c (launch scope)
+
+**Scope:** the owner's team members (spec 6.7, Revision 2026-10-29c): up to 3 members per account, roles **Offers** and **Trades** (either or both), a member's own login, and an audit log of every member action with an effect, for the account owner. Trade-side behaviour (chat label, proof, mark paid, release) is Plan 3 new Task 42. A granular per-action permission list comes later, from feedback (not planned). Lawyer: `~/x2f-comms/lawyer-questions.md` item 2 (business or exchange status) before mainnet.
+
+**Files:**
+- Create: `apps/api/migrations/1xx_team_members.sql` (next free number), `apps/api/src/team/{members,perms,audit}.ts`, `apps/api/src/routes/team.ts`, `apps/web/src/screens/settings/Team.tsx`, `apps/web/src/screens/auth/MemberInvite.tsx`
+- Modify: `apps/api/src/auth/sessions.ts` (a session knows `memberId` or `null` for the account owner), `apps/api/src/auth/login.ts` (member login), the Plan 3 offer routes (Offers role guard), `packages/auth-client`
+- Test: `apps/api/test/team.test.ts`, `apps/web/e2e/team.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - `team_members(id, account_id, display_name /* shown in chat labels */, roles text[] check (roles <@ '{offers,trades}' and cardinality(roles) >= 1), created_at, removed_at)`; at most **3** live members per account (`MAX_TEAM_MEMBERS = 3`; the 4th → 409 `too-many-members` through `CantDoThat`).
+  - **Member login:** the account owner creates a one-time invite (24 h, as staff invites); the member registers their own login methods. *Lead default (owner may change):* always two factors (the staff rule: a hardware key + PGP, two PGP keys, or PGP + a passkey); no password, TOTP or recovery code. Member sessions are separate from the owner's, count toward the account's device limit (Task 16) and never approve the owner's logins.
+  - `requireMember(perm: 'offers' | 'trades')`: the account owner has every perm; a member only their roles. **Offers:** create, delete, adjust (price, tiers, methods, limits, terms) and turn offers on or off. **Trades:** take offers and accept trades for the account, chat, upload proof, mark money sent, confirm, complete (release, but see Plan 3 Task 42's OPEN key item), open a dispute.
+  - *Lead defaults (owner may change):* **owner-only:** payout wallets, adding or removing members and their roles, login methods of the account owner, Settings → Security, the Terms, and deleting the account. A member refused → 403 `owner-only` through `CantDoThat`.
+  - **Audit log for the account owner:** `team_audit(id, account_id, member_id, at, action, trade_code null, detail jsonb)`, append-only, written in the same transaction as every member action that has an effect (offer created, changed, deleted, turned on or off; trade taken, proof uploaded, marked paid, released, dispute opened, chat message sent). Reads do not log. `GET /v1/team/audit?from&to&member` (account owner only). Trade codes in it are removed when the trade self-destructs (R36); the rest stays with the account.
+  - Routes (account owner only, confirm-it's-you): `POST /v1/team/invites { displayName, roles }`, `PATCH /v1/team/members/:id { roles }`, `DELETE /v1/team/members/:id` (ends the member's sessions at once).
+  - The 24-hour hold (Task 17) and bans (Plan 4 Task 27) on the account apply to every member.
+- [ ] **Step 1: Write the failing tests:** a 4th member → `too-many-members`; an Offers-only member can post and turn off an offer but `take` → `forbidden`; a Trades-only member can take and mark paid but `POST /v1/offers` → `forbidden`; a member adding a payout wallet, inviting a member or deleting the account → `owner-only`; each effectful member action writes exactly one `team_audit` row and a read writes none; a removed member's session → `not-authenticated` at once; a member login with a password alone is refused; the audit route refuses a member.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: team members with Offers and Trades roles and an owner audit log`.

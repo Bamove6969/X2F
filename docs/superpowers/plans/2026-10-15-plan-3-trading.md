@@ -1197,7 +1197,7 @@ Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revi
 - **News (Plan 4 Task 28):** the menu-link question is settled by the design's **Site news** bell beside the logo on Main and BuyMain (Plan 4 Revision 2026-10-29b). The browse screens (Tasks 16–17) host the bell.
 - **Foldable phones (owner):** new Task 40, on the Task 13 web shell.
 - **New-device approval and the backup-login cooling-off (Plan 2 new Tasks 16–17):** their screens are new Task 41, on top of Task 30.
-- **Team members: OPEN** (owner has not confirmed; lawyer item 2). Nothing is planned.
+- ~~**Team members: OPEN** (owner has not confirmed; lawyer item 2). Nothing is planned.~~ *Decided 2026-10-29c (owner): yes, at launch if possible; Plan 2 new Task 18 and new Task 42.*
 - **The design session reports that the owner answered these later on 2026-10-29** (`docs/design-brief-2026-10-29-response.md` @b0190d5, "Remaining open questions, answered"). They don't conflict with the owner's words to the lead, so they are recorded as decided:
   - **Tasks 34–35 (flexible offers):** a method's price adjustment is a **percent of the market rate only** (`adjustBps`), never a fixed amount. A method whose range doesn't cover the buyer's amount is **greyed out with the reason** (for example "PayPal: up to $500"), never hidden. The whole-offer fixed price is unchanged.
   - **Maintenance:** the emergency version pauses all trade timers (Task 2's `pause` already does).
@@ -1283,3 +1283,25 @@ Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` (R39–R41) > 
 - **Profiles show "Disputes: N won, M lost"** (Plan 5); Task 27's footer "It appears on your profile as a lost dispute" stays.
 - **Liens** (Plan 4 Task 25, rewritten there): Task 4's offer routes and Task 5's take refuse an account with an active lien (409 `lien`, through `CantDoThat`), from the moment a dispute it lost that requires restitution is ruled, except while its appeal is pending.
 - **The 24-hour hold** (Plan 2 Task 17, decided): Task 41's Login-Backup copy and cooling-off banner follow it; the banner also shows when the hold started from a weak change on another device.
+- **Team members: YES, at launch if possible** (owner, later on 2026-10-29). Up to 3 members per account, roles Offers and Trades. Accounts, roles and the owner's audit log are Plan 2 new Task 18; the trade side is new Task 42. Chat messages from a member are labelled "Message from Team <account display name> member: <member name>" (replaces the design's "replied by a team member", never which member).
+
+### Task 42: Team members in trades — member actions, chat labels and the escrow-key question (`apps/api`, `apps/web`) — NEW 2026-10-29c (launch scope)
+
+**Scope:** the trade side of team members (spec 6.7; Plan 2 Task 18). A member with the **Trades** role works the account's trades (take or accept, chat, upload proof, mark money sent, complete); a member with **Offers** manages its offers (Tasks 4, 34–36). Every effectful action writes Plan 2's `team_audit`. **OPEN (design item), blocks release by members:** releasing (and any signing step) needs that trade's escrow party key on the member's device; today it lives only on the device that set up the trade, the account owner's. A per-member key scheme must be designed (and reviewed against spec 3.1: X2F holds at most one key, the moderator's) before a member can release. Until then a member's Release shows `CantDoThat` "Only <account owner> can release this trade for now." `// COPY-UNSIGNED` and the owner's device releases.
+
+**Files:**
+- Modify: `apps/api/src/trades/{take,events}.ts` (role guard, audit), `apps/api/src/offers/routes.ts` (Offers guard), the chat envelope sender metadata (Task 20), `apps/web/src/screens/trade/*` (label, member gating), the Active trades list
+- Test: `apps/api/test/teamTrades.test.ts`, `apps/web/e2e/teamTrade.spec.ts`
+
+**Interfaces:**
+- Produces:
+  - **Chat label:** every chat message records the sending `memberId` (or none for the account owner) in the server-side envelope metadata; the partner's app shows "Message from Team <account display name> member: <member name>" `// COPY-UNSIGNED` above it, for example "Team Calcium member: Aurora". The account owner's own messages show no label.
+  - **Trades role:** `take`, `mark-paid`, proof upload, `open-dispute`, chat send, and the buyer's cancel before "I've paid" pass `requireMember('trades')`; Offers-only members get `forbidden`.
+  - **Release and signing:** refused for members (`member-cannot-sign`) until the OPEN key scheme lands; *lead default:* funding as seller is refused the same way (it also needs the party key).
+  - The account's Active trades list shows which member last acted on each trade (from `team_audit`), visible to the account owner only.
+  - One reputation: reviews, stats and badges stay on the account; partners never see a member's own account (a member has none).
+- [ ] **Step 1: Write the failing tests:** a Trades member's chat message reaches the partner with the exact label; the owner's message has none; a Trades member marks paid and uploads proof, each writing one audit row; an Offers-only member's `take` → `forbidden`; a member's release → `member-cannot-sign` with the popup; the owner's device can still release the same trade; parity of the labelled chat bubble at 390×844.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat: team members in trades, chat labels, owner-only signing until the key scheme`.
