@@ -53,6 +53,7 @@ const base: TradeView = {
   setupBy: '2026-10-25T11:15:00.000Z',
   fundBy: '2026-10-25T11:40:00.000Z',
   fundingSeenAt: null,
+  fundStartedAt: null,
   securedAt: null,
   payBy: null,
   paidAt: null,
@@ -62,6 +63,7 @@ const base: TradeView = {
   settleBy: null,
   pausedAt: null,
   closedAt: null,
+  cancelConfirmedAt: null,
   nextDeadline: '2026-10-25T11:40:00.000Z',
   serverNow: '2026-10-25T11:11:18.000Z',
 };

@@ -7,6 +7,8 @@ import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { clearReleaseAsked, markReleaseAsked, releaseAsked } from './release/marker.js';
+import { ReleaseWarning } from './ReleaseWarning.js';
+import { setWarned, warned } from './warned.js';
 import { ESCROW_STOPPED, amounts, publicName, firstPerson, profileCopy, refusalCopy, type MethodInfo, type ReleaseEscrow, type ReleaseTrade } from './release/view.js';
 import './release/release.css';
 
@@ -29,6 +31,10 @@ import './release/release.css';
  * (round-2 review 2026-10-28, Important 1). The marker is keyed by `escrowCode`, the trade the
  * room's escrow runs for, never by the API's `trade.code` (round-3 review, Important 1).
  * The smart proof card is Plan 5 (`proofSlot`, masked on the board comparison).
+ *
+ * Before the hold works the seller goes past the release warning once for the trade (Task 38,
+ * ReleaseWarning): it opens with the screen and again on ticking the box, and the hold stays
+ * locked until "It's in my account" (kept per `escrowCode` on this device, warned.ts).
  */
 export function SellerConfirm({
   escrowCode,
@@ -70,6 +76,8 @@ export function SellerConfirm({
   const [attempt, setAttempt] = useState(0);
   /** `release()` was asked for on this mount: the automatic resume runs at most once. */
   const asked = useRef(false);
+  /** Task 38: the seller went past the release warning for this trade on this device. */
+  const [acked, setAcked] = useState(() => warned('release', escrowCode));
 
   const buyer = publicName(trade.counterparty);
   const sums = amounts(trade, escrow);
@@ -157,6 +165,16 @@ export function SellerConfirm({
   /** "Payment not received" / "Open dispute": the seller's last act retracts the release (round-3 Minor 1). */
   const retract = () => clearReleaseAsked(escrowCode);
 
+  // The release warning opens with the screen until the seller has gone past it (Task 38), never
+  // over a release already under way from this device or done.
+  const warnDue = !acked && !done && !(releasing && !foreign);
+  const [warnOpen, setWarnOpen] = useState(warnDue);
+  const ackWarning = () => {
+    setWarned('release', escrowCode);
+    setAcked(true);
+    setWarnOpen(false);
+  };
+
   const problem = stopped ? ESCROW_STOPPED : escrow.refusal !== null ? refusalCopy(escrow.refusal, buyer) : null;
 
   const caption = done
@@ -182,7 +200,7 @@ export function SellerConfirm({
       ? signing || escrow.keepOpen
         ? 'Signing the release on this device. Keep this page open.'
         : 'The release isn’t signed on this device yet. Keep this page open.'
-      : !checked
+      : !checked || !acked
         ? 'Tick the box above to unlock this release button.'
         : sums === null && problem === null
           ? 'Waiting for this device to confirm the trade amount.'
@@ -235,7 +253,12 @@ export function SellerConfirm({
               type="checkbox"
               checked={checked || (releasing && !foreign)}
               disabled={(releasing && !foreign) || busy}
-              onChange={(e) => setChecked(e.currentTarget.checked)}
+              onChange={(e) => {
+                const on = e.currentTarget.checked;
+                setChecked(on);
+                // Ticking before going past the warning opens it again: the hold needs both.
+                if (on && !acked) setWarnOpen(true);
+              }}
             />
             <span>
               I checked {firstPerson(place)} myself and the {fiat} from {method.name} is there.
@@ -247,7 +270,7 @@ export function SellerConfirm({
       <footer className="x2f-release__footer">
         <HoldButton
           key={attempt}
-          disabled={foreign ? !checked || busy || blocked || escrow.phase !== 'ready' : !checked || notReleasable || busy || blocked || releasing}
+          disabled={foreign ? !checked || !acked || busy || blocked || escrow.phase !== 'ready' : !checked || !acked || notReleasable || busy || blocked || releasing}
           done={done}
           onComplete={() => void (foreign ? finish() : release())}
           caption={caption}
@@ -301,6 +324,15 @@ export function SellerConfirm({
           </div>
         )}
       </footer>
+      <ReleaseWarning
+        open={warnOpen && warnDue}
+        fiat={sums?.fiat ?? null}
+        amount={sums?.amount ?? null}
+        buyer={buyer}
+        methodName={method.name}
+        onOk={ackWarning}
+        onBack={() => setWarnOpen(false)}
+      />
     </div>
   );
 }

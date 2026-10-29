@@ -246,7 +246,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
-  tradeRoutes(app, { publish: tradePublish });
+  tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).

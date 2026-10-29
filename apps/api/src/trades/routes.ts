@@ -15,6 +15,8 @@ export interface TradeRouteOptions {
   /** Task 19's event bus; a no-op until then. */
   publish?: TradePublisher;
   profile?: ProfileLookup;
+  /** X2F's own node (the confirmations route's lookup): the seller's `confirm-cancel` needs the refund's confirmations. */
+  txConfirmations?: TxConfirmations;
 }
 
 type ClientEventType = (typeof CLIENT_EVENTS)[number];
@@ -38,7 +40,9 @@ function clientEvent(body: unknown): TradeEvent {
     if (typeof cents !== 'string' || !CENTS.test(cents)) throw new ApiError(400, 'bad-request');
     return { type, fiatCents: BigInt(cents) };
   }
-  return { type: type as Exclude<ClientEventType, 'mark-paid'> };
+  // The count is filled in by the route from X2F's own node, never from the body.
+  if (type === 'confirm-cancel') return { type, returnConfirmations: 0 };
+  return { type: type as Exclude<ClientEventType, 'mark-paid' | 'confirm-cancel'> };
 }
 
 /** The trade for a path code, or 404 for a malformed or unknown code. */
@@ -59,6 +63,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   const session = requireSession({ kinds: ['trader'] });
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
+  const txConfirmations = opts.txConfirmations ?? noConfirmations;
   // Delivery (Task 19: streams, pushes, the final alert) runs after the actor's request, as the
   // nudge routes' `deliver` does: the store calls this after its commit, and setImmediate keeps
   // it out of the response, so the actor's response time says nothing about the counterparty's
@@ -128,6 +133,17 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const by = roleOf(rowToTrade(row), req.auth.accountId);
     if (by === null) throw new ApiError(404, 'not-found');
     const deps = req.server.deps;
+    if (e.type === 'confirm-cancel' && row.tx_hash !== null) {
+      // "Confirm cancel" stays greyed out until the returned XMR has all its confirmations (owner
+      // 2026-10-29): the count is X2F's node's for this trade's own refund tx; unknown counts as 0.
+      let n: number | null = null;
+      try {
+        n = await txConfirmations(row.tx_hash);
+      } catch (err) {
+        req.log.warn({ err }, 'confirmations lookup failed');
+      }
+      e.returnConfirmations = n ?? 0;
+    }
     let next: Trade;
     try {
       next = await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, e, by);

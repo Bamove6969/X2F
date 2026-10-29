@@ -9,15 +9,19 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * A modal bottom sheet on `surface` with `radius-md` corners (design-system README: "cards,
  * primary buttons, sheets"). Escape, the close button and a tap on the backdrop call `onClose`;
  * focus moves into the sheet, stays inside it, and returns where it was when the sheet closes.
+ * `eyebrow` puts a small caution line with the alert icon above the title (the warning boards'
+ * "Before you pay" / "Before you release", Task 38), and makes the sheet an `alertdialog`.
  */
 export function Sheet({
   open,
   title,
+  eyebrow,
   onClose,
   children,
 }: {
   open: boolean;
   title: string;
+  eyebrow?: string;
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -59,16 +63,28 @@ export function Sheet({
       <div
         ref={panel}
         className="x2f-sheet"
-        role="dialog"
+        role={eyebrow === undefined ? 'dialog' : 'alertdialog'}
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={onKeyDown}
       >
         <div className="x2f-sheet__head">
-          <h2 id={titleId} className="x2f-sheet__title">
-            {title}
-          </h2>
+          {eyebrow === undefined ? (
+            <h2 id={titleId} className="x2f-sheet__title">
+              {title}
+            </h2>
+          ) : (
+            <div className="x2f-sheet__heading">
+              <span className="x2f-sheet__eyebrow">
+                <Icon name="alert" size={18} />
+                {eyebrow}
+              </span>
+              <h2 id={titleId} className="x2f-sheet__title">
+                {title}
+              </h2>
+            </div>
+          )}
           <button type="button" className="x2f-icon-button" aria-label="Close" onClick={onClose}>
             <Icon name="close" size={22} />
           </button>

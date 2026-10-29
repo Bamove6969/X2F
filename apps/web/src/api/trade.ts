@@ -89,6 +89,8 @@ export interface TradeView {
   setupBy: string | null;
   fundBy: string | null;
   fundingSeenAt: string | null;
+  /** When the seller tapped "Fund escrow" (Revision 2026-10-29b); after it the seller can't walk away. */
+  fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
   paidAt: string | null;
@@ -99,6 +101,8 @@ export interface TradeView {
   settleBy: string | null;
   pausedAt: string | null;
   closedAt: string | null;
+  /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
+  cancelConfirmedAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }

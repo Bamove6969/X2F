@@ -23,6 +23,7 @@ const SHAPES = {
   ),
   chat: <path d="M4 5h16v11H8l-4 4z" />,
   send: <path d="M4 12l16-8-6 16-2-7z" />,
+  shield: <path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z" />,
 } satisfies Record<string, ReactElement>;
 
 export function DisputeIcon({ name, size = 24, stroke = 1.5 }: { name: keyof typeof SHAPES; size?: number; stroke?: number }) {

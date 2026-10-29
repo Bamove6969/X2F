@@ -205,9 +205,12 @@ const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** Where a seller still waiting to fix the signed paid amount keeps reading its own size (I2). */
 const SELLER_WAIT_STATES: readonly TradeState[] = ['paid', 'settling', 'refund_requested'];
 const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
-/** Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone before settling. */
-const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested'];
+/**
+ * Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone
+ * before settling: never `paid` (no cancel after "I've paid", Revision 2026-10-29b).
+ */
+const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested'];
 
 /**
  * Whether the trade view still supports a choice the user tapped. While the trade is settling,

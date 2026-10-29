@@ -56,6 +56,7 @@ export const PAY_SECURING: TradeView = {
   setupBy: null,
   fundBy: null,
   fundingSeenAt: at(-6),
+  fundStartedAt: null,
   securedAt: null,
   payBy: null,
   paidAt: null,
@@ -65,6 +66,7 @@ export const PAY_SECURING: TradeView = {
   settleBy: null,
   pausedAt: null,
   closedAt: null,
+  cancelConfirmedAt: null,
   nextDeadline: null,
   serverNow: PAY_NOW,
 };

@@ -6,6 +6,8 @@ import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/s
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
+import { resetWarned, setWarned } from '../src/screens/trade/warned.js';
+import { PAY_WARNING_LEAD, PAY_WARNING_WHY } from '../src/screens/trade/PayWarning.js';
 import { FinalAlert } from '../src/screens/trade/FinalAlert.js';
 import { buyerAlertView, SERVER_NOW } from '../e2e/refundViews.js';
 
@@ -48,6 +50,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     setupBy: null,
     fundBy: null,
     fundingSeenAt: at(-6),
+    fundStartedAt: null,
     securedAt: null,
     payBy: null,
     paidAt: null,
@@ -57,6 +60,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     settleBy: null,
     pausedAt: null,
     closedAt: null,
+    cancelConfirmedAt: null,
     nextDeadline: null,
     serverNow: at(0),
     ...over,
@@ -102,6 +106,8 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
 }
 
 beforeEach(() => {
+  // Task 38's pay warning is tested on its own (below); elsewhere the buyer went past it already.
+  setWarned('pay', CODE);
   calls = [];
   answer = () => ({ status: 200, json: tradeView() });
   fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -118,6 +124,8 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  resetWarned();
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   setTradeChat(null);
   setPaymentDetailsSource(null);
@@ -223,9 +231,9 @@ describe("I've paid and PaidConfirmSheet", () => {
     mount(p);
     await click(byText("I've paid", 'button'));
     expect(dialog()).not.toBeNull();
-    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`);
-    expect(dialog()!.textContent).toContain('Sending without proof makes disputes harder.');
-    const yes = byText("Yes, I've paid", 'button') as HTMLButtonElement;
+    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`);
+    expect(dialog()!.textContent).toContain('After this you can\'t cancel the trade. If something goes wrong, open a dispute.');
+    const yes = byText("Yes, mark as paid", 'button') as HTMLButtonElement;
     expect(yes.disabled).toBe(true);
     await click(yes);
     expect(calls).toEqual([]);
@@ -244,8 +252,8 @@ describe("I've paid and PaidConfirmSheet", () => {
     answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText("I've paid", 'button'));
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
     expect(dialog()).toBeNull();
@@ -256,8 +264,8 @@ describe("I've paid and PaidConfirmSheet", () => {
     const p = props({ view: tradeView(SECURED) });
     const r = mount(p);
     await click(byText("I've paid", 'button'));
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
     // The room re-read the trade: it grew to 1.312500 XMR, $433.13.
@@ -270,10 +278,10 @@ describe("I've paid and PaidConfirmSheet", () => {
     expect(dialog()!.textContent).toContain('Trade grew to 1.312500 XMR, you now pay $433.13');
     const box = dialog()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
     expect(box.checked).toBe(false);
-    expect(byText(`I sent exactly $433.13 via Zelle with ${CODE} in the memo`, 'label')).toBeTruthy();
+    expect(byText(`I sent exactly $433.13 by Zelle with the memo ${CODE}.`, 'label')).toBeTruthy();
     answer = () => ({ status: 200, json: tradeView({ state: 'paid' }) });
-    await click(byText(`I sent exactly $433.13 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText(`I sent exactly $433.13 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls.slice(2)).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"43313"}`, 'escrow:markPaid(43313)', 'refresh']);
   });
@@ -282,18 +290,18 @@ describe("I've paid and PaidConfirmSheet", () => {
     const p = props({ view: tradeView(SECURED) });
     const r = mount(p);
     await click(byText("I've paid", 'button'));
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
     r.rerender({ ...p, view: tradeView({ ...SECURED, fiatCents: '43313', amountAtomic: '1312500000000' }), escrow: { ...p.escrow, amountAtomic: 1_312_500_000_000n, fiatCents: 43_313n } });
     expect(dialog()!.querySelector<HTMLInputElement>('input[type="checkbox"]')!.checked).toBe(false);
-    expect((byText("Yes, I've paid", 'button') as HTMLButtonElement).disabled).toBe(true);
+    expect((byText("Yes, mark as paid", 'button') as HTMLButtonElement).disabled).toBe(true);
   });
 
   it('another refusal is shown as text and nothing is signalled', async () => {
     answer = () => ({ status: 409, json: { error: 'too-late' } });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText("I've paid", 'button'));
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls.filter((c) => c.startsWith('escrow:'))).toEqual([]);
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
@@ -333,8 +341,8 @@ describe("I've paid and PaidConfirmSheet", () => {
     answer = () => ({ status: 409, json: { error: 'wrong-state' } });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText("I've paid", 'button'));
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`, 'refresh']);
     expect(dialog()).toBeNull();
@@ -392,9 +400,9 @@ describe("every sum comes from this device, never the API (review 2026-10-27, I1
     answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(0) }) });
     mount(props({ view: tradeView(SECURED) }));
     await click(paidButton());
-    expect(dialog()!.textContent).toContain('I sent exactly $412.50 via Zelle');
-    await click(byText(`I sent exactly $412.50 via Zelle with ${CODE} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    expect(dialog()!.textContent).toContain('I sent exactly $412.50 by Zelle');
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls[0]).toBe(`POST /v1/trades/${CODE}/events {"type":"mark-paid","fiatCents":"41250"}`);
     expect(calls[1]).toBe('escrow:markPaid(41250)');
@@ -412,6 +420,74 @@ describe("every sum comes from this device, never the API (review 2026-10-27, I1
   });
 });
 
+describe('the pay warning (Task 38; board Warn-IvePaid)', () => {
+  const fresh = () => {
+    resetWarned();
+    window.localStorage.clear();
+  };
+  const alert = () => document.body.querySelector<HTMLElement>('[role="alertdialog"]');
+
+  it("opens with the screen while the escrow still confirms, with the owner's words and the confirmations bar; I'll wait closes it", async () => {
+    fresh();
+    mount(props());
+    expect(alert()).not.toBeNull();
+    const t = alert()!.textContent ?? '';
+    expect(t).toContain('Before you pay');
+    expect(t).toContain('Wait until the XMR is fully in escrow');
+    expect(t).toContain(PAY_WARNING_LEAD);
+    expect(t).toContain(PAY_WARNING_WHY);
+    expect(PAY_WARNING_LEAD + ' ' + PAY_WARNING_WHY).toBe(
+      "We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow. The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.",
+    );
+    expect(t).toContain('Escrow confirmations');
+    expect(t).toContain('3 of 10 · about 14 min');
+    await click(byText("I'll wait", 'button'));
+    expect(alert()).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it("I've paid shows it before the sheet; I've already paid goes on to the confirm sheet, and never shows it again for the trade (after a reload too)", async () => {
+    fresh();
+    const r = mount(props({ view: tradeView(SECURED) }));
+    // Secured and unlocked: nothing opens by itself.
+    expect(alert()).toBeNull();
+    await click(byText("I've paid", 'button'));
+    expect(alert()).not.toBeNull();
+    expect(dialog()).toBeNull();
+    // Secured: no bar.
+    expect(alert()!.textContent).not.toContain('Escrow confirmations');
+    await click(byText("I'll wait", 'button'));
+    await click(byText("I've paid", 'button'));
+    await click(byText("I've already paid", 'button'));
+    expect(alert()).toBeNull();
+    expect(dialog()!.textContent).toContain('Mark this trade as paid?');
+    await click(byText('Not yet', 'button'));
+    await click(byText("I've paid", 'button'));
+    expect(alert()).toBeNull();
+    expect(dialog()).not.toBeNull();
+    r.unmount();
+    // A reload: the in-memory mark is gone, the stored one stays.
+    resetWarned();
+    mount(props({ view: tradeView() }));
+    expect(alert()).toBeNull();
+  });
+
+  it('not shown once the trade is paid', () => {
+    fresh();
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), releasable: false }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(alert()).toBeNull();
+  });
+
+  it('Yes, mark as paid is disabled until the tick (the two steps)', async () => {
+    mount(props({ view: tradeView(SECURED) }));
+    await click(byText("I've paid", 'button'));
+    const yes = byText('Yes, mark as paid', 'button') as HTMLButtonElement;
+    expect(yes.disabled).toBe(true);
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${CODE}.`, 'label'));
+    expect(yes.disabled).toBe(false);
+  });
+});
+
 describe('buyer cancel (spec 2.3)', () => {
   it('before "I\'ve paid", one tap re-reads the trade, posts buyer-cancel and then starts the refund (trade.cancel)', async () => {
     answer = (b) => ({ status: 200, json: b.type ? tradeView({ state: 'settling', settling: 'buyer-cancel' }) : tradeView(SECURED) });
@@ -422,30 +498,21 @@ describe('buyer cancel (spec 2.3)', () => {
     expect(calls).toEqual([`GET /v1/trades/${CODE}`, `POST /v1/trades/${CODE}/events {"type":"buyer-cancel"}`, 'escrow:buyerCancel', 'refresh']);
   });
 
-  it('a one-tap cancel on a stale view: the fresh trade is paid (another tab), so the warning comes first (review Minor 4)', async () => {
+  it("a one-tap cancel on a stale view: the fresh trade is paid (another tab), so nothing is cancelled and the room re-reads (review Minor 4; Revision 2026-10-29b)", async () => {
     answer = () => ({ status: 200, json: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }) });
     mount(props({ view: tradeView(SECURED) }));
     await click(byText('Cancel trade', 'button'));
     await flush();
-    expect(calls).toEqual([`GET /v1/trades/${CODE}`]);
-    expect(dialog()!.textContent).toContain('Only cancel if your payment was never sent or was returned.');
+    expect(calls).toEqual([`GET /v1/trades/${CODE}`, 'refresh']);
+    expect(dialog()).toBeNull();
   });
 
-  it('after "I\'ve paid", the warning comes first and nothing happens until it is confirmed', async () => {
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-5) }) }));
-    await click(byText('Cancel trade', 'button'));
-    expect(dialog()!.textContent).toContain(
-      "Only cancel if your payment was never sent or was returned. Scammers try to talk buyers into cancelling after they've paid.",
-    );
-    expect(calls).toEqual([]);
-    await click(byText('Keep the trade', 'button'));
+  it("after \"I've paid\" there is no cancel at all: no link, no sheet (Revision 2026-10-29b)", async () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-5) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    expect(maybe('Cancel trade')).toBeUndefined();
+    expect(text()).not.toContain('Only cancel if your payment was never sent');
     expect(dialog()).toBeNull();
     expect(calls).toEqual([]);
-    await click(byText('Cancel trade', 'button'));
-    answer = () => ({ status: 200, json: tradeView({ state: 'settling', settling: 'buyer-cancel' }) });
-    await click([...dialog()!.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Cancel trade')!);
-    await flush();
-    expect(calls).toEqual([`POST /v1/trades/${CODE}/events {"type":"buyer-cancel"}`, 'escrow:buyerCancel', 'refresh']);
   });
 
   it("the seller's proposal shows an accept/decline card; Accept posts accept-cancel then signs the mutual cancel", async () => {
@@ -468,12 +535,13 @@ describe("the seller's funded room (SellerWaiting)", () => {
   const seller = (over: Partial<TradeView> = {}) =>
     tradeView({ ...SECURED, role: 'seller', counterparty: { ...tradeView().counterparty, displayName: 'mira.k' }, ...over });
 
-  it('offers no cancel-alone control in any funded state, only Propose cancel', async () => {
+  it("offers no cancel-alone control in any funded state, only Propose cancel, and nothing after I've paid", async () => {
     for (const state of ['secured', 'securing', 'paid'] as const) {
       const r = mount(props({ view: seller({ state }) }), SellerWaiting);
       expect(maybe('Cancel trade')).toBeUndefined();
       expect(maybe('Cancel & get refund')).toBeUndefined();
-      expect(maybe('Propose cancel')).toBeDefined();
+      if (state === 'paid') expect(maybe('Propose cancel')).toBeUndefined();
+      else expect(maybe('Propose cancel')).toBeDefined();
       expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
       r.unmount();
     }
@@ -535,7 +603,7 @@ describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
     await click(byText("I've paid", 'button'));
     expect(dialog()!.textContent).toContain(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`);
     await click(byText(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`, 'label'));
-    await click(byText("Yes, I've paid", 'button'));
+    await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);
   });
@@ -724,7 +792,7 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
     calls = calls.filter((c) => !c.includes('final-alert-seen'));
     await click(byText("I've paid", 'button'));
     expect(dialog()!.textContent).toContain(MISMATCH);
-    expect(maybe("Yes, I've paid")).toBeUndefined();
+    expect(maybe("Yes, mark as paid")).toBeUndefined();
     expect(calls).toEqual([]);
   });
 

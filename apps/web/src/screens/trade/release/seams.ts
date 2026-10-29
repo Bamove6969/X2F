@@ -22,7 +22,8 @@ export const CONFIRMATIONS_MAX_POLL_MS = 240_000;
 export function useConfirmations(t: Pick<ReleaseTrade, 'code' | 'state' | 'txHash'>): Confirmations | null {
   const [got, setGot] = useState<Confirmations | null>(null);
   const { code, state, txHash } = t;
-  const ready = state === 'released' && txHash !== null;
+  // Also a refunded trade's refund (a buyer's cancel: the seller confirms once it has all its confirmations, Task 39).
+  const ready = (state === 'released' || state === 'refunded') && txHash !== null;
   useEffect(() => {
     if (!ready) return;
     let stopped = false;

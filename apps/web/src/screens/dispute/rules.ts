@@ -120,6 +120,15 @@ export function refundReason(settling: SettleKind | null, dispute: DisputeTrade[
 }
 
 /**
+ * The refund came from a cancel (the buyer's, or both sides'), with no dispute: the refunded
+ * screen asks "Did you pay before you cancelled? Open a dispute." (Revision 2026-10-29b). Not for
+ * a no-show (auto) refund, a lapse or a dispute decision.
+ */
+export function paidBeforeCancel(settling: SettleKind | null, dispute: DisputeTrade['dispute']): boolean {
+  return dispute === null && (settling === 'buyer-cancel' || settling === 'mutual-cancel');
+}
+
+/**
  * An XMR amount inside a sentence, as the boards write it ("1.25 XMR"): six decimals with the
  * trailing zeros dropped, keeping at least two. Amounts shown on their own use `Amount` (six).
  */

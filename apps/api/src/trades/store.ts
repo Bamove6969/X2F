@@ -53,6 +53,8 @@ export interface TradeRow {
   setup_by: Date | null;
   fund_by: Date | null;
   funding_seen_at: Date | null;
+  /** Migration 116 (Revision 2026-10-29b): when the seller tapped "Fund escrow". */
+  fund_started_at: Date | null;
   lapsed_at: Date | null;
   secured_at: Date | null;
   pay_by: Date | null;
@@ -71,6 +73,8 @@ export interface TradeRow {
   dispute_by: By | null;
   dispute_at: Date | null;
   closed_at: Date | null;
+  /** Migration 116: the seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29). */
+  cancel_confirmed_at: Date | null;
   buyer_payout: string | null;
   seller_refund: string | null;
   seller_wallet_app: string | null;
@@ -111,6 +115,7 @@ export function rowToTrade(r: TradeRow): Trade {
     setupBy: r.setup_by,
     fundBy: r.fund_by,
     fundingSeenAt: r.funding_seen_at,
+    fundStartedAt: r.fund_started_at,
     lapsedAt: r.lapsed_at,
     securedAt: r.secured_at,
     payBy: r.pay_by,
@@ -126,6 +131,7 @@ export function rowToTrade(r: TradeRow): Trade {
     txHash: r.tx_hash,
     dispute: r.dispute_by !== null && r.dispute_at !== null ? { by: r.dispute_by, at: r.dispute_at } : null,
     closedAt: r.closed_at,
+    cancelConfirmedAt: r.cancel_confirmed_at,
   };
 }
 
@@ -148,6 +154,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['setup_by', t.setupBy],
     ['fund_by', t.fundBy],
     ['funding_seen_at', t.fundingSeenAt],
+    ['fund_started_at', t.fundStartedAt],
     ['lapsed_at', t.lapsedAt],
     ['secured_at', t.securedAt],
     ['pay_by', t.payBy],
@@ -164,6 +171,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['dispute_by', t.dispute?.by ?? null],
     ['dispute_at', t.dispute?.at ?? null],
     ['closed_at', t.closedAt],
+    ['cancel_confirmed_at', t.cancelConfirmedAt],
   ];
 }
 
@@ -227,6 +235,9 @@ const STORED = {
   'propose-cancel': {},
   'accept-cancel': {},
   'withdraw-cancel': {},
+  'fund-started': {},
+  'walk-away': {},
+  'confirm-cancel': { returnConfirmations: 'value' },
   'release-started': {},
   settled: { kind: 'value', txHash: 'value' },
   'open-dispute': {},
