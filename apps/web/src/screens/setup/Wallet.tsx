@@ -6,8 +6,8 @@
  * server still ask for a confirm (someone coming back after the window), the confirm sheet asks;
  * the wallet still works at once.
  *
- * The app names, the "your wallet" wording for Other and the neutral first label ("Wallet 1") follow
- * Task 29's address book (wallets-model.ts on wip/t3-p3-task29); switch to its exports when it lands.
+ * The app names, the "your wallet" wording for Other and the neutral first label ("Wallet 1") come
+ * from Task 29's address book (wallets-model.ts).
  */
 import { useState } from 'react';
 import { walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
@@ -16,22 +16,10 @@ import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/Confirm
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, SetupIntro, radioProps, useSetup } from './kit.js';
 import { errorCode } from './register.js';
-
-export const APP_LABELS: Record<WalletApp, string> = {
-  cake: 'Cake Wallet',
-  edge: 'Edge',
-  feather: 'Feather',
-  monerujo: 'Monerujo',
-  stack: 'Stack',
-  'monero-gui-cli': 'Monero GUI',
-  'ledger-trezor': 'Ledger or Trezor',
-  other: 'Other',
-};
-
-const APPS = Object.keys(APP_LABELS) as WalletApp[];
+import { APP_LABELS, WALLET_APPS, appPromptName, nextWalletName } from '../wallets-model.js';
 
 /** The first wallet's name: neutral, never where the money comes from (spec 6.3, "Labels"). */
-export const FIRST_WALLET_LABEL = 'Wallet 1';
+const FIRST_WALLET_LABEL = nextWalletName(0);
 
 /**
  * A Monero address: 95 base58 characters (standard or subaddress) or 106 (integrated). The server
@@ -52,7 +40,7 @@ export function Wallet() {
   const [address, setAddress] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const appName = app === 'other' ? 'your wallet' : APP_LABELS[app];
+  const appName = appPromptName(app);
 
   const finish = async () => {
     const trimmed = address.trim();
@@ -102,8 +90,8 @@ export function Wallet() {
       >
         <SetupIntro title="Where should we send your XMR?">Choose the wallet you want to be paid to. X2F never holds your coins.</SetupIntro>
         <div className="x2f-start__chips" role="radiogroup" aria-label="Wallet app">
-          {APPS.map((a, i) => (
-            <button key={a} type="button" {...radioProps(APPS, app, setApp, i)} className="x2f-start__chip" data-app={a}>
+          {WALLET_APPS.map((a, i) => (
+            <button key={a} type="button" {...radioProps(WALLET_APPS, app, setApp, i)} className="x2f-start__chip" data-app={a}>
               {APP_LABELS[a]}
             </button>
           ))}

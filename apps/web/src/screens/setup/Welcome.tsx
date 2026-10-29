@@ -12,7 +12,7 @@ import { displayNameOf, refreshSession, useSession, type Me } from '../../sessio
 import { Button } from '../../ui/Button.js';
 import { authApi } from '../auth/authApi.js';
 import { SetupFrame, useSetup, type BackupChoice, type LoginMethod, type SetupState } from './kit.js';
-import { APP_LABELS } from './Wallet.js';
+import { APP_LABELS } from '../wallets-model.js';
 
 /** OD-7 (P3-M4), pending the owner's sign-off. */
 export const FEE_SENTENCE = 'You pay X2F 1% of each completed trade from your own ads. Taking an offer is free.';
