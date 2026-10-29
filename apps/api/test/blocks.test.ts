@@ -56,7 +56,7 @@ async function poster(): Promise<Who> {
   return t;
 }
 
-let currencies = ['GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'AUD', 'NZD', 'SGD', 'HKD'];
+let currencies = ['THB', 'ZAR', 'GBP', 'CHF', 'SEK', 'NOK', 'DKK', 'PLN', 'CZK', 'HUF', 'AUD', 'NZD', 'SGD', 'HKD'];
 /** Tests share one database: each uses a currency of its own so their lists stay apart. */
 const ownCurrency = (): string => {
   const c = currencies[0]!;
@@ -64,9 +64,9 @@ const ownCurrency = (): string => {
   return c;
 };
 
-async function post(who: Who, currency: string): Promise<string> {
+async function post(who: Who, currency: string, centsPerXmr = '3300000'): Promise<string> {
   const res = await who.browser.post('/v1/offers', {
-    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr: '3300000' },
+    side: 'sell', methodId: 'ZELLE', currency, pricing: { mode: 'fixed', centsPerXmr },
     minFiatCents: '5000', maxFiatCents: '200000', minTrades: 0, terms: 'Zelle only.',
   });
   expect(res.statusCode, res.body).toBe(201);
@@ -115,6 +115,18 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     expect(await blockedEitherWay(deps.db, a.id, c.id)).toBe(true);
   });
 
+  it('review M1: unblocks by the stored name even if the name rules would now refuse it', async () => {
+    const a = await trader();
+    const b = await trader();
+    await block(a, b);
+    // A name the current rules refuse (a later reserved-word or shape change), set directly.
+    await deps.db.query(`update accounts set display_name = 'x', display_key = 'x' where id = $1`, [b.id]);
+    expect((await a.browser.get('/v1/account/blocks')).json()).toMatchObject([{ displayName: 'x' }]);
+    expect((await a.browser.delete('/v1/account/blocks/X')).statusCode).toBe(204);
+    expect((await a.browser.get('/v1/account/blocks')).json()).toEqual([]);
+    expect(await blockedEitherWay(deps.db, a.id, b.id)).toBe(false);
+  });
+
   it('refuses an unknown name, an overlong name and anyone but a signed-in trader', async () => {
     const a = await trader();
     expect((await a.browser.delete('/v1/account/blocks/Dnobody1234567x')).json()).toEqual({ error: 'not-found' });
@@ -141,6 +153,34 @@ describe('a block stops business both ways (Task 37)', () => {
     await unblock(a, b);
     expect((await listed(b.browser, cur)).sort()).toEqual([aOffer, bOffer].sort());
     expect((await listed(a.browser, cur)).sort()).toEqual([aOffer, bOffer].sort());
+  });
+
+  it("review I1: /v1/methods' count and best rate leave out offers a block hides, for both sides", async () => {
+    const cur = ownCurrency();
+    const a = await poster();
+    const b = await trader();
+    const c = await poster();
+    const other = await trader();
+    // a's offer is the cheapest (sell ads: lowest is best).
+    await post(a, cur, '3000000');
+    await post(c, cur, '3500000');
+    const zelle = async (who: Browser) => {
+      const res = await who.get(`/v1/methods?side=sell&currency=${cur}`);
+      expect(res.statusCode, res.body).toBe(200);
+      return (res.json() as { live: { id: string; offers: number; bestRate: string | null }[] }).live.find((m) => m.id === 'ZELLE');
+    };
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    await block(a, b);
+    // The blocked person: only c's offer, at c's price, matching the list they would open.
+    expect(await zelle(b.browser)).toMatchObject({ offers: 1, bestRate: '3500000' });
+    expect(await listed(b.browser, cur)).toHaveLength(1);
+    // The blocker: their own offer counts, c's too (c is not blocked).
+    expect(await zelle(a.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    // Everyone else and logged out: unchanged.
+    expect(await zelle(other.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    expect(await zelle(anon)).toMatchObject({ offers: 2, bestRate: '3000000' });
+    await unblock(a, b);
+    expect(await zelle(b.browser)).toMatchObject({ offers: 2, bestRate: '3000000' });
   });
 
   it("GET /v1/offers/:id answers 404 not-found either way, the same as an offer that does not exist", async () => {

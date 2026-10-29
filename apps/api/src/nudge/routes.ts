@@ -3,6 +3,7 @@ import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
+import { blockedEitherWaySql } from '../traders/blocks.js';
 import { findByPublicName, PUBLIC_NAME } from './names.js';
 import { canonicalTimeZone, formatClock, inQuietHours, parseClock } from './quiet.js';
 
@@ -89,7 +90,7 @@ function deliver(app: FastifyInstance, toId: string, ev: NudgeEvent): void {
 /**
  * `POST /v1/nudges { to, context }`. The sender's own refusals are distinct: 403
  * `no-shared-context` (also for an unknown name or yourself) and 429 `too-soon`. Everything about
- * the recipient (blocked, nudges off, quiet hours, 3 already this hour, disabled) is decided after
+ * the recipient (a block either way (Task 37 review M6), nudges off, quiet hours, 3 already this hour, disabled) is decided after
  * the same queries in the same order and answers the same 202 as a delivered nudge, so the
  * sender learns nothing about the recipient's settings or blocks.
  */
@@ -127,7 +128,7 @@ async function nudgeHandler(req: FastifyRequest, reply: FastifyReply) {
       const { rows } = await client.query<RecipientFacts>(
         `select (select ${PUBLIC_NAME} from accounts where id = $1) as from_name,
                 coalesce(s.enabled, true) as enabled, s.quiet_from, s.quiet_to, s.tz,
-                exists (select 1 from account_blocks b where b.account_id = $2 and b.blocked_id = $1) as blocked,
+                ${blockedEitherWaySql('$1::uuid', '$2::uuid')} as blocked,
                 (select count(*) from nudges n where n.to_id = $2 and n.delivered and n.sent_at > $3)::int as recent
            from (select 1) as one left join nudge_settings s on s.account_id = $2`,
         [fromId, recipient.id, new Date(now.getTime() - HOUR_MS)],
@@ -227,9 +228,16 @@ async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const { displayName } = req.params as { displayName: string };
   if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
-  const who = await findByPublicName(deps.db, displayName);
-  if (who === null) throw new ApiError(404, 'not-found');
-  await deps.db.query('delete from account_blocks where account_id = $1 and blocked_id = $2', [req.auth.accountId, who.id]);
+  // By the stored key (display_key = lower(display_name)), within my own blocks only, with no
+  // name-shape or reserved-word check (review M1): a name that a later rule change would refuse
+  // must still be unblockable. 404 only when no account has that name.
+  const { rows } = await deps.db.query<{ found: boolean }>(
+    `with who as (select id from accounts where display_key = lower($2)),
+          gone as (delete from account_blocks b using who where b.account_id = $1 and b.blocked_id = who.id returning 1)
+     select exists (select 1 from who) as found`,
+    [req.auth.accountId, displayName],
+  );
+  if (rows[0]?.found !== true) throw new ApiError(404, 'not-found');
   return reply.code(204).send();
 }
 

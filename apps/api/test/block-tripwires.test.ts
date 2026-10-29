@@ -43,7 +43,8 @@ describe('Task 37: every route between two traders checks the block', () => {
     // Plan 5's GET /v1/traders/:name (lead default 2026-10-29): `hasBlocked(q, trader, viewer)`
     // → 404 not-found for the blocked person, as for an unknown name. The blocker still sees the blocked person's profile (that is
     // where the web's Unblock is).
-    const profiles = sources(SRC).filter((f) => readFileSync(f, 'utf8').includes("'/v1/traders/"));
+    // Any quote style, template literals too (review M5).
+    const profiles = sources(SRC).filter((f) => /['"`]\/v1\/traders\//.test(readFileSync(f, 'utf8')));
     expect(unchecked(profiles), 'the profile route must check the block').toEqual([]);
   });
 });

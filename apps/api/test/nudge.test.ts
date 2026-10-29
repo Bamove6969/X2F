@@ -582,6 +582,19 @@ describe('POST /v1/account/blocks', () => {
     await settle();
     expect(published.map(([id]) => id)).toEqual([p.to.id]);
   });
+
+  it('Task 37 review M6: the blocker cannot nudge the person they blocked either (dropped silently)', async () => {
+    const p = await pair();
+    // The sender blocked the recipient: same 202 as a delivered nudge, nothing delivered.
+    expect((await p.from.b.post('/v1/account/blocks', { displayName: p.to.name })).statusCode).toBe(204);
+    const res = await nudge(p.from, p.to.name, p.context);
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ ok: true });
+    await settle();
+    expect(published).toEqual([]);
+    const { rows } = await deps.db.query<{ delivered: boolean }>('select delivered from nudges where from_id = $1', [p.from.id]);
+    expect(rows.map((r) => r.delivered)).toEqual([false]);
+  });
 });
 
 describe('purgeNudges', () => {

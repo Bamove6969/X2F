@@ -291,8 +291,12 @@ const requireTrader = requireSession({ kinds: ['trader'] });
 // Browsing: a signed-in trader's session, read only (no touch), when there is one.
 const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true });
 
-/** The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session…). */
-async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
+/**
+ * The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session, a
+ * recovery session or one on its recovery hold: every 401 and 403). A null viewer is never treated
+ * as blocked (Task 37: it is the accepted residue documented in coordination.md).
+ */
+export async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyReply): Promise<string | null> {
   try {
     await viewerCheck.call(app, req, reply);
   } catch (e) {
@@ -302,16 +306,21 @@ async function viewer(app: FastifyInstance, req: FastifyRequest, reply: FastifyR
   return req.auth?.accountId ?? null;
 }
 
-/** `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database. */
+/**
+ * `/v1/methods`' live-offer counts (Task 3's `LiveOfferStats`), from the offers anyone may see, counted by the database;
+ * for a signed-in viewer, without the offers a block hides from them (Task 37 review I1), so the counts and best
+ * rates match the lists they open.
+ */
 export function liveOfferStats(deps: Pick<Deps, 'db' | 'prices'>): LiveOfferStats {
-  return async ({ side, currency }) => {
+  return async ({ side, currency, viewerId = null }) => {
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
     const { rows } = await deps.db.query<{ method_id: string; offers: number; lo: string | null; hi: string | null }>(
       `select o.method_id, count(*)::int as offers, min(r.rate) as lo, max(r.rate) as hi
          from offers o join accounts a on a.id = o.account_id cross join lateral (select ${rateSql('$3')} as rate) r
         where ${LISTED} and o.side = $1 and o.currency = $2
+          and not ${blockedEitherWaySql('o.account_id', '$4::uuid')}
         group by o.method_id`,
-      [side, currency, market === null ? null : market.toString()],
+      [side, currency, market === null ? null : market.toString(), viewerId],
     );
     return rows.map((r) => {
       // Buy ads pay the seller: the best is the highest. Sell ads charge the buyer: the lowest.
