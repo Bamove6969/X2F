@@ -108,3 +108,25 @@ The owner uses fold phones. The app must be laid out properly for them; fold-onl
   - **Folding mid-trade:** the chat pane moves behind the phone header's Chat link, and any text being typed is kept.
   - **Unfolded quote button:** says "Trade", matching the phone board.
 - Boards on the canvas: Fold-Notes, Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover and Fold-TriFold, in the "Foldables" row.
+
+## Devices and team members (owner, 2026-10-29)
+
+Spec 6.3 (device list and new-login alerts) should be updated to match these decisions.
+
+**Devices**
+- Up to 3 devices can be logged in at once by default.
+- A new device must be approved from a device that is already logged in: "Someone is logging in on <browser, OS>. Is this you?" with **Yes, let them in** or **No, block it**.
+  - The approval uses number matching: the new device shows a 2-digit number, and the user taps the same number. This stops approval spam.
+  - Choosing "No" blocks that login and suggests changing the login method.
+- If no logged-in device is available (for example, the only one was lost), the backup-login rules apply. A security key, PGP plus a passkey, or a recovery code gets in with no wait; an authenticator code starts the 24-hour wait.
+- Optional setting "One device at a time": approving a new device logs the old one out.
+
+**Team members** (the phase after launch; adjust from feedback)
+- Up to 5 members created, and at most 3 logged in at once.
+- Each member has their own login, which always needs two factors (the same rule as staff). There are no shared passwords.
+- Members can work trades only: chat, mark paid, confirm payment, release, open a dispute.
+- Only the account owner can change payout wallets, post or edit offers, add or remove members, or delete the account.
+- Trade partners see the account username plus "replied by a team member", never which member.
+- All reviews and reputation go to the one account.
+- Every member action is logged and cannot be edited. The owner can switch a member off instantly.
+- Legal flag for the lawyer: an account with members trading for it looks more like a business, which may affect whether X2F counts as an exchange.
