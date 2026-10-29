@@ -83,6 +83,41 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
   }
 }
 
+/** How a refunded trade ended: `TradeView.settling` keeps the settle kind after the refund. */
+export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-refund' | 'lapse-refund';
+
+/**
+ * The buyer's refunded view says why the XMR went back to the seller, for every kind of refund
+ * (owner 2026-10-29; the seller is "the seller", never named): the buyer cancelled; the payment
+ * time ran out and the seller cancelled; a dispute decision; both agreed to cancel; the setup time
+ * ran out. A trade that had a dispute was
+ * refunded by its decision (a moderator's refund to the seller is built as `mutual-cancel` today,
+ * escrow/policy.ts, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
+ */
+export function refundReason(settling: SettleKind | null, dispute: DisputeTrade['dispute']): { title: string; text: string } {
+  if (dispute !== null) {
+    return {
+      title: 'Refunded by the dispute decision',
+      text: 'A moderator decided this trade\'s dispute and the XMR went back to the seller. The ruling and its reasons are on the dispute page.',
+    };
+  }
+  switch (settling) {
+    case 'buyer-cancel':
+      return { title: 'You cancelled this trade', text: `You cancelled, so all the XMR went back to the seller.` };
+    case 'auto-refund':
+      return {
+        title: 'The payment time ran out',
+        text: `The payment time ended before the payment was marked as sent, so the seller cancelled and all the XMR went back to them.`,
+      };
+    case 'mutual-cancel':
+      return { title: 'You both cancelled this trade', text: `You and the seller agreed to cancel, so all the XMR went back to the seller.` };
+    case 'lapse-refund':
+      return { title: 'The setup time ran out', text: `The escrow wasn't set up in time, so all the XMR went back to the seller.` };
+    default:
+      return { title: 'Refunded', text: `The XMR went back to the seller.` };
+  }
+}
+
 /**
  * An XMR amount inside a sentence, as the boards write it ("1.25 XMR"): six decimals with the
  * trailing zeros dropped, keeping at least two. Amounts shown on their own use `Amount` (six).
@@ -206,10 +241,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
     destination = { app, end: r.destination.addressEnd.slice(-4), tail: waiting ? ', once the appeal window closes.' : '.' };
   }
   const loser = loserOf(r.outcome);
-  // The board's line, true today: nothing deletes dispute records yet. How long they are kept after
-  // the dispute closes is pending the owner's Plan 7 Q1 (Plan 4 Task 23 builds the purge); change
-  // this line with it. COPY-UNSIGNED (pending owner Q1)
-  let footer = 'This ruling and its evidence are kept with the trade.';
+  // Neutral on retention: how long dispute records are kept after the dispute closes is pending the
+  // owner's Plan 7 Q1 (Plan 4 Task 23 builds the purge and the Privacy policy states the time). The
+  // lost-dispute clause is the board's; a lost dispute still counts as a completed trade and drops
+  // no stage (owner 2026-10-29). COPY-UNSIGNED (pending owner Q1)
+  let footer = 'This ruling and its evidence are kept as set out in the Privacy policy.';
   if (loser !== null) footer += loser === me ? ' It appears on your profile as a lost dispute.' : ` It appears on ${nameOf(otherSide)}'s profile as a lost dispute.`;
   return { label, title, destination, footer };
 }

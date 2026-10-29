@@ -29,11 +29,11 @@ describe('Task 27 seams still stand in for parts other tasks build', () => {
   it('NEEDS_PLAN_4_TASK_23: dispute retention is Plan 4 Task 23\'s, waiting on the owner\'s Plan 7 Q1', () => {
     // Task 27 deletes no dispute record: 108/110 keep every dispute per (code, seq) with `closed_at`,
     // the foreign keys have no cascade (deleting a trade with a dispute is refused), and the ruling
-    // footer says "kept with the trade" (COPY-UNSIGNED, pending Q1). When Task 23 adds its purge:
-    // keep the bare record (who opened it, the ruling's outcome or loser, opened_at, closed_at) that
-    // Task 4's stage and Plan 5's reputation need; run as x2f_purge; delete appeals and rulings
+    // footer says "kept as set out in the Privacy policy" (COPY-UNSIGNED, pending Q1). When Task 23
+    // adds its purge: keep the bare record (who opened it, the ruling's outcome or loser, opened_at,
+    // closed_at) that Plan 5's Clean record needs (not the stage: owner 2026-10-29); run as x2f_purge; delete appeals and rulings
     // before their dispute; never clear trades.dispute_by (POST …/dispute refuses a second dispute
-    // on it); and change the footer line in screens/dispute/rules.ts to the owner's keep time.
+    // on it); and check the footer line in screens/dispute/rules.ts against the Privacy policy's keep time.
     const jobs = readFileSync(ROOT + 'apps/api/src/retentionJobs.ts', 'utf8');
     expect(has('apps/api/src/disputes/purge.ts') || /purgeClosedDisputes|DISPUTE_KEEP_DAYS/.test(jobs), 'Plan 4 Task 23 landed: check the bare record and the footer').toBe(false);
   });

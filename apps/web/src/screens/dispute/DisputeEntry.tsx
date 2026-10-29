@@ -1,4 +1,4 @@
-// The way into a dispute from the trade room (Task 22 places it; see the NEEDS_TASK_22 tripwire):
+// The way into a dispute from the trade room (Tasks 23, 24 and Task 27's RefundedSlot place it):
 // the BuyerPay board's rose "Open dispute", the board's explanation while the buyer must still wait
 // for the seller's confirm window, and the buyer's "Open a dispute" on a refunded trade within 90
 // days (spec 2.3). Nothing while the state machine would refuse a dispute.

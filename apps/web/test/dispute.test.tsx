@@ -140,12 +140,12 @@ describe('copy helpers', () => {
       label: 'Ruling: release to the buyer',
       title: '1.25 XMR goes to you',
       destination: { app: 'Cake Wallet', end: 'k3Fz', tail: ', once the appeal window closes.' },
-      footer: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
+      footer: "This ruling and its evidence are kept as set out in the Privacy policy. It appears on satoshi_ghost's profile as a lost dispute.",
     });
     const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN));
     expect(theirs.title).toBe('1.25 XMR goes to mira.k');
     expect(theirs.destination).toBeNull();
-    expect(theirs.footer).toBe('This ruling and its evidence are kept with the trade. It appears on your profile as a lost dispute.');
+    expect(theirs.footer).toBe('This ruling and its evidence are kept as set out in the Privacy policy. It appears on your profile as a lost dispute.');
   });
 });
 
