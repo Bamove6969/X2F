@@ -7,6 +7,7 @@
 //        → { status, results: { id, status?, refused? }[] }, one result per offer named (or every
 //        offer of mine for 'all'); a refused offer keeps its status and says why.
 import { api } from '../../api/client.js';
+import { HIDDEN_REASONS } from './model.js';
 
 export type OfferState = 'live' | 'paused';
 
@@ -24,7 +25,7 @@ export interface MyOffer {
   country?: string;
   status: OfferState;
   /** A live offer nobody can see right now, and why (review M4). */
-  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
+  hidden?: (typeof HIDDEN_REASONS)[number];
 }
 
 export interface SwitchResult {
@@ -81,8 +82,9 @@ export function parseMyOffers(raw: unknown): MyOffer[] {
     };
     if (o.country !== undefined) out.country = str(o.country);
     if (o.hidden !== undefined) {
-      if (o.hidden !== 'trading-paused' && o.hidden !== 'trading-hold' && o.hidden !== 'method-unavailable') throw shape();
-      out.hidden = o.hidden;
+      const hidden = HIDDEN_REASONS.find((h) => h === o.hidden);
+      if (hidden === undefined) throw shape();
+      out.hidden = hidden;
     }
     return out;
   });

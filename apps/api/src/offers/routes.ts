@@ -353,7 +353,8 @@ const requireTrader = requireSession({ kinds: ['trader'] });
 /**
  * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
  * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
- * live, or removes it, still needs the current Terms (`assertTermsCurrent`).
+ * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
+ * (round-2 review m1, lead decision 2026-10-29).
  */
 const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true });
 
@@ -461,8 +462,9 @@ export function offerRoutes(app: FastifyInstance): void {
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
-    // Pausing works on stale Terms (R10 lead decision 2026-10-29); relisting and removing do not.
-    if (status !== 'paused') await assertTermsCurrent(deps, req.auth!.accountId);
+    // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
+    // waits for new Terms); relisting does not.
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',

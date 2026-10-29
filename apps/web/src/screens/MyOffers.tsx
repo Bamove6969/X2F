@@ -10,12 +10,15 @@
 // classes) with no CSS of its own and no parity entry. The tick boxes and the switch are kit
 // Buttons (role="checkbox" / role="switch"): a native checkbox is under the 32 px tap size and
 // styling one would be new CSS. The board's per-offer Edit link waits for an edit screen (Task 35).
-// Refusals are inline text until Plan 5 Task 21's CantDoThat is on the main line
-// (NEEDS_CANTDOTHAT_MYOFFERS).
+// A "can't do that" refusal (trading hold, the offer cap) opens the shared CantDoThat popup with its
+// feedback link (Plan 5 Task 21) and leaves a short line on each offer it kept off; the rest
+// (maintenance, no wallet, a method off the catalog) are not refusals and stay inline.
 import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../api/client.js';
 import { Button } from '../ui/Button.js';
+import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
+import { CANT_DO_TITLE, myOffersCantDoText } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
 import { fetchMyOffers, switchOffers, type MyOffer, type OfferState, type SwitchResult } from './myoffers/api.js';
 import {
@@ -24,6 +27,7 @@ import {
   allHint,
   applyResults,
   batches,
+  cantDoFor,
   countLine,
   idsFor,
   offerLimits,
@@ -44,6 +48,8 @@ export function MyOffers() {
   const [refusals, setRefusals] = useState<ReadonlyMap<string, string>>(new Map());
   const [summary, setSummary] = useState<{ text: string; error: boolean } | null>(null);
   const [busy, setBusy] = useState(false);
+  // A "can't do that" refusal on Turn on (a hold, the cap) opens CantDoThat (Plan 5 Task 21).
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; count: number } | null>(null);
   const ids = useId();
 
   const reload = useCallback(async (signal?: AbortSignal) => {
@@ -73,6 +79,7 @@ export function MyOffers() {
     if (target.length === 0) return;
     setBusy(true);
     setSummary(null);
+    setCantDo(null);
     const results: SwitchResult[] = [];
     let failed: unknown = null;
     for (const batch of batches(target)) {
@@ -96,6 +103,7 @@ export function MyOffers() {
       }
       return next;
     });
+    if (status === 'live') setCantDo(cantDoFor(results));
     if (failed !== null) {
       // COPY-UNSIGNED
       const text = results.length === 0 ? "Something went wrong and your offers weren't changed. Try again." : `${summaryLine(status, results)} The rest weren't changed. Try again.`;
@@ -186,6 +194,10 @@ export function MyOffers() {
             <p className={summary.error ? 'x2f-error' : 'x2f-note'} role={summary.error ? 'alert' : 'status'} data-part="summary">
               {summary.text}
             </p>
+          ) : null}
+
+          {cantDo ? (
+            <CantDoThat title={CANT_DO_TITLE.myOffers} body={myOffersCantDoText(cantDo.code, cantDo.count)} from={cantDo.code} onClose={() => setCantDo(null)} />
           ) : null}
 
           <ul className="x2f-list" aria-label="My offers">

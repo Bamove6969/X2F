@@ -8,8 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MyOffers } from '../src/screens/MyOffers.js';
 import { parseMyOffers, parseSwitch, type MyOffer } from '../src/screens/myoffers/api.js';
 import {
-  allHint, applyResults, batches, countLine, idsFor, offerLimits, offerMethods, offerPrice, offerTitle, refusalLine, statusLine, summaryLine,
+  allHint, applyResults, batches, cantDoFor, countLine, idsFor, offerLimits, offerMethods, offerPrice, offerTitle, refusalLine, statusLine, summaryLine,
 } from '../src/screens/myoffers/model.js';
+import { CANT_DO_TITLE, myOffersCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -161,6 +162,14 @@ describe('the model', () => {
     for (const code of ['trading-hold', 'trading-paused', 'no-wallet', 'too-many-offers', 'method-unavailable', 'not-found', 'other']) {
       expect(refusalLine(code)).toMatch(/\.$/);
     }
+    // The "can't do that" refusals get a short row line and the popup; the rest are said in the row.
+    expect(refusalLine('trading-hold')).toBe('Stayed off: your account has a trading hold.');
+    expect(refusalLine('too-many-offers')).toBe('Stayed off: over the offer limit for this market.');
+    expect(cantDoFor([{ id: A, status: 'paused', refused: 'no-wallet' }])).toBeNull();
+    expect(cantDoFor([{ id: A, status: 'paused', refused: 'too-many-offers' }, { id: B, status: 'paused', refused: 'trading-hold' }])).toEqual({ code: 'trading-hold', count: 1 });
+    expect(cantDoFor([{ id: A, refused: 'too-many-offers' }, { id: B, refused: 'too-many-offers' }, { id: C, refused: 'trading-hold' }])).toEqual({ code: 'too-many-offers', count: 2 });
+    expect(myOffersCantDoText('too-many-offers', 1)).toContain('turn this one on');
+    expect(myOffersCantDoText('too-many-offers', 2)).toContain('turn these on');
   });
 });
 
@@ -250,9 +259,25 @@ describe('the My offers screen', () => {
     const why = row(host, B).querySelector('[data-part="refused"]')!;
     expect(why.textContent).toBe(refusalLine('trading-hold'));
     expect(sw(host, B).getAttribute('aria-describedby')).toContain(why.id);
+    // The hold is a "can't do that" refusal: CantDoThat opens, with the feedback link (Plan 5 Task 21).
+    const pop = document.querySelector('[data-part="cant-do-that"]')!;
+    expect(pop.getAttribute('data-from')).toBe('trading-hold');
+    expect(pop.querySelector('[role="alert"]')!.textContent).toBe(myOffersCantDoText('trading-hold', 2));
+    expect(pop.querySelector('a')!.getAttribute('href')).toBe('/feedback?from=trading-hold');
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(CANT_DO_TITLE.myOffers);
+    await click([...pop.querySelectorAll('button')].find((b) => b.textContent === 'OK')!);
+    expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
     onSwitch = allSwitch;
     await click(sw(host, B));
     expect(row(host, B).querySelector('[data-part="refused"]')).toBeNull();
+  });
+
+  it('a refusal that is not a "can\'t do that" (no wallet) stays inline, with no popup', async () => {
+    onSwitch = (body) => ({ status: 200, json: { status: body.status, results: body.ids.map((id) => ({ id, status: 'paused', refused: 'no-wallet' })) } });
+    const host = await mount();
+    await click(sw(host, B));
+    expect(row(host, B).querySelector('[data-part="refused"]')!.textContent).toBe(refusalLine('no-wallet'));
+    expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
   });
 
   it('a live offer hidden by a hold or a stop shows the real state (M4)', async () => {

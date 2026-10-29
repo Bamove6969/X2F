@@ -2,6 +2,7 @@
 // React so the unit tests can read them. Words follow Claude Design's MyOffers board
 // (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
+import { CANT_DO_CODES, MY_OFFERS_HIDDEN, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
 import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
@@ -11,28 +12,33 @@ export const MY_OFFERS_PATH = '/profile/offers';
 /** At most this many ids per POST /v1/account/offers/status (the API's SWITCH_MAX_IDS); more go in batches (review M5). */
 export const SWITCH_BATCH = 100;
 
+/** Why a live offer is hidden (review M4), as GET /v1/account/offers sends it. */
+export const HIDDEN_REASONS = Object.keys(MY_OFFERS_HIDDEN) as MyOffersHidden[];
+
 /**
- * Why one offer did not switch, shown under that offer. Inline text for now: the shared CantDoThat
- * popup (Plan 5 Task 21) is not on the main line yet (tripwire NEEDS_CANTDOTHAT_MYOFFERS).
+ * The line under one offer that did not switch. A "can't do that" refusal (cantDoCodes.ts:
+ * trading-hold, too-many-offers) gets a short line here and its full reason in CantDoThat
+ * (`cantDoFor`); the rest are not refusals and are said in the row only. The words are in
+ * cantDoCodes.ts (`myOffersRowText`).
  */
-// COPY-UNSIGNED
 export function refusalLine(code: string): string {
-  switch (code) {
-    case 'trading-hold':
-      return "Your account has a trading hold while a dispute is open, so this offer stays off until it's resolved.";
-    case 'trading-paused':
-      return 'Trading is paused for maintenance, so this offer stays off for now. Try again soon.';
-    case 'no-wallet':
-      return 'Add a payout wallet before turning offers on.';
-    case 'too-many-offers':
-      return 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.';
-    case 'method-unavailable':
-      return "This payment method isn't available right now, so this offer stays off.";
-    case 'not-found':
-      return 'This offer was removed.';
-    default:
-      return "Something went wrong and this offer wasn't changed. Try again.";
+  return myOffersRowText(code);
+}
+
+/**
+ * The CantDoThat popup for a Turn on: the refusal that kept the most offers off (a hold before the
+ * cap on a tie, as a hold covers every offer, by CANT_DO_CODES order), and how many it kept off; null when none did.
+ */
+export function cantDoFor(results: readonly SwitchResult[]): { code: CantDoCode; count: number } | null {
+  const counts = new Map<CantDoCode, number>();
+  for (const r of results) if (isCantDoCode(r.refused)) counts.set(r.refused, (counts.get(r.refused) ?? 0) + 1);
+  let best: { code: CantDoCode; count: number } | null = null;
+  // CANT_DO_CODES order breaks a tie (a trading hold comes before the offer cap).
+  for (const code of CANT_DO_CODES) {
+    const count = counts.get(code) ?? 0;
+    if (count > 0 && (best === null || count > best.count)) best = { code, count };
   }
+  return best;
 }
 
 /** The board's title line: "Selling XMR · USD". */
@@ -61,17 +67,7 @@ export function offerLimits(o: MyOffer): string {
  */
 export function statusLine(o: MyOffer): string {
   if (o.status === 'paused') return 'Off · hidden from everyone';
-  switch (o.hidden) {
-    // COPY-UNSIGNED (the three hidden reasons)
-    case 'trading-paused':
-      return 'On, hidden while trading is paused';
-    case 'trading-hold':
-      return 'On, hidden while your account has a trading hold';
-    case 'method-unavailable':
-      return "On, hidden: this payment method isn't available right now";
-    default:
-      return 'On · people can see and take it';
-  }
+  return o.hidden !== undefined ? MY_OFFERS_HIDDEN[o.hidden] : 'On · people can see and take it';
 }
 
 /** The header line: "3 of 5 offers on". */

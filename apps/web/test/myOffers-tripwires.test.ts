@@ -13,7 +13,7 @@ const has = (p: string): boolean => existsSync(ROOT + p);
  */
 const BOARDS = ['docs/design-boards/MyOffers.dc.html', 'design/x2f-app/MyOffers.dc.html'];
 
-describe('My offers waits for its board and the shared popup', () => {
+describe('My offers waits for its board', () => {
   it('NEEDS_DESIGN_MYOFFERS: the MyOffers board is not on the main line yet', () => {
     // The screen follows the board's behaviour (a tick box per offer, Select all only ticks, the
     // Selected offers bar with Clear / Turn on / Turn off, a switch per offer, its words) but is built
@@ -22,15 +22,11 @@ describe('My offers waits for its board and the shared popup', () => {
     // When the board lands: match apps/web/src/screens/MyOffers.tsx to it (the switch track, the
     // dashed card of an Off offer, the 22 px tick box in its 44 px tile), add expectParity for
     // MyOffers and MyOffers-Wide to e2e/myOffers.spec.ts, and delete this. Review M4's hidden-reason
-    // line ("On, hidden while trading is paused") is not on the board: ask Claude Design.
+    // line ("On, hidden while trading is paused") is not on the board: ask Claude Design. Round-2
+    // review n1: the Selected offers bar sits after the list (no CSS of its own), so with many
+    // offers it is below the fold; place it as the board does (fixed at the bottom).
     for (const b of BOARDS) expect(has(b), `The My offers board landed at ${b}: build MyOffers.tsx to it and add parity`).toBe(false);
   });
-
-  it('NEEDS_CANTDOTHAT_MYOFFERS: refusals are inline text until the shared CantDoThat popup is on the line', () => {
-    // When Plan 5 Task 21 lands: show the account-wide refusals (trading-hold, trading-paused,
-    // too-many-offers) through CantDoThat with its feedback link, keep the per-row line naming
-    // which offer stayed off, and check Task 21's cap code ('offer-cap') against the API's
-    // 'too-many-offers'.
-    expect(has('apps/web/src/ui/CantDoThat.tsx'), 'CantDoThat landed: move My offers refusals into it (myoffers/model.ts refusalLine)').toBe(false);
-  });
+  // NEEDS_CANTDOTHAT_MYOFFERS retired 2026-10-29: Plan 5 Task 21 landed; trading-hold and
+  // too-many-offers open CantDoThat (MyOffers.tsx, cantDoCodes.ts myOffersCantDoText).
 });

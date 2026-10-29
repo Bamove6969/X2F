@@ -1,8 +1,10 @@
+import { fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { SWITCH_MAX_IDS } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
+import { testDb } from './helpers/db.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -36,11 +38,13 @@ let anon: Browser;
 let setNow: (d: Date) => void;
 
 beforeAll(async () => {
-  ({ app, deps, trader, setNow } = await tradeApp({}, { prices }));
+  // A pool larger than the race tests' open transactions (the take race holds 4 at once, plus its poll).
+  ({ app, deps, trader, setNow } = await tradeApp({}, { prices, db: await testDb({ max: 12 }) }));
   anon = new Browser(app);
 });
 afterAll(async () => {
   await app.close();
+  await deps.db.end();
 });
 
 type Who = Awaited<ReturnType<typeof trader>>;
@@ -358,7 +362,7 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     ]);
   });
 
-  it('R10 (lead decision 2026-10-29): on a stale Terms version, turning off works (bulk and PATCH) and turning on does not', async () => {
+  it('R10 (lead decision 2026-10-29): on a stale Terms version, turning off and removing work (bulk and PATCH) and turning on does not', async () => {
     const p = await poster();
     const a = await post(p);
     const b = await post(p, { side: 'buy' });
@@ -378,12 +382,73 @@ describe('review fixes (Task 36 review 2026-10-29)', () => {
     const relist = await p.browser.patch(`/v1/offers/${a}`, { status: 'live' });
     expect(relist.statusCode).toBe(403);
     expect(relist.json()).toEqual(terms);
-    expect((await p.browser.patch(`/v1/offers/${a}`, { status: 'removed' })).json()).toEqual(terms);
+    // Round-2 m1 (lead decision 2026-10-29): removing is shutting off too, so it works on stale Terms.
+    expect((await p.browser.patch(`/v1/offers/${c}`, { status: 'removed' })).json()).toEqual({ id: c, status: 'removed' });
     // Posting still needs the current Terms.
     expect((await p.browser.post('/v1/offers', BODY)).json()).toEqual(terms);
-    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'paused' });
+    expect(await statuses(p.id)).toEqual({ [a]: 'paused', [b]: 'paused', [c]: 'removed' });
 
     await deps.db.query('update accounts set terms_version = $2 where id = $1', [p.id, deps.config.termsVersion]);
     expect(await setStatus(p, [a], 'live')).toEqual([{ id: a, status: 'live' }]);
+  });
+
+  it('round-2 m3: a take racing the poster\'s and the taker\'s pause-all neither deadlocks nor takes a paused offer (real Postgres)', async () => {
+    const amount = 100_000_000_000n; // 0.1 XMR at the fixed $330.00: $33.00, under any starter cap
+    for (let round = 0; round < 3; round++) {
+      const poster_ = await poster();
+      const taker = await poster();
+      const offer = await post(poster_, { pricing: { mode: 'fixed', centsPerXmr: '33000' }, minFiatCents: '1000' });
+      await post(taker, { side: 'buy' });
+      const { rows: w } = await deps.db.query<{ id: string }>('select id from wallets where account_id = $1', [taker.id]);
+      const takeBody = {
+        amountAtomic: amount.toString(), walletId: w[0]!.id, centsPerXmr: '33000',
+        fiatCents: fiatCents(amount, { currency: 'USD', centsPerXmr: 33_000n }).toString(),
+      };
+      // Hold both account rows so all three requests queue inside their transactions, then let go.
+      const holder = await deps.db.connect();
+      let res: Awaited<ReturnType<Browser['post']>>[];
+      try {
+        await holder.query('begin');
+        await holder.query('select 1 from accounts where id = any($1::uuid[]) order by id for update', [[poster_.id, taker.id]]);
+        const holderPid = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+        const fire = [
+          taker.browser.post(`/v1/offers/${offer}/take`, takeBody),
+          poster_.browser.post('/v1/account/offers/status', { ids: 'all', status: 'paused' }),
+          taker.browser.post('/v1/account/offers/status', { ids: 'all', status: 'paused' }),
+        ];
+        // Round order varies which request reaches the lock first.
+        if (round === 1) fire.reverse();
+        const pending = Promise.all(fire);
+        const deadline = Date.now() + 10_000;
+        for (;;) {
+          const { rows } = await deps.db.query<{ n: number }>(
+            `select count(*)::int as n from pg_stat_activity
+              where datname = current_database() and pid <> $1 and wait_event_type = 'Lock' and state = 'active'`,
+            [holderPid],
+          );
+          if (rows[0]!.n >= 3) break;
+          if (Date.now() > deadline) throw new Error(`only ${rows[0]!.n} of 3 requests reached the lock`);
+          await new Promise((r) => setTimeout(r, 10));
+        }
+        await holder.query('commit');
+        res = await pending;
+      } catch (e) {
+        await holder.query('rollback').catch(() => {});
+        throw e;
+      } finally {
+        holder.release();
+      }
+      if (round === 1) res.reverse();
+      const [take, posterOff, takerOff] = res as [typeof res[0], typeof res[0], typeof res[0]];
+      // No deadlock (40P01 would be a 500) and no fault.
+      expect(posterOff.statusCode, posterOff.body).toBe(200);
+      expect(takerOff.statusCode, takerOff.body).toBe(200);
+      expect([200, 404, 409], take.body).toContain(take.statusCode);
+      expect(Object.values(await statuses(poster_.id))).toEqual(['paused']);
+      expect(Object.values(await statuses(taker.id))).toEqual(['paused']);
+      // Either the take ran while the offer was live (a trade) or after the pause (no trade).
+      const { rows: trades } = await deps.db.query<{ n: number }>('select count(*)::int as n from trades where offer_id = $1', [offer]);
+      expect(trades[0]!.n).toBe(take.statusCode === 200 ? 1 : 0);
+    }
   });
 });

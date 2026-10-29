@@ -139,7 +139,13 @@ test('turning on while held: the paused offers stay off and say why; the one alr
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'false');
   await page.getByRole('checkbox', { name: 'Select all' }).click();
   await page.getByRole('button', { name: 'Turn on' }).click();
-  await expect(page.getByRole('alert')).toHaveText('1 offer turned on. 2 offers stayed as they were; each one says why below.');
+  // The hold opens the shared CantDoThat popup with its feedback link (Plan 5 Task 21).
+  const pop = page.getByRole('dialog');
+  await expect(pop).toContainText("Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.");
+  await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
+  await pop.getByRole('button', { name: 'OK' }).click();
+  await expect(pop).toHaveCount(0);
+  await expect(page.locator('[data-part="summary"]')).toHaveText('1 offer turned on. 2 offers stayed as they were; each one says why below.');
   await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
   for (const id of [B, C]) {
     await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
