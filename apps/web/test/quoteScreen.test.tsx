@@ -383,7 +383,7 @@ describe('BuyQuote', () => {
     expect(primary(host).disabled).toBe(false);
     fire(primary(host), new MouseEvent('click', { bubbles: true }));
     const to = new URL(where(host)!, 'http://x2f.test');
-    expect(to.pathname).toBe('/setup/terms');
+    expect(to.pathname).toBe('/setup');
     const back = new URL(to.searchParams.get('returnTo')!, 'http://x2f.test');
     expect(back.pathname).toBe('/buy/ZELLE/offer-ghost');
     expect(back.searchParams.get('amount')).toBe('412.50');
