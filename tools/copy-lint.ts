@@ -184,11 +184,12 @@ function textPieces(node: unknown, out: Piece[], ranges: [number, number][], toC
 
 /** Real comments (outside strings, template text, JSX text and regexes): [start, end, text]. */
 function comments(src: string, ranges: [number, number][]): { start: number; end: number; text: string }[] {
-  const sorted = [...ranges].sort((a, b) => a[0] - b[0]);
-  const inside = (i: number) => sorted.some(([a, b]) => i >= a && i < b);
+  // One pass: a mask of the offsets inside a string, template text, JSX text or regex.
+  const masked = new Uint8Array(src.length + 1);
+  for (const [a, b] of ranges) masked.fill(1, a, b);
   const out: { start: number; end: number; text: string }[] = [];
-  for (let i = 0; i < src.length - 1; i++) {
-    if (src[i] !== '/' || (src[i + 1] !== '/' && src[i + 1] !== '*') || inside(i)) continue;
+  for (let i = src.indexOf('/'); i !== -1 && i < src.length - 1; i = src.indexOf('/', i + 1)) {
+    if ((src[i + 1] !== '/' && src[i + 1] !== '*') || masked[i] === 1) continue;
     const close = src[i + 1] === '/' ? src.indexOf('\n', i) : src.indexOf('*/', i + 2);
     const end = close === -1 ? src.length : src[i + 1] === '/' ? close : close + 2;
     out.push({ start: i, end, text: src.slice(i, end) });
