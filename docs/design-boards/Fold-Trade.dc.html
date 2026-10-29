@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Fold: trade and chat</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <section aria-label="Trade steps" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+      <a href="Main.dc.html" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+        <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Buying from nightowl_44</h1>
+        <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+      </div>
+    </header>
+
+    <main style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+      <ol aria-label="Trade progress" style="list-style: none; margin: 0; padding: 16px; display: flex; flex-direction: column; gap: 12px; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--escrow); font-weight: 600;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>
+          Escrow funded · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000 XMR</span> locked
+        </li>
+        <li aria-current="step" style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--caution); font-weight: 600;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          You pay by Zelle
+        </li>
+        <li style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--ink-muted);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
+          nightowl_44 confirms
+        </li>
+        <li style="display: flex; align-items: center; gap: 12px; font-size: 15px; color: var(--ink-muted);">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/></svg>
+          XMR released to you
+        </li>
+      </ol>
+
+      <section aria-label="Payment timer" style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time to pay</span>
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">62 min</span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">of 90 min · ends 31 Oct 2026, 14:05 UTC</span>
+        </div>
+        <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label="62 of 90 minutes left">
+          <circle cx="28" cy="28" r="24" fill="none" style="stroke: var(--surface-raised);" stroke-width="6"/>
+          <circle cx="28" cy="28" r="24" fill="none" style="stroke: var(--caution);" stroke-width="6" stroke-dasharray="104 151" transform="rotate(-90 28 28)"/>
+        </svg>
+      </section>
+
+      <section aria-label="Send this payment" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50 <span style="font-size: 16px; color: var(--ink-muted);">USD</span></span>
+        <div style="display: flex; justify-content: space-between; gap: 8px; font-size: 14px;"><span style="color: var(--ink-muted);">Zelle to</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">[SELLER ZELLE ID]</span></div>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 14px;">
+          <span style="color: var(--ink-muted);">Memo</span>
+          <span style="display: flex; align-items: center; gap: 4px;">
+            <span id="memo" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">K7M2-9QXA-4FTR-8WPN</span>
+            <button type="button" onClick="{{copy}}" aria-describedby="memo" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; cursor: pointer;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{copyLabel}}
+            </button>
+          </span>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
+      </section>
+    </main>
+
+    <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+      <button type="button" onClick="{{openConfirm}}" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">I've paid</button>
+      <div style="display: flex; justify-content: space-between;">
+        <button type="button" onClick="{{openCancel}}" style="height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Ask to cancel</button>
+        <a href="DisputeOpen.dc.html" style="display: flex; align-items: center; height: 44px; color: var(--danger); font-size: 15px; text-decoration: none;">Open dispute</a>
+      </div>
+    </footer>
+
+    <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="paid-title" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+          <h2 id="paid-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Mark this trade as paid?</h2>
+          <label for="paid-check" style="display: flex; align-items: flex-start; gap: 12px; min-height: 44px; font-size: 16px; line-height: 24px; cursor: pointer;">
+            <input id="paid-check" type="checkbox" checked="{{ticked}}" onChange="{{toggleTick}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+            <span>I sent exactly <strong>$412.50</strong> by Zelle with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span>
+          </label>
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
+          <sc-if value="{{ticked}}" hint-placeholder-val="{{false}}">
+            <a href="SellerConfirm.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Yes, mark as paid</a>
+          </sc-if>
+          <sc-if value="{{notTicked}}" hint-placeholder-val="{{true}}">
+            <button type="button" disabled style="height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Yes, mark as paid</button>
+          </sc-if>
+          <button type="button" onClick="{{closeSheet}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Not yet</button>
+        </section>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{cancelOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="cancel-title" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+          <h2 id="cancel-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Ask nightowl_44 to cancel?</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">The trade ends only if nightowl_44 agrees. Their XMR goes back to them. Don't send any money while you wait.</p>
+          <button type="button" onClick="{{sendCancel}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send the request</button>
+          <button type="button" onClick="{{closeSheet}}" style="height: 48px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 16px; cursor: pointer;">Keep trading</button>
+        </section>
+      </div>
+    </sc-if>
+  </section>
+
+  <div aria-hidden="true" style="display: flex; justify-content: center;"><span style="width: 1px; background: var(--surface-raised);"></span></div>
+
+  <section aria-label="Chat with nightowl_44" style="position: relative; display: flex; flex-direction: column; min-height: 0; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 12px; padding: 16px; min-height: 44px; border-bottom: 1px solid var(--surface-raised);">
+      <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+        <h2 style="margin: 0; display: flex; align-items: center; gap: 6px; font-size: 16px; line-height: 22px; font-weight: 600;"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>nightowl_44</h2>
+        <span style="font-size: 13px; color: var(--ink-muted);">Online · 212 trades · 99% positive</span>
+      </div>
+      <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;">Trusted</span>
+    </header>
+    <div role="log" aria-label="Messages" style="flex-grow: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 16px; font-size: 15px; line-height: 22px;">
+      <span style="align-self: center; text-align: center; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
+      <sc-for list="{{messages}}" as="m" hint-placeholder-count="3">
+        <div style="{{m.wrapStyle}}">
+          <p style="{{m.bubbleStyle}}">{{m.text}}</p>
+          <span style="font-size: 12px; color: var(--ink-muted);">{{m.meta}}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div role="group" aria-label="Write a message" style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+      <label for="fold-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message nightowl_44</label>
+      <input id="fold-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" onKeyDown="{{onKey}}" placeholder="Message nightowl_44" autocomplete="off" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px;">
+      <button type="button" onClick="{{send}}" style="height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Send</button>
+    </div>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":840,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      sheet: null,
+      ticked: false,
+      copied: false,
+      draft: '',
+      messages: [
+        { me: false, text: 'Escrow is funded. Send $412.50 by Zelle with K7M2-9QXA-4FTR-8WPN in the memo please.', time: '12:58' },
+        { me: true, text: 'Got it. Sending in a few minutes.', time: '13:01' }
+      ]
+    };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 840px; height: 1000px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: grid; grid-template-columns: 412px 16px 412px;";
+    const s = this.state;
+    const messages = s.messages.map((m) => ({
+      text: m.text,
+      meta: (m.me ? 'You' : 'nightowl_44') + ' · ' + m.time,
+      wrapStyle: 'display: flex; flex-direction: column; gap: 4px; max-width: 85%; align-self: ' + (m.me ? 'flex-end; align-items: flex-end;' : 'flex-start; align-items: flex-start;'),
+      bubbleStyle: 'margin: 0; padding: 10px 12px; border-radius: 12px; ' + (m.me ? 'background: transparent; border: 1px solid var(--line);' : 'background: var(--surface-raised);')
+    }));
+    const send = () => {
+      const text = this.state.draft.trim();
+      if (!text) return;
+      this.setState({ draft: '', messages: this.state.messages.concat([{ me: true, text, time: '13:04' }]) });
+    };
+    return {
+      rootStyle,
+      messages,
+      copyLabel: s.copied ? 'Copied' : 'Copy',
+      copy: () => this.setState({ copied: true }),
+      confirmOpen: s.sheet === 'paid',
+      cancelOpen: s.sheet === 'cancel',
+      ticked: s.ticked,
+      notTicked: !s.ticked,
+      openConfirm: () => this.setState({ sheet: 'paid', ticked: false }),
+      openCancel: () => this.setState({ sheet: 'cancel' }),
+      closeSheet: () => this.setState({ sheet: null }),
+      toggleTick: () => this.setState({ ticked: !this.state.ticked }),
+      sendCancel: () => this.setState({
+        sheet: null,
+        messages: this.state.messages.concat([{ me: true, text: 'I asked to cancel this trade.', time: '13:04' }])
+      }),
+      draft: s.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      onKey: (e) => { if (e && e.key === 'Enter') send(); },
+      send
+    };
+  }
+}
+</script>
+</body>
+</html>

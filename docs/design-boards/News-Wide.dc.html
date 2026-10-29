@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>News (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 8px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 16px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
+  </nav>
+  <main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 16px;" aria-hidden="true">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 600;">How do you want to get paid?</span>
+    <span style="width: 720px; height: 44px; border-radius: 6px; background: var(--surface);"></span>
+    <span style="width: 720px; height: 60px; border-radius: 12px; background: var(--surface);"></span>
+    <span style="width: 720px; height: 60px; border-radius: 12px; background: var(--surface);"></span>
+  </main>
+
+  <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 32px 0; box-sizing: border-box;">
+      <section role="dialog" aria-modal="true" aria-labelledby="newsw-title" style="width: 640px; box-sizing: border-box; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column;">
+        <header style="display: flex; align-items: center; gap: 12px; padding: 24px 24px 16px 32px; border-bottom: 1px solid var(--surface-raised);">
+          <div style="display: flex; flex-direction: column; flex-grow: 1;">
+            <h2 id="newsw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">News</h2>
+            <span style="font-size: 14px; color: var(--ink-muted);">{{countLabel}} · newest first</span>
+          </div>
+          <sc-if value="{{hasNew}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{markAll}}" style="height: 44px; padding: 0 12px; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; cursor: pointer;">Mark all as read</button>
+          </sc-if>
+          <button type="button" onClick="{{close}}" aria-label="Close News" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--ink); cursor: pointer;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+          </button>
+        </header>
+        <div style="padding: 16px 24px; display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{posts}}" as="p" hint-placeholder-count="4">
+            <article style="{{p.cardStyle}}">
+              <button type="button" aria-expanded="{{p.expandedAttr}}" onClick="{{p.toggle}}" style="display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 60px; padding: 12px 16px; border: 0; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+                <span style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0;">
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px;">
+                    <sc-if value="{{p.isNew}}" hint-placeholder-val="{{true}}">
+                      <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>New</span>
+                    </sc-if>
+                    <sc-if value="{{p.isSeen}}" hint-placeholder-val="{{false}}">
+                      <span style="color: var(--ink-muted);">Read</span>
+                    </sc-if>
+                    <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{p.date}}</span>
+                  </span>
+                  <span style="{{p.titleStyle}}">{{p.title}}</span>
+                </span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="{{p.chevronStyle}}"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <sc-if value="{{p.expanded}}" hint-placeholder-val="{{false}}">
+                <p style="margin: 0; padding: 0 16px 16px; font-size: 16px; line-height: 24px;">{{p.body}}</p>
+              </sc-if>
+            </article>
+          </sc-for>
+          <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Posts are examples.</span>
+        </div>
+        <footer style="display: flex; align-items: center; gap: 16px; padding: 16px 24px 24px 32px; border-top: 1px solid var(--surface-raised);">
+          <sc-if value="{{withCheckbox}}" hint-placeholder-val="{{false}}">
+            <label for="newsw-hide" style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 15px; cursor: pointer;">
+              <input id="newsw-hide" type="checkbox" checked="{{hide}}" onChange="{{toggleHide}}" style="width: 20px; height: 20px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
+              <span style="display: flex; flex-direction: column;">Don't show me this again<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.</span></span>
+            </label>
+          </sc-if>
+          <span style="flex-grow: 1;"></span>
+          <button type="button" onClick="{{close}}" style="height: 48px; min-width: 140px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Continue</button>
+        </footer>
+      </section>
+    </div>
+  </sc-if>
+  <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
+    <button type="button" onClick="{{reopen}}" style="position: absolute; right: 48px; bottom: 32px; height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Show News again</button>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["plain","with-dont-show-again"],"default":"plain"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: true, seen: { n3: true, n4: true }, expanded: 'n1', hide: false };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    const data = [
+      ['n1', '28 Oct 2026', 'Offers can now have price tiers', 'Sellers can set different prices for different amounts and accept several payment methods in one offer. Buyers see the final price for the amount they type.'],
+      ['n2', '21 Oct 2026', 'Planned maintenance on 2 Nov', 'X2F will be down for about 30 minutes on 2 Nov 2026 from 03:00 UTC. Payment timers pause while we are down, so no trade runs out of time.'],
+      ['n3', '9 Oct 2026', 'You can now block a trader', 'Block someone from their profile or from the trade chat. They can no longer see or take your offers, message you, or see when you are online.'],
+      ['n4', '30 Sep 2026', 'Welcome to X2F', 'Trade Monero for cash, bank transfers and payment apps, with escrow on every trade. Your wallet keys stay on your device.']
+    ];
+    const { seen, expanded } = this.state;
+    const newCount = data.filter((d) => !seen[d[0]]).length;
+    const posts = data.map((d) => {
+      const id = d[0];
+      const isNew = !seen[id];
+      const open = expanded === id;
+      return {
+        date: d[1], title: d[2], body: d[3],
+        isNew, isSeen: !isNew,
+        expanded: open,
+        expandedAttr: open ? 'true' : 'false',
+        cardStyle: 'display: flex; flex-direction: column; border-radius: 12px; ' + (isNew
+          ? 'background: var(--surface-raised); box-shadow: inset 3px 0 0 var(--escrow);'
+          : 'background: transparent; border: 1px solid var(--surface-raised);'),
+        titleStyle: 'font-size: 16px; line-height: 24px; ' + (isNew ? 'font-weight: 600; color: var(--ink);' : 'font-weight: 400; color: var(--ink-muted);'),
+        chevronStyle: 'flex-shrink: 0; margin-top: 4px; color: var(--ink-muted); transform: rotate(' + (open ? '180' : '0') + 'deg);',
+        toggle: () => this.setState({ expanded: open ? null : id, seen: Object.assign({}, this.state.seen, { [id]: true }) })
+      };
+    });
+    return {
+      rootStyle, posts,
+      open: this.state.open,
+      closed: !this.state.open,
+      hasNew: newCount > 0,
+      countLabel: newCount > 0 ? newCount + ' new · ' + data.length + ' posts' : 'All read · ' + data.length + ' posts',
+      withCheckbox: this.props.variant === 'with-dont-show-again',
+      hide: this.state.hide,
+      toggleHide: () => this.setState({ hide: !this.state.hide }),
+      markAll: () => this.setState({ seen: { n1: true, n2: true, n3: true, n4: true } }),
+      close: () => this.setState({ open: false }),
+      reopen: () => this.setState({ open: true })
+    };
+  }
+}
+</script>
+</body>
+</html>

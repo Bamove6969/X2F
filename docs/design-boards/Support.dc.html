@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Support</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600; flex-grow: 1;">{{title}}</h1>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-size: 15px; color: var(--ink);">My tickets</a>
+  </header>
+  <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <sc-if value="{{isNew}}" hint-placeholder-val="{{true}}">
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">A Helper will answer you here. Helpers are experienced traders who know X2F well. They can&#39;t see dispute evidence or decide disputes, so for a problem with a live trade, open a dispute from the trade instead.</p>
+      <section aria-labelledby="sup-cat" style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 id="sup-cat" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">What&#39;s it about?</h2>
+        <div role="radiogroup" aria-labelledby="sup-cat" style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{cats}}" as="c" hint-placeholder-count="8">
+            <button type="button" role="radio" aria-checked="{{c.on}}" onClick="{{c.pick}}" style="{{c.style}}">
+              <span aria-hidden="true" style="{{c.dot}}"></span>
+              <span>{{c.name}}</span>
+            </button>
+          </sc-for>
+        </div>
+      </section>
+      <label for="sup-trade" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Trade code (if it&#39;s about a trade)
+        <input id="sup-trade" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="K7M2-9QXA-4FTR-8WPN" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace;">
+      </label>
+      <label for="sup-q" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Your question
+        <textarea id="sup-q" rows="6" placeholder="Tell us what happened and what you need." style="box-sizing: border-box; width: 100%; min-height: 144px; padding: 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: vertical;"></textarea>
+      </label>
+      <p style="display: flex; gap: 8px; margin: 0; padding: 12px; border-radius: 6px; border: 1px solid var(--caution); font-size: 14px; line-height: 20px;"><span style="color: var(--caution);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span><span>Never send a password, recovery code, authenticator code or private key. Helpers will never ask for them.</span></p>
+    </sc-if>
+    <sc-if value="{{isThread}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Trades and payments</h2>
+          <span style="display: inline-flex; align-items: center; align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 18px; font-weight: 600; color: var(--escrow); align-self: center;">Answered</span>
+        </div>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Opened <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">29 Oct 2026, 09:12 UTC</span> · Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></span>
+      </div>
+      <ol aria-label="Messages" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px;">
+          <li style="align-self: flex-end; max-width: 85%; display: flex; flex-direction: column; gap: 4px;">
+            <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">09:12</span></span>
+            <p style="margin: 0; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">My buyer says they paid, but I can&#39;t see the money in my bank yet. How long should I wait before I release?</p>
+          </li>
+          <li style="align-self: flex-start; max-width: 85%; display: flex; flex-direction: column; gap: 4px;">
+            <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 18px; font-weight: 600; color: var(--escrow);">Helper</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">09:40</span></span>
+            <p style="margin: 0; padding: 12px 14px; border-radius: 12px 12px 12px 4px; background: var(--surface); border: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;">Only release once the money is in your own account, checked in your bank&#39;s app, not from a screenshot. Some bank payments take a few hours. If the payment timer runs out and nothing has arrived, you can open a dispute from the trade page.</p>
+          </li>
+          <li style="align-self: flex-end; max-width: 85%; display: flex; flex-direction: column; gap: 4px;">
+            <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:05</span></span>
+            <p style="margin: 0; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">It just arrived. Thanks! Can I still leave a review after I release?</p>
+          </li>
+          <li style="align-self: flex-start; max-width: 85%; display: flex; flex-direction: column; gap: 4px;">
+            <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-weight: 600; color: var(--ink);">quill_7</span><span style="display: inline-flex; align-items: center; align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 18px; font-weight: 600; color: var(--escrow);">Helper</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10:11</span></span>
+            <p style="margin: 0; padding: 12px 14px; border-radius: 12px 12px 12px 4px; background: var(--surface); border: 1px solid var(--surface-raised); font-size: 15px; line-height: 22px;">Yes. Once you release, the trade page asks for a review. Glad it worked out.</p>
+          </li>
+          <sc-for list="{{sent}}" as="m" hint-placeholder-count="0">
+          <li style="align-self: flex-end; max-width: 85%; display: flex; flex-direction: column; gap: 4px;">
+            <span style="align-self: flex-end; font-size: 13px; line-height: 16px; color: var(--ink-muted);">You · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">just now</span></span>
+            <p style="margin: 0; padding: 12px 14px; border-radius: 12px 12px 4px 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">{{m.text}}</p>
+          </li>
+          </sc-for>
+      </ol>
+      <label for="sup-reply" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Reply
+        <textarea id="sup-reply" rows="3" value="{{draft}}" onChange="{{onDraft}}" placeholder="Write a reply" style="box-sizing: border-box; width: 100%; min-height: 96px; padding: 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: vertical;"></textarea>
+      </label>
+    </sc-if>
+  </main>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <sc-if value="{{isNew}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">Send to Helpers</button></sc-if>
+    <sc-if value="{{isThread}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{reply}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">Send reply</button>
+      <button type="button" onClick="{{newTicket}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer; text-decoration: none;">Ask something new</button>
+    </sc-if>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["new", "thread"], "default": "new"}, "$preview": {"width": 390, "height": 1260}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { cat: 'trades', stage: null, draft: '', sent: [] }; }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1260px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const dot = (on) => 'width: 20px; height: 20px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);');
+    const stage = this.state.stage || (this.props.view === 'thread' ? 'thread' : 'new');
+    const defs = [
+      ['login', 'Logging in and backups'], ['trades', 'Trades and payments'], ['escrow', 'Escrow and wallets'],
+      ['offers', 'My offers'], ['disputes', 'Disputes and appeals'], ['reviews', 'Reviews and reputation'],
+      ['bug', "Something isn't working"], ['else', 'Everything else']
+    ];
+    const cats = defs.map(([id, name]) => ({
+      name, on: this.state.cat === id ? 'true' : 'false', dot: dot(this.state.cat === id),
+      style: 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 52px; padding: 0 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface); color: var(--ink); font-family: inherit; font-size: 16px; text-align: left; cursor: pointer; border: 2px solid ' + (this.state.cat === id ? 'var(--ink);' : 'transparent;'),
+      pick: () => this.setState({ cat: id })
+    }));
+    return {
+      rootStyle, cats,
+      isNew: stage === 'new',
+      isThread: stage === 'thread',
+      send: () => this.setState({ stage: 'thread' }),
+      draft: this.state.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      sent: this.state.sent,
+      reply: () => { const t = this.state.draft.trim(); if (t) this.setState({ sent: this.state.sent.concat([{ text: t }]), draft: '' }); },
+      title: stage === 'thread' ? 'Your ticket' : 'Ask a Helper',
+      newTicket: () => this.setState({ stage: 'new' })
+    };
+  }
+}
+</script>
+</body>
+</html>

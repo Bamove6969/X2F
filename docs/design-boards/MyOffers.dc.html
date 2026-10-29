@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>My offers</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+    </a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1;">
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600;">My offers</h1>
+      <span style="font-size: 13px; color: var(--ink-muted);">{{countLine}}</span>
+    </div>
+  </header>
+
+  <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+    <div style="display: flex; align-items: center; gap: 4px; padding: 6px 16px 6px 4px; border-radius: 12px; border: 1px solid var(--line);">
+      <label style="position: relative; display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; cursor: pointer;">
+        <input id="sel-all" type="checkbox" checked="{{allChecked}}" aria-describedby="all-hint" onChange="{{toggleAll}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); cursor: pointer;">
+        <sc-if value="{{allMixed}}" hint-placeholder-val="{{true}}">
+          <span aria-hidden="true" style="position: absolute; top: 11px; left: 11px; display: flex; width: 22px; height: 22px; box-sizing: border-box; align-items: center; justify-content: center; border-radius: 4px; background: var(--ink); pointer-events: none;"><span style="display: block; width: 12px; height: 2px; border-radius: 1px; background: var(--ground);"></span></span>
+        </sc-if>
+      </label>
+      <label for="sel-all" style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0; min-height: 44px; justify-content: center; cursor: pointer;">
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Select all</span>
+        <span id="all-hint" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{allHint}}</span>
+      </label>
+    </div>
+
+    <sc-for list="{{offers}}" as="o" hint-placeholder-count="5">
+      <article aria-label="{{o.switchLabel}}" style="{{o.cardStyle}}">
+        <label style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; cursor: pointer;">
+          <input type="checkbox" checked="{{o.sel}}" onChange="{{o.toggleSel}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); cursor: pointer;">
+          <span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;">{{o.selLabel}}</span>
+        </label>
+        <div style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0; padding-top: 12px;">
+          <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{o.title}}</span>
+          <span style="font-size: 16px; line-height: 24px; font-weight: 600; {{o.textStyle}}">{{o.methods}}</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; {{o.textStyle}}">{{o.price}}</span> · {{o.priceSub}}</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{o.limits}}</span> per trade</span>
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px;">
+            <span style="{{o.statusStyle}}">{{o.status}}</span>
+            <a href="FlexOffer-Post.dc.html" aria-label="{{o.editLabel}}" style="display: flex; align-items: center; height: 44px; padding: 0 4px; color: var(--ink); font-size: 15px;">Edit</a>
+          </div>
+        </div>
+        <button type="button" role="switch" aria-checked="{{o.onStr}}" aria-label="{{o.switchLabel}}" onClick="{{o.toggle}}" style="display: flex; width: 60px; height: 44px; flex-shrink: 0; padding: 0; align-items: center; justify-content: center; border: 0; background: transparent; cursor: pointer;">
+          <span aria-hidden="true" style="{{o.trackStyle}}"><span style="{{o.thumbStyle}}"></span></span>
+        </button>
+      </article>
+    </sc-for>
+
+    <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 2 offers per side (buying or selling) for each currency.</p>
+  </main>
+
+  <div style="position: sticky; bottom: 0; background: var(--ground);">
+    <sc-if value="{{hasSel}}" hint-placeholder-val="{{true}}">
+      <div role="region" aria-label="Selected offers" style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); background: var(--surface);">
+        <span aria-live="polite" style="flex-grow: 1; font-size: 15px; font-weight: 600;">{{selCount}}</span>
+        <button type="button" onClick="{{clearSel}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink); font: inherit; font-size: 15px; text-decoration: underline; cursor: pointer;">Clear</button>
+        <button type="button" onClick="{{turnOnSel}}" style="height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Turn on</button>
+        <button type="button" onClick="{{turnOffSel}}" style="height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--ink); background: transparent; color: var(--ink); font: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Turn off</button>
+      </div>
+    </sc-if>
+    <footer style="padding: 16px; border-top: 1px solid var(--surface-raised);">
+      <a href="FlexOffer-Post.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Post an offer</a>
+    </footer>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1400}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { on: { o1: true, o2: false, o3: true, o4: true, o5: false }, sel: { o2: true, o5: true } };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 1400px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+
+    const OFFERS = [
+      { id: 'o1', side: 'Selling XMR', cur: 'USD', methods: 'Zelle · PayPal +2.0%', price: '+0.4% to +0.8%', priceSub: '2 tiers · follows the market', limits: '$50 – $2,000' },
+      { id: 'o2', side: 'Selling XMR', cur: 'USD', methods: 'Cash by mail', price: '$335.00 / XMR', priceSub: 'Fixed price', limits: '$100 – $1,000' },
+      { id: 'o3', side: 'Buying XMR', cur: 'USD', methods: 'Zelle · Cash App', price: '−0.5%', priceSub: '1 tier · follows the market', limits: '$50 – $800' },
+      { id: 'o4', side: 'Selling XMR', cur: 'EUR', methods: 'SEPA bank transfer · Revolut +1.0%', price: '+0.6% to +1.2%', priceSub: '3 tiers · follows the market', limits: '€50 – €3,000' },
+      { id: 'o5', side: 'Buying XMR', cur: 'EUR', methods: 'Wise', price: '−0.3%', priceSub: '1 tier · follows the market', limits: '€100 – €1,500' }
+    ];
+    const on = this.state.on;
+    const nOn = OFFERS.filter((o) => on[o.id]).length;
+    const track = (v) => 'position: relative; display: block; width: 52px; height: 32px; box-sizing: border-box; border-radius: 999px; ' + (v ? 'background: var(--ink); border: 1px solid var(--ink);' : 'background: var(--surface-raised); border: 1px solid var(--line);');
+    const thumb = (v) => 'position: absolute; top: 3px; width: 24px; height: 24px; border-radius: 999px; ' + (v ? 'left: 23px; background: var(--ground);' : 'left: 3px; background: var(--ink-muted);');
+    const sel = this.state.sel;
+    const nSel = OFFERS.filter((o) => sel[o.id]).length;
+    const allSel = nSel === OFFERS.length, someSel = nSel > 0 && !allSel;
+    const selectAll = (v) => { const next = {}; if (v) OFFERS.forEach((o) => { next[o.id] = true; }); this.setState({ sel: next }); };
+    const turnSel = (v) => { const next = { ...this.state.on }; OFFERS.forEach((o) => { if (this.state.sel[o.id]) next[o.id] = v; }); this.setState({ on: next, sel: {} }); };
+
+    const offers = OFFERS.map((o) => {
+      const v = !!on[o.id];
+      const ring = sel[o.id] ? ' box-shadow: inset 0 0 0 2px var(--ink);' : '';
+      return {
+        ...o,
+        title: o.side + ' · ' + o.cur,
+        isOn: v, isOff: !v,
+        onStr: v ? 'true' : 'false',
+        switchLabel: o.side + ' in ' + o.cur + ' via ' + o.methods,
+        trackStyle: track(v), thumbStyle: thumb(v),
+        status: v ? 'On · people can see and take it' : 'Off · hidden from everyone',
+        statusStyle: 'font-size: 13px; font-weight: 600; ' + (v ? 'color: var(--ink);' : 'color: var(--ink-muted);'),
+        cardStyle: 'display: flex; align-items: flex-start; gap: 4px; padding: 4px; border-radius: 12px; ' + (v ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);') + ring,
+        rowStyle: 'display: grid; grid-template-columns: 44px 60px minmax(0, 1.8fr) minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1.3fr) 72px; gap: 16px; align-items: center; padding: 12px 16px 12px 8px; border-radius: 12px; ' + (v ? 'background: var(--surface); border: 1px solid transparent;' : 'background: transparent; border: 1px dashed var(--line);') + ring,
+        textStyle: v ? 'color: var(--ink);' : 'color: var(--ink-muted);',
+        editLabel: 'Edit ' + o.side.toLowerCase() + ' in ' + o.cur,
+        sel: !!sel[o.id],
+        selLabel: 'Select ' + o.side.toLowerCase() + ' in ' + o.cur + ' via ' + o.methods,
+        toggleSel: () => this.setState({ sel: { ...this.state.sel, [o.id]: !this.state.sel[o.id] } }),
+        toggle: () => this.setState({ on: { ...this.state.on, [o.id]: !this.state.on[o.id] } })
+      };
+    });
+
+    return {
+      rootStyle, offers,
+      countLine: nOn + ' of ' + OFFERS.length + ' offers on',
+      allChecked: allSel, allMixed: someSel, hasSel: nSel > 0,
+      allHint: nSel === 0 ? 'Pick offers to turn them on or off together.' : (allSel ? 'All ' + OFFERS.length + ' offers selected.' : 'Some selected: ' + nSel + ' of ' + OFFERS.length + '.'),
+      selCount: nSel + ' selected',
+      toggleAll: () => selectAll(!allSel),
+      clearSel: () => this.setState({ sel: {} }),
+      turnOnSel: () => turnSel(true),
+      turnOffSel: () => turnSel(false)
+    };
+  }
+}
+</script>
+</body>
+</html>

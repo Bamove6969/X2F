@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Feedback</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600;">Feedback</span>
+  </header>
+  <sc-if value="{{showForm}}" hint-placeholder-val="{{true}}">
+    <main aria-labelledby="fb-title" style="flex-grow: 1; display: flex; flex-direction: column; gap: 24px; padding: 24px 16px 16px;">
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <h1 id="fb-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Tell us what you think</h1>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+      </section>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label for="fb-text" style="font-size: 15px; font-weight: 600;">Your message</label>
+        <textarea id="fb-text" rows="9" maxlength="2000" value="{{text}}" onChange="{{onText}}" placeholder="Write anything you like" style="box-sizing: border-box; width: 100%; padding: 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+        <span style="align-self: flex-end; font-size: 13px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{count}}</span> of 2000 characters</span>
+      </div>
+      <label for="fb-anon" style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; background: var(--surface); cursor: pointer;">
+        <input id="fb-anon" type="checkbox" checked="{{anon}}" onChange="{{toggleAnon}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+        <span style="display: flex; flex-direction: column; gap: 2px;">
+          <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Send anonymously</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{anonHint}}</span>
+        </span>
+      </label>
+    </main>
+    <footer style="padding: 16px; border-top: 1px solid var(--surface-raised);">
+      <button type="button" disabled="{{empty}}" onClick="{{send}}" style="{{sendStyle}}">Send</button>
+    </footer>
+  </sc-if>
+  <sc-if value="{{showThanks}}" hint-placeholder-val="{{false}}">
+    <main style="flex-grow: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; padding: 32px 24px; text-align: center;" aria-live="polite">
+      <span style="display: flex; width: 64px; height: 64px; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid var(--escrow); color: var(--escrow);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Thank you!</h1>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">Each and every comment is appreciated and reviewed to help make this community a better place for us all.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{sentAs}}</p>
+    </main>
+    <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Done</a>
+      <button type="button" onClick="{{again}}" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer; justify-content: center;">Write another</button>
+    </footer>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["form", "sent"], "default": "form"}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { sent: props.view === 'sent', text: '', anon: false }; }
+  componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ sent: this.props.view === 'sent' }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const { sent, text, anon } = this.state;
+    const empty = text.trim().length === 0;
+    const sendBase = "display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ";
+    return {
+      rootStyle,
+      showForm: !sent,
+      showThanks: sent,
+      text,
+      anon,
+      empty,
+      count: String(text.length),
+      anonHint: anon ? "Your username isn't attached, so we can't follow up with you." : 'Sent with your username, mira.k, so we can follow up if needed.',
+      sentAs: anon ? 'Sent anonymously.' : 'Sent as mira.k.',
+      sendStyle: sendBase + (empty ? 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;'),
+      onText: (e) => this.setState({ text: e.target.value }),
+      toggleAnon: () => this.setState({ anon: !anon }),
+      send: () => { if (!empty) this.setState({ sent: true }); },
+      again: () => this.setState({ sent: false, text: '' })
+    };
+  }
+}
+</script>
+</body>
+</html>

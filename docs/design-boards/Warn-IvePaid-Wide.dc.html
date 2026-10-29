@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Before you pay (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 8px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 16px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
+  </nav>
+  <main aria-hidden="{{bgHidden}}" style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 16px; width: 720px;">
+      <div style="display: flex; flex-direction: column; flex-grow: 1;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Buying from satoshi_ghost</h1>
+        <span style="font-size: 14px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+      </div>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Chat</a>
+    </div>
+    <div style="width: 720px; display: flex; flex-direction: column; gap: 16px;">
+      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>Securing escrow</span>
+      <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-muted);"><span>Escrow confirmations</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3 of 10</span> · about 14 min</span></div>
+          <span role="progressbar" aria-label="Escrow confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="3" style="display: block; height: 6px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="display: block; width: 30%; height: 100%; background: var(--caution);"></span></span>
+        </div>
+      <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
+      <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50 <span style="font-size: 16px; color: var(--ink-muted);">USD</span></span>
+      <span style="font-size: 14px; color: var(--ink-muted);">for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000 XMR</span></span>
+      <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Zelle to</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">[SELLER ZELLE ID]</span></div>
+      <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Memo</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></div>
+    </section>
+      <sc-if value="{{paid}}" hint-placeholder-val="{{false}}">
+      <p role="status" style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg>Marked as paid. satoshi_ghost has been told.</p>
+      <button type="button" onClick="{{reset}}" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Show the warning again</button>
+    </sc-if>
+      <div style="display: flex; align-items: center; gap: 16px;">
+        <sc-if value="{{showPayBtn}}" hint-placeholder-val="{{true}}">
+          <button type="button" onClick="{{openWarn}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I've paid</button>
+        </sc-if>
+        <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Cancel trade</button>
+        <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer; margin-left: auto;">Open dispute</button>
+      </div>
+    </div>
+  </main>
+  <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+      <section role="alertdialog" aria-modal="true" aria-labelledby="wipw-title" style="width: 560px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>Before you pay</span>
+        <h2 id="wipw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Wait until the XMR is fully in escrow</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">We strongly recommend that you do not send payment until all confirmations are complete and you've received confirmation that the XMR is fully in escrow.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">The way our system is designed, we can help you get back the XMR you were trading for if anyone tries to scam you, but recovering a payment you've sent is much harder and sometimes impossible.</p>
+        <div style="padding: 12px; border-radius: 12px; background: var(--surface-raised);">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-muted);"><span>Escrow confirmations</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">3 of 10</span> · about 14 min</span></div>
+          <span role="progressbar" aria-label="Escrow confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="3" style="display: block; height: 6px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="display: block; width: 30%; height: 100%; background: var(--caution);"></span></span>
+        </div>
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+          <button type="button" onClick="{{markPaid}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I've already paid</button>
+          <button type="button" onClick="{{wait}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I'll wait</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 1280, "height": 800}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { open: true, paid: false }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    const { open, paid } = this.state;
+    return {
+      rootStyle,
+      open,
+      bgHidden: open ? 'true' : 'false',
+      showPayBtn: !paid,
+      paid,
+      openWarn: () => this.setState({ open: true }),
+      wait: () => this.setState({ open: false }),
+      markPaid: () => this.setState({ open: false, paid: true }),
+      reset: () => this.setState({ open: true, paid: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

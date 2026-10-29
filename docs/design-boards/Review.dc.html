@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Rate the trade</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
+</style>
+</helmet>
+<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
+  <section aria-label="Trade complete" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 16px 16px; text-align: center;">
+    <div aria-hidden="true" style="display: flex; gap: 8px;">
+      <span style="width: 16px; height: 16px; border-radius: 999px; background: #4cc3d9;"></span>
+      <span style="width: 16px; height: 16px; border-radius: 999px; background: #4cc3d9;"></span>
+      <span style="width: 16px; height: 16px; border-radius: 999px; border: 2px solid #4cc3d9; box-sizing: border-box;"></span>
+    </div>
+    <span style="font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #4cc3d9;">Released</span>
+    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">1.237500 XMR is yours</h1>
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">Released by you and satoshi_ghost. It's on its way to your external wallet ending <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: #eef1f5;">…k3Fz</span>.</p>
+    <dl aria-label="What you receive" style="margin: 0; width: 100%; max-width: 300px; display: flex; flex-direction: column; gap: 6px; font-size: 14px;">
+      <div style="display: flex; justify-content: space-between;"><dt style="color: #9aa4b2;">Trade amount</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000 XMR</dd></div>
+      <div style="display: flex; justify-content: space-between;"><dt style="color: #9aa4b2;">X2F fee (1%, your ad)</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">−0.012500 XMR</dd></div>
+      <div style="height: 1px; background: #20262f;"></div>
+      <div style="display: flex; justify-content: space-between; font-weight: 600;"><dt>You receive</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">1.237500 XMR</dd></div>
+    </dl>
+    <div style="display: flex; flex-direction: column; gap: 6px; width: 100%; max-width: 300px;">
+      <div style="display: flex; justify-content: space-between; font-size: 13px; color: #9aa4b2;"><span>Confirmations</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: #eef1f5;">1 of 10</span></div>
+      <div role="progressbar" aria-label="Confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="1" style="height: 6px; border-radius: 999px; background: #20262f; overflow: hidden;"><span style="display: block; width: 10%; height: 100%; background: #4cc3d9;"></span></div>
+      <a href="https://xmrchain.net/" style="align-self: center; display: inline-flex; align-items: center; height: 44px; gap: 6px; font-size: 14px;">View on the Monero blockchain
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
+      </a>
+      <span style="font-size: 12px; line-height: 16px; color: #9aa4b2;">Opens a public block explorer. It shows the transaction and its confirmations, never the amount or who received it.</span>
+    </div>
+  </section>
+
+  <sc-if value="{{rating}}" hint-placeholder-val="{{true}}">
+  <section aria-label="Rate satoshi_ghost" style="margin: 0 16px; display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: 12px; background: #171b22; flex-grow: 1;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How was trading with satoshi_ghost?</h2>
+      <span style="font-size: 13px; color: #9aa4b2;">Shown to them only after they rate you too.</span>
+    </div>
+    <div role="radiogroup" aria-label="Stars" style="display: flex; gap: 4px;">
+      <sc-for list="{{stars}}" as="s" hint-placeholder-count="5">
+        <button type="button" aria-label="{{s.label}}" onClick="{{s.pick}}" style="width: 52px; height: 52px; border: 0; background: transparent; padding: 4px; cursor: pointer;">
+          <svg width="40" height="40" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z" fill="{{s.fill}}" stroke="#f2c14e" stroke-width="1.5" stroke-linejoin="round"/></svg>
+        </button>
+      </sc-for>
+    </div>
+    <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+      <sc-for list="{{tags}}" as="t" hint-placeholder-count="8">
+        <button type="button" aria-pressed="{{t.on}}" onClick="{{t.toggle}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -2px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{t.style}}">{{t.label}}</span></button>
+      </sc-for>
+    </div>
+    <label for="note" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #9aa4b2;">
+      One-line note (optional)
+      <input id="note" type="text" maxlength="120" placeholder="Smooth trade, would do again" style="height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 16px;">
+    </label>
+  </section>
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px;">
+    <button type="button" onClick="{{submit}}" style="height: 56px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Submit rating</button>
+    <button type="button" onClick="{{submit}}" style="height: 44px; border: 0; background: transparent; color: #9aa4b2; font-family: inherit; font-size: 15px; cursor: pointer;">Neutral, skip details</button>
+  </footer>
+  </sc-if>
+
+  <sc-if value="{{thanks}}" hint-placeholder-val="{{false}}">
+  <section aria-label="Rating saved" style="margin: 0 16px; display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid #4cc3d9;">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4cc3d9" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg>
+    <p style="margin: 0; font-size: 15px; line-height: 22px;">Rating saved. satoshi_ghost sees it once they've rated you too.</p>
+  </section>
+
+  <section aria-label="How's X2F doing?" style="margin: 16px 16px 0; display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: 12px; background: #171b22; flex-grow: 1;">
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How's X2F doing?</h2>
+      <span style="font-size: 14px; line-height: 20px; color: #9aa4b2;">Optional. Your feedback helps shape this community.</span>
+    </div>
+    <div role="radiogroup" aria-label="How was X2F this time" style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+      <sc-for list="{{moods}}" as="m" hint-placeholder-count="3">
+        <button type="button" aria-pressed="{{m.on}}" onClick="{{m.pick}}" style="{{m.style}}">{{m.label}}</button>
+      </sc-for>
+    </div>
+    <label for="x2f-note" style="display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: #9aa4b2;">
+      Anything we could do better?
+      <textarea id="x2f-note" rows="3" placeholder="Ideas, bugs, payment methods you want…" style="padding: 10px 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 16px; resize: none;"></textarea>
+    </label>
+    <span style="font-size: 12px; line-height: 16px; color: #9aa4b2;">Sent without your username or trade details.</span>
+  </section>
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px;">
+    <button type="button" style="height: 56px; border: 1px solid #6b7584; border-radius: 12px; background: transparent; color: #eef1f5; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">Send feedback</button>
+    <button type="button" style="height: 44px; border: 0; background: transparent; color: #9aa4b2; font-family: inherit; font-size: 15px; cursor: pointer;">Not now</button>
+  </footer>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { rating: 5, picked: { 'Fast release': true, 'Clear instructions': true }, submitted: false, mood: null };
+  }
+  renderVals() {
+    const mood = this.state.mood;
+    const moodBase = 'height: 48px; border-radius: 12px; font-family: inherit; font-size: 15px; cursor: pointer; ';
+    const moods = ['Great', 'OK', 'Needs work'].map((label) => ({
+      label,
+      on: mood === label ? 'true' : 'false',
+      style: mood === label
+        ? moodBase + 'border: 1px solid #eef1f5; background: #20262f; color: #eef1f5; font-weight: 600;'
+        : moodBase + 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;',
+      pick: () => this.setState({ mood: label })
+    }));
+    const flow = { rating: !this.state.submitted, thanks: this.state.submitted, moods, submit: () => this.setState({ submitted: true }) };
+    const rating = this.state.rating;
+    const stars = [1, 2, 3, 4, 5].map((n) => ({
+      label: n + (n === 1 ? ' star' : ' stars'),
+      fill: n <= rating ? '#f2c14e' : 'none',
+      pick: () => this.setState({ rating: n })
+    }));
+    const good = ['Fast release', 'Friendly', 'Clear instructions', 'Would trade again'];
+    const bad = ['Slow', 'Went quiet', 'Asked for ID', 'Payment didn’t match'];
+    const base = 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 40px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; ';
+    const tags = good.concat(bad).map((label) => {
+      const on = !!this.state.picked[label];
+      const isBad = bad.indexOf(label) >= 0;
+      const style = on
+        ? base + 'border: 1px solid ' + (isBad ? '#ff6b8a' : '#4cc3d9') + '; background: #20262f; color: ' + (isBad ? '#ff6b8a' : '#4cc3d9') + '; font-weight: 600;'
+        : base + 'border: 1px solid #6b7584; background: transparent; color: #eef1f5;';
+      return {
+        label, on: on ? 'true' : 'false', style,
+        toggle: () => this.setState({ picked: Object.assign({}, this.state.picked, { [label]: !on }) })
+      };
+    });
+    return Object.assign({ stars, tags }, flow);
+  }
+}
+</script>
+</body>
+</html>

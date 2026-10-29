@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Log in (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; padding: 16px 32px; border-bottom: 1px solid var(--surface-raised);">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+  </header>
+  <main style="flex-grow: 1; display: flex; justify-content: center; align-items: flex-start; padding: 48px 32px;">
+    <div style="width: 520px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 20px;">
+    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Log in</h1>
+    <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; border: 1px solid var(--escrow);">
+        <span style="display: flex; align-items: center; gap: 8px; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg>You&#39;re logged in</span>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Welcome back, nightowl_44.</p>
+      </div>
+    </sc-if>
+    <sc-if value="{{askName}}" hint-placeholder-val="{{false}}">
+      <label for="li-name" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Username
+        <input id="li-name" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" value="{{uname}}" onChange="{{onName}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+      </label>
+    </sc-if>
+    <sc-if value="{{showMethod}}" hint-placeholder-val="{{true}}">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 4px 4px 16px; border-radius: 12px; background: var(--surface-raised);">
+        <span style="font-size: 15px; line-height: 22px; color: var(--ink-muted);">Logging in as <span style="font-weight: 600; color: var(--ink);">{{uname}}</span></span>
+        <button type="button" onClick="{{change}}" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; text-decoration: underline; cursor: pointer; padding: 0 12px;">Change</button>
+      </div>
+      <sc-if value="{{isPgp}}" hint-placeholder-val="{{true}}">
+        <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; line-height: 22px;">
+          <li>Copy the encrypted message below.</li>
+          <li>Decrypt it in your PGP app (Kleopatra, GPG Suite or OpenKeychain).</li>
+          <li>Paste the code from inside the message.</li>
+        </ol>
+        <section aria-label="Encrypted message" style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Expires in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4:12</span></span>
+            <button type="button" onClick="{{copy}}" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 16px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; cursor: pointer;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a1 1 0 011-1h10"/></svg>{{copyLabel}}</button>
+          </div>
+          <pre style="margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 17px; color: var(--ink-muted); white-space: pre-wrap; word-break: break-all;">-----BEGIN PGP MESSAGE-----
+
+hQIMA7c2x9mPq0SAAQ/+Jt4vJ8u2Lk0aQz
+Wm3nR8yXp1…
+-----END PGP MESSAGE-----</pre>
+        </section>
+        <label for="li-code" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+          Code from the message
+          <input id="li-code" type="text" autocomplete="off" spellcheck="false" placeholder="Paste the code" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace;">
+        </label>
+        <p style="margin: 0; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--caution); font-size: 13px; line-height: 18px;">Check before you paste: your PGP app should show a good signature from the official X2F key, and the message should name X2F and today&#39;s date and time. If not, stop. Someone may be trying to phish you.</p>
+        <button type="button" style="display: inline-flex; align-items: center; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; text-decoration: underline; cursor: pointer; align-self: flex-start;">Get a new message</button>
+      </sc-if>
+      <sc-if value="{{isPasskey}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 16px; border-radius: 12px; background: var(--surface-raised); text-align: center;">
+          <span style="color: var(--ink);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 10a5 5 0 0110 0v3"/><path d="M12 10v5a5 5 0 01-2 4"/><path d="M4 12a8 8 0 0116 0"/><path d="M9 14c0 2-1 4-2 5"/><path d="M15 13c0 3-1 6-3 8"/></svg></span>
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Use your passkey</h2>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your phone or computer will ask for your face, fingerprint or PIN.</p>
+        </div>
+      </sc-if>
+      <sc-if value="{{isKey}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 24px 16px; border-radius: 12px; background: var(--surface-raised); text-align: center;">
+          <span style="color: var(--ink);"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="8" y="2" width="8" height="14" rx="2"/><path d="M10 16v4a2 2 0 004 0v-4"/><circle cx="12" cy="7" r="1.5"/></svg></span>
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Have your security key ready</h2>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">When asked, plug it in or hold it to the back of your phone, then touch it.</p>
+        </div>
+      </sc-if>
+      <sc-if value="{{isPwStep}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; flex-direction: column; gap: 6px;">
+          <label for="li-pw" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Password</label>
+          <div style="position: relative; display: flex;">
+            <input id="li-pw" type="{{pwType}}" autocomplete="current-password" value="{{pw}}" onChange="{{onPw}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; padding-right: 52px;">
+            <button type="button" onClick="{{togglePw}}" aria-label="{{pwToggleLabel}}" aria-pressed="{{pwShown}}" style="position: absolute; right: 2px; top: 2px; display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; padding: 0; border: 0; background: transparent; color: var(--ink-muted); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </div>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Forgot it? Log in with a backup instead. X2F can&#39;t reset passwords, because we don&#39;t know who you are.</p>
+      </sc-if>
+      <sc-if value="{{isCodeStep}}" hint-placeholder-val="{{false}}">
+        <label for="li-totp" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+          <span style="font-size: 16px; line-height: 24px; color: var(--ink);">Enter the 6-digit code from your authenticator app</span>
+          <input id="li-totp" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="000000" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace; height: 56px; font-size: 24px; letter-spacing: 0.3em;">
+        </label>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The code changes every 30 seconds.</p>
+      </sc-if>
+    </sc-if>
+    <sc-if value="{{showCta}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{go}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none; height: 48px; font-size: 16px;">{{cta}}</button></sc-if>
+    <div style="display: flex; flex-direction: column; gap: 4px;">
+      <a href="Login-Backup-Wide.dc.html" style="display: inline-flex; align-items: center; min-height: 44px; font-size: 15px; color: var(--monero-ink);">Can&#39;t log in? Use a backup</a>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">No account yet? Tap Trade or post an offer, and X2F sets one up on the way.</p>
+    </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "method": {"editor": "enum", "options": ["pgp", "passkey", "security-key", "password"], "default": "pgp"}, "$preview": {"width": 1280, "height": 1100}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { askName: false, uname: 'nightowl_44', pwStep: 'pw', pw: '', pwShown: false, copied: false, done: false }; }
+  componentDidUpdate(prev) { if (prev.method !== this.props.method) this.setState({ pwStep: 'pw', done: false, askName: false }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 1100px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+    const m = this.props.method || 'pgp';
+    const ctas = { pgp: 'Log in', passkey: 'Log in with passkey', 'security-key': 'Log in with security key', password: 'Log in' };
+    const showMethod = !s.askName && !s.done;
+    return {
+      rootStyle,
+      done: s.done,
+      askName: s.askName && !s.done,
+      showMethod,
+      showCta: !s.done,
+      uname: s.uname,
+      onName: (e) => this.setState({ uname: e.target.value }),
+      change: () => this.setState({ askName: true }),
+      isPgp: m === 'pgp', isPasskey: m === 'passkey', isKey: m === 'security-key',
+      isPwStep: m === 'password' && s.pwStep === 'pw',
+      isCodeStep: m === 'password' && s.pwStep === 'code',
+      pw: s.pw, onPw: (e) => this.setState({ pw: e.target.value }),
+      pwType: s.pwShown ? 'text' : 'password',
+      pwShown: s.pwShown ? 'true' : 'false',
+      pwToggleLabel: s.pwShown ? 'Hide password' : 'Show password',
+      togglePw: () => this.setState({ pwShown: !s.pwShown }),
+      copyLabel: s.copied ? 'Copied' : 'Copy message',
+      copy: () => this.setState({ copied: true }),
+      cta: s.askName ? 'Continue' : ctas[m],
+      go: () => {
+        if (s.askName) this.setState({ askName: false });
+        else if (m === 'password' && s.pwStep === 'pw') this.setState({ pwStep: 'code' });
+        else this.setState({ done: true });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

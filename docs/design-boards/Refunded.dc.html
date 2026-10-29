@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Refunded</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+textarea::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1;">
+      <span style="font-size: 16px; font-weight: 600;">Buying from satoshi_ghost</span>
+      <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+    </div>
+  </header>
+  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+    <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 14l-5-5 5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>{{chip}}</span>
+    <section style="display: flex; flex-direction: column; gap: 8px;">
+      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{headline}}</h1>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{lead}}</p>
+    </section>
+    <section aria-label="What happened" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
+      <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"><h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happened</h2><span style="font-size: 14px; color: var(--ink-muted);">29 Oct 2026</span></div>
+      <dl style="margin: 0; display: flex; flex-direction: column; gap: 8px;">
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="3">
+          <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{r.k}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">{{r.v}}</dd></div>
+        </sc-for>
+        <div style="height: 1px; background: var(--surface-raised);"></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Trade amount</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">1.250000 XMR · $412.50</dd></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Charged to you</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">Nothing</dd></div>
+      </dl>
+    </section>
+    <sc-if value="{{showDispute}}" hint-placeholder-val="{{true}}">
+      <section aria-labelledby="rf-dispute" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+        <h2 id="rf-dispute" style="margin: 0; display: flex; gap: 8px; align-items: center; font-size: 16px; line-height: 22px; font-weight: 600;"><span style="display: flex; color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>{{disputeTitle}}</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator makes them send you the 1.250000 XMR as agreed.</p>
+        <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer; align-self: flex-start;">Open dispute</button>
+      </section>
+    </sc-if>
+    <sc-if value="{{showRuling}}" hint-placeholder-val="{{false}}">
+      <section aria-labelledby="rf-reason" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+        <h2 id="rf-reason" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">The moderator's reason</h2>
+        <p style="margin: 0; font-size: 15px; line-height: 22px;">satoshi_ghost's Zelle activity shows no payment for this trade. Your screenshot shows a payment to a different Zelle ID.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Don't agree? You can request an appeal until <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1 Nov 2026, 14:05 UTC</span>.</p>
+        <a href="Appeal-Notice.dc.html" style="display: inline-flex; align-items: center; height: 44px; align-self: flex-start; color: var(--monero-ink); font-size: 15px;">Read the ruling and appeal</a>
+      </section>
+    </sc-if>
+  </main>
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Find another offer</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer; justify-content: center;">Back to my trades</a>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["buyer-cancelled", "time-ran-out", "moderator"], "default": "buyer-cancelled"}, "$preview": {"width": 390, "height": 900}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = {}; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 900px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const v = ['buyer-cancelled', 'time-ran-out', 'moderator'].indexOf(this.props.variant) >= 0 ? this.props.variant : 'buyer-cancelled';
+    const C = {
+      'buyer-cancelled': {
+        chip: 'Cancelled together',
+        headline: 'You both cancelled this trade',
+        lead: 'You asked to cancel and satoshi_ghost agreed. All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. Nothing was charged to you.',
+        rows: [
+          { k: 'You asked to cancel', v: '10:38 UTC' },
+          { k: 'satoshi_ghost agreed', v: '10:41 UTC' },
+          { k: 'Refund sent to satoshi_ghost', v: '10:42 UTC' }
+        ]
+      },
+      'time-ran-out': {
+        chip: 'Payment time ran out',
+        headline: 'Payment time ran out',
+        lead: "You didn't tap I've paid within the 90 minutes, so satoshi_ghost cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to satoshi_ghost.",
+        rows: [
+          { k: 'Time to pay ended', v: '11:58 UTC' },
+          { k: 'satoshi_ghost cancelled', v: '12:03 UTC' },
+          { k: 'Your final alert ended', v: '12:18 UTC' },
+          { k: 'Refund sent to satoshi_ghost', v: '12:18 UTC' }
+        ]
+      },
+      'moderator': {
+        chip: 'Dispute decided',
+        headline: 'A moderator decided the dispute',
+        lead: 'Moderator sarah.v ruled for satoshi_ghost. The 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost.',
+        rows: [
+          { k: 'You opened a dispute', v: '09:40 UTC' },
+          { k: 'Moderator ruled', v: '14:05 UTC' },
+          { k: 'Refund sent to satoshi_ghost', v: '14:06 UTC' }
+        ]
+      }
+    }[v];
+    return {
+      rootStyle,
+      chip: C.chip,
+      headline: C.headline,
+      lead: C.lead,
+      rows: C.rows,
+      showDispute: v !== 'moderator',
+      disputeTitle: v === 'buyer-cancelled' ? 'Did you pay before you cancelled?' : 'Did you send the money anyway?',
+      showRuling: v === 'moderator'
+    };
+  }
+}
+</script>
+</body>
+</html>
