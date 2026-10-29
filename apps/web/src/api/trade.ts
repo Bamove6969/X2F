@@ -103,6 +103,8 @@ export interface TradeView {
   closedAt: string | null;
   /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
   cancelConfirmedAt: string | null;
+  /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
+  cancelConfirmableAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
 }

@@ -9,3 +9,7 @@ alter table trades add column fund_started_at timestamptz;
 -- to the seller at once, and the trade is officially cancelled only when the seller taps "Confirm
 -- cancel", which the API accepts once the refund tx has 10 confirmations on X2F's own node.
 alter table trades add column cancel_confirmed_at timestamptz;
+-- When the seller's Confirm cancel became available (the server first saw the refund with all its
+-- confirmations); if the seller never taps, the trade closes as cancelled 48 hours later (owner
+-- 2026-10-29), frozen by maintenance like every other trade timer.
+alter table trades add column cancel_confirmable_at timestamptz;

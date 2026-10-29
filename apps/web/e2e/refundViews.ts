@@ -66,6 +66,7 @@ export function sellerView(over: Partial<RefundView> = {}): RefundView {
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,
+    cancelConfirmableAt: null,
     nextDeadline: iso(-5),
     serverNow: SERVER_NOW,
     ...over,

@@ -4,6 +4,7 @@
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { watchCancelReturns } from '../src/trades/cancelReturn.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -102,10 +103,31 @@ describe("the seller's Confirm cancel after a buyer's cancel (owner 2026-10-29)"
     expect((ok.json() as { cancelConfirmedAt: string | null }).cancelConfirmedAt).not.toBeNull();
     const { rows } = await deps.db.query<{ event: unknown }>('select event from trade_events where code = $1 order by id desc limit 1', [t.code]);
     expect(rows[0]!.event).toEqual({ type: 'confirm-cancel', returnConfirmations: 10 });
+    // The full count also recorded when the button became available.
+    expect((await loadTrade(deps.db, t.code))!.cancelConfirmableAt).toBeInstanceOf(Date);
     expect(errorOf(await seller.browser.post(events(t.code), { type: 'confirm-cancel' }))).toBe('wrong-state');
     // A cancel itself can't be disputed (owner 2026-10-29, question 4).
     const d = await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' });
     expect(d.statusCode).toBe(409);
     expect(errorOf(d)).toBe('wrong-state');
+  });
+});
+
+describe('the 48-hour auto-close starts when the refund is fully confirmed (owner 2026-10-29)', () => {
+  it('watchCancelReturns records the moment once per trade, only with all confirmations', async () => {
+    const { buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(events(t.code), { type: 'buyer-cancel' });
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'buyer-cancel', txHash: 'fa'.repeat(32) }, 'system');
+    const lookup = async (hash: string) => (hash === 'fa'.repeat(32) ? nodeCount : null);
+    nodeCount = 9;
+    expect(await watchCancelReturns(deps, lookup)).toBe(0);
+    expect((await loadTrade(deps.db, t.code))!.cancelConfirmableAt).toBeNull();
+    nodeCount = 10;
+    expect(await watchCancelReturns(deps, lookup)).toBe(1);
+    const after = await loadTrade(deps.db, t.code);
+    expect(after!.cancelConfirmableAt).toEqual(deps.clock());
+    expect(await watchCancelReturns(deps, lookup)).toBe(0);
+    const view = await buyer.browser.get(`/v1/trades/${t.code}`);
+    expect((view.json() as { cancelConfirmableAt: string | null }).cancelConfirmableAt).toBe(deps.clock().toISOString());
   });
 });

@@ -4,6 +4,7 @@ import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type T
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
+import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
@@ -143,6 +144,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         req.log.warn({ err }, 'confirmations lookup failed');
       }
       e.returnConfirmations = n ?? 0;
+      // The first full count also starts the 48 hours, if the watcher has not yet (cancelReturn.ts).
+      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n);
     }
     let next: Trade;
     try {
@@ -188,6 +191,8 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
       // A fixed line: the logger reduces the error to its class and code (never the hash or the node's URL).
       req.log.warn({ err }, 'confirmations lookup failed');
     }
+    // A buyer's cancel: the first full count makes the seller's Confirm cancel available (owner 2026-10-29).
+    await recordReturnConfirmed(req.server.deps, row, confirmations);
     const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
     if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);
     return out;

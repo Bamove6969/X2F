@@ -15,12 +15,12 @@ export const TIMERS = {
 export const UNLOCK_CONFIRMATIONS = 10;
 
 /**
- * OPEN (owner, 2026-10-29): what happens when the seller never taps "Confirm cancel" after a
- * buyer's cancel. `null` = nothing closes it by itself; the trade stays "Cancelling" (the coins are
- * already back with the seller). When the owner answers, set the hours here and add the timer
- * (tripwire NEEDS_OWNER_CONFIRM_CANCEL_TIMEOUT, packages/trade/test/machine.test.ts).
+ * Owner 2026-10-29: when the seller never taps "Confirm cancel" after a buyer's cancel, the trade
+ * stays in their active trades ("Your input is needed to cancel this trade.") and closes as
+ * cancelled this many hours after the button became available (`cancelConfirmableAt`). Frozen by
+ * maintenance like every other trade timer.
  */
-export const SELLER_CONFIRM_CANCEL_TIMEOUT_H: number | null = null;
+export const SELLER_CONFIRM_CANCEL_TIMEOUT_H = 48;
 
 const MIN_MS = 60_000;
 

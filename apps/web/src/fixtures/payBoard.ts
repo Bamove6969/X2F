@@ -67,6 +67,7 @@ export const PAY_SECURING: TradeView = {
   pausedAt: null,
   closedAt: null,
   cancelConfirmedAt: null,
+  cancelConfirmableAt: null,
   nextDeadline: null,
   serverNow: PAY_NOW,
 };

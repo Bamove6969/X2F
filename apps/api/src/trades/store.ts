@@ -75,6 +75,8 @@ export interface TradeRow {
   closed_at: Date | null;
   /** Migration 116: the seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29). */
   cancel_confirmed_at: Date | null;
+  /** Migration 116: when the seller's Confirm cancel became available (the refund fully confirmed). */
+  cancel_confirmable_at: Date | null;
   buyer_payout: string | null;
   seller_refund: string | null;
   seller_wallet_app: string | null;
@@ -132,6 +134,7 @@ export function rowToTrade(r: TradeRow): Trade {
     dispute: r.dispute_by !== null && r.dispute_at !== null ? { by: r.dispute_by, at: r.dispute_at } : null,
     closedAt: r.closed_at,
     cancelConfirmedAt: r.cancel_confirmed_at,
+    cancelConfirmableAt: r.cancel_confirmable_at,
   };
 }
 
@@ -172,6 +175,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['dispute_at', t.dispute?.at ?? null],
     ['closed_at', t.closedAt],
     ['cancel_confirmed_at', t.cancelConfirmedAt],
+    ['cancel_confirmable_at', t.cancelConfirmableAt],
   ];
 }
 
@@ -238,6 +242,7 @@ const STORED = {
   'fund-started': {},
   'walk-away': {},
   'confirm-cancel': { returnConfirmations: 'value' },
+  'return-confirmed': { confirmations: 'value' },
   'release-started': {},
   settled: { kind: 'value', txHash: 'value' },
   'open-dispute': {},

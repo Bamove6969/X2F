@@ -478,12 +478,44 @@ describe("the seller's Confirm cancel after a buyer's cancel (owner 2026-10-29, 
     expect(() => apply(refunded(), confirm(1.5), 'seller', at(80))).toThrow(RangeError);
   });
 
-  test('NEEDS_OWNER_CONFIRM_CANCEL_TIMEOUT: nothing closes an unconfirmed cancel by itself until the owner says when', () => {
-    // OPEN with the owner: what happens if the seller never taps Confirm cancel. When the answer
-    // comes, set SELLER_CONFIRM_CANCEL_TIMEOUT_H (timers.ts), add the timer (tick) and its tests,
-    // and delete this check.
-    expect(SELLER_CONFIRM_CANCEL_TIMEOUT_H).toBeNull();
-    expect(apply(refunded(), { type: 'tick' }, 'system', at(100_000)).cancelConfirmedAt).toBeNull();
+  test('return-confirmed (system) makes Confirm cancel available once; 48 h later the trade closes as cancelled by itself', () => {
+    expect(SELLER_CONFIRM_CANCEL_TIMEOUT_H).toBe(48);
+    const r = refunded(); // settled at minute 61
+    expect(nextDeadline(r)).toBeNull();
+    expect(rule(() => apply(r, { type: 'return-confirmed', confirmations: 10 }, 'seller', at(70)))).toBe('wrong-party');
+    expect(rule(() => apply(r, { type: 'return-confirmed', confirmations: 9 }, 'system', at(70)))).toBe('too-early');
+    const c = apply(r, { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
+    expect(c.cancelConfirmableAt).toEqual(at(80));
+    expect(rule(() => apply(c, { type: 'return-confirmed', confirmations: 11 }, 'system', at(81)))).toBe('wrong-state');
+    const due = at(80 + 48 * 60);
+    expect(nextDeadline(c)).toEqual(due);
+    expect(apply(c, { type: 'tick' }, 'system', due)).toBe(c);
+    const closed = apply(c, { type: 'tick' }, 'system', at(80 + 48 * 60, 1));
+    expect(closed.cancelConfirmedAt).toEqual(at(80 + 48 * 60, 1));
+    expect(closed.state).toBe('refunded');
+    expect(nextDeadline(closed)).toBeNull();
+    expect(rule(() => apply(closed, confirm(10), 'seller', at(80 + 48 * 60 + 1)))).toBe('wrong-state');
+  });
+
+  test('the seller confirming first stops the auto-close', () => {
+    const c = apply(refunded(), { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
+    const done = apply(c, confirm(10), 'seller', at(90));
+    expect(nextDeadline(done)).toBeNull();
+    expect(apply(done, { type: 'tick' }, 'system', at(80 + 49 * 60)).cancelConfirmedAt).toEqual(at(90));
+  });
+
+  test('maintenance freezes the 48 hours like every other trade timer', () => {
+    const c = apply(refunded(), { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
+    const p = apply(c, { type: 'pause' }, 'system', at(100));
+    expect(nextDeadline(p)).toBeNull();
+    expect(apply(p, { type: 'tick' }, 'system', at(80 + 50 * 60)).cancelConfirmedAt).toBeNull();
+    const resumed = apply(p, { type: 'resume' }, 'system', at(160)); // paused 60 min
+    expect(resumed.cancelConfirmableAt).toEqual(at(140));
+    expect(nextDeadline(resumed)).toEqual(at(140 + 48 * 60));
+    // Recorded during maintenance: the 48 hours count from the pause, so they start at the resume.
+    const p2 = apply(refunded(), { type: 'pause' }, 'system', at(70));
+    const c2 = apply(p2, { type: 'return-confirmed', confirmations: 10 }, 'system', at(80));
+    expect(apply(c2, { type: 'resume' }, 'system', at(130)).cancelConfirmableAt).toEqual(at(130));
   });
 });
 

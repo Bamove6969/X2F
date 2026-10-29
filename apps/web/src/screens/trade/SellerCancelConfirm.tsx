@@ -5,10 +5,13 @@
  * trade says "Cancelling" until the seller taps Confirm cancel, which stays greyed out until the
  * returned XMR has all its confirmations (10, the count the trade uses for funding and release);
  * the API checks the count itself on its own node (`confirm-cancel`, too-early before 10).
- * What happens if the seller never taps is OPEN: SELLER_CONFIRM_CANCEL_TIMEOUT_H (null, no
- * auto-close). No board draws this screen: COPY-UNSIGNED.
+ * If the seller never taps, the trade stays among their active trades with "Your input is needed
+ * to cancel this trade." and closes as cancelled by itself SELLER_CONFIRM_CANCEL_TIMEOUT_H (48)
+ * hours after the button became available (`cancelConfirmableAt`; the server's timer, owner
+ * 2026-10-29). No board draws this screen: COPY-UNSIGNED.
  */
 import { useState } from 'react';
+import { SELLER_CONFIRM_CANCEL_TIMEOUT_H } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { postTradeEvent } from '../../api/trade.js';
 import { Button } from '../../ui/Button.js';
@@ -34,7 +37,10 @@ export function SellerCancelConfirm({ code, view, refresh }: TradeScreenProps) {
   const confirmed = view.cancelConfirmedAt !== null;
   const target = got?.target ?? 10;
   const count = got?.confirmations ?? null;
-  const ready = confirmCancelReady(view.state, count, target);
+  // The server's word that the return is complete counts too (it recorded the moment), so the
+  // button never waits for this device's own read of the count.
+  const ready = confirmCancelReady(view.state, count, target) || (view.state === 'refunded' && view.cancelConfirmableAt !== null);
+  const closesAt = view.cancelConfirmableAt === null ? null : new Date(Date.parse(view.cancelConfirmableAt) + SELLER_CONFIRM_CANCEL_TIMEOUT_H * 3_600_000);
 
   const confirm = async () => {
     if (!ready || busy) return;
@@ -96,6 +102,14 @@ export function SellerCancelConfirm({ code, view, refresh }: TradeScreenProps) {
             </section>
           </>
         )}
+        {!confirmed && ready ? (
+          <p className="x2f-room__grown" role="status" data-input-needed="">
+            Your input is needed to cancel this trade.
+            {closesAt !== null
+              ? ` If you don't confirm, it closes as cancelled by itself on ${closesAt.toISOString().slice(0, 16).replace('T', ' ')} UTC.`
+              : ''}
+          </p>
+        ) : null}
         {error !== null ? (
           <p className="x2f-room__error" role="alert">
             {error}

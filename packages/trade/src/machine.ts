@@ -6,7 +6,7 @@
  */
 import { amountForFunds, escrowPlan, fiatCents as fiatFor, type Price } from './money.js';
 import { SETTLE_KINDS, type SettleKind } from './payouts.js';
-import { TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
+import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
 
 export type TradeState =
   | 'setup'
@@ -89,6 +89,12 @@ export interface Trade {
    * say "Cancelling: returning the XMR to the seller".
    */
   cancelConfirmedAt: Date | null;
+  /**
+   * When the seller's Confirm cancel became available: the server first saw the buyer-cancel
+   * refund with all its confirmations (system event `return-confirmed`). The trade closes as
+   * cancelled by itself SELLER_CONFIRM_CANCEL_TIMEOUT_H after it (owner 2026-10-29).
+   */
+  cancelConfirmableAt: Date | null;
 }
 
 export type TradeEvent =
@@ -110,6 +116,8 @@ export type TradeEvent =
    * refund tx, never taken from the request.
    */
   | { type: 'confirm-cancel'; returnConfirmations: number }
+  /** The server saw the buyer-cancel refund tx with all its confirmations (its own node): Confirm cancel is now available. */
+  | { type: 'return-confirmed'; confirmations: number }
   /** The seller ends the trade before funding (Revision 2026-10-29b): only before "Fund escrow" and before any coins. */
   | { type: 'walk-away' }
   | { type: 'release-started' }
@@ -120,7 +128,7 @@ export type TradeEvent =
   | { type: 'resume' }
   | { type: 'tick' };
 
-export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick'] as const;
+export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick', 'return-confirmed'] as const;
 export const CLIENT_EVENTS = [
   'mark-paid',
   'extend',
@@ -244,7 +252,23 @@ export function newTrade(
     dispute: null,
     closedAt: null,
     cancelConfirmedAt: null,
+    cancelConfirmableAt: null,
   };
+}
+
+/**
+ * A buyer's cancel whose refund has settled and that the seller has not confirmed yet (owner
+ * 2026-10-29): it stays among the seller's active trades ("Your input is needed to cancel this
+ * trade."), and timers and maintenance still apply to it although it is closed.
+ */
+export function awaitingCancelConfirm(t: Pick<Trade, 'state' | 'settling' | 'cancelConfirmedAt' | 'dispute'>): boolean {
+  return t.state === 'refunded' && t.settling === 'buyer-cancel' && t.cancelConfirmedAt === null && t.dispute === null;
+}
+
+/** When an unconfirmed buyer's cancel closes by itself, or null before Confirm cancel became available. */
+function cancelAutoCloseAt(t: Trade): Date | null {
+  if (!awaitingCancelConfirm(t) || t.cancelConfirmableAt === null) return null;
+  return addMin(t.cancelConfirmableAt, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60);
 }
 
 function checkNow(now: Date): void {
@@ -347,6 +371,9 @@ function onTick(t: Trade, now: Date): Trade {
     case 'settling':
       if (!past(now, t.settleBy)) return t;
       return { ...t, state: t.settleFrom ?? fail('wrong-state'), settling: null, settleFrom: null, settleBy: null };
+    case 'refunded':
+      // The seller never tapped Confirm cancel: it closes as cancelled by itself (owner 2026-10-29).
+      return past(now, cancelAutoCloseAt(t)) ? { ...t, cancelConfirmedAt: now } : t;
     default:
       return t;
   }
@@ -374,6 +401,7 @@ function onResume(t: Trade, now: Date): Trade {
     settleBy: move(t.settleBy),
     finalAlertAt: opens(t.finalAlertAt, TIMERS.finalAlertMin),
     lapsedAt: opens(t.lapsedAt, TIMERS.lapseCosignMin),
+    cancelConfirmableAt: opens(t.cancelConfirmableAt, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60),
   };
 }
 
@@ -525,6 +553,13 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       if (s === 'funding' && t.fundStartedAt === null && t.receivedAtomic === 0n && t.fundingSeenAt === null) return close(t, 'cancelled', now);
       return fail('wrong-state');
 
+    case 'return-confirmed':
+      if (!awaitingCancelConfirm(t) || t.cancelConfirmableAt !== null) return fail('wrong-state');
+      if (!Number.isSafeInteger(e.confirmations) || e.confirmations < 0) throw new RangeError('bad confirmations');
+      if (e.confirmations < UNLOCK_CONFIRMATIONS) return fail('too-early');
+      // During maintenance the 48 hours count from the resume (as every deadline set while paused).
+      return { ...t, cancelConfirmableAt: base(t, now) };
+
     case 'confirm-cancel':
       if (by !== 'seller') return fail('wrong-party');
       if (s !== 'refunded' || t.settling !== 'buyer-cancel' || t.cancelConfirmedAt !== null) return fail('wrong-state');
@@ -560,6 +595,8 @@ export function nextDeadline(t: Trade): Date | null {
       return t.finalAlertAt === null ? null : addMin(t.finalAlertAt, TIMERS.finalAlertMin);
     case 'settling':
       return t.settleBy;
+    case 'refunded':
+      return cancelAutoCloseAt(t);
     default:
       return null;
   }

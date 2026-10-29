@@ -61,6 +61,7 @@ function tradeView(over: Partial<TradeView> = {}): TradeView {
     pausedAt: null,
     closedAt: null,
     cancelConfirmedAt: null,
+    cancelConfirmableAt: null,
     nextDeadline: null,
     serverNow: at(0),
     ...over,
@@ -601,8 +602,8 @@ describe("Task 25's FinalAlert: I've paid opens Task 23's paid step", () => {
     await flush();
     calls = calls.filter((c) => !c.includes('final-alert-seen'));
     await click(byText("I've paid", 'button'));
-    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`);
-    await click(byText(`I sent exactly $412.50 via Zelle with ${view.code} in the memo`, 'label'));
+    expect(dialog()!.textContent).toContain(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`);
+    await click(byText(`I sent exactly $412.50 by Zelle with the memo ${view.code}.`, 'label'));
     await click(byText("Yes, mark as paid", 'button'));
     await flush();
     expect(calls).toEqual([`POST /v1/trades/${encodeURIComponent(view.code)}/events {"type":"mark-paid","fiatCents":"41250"}`, 'escrow:markPaid(41250)', 'refresh']);

@@ -120,6 +120,20 @@ describe("the seller's Confirm cancel", () => {
     expect(host.querySelector('[role="alert"]')?.textContent).toContain("doesn't have all its confirmations yet");
   });
 
+  it('once the server recorded the full count: "Your input is needed to cancel this trade." with when it closes by itself (48 h)', async () => {
+    count = null; // this device's own read has not come back
+    const { host } = render(
+      <MemoryRouter>
+        <SellerCancelConfirm {...props(view({ cancelConfirmableAt: '2026-10-25T12:00:00.000Z' }))} />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(confirmButton(host)!.disabled).toBe(false);
+    expect(host.querySelector('[data-input-needed]')?.textContent).toBe(
+      "Your input is needed to cancel this trade. If you don't confirm, it closes as cancelled by itself on 2026-10-27 12:00 UTC.",
+    );
+  });
+
   it('once confirmed: "Trade cancelled" and no button', async () => {
     const { host } = render(
       <MemoryRouter>

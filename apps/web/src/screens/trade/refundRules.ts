@@ -77,6 +77,7 @@ export function tradeFromView(v: RefundView): Trade {
     dispute: null,
     closedAt: date(v.closedAt, 'closedAt'),
     cancelConfirmedAt: date(v.cancelConfirmedAt ?? null, 'cancelConfirmedAt'),
+    cancelConfirmableAt: date(v.cancelConfirmableAt ?? null, 'cancelConfirmableAt'),
   };
 }
 

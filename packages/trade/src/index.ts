@@ -44,6 +44,7 @@ export {
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,
+  awaitingCancelConfirm,
   newTrade,
   nextDeadline,
   releasableEta,
