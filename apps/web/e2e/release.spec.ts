@@ -246,7 +246,8 @@ test.describe('SellerConfirm', () => {
     await expect(warn).toHaveCount(0);
     await box(page).check();
     await expect(warn).toBeVisible();
-    await expect(hold(page)).toBeDisabled();
+    // The warning's own primary button is open over the page: the hold is the screen's.
+    await expect(page.locator('[data-screen="seller-confirm"] button[data-primary]')).toBeDisabled();
     await page.getByRole('button', { name: "It's in my account" }).click();
     await expect(warn).toHaveCount(0);
     await expect(hold(page)).toBeEnabled();
