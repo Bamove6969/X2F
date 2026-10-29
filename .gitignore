@@ -9,5 +9,5 @@ test-results/
 playwright-report/
 design/x2f-app/support.js
 
-# Helpers keep their scratch files here (helper-common.md).
+# Helper agents keep scratch files here (never commit them)
 .scratch/

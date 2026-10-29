@@ -102,6 +102,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'bad-proof': 'a device check (a fault)',
   'attestation-refused': 'a device check (a fault)',
   'trade-closed': 'the trade has ended',
+  'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
