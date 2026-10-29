@@ -392,3 +392,12 @@ Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revi
 - **Tasks 1–4 and 12 (retention text), design reports the owner's answer:** the 6-month anonymized training copy is dropped. Trade chats auto-delete 30 days after the trade ends; dispute records are kept 90 days for moderator training, with as much private detail auto-blurred as possible. The privacy page (Task 4), the lawful-requests data inventory (Task 12) and the Terms key points say exactly that and never mention a 6-month copy.
 - **OPEN conflict (dispute after refund, Task 1):** the design reports the owner said a dispute can be opened for 48 hours after a trade ends; the lead's question A recommends 30 days. Task 1's rule for a refunded trade stays until the owner settles it.
 - **Owner questions, settled:** the News "don't show again" checkbox exists (owner, 2026-10-29b); remove it from "Still open".
+
+## Revision 2026-10-29c (owner)
+
+Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's words of 2026-10-29 12:30–13:34 (`~/x2f-comms/owner-answers-2026-10-28.md`).
+
+- **Task 18 (delete my account), P7-A12:** the `appeal-window` refusal now spans **48 hours** after a ruling (owner, appeal window 48 h); the `lien` refusal covers Plan 4 Task 25's rewritten liens (an `active` lien after a lost dispute that requires restitution, or after an overturned ruling; a `suspended` lien during an appeal also refuses, since the appeal is open).
+- **Task 2 (purge):** the revenue ledger it fills before deleting now counts **released trades and settled disputes**, never cancels (Plan 4 Task 32). The running totals include `won_disputes` (Plan 5 Revision 2026-10-29c).
+- **Task 1 (retention), dispute after refund:** the owner said a cancel can't be disputed and a refund can be disputed if the amount refunded was wrong. The refund-dispute window stays OPEN (Plan 3 Revision 2026-10-29c); Task 1's rule for a refunded trade is unchanged until it is settled.
+- **Part B (alerts):** every new login sends a push alert (Plan 2 Task 17); `notify()` carries `new-login`, `hold-started` and `hold-ended`, and the Jabber channel gets them too.
