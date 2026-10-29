@@ -849,3 +849,12 @@ Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revi
   - **Replies to named feedback are in the app only,** never by email: staff reply through a ticket thread and an alert (Plan 4 Revision 2026-10-29b, Tasks 30–31). Anonymous feedback has no reply.
   - *Lead call 2026-10-29:* sending feedback anonymously does not update "last seen" (the request does not touch `sessions.last_seen_at`), and the anonymous copy promises only **"We don't record who sent it."** Tests: an anonymous send leaves `last_seen_at` unchanged; the copy is exact.
 - **Completed trades (R38, lead call):** released trades plus refunded trades that had a dispute; a settled dispute counts whoever won (P5-A13 as revised on 2026-10-29).
+
+## Revision 2026-10-29c (owner)
+
+Authority: spec (Revision 2026-10-29c, 5.4) > `rulings-and-lessons.md` (R38) > earlier revisions > this note. Source: the owner's words of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`, "Profile: owner leans to showing 'Disputes: N won, M lost'", confirmed in the lead's brief of 2026-10-29c).
+
+- **Profiles show "Disputes: N won, M lost"** (Tasks 5, 12, 20). Task 20's `account_totals` gains `won_disputes int` beside `lost_disputes`; `addToTotals` adds one to the winner's `won_disputes` and the loser's `lost_disputes` when a dispute settles. Task 5's `TraderProfile.stats` gains `disputesWon` and `disputesLost`; Task 12's profile screen shows "Disputes: 3 won, 1 lost" `// COPY-UNSIGNED` (with none: "Disputes: none"). Plan 4 Task 25's record fix after an overturned ruling swaps the two counts for round 1. Tests: a settled dispute adds one won and one lost, once; the counts survive the trade purge; an overturned ruling swaps them.
+- **A lost dispute still counts as a completed trade** (R38, unchanged), and Clean record still needs zero lost disputes.
+- **The dispute screen's footer "It appears on your profile as a lost dispute" stays** (Plan 3 Task 27, owner).
+- **Task 21 (`CantDoThat`):** the lien refusal (`lien`, Plan 4 Task 25) and the 24-hour hold refusal (`recovery-hold`, Plan 2 Task 17) use the popup.
