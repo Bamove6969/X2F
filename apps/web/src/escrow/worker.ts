@@ -1,6 +1,7 @@
 /**
  * The escrow Web Worker: runs the escrow runtime (identities, wallet passwords, monero-ts,
- * runParty) off the page. The page only ever gets status objects (phase, error, check words,
+ * runParty) off the page, and the chat engine (Task 20: chat identities and seal/open; see
+ * ../chat/serve.ts for its messages). The page only ever gets status objects (phase, error, check words,
  * keepOpen, role) and sends start/act/stop requests; no secret crosses postMessage.
  *
  * `serveEscrow` is the message handler, kept apart from the worker's own start-up so it can be
@@ -11,6 +12,10 @@ import { generateIdentity } from '@x2f/protocol';
 import { httpEscrowApi } from './adapters.js';
 import { createEscrowRuntime, type ConfirmedTrade, type EscrowAction, type EscrowRuntime, type EscrowStatus, type RuntimeDeps } from './runtime.js';
 import { openEscrowStore } from './store.js';
+import { createChatEngine } from '../chat/engine.js';
+import { httpChatApi } from '../chat/http.js';
+import { chatConfig, serveChat, type ChatPort } from '../chat/serve.js';
+import { openChatStore } from '../chat/store.js';
 
 export type ToWorker =
   | { t: 'start'; code: string; confirmed?: ConfirmedTrade }
@@ -121,6 +126,15 @@ export function workerConfig(env: Record<string, string | undefined>): RuntimeDe
 // Started only inside a dedicated worker (never when a test imports this module).
 const scope = globalThis as unknown as { WorkerGlobalScope?: unknown; postMessage?: unknown };
 if (typeof scope.WorkerGlobalScope !== 'undefined' && typeof scope.postMessage === 'function') {
+  // The chat runs whether or not the escrow config is complete; it needs only the moderation key.
+  serveChat(globalThis as unknown as ChatPort, async () =>
+    createChatEngine({
+      api: httpChatApi(),
+      store: await openChatStore(),
+      newIdentity: generateIdentity,
+      ...chatConfig(import.meta.env as unknown as Record<string, string | undefined>),
+    }),
+  );
   serveEscrow(globalThis as unknown as Port, async (onStatus) => {
     // Each key is named, so the build inlines only these five and never the whole env object
     // (which would carry VITE_FIXTURES and any other VITE_ variable into the production worker).
