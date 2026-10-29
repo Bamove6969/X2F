@@ -215,7 +215,9 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
    * unlockedAtomic, confirmations }` (bigints as decimal strings), `settled { txHash }` (the kind
    * from `settleKindFor`; 409 `settle-kind-unknown` when the trade alone does not name it) and
    * `late-funds` and `spend-unshown` (a trade settling 6 h with no sweep shown to the moderator,
-   * Task 9 I/O fallback; both applied as `escalate`), each for an attested trade only. Applied through the
+   * Task 9 I/O fallback; both applied as `escalate`) and `release-claimed` (the moderation
+   * service received a trade party's sealed post-release info: the signing window no longer
+   * reverts the settling trade, lead decision b 2026-10-29), each for an attested trade only. Applied through the
    * trade store as `system`. The state machine's refusal is 409 with its rule code, so a repeated
    * report is refused `wrong-state` and the watcher counts it as done.
    */
@@ -244,6 +246,10 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
       case 'spend-unshown':
         if (!keysAre(body, ['kind', 'trade'])) break;
         event = { type: 'escalate' };
+        break;
+      case 'release-claimed':
+        if (!keysAre(body, ['kind', 'trade'])) break;
+        event = { type: 'release-claimed' };
         break;
     }
     if (event === null) throw new Refused(400, 'bad-body');

@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { loadTrade } from '../src/trades/store.js';
 import { startTimers } from '../src/trades/timers.js';
+import { applyEvent } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -50,6 +51,25 @@ describe('startTimers', () => {
     const before = await events(stuck.code);
     await timers.tick();
     expect(await events(stuck.code)).toEqual(before);
+    await timers.stop();
+  });
+
+  it('the signing window returns an unclaimed release to settleFrom, but never a claimed one (Task 9 I/O, lead decision b)', async () => {
+    const plain = await trade();
+    const claimed = await trade();
+    for (const t of [plain, claimed]) await driveTo({ db: deps.db, clock }, t, 'settling');
+    await applyEvent({ db: deps.db, clock }, claimed.code, { type: 'release-claimed' }, 'system');
+    const settleBy = (await loadTrade(deps.db, plain.code))!.settleBy!;
+    const timers = startTimers({ db: deps.db, clock, intervalMs: 0 });
+    now = new Date(settleBy.getTime() + 1);
+    const pass = await timers.tick();
+    expect(pass.applied).toContainEqual({ code: plain.code, type: 'tick' });
+    expect(pass.applied.filter((a) => a.code === claimed.code)).toEqual([]);
+    expect((await loadTrade(deps.db, plain.code))!.state).toBe('paid');
+    now = addMin(now, 7 * 60);
+    await timers.tick();
+    expect(await loadTrade(deps.db, claimed.code)).toMatchObject({ state: 'settling', settling: 'release' });
+    expect(await events(claimed.code)).not.toContain('tick');
     await timers.stop();
   });
 

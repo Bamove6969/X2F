@@ -138,6 +138,7 @@ describe('POST /internal/v1/reports: watcher reports', () => {
       { kind: 'setup-done', trade: t.code, escrowAddress: '' },
       { kind: 'late-funds', trade: t.code, kindOf: 'x' },
       { kind: 'spend-unshown', trade: t.code, txHash: 'a'.repeat(64) },
+      { kind: 'release-claimed', trade: t.code, from: 'buyer' },
       { kind: 'nope', trade: t.code },
     ];
     for (const b of bad) {
@@ -188,5 +189,24 @@ describe('POST /internal/v1/reports: watcher reports', () => {
     const refused = await report({ kind: 'spend-unshown', trade: u.code });
     expect(refused.statusCode).toBe(409);
     expect((await loadTrade(deps.db, u.code))!.state).toBe('secured');
+  });
+
+  it('release-claimed records the claim on a settling trade (Task 9 I/O, lead decision b); once; outside settling wrong-state', async () => {
+    const t = await trade();
+    await driveTo(deps, t, 'settling');
+    const res = await report({ kind: 'release-claimed', trade: t.code });
+    expect(res.statusCode).toBe(201);
+    expect(await loadTrade(deps.db, t.code)).toMatchObject({ state: 'settling', releaseClaimedAt: NOW });
+    const again = await report({ kind: 'release-claimed', trade: t.code });
+    expect(again.statusCode).toBe(409);
+    expect(again.json()).toEqual({ error: 'wrong-state' });
+    const u = await trade();
+    await driveTo(deps, u, 'paid');
+    const refused = await report({ kind: 'release-claimed', trade: u.code });
+    expect(refused.statusCode).toBe(409);
+    expect(refused.json()).toEqual({ error: 'wrong-state' });
+    expect(await loadTrade(deps.db, u.code)).toMatchObject({ state: 'paid', releaseClaimedAt: null });
+    const v = await trade(false);
+    expect((await report({ kind: 'release-claimed', trade: v.code })).json()).toEqual({ error: 'not-attested' });
   });
 });
