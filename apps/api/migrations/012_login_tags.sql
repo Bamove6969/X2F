@@ -1,5 +1,6 @@
 -- Plan 2 follow-up FU-D (owner, 2026-10-25): the private login name is stored only as a keyed tag,
--- so a stolen database holds no login names.
+-- so a stolen database holds no login names once step 1 below, with its VACUUM FULL, has run and
+-- every backup and WAL archive from before it is gone.
 --
 -- login_tag = HMAC-SHA-256 under the X2F_LOGIN_NAME_KEYS key `login_tag_key_id` of
 -- "x2f/login-name\0" || the lower-cased NFC login name. A login looks the name up under every key in
@@ -8,7 +9,9 @@
 -- Step 1 (this migration): the new columns. SQL has no key, so existing plaintext rows are tagged by
 -- the app: stop the API, migrate, run `npm run tag-login-names -w @x2f/api` (it tags every row that
 -- still holds `login_key` and nulls `login_name` / `login_key` in the same update; the `name_keys`
--- trigger from 009 then drops the row's plaintext `login` entry), then start the API again. The API
+-- trigger from 009 then drops the row's plaintext `login` entry), then `VACUUM FULL accounts, name_keys;`
+-- (the update leaves the old values in dead tuples and index pages until the tables are rewritten;
+-- older backups and WAL still hold them in clear: docs/dev-setup.md), then start the API again. The API
 -- refuses to start while any row still holds a plaintext login name. A pre-009 account
 -- (`legacy_login_name`, login key = its display key) is tagged the same way and keeps logging in by
 -- its display name until it sets a private one.

@@ -160,8 +160,11 @@ export interface TaggedAccount {
 /**
  * After a successful login by name (FU-D rotation, like FU-C's pepper rehash): a row tagged under an
  * older key gets the name's tag under the current key, already computed by `loginNameLookup` (no
- * extra HMAC). Written only if the row is still under the key it was found under. A clash with
- * another row (which `createAccount` prevents) leaves the row as it is: the login still succeeds.
+ * extra HMAC). Written only if the row is still under the key it was found under. Best-effort (FU-D
+ * review M1): any failure (a clash with another row, which `createAccount` prevents, a dropped
+ * connection, a statement timeout) leaves the row as it is and is swallowed, never logged (the
+ * error could carry the tag); the login still succeeds, after a recovery code was already burned
+ * or a session cookie already set, and the next login by name retries.
  */
 export async function retagLoginName(deps: Pick<Deps, 'db' | 'config'>, account: TaggedAccount, currentTag: Buffer): Promise<void> {
   const current = deps.config.loginNameKeys.current;
@@ -170,8 +173,8 @@ export async function retagLoginName(deps: Pick<Deps, 'db' | 'config'>, account:
     await deps.db.query('update accounts set login_tag = $2, login_tag_key_id = $3 where id = $1 and login_tag_key_id = $4', [
       account.id, currentTag, current, account.login_tag_key_id,
     ]);
-  } catch (e) {
-    if ((e as { code?: string }).code !== '23505') throw e;
+  } catch {
+    // Best-effort: the next login by name retries.
   }
 }
 

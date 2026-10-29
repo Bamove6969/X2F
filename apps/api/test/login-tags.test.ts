@@ -210,6 +210,46 @@ describe('rotation', () => {
   });
 });
 
+describe('the re-tag is best-effort (review M1)', () => {
+  /** Runs `run` with the re-tag's update failing like a dropped connection; every other query runs. */
+  async function retagFails<T>(run: () => Promise<T>): Promise<T> {
+    const real = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const query = vi.spyOn(deps.db, 'query').mockImplementation(((...a: unknown[]) =>
+      String(a[0]).startsWith('update accounts set login_tag = $2, login_tag_key_id = $3 where id = $1')
+        ? Promise.reject(Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' }))
+        : real(...a)) as never);
+    try {
+      return await run();
+    } finally {
+      query.mockRestore();
+    }
+  }
+
+  it('password: a failing re-tag still logs in; the row stays under the old key and the next login moves it', async () => {
+    const { id, loginName } = await passwordAccount(1);
+    deps.config.loginNameKeys = rotated();
+    const res = await retagFails(() => login(loginName));
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['set-cookie']).toBeDefined();
+    expect((await tagRow(id)).login_tag_key_id).toBe(1);
+    expect((await login(loginName)).statusCode).toBe(200);
+    expect((await tagRow(id)).login_tag_key_id).toBe(2);
+  });
+
+  it('recovery code: a failing re-tag after the code is burned still starts the session', async () => {
+    const { id, loginName } = await passwordAccount(1);
+    const b = new Browser(app);
+    expect((await b.post('/t/login', { accountId: id, firstSession: true })).statusCode).toBe(200);
+    const [code] = ((await b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] }).codes;
+    deps.config.loginNameKeys = rotated();
+    const res = await retagFails(() => backup(loginName, code!));
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ status: 'ok', level: 'recovery' });
+    expect((await tagRow(id)).login_tag_key_id).toBe(1);
+    expect(logs.join('\n')).not.toContain(loginName.toLowerCase());
+  });
+});
+
 describe('uniqueness across keys', () => {
   it('a name held under an old key cannot be signed up again under the current key: names-unavailable', async () => {
     const { loginName } = await passwordAccount(1);
