@@ -140,7 +140,7 @@ button:disabled{cursor:not-allowed}
             <h2 id="methods-hw" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Payment methods</h2>
             <span style="font-size: 13px; color: var(--ink-muted);">{{methodCount}} picked</span>
           </div>
-          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick every method you take. Each one has its own payment instructions and can change the price.</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick every method you take. Each one has its own payment instructions and can change the price by a percent.</span>
           <sc-for list="{{methods}}" as="m" hint-placeholder-count="6">
             <div style="{{m.cardStyle}}">
               <label for="{{m.cbId}}" style="display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 0 16px; cursor: pointer;">
@@ -154,7 +154,7 @@ button:disabled{cursor:not-allowed}
                     <textarea id="{{m.instrId}}" rows="3" value="{{m.instr}}" onChange="{{m.onInstr}}" placeholder="What the other person needs to know to pay you or get paid." style="padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; resize: none;"></textarea>
                   </label>
                   <div style="display: flex; flex-direction: column; gap: 6px;">
-                    <span style="font-size: 13px; color: var(--ink-muted);">Price change (optional)</span>
+                    <span style="font-size: 13px; color: var(--ink-muted);">Price change in % (optional)</span>
                     <div style="display: flex; align-items: center; gap: 8px;">
                       <button type="button" aria-label="{{m.downLabel}}" onClick="{{m.adjDown}}" style="width: 44px; height: 44px; flex-shrink: 0; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 22px; cursor: pointer;">−</button>
                       <span style="flex-grow: 1; text-align: center; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px;">{{m.adjText}}</span>

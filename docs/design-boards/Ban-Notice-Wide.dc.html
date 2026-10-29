@@ -46,7 +46,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             <p style="margin: 0; font-size: 16px; line-height: 24px;">Reason: three trades in a row were not paid.</p>
           </div>
           <p style="margin: 0; font-size: 16px; line-height: 24px;">Your XMR isn't affected. Your wallet keys are on your device, so no one can freeze your coins.</p>
-          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If you don't agree with this decision or feel it was made in error, please reach out to our moderators on <a href="https://matrix.to/#/#x2f-mods:matrix.org" style="color: var(--monero-ink); padding: 14px 0;">Matrix</a> (or <a href="https://t.me/x2f_mods" style="color: var(--monero-ink); padding: 14px 0;">Telegram</a>).</p>
+          <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If you don't agree with this decision or feel it was made in error, please reach out to our moderators on <a href="#" style="color: var(--monero-ink); padding: 14px 0;">Matrix</a> (or <a href="#" style="color: var(--monero-ink); padding: 14px 0;">Telegram</a>).</p>
           <div style="display: flex; justify-content: flex-end;">
             <button type="button" onClick="{{close}}" style="height: 48px; min-width: 120px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">OK</button>
           </div>
@@ -62,7 +62,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <div style="flex-grow: 1; display: flex; flex-direction: column;">
       <header style="display: flex; align-items: center; justify-content: space-between; padding: 16px 32px; border-bottom: 1px solid var(--surface-raised);">
         <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
-        <button type="button" style="height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Log out</button>
+        <sc-if value="{{unfinished}}" hint-placeholder-val="{{true}}"><button type="button" style="height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Log out</button></sc-if>
       </header>
       <main style="flex-grow: 1; display: flex; justify-content: center; padding: 64px 32px;">
         <div style="width: 640px; display: flex; flex-direction: column; gap: 24px;">
@@ -79,25 +79,46 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
               <p style="margin: 0; font-size: 18px; line-height: 28px;">Your account is permanently banned. This ban has no end date.</p>
             </sc-if>
             <p style="margin: 0; font-size: 18px; line-height: 28px;">Reason: you sent the same seller a fake payment screenshot.</p>
+          <sc-if value="{{noBusiness}}" hint-placeholder-val="{{false}}">
+          <p style="margin: 0; font-size: 18px; line-height: 28px;">Nothing on your account is left open, so you can't log in while the ban lasts. You can still appeal.</p>
+        </sc-if>
+      </section>
+          <sc-if value="{{unfinished}}" hint-placeholder-val="{{true}}">
+          <section aria-labelledby="banw-site-open" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 20px; border-radius: 12px; border: 1px solid var(--caution);">
+            <h2 id="banw-site-open" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Finish open business</h2>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">You can still log in, but only to finish these.</p>
+            <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px;">
+              <li><a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 16px; box-sizing: border-box; border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none;"><span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">1 open trade</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Buying <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.500000 XMR</span> ($165.00) from nightowl_44</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a></li>
+              <li><a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 56px; padding: 8px 16px; box-sizing: border-box; border-radius: 12px; background: var(--surface); color: var(--ink); text-decoration: none;"><span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">1 payout still arriving</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.800000 XMR</span> ($264.00) to your wallet</span></span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a></li>
+            </ul>
+            <sc-if value="{{permanent}}" hint-placeholder-val="{{false}}">
+              <p style="margin: 0; font-size: 15px; line-height: 22px;">Once everything is finished, you won't be able to log in again. You can still appeal.</p>
+            </sc-if>
+            <sc-if value="{{timed}}" hint-placeholder-val="{{true}}">
+              <p style="margin: 0; font-size: 15px; line-height: 22px;">Once everything is finished, you won't be able to log in again until the ban ends. You can still appeal.</p>
+            </sc-if>
           </section>
+          </sc-if>
+          <sc-if value="{{unfinished}}" hint-placeholder-val="{{true}}">
           <section aria-label="Your coins" style="display: flex; gap: 12px; align-items: flex-start; padding: 16px 20px; border-radius: 12px; background: var(--surface);">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>
             <p style="margin: 0; font-size: 16px; line-height: 24px;">Your XMR isn't affected. Your wallet keys are on your device, so no one can freeze your coins.</p>
           </section>
+          </sc-if>
           <section aria-labelledby="banw-site-contact" style="display: flex; flex-direction: column; gap: 12px;">
             <h2 id="banw-site-contact" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Think this is a mistake?</h2>
-            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">If you don't agree with this decision or feel it was made in error, please reach out to our moderators on <a href="https://matrix.to/#/#x2f-mods:matrix.org" style="color: var(--monero-ink); padding: 14px 0;">Matrix</a> (or <a href="https://t.me/x2f_mods" style="color: var(--monero-ink); padding: 14px 0;">Telegram</a>).</p>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">If you don't agree with this decision or feel it was made in error, please reach out to our moderators on <a href="#" style="color: var(--monero-ink); padding: 14px 0;">Matrix</a> (or <a href="#" style="color: var(--monero-ink); padding: 14px 0;">Telegram</a>).</p>
             <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px;">
-              <a href="https://matrix.to/#/#x2f-mods:matrix.org" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); text-decoration: none;">
-                <span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">Message the moderators on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);">#x2f-mods:matrix.org</span></span>
+              <a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); text-decoration: none;">
+                <span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">Message the moderators on Matrix</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);">[Matrix address to come]</span></span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
               </a>
-              <a href="https://t.me/x2f_mods" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); text-decoration: none;">
-                <span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">Or use Telegram</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);">@x2f_mods</span></span>
+              <a href="#" style="display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 64px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); text-decoration: none;">
+                <span style="display: flex; flex-direction: column;"><span style="font-size: 16px; font-weight: 600;">Or use Telegram</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);">[Telegram address to come]</span></span>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M14 4h6v6"/><path d="M20 4l-9 9"/><path d="M18 14v5a1 1 0 01-1 1H5a1 1 0 01-1-1V7a1 1 0 011-1h5"/></svg>
               </a>
             </div>
-            <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Addresses are examples.</span>
+            <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Placeholders: the Matrix and Telegram addresses are still to be decided.</span>
           </section>
         </div>
       </main>
@@ -105,7 +126,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"$preview":{"width":1280,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["trade-ban","site-ban"],"default":"trade-ban"},"ends":{"editor":"enum","options":["date","permanent"],"default":"date"},"business":{"editor":"enum","options":["unfinished","none"],"default":"unfinished"},"$preview":{"width":1280,"height":1080}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { open: true }; }
   renderVals() {
@@ -116,6 +137,7 @@ class Component extends DCLogic {
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const variant = this.props.variant === 'site-ban' ? 'site-ban' : 'trade-ban';
     const ends = this.props.ends === 'permanent' ? 'permanent' : 'date';
+    const business = this.props.business === 'none' ? 'none' : 'unfinished';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle,
@@ -123,6 +145,8 @@ class Component extends DCLogic {
       siteBan: variant === 'site-ban',
       timed: ends === 'date',
       permanent: ends === 'permanent',
+      unfinished: business === 'unfinished',
+      noBusiness: business === 'none',
       open: this.state.open,
       closed: !this.state.open,
       close: () => this.setState({ open: false }),

@@ -10,10 +10,58 @@ Branch `wip/design-brief` in bamove6969/x2f. Nothing is merged; that is your cal
 - **Board source files:** `docs/design-boards/` on this branch. These are the same files as on the canvas, including `canvas.json`. They are `.dc.html` design boards, readable as markup.
 - **Full record:** `docs/design-brief-2026-10-29-response.md`. It has every board, every copy change, the brief-vs-spec conflicts and every owner answer.
 
+## Later the same day: final owner answers (all applied to boards)
+
+Full list: "Remaining open questions, answered" in the response doc.
+
+1. **Coins move at once.** A release or a ruling sends the XMR right away; nothing is held until the appeal window closes.
+   - A dispute can be opened up to 48 h after a trade ends, and an appeal up to 48 h after a ruling.
+   - Whoever loses gets a lien: no trading until they pay it back.
+   - If a ruling is overturned, the person who received the coins gets the lien.
+   - The appeal window is **48 h**. The brief's 72 h is dropped.
+   - Boards: DisputeRuling, Appeal-Notice, Lien-Notice, SetupTerms §5.
+   - Please check: ModCase still offers "Trading hold on the losing side, until the appeal window closes". It probably becomes the lien. The board was left unchanged.
+2. **Site ban.**
+   - A banned user can log in only while something is unfinished: an open trade, a lien, a payout still arriving or an open appeal. After that, they're locked out completely.
+   - The Matrix and Telegram appeal contacts are still to be decided, and show as placeholders.
+   - Board: Ban-Notice (`business` tweak).
+3. **Maintenance** has two versions (`variant` tweak):
+   - Planned: start and end times.
+   - Emergency: "back soon", with all trade timers paused.
+4. **Reviews.**
+   - Stars are 1–5 only.
+   - Disputing a review takes a required free-text reason; there's no reason list for now.
+5. **Alerts.**
+   - Jabber is OMEMO only, sent over Tor through X2F's onion address.
+   - The X2F alert account's OMEMO fingerprint is shown so users can check it.
+   - Suggested apps: Conversations, Monal and Gajim.
+   - The battery tip shows on Android only.
+6. **No email anywhere.** Remove spec 6.3's opt-in PGP email alerts.
+7. **Retention.**
+   - Trade chats are kept 30 days after the trade ends.
+   - Dispute records are kept 90 days, used for training, with private details auto-blurred.
+   - The 6-month copy is dropped.
+   - Spec 4.1, Terms and privacy text need updating. Boards: SelfDestruct, SetupTerms.
+8. **Deleted accounts.**
+   - The username is never reused.
+   - Past trade and dispute records stay until they auto-delete.
+   - Board: DeleteAccount.
+9. **Flexible offers.**
+   - Payment-method price changes are a percent of the market rate only.
+   - A method outside the buyer's amount shows greyed out with the reason, e.g. "PayPal: up to $500", never hidden.
+   - Boards: FlexOffer-Post, FlexOffer-Quote.
+   - The whole-offer "Fixed price" option is unchanged. The owner's answer was about method adjustments.
+10. **Staff pay** is paid at the end of each shift, when they log out, with clawback.
+    - Senior moderators get a large-trade bonus: a % of the trade total, with an optional cap.
+    - By default the bonus is held 48 h.
+    - Board: StaffSettings. Spec 6.6 says "monthly" today.
+
+All open design questions are now answered.
+
 ## Still in progress (not finished yet)
 
-- **Team members:** the rules are agreed (section 6 below). The Team settings boards are being drawn now and aren't on the canvas yet. It's planned for the phase after launch, and will be adjusted from trader feedback.
-- **Devices:** the rules are agreed (section 5). The "Is this you?" login-approval boards (both sides) and the device list are being drawn now and aren't on the canvas yet.
+- **Team members:** the rules are agreed (section 6 below) and the Team boards are on the canvas. It's planned for the phase after launch.
+- **Devices:** the rules are agreed (section 5), and the LoginApprove and Devices boards are on the canvas.
 - **Foldables:** six boards are on the canvas, but they haven't been checked in a real browser yet. The fold rules aren't added to existing boards yet. Only the new Fold-* boards show them.
 - **Open questions:** the questions still open with the owner are listed at the end. I'll send another update when they're answered and the boards above are done.
 

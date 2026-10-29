@@ -23,7 +23,7 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
   <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
     <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Choose how X2F gets your attention when a trade needs you.</p>
     <section aria-labelledby="al-push" style="display: flex; flex-direction: column; gap: 8px;">
-      <h2 id="al-push" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">On this phone</h2>
+      <h2 id="al-push" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{deviceHeading}}</h2>
       <div style="border-radius: 12px; background: var(--surface); padding: 0 16px;">
         <div style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 0;">
           <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
@@ -79,6 +79,7 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
         </sc-if>
       </div>
     </section>
+    <sc-if value="{{isAndroid}}" hint-placeholder-val="{{true}}">
     <section aria-labelledby="al-android" style="display: flex; flex-direction: column; gap: 8px;">
       <h2 id="al-android" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Android</h2>
       <div style="border-radius: 12px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 12px;">
@@ -94,21 +95,26 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
         </sc-if>
       </div>
     </section>
+    </sc-if>
     <section aria-labelledby="al-jabber" style="display: flex; flex-direction: column; gap: 8px;">
       <h2 id="al-jabber" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Jabber over Tor</h2>
       <div style="border-radius: 12px; background: var(--surface); padding: 0 16px;">
         <div style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 0;">
           <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
             <span id="al-jabber-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">Encrypted Jabber alerts</span>
-            <span style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Get alerts as Jabber messages, encrypted end to end with OMEMO and sent over Tor.</span>
+            <span style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Get alerts as Jabber messages in an app you choose.</span>
           </span>
           <button type="button" role="switch" aria-checked="{{jabber.on}}" aria-labelledby="al-jabber-l" onClick="{{jabber.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; padding: 0; border: 0; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{jabber.track}}"><span style="{{jabber.knob}}"></span></span></button>
         </div>
         <sc-if value="{{jabber.isOn}}" hint-placeholder-val="{{true}}">
         <div style="display: flex; flex-direction: column; gap: 16px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
+            <li style="display: flex; gap: 10px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg><span>Alerts are always end-to-end encrypted with OMEMO. Apps without OMEMO won't work.</span></li>
+            <li style="display: flex; gap: 10px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c3 3 3 15 0 18"/><path d="M12 3c-3 3-3 15 0 18"/></svg><span>Sent over Tor through X2F's onion address.</span></li>
+          </ul>
           <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">Set it up in 4 steps</h3>
           <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
-            <li>Install a Jabber app with OMEMO, such as Conversations (Android), Monal (iPhone) or Gajim (computer).</li>
+            <li>Install a Jabber app with OMEMO: Conversations (Android), Monal (iPhone) or Gajim (computer).</li>
             <li>Connect the app through Tor, for example with Orbot.</li>
             <li>Type your Jabber address below and tap Send test.</li>
             <li>Accept the message from X2F. Trust its OMEMO key only if the fingerprint matches the one shown here.</li>
@@ -118,8 +124,9 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
             <input id="al-jid" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="name@server.onion" value="{{jid}}" onChange="{{setJid}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px;">
           </label>
           <div style="display: flex; flex-direction: column; gap: 4px;">
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">X2F&#39;s OMEMO fingerprint</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">X2F alert account&#39;s OMEMO fingerprint</span>
             <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; word-break: break-word;">5c1a9e07 d3b24f18 7a60c2e9 41bd8f35 0e6a72c4 93f1d058 b27e4a16 c8093d5f</span>
+            <span style="font-size: 14px; line-height: 20px;">Check this matches before you trust a message from X2F.</span>
           </div>
           <button type="button" onClick="{{sendTest}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none; align-self: flex-start;">Send test</button>
           <sc-if value="{{testSent}}" hint-placeholder-val="{{false}}">
@@ -135,7 +142,7 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 390, "height": 1880}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "device": {"editor": "enum", "options": ["android", "iphone", "computer"], "default": "android"}, "$preview": {"width": 390, "height": 1980}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { push: true, alarm: true, sound: 'default', volume: 80, playing: false, battery: false, jabber: true, jid: '', testSent: false, saved: false }; }
   renderVals() {
@@ -144,7 +151,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1880px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1980px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
     const sw = (on, toggle) => ({
       on: on ? 'true' : 'false', isOn: on, toggle,
       track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (on ? 'var(--escrow); background: var(--escrow); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
@@ -152,6 +159,7 @@ class Component extends DCLogic {
     });
     const dot = (on) => 'width: 20px; height: 20px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);');
     const s = this.state;
+    const device = ['android', 'iphone', 'computer'].indexOf(this.props.device) >= 0 ? this.props.device : 'android';
     const set = (o) => this.setState(Object.assign({ saved: false }, o));
     const sounds = [
       { id: 'default', name: 'Default alarm', desc: "X2F's own loud alarm." },
@@ -159,6 +167,8 @@ class Component extends DCLogic {
     ].map((d) => ({ name: d.name, desc: d.desc, on: s.sound === d.id ? 'true' : 'false', dot: dot(s.sound === d.id), pick: () => set({ sound: d.id }) }));
     return {
       rootStyle,
+      isAndroid: device === 'android',
+      deviceHeading: device === 'computer' ? 'On this computer' : 'On this phone',
       push: sw(s.push, () => set({ push: !s.push })),
       alarm: sw(s.alarm, () => set({ alarm: !s.alarm })),
       jabber: sw(s.jabber, () => set({ jabber: !s.jabber })),

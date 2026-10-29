@@ -55,11 +55,11 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
       <section aria-labelledby="del-what" style="border-radius: 12px; background: var(--surface); padding: 16px; display: flex; flex-direction: column; gap: 12px;">
         <h2 id="del-what" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happens</h2>
         <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 15px; line-height: 22px;">
-          <li>Your username, login methods and saved wallets are deleted.</li>
+          <li>Your username, login methods and saved wallets are deleted. Your username can never be used again.</li>
           <li>Your reviews, badges and reputation are gone for good.</li>
           <li>Your offers come down straight away.</li>
           <li>Your coins aren&#39;t touched. They&#39;re in your own wallet, not with X2F.</li>
-          <li>Past trades still self-destruct on their usual date. <a href="{{privacyHref}}" style="color: var(--monero-ink); padding: 14px 0;">How this works</a></li>
+          <li>Records of your past trades and disputes stay until they auto-delete (chats 30 days after the trade, disputes 90 days). <a href="{{privacyHref}}" style="color: var(--monero-ink); padding: 14px 0;">How this works</a></li>
         </ul>
       </section>
       <label for="del-name" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
@@ -90,7 +90,7 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["blocked", "allowed"], "default": "blocked"}, "$preview": {"width": 390, "height": 844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["blocked", "allowed"], "default": "blocked"}, "$preview": {"width": 390, "height": 900}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { typed: '', done: false }; }
   componentDidUpdate(prev) { if (prev.variant !== this.props.variant && this.state.done) this.setState({ done: false, typed: '' }); }
@@ -100,7 +100,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 900px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
     const blocked = (this.props.variant ?? 'blocked') === 'blocked';
     const ready = this.state.typed.trim() === 'nightowl_44';
     const WIDE = false;

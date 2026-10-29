@@ -190,39 +190,29 @@ textarea::placeholder{color:var(--ink-muted)}
       <section role="dialog" aria-modal="true" aria-labelledby="rvwd-title" style="width: 520px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
         <h2 id="rvwd-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Dispute this review</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">Tell a moderator what's wrong with {{disputeFrom}}'s review. They'll check it against the trade.</p>
-        <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column;">
-          <legend style="margin-bottom: 4px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">What's wrong?</legend>
-          <sc-for list="{{reasons}}" as="o" hint-placeholder-count="4">
-            <label for="{{o.id}}" style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer;">
-              <input id="{{o.id}}" type="radio" name="rvwd-reason" checked="{{o.checked}}" onChange="{{o.pick}}" style="width: 20px; height: 20px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
-              {{o.label}}
-            </label>
-          </sc-for>
-        </fieldset>
-        <label for="rvwd-more" style="display: flex; flex-direction: column; gap: 6px; font-size: 15px;">
-          Anything else? <span style="font-size: 13px; color: var(--ink-muted);">Optional</span>
-          <textarea id="rvwd-more" rows="2" style="padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; resize: none;"></textarea>
-        </label>
+        <label for="rvwd-why" style="font-size: 15px; line-height: 22px; font-weight: 600;">Tell the moderator what's wrong with this review</label>
+        <textarea id="rvwd-why" rows="4" required aria-describedby="rvwd-why-hint" value="{{why}}" onChange="{{onWhy}}" style="box-sizing: border-box; width: 100%; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; resize: none;"></textarea>
+        <span id="rvwd-why-hint" style="margin-top: -8px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Required. At least 10 characters.</span>
         <div style="display: flex; justify-content: flex-end; gap: 12px;">
           <button type="button" onClick="{{closeDispute}}" style="height: 48px; padding: 0 20px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 16px; cursor: pointer;">Cancel</button>
-          <button type="button" onClick="{{sendDispute}}" style="height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send to a moderator</button>
+          <button type="button" disabled="{{noWhy}}" onClick="{{sendDispute}}" style="{{sendStyle}}">Send</button>
         </div>
       </section>
     </div>
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"stars":{"editor":"enum","options":["5","10"],"default":"5"},"$preview":{"width":1280,"height":1000}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"view":{"editor":"enum","options":["write","profile"],"default":"write"},"$preview":{"width":1280,"height":1000}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
     this.state = {
-      r5: 4, r10: 8,
+      r5: 4,
       phrases: { 'Fast release': true, 'Clear instructions': true },
       badges: { 'Smooth trade': true },
       note: '',
       submitted: false,
-      disputeFor: null, reason: 'untrue', disputed: { r3: true }
+      disputeFor: null, why: '', disputed: { r3: true }
     };
   }
   renderVals() {
@@ -232,14 +222,14 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const view = this.props.view === 'profile' ? 'profile' : 'write';
-    const max = this.props.stars === '10' ? 10 : 5;
+    const max = 5;
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const s = this.state;
     const NAV_ON = 'display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;';
     const NAV_OFF = 'display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;';
 
     // Star picker (write view)
-    const rating = max === 10 ? s.r10 : s.r5;
+    const rating = s.r5;
     const pickStars = [];
     for (let n = 1; n <= max; n++) {
       pickStars.push({
@@ -247,7 +237,7 @@ class Component extends DCLogic {
         checked: n === rating ? 'true' : 'false',
         fill: n <= rating ? 'currentColor' : 'none',
         style: 'color: ' + (n <= rating ? 'var(--caution)' : 'var(--line)') + ';',
-        pick: () => this.setState(max === 10 ? { r10: n } : { r5: n })
+        pick: () => this.setState({ r5: n })
       });
     }
 
@@ -298,12 +288,12 @@ class Component extends DCLogic {
       return out;
     };
     const reviewData = [
-      { id: 'r1', from: 'satoshi_ghost', when: '2 days ago', method: 'Zelle', v5: 5, v10: 10, phrases: 'Fast release · Clear instructions', bad: false, badges: ['Smooth trade', 'Exact amount and memo'], note: 'Released in five minutes, everything as described.' },
-      { id: 'r2', from: 'nightowl_44', when: '1 week ago', method: 'Cash by mail', v5: 5, v10: 9, phrases: 'Would trade again · Friendly', bad: false, badges: ['Great communication'], note: '' },
-      { id: 'r3', from: 'quickflip_22', when: '3 weeks ago', method: 'Zelle', v5: 2, v10: 3, phrases: 'Went quiet · Slow', bad: true, badges: [], note: 'Took ages to release.' }
+      { id: 'r1', from: 'satoshi_ghost', when: '2 days ago', method: 'Zelle', v5: 5, phrases: 'Fast release · Clear instructions', bad: false, badges: ['Smooth trade', 'Exact amount and memo'], note: 'Released in five minutes, everything as described.' },
+      { id: 'r2', from: 'nightowl_44', when: '1 week ago', method: 'Cash by mail', v5: 5, phrases: 'Would trade again · Friendly', bad: false, badges: ['Great communication'], note: '' },
+      { id: 'r3', from: 'quickflip_22', when: '3 weeks ago', method: 'Zelle', v5: 2, phrases: 'Went quiet · Slow', bad: true, badges: [], note: 'Took ages to release.' }
     ];
     const reviews = reviewData.map((r) => {
-      const v = max === 10 ? r.v10 : r.v5;
+      const v = r.v5;
       const isDisputed = !!s.disputed[r.id];
       return {
         from: r.from, meta: r.when + ' · ' + r.method,
@@ -316,29 +306,17 @@ class Component extends DCLogic {
         hasNote: !!r.note, note: r.note,
         canDispute: !isDisputed,
         isDisputed,
-        openDispute: () => this.setState({ disputeFor: r.id, reason: 'untrue' })
+        openDispute: () => this.setState({ disputeFor: r.id, why: '' })
       };
     });
     const disputeTarget = reviewData.filter((r) => r.id === s.disputeFor)[0];
-    const reasonDefs = [
-      ['untrue', 'It isn’t true'],
-      ['abusive', 'It’s abusive or shares private details'],
-      ['other-trade', 'It’s about something else, not this trade'],
-      ['other', 'Something else']
-    ];
-    const reasons = reasonDefs.map(([id, label]) => ({
-      id: 'reason-' + id + '-w', label,
-      checked: s.reason === id,
-      pick: () => this.setState({ reason: id })
-    }));
+    const whyReady = s.why.trim().length >= 10;
 
     return {
       rootStyle,
       isWrite: view === 'write' && !s.submitted,
       isThanks: view === 'write' && s.submitted,
       isProfile: view === 'profile',
-      isTen: max === 10,
-      isFive: max === 5,
       navTrade: view === 'write' ? NAV_ON : NAV_OFF,
       navProfile: view === 'profile' ? NAV_ON : NAV_OFF,
       pickStars, ratingLabel: rating + ' of ' + max,
@@ -348,13 +326,17 @@ class Component extends DCLogic {
       onNote: (e) => this.setState({ note: e.target.value.slice(0, 200) }),
       submit: () => this.setState({ submitted: true }),
       again: () => this.setState({ submitted: false }),
-      average: max === 10 ? '9.5' : '4.8', maxLabel: 'of ' + max,
-      averageStars: starRow(max === 10 ? 10 : 5),
-      reviews, reasons,
+      average: '4.8', maxLabel: 'of ' + max,
+      averageStars: starRow(5),
+      reviews,
+      why: s.why,
+      noWhy: !whyReady,
+      sendStyle: 'height: 48px; padding: 0 24px; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (whyReady ? 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted); cursor: not-allowed;'),
+      onWhy: (e) => this.setState({ why: e.target.value }),
       disputeOpen: view === 'profile' && !!disputeTarget,
       disputeFrom: disputeTarget ? disputeTarget.from : '',
       closeDispute: () => this.setState({ disputeFor: null }),
-      sendDispute: () => this.setState({ disputed: Object.assign({}, s.disputed, { [s.disputeFor]: true }), disputeFor: null })
+      sendDispute: () => { if (whyReady) this.setState({ disputed: Object.assign({}, s.disputed, { [s.disputeFor]: true }), disputeFor: null, why: '' }); }
     };
   }
 }
