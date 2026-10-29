@@ -13,6 +13,7 @@ import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
 import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
 import { disputeRoutes } from './disputes/routes.js';
+import { takeRoutes } from './trades/take.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
@@ -249,6 +250,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   tradeRoutes(app, { publish: tradePublish });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
+  // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.
+  takeRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.

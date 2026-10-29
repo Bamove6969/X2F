@@ -364,6 +364,8 @@ Rules the tests pin (one test each):
 
 Revision 2026-10-27 (lead): `POST /v1/offers/:id/take` accepts the quoted `centsPerXmr` and `fiatCents`; it refuses with 409 `price-changed` when the offer's rate now (`offerRate`, market plus the offer's margin) differs from the quote by more than 0.5%; fixed-price offers compare exactly. When it accepts, it locks exactly the quoted `centsPerXmr` and `fiatCents` (never its own fresh rate), because the attested `deal.centsPerXmr` must equal the taker's `confirmed.deal.centsPerXmr` or the trade fails `deal-mismatch` (Task 18 re-review, 2026-10-27).
 
+Revision 2026-10-29 (lead decision, Task 5 review I2; supersedes "locks exactly the quoted" above): the client's rate is never locked. The take always locks the server's own rate now (`offerRate`: market plus margin, or the fixed price) and that rate's total, and answers `{ code, centsPerXmr, fiatCents }` with them. The client's `centsPerXmr` only detects a move: more than 0.5% from the server's rate (fixed: any difference) → 409 `price-changed`. So the taker gets the live price within 0.5% of what they saw and can never pick a better one. The device records its confirmed deal at the rate in the answer, after checking it is within 0.5% of the quote it showed (else it records nothing), so the attested `deal.centsPerXmr` still equals `confirmed.deal.centsPerXmr`. Also (lead decisions, same review): the Starter cap counts the larger of the fiat total and the XMR amount at the live market price (M5); the poster's open-trade limit refuses with a generic 409 `offer-busy` (M6); a blocked pair (either way) gets 404 `not-found` before any other refusal (M3, Task 37).
+
 ### Task 6: Trade store, view, events route, retention and log hygiene (`apps/api`)
 
 **Files:**
