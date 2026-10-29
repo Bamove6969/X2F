@@ -10,6 +10,13 @@ Branch `wip/design-brief` in bamove6969/x2f. Nothing is merged; that is your cal
 - **Board source files:** `docs/design-boards/` on this branch. These are the same files as on the canvas, including `canvas.json`. They are `.dc.html` design boards, readable as markup.
 - **Full record:** `docs/design-brief-2026-10-29-response.md`. It has every board, every copy change, the brief-vs-spec conflicts and every owner answer.
 
+## Still in progress (not finished yet)
+
+- **Team members:** the rules are agreed (section 6 below). The Team settings boards are being drawn now and aren't on the canvas yet. It's planned for the phase after launch, and will be adjusted from trader feedback.
+- **Devices:** the rules are agreed (section 5). The "Is this you?" login-approval boards (both sides) and the device list are being drawn now and aren't on the canvas yet.
+- **Foldables:** six boards are on the canvas, but they haven't been checked in a real browser yet. The fold rules aren't added to existing boards yet. Only the new Fold-* boards show them.
+- **Open questions:** the questions still open with the owner are listed at the end. I'll send another update when they're answered and the boards above are done.
+
 ## Spec and plan changes you need to make
 
 These are owner decisions that change the spec or plans. Please apply them; the design side doesn't edit the spec on main.
