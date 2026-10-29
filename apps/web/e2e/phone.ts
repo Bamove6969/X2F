@@ -23,7 +23,8 @@ export async function setPhone(page: Page, viewport: ParityViewport): Promise<vo
 /**
  * Throws when the page scrolls sideways, a visible element sticks out past the viewport's sides,
  * or a visible control (link, button, input, radio, tab) is smaller than MIN_TAP on a side.
- * Inline text links inside a sentence are measured by their line box, so they are held to 24.
+ * Inline text links inside a sentence are measured by their line box, so they are held to 24. A
+ * checkbox or radio inside a label of at least 44 px by MIN_TAP passes: the label is the target.
  */
 export async function expectPhoneLayout(page: Page): Promise<void> {
   const problems = await page.evaluate((minTap) => {
@@ -56,6 +57,13 @@ export async function expectPhoneLayout(page: Page): Promise<void> {
     for (const el of Array.from(controls)) {
       if (!visible(el)) continue;
       const r = el.getBoundingClientRect();
+      // A checkbox or radio inside a label that is itself a big enough target (at least 44 px tall
+      // and MIN_TAP wide) is tapped through its label (lead's ruling 2026-10-28: SellerConfirm's
+      // 22 px box in its 44 px label row).
+      if (el instanceof HTMLInputElement && (el.type === 'checkbox' || el.type === 'radio')) {
+        const box = el.closest('label')?.getBoundingClientRect();
+        if (box && box.height >= 44 - 0.5 && box.width >= minTap) continue;
+      }
       const inline = getComputedStyle(el).display === 'inline';
       const min = inline ? 24 : minTap;
       if (r.width < min || r.height < min) out.push(`${label(el)} is ${Math.round(r.width)}x${Math.round(r.height)}, under ${min}x${min}`);

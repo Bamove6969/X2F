@@ -75,7 +75,10 @@ export function installFixtures(): void {
     confirmedAtomic: big(confirmedAtomic),
     amountAtomic: big(amountAtomic),
     fiatCents: big(fiatCents),
-    release: record('release'),
+    release: async () => {
+      await record('release')();
+      set({ phase: 'done', keepOpen: false });
+    },
     buildRefund: record('build-refund'),
     // Like Task 12's runtime: a tapped settle is saved on this device (intentKind).
     buyerCancel: record('buyer-cancel', () => set({ intentKind: 'buyer-cancel' })),
