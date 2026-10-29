@@ -43,7 +43,7 @@ export function Backup() {
         screen="setup-backup"
         step={4}
         footer={
-          <div className="x2f-setup__buttons">
+          <div className="x2f-start__buttons">
             {adding === null ? (
               <Button variant={open ? 'secondary' : 'primary'} onClick={() => setAdding(pick)} data-part="backup-add">
                 Add {choice.short}
@@ -59,11 +59,11 @@ export function Backup() {
           We recommend it. X2F has no email address or phone number for you, so if you lose your key or forget your password, we have no way to let
           you back in.
         </SetupIntro>
-        <p className="x2f-setup__panel">
+        <p className="x2f-start__panel">
           Your coins stay in your own wallet either way. Without a backup, you could lose this account and the reputation you've built on it.
         </p>
         {adding === null ? (
-          <div className="x2f-setup__options" role="radiogroup" aria-label="Backup method">
+          <div className="x2f-start__options" role="radiogroup" aria-label="Backup method">
             {BACKUPS.map((b, i) => (
               <button
                 key={b.id}
@@ -74,14 +74,14 @@ export function Backup() {
                   setPick,
                   i,
                 )}
-                className="x2f-setup__option"
+                className="x2f-start__option"
                 data-backup={b.id}
               >
-                <span className="x2f-setup__option-text">
-                  <span className="x2f-setup__choice-name">{b.name}</span>
-                  <span className="x2f-setup__choice-desc">{b.desc}</span>
+                <span className="x2f-start__option-text">
+                  <span className="x2f-start__choice-name">{b.name}</span>
+                  <span className="x2f-start__choice-desc">{b.desc}</span>
                 </span>
-                <span className="x2f-setup__dot" aria-hidden="true" />
+                <span className="x2f-start__dot" aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -132,7 +132,7 @@ function SecurityKeyBackup({ prove, onDone, onCancel }: { prove: Prove; onDone: 
   return (
     <div className="x2f-field" data-part="backup-security-key">
       <ErrorLine error={error} />
-      <p className="x2f-setup__help">Plug in or hold your security key near the phone, then tap it when asked.</p>
+      <p className="x2f-start__help">Plug in or hold your security key near the phone, then tap it when asked.</p>
       <div className="x2f-row">
         <Button variant={primary} disabled={busy} onClick={() => void add()} data-part="backup-key-add">
           Add security key
@@ -223,7 +223,7 @@ function SecondPgpKey({ prove, onDone, onCancel }: { prove: Prove; onDone: () =>
   return (
     <div className="x2f-field" data-part="backup-pgp">
       <ErrorLine error={error} />
-      <p className="x2f-setup__help">Decrypt this message with the second key, then paste the code from inside it.</p>
+      <p className="x2f-start__help">Decrypt this message with the second key, then paste the code from inside it.</p>
       <pre className="x2f-pre">{challenge.encryptedMessage}</pre>
       <label className="x2f-field x2f-label" htmlFor="backup-code">
         Code from the message

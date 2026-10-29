@@ -101,22 +101,22 @@ export function Wallet() {
         }
       >
         <SetupIntro title="Where should we send your XMR?">Choose the wallet you want to be paid to. X2F never holds your coins.</SetupIntro>
-        <div className="x2f-setup__chips" role="radiogroup" aria-label="Wallet app">
+        <div className="x2f-start__chips" role="radiogroup" aria-label="Wallet app">
           {APPS.map((a, i) => (
-            <button key={a} type="button" {...radioProps(APPS, app, setApp, i)} className="x2f-setup__chip" data-app={a}>
+            <button key={a} type="button" {...radioProps(APPS, app, setApp, i)} className="x2f-start__chip" data-app={a}>
               {APP_LABELS[a]}
             </button>
           ))}
         </div>
         {app === 'edge' ? (
-          <p className="x2f-setup__tip" data-part="edge-tip">
+          <p className="x2f-start__tip" data-part="edge-tip">
             For best privacy, turn on Full Sync in Edge's Monero settings. Otherwise Edge's servers can see payments coming in.
           </p>
         ) : null}
         <label className="x2f-field x2f-label" htmlFor="addr">
           Receive address from {appName}
           <input
-            className="x2f-input x2f-setup__mono"
+            className="x2f-input x2f-start__mono"
             id="addr"
             type="text"
             placeholder="4… or 8…"
@@ -133,11 +133,11 @@ export function Wallet() {
             {error}
           </p>
         ) : null}
-        <p className="x2f-setup__help" data-part="first-wallet-rule">
+        <p className="x2f-start__help" data-part="first-wallet-rule">
           This is your first payout wallet, so it works at once. Wallets you add later ask you to confirm it's you, and X2F always shows an alert when
           one is added.
         </p>
-        <p className="x2f-setup__small">
+        <p className="x2f-start__small">
           Monero addresses never expire, so reusing one will never make you miss a payout. For extra privacy, you can paste a fresh address from your
           wallet for each trade.
         </p>

@@ -83,32 +83,32 @@ export function SetupFrame({
   children: ReactNode;
 }) {
   return (
-    <div className={fit ? 'x2f-setup x2f-setup--fit' : 'x2f-setup'} data-screen={screen}>
-      <header className="x2f-setup__head">
-        <div className="x2f-setup__bar">
+    <div className={fit ? 'x2f-start x2f-start--fit' : 'x2f-start'} data-screen={screen}>
+      <header className="x2f-start__head">
+        <div className="x2f-start__bar">
           {back !== undefined ? (
-            <Link className="x2f-icon-button x2f-setup__back" to={back} aria-label="Back">
+            <Link className="x2f-icon-button x2f-start__back" to={back} aria-label="Back">
               <Icon name="chevron-left" />
             </Link>
           ) : (
-            <span className="x2f-setup__nobar" aria-hidden="true" />
+            <span className="x2f-start__nobar" aria-hidden="true" />
           )}
-          <span className="x2f-setup__title">{title}</span>
-          {step !== undefined ? <span className="x2f-setup__step">Step {step} of 5</span> : null}
+          <span className="x2f-start__title">{title}</span>
+          {step !== undefined ? <span className="x2f-start__step">Step {step} of 5</span> : null}
         </div>
         {step !== undefined ? (
           <>
-            <div className="x2f-setup__progress" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={5} aria-valuenow={step}>
+            <div className="x2f-start__progress" role="progressbar" aria-label="Setup progress" aria-valuemin={1} aria-valuemax={5} aria-valuenow={step}>
               {[1, 2, 3, 4, 5].map((i) => (
-                <span key={i} className="x2f-setup__seg" data-on={i <= step ? 'true' : 'false'} />
+                <span key={i} className="x2f-start__seg" data-on={i <= step ? 'true' : 'false'} />
               ))}
             </div>
-            <span className="x2f-setup__time">Takes about 2 minutes.</span>
+            <span className="x2f-start__time">Takes about 2 minutes.</span>
           </>
         ) : null}
       </header>
-      <main className="x2f-setup__main">{children}</main>
-      <footer className="x2f-setup__foot">{footer}</footer>
+      <main className="x2f-start__main">{children}</main>
+      <footer className="x2f-start__foot">{footer}</footer>
     </div>
   );
 }
@@ -116,9 +116,9 @@ export function SetupFrame({
 /** The screen's heading and the sentence under it. */
 export function SetupIntro({ title, children }: { title: ReactNode; children?: ReactNode }) {
   return (
-    <section className="x2f-setup__intro">
-      <h1 className="x2f-setup__h1">{title}</h1>
-      {children !== undefined ? <p className="x2f-setup__lead">{children}</p> : null}
+    <section className="x2f-start__intro">
+      <h1 className="x2f-start__h1">{title}</h1>
+      {children !== undefined ? <p className="x2f-start__lead">{children}</p> : null}
     </section>
   );
 }

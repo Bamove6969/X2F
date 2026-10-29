@@ -100,18 +100,18 @@ export function Welcome() {
   const s = summarize(me, wallets, state);
 
   return (
-    <div className="x2f-setup x2f-welcome" data-screen="setup-welcome">
+    <div className="x2f-start x2f-welcome" data-screen="setup-welcome">
       <main className="x2f-welcome__main">
         <span className="x2f-welcome__badge" aria-hidden="true">
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
             <path d="M5 12l4 4 10-10" />
           </svg>
         </span>
-        <section className="x2f-setup__intro">
+        <section className="x2f-start__intro">
           <h1 className="x2f-welcome__h1">
             Welcome to X2F, <span data-username="">{name}</span>
           </h1>
-          <p className="x2f-setup__lead">
+          <p className="x2f-start__lead">
             Your account is ready. Trade Monero for cash, bank transfers and payment apps, with every trade protected by escrow.
           </p>
         </section>
@@ -128,19 +128,19 @@ export function Welcome() {
             <span className="x2f-welcome__key">You get paid to</span>
             {s.paidTo !== null ? (
               <span data-part="summary-wallet">
-                {s.paidTo.app} <span className="x2f-setup__mono x2f-welcome__end">…{s.paidTo.end}</span>
+                {s.paidTo.app} <span className="x2f-start__mono x2f-welcome__end">…{s.paidTo.end}</span>
               </span>
             ) : (
               <span data-part="summary-wallet">None yet</span>
             )}
           </li>
         </ul>
-        <p className="x2f-setup__help">You can change any of these later in Settings.</p>
-        <p className="x2f-setup__help" data-part="fee">
+        <p className="x2f-start__help">You can change any of these later in Settings.</p>
+        <p className="x2f-start__help" data-part="fee">
           {FEE_SENTENCE}
         </p>
       </main>
-      <footer className="x2f-setup__foot">
+      <footer className="x2f-start__foot">
         <Button variant="primary" onClick={start} data-part="start-trading">
           Start trading
         </Button>

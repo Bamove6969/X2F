@@ -98,31 +98,31 @@ export function PgpChallenge() {
     >
       <SetupIntro title="Decrypt your first login code">You'll do the same thing each time you log in.</SetupIntro>
       {done ? (
-        <section className="x2f-setup__verified" aria-label="Key verified">
-          <p className="x2f-setup__status" data-tone="escrow">
+        <section className="x2f-start__verified" aria-label="Key verified">
+          <p className="x2f-start__status" data-tone="escrow">
             <Icon name="check" size={20} stroke={2} />
             Key verified
           </p>
-          <p className="x2f-setup__help">
+          <p className="x2f-start__help">
             Every login works this way from now on. X2F shows a message locked to your key, your PGP app unlocks it with your private key, and you
             paste in the code.
           </p>
-          <p className="x2f-setup__help">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
+          <p className="x2f-start__help">Each code works once and expires after 5 minutes, so a fake site can't reuse one.</p>
         </section>
       ) : (
         <>
-          <ol className="x2f-setup__steps">
+          <ol className="x2f-start__steps">
             <li>Copy the encrypted message below.</li>
             <li>Open your PGP app (Kleopatra, GPG Suite or OpenKeychain) and decrypt it.</li>
             <li>Paste the code from inside the message.</li>
           </ol>
-          <section className="x2f-setup__message" aria-label="Encrypted message">
-            <div className="x2f-setup__message-bar">
-              <span className="x2f-setup__expires">
+          <section className="x2f-start__message" aria-label="Encrypted message">
+            <div className="x2f-start__message-bar">
+              <span className="x2f-start__expires">
                 <Icon name="clock" size={16} />
                 Expires in <Countdown deadline={challenge.expiresAt} serverClock={clock} />
               </span>
-              <button type="button" className="x2f-setup__pill" onClick={copy} data-part="copy">
+              <button type="button" className="x2f-start__pill" onClick={copy} data-part="copy">
                 {copied ? 'Copied' : 'Copy message'}
               </button>
             </div>
@@ -147,11 +147,11 @@ export function PgpChallenge() {
           </label>
           <RegisterError error={error} />
           {error !== null && !error.names && !error.keyInUse ? (
-            <button type="button" className="x2f-setup__textbutton" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
+            <button type="button" className="x2f-start__textbutton" disabled={busy} onClick={() => void resend()} data-part="pgp-new-message">
               Send a new message
             </button>
           ) : null}
-          <p className="x2f-setup__warn">
+          <p className="x2f-start__warn">
             The decrypted message also names X2F and today's date and time. If it names a different site or an old time, stop and don't paste
             anything. Someone may be trying to phish you.
           </p>

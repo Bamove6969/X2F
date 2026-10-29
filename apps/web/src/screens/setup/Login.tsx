@@ -93,7 +93,7 @@ export function Login() {
       }
     >
       <SetupIntro title="How do you want to log in?">Choose one for now. You can add others later in Settings.</SetupIntro>
-      <div className="x2f-setup__choices" role="radiogroup" aria-label="Login method">
+      <div className="x2f-start__choices" role="radiogroup" aria-label="Login method">
         {METHODS.map((m, i) => (
           <button
             key={m.id}
@@ -104,24 +104,24 @@ export function Login() {
               setPick,
               i,
             )}
-            className="x2f-setup__choice"
+            className="x2f-start__choice"
             data-method={m.id}
           >
-            <span className="x2f-setup__choice-head">
-              <span className="x2f-setup__choice-name">{m.name}</span>
-              {m.rec ? <span className="x2f-setup__rec">Recommended</span> : null}
+            <span className="x2f-start__choice-head">
+              <span className="x2f-start__choice-name">{m.name}</span>
+              {m.rec ? <span className="x2f-start__rec">Recommended</span> : null}
             </span>
-            <span className="x2f-setup__choice-desc">{m.desc}</span>
-            {pick === m.id && m.later !== undefined ? <span className="x2f-setup__choice-later">{m.later}</span> : null}
+            <span className="x2f-start__choice-desc">{m.desc}</span>
+            {pick === m.id && m.later !== undefined ? <span className="x2f-start__choice-later">{m.later}</span> : null}
           </button>
         ))}
       </div>
       <RegisterError error={error} />
-      <button type="button" className="x2f-setup__textbutton" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
+      <button type="button" className="x2f-start__textbutton" aria-expanded={explain} onClick={() => setExplain((x) => !x)} data-part="pgp-explain">
         New to PGP?
       </button>
       {explain ? (
-        <p className="x2f-setup__help" data-part="pgp-explainer">
+        <p className="x2f-start__help" data-part="pgp-explainer">
           PGP is free software that locks and unlocks messages with a pair of keys: a public key you can share and a private key only you keep. You
           need a PGP app each time you log in, such as Kleopatra on Windows, GPG Suite on a Mac or OpenKeychain on Android. X2F never makes keys for
           you, so your private key never leaves your app.

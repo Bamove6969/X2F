@@ -143,7 +143,7 @@ function TermsScreen({
       {loadFailed ? (
         <p className="x2f-error" role="alert">
           Could not load the Terms version.{' '}
-          <button type="button" className="x2f-setup__textbutton" onClick={load}>
+          <button type="button" className="x2f-start__textbutton" onClick={load}>
             Try again
           </button>
         </p>
@@ -177,11 +177,11 @@ function TermsScreen({
         />
         <span>
           I have read and agree to the{' '}
-          <button type="button" className="x2f-setup__textbutton" onClick={() => show(null)}>
+          <button type="button" className="x2f-start__textbutton" onClick={() => show(null)}>
             Terms of Service
           </button>{' '}
           and{' '}
-          <button type="button" className="x2f-setup__textbutton" onClick={() => show(PRIVACY_HEADING)}>
+          <button type="button" className="x2f-start__textbutton" onClick={() => show(PRIVACY_HEADING)}>
             Privacy Policy
           </button>
           .
@@ -201,7 +201,7 @@ export function SetupTerms() {
       intro="Please read to the end. The key points first:"
       back={returnTo}
       after={
-        <p className="x2f-setup__help">
+        <p className="x2f-start__help">
           Already have an account?{' '}
           <Link className="x2f-link" to={`/login?returnTo=${encodeURIComponent(returnTo)}`} data-part="setup-login">
             Log in

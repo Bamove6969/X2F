@@ -42,7 +42,7 @@ export function Username() {
           Username
         </label>
         <input
-          className="x2f-input x2f-setup__name"
+          className="x2f-input x2f-start__name"
           id="uname"
           type="text"
           autoComplete="off"
@@ -55,14 +55,14 @@ export function Username() {
           onChange={(e) => setDisplayName(e.target.value)}
         />
         {checkDisplayName(displayName).ok ? (
-          <span className="x2f-setup__status x2f-setup__preview" data-tone="escrow" data-part="name-preview">
+          <span className="x2f-start__status x2f-start__preview" data-tone="escrow" data-part="name-preview">
             <Icon name="check" size={18} stroke={2} />
             <span>
               Traders will see <span data-username="">{displayName}</span>
             </span>
           </span>
         ) : null}
-        <p className="x2f-setup__help" id="uname-help">
+        <p className="x2f-start__help" id="uname-help">
           5 to 20 characters: letters, numbers, dots, dashes and underscores. It shows exactly as you type it. Pick something that isn't your real
           name or used elsewhere.
         </p>
@@ -72,7 +72,7 @@ export function Username() {
           Login name
         </label>
         <input
-          className="x2f-input x2f-setup__name"
+          className="x2f-input x2f-start__name"
           id="login-name"
           type="text"
           autoComplete="username"
@@ -84,7 +84,7 @@ export function Username() {
           value={loginName}
           onChange={(e) => setLoginName(e.target.value)}
         />
-        <p className="x2f-setup__help" id="login-name-help">
+        <p className="x2f-start__help" id="login-name-help">
           Private: nobody else ever sees it. You use it to log in with a password or a security key, so make it different from your username.
         </p>
       </div>

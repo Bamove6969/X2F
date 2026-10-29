@@ -103,22 +103,22 @@ export function PgpKey() {
         />
       </label>
       {check !== null && check.ok ? (
-        <section className="x2f-setup__facts" aria-label="Key check" data-part="key-check">
-          <span className="x2f-setup__status" data-tone="escrow">
+        <section className="x2f-start__facts" aria-label="Key check" data-part="key-check">
+          <span className="x2f-start__status" data-tone="escrow">
             <Icon name="check" size={18} stroke={2} />
             Key accepted
           </span>
-          <div className="x2f-setup__fact">
-            <span className="x2f-setup__fact-name">Type</span>
+          <div className="x2f-start__fact">
+            <span className="x2f-start__fact-name">Type</span>
             <span>{keyType(check)}</span>
           </div>
-          <div className="x2f-setup__fact">
-            <span className="x2f-setup__fact-name">Expires</span>
+          <div className="x2f-start__fact">
+            <span className="x2f-start__fact-name">Expires</span>
             <span>{expiry(check.expiresAt)}</span>
           </div>
-          <div className="x2f-setup__fact x2f-setup__fact--wide">
-            <span className="x2f-setup__fact-name">Fingerprint (your account ID)</span>
-            <span className="x2f-setup__mono">{groupFingerprint(check.fingerprint)}</span>
+          <div className="x2f-start__fact x2f-start__fact--wide">
+            <span className="x2f-start__fact-name">Fingerprint (your account ID)</span>
+            <span className="x2f-start__mono">{groupFingerprint(check.fingerprint)}</span>
           </div>
         </section>
       ) : null}
@@ -128,10 +128,10 @@ export function PgpKey() {
         </p>
       ) : null}
       <RegisterError error={error} />
-      <p className="x2f-setup__help">
+      <p className="x2f-start__help">
         We accept RSA keys of 4096 bits or more, Ed25519 and Ed448. If a key has expired or been revoked, we'll tell you.
       </p>
-      <p className="x2f-setup__help">If your key contains an email address, X2F never shows or uses it. For full privacy, use a key without one.</p>
+      <p className="x2f-start__help">If your key contains an email address, X2F never shows or uses it. For full privacy, use a key without one.</p>
     </SetupFrame>
   );
 }

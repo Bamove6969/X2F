@@ -35,7 +35,7 @@ export function passwordRules(pw: string, again: string): PasswordRules {
 
 function Rule({ id, met, children }: { id: string; met: Met; children: string }) {
   return (
-    <li className="x2f-setup__rule" data-rule={id} data-met={met}>
+    <li className="x2f-start__rule" data-rule={id} data-met={met}>
       <Icon name={met === 'false' ? 'close' : 'check'} size={18} stroke={2} />
       {children}
     </li>
@@ -110,7 +110,7 @@ export function Password() {
         Type it again
         <input className="x2f-input" id="pw2" type="password" autoComplete="new-password" value={again} onChange={(e) => setAgain(e.target.value)} />
       </label>
-      <ul className="x2f-setup__rules" aria-label="Password rules">
+      <ul className="x2f-start__rules" aria-label="Password rules">
         <Rule id="length" met={yes(rules.length)}>
           10 characters or more
         </Rule>
@@ -128,7 +128,7 @@ export function Password() {
         </Rule>
       </ul>
       <RegisterError error={error} />
-      <p className="x2f-setup__help">
+      <p className="x2f-start__help">
         X2F stores a scrambled version that can't be turned back into your password. We have no email address to reset it with, so keep it in a
         password manager or somewhere else safe.
       </p>
