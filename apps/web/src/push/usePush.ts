@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, type ApiInit } from '../api/client.js';
+import { clearFeedbackDraft } from '../screens/feedbackDraft.js';
 
 export type PushStatus = 'unsupported' | 'denied' | 'off' | 'on';
 
@@ -99,6 +100,8 @@ export async function logOut(env: PushEnv): Promise<void> {
     // best-effort: POST /v1/logout drops this session's subscriptions on the server anyway
   }
   await env.api('/v1/logout', { method: 'POST' });
+  // A feedback draft never outlives the account in this tab (Plan 5 Task 21, round-2 N-M6).
+  clearFeedbackDraft();
 }
 
 /** Phone alerts on or off for this browser (Security settings and onboarding use it). */

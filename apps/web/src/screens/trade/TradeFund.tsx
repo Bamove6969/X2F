@@ -95,6 +95,7 @@ function HowEscrow({ view }: { view: TradeView }) {
       <div className="x2f-how__head">
         <h2>Escrow ready: 3 keys, any 2 release it</h2>
         <span className="x2f-muted">
+          {/* not-a-refusal: explains the escrow keys */}
           Yours, <Name view={view} />
           's and the moderator's. One key alone can't move anything.
         </span>

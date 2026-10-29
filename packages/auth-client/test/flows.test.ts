@@ -31,12 +31,14 @@ const LABEL = 'Browser on Linux';
  * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 5:
  * taking an offer and the poster's wallet; Task 6: the trade view
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
- * Push and the final-alert receipts; Task 26: nudges, nudge settings and blocks; Task 27: the dispute
- * and the appeal). Any other new
+ * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
+ * and blocks; Task 27: the dispute and the appeal; Task 37: the Blocked list and unblock). Any other new
  * route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
+  'DELETE /v1/account/blocks/:displayName',
   'DELETE /v1/account/push',
+  'GET /v1/account/blocks',
   'GET /v1/account/nudges',
   'GET /v1/account/push',
   'GET /v1/events',
@@ -53,6 +55,7 @@ const NOT_AUTH_CLIENT = [
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/push',
+  'POST /v1/feedback/form',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
   'POST /v1/offers',

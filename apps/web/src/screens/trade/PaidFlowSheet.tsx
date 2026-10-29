@@ -86,6 +86,7 @@ export function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'r
 
 const REFUSALS: Record<string, string> = {
   'too-late': "It's too late for that now.",
+  // not-a-refusal: the trade state machine (see NOT_REFUSAL_CODES)
   'wrong-state': "The trade has moved on. It can't do that now.",
   'trading-paused': 'Trading is paused for maintenance. Try again soon.',
 };

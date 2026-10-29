@@ -45,10 +45,12 @@ export function EscrowCheck({ view, words }: { view: TradeView; words: readonly 
 export function errorSentence(e: Pick<TradeEscrow, 'error' | 'retryable'>): string | null {
   switch (e.error) {
     case 'unsupported-browser':
+      // not-a-refusal: a device fault
       return "This browser can't run the escrow. Open the trade in an up-to-date browser.";
     case 'not-confirmed':
       return 'Open this trade from the device you started it on.';
     case 'escrow-failed':
+      // not-a-refusal: a device fault
       return e.retryable ? 'Escrow setup stopped. Check your connection and try again.' : "The escrow can't be set up on this device.";
     default:
       return null;
@@ -113,6 +115,7 @@ export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | '
       await postTradeEvent(view.code, { type: buyer ? 'buyer-cancel' : walkAway ? 'walk-away' : 'propose-cancel' });
       await refresh();
     } catch (e) {
+      // not-a-refusal: 409 on cancel: the trade has moved on (wrong-state, see NOT_REFUSAL_CODES)
       setErr(e instanceof ApiCallError && e.status === 409 ? "This trade can't be cancelled from here any more." : "Couldn't cancel. Try again.");
     } finally {
       setBusy(false);

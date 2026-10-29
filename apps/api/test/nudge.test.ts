@@ -24,6 +24,8 @@ const DAY = 24 * HOUR;
 const published: Array<[string, NudgeEvent]> = [];
 const pushed: Array<unknown[]> = [];
 const shared = new Set<string>();
+/** Shared contexts that are an open trade between the two (a block does not stop those, review N1). */
+const sharedTrades = new Set<string>();
 /** When set, publish and sendPush never return (a slow push service): the response must not wait. */
 let hang = false;
 let publishThrows = false;
@@ -32,6 +34,7 @@ const ctxKey = (from: string, to: string, context: string) => `${from}|${to}|${c
 
 const fakeWiring: NudgeWiring = {
   async hasSharedContext(fromId, toId, context) {
+    if (sharedTrades.has(ctxKey(fromId, toId, context))) return 'open-trade';
     return shared.has(ctxKey(fromId, toId, context));
   },
   publish(accountId, ev) {
@@ -582,6 +585,54 @@ describe('POST /v1/account/blocks', () => {
     await settle();
     expect(published.map(([id]) => id)).toEqual([p.to.id]);
   });
+
+  it('Task 37 review N1: inside an open trade a block either way does not stop nudges', async () => {
+    const p = await pair();
+    const key = (a: Trader, b: Trader) => ctxKey(a.id, b.id, p.context);
+    sharedTrades.add(key(p.from, p.to));
+    sharedTrades.add(key(p.to, p.from));
+    // The seller (to) blocked the buyer (from) mid-trade; the buyer paid and nudges to release.
+    expect((await p.to.b.post('/v1/account/blocks', { displayName: p.from.name })).statusCode).toBe(204);
+    expect((await nudge(p.from, p.to.name, p.context)).statusCode).toBe(202);
+    // And the blocker can still nudge the person they blocked about the trade.
+    expect((await nudge(p.to, p.from.name, p.context)).statusCode).toBe(202);
+    await settle();
+    expect(published).toEqual([
+      [p.to.id, { type: 'nudge', from: p.from.name, context: p.context }],
+      [p.from.id, { type: 'nudge', from: p.to.name, context: p.context }],
+    ]);
+    const { rows } = await deps.db.query<{ delivered: boolean }>(
+      'select delivered from nudges where from_id = any($1::uuid[]) order by sent_at',
+      [[p.from.id, p.to.id]],
+    );
+    expect(rows.map((r) => r.delivered)).toEqual([true, true]);
+  });
+
+  it('Task 37 review N1: outside a trade (an offer chat) a block either way drops the nudge silently', async () => {
+    const p = await pair();
+    shared.add(ctxKey(p.to.id, p.from.id, p.context));
+    expect((await p.to.b.post('/v1/account/blocks', { displayName: p.from.name })).statusCode).toBe(204);
+    for (const [a, b] of [[p.from, p.to], [p.to, p.from]] as const) {
+      const res = await nudge(a, b.name, p.context);
+      expect(res.statusCode).toBe(202);
+      expect(res.json()).toEqual({ ok: true });
+    }
+    await settle();
+    expect(published).toEqual([]);
+  });
+
+  it('Task 37 review M6: the blocker cannot nudge the person they blocked either (dropped silently)', async () => {
+    const p = await pair();
+    // The sender blocked the recipient: same 202 as a delivered nudge, nothing delivered.
+    expect((await p.from.b.post('/v1/account/blocks', { displayName: p.to.name })).statusCode).toBe(204);
+    const res = await nudge(p.from, p.to.name, p.context);
+    expect(res.statusCode).toBe(202);
+    expect(res.json()).toEqual({ ok: true });
+    await settle();
+    expect(published).toEqual([]);
+    const { rows } = await deps.db.query<{ delivered: boolean }>('select delivered from nudges where from_id = $1', [p.from.id]);
+    expect(rows.map((r) => r.delivered)).toEqual([false]);
+  });
 });
 
 describe('purgeNudges', () => {
@@ -630,9 +681,9 @@ describe('shared context from real trades (Task 6)', () => {
     const c = await trader();
     const { code } = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
     const shares = tradeSharedContext(deps.db);
-    expect(await shares(a.id, b.id, code)).toBe(true);
-    expect(await shares(b.id, a.id, code)).toBe(true);
-    expect(await shares(a.id, b.id, code.toLowerCase().replace(/-/g, ''))).toBe(true);
+    expect(await shares(a.id, b.id, code)).toBe('open-trade');
+    expect(await shares(b.id, a.id, code)).toBe('open-trade');
+    expect(await shares(a.id, b.id, code.toLowerCase().replace(/-/g, ''))).toBe('open-trade');
     expect(await shares(a.id, c.id, code)).toBe(false);
     expect(await shares(c.id, b.id, code)).toBe(false);
     expect(await shares(a.id, a.id, code)).toBe(false);
@@ -648,7 +699,7 @@ describe('shared context from real trades (Task 6)', () => {
     expect(await shares(a.id, b.id, done.code)).toBe(false);
     const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'buyer' });
     await deps.db.query("update trades set state = 'disputed', closed_at = null where code = $1", [open.code]);
-    expect(await shares(b.id, a.id, open.code)).toBe(true);
+    expect(await shares(b.id, a.id, open.code)).toBe('open-trade');
   });
 
   it('end to end: a nudge about an open trade goes through the production check', async () => {
@@ -664,6 +715,12 @@ describe('shared context from real trades (Task 6)', () => {
       expect(published).toEqual([[b.id, { type: 'nudge', from: a.name, context: code }]]);
       const stranger = await trader();
       expect((await nudge(stranger, b.name, code)).json()).toEqual({ error: 'no-shared-context' });
+      // Review N1: a block between the two does not stop nudges about their open trade.
+      published.length = 0;
+      expect((await a.b.post('/v1/account/blocks', { displayName: b.name })).statusCode).toBe(204);
+      expect((await nudge(b, a.name, code)).statusCode).toBe(202);
+      await settle();
+      expect(published).toEqual([[a.id, { type: 'nudge', from: b.name, context: code }]]);
     } finally {
       fakeWiring.hasSharedContext = saved;
     }

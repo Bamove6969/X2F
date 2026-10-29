@@ -21,6 +21,7 @@ import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
+import { feedbackFormRoutes } from './feedback/form.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
@@ -271,6 +272,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
       await stopWatch();
     });
   }
+  // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
+  feedbackFormRoutes(app);
 
   return app;
 }
