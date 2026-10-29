@@ -8,6 +8,7 @@ import { getMethod, isAvailable } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
+import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
@@ -19,6 +20,9 @@ import { usableWallets } from '../wallets/routes.js';
  * - `PATCH /v1/offers/:id { status }` (the poster only) → `{ id, status }`.
  * - `GET /v1/offers?side&method&currency&sort=best|online|trades` (no session, P3-M9) → `OfferCard[]`.
  * - `GET /v1/offers/:id` (no session) → `OfferDetail`; a paused offer only to its poster.
+ *
+ * A signed-in trader never sees the offers of someone they blocked or who blocked them (Task 37,
+ * traders/blocks.ts): the list leaves them out and the single-offer route answers 404.
  *
  * `side` is the ads' own side, what the poster does with XMR: someone buying XMR browses
  * `side=sell`. Amounts and prices are decimal strings (bigints), fiat in the currency's minor units.
@@ -436,6 +440,7 @@ export function offerRoutes(app: FastifyInstance): void {
          cross join lateral (select coalesce(${lastSeenSql('a.id', '$6::uuid')} >= $5::timestamptz, false) as online) ls
          cross join lateral (select ${COMPLETED_TRADES_SQL} as completed) ct
         where ${LISTED} and o.side = $1 and o.method_id = $2 and o.currency = $3
+          and not ${blockedEitherWaySql('o.account_id', '$6::uuid')}
         order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
       [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId],
     );
@@ -450,15 +455,17 @@ export function offerRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
-    const { rows } = await deps.db.query<OfferRow & { listed: boolean }>(
-      `select ${OFFER_COLUMNS}, (${LISTED}) as listed from offers o join accounts a on a.id = o.account_id where o.id = $1`,
-      [id],
+    const viewerId = await viewer(app, req, reply);
+    const { rows } = await deps.db.query<OfferRow & { listed: boolean; blocked: boolean }>(
+      `select ${OFFER_COLUMNS}, (${LISTED}) as listed, ${blockedEitherWaySql('o.account_id', '$2::uuid')} as blocked
+         from offers o join accounts a on a.id = o.account_id where o.id = $1`,
+      [id, viewerId],
     );
     const r = rows[0];
     if (!r || r.status === 'removed') throw new ApiError(404, 'not-found');
-    const viewerId = await viewer(app, req, reply);
     const mine = viewerId !== null && viewerId === r.account_id;
-    if (!mine && !(r.listed && isAvailable(r.method_id))) throw new ApiError(404, 'not-found');
+    // A block either way looks exactly like an offer that does not exist (Task 37).
+    if (!mine && (r.blocked || !(r.listed && isAvailable(r.method_id)))) throw new ApiError(404, 'not-found');
     const now = deps.clock();
     const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId)).get(r.account_id)!;
     const card = toCard(r, poster, rateOf(r, deps.prices));

@@ -218,6 +218,40 @@ async function blockHandler(req: FastifyRequest, reply: FastifyReply) {
   return reply.code(204).send();
 }
 
+/**
+ * `DELETE /v1/account/blocks/:displayName` (Task 37): unblocks by public display name; unblocking
+ * someone not blocked is a no-op (204), an unknown name 404 as for blocking. Everything the block
+ * stopped (offers, takes, chats, presence) comes back at once: nothing is stored but the row.
+ */
+async function unblockHandler(req: FastifyRequest, reply: FastifyReply) {
+  const deps = req.server.deps;
+  const { displayName } = req.params as { displayName: string };
+  if (displayName.length > NAME_MAX) throw new ApiError(400, 'bad-request');
+  const who = await findByPublicName(deps.db, displayName);
+  if (who === null) throw new ApiError(404, 'not-found');
+  await deps.db.query('delete from account_blocks where account_id = $1 and blocked_id = $2', [req.auth.accountId, who.id]);
+  return reply.code(204).send();
+}
+
+/** One entry of my Blocked list: the public display name only (never the login name). */
+export interface BlockedEntry {
+  displayName: string;
+  blockedAt: string;
+}
+
+/**
+ * `GET /v1/account/blocks` (Task 37) → `BlockedEntry[]`, newest first: only the people I blocked.
+ * Who blocked me is never answered anywhere (blocks are private, spec 2.4).
+ */
+async function listBlocks(req: FastifyRequest): Promise<BlockedEntry[]> {
+  const { rows } = await req.server.deps.db.query<{ name: string; created_at: Date }>(
+    `select a.${PUBLIC_NAME} as name, b.created_at from account_blocks b join accounts a on a.id = b.blocked_id
+      where b.account_id = $1 order by b.created_at desc, a.${PUBLIC_NAME}`,
+    [req.auth.accountId],
+  );
+  return rows.map((r) => ({ displayName: r.name, blockedAt: r.created_at.toISOString() }));
+}
+
 /** Deletes nudge records older than an hour (registered in main.ts). */
 export const purgeNudges: RetentionJob = {
   name: 'purgeNudges',
@@ -227,11 +261,13 @@ export const purgeNudges: RetentionJob = {
   },
 };
 
-/** Nudges, nudge settings and blocks: full trader sessions only. */
+/** Nudges, nudge settings and blocks (Tasks 26 and 37): full trader sessions only. */
 export function nudgeRoutes(app: FastifyInstance): void {
   const trader = requireSession({ kinds: ['trader'] });
   app.post('/v1/nudges', { preHandler: trader }, nudgeHandler);
   app.get('/v1/account/nudges', { preHandler: trader }, getSettings);
   app.put('/v1/account/nudges', { preHandler: trader }, putSettings);
+  app.get('/v1/account/blocks', { preHandler: trader }, listBlocks);
   app.post('/v1/account/blocks', { preHandler: trader }, blockHandler);
+  app.delete('/v1/account/blocks/:displayName', { preHandler: trader }, unblockHandler);
 }
