@@ -9,7 +9,7 @@ import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
-import { ONLINE_MS, traderSummaries, type TraderSummary } from '../traders/summary.js';
+import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
 
 /**
@@ -114,11 +114,14 @@ const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is nul
  * The offer's rate now in SQL, with the currency's market price bound as `param` (null while the feed
  * has none): the same number as @x2f/trade's `offerRate` (rateFor rounds half up:
  * (market × (10000 + margin) × 2 + 10000) div 20000), so the database can sort before the limit.
+ * `div` is exact integer division; numeric `/` rounds its quotient to about 16 significant digits,
+ * so from rates near 10^16 a `floor(… / 20000)` came out 1 above offerRate (round-2 review Minor 1).
+ * Exported for the parity test.
  */
-function rateSql(param: string): string {
+export function rateSql(param: string): string {
   return `(case when o.price_mode = 'fixed' then o.fixed_cents_per_xmr
     when ${param}::numeric is null then null
-    else floor((${param}::numeric * (10000 + o.margin_bps) * 2 + 10000) / 20000) end)`;
+    else div(${param}::numeric * (10000 + o.margin_bps) * 2 + 10000, 20000) end)`;
 }
 
 function pricingOf(r: OfferRow): Pricing {
@@ -417,27 +420,28 @@ export function offerRoutes(app: FastifyInstance): void {
     if (!isAvailable(method)) return [];
 
     // Sorted by the database before the limit (review I1): the rate from the bound market price,
-    // online from the newest live session, trades from the completed count; ties newest first.
+    // online from the newest live session (as traderSummaries: by bucket, hidden from someone the
+    // poster blocked), trades from the completed count; ties newest first.
     const now = deps.clock();
+    const viewerId = await viewer(app, req, reply);
     const market = deps.prices.current(currency)?.centsPerXmr ?? null;
     const byRate = `r.rate ${side === 'buy' ? 'desc' : 'asc'} nulls last`;
     const order =
-      sort === 'online' ? `coalesce(ls.last_seen > $5::timestamptz, false) desc, ${byRate}`
+      sort === 'online' ? `ls.online desc, ${byRate}`
       : sort === 'trades' ? `ct.completed desc, ${byRate}`
       : byRate;
     const { rows } = await deps.db.query<OfferRow>(
       `select ${OFFER_COLUMNS} from offers o join accounts a on a.id = o.account_id
          cross join lateral (select ${rateSql('$4')} as rate) r
-         cross join lateral (select max(s.last_seen_at) as last_seen from sessions s where s.account_id = a.id and s.revoked_at is null) ls
+         cross join lateral (select coalesce(${lastSeenSql('a.id', '$6::uuid')} >= $5::timestamptz, false) as online) ls
          cross join lateral (select ${COMPLETED_TRADES_SQL} as completed) ct
         where ${LISTED} and o.side = $1 and o.method_id = $2 and o.currency = $3
         order by ${order}, o.created_at desc, o.id limit ${LIST_LIMIT}`,
-      [side, method, currency, market === null ? null : market.toString(), ...(sort === 'online' ? [new Date(now.getTime() - ONLINE_MS)] : [])],
+      [side, method, currency, market === null ? null : market.toString(), onlineSince(now), viewerId],
     );
-    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now);
+    const posters = await traderSummaries(deps.db, rows.map((r) => r.account_id), now, viewerId);
     const entries = rows.map((r) => ({ r, poster: posters.get(r.account_id)!, rate: rateOf(r, deps.prices) }));
     const cards = entries.map((e) => toCard(e.r, e.poster, e.rate));
-    const viewerId = await viewer(app, req, reply);
     if (viewerId !== null) await markOpensAt(deps, viewerId, entries.map((e) => e.r), cards);
     return cards;
   });
@@ -456,7 +460,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const mine = viewerId !== null && viewerId === r.account_id;
     if (!mine && !(r.listed && isAvailable(r.method_id))) throw new ApiError(404, 'not-found');
     const now = deps.clock();
-    const poster = (await traderSummaries(deps.db, [r.account_id], now)).get(r.account_id)!;
+    const poster = (await traderSummaries(deps.db, [r.account_id], now, viewerId)).get(r.account_id)!;
     const card = toCard(r, poster, rateOf(r, deps.prices));
     if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
     return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };
