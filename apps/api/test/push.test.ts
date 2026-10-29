@@ -178,7 +178,7 @@ describe("the owner's price-health push (review 2026-10-27, Important 3)", () =>
 
   it('the alert payload is exactly the fixed string', () => {
     expect(PUSH_PAYLOADS.alert).toBe(ALERT);
-    expect(Object.keys(PUSH_PAYLOADS).sort()).toEqual(['alert', 'nudge', 'trade']);
+    expect(Object.keys(PUSH_PAYLOADS).sort()).toEqual(['alert', 'cancel-confirm', 'nudge', 'trade']);
   });
 });
 
