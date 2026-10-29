@@ -8,6 +8,7 @@ import { ApiError } from '../errors.js';
 import { acceptedEvent } from '../events/publicName.js';
 import { getProfile, isAvailable } from '../methods/profiles.js';
 import type { MarketPrices } from '../price/market.js';
+import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
 import { usableWallets, type Wallet } from '../wallets/routes.js';
 import { insertTrade, loadTradeRow, rowToTrade, type TradeSides } from './store.js';
@@ -212,21 +213,6 @@ function raceRefusal(e: unknown): ApiError | null {
   if (err.constraint === 'trades_waiting_per_buyer') return new ApiError(409, 'already-waiting');
   if (err.constraint === 'trades_waiting_per_amount') return new ApiError(409, 'ad-busy');
   return null;
-}
-
-/**
- * 404 `not-found` when either trader has blocked the other (Plan 3 Task 37, lead default
- * 2026-10-29: the blocker's take of the blocked person's offer is refused too). One check, both
- * directions. Task 37 (wip/lead-p3-task37) exports the same `assertNotBlocked(q, actor, other)`
- * from traders/blocks.ts: whichever lands second replaces this one with the import.
- */
-async function assertNotBlocked(q: Queryable, actor: string, other: string): Promise<void> {
-  const { rows } = await q.query<{ blocked: boolean }>(
-    `select exists (select 1 from account_blocks
-      where (account_id = $1 and blocked_id = $2) or (account_id = $2 and blocked_id = $1)) as blocked`,
-    [actor, other],
-  );
-  if (rows[0]?.blocked === true) throw notFound();
 }
 
 const requireTrader = requireSession({ kinds: ['trader'] });

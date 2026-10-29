@@ -34,6 +34,10 @@ export const CANT_DO_CODES = [
   // Plan 3 Task 26: the nudge limit. Task 6: no more payment-time extensions.
   'too-soon',
   'no-extensions-left',
+  // Plan 3 Task 37: blocking a trader the API refuses (400 yourself, 404 a closed account). The
+  // API's own codes are bad-request and not-found; this one is the web's, for the popup's
+  // feedback link.
+  'cannot-block',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -135,6 +139,7 @@ export const CANT_DO_TITLE = {
   methods: "That login method can't be removed",
   nudge: "You can't nudge yet",
   extend: "You can't give more time",
+  block: "You can't block this trader",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -201,3 +206,9 @@ export const NUDGE_TOO_SOON_CODE = 'too-soon' satisfies CantDoCode;
 
 /** 429 `too-soon` on a nudge (Plan 3 Task 26). */
 export const NUDGE_TOO_SOON = 'You can nudge once every 10 minutes.';
+
+/** The block's refusal code (Plan 3 Task 37). */
+export const CANNOT_BLOCK_CODE = 'cannot-block' satisfies CantDoCode;
+
+/** A block the API refuses: 400 (yourself) or 404 (the account was closed) on POST /v1/account/blocks. COPY-UNSIGNED */
+export const CANNOT_BLOCK = 'That trader cannot be blocked.';
