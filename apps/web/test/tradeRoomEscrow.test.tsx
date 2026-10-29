@@ -23,7 +23,7 @@ let client: EscrowClient & { start: ReturnType<typeof vi.fn<EscrowClient["start"
 /** Pushes a status to the room's subscription. */
 let push: (s: EscrowStatus) => void = () => undefined;
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {

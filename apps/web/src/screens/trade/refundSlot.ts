@@ -35,10 +35,10 @@ export type RefundEscrow = Pick<UseEscrow, 'buildRefund' | 'signal' | 'amountAto
 /**
  * What FinalAlert's I've paid sheet (Task 23's PaidFlowSheet) reads from the same handle: the
  * device's total (`fiatCents`, `deal`), whether the escrow can take the tap (`phase`, `error`,
- * `retryable`) and `markPaid` (the `trade.paid` signal). `mark-paid` is accepted in
- * `refund_requested` (machine.ts).
+ * `retryable`, and `refusal`: any but `amount-out-of-range` blocks the tap, Task 23 round 2 I1) and
+ * `markPaid` (the `trade.paid` signal). `mark-paid` is accepted in `refund_requested` (machine.ts).
  */
-type PaidStepKeys = 'phase' | 'error' | 'retryable' | 'fiatCents' | 'deal' | 'markPaid';
+type PaidStepKeys = 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'deal' | 'markPaid';
 
 /** Task 22's `TradeScreenProps` with the narrower escrow. */
 export type RefundScreenProps = Omit<TradeScreenProps, 'escrow'> & { escrow: RefundEscrow };

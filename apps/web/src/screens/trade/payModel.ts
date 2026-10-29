@@ -127,16 +127,40 @@ export function counterpartyLine(v: Pick<TradeView, 'role' | 'counterparty'>): s
 /**
  * Why "I've paid" is not offered right now, or null when it is (review 2026-10-27, I1). The sum to
  * pay is only ever this device's own figure (`escrow.fiatCents`, Task 12): none while the escrow
- * is stopped or not ready, none while the device accepts no amount (the API's is outside
- * [take, this device's size]), and none while the API's total differs from the device's (the API
- * would refuse a `mark-paid` the device confirms, or the device would refuse the one the API takes).
+ * is stopped or not ready, none while the escrow refuses the trade as the API shows it (any
+ * refusal but `amount-out-of-range`, which is `no-amount`: a `view-mismatch` can leave the totals
+ * agreeing, and then the device would settle nothing for a payment; round 2, I1), none while the
+ * device accepts no amount (the API's is outside [take, this device's size]), and none while the
+ * API's total differs from the device's (the API would refuse a `mark-paid` the device confirms,
+ * or the device would refuse the one the API takes). A differing total on the SAME amount is
+ * `total-wrong`: both work it out at the locked rate, so it will not clear by waiting (round 2,
+ * Minor 2); on another amount it is `amount-differs` (the device may still catch up).
  */
-export type PayBlock = 'escrow-stopped' | 'escrow-not-ready' | 'no-amount' | 'amount-differs';
+export type PayBlock = 'escrow-stopped' | 'escrow-refused' | 'escrow-not-ready' | 'no-amount' | 'amount-differs' | 'total-wrong';
 
-export function payBlock(view: Pick<TradeView, 'fiatCents'>, e: Pick<TradeEscrow, 'phase' | 'error' | 'fiatCents'>): PayBlock | null {
-  if (e.error !== null) return 'escrow-stopped';
-  if (e.phase !== 'ready') return 'escrow-not-ready';
+type PayView = Pick<TradeView, 'fiatCents' | 'amountAtomic'>;
+type PayEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'refusal' | 'fiatCents' | 'amountAtomic'>;
+
+function totalBlock(view: PayView, e: PayEscrow): PayBlock | null {
   if (e.fiatCents === null) return 'no-amount';
-  if (e.fiatCents !== BigInt(view.fiatCents)) return 'amount-differs';
-  return null;
+  if (e.fiatCents === BigInt(view.fiatCents)) return null;
+  return e.amountAtomic !== null && e.amountAtomic === BigInt(view.amountAtomic) ? 'total-wrong' : 'amount-differs';
+}
+
+export function payBlock(view: PayView, e: PayEscrow): PayBlock | null {
+  if (e.error !== null) return 'escrow-stopped';
+  if (e.refusal !== null && e.refusal !== 'amount-out-of-range') return 'escrow-refused';
+  if (e.phase !== 'ready') return 'escrow-not-ready';
+  return totalBlock(view, e);
+}
+
+/**
+ * Why "Finish marking as paid" (paid on the server, the tap not recorded on this device) cannot
+ * run, or null when it can: the same gate as `payBlock`, except that `amount-unknown` is the
+ * refusal Finish exists for (and the phase is not asked: the escrow may be busy co-signing).
+ */
+export function finishBlock(view: PayView, e: PayEscrow): PayBlock | null {
+  if (e.error !== null) return 'escrow-stopped';
+  if (e.refusal !== null && e.refusal !== 'amount-unknown') return 'escrow-refused';
+  return totalBlock(view, e);
 }

@@ -84,6 +84,7 @@ function fakeEscrow(over: Partial<TradeEscrow> = {}): TradeEscrow {
     receivedAtomic: null,
     confirmedAtomic: null,
     paidRecorded: false,
+    intentKind: null,
     error: null,
     retryable: false,
     refusal: null,
@@ -655,5 +656,97 @@ describe('review minors 1, 5 and 7', () => {
     expect(dialog()).toBeNull();
     expect(document.querySelectorAll('[data-test-chat]')).toHaveLength(1);
     expect(document.activeElement?.hasAttribute('data-test-chat')).toBe(true);
+  });
+});
+
+describe('review round 2 (2026-10-28): fix round 3', () => {
+  const paidButton = () => byText("I've paid", 'button') as HTMLButtonElement;
+  const MISMATCH = "The trade's details on the server don't match what you agreed to.";
+  const count = (s: string) => text().split(s).length - 1;
+
+  it.each([
+    ['view-mismatch', MISMATCH],
+    ['amount-changed', "The trade's amount changed on the server after you paid."],
+    ['attempts-exhausted', "Your device couldn't settle this trade."],
+  ] as const)("I1: refusal %s with the totals agreeing leaves I've paid disabled, says why once, and posts nothing", async (refusal, sentence) => {
+    mount(props({ view: tradeView(SECURED), escrow: fakeEscrow({ refusal }) }));
+    expect(paidButton().disabled).toBe(true);
+    expect(count(sentence)).toBe(1);
+    await click(paidButton());
+    expect(dialog()).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(calls).toEqual([]);
+  });
+
+  it('I1: wide too (only the maximum or the poster drifted, so the totals agree)', () => {
+    mount(props({ view: tradeView(SECURED), escrow: fakeEscrow({ refusal: 'view-mismatch' }), wide: true }));
+    expect(paidButton().disabled).toBe(true);
+    expect(text()).toContain('$412.50');
+    expect(count(MISMATCH)).toBe(1);
+  });
+
+  it('I1: the paid step itself (FinalAlert opens it) refuses on a refusal: no Yes, the reason instead', async () => {
+    const view = buyerAlertView();
+    render(
+      <MemoryRouter>
+        <FinalAlert view={view} escrow={fakeEscrow({ refusal: 'view-mismatch' })} refresh={async () => void calls.push('refresh')} serverClock={() => new Date(SERVER_NOW)} wide={false} />
+      </MemoryRouter>,
+    );
+    await flush();
+    calls = calls.filter((c) => !c.includes('final-alert-seen'));
+    await click(byText("I've paid", 'button'));
+    expect(dialog()!.textContent).toContain(MISMATCH);
+    expect(maybe("Yes, I've paid")).toBeUndefined();
+    expect(calls).toEqual([]);
+  });
+
+  it('I1: Finish is offered but refused while the view does not match, and says not to pay again', async () => {
+    const escrow = fakeEscrow({ refusal: 'view-mismatch' });
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow }));
+    const finish = byText('Finish marking as paid', 'button') as HTMLButtonElement;
+    expect(finish.disabled).toBe(true);
+    expect(text()).toContain("Don't pay again.");
+    expect(text()).not.toContain("Don't send any money");
+    await click(finish);
+    await flush();
+    expect(calls).toEqual([]);
+    expect(escrow.markPaid).not.toHaveBeenCalled();
+  });
+
+  it('I1: once recorded, a later view mismatch keeps "Marked as paid" (nothing to finish)', () => {
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow: fakeEscrow({ refusal: 'view-mismatch', paidRecorded: true }) }));
+    expect(maybe('Finish marking as paid')).toBeUndefined();
+    expect(maybe('Marked as paid')).toBeDefined();
+  });
+
+  it('Minor 2: the same amount with another total will not clear: a final sentence, not "checking"', () => {
+    const r = mount(props({ view: tradeView({ ...SECURED, fiatCents: '43313' }) }));
+    expect(paidButton().disabled).toBe(true);
+    const block = document.querySelector('[data-pay-block]')!;
+    expect(block.getAttribute('data-pay-block')).toBe('total-wrong');
+    expect(block.textContent).toBe("The trade's total on the server doesn't match your trade. Don't send any money. Ask in the chat, or open a dispute if it doesn't clear.");
+    r.unmount();
+    // Another amount: the device may still catch up, so "checking" stays.
+    mount(props({ view: tradeView({ ...SECURED, fiatCents: '43313', amountAtomic: '1312500000000' }) }));
+    expect(document.querySelector('[data-pay-block]')!.textContent).toContain('Your device is checking the new total.');
+  });
+
+  it('Minor 1: the refund intent is saved and waits for the coins to unlock: no Try again', () => {
+    const settling = (kind: 'buyer-cancel' | 'mutual-cancel') => tradeView({ ...SECURED, state: 'settling', settling: kind });
+    const r = mount(props({ view: settling('buyer-cancel'), escrow: fakeEscrow({ phase: 'ready', intentKind: 'buyer-cancel' }) }), BuyerCancelling);
+    expect(maybe('Try again')).toBeUndefined();
+    expect(maybe('Returning the XMR…')).toBeDefined();
+    r.unmount();
+    // A saved intent of another kind is not this refund: Try again is offered.
+    mount(props({ view: settling('mutual-cancel'), escrow: fakeEscrow({ phase: 'ready', intentKind: 'buyer-cancel' }) }), BuyerCancelling);
+    expect(maybe('Try again')).toBeDefined();
+  });
+
+  it('Minor 3: with no chat installed, the wide seller room disables Chat and says why', async () => {
+    mount(props({ view: tradeView({ ...SECURED, role: 'seller' }), wide: true }), SellerWaiting);
+    const chat = byText('Chat', 'button') as HTMLButtonElement;
+    expect(chat.disabled).toBe(true);
+    expect(document.getElementById(chat.getAttribute('aria-describedby')!)?.textContent).toBe("Chat isn't available here yet.");
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
   });
 });

@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Deal } from './policy.js';
 import type { ConfirmedTrade, EscrowAction, EscrowErrorCode, EscrowPhase, EscrowRefusal, EscrowStatus } from './runtime.js';
 import type { UserSignal } from './signals.js';
+import type { SettleKind } from '@x2f/trade';
 import type { FromWorker, ToWorker } from './worker.js';
 
 export interface EscrowClient {
@@ -90,6 +91,8 @@ export interface UseEscrow {
   confirmedAtomic: bigint | null;
   /** `EscrowStatus.paidRecorded`: the buyer's own "I've paid" is recorded on this device ("Marked as paid"). */
   paidRecorded: boolean;
+  /** `EscrowStatus.intentKind`: the settle the user tapped on this device and that is saved, or null. */
+  intentKind: SettleKind | null;
   release(): Promise<void>;
   buildRefund(): Promise<void>;
   buyerCancel(): Promise<void>;
@@ -104,7 +107,7 @@ export interface UseEscrow {
   signal(type: Exclude<UserSignal, 'trade.paid'>): Promise<void>;
 }
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
 
 /**
  * `confirmed` is what the user confirmed on the take or accept screen (Tasks 18/19); it is
@@ -135,6 +138,7 @@ export function useEscrow(code: string, confirmed?: ConfirmedTrade): UseEscrow {
     receivedAtomic: status.receivedAtomic,
     confirmedAtomic: status.confirmedAtomic,
     paidRecorded: status.paidRecorded,
+    intentKind: status.intentKind,
     release: () => act({ type: 'release' }),
     buildRefund: () => act({ type: 'build-refund' }),
     buyerCancel: () => act({ type: 'buyer-cancel' }),

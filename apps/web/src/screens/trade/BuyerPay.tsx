@@ -29,8 +29,8 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
-import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
 import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
@@ -405,24 +405,6 @@ function focusAsideChat(from: HTMLElement): void {
 }
 
 
-/**
- * The escrow's other refusals, in words (review I2: shown, never silent). `amount-out-of-range`
- * is the "no total" note before paid; `amount-unknown` is the Finish card; the seller-only ones
- * never reach the buyer.
- */
-function refusalText(r: TradeEscrow['refusal']): string | null {
-  switch (r) {
-    case 'amount-changed':
-      return "The trade's amount changed on the server after you paid. Your device settles only the amount you paid. Open a dispute if this doesn't clear.";
-    case 'view-mismatch':
-      return "The trade's details on the server don't match what you agreed to. Don't send any money. Open a dispute if this doesn't clear.";
-    case 'attempts-exhausted':
-      return "Your device couldn't settle this trade. Open a dispute.";
-    default:
-      return null;
-  }
-}
-
 export function BuyerPay(p: TradeScreenProps) {
   const { view, escrow, serverClock, wide } = p;
   const method = payMethodOf(view);
@@ -437,9 +419,12 @@ export function BuyerPay(p: TradeScreenProps) {
   const total = deviceTotal(view, escrow);
   const block = payBlock(view, escrow);
   // Paid on the server, but this device never recorded the tap (a reload, another tab, a lost
-  // answer, a refused markPaid): the runtime says `amount-unknown` (review I2).
-  const needsFinish = paid && escrow.refusal === 'amount-unknown';
-  const finishOk = escrow.error === null && escrow.fiatCents !== null && escrow.fiatCents === BigInt(view.fiatCents);
+  // answer, a refused markPaid): the runtime says `amount-unknown` (review I2). While the view
+  // disagrees with the deal the runtime says `view-mismatch` instead (it reads nothing more from
+  // that view): Finish is still shown, refused, so the buyer is told not to pay again (round 2, I1).
+  const needsFinish = paid && !escrow.paidRecorded && (escrow.refusal === 'amount-unknown' || escrow.refusal === 'view-mismatch');
+  const finishBlocked = finishBlock(view, escrow);
+  const finishOk = finishBlocked === null;
 
   const finish = async () => {
     if (!finishOk || finishing || escrow.fiatCents === null) return;
@@ -520,7 +505,7 @@ export function BuyerPay(p: TradeScreenProps) {
             </Button>
           ) : null}
         </div>
-      ) : !paid && block !== null ? (
+      ) : !paid && block !== null && !(block === 'escrow-refused' && refusal !== null) ? (
         <p className="x2f-room__error" role="status" data-pay-block={block}>
           {payBlockText(block, escrow)}
         </p>
@@ -528,7 +513,11 @@ export function BuyerPay(p: TradeScreenProps) {
       {needsFinish ? (
         <p className="x2f-room__error" role="alert" data-paid-unrecorded="">
           Your device hasn't recorded your payment. Tap to finish.
-          {finishOk ? null : " Your device can't confirm the total the trade shows. Don't pay again. Ask in the chat, or open a dispute if it doesn't clear."}
+          {finishOk
+            ? null
+            : finishBlocked === 'escrow-refused'
+              ? " The trade's details on the server don't match what you agreed to, so your device can't record it yet. Don't pay again. Open a dispute if this doesn't clear."
+              : " Your device can't confirm the total the trade shows. Don't pay again. Ask in the chat, or open a dispute if it doesn't clear."}
           {finishError !== null ? ` ${finishError}` : null}
         </p>
       ) : refusal !== null && escrow.error === null ? (
@@ -616,8 +605,11 @@ export function BuyerCancelling(p: TradeScreenProps) {
   const [error, setError] = useState<string | null>(null);
   const done = escrow.phase === 'done' || escrow.phase === 'settled-without-device';
   const stopped = escrow.error !== null;
-  // 'ready' means no outcome is being signed: the tapped intent never got saved (or not yet).
-  const canRetry = !done && (stopped ? escrow.retryable : escrow.phase === 'ready');
+  // Try again only while nothing is being signed AND the tap this refund needs is not saved on
+  // this device (it never got saved, or another one is). A saved tap of this kind only waits (the
+  // coins unlock up to about 20 min after funding): no Try again then (round 2, Minor 1).
+  const saved = escrow.intentKind !== null && escrow.intentKind === view.settling;
+  const canRetry = !done && (stopped ? escrow.retryable : escrow.phase === 'ready' && !saved);
 
   const again = async () => {
     if (busy) return;
@@ -703,6 +695,7 @@ export function SellerWaiting(p: TradeScreenProps) {
   const chip = escrowChip(view);
   const action = useTradeAction(p);
   const total = deviceTotal(view, escrow);
+  const chatInstalled = useTradeChat() !== null;
   const cancel = (
     <SellerCancelControls
       view={view}
@@ -750,10 +743,22 @@ export function SellerWaiting(p: TradeScreenProps) {
         {waiting}
         {error}
         <div className="x2f-room__actions">
-          {/* The chat is already beside the room: Chat goes there, never a second panel (review Minor 5). */}
-          <Button variant="primary" onClick={(e) => focusAsideChat(e.currentTarget)}>
-            Chat
-          </Button>
+          {/* The chat is already beside the room: Chat goes there, never a second panel (review Minor 5).
+              Until Task 20 installs its panel (setTradeChat) there is nothing to go to: disabled, and says so (round 2, Minor 3). */}
+          {chatInstalled ? (
+            <Button variant="primary" onClick={(e) => focusAsideChat(e.currentTarget)}>
+              Chat
+            </Button>
+          ) : (
+            <>
+              <Button variant="primary" disabled aria-describedby="x2f-room-chat-hint">
+                Chat
+              </Button>
+              <span id="x2f-room-chat-hint" className="x2f-room__hint">
+                Chat isn't available here yet.
+              </span>
+            </>
+          )}
           {cancel}
         </div>
       </WideRoom>

@@ -28,7 +28,7 @@ declare global {
      * Fixture builds only: changes the fixture escrow's state while the page runs (a device whose
      * own figures follow a grown trade, a runtime that reports a refusal); amounts as decimal strings.
      */
-    __x2fSetFixtureEscrow?: (patch: Partial<Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'refusal' | 'keepOpen' | 'paidRecorded'>> & { amountAtomic?: string | null; fiatCents?: string | null }) => void;
+    __x2fSetFixtureEscrow?: (patch: Partial<Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'refusal' | 'keepOpen' | 'paidRecorded' | 'intentKind'>> & { amountAtomic?: string | null; fiatCents?: string | null }) => void;
     /** Fixture builds only: every escrow action the room asked for (`release`, `signal:trade.extend`, ...), in order. */
     __x2fEscrowCalls?: string[];
     /** Fixture builds only: while true, every escrow action is refused (a relay that is down). */
@@ -77,8 +77,9 @@ export function installFixtures(): void {
     fiatCents: big(fiatCents),
     release: record('release'),
     buildRefund: record('build-refund'),
-    buyerCancel: record('buyer-cancel'),
-    proposeCancelSign: record('propose-cancel-sign'),
+    // Like Task 12's runtime: a tapped settle is saved on this device (intentKind).
+    buyerCancel: record('buyer-cancel', () => set({ intentKind: 'buyer-cancel' })),
+    proposeCancelSign: record('propose-cancel-sign', () => set({ intentKind: 'mutual-cancel' })),
     // Like Task 12's runtime: the buyer's own tap is recorded on this device (paidRecorded).
     markPaid: async (cents) => record(`paid:${cents}`, () => set({ paidRecorded: true, refusal: null }))(),
     signal: async (type) => record(`signal:${type}`)(),

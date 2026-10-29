@@ -389,8 +389,10 @@
   line-height: 22px;
 }
 
-/* "Dispute opens in N min" in place of the link before confirmBy (review Minor 7). */
-.x2f-room__dispute-wait {
+/* "Dispute opens in N min" in place of the link before confirmBy (review Minor 7), and the wide
+   seller room's "Chat isn't available here yet." while no chat panel is installed (round 2, Minor 3). */
+.x2f-room__dispute-wait,
+.x2f-room__hint {
   display: inline-flex;
   align-items: center;
   min-height: 44px;

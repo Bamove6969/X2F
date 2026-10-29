@@ -19,7 +19,7 @@ import type { TradeEscrow, TradeView } from './payTypes.js';
 import { errorSentence } from './SetupStatus.js';
 
 /** The parts of the room's escrow handle the paid step reads. */
-export type PaidFlowEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'fiatCents' | 'amountAtomic' | 'deal' | 'markPaid'>;
+export type PaidFlowEscrow = Pick<TradeEscrow, 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'amountAtomic' | 'deal' | 'markPaid'>;
 
 /** The sum to pay as THIS device works it out (Task 12's `escrow.fiatCents`); null when the device has none. */
 export interface DeviceTotal {
@@ -44,17 +44,43 @@ export function stoppedText(escrow: Pick<TradeEscrow, 'error' | 'retryable'>): s
   return `${errorSentence(escrow) ?? 'The escrow stopped on this device.'} Don't send any money until it runs again.`;
 }
 
+/**
+ * The escrow's refusals that block paying, in words (review I2: shown, never silent; round 2, I1).
+ * `amount-out-of-range` is the "no total" note before paid; `amount-unknown` is the Finish card;
+ * the seller-only ones never reach the buyer, and get the general sentence if they ever do.
+ */
+export function refusalText(r: TradeEscrow['refusal']): string | null {
+  switch (r) {
+    case null:
+    case 'amount-out-of-range':
+    case 'amount-unknown':
+      return null;
+    case 'amount-changed':
+      return "The trade's amount changed on the server after you paid. Your device settles only the amount you paid. Open a dispute if this doesn't clear.";
+    case 'view-mismatch':
+      return "The trade's details on the server don't match what you agreed to. Don't send any money. Open a dispute if this doesn't clear.";
+    case 'attempts-exhausted':
+      return "Your device couldn't settle this trade. Open a dispute.";
+    default:
+      return "Your device can't settle this trade as the server shows it. Don't send any money. Open a dispute if this doesn't clear.";
+  }
+}
+
 /** Why I've paid waits, in words (payModel.ts `payBlock`). */
-export function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'retryable'>): string {
+export function payBlockText(b: PayBlock, escrow: Pick<TradeEscrow, 'error' | 'retryable' | 'refusal'>): string {
   switch (b) {
     case 'escrow-stopped':
       return stoppedText(escrow);
+    case 'escrow-refused':
+      return refusalText(escrow.refusal) ?? "Your device can't settle this trade as the server shows it. Don't send any money.";
     case 'escrow-not-ready':
       return "Your device is still checking the escrow. Keep this page open, and don't send any money yet.";
     case 'no-amount':
       return "Your device can't confirm the trade amount. Don't send any money yet. Ask in the chat, or open a dispute if it doesn't clear.";
     case 'amount-differs':
       return "Your device is checking the new total. Don't send any money yet.";
+    case 'total-wrong':
+      return "The trade's total on the server doesn't match your trade. Don't send any money. Ask in the chat, or open a dispute if it doesn't clear.";
   }
 }
 

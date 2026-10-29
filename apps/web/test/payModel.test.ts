@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyerCancelMode, escrowChip, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
+import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
@@ -126,14 +126,29 @@ describe('counterpartyLine (Desktop board "412 trades · 99% positive · release
 });
 
 describe("payBlock: I've paid only on the device's own total (review I1)", () => {
-  const e = (over: object = {}) => ({ phase: 'ready' as const, error: null, fiatCents: 41_250n, ...over });
+  const e = (over: object = {}) => ({ phase: 'ready' as const, error: null, refusal: null, fiatCents: 41_250n, amountAtomic: 1_250_000_000_000n, ...over });
+  const v = (fiatCents: string, amountAtomic = '1250000000000') => ({ fiatCents, amountAtomic });
   it('open when the escrow is ready and the API shows the device total', () => {
-    expect(payBlock({ fiatCents: '41250' }, e())).toBeNull();
+    expect(payBlock(v('41250'), e())).toBeNull();
+    // amount-out-of-range is the no-amount case (no device total), never a block of its own.
+    expect(payBlock(v('41250'), e({ refusal: 'amount-out-of-range' }))).toBeNull();
   });
   it('closed, with the reason, otherwise', () => {
-    expect(payBlock({ fiatCents: '41250' }, e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
-    expect(payBlock({ fiatCents: '41250' }, e({ phase: 'setting-up' }))).toBe('escrow-not-ready');
-    expect(payBlock({ fiatCents: '41250' }, e({ fiatCents: null }))).toBe('no-amount');
-    expect(payBlock({ fiatCents: '43313' }, e())).toBe('amount-differs');
+    expect(payBlock(v('41250'), e({ error: 'escrow-failed', phase: 'error' }))).toBe('escrow-stopped');
+    expect(payBlock(v('41250'), e({ phase: 'setting-up' }))).toBe('escrow-not-ready');
+    expect(payBlock(v('41250'), e({ fiatCents: null }))).toBe('no-amount');
+    expect(payBlock(v('43313', '1312500000000'), e())).toBe('amount-differs');
+  });
+  it('round 2: any other refusal blocks, even with the totals agreeing (I1); the same amount with another total is final (Minor 2)', () => {
+    for (const refusal of ['view-mismatch', 'amount-changed', 'attempts-exhausted', 'amount-unknown'] as const) {
+      expect(payBlock(v('41250'), e({ refusal }))).toBe('escrow-refused');
+    }
+    expect(payBlock(v('43313'), e())).toBe('total-wrong');
+  });
+  it('finishBlock: amount-unknown is what Finish is for; every other refusal blocks it', () => {
+    expect(finishBlock(v('41250'), e({ refusal: 'amount-unknown', phase: 'signing' }))).toBeNull();
+    expect(finishBlock(v('41250'), e({ refusal: 'view-mismatch' }))).toBe('escrow-refused');
+    expect(finishBlock(v('41250'), e({ refusal: 'amount-unknown', error: 'escrow-failed' }))).toBe('escrow-stopped');
+    expect(finishBlock(v('43313'), e({ refusal: 'amount-unknown' }))).toBe('total-wrong');
   });
 });
