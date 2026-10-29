@@ -26,8 +26,10 @@ describe('Task 37 web still waits for its design and the shared popup', () => {
   });
 
   it('NEEDS_TASK_20_BLOCK_UI: the trade chat has no block action yet (Task 20 ChatPanel not built)', () => {
-    // When ChatPanel lands: put <BlockAction displayName=… /> in the chat header area for an offer
-    // chat (the API refuses a blocked pair's messages; apps/api/test/block-tripwires.test.ts).
+    // When ChatPanel lands (installed into the trade room through Task 23's setTradeChat seam,
+    // paySeams.ts, and used for offer chats from the quote's Chat button): put
+    // <BlockAction displayName=… /> in the chat header area (the API refuses a blocked pair's
+    // messages; apps/api/test/block-tripwires.test.ts).
     expect(has('apps/web/src/chat/ChatPanel.tsx'), 'ChatPanel landed: add the block action').toBe(false);
   });
 });
