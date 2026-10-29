@@ -43,8 +43,8 @@ const toItem = (r: Row): NewsItem => ({
 });
 
 // Control characters other than the newline (a title takes none at all).
-const BODY_CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f  ]/;
-const TITLE_CONTROL = /[\u0000-\u001f\u007f-\u009f  ]/;
+const BODY_CONTROL = /[\u0000-\u0009\u000b-\u001f\u007f-\u009f\u2028\u2029]/;
+const TITLE_CONTROL = /[\u0000-\u001f\u007f-\u009f\u2028\u2029]/;
 
 export class NewsInputError extends Error {
   constructor(readonly field: 'title' | 'body') {
