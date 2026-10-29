@@ -36,6 +36,7 @@ const LABEL = 'Browser on Linux';
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/push',
   'GET /v1/account/nudges',
+  'GET /v1/account/offers',
   'GET /v1/account/push',
   'GET /v1/events',
   'GET /v1/methods',
@@ -47,6 +48,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code/attestation',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
+  'POST /v1/account/offers/status',
   'POST /v1/account/push',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
