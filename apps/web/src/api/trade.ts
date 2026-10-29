@@ -45,6 +45,8 @@ export interface TraderSummary {
   typicalMinutes: number | null;
   positivePct: number | null;
   badges: string[];
+  /** The starter-limits stage (Task 4, spec 2.3): the New badge shows until 'graduated'. */
+  stage: 'starter' | 'building' | 'graduated';
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */

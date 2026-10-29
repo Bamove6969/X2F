@@ -7,7 +7,7 @@ import { newChatState, sealChatMessage, type ChatState } from '../src/chat/chatC
 import { ChatSendFailed, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
 import { memoryChatStore } from '../src/chat/store.js';
 
-/** A chat identity made with libsodium (apps/web names generateIdentity only in the escrow worker). */
+/** A chat identity made with libsodium (apps/web makes real identities only in the escrow worker). */
 async function testIdentity(): Promise<Identity> {
   await sodium.ready;
   const kp = sodium.crypto_sign_keypair();
