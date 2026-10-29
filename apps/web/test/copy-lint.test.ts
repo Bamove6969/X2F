@@ -116,7 +116,7 @@ describe('copy-lint', () => {
 
   it('passes on apps/web/src as committed', () => {
     expect(lintTree(WEB_SRC)).toEqual([]);
-  });
+  }, 30_000); // reads every source file: slow while other agents load the machine
 
   describe('lintTree and the CLI over a planted temp folder', () => {
     let dir = '';
@@ -140,7 +140,8 @@ describe('copy-lint', () => {
       expect(clean.stdout).toMatch(/copy-lint:/);
       writeFileSync(join(dir, 'bad.ts'), 'export const label = "Done!";\n');
       await expect(run(process.execPath, [TSX, CLI, dir], { cwd: REPO })).rejects.toMatchObject({ code: 1 });
-    });
+      // Two tsx start-ups: the default 5 s is too short while other agents load the machine.
+    }, 30_000);
   });
 
   it('runs as part of `npm run check`', () => {

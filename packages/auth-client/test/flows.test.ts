@@ -42,6 +42,7 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/account/push',
   'GET /v1/events',
   'GET /v1/methods',
+  'GET /v1/news',
   'GET /v1/offers',
   'GET /v1/offers/:id',
   'GET /v1/owner/price-health',

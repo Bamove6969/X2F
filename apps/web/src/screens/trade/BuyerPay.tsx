@@ -610,6 +610,9 @@ export function BuyerCancelling(p: TradeScreenProps) {
   // coins unlock up to about 20 min after funding): no Try again then (round 2, Minor 1).
   const saved = escrow.intentKind !== null && escrow.intentKind === view.settling;
   const canRetry = !done && (stopped ? escrow.retryable : escrow.phase === 'ready' && !saved);
+  // A refusal (the attempts ran out, or the server's view drifted) is said under the card with its
+  // next step, so the room never just says "Keep this page open" forever (round-3 review, Minor 1).
+  const refusal = done || stopped ? null : refusalText(escrow.refusal);
 
   const again = async () => {
     if (busy) return;
@@ -649,6 +652,11 @@ export function BuyerCancelling(p: TradeScreenProps) {
       {stopped ? (
         <p className="x2f-room__error" role="alert" data-pay-block="escrow-stopped">
           {errorSentence(escrow) ?? 'The escrow stopped on this device.'}
+        </p>
+      ) : null}
+      {refusal !== null ? (
+        <p className="x2f-room__error" role="status" data-escrow-refusal={escrow.refusal ?? undefined}>
+          {refusal}
         </p>
       ) : null}
       {error !== null ? (
