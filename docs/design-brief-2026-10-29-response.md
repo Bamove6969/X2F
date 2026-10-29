@@ -87,3 +87,13 @@ Variants the brief asked for are tweaks on the same board.
 - **Bans (owner, 2026-10-29):** both ban types show when they end (or "permanent") and a one-line plain reason.
 - **Blocking (owner, 2026-10-29):** silent. The blocked person is not told; open trades finish normally.
 - **Disputed reviews (owner, 2026-10-29):** the review stays visible, marked "Under review", until a moderator checks it against the trade; removed only if it breaks the rules.
+
+## Foldables (owner, 2026-10-29)
+
+The owner uses fold phones. The app must be laid out properly for them; fold-only features are welcome but optional.
+
+- Postures: cover/folded uses the 390 phone layout; unfolded uses two panes (about 840 wide), split at the hinge; tabletop (half-folded) shows glanceable info on top and all controls on the bottom; wide screens use the desktop layout.
+- Nothing goes across the hinge. Dialogs and sheets stay inside one pane.
+- Folding or unfolding keeps the user's place: same screen, same scroll position, and any typed text.
+- Web app: use `horizontal-viewport-segments` / `vertical-viewport-segments` and `env(viewport-segment-*)`. Where those aren't supported, fall back to two panes at 600 px wide or more.
+- New boards: Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover (Flip cover screen), Fold-Notes.
