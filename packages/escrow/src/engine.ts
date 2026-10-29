@@ -11,7 +11,9 @@ export type EscrowErrorCode =
   | 'build-failed'
   | 'bad-saved-session'
   /** The daemon did not answer in time (DAEMON_TIMEOUT_MS) or could not be reached: retry later. */
-  | 'daemon-unavailable';
+  | 'daemon-unavailable'
+  /** A peer's post-release multisig info (PartyHandle.importSpendInfo) is malformed, too big, or not for this escrow. */
+  | 'bad-spend-info';
 
 /** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
 export const DAEMON_TIMEOUT_MS = 15_000;

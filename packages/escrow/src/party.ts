@@ -66,6 +66,8 @@ export interface PartyState {
   sent: Record<string, Record<string, string | Record<string, string>>>;
   received: Record<string, Partial<Record<Role, Received>>>;
   release: ReleaseState | null;
+  /** The post-release multisig info (spendInfo()), exported once after this party's release was done. */
+  spendInfo?: string;
 }
 
 export interface PartyStore {
@@ -91,8 +93,33 @@ export interface PartyHandle {
    * provides them (the Monero engine does).
    */
   funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[] }>;
+  /**
+   * This party's post-release multisig info (hex), for the moderator, who takes no part in a
+   * seller–buyer release and so cannot see that spend on its own (Task 9, lead decision A).
+   * Only once this party's release is done (the co-signer submitted it, or the builder saw it in a
+   * block); before that it rejects with PartyError('bad-state'), because a fresh export replaces the
+   * signing nonces a release in progress depends on. Exported once and saved (with the wallet,
+   * before it is returned); later calls return the same hex.
+   */
+  spendInfo(): Promise<string>;
+  /**
+   * Imports a peer's post-release multisig info (the moderator's side of spendInfo()), so this
+   * wallet can compute the escrow's key images and its own outgoing view (funds().outgoing)
+   * shows a spend that really is in a block. The import is the proof: the info only completes
+   * key images for this wallet's own outputs; the wallet then finds those key images among the
+   * inputs of txs in blocks. Nothing a peer sends names a tx. Rejects with
+   * EscrowError('bad-spend-info') for anything that is not a well-formed export of this escrow
+   * (not hex, over SPEND_INFO_MAX_HEX, another wallet, a bad signature), PartyError('bad-state')
+   * before setup ended or while this party's own release is under way (an import replaces the
+   * peer nonces it is signing with). Saved with the wallet afterwards.
+   */
+  importSpendInfo(info: string): Promise<void>;
   stop(): Promise<void>;
 }
+
+/** The longest post-release multisig info importSpendInfo() takes (hex characters). */
+export const SPEND_INFO_MAX_HEX = 256 * 1024;
+const HEX = /^[0-9a-f]+$/;
 
 export interface PartyArgs {
   role: Role;
@@ -765,6 +792,52 @@ export function runParty(a: PartyArgs): PartyHandle {
             if (session.chainHeight) extra.chainHeight = await session.chainHeight();
             if (session.outgoing) extra.outgoing = await session.outgoing();
             resolve({ balance, unlocked, incoming, ...extra });
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    spendInfo() {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure) return reject(failure);
+          if (state.spendInfo !== undefined) return resolve(state.spendInfo);
+          if (state.release?.phase !== 'done') return reject(new PartyError('bad-state', 'no release of this party is done'));
+          try {
+            state.spendInfo = await session.exportState();
+            await persist(); // the export's fresh nonces are saved with the wallet before it leaves
+            resolve(state.spendInfo);
+          } catch (e) {
+            delete state.spendInfo;
+            reject(e);
+          }
+        });
+      });
+    },
+    importSpendInfo(info) {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure) return reject(failure);
+          if (typeof info !== 'string' || info.length === 0 || info.length > SPEND_INFO_MAX_HEX || info.length % 2 !== 0 || !HEX.test(info)) {
+            return reject(new EscrowError('bad-spend-info', 'not a hex string of the right size'));
+          }
+          if (!state.address || !checked()) return reject(new PartyError('bad-state', 'setup has not ended'));
+          const ph = state.release?.phase;
+          if (ph !== undefined && ph !== 'done' && ph !== 'exhausted' && ph !== 'superseded' && ph !== 'waiting-funds') {
+            return reject(new PartyError('bad-state', 'a release of this party is under way'));
+          }
+          try {
+            await session.importState([info]);
+          } catch (e) {
+            if (e instanceof EscrowError) return reject(e);
+            return reject(new EscrowError('bad-spend-info', e instanceof Error ? e.message.slice(0, 120) : 'import failed'));
+          }
+          try {
+            await persist();
+            resolve();
           } catch (e) {
             reject(e);
           }
