@@ -79,6 +79,76 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The proof slot hint on the BuyerPay phone board reads "Private details are blurred for you to check next. Location and device info are removed."; the phone board wins.',
     },
   ],
+  SetupTerms: [
+    {
+      text: '[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: eligibility, one person per account, keeping your login keys safe.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: how 2-of-3 escrow works, funding is a commitment, releases can\'t be undone.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: when moderators can read chats, rulings, appeals, trading holds.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: no IP logging; dispute records 30 days; anonymized training copies 6 months.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: changes to these terms are shown at your next login.]',
+      why: 'Placeholder for the lawyer\'s text; the page shows the draft (screens/setup/termsText.ts), which states the spec\'s rules under the board\'s heading (Task 28).',
+    },
+    {
+      text: '[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow goes to the ad poster.]',
+      why: 'Placeholder for the lawyer\'s text, and its last clause is superseded (extra XMR, owner 2026-10-20, spec 11.1); the page\'s draft Fees section says the 1% and the network fees only (Task 28).',
+    },
+    {
+      text: 'End of Terms. Version [DATE].',
+      why: 'The page shows the real version from GET /v1/terms in place of [DATE] (Task 28).',
+    },
+  ],
+  SetupPgpKey: [
+    {
+      text: 'Public key -----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The board\'s example key, shortened with "…", is not a key: the key check (type, expiry, fingerprint) needs a real pasted key, so the page shows the key the test pastes (Task 28).',
+    },
+    {
+      text: '-----BEGIN PGP PUBLIC KEY BLOCK----- mDMEZx3kQhYJKwYBBAHaRw8BAQdA0r9p … -----END PGP PUBLIC KEY BLOCK-----',
+      why: 'The same example key inside the textarea (see above).',
+    },
+    {
+      text: '3F2A 9C41 7B0E D5A2 61C8 0E4B 92D7 1F6A C3B8 0D15',
+      why: "The example key's fingerprint; the page shows the pasted key's own fingerprint in the same grouping (Task 28).",
+    },
+  ],
+  SetupPgpChallenge: [
+    {
+      text: '4:12',
+      why: 'The inner value of "Expires in 4:12": the page\'s masked Countdown already stands for it in that sentence, and one masked element covers one board text (Task 28).',
+    },
+  ],
+  SetupUsername: [
+    {
+      text: 'lumen.k is available',
+      why: 'No API answers whether a name is free before sign-up (Plan 2 and FU-A have none), so the page cannot claim it; a taken name comes back from the register call and returns the person to this screen. The page shows how the name will look instead (Task 28; open question for the lead).',
+    },
+  ],
+  SetupWallet: [
+    {
+      text: "Whenever you add a payout wallet, we'll ask you to confirm it's you, and we'll show an alert. Want extra protection? In Security settings, you can make new wallets wait 24 hours before they can be paid.",
+      why: 'Superseded by spec 6.3 "Decided 2026-10-23" and "Wallet rules refined" (owner 2026-10-24): there is no 24-hour setting any more, and the first wallet in setup needs no confirm and never waits. The page says so instead; the canvas copy is for the lead to update (Task 28).',
+    },
+  ],
   SellOffers: [
     {
       text: '$20 – $200Deposit required',
@@ -91,6 +161,33 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
       why: 'The board names ACH differently from the catalog ("ACH bank transfer (US)", data/payment-methods.json); the board fix is a design to-do (lead, 2026-10-27).',
     },
   ],
+  // Task 27's dispute boards: parts other tasks build (Plan 5's evidence and unblurred proof, Task 20's chat).
+  DisputeOpen: [
+    { text: 'Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'Already in this trade, blurred', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    { text: 'Included', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+  ],
+  DisputeRoom: [
+    { text: 'Your Zelle screenshot', why: 'Plan 5 (proof pipeline) and Task 23 (proof slot): the proof already in the trade.' },
+    {
+      text: 'She can read this whole chat, including messages from before the trade. Moderators only ever contact you here.',
+      why: 'The app cannot know a moderator\'s gender and says "They" (Task 27; lead/owner question).',
+    },
+    { text: 'satoshi_ghost · 10:20', why: 'Task 20 (ChatPanel): chat messages.' },
+    { text: "Nothing from Zelle on my side yet. I'll check again tonight.", why: 'Task 20 (ChatPanel): chat messages.' },
+    { text: 'X2F Moderator', why: 'Task 20 (ChatPanel): a moderator\'s chat message carries the badge.' },
+    { text: 'sarah.v · 10:53', why: 'Task 20 (ChatPanel): chat messages.' },
+    {
+      text: "Hi both. I've read the chat and seen the proof. mira.k, please send me the unblurred screenshot so I can check the sender name. satoshi_ghost, please look in your Zelle activity for $412.50 today with the note K7M2-9QXA-4FTR-8WPN.",
+      why: 'Task 20 (ChatPanel): chat messages.',
+    },
+    { text: "sarah.v asked you for the unblurred proof. Only she will see it. satoshi_ghost won't.", why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+    { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
+  ],
+  DisputeRuling: [
+    { text: 'Open · 47 h 58 min left', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
+    { text: '47 h 58 min', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
+  ],
   BuyQuote: [
     {
       text: 'Paid by satoshi_ghost',
@@ -98,6 +195,12 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     },
     { text: 'Deposit', why: 'No buyer deposits (spec 2.5, plan Revision 2026-10-18): the quote has no Deposit row (plan Task 18).' },
     { text: 'None for this trade', why: 'The value of the removed Deposit row (spec 2.5).' },
+  ],
+  Wallet: [
+    {
+      text: "Saving asks you to confirm it's you. Confirm with a PGP key, passkey or security key and the wallet works at once; with a password or authenticator code it waits 24 hours before it can be paid.",
+      why: 'Superseded by spec 6.3 "Wallet rules refined" (owner 2026-10-24): the first wallet never waits and a batch shares one wait, so the note under the form follows the account\'s own GET /v1/wallets/rule (ruleNote in screens/wallets-model.ts) instead of one fixed sentence (Task 29).',
+    },
   ],
 };
 
@@ -268,8 +371,15 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
   for (const m of masks) await m.evaluateAll((els, attr) => els.forEach((e) => e.setAttribute(attr, '')), MASK_ATTR);
   const { shown, standalone } = await page.evaluate(
     ({ sel, mask }) => {
-      // Shown to a sighted person: rendered, and at least 2x2 px inside the document, so screen-reader
-      // only text (1 px clip), a 0x0 box or text moved off the page does not count.
+      // Shown to a sighted person: rendered, at least 2x2 px, and inside every box that clips it, so
+      // screen-reader-only text (1 px clip), a 0x0 box, text at left:-9999px, text off the right of
+      // a page that cannot scroll, or text cut off by a non-scrolling overflow:hidden box does not
+      // count. A box that scrolls (and the page, when it scrolls) clips to its whole scrolled
+      // content, so text further down a scrolling container (an app shell scrolling in <main>)
+      // still counts.
+      const scrolls = (o: string) => o === 'auto' || o === 'scroll';
+      const inside = (r: DOMRect, left: number, top: number, right: number, bottom: number) =>
+        r.right > left && r.bottom > top && r.left < right && r.top < bottom;
       const visible = (el: Element): boolean => {
         // An <option> has no box of its own in a closed select; it is shown when its select is.
         if (el.matches('option, optgroup')) {
@@ -277,12 +387,31 @@ export async function missingTexts(page: Page, texts: string[], masks: Locator[]
           return select !== null && visible(select);
         }
         if (!el.checkVisibility({ visibilityProperty: true, opacityProperty: true })) return false;
-        const r = el.getBoundingClientRect();
+        let r = el.getBoundingClientRect();
         if (r.width < 2 || r.height < 2) return false;
         const doc = document.documentElement;
-        const left = r.left + window.scrollX;
-        const top = r.top + window.scrollY;
-        return left + r.width > 0 && top + r.height > 0 && left < doc.scrollWidth && top < doc.scrollHeight;
+        for (let a = el.parentElement; a !== null && a !== doc && a !== document.body; a = a.parentElement) {
+          const cs = getComputedStyle(a);
+          if (cs.overflowX === 'visible' && cs.overflowY === 'visible') continue;
+          const b = a.getBoundingClientRect();
+          const sx = scrolls(cs.overflowX);
+          const sy = scrolls(cs.overflowY);
+          const left = sx ? b.left - a.scrollLeft : b.left;
+          const top = sy ? b.top - a.scrollTop : b.top;
+          const right = sx ? left + a.scrollWidth : b.right;
+          const bottom = sy ? top + a.scrollHeight : b.bottom;
+          if (!inside(r, left, top, right, bottom)) return false;
+          // Scrolled into view it sits within this box, so the boxes further out clip the box.
+          if (sx || sy) r = b;
+        }
+        // The page: its whole scrolled area when it scrolls that way, else the viewport.
+        const root = getComputedStyle(doc);
+        const body = getComputedStyle(document.body);
+        const pageX = !(root.overflowX === 'hidden' || root.overflowX === 'clip' || body.overflowX === 'hidden' || body.overflowX === 'clip');
+        const pageY = !(root.overflowY === 'hidden' || root.overflowY === 'clip' || body.overflowY === 'hidden' || body.overflowY === 'clip');
+        const left = -window.scrollX;
+        const top = -window.scrollY;
+        return inside(r, left, top, pageX ? left + doc.scrollWidth : window.innerWidth, pageY ? top + doc.scrollHeight : window.innerHeight);
       };
       // The outermost visible masked elements, each with an id.
       const ids = new Map<Element, number>();

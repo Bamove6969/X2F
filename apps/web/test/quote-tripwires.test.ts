@@ -3,11 +3,19 @@
 // api.ts on 2026-10-27: same fields, `exponent` always sent; Tasks 16 and 17's offer lists are on
 // the line and App.tsx hands their Trade button to the quote, which reads offers through browse's
 // parseOffers; those tripwires are retired. Task 4's GET /v1/offers landed 2026-10-28 and matches
-// quoteOffer and parseOffers (poster.username is the public name, stage, opensAt, bigint strings); its
+// quoteOffer and parseOffers (poster.displayName is the public name, stage, opensAt, bigint strings); its
 // tripwire is retired. Task 4 also serves GET /v1/offers/:id, which the quote may use instead of the list. Task 12 is on the line since 2026-10-27: quote/confirmed.ts imports
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the trade room (Task 22) passes location.state.confirmed,
-// else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx).) Each one below fails once the named module lands: then
+// else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 28's setup is on the
+// line since 2026-10-29: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
+// trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
+// re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome. Task 29 is on the line since
+// 2026-10-29: WalletPicker names and filters wallets through wallets-model.ts (APP_LABELS,
+// takeableWallets), and e2e/quote.spec.ts drives the real /wallets?add=1&returnTo screen back here.
+// Task 20's chat is on the line since 2026-10-29; its tripwire is retired, but the header's Chat
+// stays off ("Chat opens once the trade starts.", Task 20 review I1) until the chats inbox and the
+// poster's notice are built (owed, docs/coordination.md).) Each one below fails once the named module lands: then
 // do what its message says (check the real shape against src/screens/quote/api.ts and the stubs in
 // e2e/quote.spec.ts and test/quoteScreen.test.tsx, or wire the live call), and delete that tripwire.
 import { existsSync } from 'node:fs';
@@ -27,24 +35,5 @@ describe('Task 18 guesses still stand in for missing tasks', () => {
     // naming only the caller's own stage (Revision 2026-10-24). Also check that the trade's stored fiatCents
     // is the quoted one (OD-5).
     expect(has('apps/api/src/trades/take.ts'), "Task 5 landed: check takeOffer's body (centsPerXmr, fiatCents), price-changed, takeRefusal's codes and the starter-limit fields").toBe(false);
-  });
-
-  it("NEEDS_TASK_28: setup does not yet come back to the quote with `resume=<nonce>` and this tab's pending-take marker", () => {
-    // useTake sends a logged-out Trade to /setup/terms?returnTo=<quote with resume=<nonce>> after
-    // writing the single-use pending-take marker to this tab's sessionStorage (pendingTake.ts). Setup
-    // must end on returnTo IN THE SAME TAB (the marker is per tab; a new tab or window is a plain
-    // quote) with a fresh session (useSession reads /v1/account/me once per page load today). Back on
-    // the quote, a matching marker re-shows the quote at the price now and asks for a tap; it never takes.
-    expect(
-      has('apps/web/src/screens/setup/SetupFlow.tsx'),
-      'Task 28 landed: check Start trading → returnTo in the same tab re-shows the quote with "You\'re back" (e2e quote.spec.ts)',
-    ).toBe(false);
-  });
-
-  it('NEEDS_TASK_29: the wallet names and the usable filter mirror the unmerged wallets model', () => {
-    expect(
-      has('apps/web/src/screens/wallets-model.ts'),
-      'Task 29 landed: use APP_LABELS and takeableWallets in WalletPicker, and check /wallets?add=1&returnTo comes back here after confirm-it\'s-you',
-    ).toBe(false);
   });
 });

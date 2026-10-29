@@ -4,11 +4,6 @@ import type { Queryable } from '../db/pool.js';
  * Starter limits (spec 2.3, owner 2026-10-24; plan Revision 2026-10-24). An account's stage comes
  * from its completed trades and its age; the stage caps the largest single trade it can be part of
  * (USD equivalent at the locked rate) and, on Starter, how many trades it can have open.
- *
- * Not yet counted: "a lost dispute drops the account back one stage" and "only completed trades
- * with no dispute lost count" need the disputes table (Plan 3 Task 27, migration 108), which is
- * not on the main line. `completedTrades` below is every released trade; Task 27 must subtract
- * the lost ones and drop a stage per lost dispute here, in this one place.
  */
 export type Stage = 'starter' | 'building' | 'graduated';
 
@@ -105,9 +100,16 @@ export interface TradeCap {
   maxOpen: number | null;
 }
 
-/** SQL: an account's completed trades (released, either side). One place, so Task 27 changes it once. */
+/**
+ * SQL: an account's completed trades, either side: released trades, plus refunded trades whose
+ * dispute settled. Owner rule R38 (2026-10-29): a settled dispute counts as completed whoever won,
+ * and a lost dispute drops no stage. A moderator's refund to the seller settles as `mutual-cancel`
+ * (no seller-side kind yet), so such a trade ends `refunded` with `dispute_by` set; a released
+ * trade whose late deposit was escalated and refunded ends the same way and still counts.
+ */
 export const COMPLETED_TRADES_SQL = `(select count(*) from trades t
-   where t.state = 'released' and (t.buyer_account_id = a.id or t.seller_account_id = a.id))`;
+   where (t.state = 'released' or (t.state = 'refunded' and t.dispute_by is not null))
+     and (t.buyer_account_id = a.id or t.seller_account_id = a.id))`;
 
 /**
  * The plan's shared helper `tradeCap(deps, accountId, now)` (Revision 2026-10-24), for Task 5's

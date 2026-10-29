@@ -47,6 +47,7 @@ export type ApiErrorCode =
   | 'no-wallet'
   | 'trading-hold'
   | 'trading-paused'
+  | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'
@@ -69,6 +70,8 @@ export type ApiErrorCode =
   | 'wrong-channel'
   | 'wrong-sender'
   | 'chat-unavailable'
+  // Plan 3, Task 27: a second dispute on one trade.
+  | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

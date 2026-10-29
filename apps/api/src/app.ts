@@ -10,7 +10,9 @@ import { recoveryRoutes } from './auth/recovery.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
-import { tradeRoutes } from './trades/routes.js';
+import type { TxConfirmations } from './trades/chain.js';
+import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
+import { disputeRoutes } from './disputes/routes.js';
 import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
@@ -92,6 +94,8 @@ export interface BuildOptions {
   pushTransport?: PushTransport;
   /** Trade event delivery after commit; default Task 19's `tradeEventPublisher` (SSE, Web Push, final alert). */
   tradePublish?: TradePublisher;
+  /** Plan 3 Task 24: confirmations from X2F's own node; without it the released screen's count is unknown. */
+  txConfirmations?: TxConfirmations;
 }
 
 export const BODY_LIMIT = 16 * 1024;
@@ -241,12 +245,17 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  tradeRoutes(app, { publish: options.tradePublish ?? tradeEventPublisher({ events, push: app.push }) });
+  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
+  tradeRoutes(app, { publish: tradePublish });
+  // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
+  disputeRoutes(app, { publish: tradePublish });
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
   chatRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
+  // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
+  confirmationsRoute(app, options.txConfirmations);
 
   return app;
 }

@@ -263,7 +263,7 @@ export function chatRoutes(app: FastifyInstance): void {
       [me, CHAT_LIST_LIMIT],
     );
     const others = rows.map((r) => (r.buyer_account_id === me ? r.seller_account_id : r.buyer_account_id));
-    const names = await traderSummaries(deps.db, others, deps.clock());
+    const names = await traderSummaries(deps.db, others, deps.clock(), me);
     const chats: ChatSummary[] = rows.map((r, i) => ({
       chat: r.code,
       role: r.buyer_account_id === me ? 'buyer' : 'seller',
@@ -278,7 +278,8 @@ export function chatRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const other = role === 'buyer' ? row.seller_account_id : row.buyer_account_id;
-    const names = await traderSummaries(deps.db, [other], deps.clock());
+    // Presence through the viewer-aware summary: hidden from a trader the other side blocked (review M5).
+    const names = await traderSummaries(deps.db, [other], deps.clock(), req.auth.accountId);
     const facts = await deps.db.query<{ disputed: boolean; attested: boolean; mine: string | null }>(
       `select exists (select 1 from trades t where t.code = $2 and t.state = 'disputed') as disputed,
               exists (select 1 from chat_attestations a where a.chat = $1) as attested,

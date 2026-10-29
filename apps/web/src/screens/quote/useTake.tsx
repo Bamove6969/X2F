@@ -6,8 +6,9 @@ import { takeOffer, type TakeRequest } from './api.js';
 import { storeConfirmed, type ConfirmedTrade } from './confirmed.js';
 
 // The Trade button's action (plan Task 18). Logged out, it goes to setup with `returnTo` = the
-// quote with `resume=<nonce>` and a pending-take marker in this tab (pendingTake.ts), so the quote
-// takes the offer once the person is back (Task 28 builds setup).
+// quote with `resume=<nonce>` and a pending-take marker in this tab (pendingTake.ts). Setup (Task 28)
+// starts on the Terms at `/setup` and its Start trading navigates to returnTo in the same tab, where
+// the marker re-shows the quote at the price now for a fresh tap (it never takes by itself).
 // Logged in, it calls take with the quoted rate and total (the rate the person sees is the rate
 // that locks; a 409 price-changed means the server would have locked another one, so the quote
 // re-fetches the price and asks for a fresh tap) and opens the trade room with the device's own
@@ -16,7 +17,7 @@ import { storeConfirmed, type ConfirmedTrade } from './confirmed.js';
 // (Task 13) with this page as `returnTo`.
 
 /** Where a logged-out Trade goes first. */
-export const SETUP_START = '/setup/terms';
+export const SETUP_START = '/setup';
 
 export function setupHref(returnTo: string): string {
   return `${SETUP_START}?returnTo=${encodeURIComponent(safeReturnTo(returnTo))}`;

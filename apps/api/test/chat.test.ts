@@ -215,6 +215,17 @@ describe('GET /v1/chats/:chat', () => {
     expect(miss.json()).toEqual(unknown.json());
   });
 
+  it("hides the other side's online status from a trader they blocked (review M5: presence through the viewer-aware summary)", async () => {
+    const o = await openChat();
+    // The poster is online (signed in just now) and blocks the taker.
+    await deps.db.query('insert into account_blocks (account_id, blocked_id, created_at) values ($1, $2, $3)', [o.poster.id, o.taker.id, now]);
+    const seen = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { counterparty: { online: boolean; lastSeenAt: string | null } };
+    expect(seen.counterparty).toMatchObject({ online: false, lastSeenAt: null });
+    // The blocker still sees the taker's status.
+    const other = (await o.poster.b.get(`/v1/chats/${o.chat}`)).json() as { counterparty: { online: boolean } };
+    expect(other.counterparty.online).toBe(true);
+  });
+
   it('lists my chats', async () => {
     const o = await openChat();
     const res = await o.poster.b.get('/v1/chats');

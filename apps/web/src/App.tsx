@@ -2,9 +2,11 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { TradeChatPanel } from './chat/ChatPanel.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { PostOffer } from './screens/PostOffer.js';
+import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -16,13 +18,21 @@ import { Login } from './screens/auth/Login.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
+import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Security } from './screens/settings/Security.js';
+import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
+import { setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
+
+// Task 20's trade chat in Task 23's seam (BuyerPay's Chat sheet, the wide room's aside). A fixtures
+// build replaces it with the board's stand-in (fixtures/payChat.ts, installed after this module loads).
+setTradeChat(TradeChatPanel);
 
 const WIDE = '(min-width: 1024px)';
 
@@ -148,10 +158,11 @@ export function App() {
           <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
-          <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
-          <Route path="/setup/*" element={<Screen name="setup" />} />
-          <Route path="/terms" element={<Screen name="terms" />} />
+          {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
+          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
+          <Route path="/wallets" element={<Wallets />} />
+          <Route path="/setup/*" element={<SetupFlow />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
