@@ -781,7 +781,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 
 **Interfaces:**
 - Produces:
-  - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review.
+  - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review. *2026-10-29b (owner): statuses `open | stands | comments-removed | removed`, and an open dispute shows "Under review" at once; see Revision 2026-10-29b.*
   - `POST /v1/reviews/:id/dispute` (the subject only, once the review is revealed). Staff: `GET /staff/v1/review-disputes`, `POST …/:id/decide { outcome, reason ≥ 20 }` (perm `reputation.review`). Each step is logged without the note text.
   - A removed review no longer counts anywhere (stats, badges, profile); its row is kept with `removed_at` so the decision can be checked.
   - The moderator sees the review and the reason. If the trade is already purged (older than 30 days), there is no chat to read; the decision rests on the review text and the reason. (See the open point in the final report.)
@@ -832,3 +832,20 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: feedback form linked from every can't-do popup`.
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Sources: the owner's words of 2026-10-29 08:03 (`~/x2f-comms/owner-answers-2026-10-28.md`, item c), the lead's calls of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-29-lead-calls.md`) and Claude Design's update (`origin/wip/design-brief`, Reviews board). The owner's words win over the design's summary.
+
+- **Reviews are very public but anonymous** (owner). Nothing on a review can link it to whoever left it: **no username, no account number, no order or trade number**. This changes Tasks 3, 5, 6, 12 and 20:
+  - Every public review reader (profile, offer card popups, the portable record of Task 12) returns only the subject, stars, phrases, note, trade badges, method name and a coarse date. It never returns the reviewer's name or id, the trade code or anything derived from them. *Lead default (2026-10-29b), owner may change:* the date is shown as month and year only, so the exact time can't be matched to a trade.
+  - *Lead default (2026-10-29b), owner may change:* the stored link to the reviewer (`reviewer_account_id`) is kept only as long as the rules need it (blind reveal, one review per trade, the rate-first gate), and is nulled together with the trade code when the trade self-destructs (Task 20, Plan 7 Task 2). The role (buyer or seller) and the weight stay.
+  - A new test in Task 20: after the trade is purged, no column of `reviews` holds the reviewer's id or the trade code; a public profile response contains neither the reviewer's name nor any trade code at any time.
+- **A disputed review immediately shows "Under review"** (owner: the benefit of the doubt goes to the person reviewed), from the moment the dispute is filed until a moderator decides. Task 19's outcomes become the owner's three: **remove some comments** (`comments-removed`: the moderator removes the note, chosen phrases or badges, and the stars stay), **let it stand** (`stands`), or **remove the review entirely** (`removed`). They replace `kept` / `removed` / `note-removed`.
+  - *Lead default (2026-10-29b), owner may change:* while "Under review", the review is shown with its label but does not count in `positivePct`, Trusted or the other badges; it counts again if it stands. That is the benefit of the doubt.
+  - **OPEN:** the list of reasons for disputing a review (the design asks; Task 19's `retaliation | competitor | doxxing | other` stays until the owner answers).
+- **OPEN: stars 1–5 or 1–10** (unchanged; `STAR_MAX` default 5). The Reviews board has both as a tweak; stars are amber everywhere (design).
+- **Task 21 (feedback):**
+  - **Replies to named feedback are in the app only,** never by email: staff reply through a ticket thread and an alert (Plan 4 Revision 2026-10-29b, Tasks 30–31). Anonymous feedback has no reply.
+  - *Lead call 2026-10-29:* sending feedback anonymously does not update "last seen" (the request does not touch `sessions.last_seen_at`), and the anonymous copy promises only **"We don't record who sent it."** Tests: an anonymous send leaves `last_seen_at` unchanged; the copy is exact.
+- **Completed trades (R38, lead call):** released trades plus refunded trades that had a dispute; a settled dispute counts whoever won (P5-A13 as revised on 2026-10-29).
