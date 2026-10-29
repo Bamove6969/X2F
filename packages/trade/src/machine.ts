@@ -391,6 +391,10 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
       return open();
     case 'refunded': {
       if (by !== 'buyer') return fail('wrong-party');
+      // A cancel itself can't be disputed (owner 2026-10-29, question 4): the buyer's own cancel,
+      // or one both agreed to. (A moderator's refund to the seller is also built as mutual-cancel,
+      // but only after a dispute, which this leaves as it was.)
+      if (t.dispute === null && (t.settling === 'buyer-cancel' || t.settling === 'mutual-cancel')) return fail('wrong-state');
       const closed = t.closedAt ?? fail('wrong-state');
       const limit = closed.getTime() + TIMERS.disputeAfterRefundDays * 24 * 60 * 60_000;
       if (now.getTime() > limit) return fail('too-late');

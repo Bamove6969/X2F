@@ -74,6 +74,9 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
     case 'refunded': {
       // One dispute per trade: a refund that was already disputed (and ruled) offers none again.
       if (t.dispute !== null) return { kind: 'opened' };
+      // A cancel itself can't be disputed (owner 2026-10-29, question 4): the buyer's own cancel or
+      // one both agreed to. Disputing a refund of the wrong amount is not built yet (coordination.md).
+      if (isCancelRefund(t.settling ?? null, t.dispute)) return { kind: 'none' };
       const closed = ms(t.closedAt);
       if (t.role !== 'buyer' || closed === null) return { kind: 'none' };
       return n <= closed + TIMERS.disputeAfterRefundDays * DAY_MS ? { kind: 'open' } : { kind: 'none' };
@@ -120,11 +123,12 @@ export function refundReason(settling: SettleKind | null, dispute: DisputeTrade[
 }
 
 /**
- * The refund came from a cancel (the buyer's, or both sides'), with no dispute: the refunded
- * screen asks "Did you pay before you cancelled? Open a dispute." (Revision 2026-10-29b). Not for
- * a no-show (auto) refund, a lapse or a dispute decision.
+ * The refund came from a cancel (the buyer's, or both sides'), with no dispute. A cancel itself
+ * can't be disputed (owner 2026-10-29, question 4; this replaces Revision 2026-10-29b's "Did you
+ * pay before you cancelled? Open a dispute."). Not a no-show (auto) refund, a lapse or a dispute
+ * decision.
  */
-export function paidBeforeCancel(settling: SettleKind | null, dispute: DisputeTrade['dispute']): boolean {
+export function isCancelRefund(settling: SettleKind | null, dispute: DisputeTrade['dispute']): boolean {
   return dispute === null && (settling === 'buyer-cancel' || settling === 'mutual-cancel');
 }
 

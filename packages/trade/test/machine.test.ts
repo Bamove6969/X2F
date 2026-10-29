@@ -617,8 +617,8 @@ describe('release and settling', () => {
     expect(r.settling).toBe('buyer-cancel');
     expect(r.txHash).toBe('bb'.repeat(32));
     expect(r.closedAt).toEqual(at(28));
-    // The buyer keeps the dispute-after-refund window (spec 2.3).
-    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(60)).state).toBe('disputed');
+    // A cancel itself can't be disputed (owner 2026-10-29, question 4).
+    expect(rule(() => apply(r, { type: 'open-dispute' }, 'buyer', at(60)))).toBe('wrong-state');
   });
 
   test('reproduced: a buyer-cancel from securing times out back to securing, then its refund lands and is recorded', () => {
@@ -632,7 +632,7 @@ describe('release and settling', () => {
     expect(r.state).toBe('refunded');
     expect(r.txHash).toBe('bb'.repeat(32));
     expect(r.closedAt).toEqual(at(40));
-    expect(apply(r, { type: 'open-dispute' }, 'buyer', at(41)).state).toBe('disputed');
+    expect(rule(() => apply(r, { type: 'open-dispute' }, 'buyer', at(41)))).toBe('wrong-state');
   });
 
   test('reproduced: a release that lands after settleBy returned the trade to paid is still recorded', () => {
@@ -712,14 +712,27 @@ describe('open-dispute', () => {
     expect(rule(() => apply(waiting, { type: 'open-dispute' }, 'buyer', at(500)))).toBe('too-early');
   });
 
-  test('buyer in refunded within 90 days', () => {
-    const f = refunded();
-    expect(rule(() => apply(f, { type: 'open-dispute' }, 'seller', at(62)))).toBe('wrong-party');
+  test('buyer in refunded within 90 days (a no-show refund; a cancel itself can\'t be disputed)', () => {
+    // The no-show refund: request-refund at 121, the auto-refund lands at 140; the window counts from it.
+    const f = run([[{ type: 'request-refund' }, 'seller', 121], [{ type: 'settled', kind: 'auto-refund', txHash: 'dd'.repeat(32) }, 'system', 140]], secured());
+    expect(f.state).toBe('refunded');
+    expect(rule(() => apply(f, { type: 'open-dispute' }, 'seller', at(141)))).toBe('wrong-party');
     const day = 24 * 60;
-    const d = apply(f, { type: 'open-dispute' }, 'buyer', at(61 + 90 * day));
+    const d = apply(f, { type: 'open-dispute' }, 'buyer', at(140 + 90 * day));
     expect(d.state).toBe('disputed');
     expect(d.closedAt).toBeNull();
-    expect(rule(() => apply(f, { type: 'open-dispute' }, 'buyer', at(61 + 90 * day, 1)))).toBe('too-late');
+    expect(rule(() => apply(f, { type: 'open-dispute' }, 'buyer', at(140 + 90 * day, 1)))).toBe('too-late');
+    // A buyer's cancel, or one both agreed to: no dispute (owner 2026-10-29, question 4).
+    expect(rule(() => apply(refunded(), { type: 'open-dispute' }, 'buyer', at(62)))).toBe('wrong-state');
+    const mutual = run(
+      [
+        [{ type: 'propose-cancel' }, 'buyer', 35],
+        [{ type: 'accept-cancel' }, 'seller', 36],
+        [{ type: 'settled', kind: 'mutual-cancel', txHash: 'cc'.repeat(32) }, 'system', 40],
+      ],
+      secured(),
+    );
+    expect(rule(() => apply(mutual, { type: 'open-dispute' }, 'buyer', at(41)))).toBe('wrong-state');
   });
 
   test('other states → wrong-state; tick in disputed changes nothing', () => {

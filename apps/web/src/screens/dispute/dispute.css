@@ -479,31 +479,3 @@
   line-height: 16px;
   color: var(--x2f-ink-muted);
 }
-/* The refunded screen's "Did you pay before you cancelled?" (Refunded board, Revision 2026-10-29b). */
-.dispute-paid-first {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px;
-  border-radius: var(--x2f-radius-md);
-  border: 1px solid var(--x2f-line);
-}
-.dispute-paid-first__title {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin: 0;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
-}
-.dispute-paid-first__title > svg {
-  flex-shrink: 0;
-  color: var(--x2f-escrow);
-}
-.dispute-paid-first__text {
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
-  color: var(--x2f-ink-muted);
-}

@@ -28,6 +28,8 @@ export interface DisputeTrade {
   settleBy: string | null;
   closedAt: string | null;
   dispute: { by: 'buyer' | 'seller' | 'system'; at: string } | null;
+  /** How the trade settled (a refund's kind): a cancel's refund can't be disputed (owner 2026-10-29). */
+  settling?: TradeView['settling'];
   serverNow: string;
 }
 
@@ -105,6 +107,7 @@ export function tradeFromView(v: TradeView): DisputeTrade {
     settleBy: v.settleBy,
     closedAt: v.closedAt,
     dispute: v.dispute,
+    settling: v.settling,
     serverNow: v.serverNow,
   };
 }

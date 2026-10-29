@@ -189,33 +189,27 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       );
       expect(host.querySelector('h1')?.textContent, JSON.stringify(over)).toBe(title);
       expect(host.textContent).toContain(text);
-      // The 90-day line only while a dispute can still be opened; after a cancel, the board's box instead.
+      // The 90-day line only while a dispute can still be opened: never after a cancel (owner 2026-10-29, question 4).
       const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
       expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
-      expect(host.textContent.includes('Did you pay before you cancelled?')).toBe(cancel);
     }
   });
 
-  it('after a cancel: "Did you pay before you cancelled?" with Open a dispute (Refunded board, Revision 2026-10-29b); not after a no-show refund', () => {
+  it("a cancel itself can't be disputed (owner 2026-10-29, question 4): no Open a dispute after a cancel's refund; a no-show refund keeps it", () => {
     for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
       const { host } = render(
         <MemoryRouter>
-          <RefundedSlot {...props(refunded({ settling }))} />
+          <RefundedSlot {...props(refunded({ settling, cancelConfirmedAt: at(-9 * DAY) }))} />
         </MemoryRouter>,
       );
-      const box = host.querySelector('[data-paid-before-cancel]');
-      expect(box?.querySelector('h2')?.textContent).toBe('Did you pay before you cancelled?');
-      expect(box?.textContent).toContain('Open a dispute and add your payment proof.');
-      expect([...box!.querySelectorAll('a')].find((a) => a.textContent === 'Open a dispute')?.getAttribute('href')).toBe(`/trade/${encodeURIComponent(refunded().code)}/dispute`);
-      // One way into the dispute, not two.
-      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute')).toHaveLength(1);
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(0);
+      expect(host.textContent).not.toContain('Did you pay before you cancelled?');
     }
     const noShow = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
       </MemoryRouter>,
     );
-    expect(noShow.host.textContent).not.toContain('Did you pay before you cancelled?');
-    expect(noShow.host.querySelector('[data-paid-before-cancel]')).toBeNull();
+    expect([...noShow.host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute')).toHaveLength(1);
   });
 });

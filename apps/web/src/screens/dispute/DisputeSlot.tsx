@@ -6,19 +6,17 @@
 // GET /v1/trades/:code/dispute, again whenever the room hands it a fresh view. A Plan 4 mod-built
 // co-sign runs through the room's `escrow` handle and rulingAllowsCosign (NEEDS_PLAN_4_MOD_COSIGN).
 import { useEffect, useState } from 'react';
-import { formatXmr } from '@x2f/trade';
 import { methodOf } from '../../api/trade.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
 import { registerTradeScreen, type TradeScreenProps } from '../trade/TradeRoom.js';
 import { fetchDispute, refusalText, sendAppeal, tradeFromView, type DisputeView } from './api.js';
 import { DisputeEntry } from './DisputeEntry.js';
-import { DisputeIcon } from './icons.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeRoom } from './DisputeRoom.js';
 import { DisputeRuling } from './DisputeRuling.js';
 import { disputeScreenFor } from './DisputeScreen.js';
-import { disputeEntry, paidBeforeCancel, refundReason } from './rules.js';
+import { disputeEntry, refundReason } from './rules.js';
 import './dispute.css';
 
 /** Where a slot's back link goes: the trader's own list (the room is the trade's page). */
@@ -75,9 +73,9 @@ export function DisputeSlot({ code, view, refresh, serverClock }: TradeScreenPro
  * (refundReason: the buyer cancelled, the payment time ran out and the seller cancelled, a dispute
  * decision, both cancelled, the funding time ran out). Within 90 days of the refund the buyer may
  * still open a dispute (spec 2.3, "dispute after refund"); after one was opened, the way to it.
- * After a cancel (the buyer's or a mutual one) the dispute part is the Refunded board's "Did you
- * pay before you cancelled? Open a dispute." (Revision 2026-10-29b; board Refunded.dc.html on
- * wip/design-brief). The rest is COPY-UNSIGNED (until the Refunded board is merged).
+ * A cancel (the buyer's or a mutual one) can't be disputed (owner 2026-10-29, question 4), so its
+ * refund offers no dispute; this replaces the Refunded board's "Did you pay before you cancelled?
+ * Open a dispute." (Revision 2026-10-29b). COPY-UNSIGNED (until the Refunded board is merged).
  */
 export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   const trade = tradeFromView(view);
@@ -101,24 +99,11 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
           {cancelling ? <StatusChip tone="caution" icon="clock" label="Cancelling" /> : <StatusChip tone="escrow" icon="check" label="Refunded" />}
           <h1 className="dispute-title">{reason.title}</h1>
           <p className="dispute-lead">{reason.text}</p>
-          {entry.kind === 'open' && !paidBeforeCancel(view.settling, trade.dispute) ? (
+          {entry.kind === 'open' ? (
             <p className="dispute-lead">If you paid the seller and did not get your XMR, you can still open a dispute for 90 days after the refund.</p>
           ) : null}
-          {entry.kind === 'open' && paidBeforeCancel(view.settling, trade.dispute) ? null : <DisputeEntry trade={trade} now={now} />}
+          <DisputeEntry trade={trade} now={now} />
         </section>
-        {entry.kind === 'open' && paidBeforeCancel(view.settling, trade.dispute) ? (
-          <section className="dispute-paid-first" aria-labelledby="rf-dispute" data-paid-before-cancel="">
-            <h2 id="rf-dispute" className="dispute-paid-first__title">
-              <DisputeIcon name="shield" size={20} />
-              Did you pay before you cancelled?
-            </h2>
-            <p className="dispute-paid-first__text">
-              {/* The board names the seller; this screen calls them "the seller" (refundReason, owner 2026-10-29). */}
-              Open a dispute and add your payment proof. If the money reached the seller, a moderator makes them send you the {formatXmr(BigInt(trade.amountAtomic))} XMR as agreed.
-            </p>
-            <DisputeEntry trade={trade} now={now} />
-          </section>
-        ) : null}
       </div>
     </div>
   );

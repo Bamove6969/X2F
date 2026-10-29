@@ -103,5 +103,9 @@ describe("the seller's Confirm cancel after a buyer's cancel (owner 2026-10-29)"
     const { rows } = await deps.db.query<{ event: unknown }>('select event from trade_events where code = $1 order by id desc limit 1', [t.code]);
     expect(rows[0]!.event).toEqual({ type: 'confirm-cancel', returnConfirmations: 10 });
     expect(errorOf(await seller.browser.post(events(t.code), { type: 'confirm-cancel' }))).toBe('wrong-state');
+    // A cancel itself can't be disputed (owner 2026-10-29, question 4).
+    const d = await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' });
+    expect(d.statusCode).toBe(409);
+    expect(errorOf(d)).toBe('wrong-state');
   });
 });
