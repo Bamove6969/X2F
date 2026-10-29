@@ -74,6 +74,13 @@ export interface Trade {
   settling: SettleKind | null;
   settleFrom: TradeState | null;
   settleBy: Date | null;
+  /**
+   * When the moderation service reported a trade party's sealed post-release info for this
+   * settling episode (`release-claimed`, Task 9 I/O, lead decision b, 2026-10-29). While set the
+   * signing window no longer returns the trade to `settleFrom`: it stays `settling` until the
+   * sweep is shown (`settled`) or the watcher's 6 h fallback escalates it. Null outside a claim.
+   */
+  releaseClaimedAt: Date | null;
   pausedAt: Date | null;
   txHash: string | null;
   dispute: { by: By; at: Date } | null;
@@ -95,11 +102,12 @@ export type TradeEvent =
   | { type: 'settled'; kind: SettleKind; txHash: string }
   | { type: 'open-dispute' }
   | { type: 'escalate' }
+  | { type: 'release-claimed' }
   | { type: 'pause' }
   | { type: 'resume' }
   | { type: 'tick' };
 
-export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick'] as const;
+export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'release-claimed', 'pause', 'resume', 'tick'] as const;
 export const CLIENT_EVENTS = [
   'mark-paid',
   'extend',
@@ -208,6 +216,7 @@ export function newTrade(
     settling: null,
     settleFrom: null,
     settleBy: null,
+    releaseClaimedAt: null,
     pausedAt: null,
     txHash: null,
     dispute: null,
@@ -236,6 +245,7 @@ function startSettling(t: Trade, kind: SettleKind, now: Date): Trade {
     settling: kind,
     settleFrom: t.state,
     settleBy: t.releasable ? addMin(base(t, now), TIMERS.settleMin) : null,
+    releaseClaimedAt: null,
   };
 }
 
@@ -313,7 +323,8 @@ function onTick(t: Trade, now: Date): Trade {
       // With nothing in the escrow the trade is over; otherwise the lapse refund still has to settle.
       return { ...t, state: 'lapsed', lapsedAt: now, closedAt: t.receivedAtomic === 0n ? now : null };
     case 'settling':
-      if (!past(now, t.settleBy)) return t;
+      // A claimed release is not reverted (lead decision b): only the sweep or the fallback ends it.
+      if (t.releaseClaimedAt !== null || !past(now, t.settleBy)) return t;
       return { ...t, state: t.settleFrom ?? fail('wrong-state'), settling: null, settleFrom: null, settleBy: null };
     default:
       return t;
@@ -419,6 +430,12 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       return { ...t, state: 'disputed', dispute: { by: 'system', at: now }, closedAt: null };
     }
 
+    case 'release-claimed':
+      // The moderation service got a trade party's sealed post-release info (Task 9 I/O, lead
+      // decision b): once per settling episode, only while settling.
+      if (s !== 'settling' || t.releaseClaimedAt !== null) return fail('wrong-state');
+      return { ...t, releaseClaimedAt: now };
+
     case 'mark-paid':
       if (by !== 'buyer') return fail('wrong-party');
       if (s !== 'securing' && s !== 'secured' && s !== 'refund_requested') return fail('wrong-state');
@@ -502,7 +519,7 @@ export function nextDeadline(t: Trade): Date | null {
     case 'refund_requested':
       return t.finalAlertAt === null ? null : addMin(t.finalAlertAt, TIMERS.finalAlertMin);
     case 'settling':
-      return t.settleBy;
+      return t.releaseClaimedAt !== null ? null : t.settleBy;
     default:
       return null;
   }

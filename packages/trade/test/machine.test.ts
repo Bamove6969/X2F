@@ -83,6 +83,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
   settled: { type: 'settled', kind: 'release', txHash: 'aa'.repeat(32) },
   'open-dispute': { type: 'open-dispute' },
   escalate: { type: 'escalate' },
+  'release-claimed': { type: 'release-claimed' },
   pause: { type: 'pause' },
   resume: { type: 'resume' },
   tick: { type: 'tick' },
@@ -609,6 +610,44 @@ describe('open-dispute', () => {
     expect(rule(() => apply(funding(), { type: 'open-dispute' }, 'buyer', at(2)))).toBe('wrong-state');
     const d = apply(secured(), { type: 'open-dispute' }, 'buyer', at(31));
     expect(apply(d, { type: 'tick' }, 'system', at(10_000))).toEqual(d);
+  });
+});
+
+describe('release-claimed (Task 9 I/O, lead decision b, 2026-10-29)', () => {
+  test('a claimed release stays settling past settleBy; the timer loop has no deadline for it', () => {
+    const c = apply(settling(), { type: 'release-claimed' }, 'system', at(55));
+    expect(c.state).toBe('settling');
+    expect(c.releaseClaimedAt).toEqual(at(55));
+    expect(c.settleBy).toEqual(at(65)); // unchanged: a party may still open a dispute after it
+    expect(apply(c, { type: 'tick' }, 'system', at(66))).toEqual(c);
+    expect(apply(c, { type: 'tick' }, 'system', at(66 + 6 * 60))).toEqual(c);
+    expect(nextDeadline(c)).toBeNull();
+    // a chain that clears and restores releasable does not bring the revert back
+    const again = apply(apply(c, chain(FUNDS + 5n, FUNDS, 0), 'system', at(70)), chain(FUNDS + 5n, FUNDS + 5n, 10), 'system', at(90));
+    expect(apply(again, { type: 'tick' }, 'system', at(200)).state).toBe('settling');
+    // what ends it: the shown sweep, the 6 h fallback's escalate, or a party's dispute after settleBy
+    expect(apply(c, { type: 'settled', kind: 'release', txHash: 'bb'.repeat(32) }, 'system', at(100)).state).toBe('released');
+    expect(apply(c, { type: 'escalate' }, 'system', at(55 + 360)).state).toBe('disputed');
+    expect(apply(c, { type: 'open-dispute' }, 'buyer', at(65, 1)).state).toBe('disputed');
+  });
+
+  test('only from settling, once, and only by the system', () => {
+    expect(settling().releaseClaimedAt).toBeNull();
+    expect(taken().releaseClaimedAt).toBeNull();
+    const c = apply(settling(), { type: 'release-claimed' }, 'system', at(55));
+    expect(rule(() => apply(c, { type: 'release-claimed' }, 'system', at(56)))).toBe('wrong-state');
+    for (const t of [secured(), paid(), refunded(), apply(settling(), { type: 'tick' }, 'system', at(65, 1))]) {
+      expect(rule(() => apply(t, { type: 'release-claimed' }, 'system', at(70)))).toBe('wrong-state');
+    }
+    expect(rule(() => apply(settling(), { type: 'release-claimed' }, 'seller', at(55)))).toBe('wrong-party');
+  });
+
+  test('a new settling episode starts unclaimed', () => {
+    // a buyer-cancel settling that reverted, then a new one: never carries an old claim
+    const old: Trade = { ...settling(), releaseClaimedAt: at(55) };
+    const fresh = apply({ ...old, state: 'paid', settling: null, settleFrom: null, settleBy: null }, { type: 'buyer-cancel' }, 'buyer', at(70));
+    expect(fresh.state).toBe('settling');
+    expect(fresh.releaseClaimedAt).toBeNull();
   });
 });
 

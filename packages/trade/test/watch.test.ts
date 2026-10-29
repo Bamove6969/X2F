@@ -46,11 +46,12 @@ const sweep = (sweptAtomic: bigint, conf: number, txHash = SETTLE, chain = CHAIN
   sweptAtomic,
 });
 
-function step(o: { state?: WatchState; apiState?: TradeState; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date }) {
+function step(o: { state?: WatchState; apiState?: TradeState; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean }) {
   return watchStep({
     trade: { state: o.apiState ?? 'funding' },
     funds: o.f,
     spend: o.spend ?? null,
+    ...(o.claimed !== undefined ? { claimed: o.claimed } : {}),
     state: o.state ?? newWatchState(),
     now: o.now ?? at(0),
   });
@@ -494,6 +495,61 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       const r = step({ apiState: 'settling', state: old as WatchState, f: coins, now: at(0) });
       expect(r.state.settlingSince).toEqual(at(0));
       expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
+    });
+  });
+
+  describe('release claimed by a trade party (Task 9 I/O, lead decision b, 2026-10-29)', () => {
+    const coins = funds([inc(HASH_A, 1000n, 30)]);
+    const HOURS6 = SPEND_UNSHOWN_MS / 60_000;
+
+    test('reported once, on the first step that sees the claim; the 6 h then count from the claim', () => {
+      let r = step({ apiState: 'settling', f: coins, now: at(0) });
+      expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(5), claimed: false });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10), claimed: true });
+      expect(r.reports).toEqual([{ kind: 'release-claimed' }]);
+      expect(r.state.claimReported).toBe(true);
+      expect(r.state.claimedAt).toEqual(at(10));
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(11), claimed: true });
+      expect(r.reports).toEqual([]);
+      // 6 h after settling started but not after the claim: nothing yet
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(HOURS6 + 5), claimed: true });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6), claimed: true });
+      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
+      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 + 1), claimed: true });
+      expect(r.reports).toEqual([]);
+      r = step({ apiState: 'disputed', state: r.state, f: coins, now: at(10 + HOURS6 + 2), claimed: true });
+      expect(r.reports).toEqual([]);
+    });
+
+    test('reported whatever state the watcher last read (the API decides); never after a shown sweep', () => {
+      // the watcher's read can lag the API by a pass: the claim goes to the API, which refuses it outside settling
+      expect(step({ apiState: 'paid', f: coins, now: at(0), claimed: true }).reports).toEqual([
+        { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 },
+        { kind: 'release-claimed' },
+      ]);
+      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(1), claimed: true });
+      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
+      expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), now: at(2), claimed: true }).reports).toEqual([]);
+    });
+
+    test('a shown sweep before 6 h after the claim settles normally', () => {
+      let r = step({ apiState: 'settling', f: coins, now: at(0), claimed: true });
+      r = step({ apiState: 'settling', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(HOURS6 - 1), claimed: true });
+      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
+      r = step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(2 * HOURS6), claimed: true });
+      expect(r.reports).toEqual([]);
+    });
+
+    test('a state persisted before these fields reads as not reported', () => {
+      const old = { ...newWatchState() } as Partial<WatchState>;
+      delete old.claimReported;
+      delete old.claimedAt;
+      const r = step({ apiState: 'settling', state: { ...(old as WatchState), lastChain: { receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 } }, f: coins, claimed: true });
+      expect(r.reports).toEqual([{ kind: 'release-claimed' }]);
+      expect(newWatchState()).toMatchObject({ claimReported: false, claimedAt: null });
     });
   });
 

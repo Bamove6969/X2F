@@ -38,6 +38,13 @@
  *   has been settling for SPEND_UNSHOWN_MS with no sweep shown, counted from the first step that
  *   saw it settling (`settlingSince`, persisted). Once per settling episode; an episode ends when
  *   the trade is seen in any other open state (a signing window that timed out, or the dispute).
+ * - Release claimed (lead decision b, 2026-10-29): `release-claimed` (the API records it, and the
+ *   signing window then no longer returns the trade to `settleFrom`) once, on the first step whose
+ *   `claimed` is set: the mod's party received a sealed, signed post-release info (`spend.info`, or
+ *   `spend.claim` when it is too big to send) from the buyer or seller, whether or not its import
+ *   was refused. Reported whatever state the watcher last read (the API decides; outside `settling`
+ *   it refuses `wrong-state`), never once a sweep is shown. The 6 h fallback then counts from the
+ *   later of the episode's start and the claim.
  */
 import type { TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
@@ -92,7 +99,7 @@ export interface ChainFacts {
   confirmations: number;
 }
 
-export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' } | { kind: 'spend-unshown' };
+export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' } | { kind: 'spend-unshown' } | { kind: 'release-claimed' };
 
 /** Persisted per escrow by the watcher (moderation database). */
 export interface WatchState {
@@ -119,6 +126,10 @@ export interface WatchState {
   settlingSince?: Date | null;
   /** `spend-unshown` was reported for the current settling episode. */
   spendUnshownReported?: boolean;
+  /** `release-claimed` was reported (once per watch). Optional: absent reads as not reported. */
+  claimReported?: boolean;
+  /** When that report was made; the 6 h fallback counts from it when it is later than `settlingSince`. */
+  claimedAt?: Date | null;
 }
 
 export interface WatchStepResult {
@@ -146,6 +157,8 @@ export function newWatchState(): WatchState {
     channelsClosed: false,
     settlingSince: null,
     spendUnshownReported: false,
+    claimReported: false,
+    claimedAt: null,
   };
 }
 
@@ -211,6 +224,8 @@ export function watchStep(a: {
   spend: SpendEvidence | null;
   state: WatchState;
   now: Date;
+  /** The mod's party has received a trade party's sealed post-release info (see the module comment). */
+  claimed?: boolean;
 }): WatchStepResult {
   if (!(a.now instanceof Date) || Number.isNaN(a.now.getTime())) throw new RangeError('bad clock');
   checkFunds(a.funds);
@@ -249,11 +264,15 @@ export function watchStep(a: {
     } else {
       // Fallback: settling with no sweep shown for SPEND_UNSHOWN_MS escalates, once per episode
       // (after any chain facts, so the API holds the coins it escalates on).
+      const claimNow = a.claimed === true && s.claimReported !== true;
+      if (claimNow) s = { ...s, claimReported: true, claimedAt: a.now };
       let escalate = false;
       if (a.trade.state === 'settling') {
         const since = s.settlingSince ?? a.now;
         s = { ...s, settlingSince: since, spendUnshownReported: s.spendUnshownReported === true };
-        escalate = !s.spendUnshownReported && a.now.getTime() - since.getTime() >= SPEND_UNSHOWN_MS;
+        const claimedAt = s.claimedAt ?? null;
+        const anchor = claimedAt !== null && claimedAt.getTime() > since.getTime() ? claimedAt : since;
+        escalate = !s.spendUnshownReported && a.now.getTime() - anchor.getTime() >= SPEND_UNSHOWN_MS;
       } else {
         s = { ...s, settlingSince: null, spendUnshownReported: false };
       }
@@ -264,6 +283,7 @@ export function watchStep(a: {
         reports.push({ kind: 'chain', ...facts });
         s = { ...s, lastChain: facts };
       }
+      if (claimNow) reports.push({ kind: 'release-claimed' });
       if (escalate) {
         reports.push({ kind: 'spend-unshown' });
         s = { ...s, spendUnshownReported: true };
