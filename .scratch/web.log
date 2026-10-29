@@ -1,0 +1,63 @@
+
+ RUN  v5.0.3 /home/flem/x2f-worktrees/lead-p5-t21
+
+ ❯ |@x2f/web| test/cantDoThat-lint.test.ts (11 tests | 2 failed) 1207ms
+   ❯ copy-lint: every refusal goes through CantDoThat, judged piece by piece (8)
+     × passes text written straight into <CantDoThat title= body=>, and the text map itself 33ms
+   ❯ review I3: every error code the web knows is classified (2)
+     × in CANT_DO_CODES or NOT_REFUSAL_CODES, never both 35ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |@x2f/web| test/cantDoThat-lint.test.ts > copy-lint: every refusal goes through CantDoThat, judged piece by piece > passes text written straight into <CantDoThat title= body=>, and the text map itself
+AssertionError: expected [ 'too-many-offers' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "too-many-offers",
++ ]
+
+ ❯ test/cantDoThat-lint.test.ts:40:176
+     38|
+     39|   it('passes text written straight into <CantDoThat title= body=>, and…
+     40|     expect(lint(`${IMPORT}export const A = () => <CantDoThat title="Yo…
+       |                                                                                                                                                                                ^
+     41|     // ...but not text beside it.
+     42|     expect(lint(`${IMPORT}export const A = () => <><CantDoThat title="…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |@x2f/web| test/cantDoThat-lint.test.ts > review I3: every error code the web knows is classified > in CANT_DO_CODES or NOT_REFUSAL_CODES, never both
+AssertionError: classify each new code in apps/web/src/ui/cantDoCodes.ts: expected [ 'string' ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   "string",
++ ]
+
+ ❯ test/cantDoThat-lint.test.ts:140:86
+    138|     expect(known.size).toBeGreaterThan(60);
+    139|     const unclassified = [...known].filter((c) => !cant.has(c) && !Obj…
+    140|     expect(unclassified, 'classify each new code in apps/web/src/ui/ca…
+       |                                                                                      ^
+    141|   });
+    142|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed | 57 passed (58)
+      Tests  2 failed | 844 passed (846)
+   Start at  07:31:55
+   Duration  28.96s (tests 45%, environment 22%, import 19%, transform 14%, worker 1%)
+
+    Isolate  58 workers spawned · ~801ms startup each (spawn + environment, per file)
+             at least ~5.84s faster with isolate: false — reuses workers across files instead of one per file
+
+copy-lint: apps/web/src is clean

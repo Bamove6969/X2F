@@ -20,7 +20,7 @@
 //   "already have", ...) and every string literal equal to one of the API's refusal codes
 //   (CANT_DO_CODES in apps/web/src/ui/cantDoCodes.ts) is judged on its own. It passes only when:
 //     - it lives in the refusal text map itself (ui/cantDoCodes.ts) or in ui/CantDoThat.tsx;
-//     - it is written straight into a `<CantDoThat title=... body=...>` attribute; or
+//     - it is written straight into a `<CantDoThat title=... body=... from=...>` attribute; or
 //     - a real comment (not text inside a string) on the same line, or ending on the line above,
 //       says `not-a-refusal: <why>` (an explanation, an input check, a fault, not a rule that
 //       stops the user) or `cant-do-that-todo: <why>` (a refusal still shown inline). Tests count
@@ -163,7 +163,7 @@ function textPieces(node: unknown, out: Piece[], ranges: [number, number][], toC
   if (n.type === 'JSXOpeningElement' && Array.isArray(n.attributes)) {
     const name = (n.name as { name?: unknown } | undefined)?.name;
     for (const a of n.attributes as { type?: unknown; name?: { name?: unknown } }[]) {
-      const routed = name === 'CantDoThat' && a.type === 'JSXAttribute' && (a.name?.name === 'title' || a.name?.name === 'body');
+      const routed = name === 'CantDoThat' && a.type === 'JSXAttribute' && ['title', 'body', 'from'].includes(String(a.name?.name));
       textPieces(a, out, ranges, toCantDo || routed);
     }
     textPieces(n.name, out, ranges, toCantDo);

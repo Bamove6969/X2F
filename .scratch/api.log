@@ -1,0 +1,9 @@
+
+ RUN  v5.0.3 /home/flem/x2f-worktrees/lead-p5-t21
+
+
+ Test Files  4 passed (4)
+      Tests  107 passed (107)
+   Start at  07:28:41
+   Duration  19.18s (import 48%, tests 37%, transform 15%)
+

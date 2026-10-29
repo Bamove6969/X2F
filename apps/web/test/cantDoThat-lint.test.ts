@@ -117,7 +117,8 @@ describe('review I3: every error code the web knows is classified', () => {
     for (const e of readdirSync(SRC, { recursive: true, withFileTypes: true })) {
       if (!e.isFile() || !/\.(tsx?|jsx?)$/.test(e.name)) continue;
       const src = readFileSync(join(e.parentPath, e.name), 'utf8');
-      for (const m of src.matchAll(/(typeof [\w.]+)?\.code\s*[!=]==\s*'([a-z0-9-]+)'/g)) if (m[1] === undefined) out.add(m[2]!);
+      // `typeof x.code === 'string'` is a type check, not a code.
+      for (const m of src.matchAll(/\.code\s*[!=]==\s*'([a-z0-9-]+)'/g)) if (!['string', 'number', 'undefined', 'object'].includes(m[1]!)) out.add(m[1]!);
       for (const sw of src.matchAll(/switch \((?:[\w.]+\.)?code\) \{/g)) {
         let depth = 0;
         let i = sw.index + sw[0].length - 1;
