@@ -6,7 +6,7 @@
 // ConfirmedTrade and Deal from escrow/ and its read-back refuses what Task 12's validConfirmed refuses
 // (address over 256 characters included); the trade room (Task 22) passes location.state.confirmed,
 // else readConfirmed(code), to Task 12's useEscrow (test/tradeRoomEscrow.test.tsx). Task 28's setup is on the
-// branch since 2026-10-28: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
+// line since 2026-10-29: a logged-out Trade goes to the Terms at /setup, and Welcome's Start
 // trading navigates to returnTo in the same tab with the session refreshed, so the quote's marker
 // re-shows it for a fresh tap; e2e quote.spec.ts walks that through the real Welcome. Task 29 is on the line since
 // 2026-10-29: WalletPicker names and filters wallets through wallets-model.ts (APP_LABELS,
