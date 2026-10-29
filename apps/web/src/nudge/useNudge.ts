@@ -66,7 +66,9 @@ export async function sendNudge(to: string, context: string): Promise<SendResult
     await api('/v1/nudges', { method: 'POST', body: { to, context } });
     return { result: 'sent' };
   } catch (e) {
+    // not-a-refusal: maps the API code to the sender's result; SellerRefund shows it in CantDoThat
     if (e instanceof ApiCallError && e.code === 'too-soon') {
+      // not-a-refusal: as above
       return e.retryAfterSeconds === undefined ? { result: 'too-soon' } : { result: 'too-soon', retryAfterSeconds: e.retryAfterSeconds };
     }
     if (e instanceof ApiCallError && e.code === 'no-shared-context') return { result: 'no-shared-context' };

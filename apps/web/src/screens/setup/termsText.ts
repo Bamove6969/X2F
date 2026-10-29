@@ -56,6 +56,7 @@ export const TERMS: TermsSection[] = [
     paragraphs: [
       'Your coins stay in your own wallet, except while they are locked in a trade’s 2-of-3 escrow. X2F holds one of the three escrow keys and can never move coins on its own.',
       'You decide whom you trade with and on what terms. Read the other trader’s terms before you take an offer.',
+      // not-a-refusal: Terms text
       'Only the seller funds the escrow, and funding it is a commitment to the trade. The buyer pays the fiat exactly as the trade says and marks it paid. The seller confirms the payment and releases the XMR. A release cannot be undone.',
       'Never release coins before you have checked that the money has arrived in your own account. A screenshot is not a payment.',
       'Each trade has timers. When a timer runs out, the trade moves on as the trade screen explains, for example a refund to the seller when the buyer does not pay in time.',
@@ -86,6 +87,7 @@ export const TERMS: TermsSection[] = [
   {
     heading: '7. Police and government requests',
     paragraphs: [
+      // not-a-refusal: Terms text
       "If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]",
     ],
   },

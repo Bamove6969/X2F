@@ -75,6 +75,7 @@ export function amounts(t: Pick<ReleaseTrade, 'role' | 'lockedRate' | 'fee'>, de
 }
 
 /** What a trade screen says when the device's escrow has stopped (Task 12 `phase: 'error'`). */
+// not-a-refusal: a device fault (the escrow stopped)
 export const ESCROW_STOPPED = 'The escrow stopped on this device, so it can’t sign a release. Reload the page; if it stays, open a dispute.';
 
 /** What a trade screen says for each Task 12 refusal (never silent, runtime.ts EscrowRefusal). */

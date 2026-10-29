@@ -17,7 +17,7 @@ Applied every Plan 2 item and cross-plan reconciliation from the review. Authori
 - **P2-C1** Per-method throttles (`password`, `totp`, `recovery-code`) split by trusted device vs anonymous; PGP and WebAuthn never blocked by them; the 15-min lock is now a brief 30 s lock (spec 6.2 "slow down and then lock briefly"); device cookie `__Host-x2f_dev` (Task 4); flood tests in Tasks 4 and 14.
 - **P2-C2** `FRESH_MS` dropped. Every sensitive change needs a single-use `confirmToken` bound to the session and the action (Task 5); PGP message names the action; onboarding exemption limited to the first wallet / first methods in the creating session within 30 min; Task 14 adds every wallet via `withConfirm`.
 - **P2-C3** `encryptChallenge` uses `wildcard: true` (zero key IDs tested); unknown usernames get a decoy challenge; `key-in-use` reported only at `register/pgp/finish`; expired key at login answers `key-expired` with no date or fingerprint (Tasks 2, 7).
-- **P2-I1** TOTP-alone backup login opens a recovery session under a 24 h hold before it may add a primary method; any full session can cancel; recovery codes skip the hold; TOTP backup capped at 5 tries/day; recovery sessions never become full (Task 9).
+- **P2-I1** TOTP-alone backup login opens a recovery session under a 24 h hold before it may add a primary method; any full session can cancel; recovery codes skip the hold; TOTP backup capped at 5 tries/day; recovery sessions never become full (Task 9). *Revised 2026-10-29b (owner): two factors get in with no wait, a single weak way waits 24 hours, open trades can be finished during the wait; new Task 17.*
 - **P2-I2** TOTP replay test rewritten in the right order (Task 9).
 - **P2-I3** Up to 3 open login challenges, `start` limited to 5 per 5 min per account and device (slow-down only), earlier challenges invalidated only from the same device; binding tests added; `siteHost` taken from the checked `Origin` (Tasks 2, 7).
 - **P2-I4** Seven WebAuthn security tests added (Task 8).
@@ -82,6 +82,19 @@ Owner decisions of 2026-10-17 applied before building. Authority: spec > this re
 - `DELETE /v1/account/sessions/:id` also takes `allowStaleTerms`, so a stolen session can be ended without first accepting new Terms. It joins Task 4's list of routes that use that flag.
 - `POST /v1/account/terms` allows recovery sessions but not held ones: accepting the Terms is a change, so it waits for the hold like other changes.
 - Noted for Task 15: `hasBackup` counts every stored PGP key, including expired or revoked ones.
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's words of 2026-10-29 07:55–07:59 (`~/x2f-comms/owner-answers-2026-10-28.md`) on Claude Design's update (`origin/wip/design-brief`: `docs/design-update-2026-10-29-for-lead.md`, points 4 and 5). The owner's words win over the design's summary. Plan 2's built tasks are not reopened; the changes are new Tasks 16 and 17 at the end of this plan, with their screens in Plan 3 new Task 41.
+
+- **Backup-login wait: the owner's rule replaces P2-I1's "TOTP alone holds, recovery codes skip".** Any login with **at least two factors** gets in with **no wait**; a login with **a single weak way of logging in** starts a **24-hour cooling-off**. New Task 17.
+  - **OPEN, lead default (2026-10-29b) until decided:** weak = a password alone or an authenticator (TOTP) code alone; PGP, a passkey and a security key are strong.
+  - **OPEN: a recovery code alone.** Task 9 as built gives no hold, and the design (Login-Backup) agrees; the owner's words read as a single factor that waits. Task 17 keeps today's behaviour behind one constant (`RECOVERY_CODE_ALONE_WAITS = false`) until the lead or the owner decides.
+  - **OPEN, lead default (2026-10-29b) until decided: what the cooling-off blocks** (taken from the design's point 4, which the owner's rule replaced, so it is not settled): new trades and offers, new logins on other devices, and wallet and login-method changes. Trades already open can still be finished (chat, mark paid, confirm, release, open a dispute). Task 9 as built keeps a held recovery session off every trade route; Task 17 opens the open-trade routes to it.
+- **New-device approval (owner).** If the account is already logged in and a **new device** tries to log in, the login waits until it is **approved or blocked from a logged-in device**, with number matching (the new device shows a 2-digit number; the user taps the same one). New Task 16.
+- **At most 3 devices logged in at once**, and an optional **"One device at a time"** setting (approving a new device logs the old one out). From the design; the owner did not contest them. New Task 16.
+- **OPEN (design, not confirmed by the owner): no logged-in device available.** The design says the backup-login rule then applies to a new device's login. Read literally, a password-only trader logging in on a new phone with no other session would wait 24 hours. Not built until the lead or the owner confirms; until then a login with no logged-in device to approve it works as today.
+- **Staff and owner:** *lead default (2026-10-29b), owner may change:* Tasks 16 and 17 apply to traders only. Staff and owner logins already need two factors, keep 2-hour sessions and use the staff address.
 
 ## Plan 4 reconciliation
 
@@ -517,6 +530,8 @@ Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) bu
 
 ### Task 11: Account overview, devices and alerts
 
+*2026-10-29b:* new-device approval, the 3-device limit and "One device at a time" are new Task 16; this task's session list is what Task 16's limit counts.
+
 **Files:**
 - Create: `apps/api/src/routes/account.ts`
 - Test: `apps/api/test/account.test.ts`
@@ -638,3 +653,47 @@ Plan 4 (`docs/superpowers/plans/2026-10-15-plan-4-staff.md`, "Assumed" block) bu
 - [ ] **Step 4:** Update the roadmap (P2-I10, X6): Plan 2 row → "Written"; name an owner for each deferred item — security-key tap to fund escrow (Plan 6), "require a security key to log in" (Plan 6), escrow-key backup encrypted to the user's PGP key and the lost-device test (Plan 3, P3-I14), Web Push (Plan 3, P3-I13), staff invites and login hours (Plan 4), passkeys inside Capacitor and WebAuthn on the `.onion` origin (Plan 6), nudge (Plan 3, P3-M11), the violet moderator badge, the moderator dashboard and the training library (Plan 4, R4), the 30-day purge of closed disputes and the 6-month purge of anonymized training copies as jobs on `startRetention` (Plan 4, R6), reverse-proxy and Tor access logs switched off in deployment (Plan 6, R5), no trading or ads until the account has a payout wallet (Plan 3, spec 6.4) and no buyer deposits (Plan 3, owner 2026-10-17), the Terms screen with scroll-to-end, tick box and "I accept" on `GET /v1/terms` / `POST /v1/account/terms` (Plan 3, R10), the leaked-list production size recorded in `docs/dev-setup.md` once the operator first builds it (owner/operator, Task 6). Add the deferred hardening to the Plan 6 row. Note in `docs/security/plan-2-review.md` that the X2F PGP signing key is a live key on the API server (R7).
 - [ ] **Step 5:** List owner questions in `docs/security/plan-2-review.md` under "For the owner": delete 6.3's wallet-era items ("withdraw", "daily spending limits", "PGP-signed withdrawal addresses"); 6.2 "fingerprint becomes the account ID" vs. login by username (P2-M8); 6.3 "PGP-encrypted notifications for users who opt into email" vs. no email (P2-M8); the Wallet board's "· gets payouts" copy now that there is no default payout wallet (X2); and, if Task 13 was skipped, which P3-C1 option was chosen.
 - [ ] **Step 6:** Commit `docs: plan 2 security review and roadmap owners`.
+
+### Task 16: New-device approval, number matching and the 3-device limit — NEW 2026-10-29b
+
+**Scope:** the owner's rule that a new device must be approved or blocked from a logged-in device, with the design's number matching, the 3-device limit and "One device at a time". Traders only (lead default, Revision 2026-10-29b). Screens: Plan 3 Task 41.
+
+**Files:**
+- Create: `apps/api/migrations/1xx_device_approval.sql` (next free number), `apps/api/src/auth/approval.ts`
+- Modify: `apps/api/src/auth/login.ts` (`completeLogin` trader branch), `apps/api/src/auth/sessions.ts` (device limit), `apps/api/src/routes/account.ts` (setting), `apps/api/src/alerts.ts` (`AlertKind` gains `login-approval`, `login-blocked`, `logged-out-by-new-device`), `packages/auth-client` (new calls)
+- Test: `apps/api/test/deviceApproval.test.ts`
+
+**Interfaces:**
+- Produces:
+  - **When approval is needed:** a trader login whose credentials pass, from a device **not trusted** for the account (`isTrusted` false), while the account has **at least one open full session on another device**. Then `completeLogin` starts no session and returns `{ status: 'approve-on-device', approvalId, number }`. `number` is a 2-digit number (10–99) from the OS random generator. A trusted device, or an account with no open full session, logs in as today (but see Revision 2026-10-29b, OPEN, for the no-device case).
+  - `login_approvals(id uuid pk, account_id, device_hash, device_label, method, number smallint, choices smallint[3], created_at, expires_at, decided_at, outcome 'approved'|'blocked'|'expired'|null)`. *Lead default (2026-10-29b), owner may change:* an approval expires after 5 minutes, like a login challenge; at most 3 open approvals per account (the oldest expires).
+  - Logged-in side: an alert `login-approval` `{ approvalId, deviceLabel, method }` and a Plan 3 live event / push "Someone is logging in. Is this you?" (push text names nothing else). `GET /v1/account/approvals/:id` (full session) → `{ deviceLabel, choices }`: the right number plus two others, in random order. `POST /v1/account/approvals/:id { choice: number } | { block: true }`. The right number → `approved`; `block` → `blocked` and alert `login-blocked`; *lead default:* a wrong number → `blocked` too (it stops a user tapping at random under approval spam).
+  - New side: `POST /v1/login/approval/:id/poll` (the same device hash only) → `{ status: 'waiting' }` | `{ status: 'ok' }` (the session starts now, `method` as logged) | `{ status: 'blocked' }` | `{ status: 'expired' }`. The approval is bound to the device hash that started it; any other device → `not-found`.
+  - **3 devices:** `MAX_DEVICES = 3` open full sessions per trader account (owner-changeable setting `max_devices`, default 3). Approving a 4th → 409 `too-many-devices` with the session list, shown on the approving device as "Log out a device first" through Plan 5's `CantDoThat` (*lead default:* refusing is simpler than guessing which device to drop).
+  - **"One device at a time":** `PUT /v1/account/security/one-device { on }` (confirm-it's-you). When on, approving a new device ends every other full session (alert `logged-out-by-new-device` on the new one, listing what was ended).
+- [ ] **Step 1: Write the failing tests:** a login from an untrusted device while another session is open → `approve-on-device` and no `Set-Cookie`; the right number → the poll returns `ok` and a session; a wrong number → `blocked`; `block` → `blocked` and a `login-blocked` alert; an approval at 5:00 → `expired`; a poll from another device → `not-found`; a trusted device needs no approval; an account with no open session needs no approval; a 4th device → `too-many-devices`; "One device at a time" on → the old session's next request → `not-authenticated`; the number comes from `crypto.randomInt` (a seam test, as Task 9's no-patterns rule); a staff login is unaffected.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(api): new-device approval with number matching and a 3-device limit`.
+
+### Task 17: Backup-login cooling-off by factor count — NEW 2026-10-29b
+
+**Scope:** the owner's rule (Revision 2026-10-29b): two or more factors, no wait; a single weak way, a 24-hour cooling-off; open trades can still be finished during it. Replaces the hold rule of Task 9 (P2-I1). Screens: Plan 3 Task 41.
+
+**Files:**
+- Modify: `apps/api/src/auth/recovery.ts`, `apps/api/src/auth/totp.ts`, `apps/api/src/auth/sessions.ts` (`requireSession` gains `allowHeld`), the Plan 3 trade routes that finish an open trade
+- Create: `apps/api/src/auth/strength.ts`
+- Test: `apps/api/test/coolingOff.test.ts`
+
+**Interfaces:**
+- Produces:
+  - `loginStrength(factors: LoginFactorKind[]): 'two-factor' | 'strong-single' | 'weak-single'` in `strength.ts`. Two different factor kinds → `two-factor`. One of `pgp`, `passkey`, `security-key` → `strong-single`. One of `password`, `totp` → `weak-single`. `recovery-code` alone → `weak-single` only when `RECOVERY_CODE_ALONE_WAITS` is true (default `false`, OPEN in Revision 2026-10-29b).
+  - `/v1/login/backup` takes an optional second factor (`{ kind, code, second?: { kind, code } }`; *lead default:* TOTP + recovery code, or either with the password). `two-factor` → a full session with no hold; `weak-single` → today's held recovery session (`hold_until = now + 24 h`, alert `recovery-login`).
+  - **During the cooling-off** (`hold_until > now`): `requireSession({ allowHeld: true })` lets the held session reach the routes that finish trades already open: `GET` the trade and chat, `mark-paid`, `release-started` and its signals, `open-dispute`, chat send. Everything else stays refused 403 `recovery-hold` with `{ holdUntil }`: `take`, `POST /v1/offers` and turning offers on, wallets, login methods, the Terms, and **new logins on other devices** (a trader login while the account has a held session → 403 `recovery-hold`; *design rule, lead default:* it stops a thief adding a device during the wait).
+  - Any full session of the account can still cancel the held session (Task 9's `DELETE /v1/account/recovery-sessions/:id`).
+- [ ] **Step 1: Write the failing tests:** TOTP alone → held; TOTP + recovery code → full, no hold; password + TOTP at backup → full; a recovery code alone → no hold while `RECOVERY_CODE_ALONE_WAITS` is false, held when true (the switch bites); during the hold `mark-paid` and `release-started` on an open trade succeed, `take` and adding a wallet → `recovery-hold`; a new login on another device during the hold → `recovery-hold`; at +24:00:00 the hold is gone; Task 9's existing hold tests still pass.
+- [ ] **Step 2:** Run; expect FAIL.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** `npm run check`; expect PASS.
+- [ ] **Step 5:** Commit `feat(api): backup-login cooling-off by factor count`.

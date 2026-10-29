@@ -128,6 +128,7 @@ export function Password() {
         </Rule>
       </ul>
       <RegisterError error={error} />
+      {/* not-a-refusal: explains password storage */}
       <p className="x2f-start__help">
         X2F stores a scrambled version that can't be turned back into your password. We have no email address to reset it with, so keep it in a
         password manager or somewhere else safe.
