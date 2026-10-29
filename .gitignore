@@ -8,3 +8,6 @@ dist-fixtures-*/
 test-results/
 playwright-report/
 design/x2f-app/support.js
+
+# Helper agents keep scratch files here (never commit them)
+.scratch/

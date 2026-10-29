@@ -1,0 +1,481 @@
+/*
+ * DisputeOpen, DisputeRoom and DisputeRuling (Plan 3 Task 27). Measurements from
+ * design/x2f-app/Dispute*.dc.html; colours are design tokens only (src/theme/tokens.css). Body copy
+ * and every text field are at least 16 px on phones (Global Constraints), where the boards use 15.
+ */
+.dispute-screen {
+  display: flex;
+  flex-direction: column;
+  /* The page itself scrolls (Task 15's parity and phone checks read the document), with the footer kept in view. */
+  min-height: 100dvh;
+  max-width: 640px;
+  margin: 0 auto;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+.dispute-screen > header,
+.dispute-footer,
+.dispute-status {
+  flex-shrink: 0;
+}
+.dispute-main {
+  flex-grow: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+}
+.dispute-main--room {
+  gap: 12px;
+  padding-top: 12px;
+}
+.dispute-footer {
+  position: sticky;
+  bottom: 0;
+  background: var(--x2f-ground);
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+.dispute-footer .x2f-button {
+  width: 100%;
+}
+.dispute-back {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-stack,
+.dispute-stack-4,
+.dispute-stack-6,
+.dispute-stack-8 {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.dispute-stack {
+  gap: 2px;
+}
+.dispute-stack-4 {
+  gap: var(--x2f-space-1);
+}
+.dispute-stack-6 {
+  gap: 6px;
+}
+.dispute-stack-8 {
+  gap: var(--x2f-space-2);
+}
+.grow {
+  flex-grow: 1;
+}
+.dispute-title {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: var(--x2f-title-weight);
+  overflow-wrap: anywhere;
+}
+.dispute-lead,
+.dispute-muted {
+  margin: 0;
+  color: var(--x2f-ink-muted);
+  font-size: 16px;
+  line-height: 22px;
+}
+.dispute-muted-sm {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-muted-14 {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-body {
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  overflow-wrap: anywhere;
+}
+.dispute-strong {
+  font-weight: 600;
+}
+.dispute-strong-15,
+.dispute-strong-16 {
+  margin: 0;
+  font-weight: 600;
+  font-size: 16px;
+}
+.dispute-ink {
+  color: var(--x2f-ink);
+}
+.dispute-mono {
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink);
+}
+.dispute-eyebrow {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+.dispute-flag {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: 6px 12px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface-raised);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.dispute-flag[data-tone='caution'],
+.dispute-window-open,
+.dispute-appeal-sent {
+  color: var(--x2f-caution);
+}
+.dispute-wait {
+  display: flex;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  color: var(--x2f-caution);
+  font-size: 16px;
+  line-height: 22px;
+}
+.dispute-wait > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.dispute-reasons {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  min-width: 0;
+}
+.dispute-reasons legend {
+  padding: 0 0 var(--x2f-space-2);
+  font-size: 16px;
+  font-weight: 600;
+}
+.dispute-reason {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: var(--x2f-space-2) 14px;
+  border-radius: var(--x2f-radius-md);
+  border: 2px solid var(--x2f-surface-raised);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 20px;
+}
+.dispute-reason[data-on='true'] {
+  border-color: var(--x2f-monero);
+  background: var(--x2f-surface);
+}
+/* The board's 20 px radio, drawn inside a 32 px tap box (Task 15's MIN_TAP); the -6 px margin keeps the board's spacing. */
+.dispute-reason input {
+  appearance: none;
+  width: 32px;
+  height: 32px;
+  margin: -6px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  cursor: inherit;
+  background: radial-gradient(circle closest-side, transparent 8px, var(--x2f-ink-muted) 8px 10px, transparent 10px);
+}
+.dispute-reason input:checked {
+  background: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5px 8px, var(--x2f-monero) 8px 10px, transparent 10px);
+}
+.dispute-reason input:focus-visible {
+  outline: 2px solid var(--x2f-monero);
+  outline-offset: -4px;
+}
+@media (forced-colors: active) {
+  .dispute-reason input {
+    appearance: auto;
+    width: 20px;
+    height: 20px;
+    margin: 6px;
+  }
+}
+/* The header's method name gets a 32 px tap box (Task 15's MIN_TAP) without growing its 24 px line. */
+.dispute-screen .x2f-method-name {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  min-height: 32px;
+  margin: -4px 0;
+  vertical-align: middle;
+}
+.dispute-reasons:disabled .dispute-reason {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.dispute-textarea {
+  width: 100%;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 22px;
+  resize: none;
+}
+.dispute-textarea--ground {
+  background: var(--x2f-ground);
+}
+.dispute-proof {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+.dispute-proof__thumb {
+  width: 40px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: var(--x2f-radius-sm);
+  background: var(--x2f-surface-raised);
+}
+.dispute-included {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  font-size: 13px;
+  color: var(--x2f-escrow);
+}
+.dispute-add-evidence {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px dashed var(--x2f-line);
+  color: var(--x2f-ink-muted);
+}
+.dispute-add-evidence > svg {
+  flex-shrink: 0;
+}
+.dispute-notice {
+  display: flex;
+  gap: 12px;
+  padding: 14px 12px;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-notice > svg {
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.dispute-notice .dispute-muted {
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-error {
+  margin: 0;
+  color: var(--x2f-danger);
+}
+.dispute-retry {
+  border: 0;
+  background: none;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.dispute-status {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 var(--x2f-space-4) 12px;
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+.dispute-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-2);
+}
+.dispute-deadline {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-joined {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-moderator);
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-joined > svg {
+  flex-shrink: 0;
+  color: var(--x2f-moderator);
+}
+.dispute-joined .dispute-muted {
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-mod-name {
+  color: var(--x2f-moderator);
+  font-weight: 600;
+}
+.dispute-see-ruling,
+.dispute-header-link {
+  color: var(--x2f-ink);
+  text-decoration: underline;
+}
+.dispute-header-link {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 var(--x2f-space-2);
+  text-decoration: none;
+}
+.dispute-evidence-chips {
+  display: flex;
+  gap: var(--x2f-space-2);
+  overflow-x: auto;
+}
+.dispute-evidence-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  background: var(--x2f-surface);
+  font-size: 13px;
+}
+.dispute-chat-notice {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
+}
+.dispute-log {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dispute-system-card {
+  align-self: center;
+  max-width: 92%;
+  padding: var(--x2f-space-2) 12px;
+  border-radius: 8px;
+  border: 1px solid var(--x2f-surface-raised);
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.dispute-ruling {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  border: 1px solid var(--x2f-moderator);
+}
+.dispute-row-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+.dispute-row-between.wrap {
+  flex-wrap: wrap;
+}
+.dispute-outcome {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--x2f-escrow);
+}
+.dispute-evidence-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+.dispute-evidence-list li {
+  display: flex;
+  gap: var(--x2f-space-2);
+  overflow-wrap: anywhere;
+}
+.dispute-evidence-list svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.dispute-appeal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-line);
+}
+.dispute-appeal .dispute-muted {
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-appeal > .x2f-button {
+  width: 100%;
+}
+.dispute-window-open,
+.dispute-appeal-sent {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+  font-size: 14px;
+  line-height: 20px;
+}
+.dispute-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--x2f-space-2);
+}
+.dispute-footnote {
+  margin: 0;
+  font-size: 12px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}

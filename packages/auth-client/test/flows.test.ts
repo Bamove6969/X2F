@@ -30,7 +30,8 @@ const LABEL = 'Browser on Linux';
  * apps/web's own client. Exact "METHOD /path" strings, kept sorted; each Plan 3 task adds its own
  * (Task 3: methods, method suggestions, price, the owner's price health; Task 4: offers; Task 6: the trade view
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
- * Push and the final-alert receipts; Task 26: nudges, nudge settings and blocks; Task 24: the release confirmations; Task 37: the Blocked list and unblock). Any other new
+ * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
+ * and blocks; Task 27: the dispute and the appeal; Task 37: the Blocked list and unblock). Any other new
  * route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
@@ -48,12 +49,15 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/confirmations',
+  'GET /v1/trades/:code/dispute',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/push',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
   'POST /v1/offers',
+  'POST /v1/trades/:code/appeal',
+  'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/final-alert-seen',
   'POST /v1/trades/:code/identity',
