@@ -89,8 +89,8 @@ export type SettleKind = 'release' | 'mutual-cancel' | 'buyer-cancel' | 'auto-re
 /**
  * The buyer's refunded view says why the XMR went back to the seller, for every kind of refund
  * (owner 2026-10-29; the seller is "the seller", never named): the buyer cancelled; the payment
- * time ran out and the seller cancelled; a dispute decision; both agreed to cancel; the setup time
- * ran out. A trade that had a dispute was
+ * time ran out and the seller cancelled; a dispute decision; both agreed to cancel; the funding
+ * time ran out. Until trades record `refund_reason` (NEEDS_REFUND_REASON) the reason is inferred. A trade that had a dispute was
  * refunded by its decision (a moderator's refund to the seller is built as `mutual-cancel` today,
  * escrow/policy.ts, so the dispute decides the reason, not the kind). COPY-UNSIGNED (no board).
  */
@@ -107,12 +107,13 @@ export function refundReason(settling: SettleKind | null, dispute: DisputeTrade[
     case 'auto-refund':
       return {
         title: 'The payment time ran out',
-        text: `The payment time ended before the payment was marked as sent, so the seller cancelled and all the XMR went back to them.`,
+        // The owner's wording (Plan 3 Revision 2026-10-29, Decision 7). COPY-UNSIGNED
+        text: 'Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.',
       };
     case 'mutual-cancel':
       return { title: 'You both cancelled this trade', text: `You and the seller agreed to cancel, so all the XMR went back to the seller.` };
     case 'lapse-refund':
-      return { title: 'The setup time ran out', text: `The escrow wasn't set up in time, so all the XMR went back to the seller.` };
+      return { title: 'The funding time ran out', text: `The escrow wasn't fully funded in time, so all the XMR went back to the seller.` }; // COPY-UNSIGNED
     default:
       return { title: 'Refunded', text: `The XMR went back to the seller.` };
   }

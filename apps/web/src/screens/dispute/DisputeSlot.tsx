@@ -71,7 +71,7 @@ export function DisputeSlot({ view, refresh, serverClock }: TradeScreenProps) {
 /**
  * The buyer's refunded trade: the escrow went back to the seller, with the reason for this refund
  * (refundReason: the buyer cancelled, the payment time ran out and the seller cancelled, a dispute
- * decision, both cancelled, the setup time ran out). Within 90 days of the refund the buyer may
+ * decision, both cancelled, the funding time ran out). Within 90 days of the refund the buyer may
  * still open a dispute (spec 2.3, "dispute after refund"); after one was opened, the way to it.
  * COPY-UNSIGNED (no board draws this screen).
  */

@@ -51,7 +51,7 @@ const buyerRefunded = (over: Partial<TradeView> = {}) =>
 test('the buyer\'s refunded trade says the payment time ran out and offers "Open a dispute"', async ({ page }) => {
   await openRoom(page, buyerRefunded());
   await expect(page.getByRole('heading', { name: 'The payment time ran out' })).toBeVisible();
-  await expect(page.getByText('the seller cancelled and all the XMR went back to them', { exact: false })).toBeVisible();
+  await expect(page.getByText('Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.')).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open a dispute' })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
 });
 

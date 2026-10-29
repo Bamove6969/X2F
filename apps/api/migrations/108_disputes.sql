@@ -10,9 +10,10 @@
 -- Each dispute on a trade has its own identity (code, seq): seq 1 is the trade's first dispute,
 -- and a later system escalation (late funds after the trade settled) adds seq 2, 3, ... The
 -- current dispute is the highest seq. Earlier disputes, their rulings, appeal and note are never
--- deleted or rewritten by a new one: who lost a dispute must survive (spec 2.1 stages, Plan 5).
+-- deleted or rewritten by a new one: who lost a dispute must survive (Plan 5's lost-dispute total;
+-- it drops no stage, R38).
 -- The foreign keys have no cascade: nothing in Plan 3 deletes a dispute, and a job that deletes a
--- trade must handle its dispute records itself (retention is Plan 4 Task 23's).
+-- trade must delete appeals, then rulings, then disputes first (Plan 7 Task 2 / Plan 4 Task 23).
 create table disputes (
   code text not null references trades (code),
   seq smallint not null check (seq >= 1),

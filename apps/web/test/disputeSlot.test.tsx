@@ -172,9 +172,9 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   it('says why the XMR went back to the seller, for every kind of refund (owner 2026-10-29)', () => {
     const cases: [Partial<TradeView>, string, string][] = [
       [{ settling: 'buyer-cancel' }, 'You cancelled this trade', 'You cancelled'],
-      [{ settling: 'auto-refund' }, 'The payment time ran out', 'the seller cancelled and all the XMR went back to them'],
+      [{ settling: 'auto-refund' }, 'The payment time ran out', 'Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.'],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
-      [{ settling: 'lapse-refund' }, 'The setup time ran out', "wasn't set up in time"],
+      [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
       // A moderator's refund to the seller is built as mutual-cancel: the dispute decides the reason.
       [{ settling: 'mutual-cancel', dispute: { by: 'buyer', at: at(-20 * DAY) } }, 'Refunded by the dispute decision', 'A moderator decided'],
       [{ settling: 'auto-refund', dispute: { by: 'system', at: at(-20 * DAY) } }, 'Refunded by the dispute decision', 'A moderator decided'],

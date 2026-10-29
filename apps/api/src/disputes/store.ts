@@ -9,8 +9,8 @@ export const NEXT_SEQ = `(select coalesce(max(seq), 0) + 1 from disputes where c
  * transaction, with the trade row locked, so a trade is never `disputed` without a dispute row.
  *
  * It adds a new dispute (the next seq) and never deletes or rewrites an earlier one: an earlier
- * dispute's ruling, appeal and note stay exactly as they were (who lost it counts for the stage,
- * spec 2.1, and the moderator of the new dispute can read them).
+ * dispute's ruling, appeal and note stay exactly as they were (who lost it counts for Plan 5's
+ * lost-dispute total, never the stage, R38; and the moderator of the new dispute can read them).
  */
 export async function openSystemDispute(client: pg.PoolClient, code: string, now: Date): Promise<void> {
   await client.query(
