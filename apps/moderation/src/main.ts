@@ -1,15 +1,20 @@
 import { normalizeTradeCode, type Role } from '@x2f/core';
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import { channelFor, type Attestation, type ModPartyArgs } from '@x2f/trade';
+import type { PartyHandle } from '@x2f/escrow';
+import { channelFor, WATCH_INTERVAL_MS, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
 import { AttestRefused, attestTrade, BadTerms } from './attest.js';
 import { loadParty, saveParty, walletPassword } from './keystore.js';
 import { createLink, type Fetch, type Link, type WorkItem } from './link.js';
+import { defaultPartyIO, startModParty, type PartyIO } from './party.js';
+import { createWatcher } from './watcher.js';
 
 export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
+export { createLink, relayCloseMessage, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
+export { defaultPartyIO, escrowStore, startModParty, type PartyIO } from './party.js';
+export { createWatcher, dumpWatchState, reviveWatchState, spendEvidence, SETTLE_BACKOFF_MS, type Watcher } from './watcher.js';
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)
@@ -36,12 +41,25 @@ export interface ModerationOptions {
   /** MOD_SIGNING_SECRET: the 64-byte Ed25519 secret key. */
   signingSecret: Uint8Array;
   feeWallet: string;
+  /** RELAY_URL: the relay's public WebSocket URL, which the moderator party joins (Task 9). */
+  relayUrl: string;
+  /** MONERO_NETWORK: the escrow wallets' network. */
+  network: 'regtest' | 'stagenet' | 'mainnet';
 }
 
 export interface ModerationDeps {
   fetch?: Fetch;
-  /** Starts the moderator party for a trade. Task 9 supplies the real one; until then it is deferred. */
+  /**
+   * Replaces the whole moderator party hook (Task 8's tests record it). Default: the Task 9
+   * watcher's, which registers the trade in `mod_watch` and starts the party.
+   */
   runParty?: (a: ModPartyArgs) => void | Promise<void>;
+  /** Starts one moderator party. Default: `startModParty` with the production I/O (`partyIO`). */
+  startParty?: (a: ModPartyArgs) => Promise<PartyHandle>;
+  /** The party's I/O for the default `startParty`. Default: monero-ts and the relay (`defaultPartyIO`). */
+  partyIO?: PartyIO;
+  /** Watcher period; 0 runs no watcher loop (callers drive `watch`). Default WATCH_INTERVAL_MS (15 s). */
+  watchIntervalMs?: number;
   newIdentity?: () => Promise<Identity>;
   now?: () => Date;
   /** Loop period; 0 runs no loop (callers drive `tick`). Default 5 s. */
@@ -53,6 +71,9 @@ export interface ModerationDeps {
 export interface ModerationHandle {
   /** One pass over the API's work list; resolves with the trades attested and started this pass. */
   tick(): Promise<string[]>;
+  /** One chain-watcher pass (Task 9). */
+  watch(): Promise<void>;
+  /** Stops both loops, then every running moderator party. */
   stop(): Promise<void>;
 }
 
@@ -91,7 +112,8 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   }
   const now = deps.now ?? (() => new Date());
   const log = deps.log ?? (() => {});
-  const runParty = deps.runParty ?? (() => log({ reason: 'party-deferred' }));
+  if (typeof o.relayUrl !== 'string' || !/^wss?:\/\//.test(o.relayUrl)) throw new TypeError('moderation: relayUrl must be a ws:// or wss:// URL');
+  if (!['regtest', 'stagenet', 'mainnet'].includes(o.network)) throw new TypeError('moderation: network must be regtest, stagenet or mainnet');
   const link: Link = createLink({
     apiInternalUrl: o.apiInternalUrl,
     relayAdminUrl: o.relayAdminUrl,
@@ -99,6 +121,12 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     fetch: deps.fetch ?? defaultFetch,
     now: () => now().getTime(),
   });
+  let io: PartyIO | undefined = deps.partyIO;
+  const startParty =
+    deps.startParty ??
+    (async (a: ModPartyArgs) => startModParty(a, (io ??= await defaultPartyIO({ relayUrl: o.relayUrl, network: o.network })), o.db, o.keystoreKey));
+  const watcher = createWatcher({ db: o.db, link, startParty, argsFor: (code) => partyArgsFor(o, code), now, log });
+  const runParty = deps.runParty ?? ((a: ModPartyArgs) => watcher.runParty(a));
   const started = new Set<string>();
 
   /** The trade's signed attestation and party, minted once and sealed before anything is sent. */
@@ -218,13 +246,53 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
   };
   if (intervalMs > 0) loop();
 
+  const watchIntervalMs = deps.watchIntervalMs ?? WATCH_INTERVAL_MS;
+  let watchTimer: ReturnType<typeof setTimeout> | null = null;
+  let watching: Promise<unknown> = Promise.resolve();
+  const watchLoop = (): void => {
+    if (stopped) return;
+    watching = watcher
+      .tick()
+      .catch(() => log({ reason: 'watch-pass-failed' }))
+      .finally(() => {
+        if (!stopped) watchTimer = setTimeout(watchLoop, watchIntervalMs);
+      });
+  };
+  if (watchIntervalMs > 0) watchLoop();
+
   return {
     tick,
+    watch: () => watcher.tick(),
     async stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
+      if (watchTimer) clearTimeout(watchTimer);
       await running.catch(() => undefined);
+      await watching.catch(() => undefined);
+      await watcher.stop();
     },
+  };
+}
+
+/**
+ * A trade's ModPartyArgs after a restart, from this service's own records only: the sealed mod
+ * identity and participants (`mod_party_state`), the R27 wallet password (`mod_wallet_secrets`)
+ * and the terms it signed (`signed_terms`). Never from the API. Null when any is missing.
+ */
+async function partyArgsFor(o: ModerationOptions, code: string): Promise<ModPartyArgs | null> {
+  const party = await loadParty<SealedParty>(o.db, o.keystoreKey, code);
+  const { rows } = await o.db.query<{ attestation: Attestation }>('select attestation from signed_terms where trade = $1 and posted_at is not null', [code]);
+  const terms = rows[0]?.attestation.terms;
+  if (!party || terms === undefined) return null;
+  return {
+    trade: code,
+    role: 'mod',
+    me: fromHexIdentity(party.me),
+    participants: party.participants,
+    password: await walletPassword(o.db, o.keystoreKey, code),
+    daemonUri: o.daemonUri,
+    feeWallet: o.feeWallet,
+    terms,
   };
 }
 
@@ -240,6 +308,12 @@ function envBytes(env: Record<string, string | undefined>, name: string, len: nu
 function envString(env: Record<string, string | undefined>, name: string): string {
   const v = env[name];
   if (!v) throw new Error(`moderation: ${name} is missing`);
+  return v;
+}
+
+function envNetwork(env: Record<string, string | undefined>): ModerationOptions['network'] {
+  const v = envString(env, 'MONERO_NETWORK');
+  if (v !== 'regtest' && v !== 'stagenet' && v !== 'mainnet') throw new Error('moderation: MONERO_NETWORK must be regtest, stagenet or mainnet');
   return v;
 }
 
@@ -260,6 +334,8 @@ if (process.argv[1] && import.meta.url === (await import('node:url')).pathToFile
       keystoreKey: envBytes(env, 'MOD_KEYSTORE_KEY', 32),
       signingSecret: envBytes(env, 'MOD_SIGNING_SECRET', 64),
       feeWallet: envString(env, 'X2F_FEE_WALLET'),
+      relayUrl: envString(env, 'RELAY_URL'),
+      network: envNetwork(env),
     },
     { log: (e) => process.stdout.write(`${JSON.stringify({ level: 30, msg: e.reason })}\n`) },
   );

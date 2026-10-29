@@ -67,17 +67,23 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
     await expect.poll(async () => (await t.parties.mod.funds()).incoming.length, { timeout: 60_000, interval: 1000 }).toBe(2);
     let f = await t.parties.mod.funds();
     expect(new Map(f.incoming.map((i) => [i.txHash, i.amountAtomic]))).toEqual(new Map([[first, 600_000_000_000n], [second, 400_000_000_000n]]));
-    for (const i of f.incoming) expect(i).toMatchObject({ confirmations: 0, unlocked: false });
+    for (const i of f.incoming) expect(i).toMatchObject({ confirmations: 0, unlocked: false, height: null });
+    expect(f.outgoing).toEqual([]);
     await mine(node.rpcUri, 1, funderAddress);
     f = await t.parties.mod.funds();
     expect(f.balance).toBe(XMR);
     expect(f.unlocked).toBe(0n);
     for (const i of f.incoming) expect(i).toMatchObject({ confirmations: 1, unlocked: false });
+    // Task 9: absolute heights, with the chain height from the same read (confirmations = chainHeight - height).
+    const blockOf = f.incoming[0]!.height;
+    expect(typeof f.chainHeight).toBe('number');
+    for (const i of f.incoming) expect(i.height).toBe(f.chainHeight! - 1);
     await mine(node.rpcUri, 11, funderAddress);
     f = await t.parties.mod.funds();
     expect(f.unlocked).toBe(XMR);
     expect(f.incoming).toHaveLength(2);
-    for (const i of f.incoming) expect(i).toMatchObject({ confirmations: 12, unlocked: true });
+    for (const i of f.incoming) expect(i).toMatchObject({ confirmations: 12, unlocked: true, height: blockOf });
+    expect(f.chainHeight! - blockOf!).toBe(12);
   });
 
   it('funds() during a settle never interleaves wallet calls', async () => {
@@ -137,6 +143,11 @@ describe('incoming funds, funds() and outcome buffering on regtest', () => {
       expect(hash).toMatch(/^[0-9a-f]{64}$/);
       expect(sellerResult).toBeNull();
       await mine(node.rpcUri, 12, funderAddress);
+      // Task 9: the co-signing mod's own wallet shows the sweep it signed, in its block, spending the whole escrow.
+      const modFunds = await t.parties.mod.funds();
+      expect(modFunds.outgoing).toHaveLength(1);
+      expect(modFunds.outgoing![0]).toMatchObject({ txHash: hash, spentAtomic: XMR });
+      expect(modFunds.outgoing![0]!.height).toBeLessThanOrEqual(modFunds.chainHeight! - 12);
       expect(await balanceOf(other)).toBe(0n);
       const got = await balanceOf(refund);
       expect(got).toBeGreaterThan(XMR - MAX_NET_FEE);

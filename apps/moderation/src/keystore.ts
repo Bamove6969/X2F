@@ -128,3 +128,20 @@ export async function walletPassword(db: Queryable, keystoreKey: Uint8Array, tra
   bytes.fill(0);
   return hex;
 }
+
+/** Seal and store a trade's escrow PartyState (Task 9) under MOD_KEYSTORE_KEY, apart from its wallet password (R27). */
+export async function saveEscrow(db: Queryable, keystoreKey: Uint8Array, trade: string, state: unknown): Promise<void> {
+  const sealed = seal(keystoreKey, `x2f/mod/escrow/${trade}`, new TextEncoder().encode(JSON.stringify(state)));
+  await db.query(
+    `insert into mod_escrow_state (trade, sealed, updated_at) values ($1, $2, now())
+     on conflict (trade) do update set sealed = excluded.sealed, updated_at = now()`,
+    [trade, sealed],
+  );
+}
+
+export async function loadEscrow<T = unknown>(db: Queryable, keystoreKey: Uint8Array, trade: string): Promise<T | null> {
+  const { rows } = await db.query<{ sealed: Buffer }>('select sealed from mod_escrow_state where trade = $1', [trade]);
+  const row = rows[0];
+  if (!row) return null;
+  return JSON.parse(new TextDecoder().decode(open(keystoreKey, `x2f/mod/escrow/${trade}`, row.sealed))) as T;
+}

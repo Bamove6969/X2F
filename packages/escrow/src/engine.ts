@@ -11,7 +11,9 @@ export type EscrowErrorCode =
   | 'build-failed'
   | 'bad-saved-session'
   /** The daemon did not answer in time (DAEMON_TIMEOUT_MS) or could not be reached: retry later. */
-  | 'daemon-unavailable';
+  | 'daemon-unavailable'
+  /** A peer's post-release multisig info (PartyHandle.importSpendInfo) is malformed, too big, or not for this escrow. */
+  | 'bad-spend-info';
 
 /** Every daemon call (wallet sync, tx lookup, submit, building a tx) gives up after this long. */
 export const DAEMON_TIMEOUT_MS = 15_000;
@@ -24,6 +26,24 @@ export interface Incoming {
   confirmations: number;
   /** Spendable: the wallet's 10-block unlock has passed. */
   unlocked: boolean;
+  /**
+   * The block it is in (absolute index, as monero-ts `tx.getHeight()`), null while in the pool.
+   * With `chainHeight` from the same read, confirmations = chainHeight - height. Optional so that
+   * test doubles may leave it out; the Monero engine always sets it (Task 9 watcher).
+   */
+  height?: number | null;
+}
+
+/**
+ * A transaction this wallet itself records as spending the escrow's outputs (its own outgoing
+ * view: it signed it, or holds the key images after an export round). Never a tx merely seen.
+ */
+export interface Outgoing {
+  txHash: string;
+  /** The block it is in, null while in the pool. */
+  height: number | null;
+  /** Everything it spent: the payouts plus the network fee. */
+  spentAtomic: bigint;
 }
 
 /** Where the daemon has a transaction: nowhere, in the pool, or in a block. */
@@ -63,6 +83,10 @@ export interface EscrowSession {
   sync(): Promise<{ balance: bigint; unlocked: bigint }>;
   /** Every transaction paying the escrow, from the last sync (pool included). */
   incoming(): Promise<Incoming[]>;
+  /** The daemon height (number of blocks) as of the last sync. Optional for test doubles. */
+  chainHeight?(): Promise<number>;
+  /** Every tx this wallet records as spending the escrow (see Outgoing), from the last sync. Optional for test doubles. */
+  outgoing?(): Promise<Outgoing[]>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;

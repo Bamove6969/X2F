@@ -5,6 +5,7 @@ export {
   type EscrowErrorCode,
   type EscrowSession,
   type Incoming,
+  type Outgoing,
   type Payout,
   type SavedSession,
   type TxStatus,
@@ -20,5 +21,5 @@ export {
   type BuyerCancelFacts,
   type BuyerCancelRefusal,
 } from './autoRefund.js';
-export { PartyError, runParty, type Outcome, type PartyArgs, type PartyErrorCode, type PartyHandle, type PartyState, type PartyStore } from './party.js';
+export { PartyError, SPEND_INFO_MAX_HEX, runParty, type Outcome, type PartyArgs, type PartyErrorCode, type PartyHandle, type PartyState, type PartyStore } from './party.js';
 export { TransportClosedError, wsTransport, type Transport } from './transport.js';

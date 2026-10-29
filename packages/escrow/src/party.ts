@@ -10,7 +10,7 @@ import {
   type ReplayGuardJSON,
 } from '@x2f/protocol';
 import sodium from 'libsodium-wrappers';
-import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Payout, type SavedSession } from './engine.js';
+import { EscrowError, type EscrowEngine, type EscrowSession, type Incoming, type Outgoing, type Payout, type SavedSession } from './engine.js';
 import type { Transport } from './transport.js';
 import { sumPayouts } from './verify.js';
 
@@ -66,6 +66,13 @@ export interface PartyState {
   sent: Record<string, Record<string, string | Record<string, string>>>;
   received: Record<string, Partial<Record<Role, Received>>>;
   release: ReleaseState | null;
+  /**
+   * Moderator only: the trade parties whose sealed post-release info (`spend.info`, or
+   * `spend.claim` when theirs is too big to send) this party has received, in arrival order,
+   * whether or not the import was refused (Task 9 I/O, lead decision b: the watcher reports
+   * `release-claimed`). Saved before the import is tried. Absent in states saved before it.
+   */
+  claims?: Role[];
 }
 
 export interface PartyStore {
@@ -87,10 +94,38 @@ export interface PartyHandle {
    * wallet calls never interleave. Watchers and apps read the escrow only through this. Still
    * answers after the relay connection ended for good (ready() and settle() reject with the
    * TransportClosedError): the wallet needs no peer. Rejects after a PartyError or stop().
+   * `chainHeight` and `outgoing` (Task 9's watcher) come from the same sync when the engine
+   * provides them (the Monero engine does). `spendClaims` (moderator only): PartyState.claims.
    */
-  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[] }>;
+  funds(): Promise<{ balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] }>;
+  /**
+   * This party's post-release multisig info (hex), for the moderator, who takes no part in a
+   * seller–buyer release and so cannot see that spend on its own (Task 9, lead decision A). The
+   * party sends it to the moderator by itself (`spend.info`, below); this only reads it.
+   * Only once this party's release is done (the co-signer submitted it, or the builder saw it in a
+   * block); before that it rejects with PartyError('bad-state'), because a fresh export replaces the
+   * signing nonces a release in progress depends on. Exported once and saved (with the wallet,
+   * before it leaves); later calls return the same hex.
+   */
+  spendInfo(): Promise<string>;
+  /**
+   * Imports a peer's post-release multisig info (the moderator's side of spendInfo()), so this
+   * wallet can compute the escrow's key images and its own outgoing view (funds().outgoing)
+   * shows a spend that really is in a block. The import is the proof: the info only completes
+   * key images for this wallet's own outputs; the wallet then finds those key images among the
+   * inputs of txs in blocks. Nothing a peer sends names a tx. Rejects with
+   * EscrowError('bad-spend-info') for anything that is not a well-formed export of this escrow
+   * (not hex, over SPEND_INFO_MAX_HEX, another wallet, a bad signature), PartyError('bad-state')
+   * before setup ended or while this party's own release is under way (an import replaces the
+   * peer nonces it is signing with). Saved with the wallet afterwards.
+   */
+  importSpendInfo(info: string): Promise<void>;
   stop(): Promise<void>;
 }
+
+/** The longest post-release multisig info importSpendInfo() takes (hex characters). */
+export const SPEND_INFO_MAX_HEX = 60_000; // fits one sealed message (64 KiB padded plaintext, R9)
+const HEX = /^[0-9a-f]+$/;
 
 export interface PartyArgs {
   role: Role;
@@ -116,6 +151,20 @@ const MAKE = 'msig.make:1';
 const ADDR = 'msig.addr:0';
 /** "I have checked all three addresses": nobody funds until both peers confirm too. */
 const READY = 'msig.ready:0';
+/**
+ * Post-release multisig info (Task 9, lead decision A): a buyer or seller whose release is done
+ * sends it to the moderator, and resends it (timer, reconnect) until the moderator's SPEND_ACK;
+ * the moderator imports it and acks. Outside the release's attempt tags: it is about a spend
+ * that already happened.
+ */
+const SPEND_INFO = 'spend.info:0';
+const SPEND_ACK = 'spend.ack:0';
+/**
+ * Sent instead of SPEND_INFO when this party's info is over SPEND_INFO_MAX_HEX (a dust-attacked
+ * escrow): no info, only the claim that its release is done, so the moderator's watcher still
+ * reports `release-claimed` and the 6 h fallback escalates (lead decision b). Acked by SPEND_ACK.
+ */
+const SPEND_CLAIM = 'spend.claim:0';
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
@@ -167,6 +216,9 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === MAKE) return Object.keys(p).length === 3 && typeof p.hex === 'string' && echoOk();
   if (key === ADDR) return Object.keys(p).length === 4 && typeof p.address === 'string' && typeof p.prev === 'string' && echoOk();
   if (key === READY) return exactStrings(p, ['key', 'address']);
+  if (key === SPEND_INFO) return from !== 'mod' && exactStrings(p, ['key', 'hex']);
+  if (key === SPEND_ACK) return from === 'mod' && exactStrings(p, ['key']);
+  if (key === SPEND_CLAIM) return from !== 'mod' && exactStrings(p, ['key']);
   const rel = RELEASE_KEY.exec(key);
   if (!rel || Number(rel[3]) > MAX_ATTEMPT) return false;
   if (rel[1] === 'state.export') return exactStrings(p, ['key', 'hex']);
@@ -297,6 +349,7 @@ export function runParty(a: PartyArgs): PartyHandle {
       readyResends += 1;
       await send(READY, peers.filter((p) => !pastSetup(p)));
     }
+    if (!state.received[SPEND_ACK]?.mod) await sendSpend();
     const rel = state.release;
     if (!rel) return;
     if (rel.phase === 'exhausted' || rel.phase === 'superseded') return;
@@ -565,6 +618,120 @@ export function runParty(a: PartyArgs): PartyHandle {
     if (rel.phase === 'done') settleWaiter?.resolve(rel.txHash ?? null);
   };
 
+  // ── Spend info (Task 9, lead decision A) ──────────────────────────────
+
+  /**
+   * Buyer or seller: once its release is done, export fresh multisig info once, save it with the
+   * wallet, and send it to the moderator (resent by `resend` until acked). Not after a release
+   * the moderator co-signed: its own wallet shows that one. Never before done: the export
+   * replaces the nonces a release in progress signs with.
+   */
+  const offerSpendInfo = async (): Promise<void> => {
+    const rel = state.release;
+    if (a.role === 'mod' || !rel || rel.phase !== 'done' || rel.counterpart === 'mod' || state.sent[SPEND_INFO]) return;
+    try {
+      await exportSpendInfo();
+    } catch {
+      // Never fatal after a release that is done: nothing was sent, tried again on the next tick.
+      return ignored('spend-info-export-failed');
+    }
+    await sendSpend();
+  };
+
+  /** The exported info when it fits one sealed message, else the claim alone (never sent before an export). */
+  const sendSpend = async (): Promise<void> => {
+    if (!state.sent[SPEND_INFO]) return;
+    if (spendInfoSendable()) return send(SPEND_INFO, ['mod']);
+    state.sent[SPEND_CLAIM] ??= {};
+    await send(SPEND_CLAIM, ['mod']);
+  };
+
+  /** Exported and small enough for one sealed message (else never sent: the watcher's fallback escalates). */
+  const spendInfoSendable = (): boolean => {
+    const hex = state.sent[SPEND_INFO]?.hex;
+    return typeof hex === 'string' && hex.length <= SPEND_INFO_MAX_HEX;
+  };
+
+  const exportSpendInfo = async (): Promise<string> => {
+    const hex = await session.exportState();
+    if (hex.length > SPEND_INFO_MAX_HEX) ignored('spend-info-too-large');
+    state.sent[SPEND_INFO] = { hex };
+    try {
+      await persist(); // the export's fresh nonces are saved with the wallet before it leaves
+    } catch (e) {
+      delete state.sent[SPEND_INFO]; // never sent unsaved; exported afresh next time
+      throw e;
+    }
+    return hex;
+  };
+
+  /** Null when the info may be imported now, else why not. */
+  const importRefusal = (info: unknown): EscrowError | PartyError | null => {
+    if (typeof info !== 'string' || info.length === 0 || info.length > SPEND_INFO_MAX_HEX || info.length % 2 !== 0 || !HEX.test(info)) {
+      return new EscrowError('bad-spend-info', 'not a hex string of the right size');
+    }
+    if (!state.address || !checked()) return new PartyError('bad-state', 'setup has not ended');
+    const ph = state.release?.phase;
+    if (ph !== undefined && ph !== 'done' && ph !== 'exhausted' && ph !== 'superseded' && ph !== 'waiting-funds') {
+      return new PartyError('bad-state', 'a release of this party is under way');
+    }
+    return null;
+  };
+
+  /**
+   * Sync first (the wallet must know the escrow's outputs to complete their key images), then
+   * import one peer's info alone (never with another peer's: a bad one would spoil the
+   * composite key images of a good one), then save the wallet. Anything the wallet refuses (not
+   * an export of this escrow, a bad signature) is EscrowError('bad-spend-info'); a daemon that
+   * does not answer stays 'daemon-unavailable'.
+   */
+  const importSpendInfo = async (info: string): Promise<void> => {
+    await session.sync();
+    try {
+      await session.importState([info]);
+    } catch (e) {
+      if (e instanceof EscrowError) throw e;
+      throw new EscrowError('bad-spend-info', e instanceof Error ? e.message.slice(0, 120) : 'import failed');
+    }
+    await persist();
+  };
+
+  /** A spend message (opened, well-formed): the moderator imports info and acks; a party records the ack. */
+  const onSpend = async (key: string, from: Role, payload: Received['payload']): Promise<void> => {
+    const digest = digestOf(key, payload);
+    if (key === SPEND_ACK) {
+      if (a.role === 'mod' || !state.sent[SPEND_INFO] || state.received[SPEND_ACK]?.mod) return ignored('duplicate');
+      (state.received[SPEND_ACK] ??= {}).mod = { payload, digest };
+      state.guard = guard.toJSON();
+      await saveState();
+      return;
+    }
+    if (a.role !== 'mod') return ignored('spend-info-not-mod');
+    // Opened, signed by a trade party: a claim that its release is done, imported or not (lead decision b).
+    if (!(state.claims ?? []).includes(from)) {
+      state.claims = [...(state.claims ?? []), from];
+      await saveState();
+    }
+    if (key === SPEND_CLAIM) {
+      (state.received[SPEND_CLAIM] ??= {})[from] ??= { payload, digest };
+    } else if (state.received[SPEND_INFO]?.[from]?.digest !== digest) {
+      const hex = payload.hex;
+      if (importRefusal(hex) !== null) return ignored('spend-info-refused');
+      try {
+        await importSpendInfo(hex as string);
+      } catch (e) {
+        // Garbage, another escrow's info, or a daemon that did not answer: not recorded, so the
+        // sender's next resend is tried again. Never fatal.
+        return ignored(e instanceof EscrowError && e.code === 'daemon-unavailable' ? 'daemon-unavailable' : 'spend-info-refused');
+      }
+      (state.received[SPEND_INFO] ??= {})[from] = { payload, digest };
+    }
+    state.guard = guard.toJSON();
+    state.sent[SPEND_ACK] = {};
+    await saveState();
+    await send(SPEND_ACK, [from]); // also for a resend: our ack may have been lost
+  };
+
   const beginRelease = async (o: Outcome): Promise<void> => {
     const digest = outcomeDigest(o);
     const rel = state.release;
@@ -615,6 +782,10 @@ export function runParty(a: PartyArgs): PartyHandle {
       ignored('setup-after-ready');
       return;
     }
+    if (key === SPEND_INFO || key === SPEND_ACK || key === SPEND_CLAIM) {
+      await onSpend(key, from, payload);
+      return;
+    }
     if (!isSetupKey(key)) {
       const rel = state.release;
       if (!rel || from !== rel.counterpart || !key.includes(`:${tagOf(rel.outcome)}.`)) {
@@ -645,6 +816,7 @@ export function runParty(a: PartyArgs): PartyHandle {
         await beginRelease(settleOutcome);
         await advanceRelease();
       }
+      await offerSpendInfo();
     } catch (e) {
       // A slow or unreachable daemon is retried on the next tick. Nothing is saved or sent
       // between a daemon call and the step it guards, so the step simply runs again.
@@ -758,7 +930,44 @@ export function runParty(a: PartyArgs): PartyHandle {
           if (failure && (failure instanceof PartyError || !session)) return reject(failure);
           try {
             const { balance, unlocked } = await session.sync();
-            resolve({ balance, unlocked, incoming: await session.incoming() });
+            const incoming = await session.incoming();
+            const extra: { chainHeight?: number; outgoing?: Outgoing[]; spendClaims?: Role[] } = {};
+            if (a.role === 'mod') extra.spendClaims = [...(state.claims ?? [])];
+            if (session.chainHeight) extra.chainHeight = await session.chainHeight();
+            if (session.outgoing) extra.outgoing = await session.outgoing();
+            resolve({ balance, unlocked, incoming, ...extra });
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    spendInfo() {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
+          const sent = state.sent[SPEND_INFO];
+          if (sent) return resolve(String(sent.hex));
+          if (state.release?.phase !== 'done') return reject(new PartyError('bad-state', 'no release of this party is done'));
+          try {
+            resolve(await exportSpendInfo());
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+    },
+    importSpendInfo(info) {
+      return new Promise((resolve, reject) => {
+        chain = chain.then(async () => {
+          if (stopped) return reject(new PartyError('stopped'));
+          if (failure && (failure instanceof PartyError || !session)) return reject(failure); // as funds(): no peer needed
+          const refusal = importRefusal(info);
+          if (refusal) return reject(refusal);
+          try {
+            await importSpendInfo(info);
+            resolve();
           } catch (e) {
             reject(e);
           }

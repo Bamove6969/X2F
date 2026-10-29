@@ -2,6 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+## Revision 2026-10-29 (lead decisions A and b, Task 9 I/O; Task 2 state machine)
+
+- **`escalate` from `settling`** (Task 2): a system `escalate` is also allowed from `settling` while the escrow holds coins: the moderation watcher's `spend-unshown` (a settlement the moderator was not shown spending the escrow 6 h after it started, or after the release was claimed).
+- **`release-claimed`** (Task 2, new system event; lead decision b): the moderation service received a trade party's sealed post-release info (`spend.info`, or `spend.claim` when the info is too big to send), imported or not. Only from `settling`, once per settling episode (else `wrong-state`); sets `releaseClaimedAt` (column `trades.release_claimed_at`, migration `113_release_claim.sql`). While set, the signing window does **not** return the trade to `settleFrom`: `tick` leaves it `settling` and `nextDeadline` is null; it ends only with `settled` (the sweep shown), the watcher's 6 h `escalate`, or a party's `open-dispute` after `settleBy` (unchanged). `startSettling` clears it, so a new episode starts unclaimed.
+
 ## Revision 2026-10-24 (Task 8 as built; updated 2026-10-28 after the Task 8-b review)
 
 Deviations in the built Task 8 (review APPROVED 2026-10-28). Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.

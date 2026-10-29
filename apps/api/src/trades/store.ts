@@ -65,6 +65,7 @@ export interface TradeRow {
   settling: Trade['settling'];
   settle_from: TradeState | null;
   settle_by: Date | null;
+  release_claimed_at: Date | null;
   paused_at: Date | null;
   tx_hash: string | null;
   dispute_by: By | null;
@@ -121,6 +122,7 @@ export function rowToTrade(r: TradeRow): Trade {
     settling: r.settling,
     settleFrom: r.settle_from,
     settleBy: r.settle_by,
+    releaseClaimedAt: r.release_claimed_at ?? null,
     pausedAt: r.paused_at,
     txHash: r.tx_hash,
     dispute: r.dispute_by !== null && r.dispute_at !== null ? { by: r.dispute_by, at: r.dispute_at } : null,
@@ -158,6 +160,7 @@ function stateColumns(t: Trade): [string, unknown][] {
     ['settling', t.settling],
     ['settle_from', t.settleFrom],
     ['settle_by', t.settleBy],
+    ['release_claimed_at', t.releaseClaimedAt],
     ['paused_at', t.pausedAt],
     ['tx_hash', t.txHash],
     ['dispute_by', t.dispute?.by ?? null],
@@ -230,6 +233,7 @@ const STORED = {
   settled: { kind: 'value', txHash: 'value' },
   'open-dispute': {},
   escalate: {},
+  'release-claimed': {},
   pause: {},
   resume: {},
   tick: {},
