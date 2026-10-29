@@ -60,6 +60,7 @@ const base: TradeView = {
   finalAlertAt: null,
   finalAlertSeenAt: null,
   settleBy: null,
+  releaseClaimedAt: null,
   pausedAt: null,
   closedAt: null,
   nextDeadline: '2026-10-25T11:40:00.000Z',

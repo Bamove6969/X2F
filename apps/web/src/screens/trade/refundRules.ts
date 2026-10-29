@@ -71,7 +71,7 @@ export function tradeFromView(v: RefundView): Trade {
     settling: v.settling,
     settleFrom: null,
     settleBy: date(v.settleBy, 'settleBy'),
-    releaseClaimedAt: null,
+    releaseClaimedAt: date(v.releaseClaimedAt, 'releaseClaimedAt'),
     pausedAt: date(v.pausedAt, 'pausedAt'),
     txHash: v.txHash,
     dispute: null,

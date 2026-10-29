@@ -102,6 +102,13 @@ export interface TradeView {
    */
   finalAlertSeenAt: string | null;
   settleBy: string | null;
+  /**
+   * When the moderator's watcher reported that a buyer or seller says their side of the
+   * settlement is done (Task 9 I/O, lead decision b): from then on the trade waits for the network
+   * to show the sweep, and the settle window no longer reverts it. The claim time only, for both
+   * traders; nothing else about the moderator. `settleBy` is unchanged (a dispute stays open after it).
+   */
+  releaseClaimedAt: string | null;
   pausedAt: string | null;
   closedAt: string | null;
   nextDeadline: string | null;
@@ -170,6 +177,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     finalAlertAt: iso(t.finalAlertAt),
     finalAlertSeenAt: role === 'buyer' ? iso(ctx.finalAlertSeenAt) : null,
     settleBy: iso(t.settleBy),
+    releaseClaimedAt: iso(t.releaseClaimedAt),
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
     nextDeadline: iso(nextDeadline(t)),

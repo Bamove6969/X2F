@@ -58,6 +58,7 @@ import { useLocation, useParams } from 'react-router';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { SettleWait } from './settleWait.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 
 export interface TradeScreenProps {
@@ -164,12 +165,13 @@ function useTradeView(code: string): { load: Load; refresh: () => Promise<void> 
   return { load, refresh };
 }
 
-/** Shown for a state whose screen has not landed yet. */
-function StatusCard({ view }: { view: TradeView }) {
+/** Shown for a state whose screen has not landed yet; while settling, also what the trade waits for. */
+export function StatusCard({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   return (
     <section className="x2f-trade-status" data-trade-state={view.state}>
       <p>Trade {view.code}</p>
       <p>State: {view.state.replace('_', ' ')}</p>
+      <SettleWait view={view} serverClock={serverClock} />
     </section>
   );
 }
@@ -239,7 +241,7 @@ function ReadyRoom({ code, view, refresh, navState }: { code: string; view: Trad
         // Fails closed even if no screen module registered the danger state.
         <p role="alert">Security check failed. Don't fund this trade.</p>
       ) : (
-        <StatusCard view={view} />
+        <StatusCard view={view} serverClock={clock} />
       )}
     </main>
   );
