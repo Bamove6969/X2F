@@ -120,7 +120,8 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // refusals move into CantDoThat; raise one only with a reviewed reason.
     expect(todo).toBeLessThanOrEqual(4);
     expect(notARefusal).toBeLessThanOrEqual(40);
-  });
+    // Parses every file under apps/web/src: give it room on a loaded machine.
+  }, 60_000);
 });
 
 describe('review I3: every error code the web knows is classified', () => {
