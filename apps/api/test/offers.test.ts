@@ -1,6 +1,8 @@
+import { offerRate } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { rateSql } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
@@ -575,5 +577,57 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     expect((await t.browser.get('/v1/account/me')).json()).toMatchObject({ stage: 'building' });
     const staff = await trader('staff');
     expect((await staff.browser.get('/v1/account/me')).json()).toMatchObject({ stage: null });
+  });
+});
+
+describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
+  it('Minor 1: the SQL rate equals offerRate for every margin and market size, huge ones included', async () => {
+    // A seeded LCG, so a failure is repeatable.
+    let seed = 0x2f2f2fn;
+    const next = (mod: bigint): bigint => {
+      seed = (seed * 6364136223846793005n + 1442695040888963407n) % (1n << 64n);
+      return seed % mod;
+    };
+    const margins = [-5000, -4999, -101, -5, -1, 0, 1, 5, 49, 4999, 5000];
+    const markets = [
+      1n, 2n, 3n, 7n, 33_333n, 99_999n, 10n ** 8n, 10n ** 12n, 10n ** 15n + 7n, 10n ** 16n - 1n, 10n ** 16n + 3n,
+      10_820_100_000_498_616n, 24_565_500_000_621_051n, 10n ** 18n - 1n, 10n ** 20n - 1n,
+    ];
+    const pairs: [bigint, number][] = [];
+    for (const m of markets) for (const b of margins) pairs.push([m, b]);
+    for (let i = 0; i < 3000; i++) {
+      const digits = 1n + next(20n);
+      pairs.push([1n + next(10n ** digits), Number(next(10_001n)) - 5000]);
+    }
+    const { rows } = await deps.db.query<{ rate: string }>(
+      `select (${rateSql('o.m')})::text as rate
+         from (select 'market'::text as price_mode, null::numeric as fixed_cents_per_xmr, u.b as margin_bps, u.m::numeric as m, u.i
+                 from unnest($1::text[], $2::int[]) with ordinality as u(m, b, i)) o
+        order by o.i`,
+      [pairs.map(([m]) => m.toString()), pairs.map(([, b]) => b)],
+    );
+    const differ = pairs.flatMap(([m, b], i) => {
+      const js = offerRate({ mode: 'market', marginBps: b }, 'USD', { currency: 'USD', centsPerXmr: m })!.centsPerXmr.toString();
+      return rows[i]!.rate === js ? [] : [{ m: m.toString(), b, js, sql: rows[i]!.rate }];
+    });
+    expect(differ).toEqual([]);
+    // A fixed offer's rate is its own price, also at the 20-digit maximum.
+    const fixed = await deps.db.query<{ rate: string }>(
+      `select (${rateSql('$1')})::text as rate from (select 'fixed'::text as price_mode, '99999999999999999999'::numeric as fixed_cents_per_xmr, null::int as margin_bps) o`,
+      ['33000'],
+    );
+    expect(fixed.rows[0]!.rate).toBe('99999999999999999999');
+  });
+
+  it('Minor 1: the best sort uses the rate rounded half up, as the cards show it', async () => {
+    market.usdCentsPerXmr = 33_333n;
+    const p = await poster();
+    const q = await poster();
+    // 33333 × 1.0005 = 33349.67 → 33350, between the fixed 33349 and 33351.
+    const lo = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33349' } });
+    const hi = await post(q, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'fixed', centsPerXmr: '33351' } });
+    const mid = await post(p, { currency: 'USD', methodId: 'TRANSFERWISE', pricing: { mode: 'market', marginBps: 5 } });
+    const cards = await list('side=sell&method=TRANSFERWISE&currency=USD&sort=best');
+    expect(cards.map((c) => [c.id, c.rate])).toEqual([[lo, '33349'], [mid, '33350'], [hi, '33351']]);
   });
 });

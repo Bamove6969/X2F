@@ -114,11 +114,14 @@ const LISTED = `o.status = 'live' and a.kind = 'trader' and a.disabled_at is nul
  * The offer's rate now in SQL, with the currency's market price bound as `param` (null while the feed
  * has none): the same number as @x2f/trade's `offerRate` (rateFor rounds half up:
  * (market × (10000 + margin) × 2 + 10000) div 20000), so the database can sort before the limit.
+ * `div` is exact integer division; numeric `/` rounds its quotient to about 16 significant digits,
+ * so from rates near 10^16 a `floor(… / 20000)` came out 1 above offerRate (round-2 review Minor 1).
+ * Exported for the parity test.
  */
-function rateSql(param: string): string {
+export function rateSql(param: string): string {
   return `(case when o.price_mode = 'fixed' then o.fixed_cents_per_xmr
     when ${param}::numeric is null then null
-    else floor((${param}::numeric * (10000 + o.margin_bps) * 2 + 10000) / 20000) end)`;
+    else div(${param}::numeric * (10000 + o.margin_bps) * 2 + 10000, 20000) end)`;
 }
 
 function pricingOf(r: OfferRow): Pricing {
