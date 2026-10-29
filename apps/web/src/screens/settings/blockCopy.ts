@@ -1,22 +1,38 @@
-// Plan 3 Task 37: the block's words. // COPY-UNSIGNED: no board yet (Claude Design brief item 14);
-// the owner signs the copy off with the board. The refusals are shown inline until Plan 5 Task 21's
-// shared CantDoThat popup is on the main line (tripwire in apps/web/test/block-tripwires.test.ts).
+// Plan 3 Task 37: the block's words, following Claude Design's Block board
+// (origin/wip/design-brief docs/design-boards/Block.dc.html). // COPY-UNSIGNED: the owner signs
+// it off with the board. Softened where the build cannot promise more (review M7): a blocked
+// person who logs out sees what any stranger sees, so the promises are "while they're signed in".
+// Blocking is silent (the blocked person is never told) and open trades finish normally. The
+// refusals are shown inline until Plan 5 Task 21's shared CantDoThat popup is on the main line
+// (tripwire in apps/web/test/block-tripwires.test.ts).
 
 export const BLOCK_COPY = {
   action: (name: string) => `Block ${name}`,
   confirmTitle: (name: string) => `Block ${name}?`,
-  confirmBody: "They won't see your offers or be able to take them, message you, or see when you're online. They won't be told. Trades already open with them continue to the end.",
-  confirm: 'Block',
+  confirmLead: (name: string) => `Once blocked, while they're signed in, ${name} can't:`,
+  cant: ['see or take your offers', 'message you or nudge you', "see when you're online"] as const,
+  silent: "They won't be told you blocked them.",
+  openTrades: "Open trades with them aren't affected. They finish normally.",
+  later: 'You can unblock them any time in Settings, Blocked traders.',
   cancel: 'Cancel',
-  done: (name: string) => `You blocked ${name}. You won't see each other's offers.`,
+  done: (name: string) => `You blocked ${name}. While signed in, they can't see or take your offers, message you, or see when you're online.`,
   manage: 'Blocked traders',
   failed: (name: string) => `Could not block ${name}. Try again.`,
   // A name that is gone (the account was closed) or yourself: the API's 404 and 400.
   cannot: 'That trader cannot be blocked.',
   title: 'Blocked traders',
-  intro: "People you block can't see your offers, take them, message you, or see when you're online. You won't see theirs either.",
+  whatTitle: 'What blocking does',
+  what: ["They can't see or take your offers.", "They can't message you or nudge you.", "They can't see when you're online."] as const,
+  whatNote: "This applies while they're signed in. To block someone, open one of their offers and tap Block.",
+  count: (n: number) => (n === 1 ? '1 blocked trader' : `${n} blocked traders`),
+  blockedOn: (iso: string) =>
+    `Blocked ${new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}`,
+  unblockedRow: 'Unblocked. They can see your offers again.',
+  unblock: (name: string) => `Unblock ${name}`,
+  blockAgain: (name: string) => `Block ${name} again`,
+  unblocked: (name: string) => `Unblocked ${name}.`,
+  reblocked: (name: string) => `Blocked ${name} again.`,
   empty: "You haven't blocked anyone.",
-  unblock: 'Unblock',
   loadFailed: 'Could not load your blocked traders. Reload the page to try again.',
   unblockFailed: (name: string) => `Could not unblock ${name}. Try again.`,
   signedOut: 'Log in to see the traders you blocked.',

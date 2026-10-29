@@ -67,6 +67,8 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expectPhoneLayout(page);
       await open.click();
       await expect(page.locator('[data-part="block-ask"]')).toContainText(`Block ${poster}?`);
+      await expect(page.locator('#block-ask-h')).toBeFocused();
+      await expect(page.locator('[data-part="block-ask"]')).toContainText("They won't be told you blocked them.");
       await expectPhoneLayout(page);
       // Still exactly one primary (Trade): the block buttons are never primary.
       expect(await page.locator('[data-primary]').count()).toBe(1);
@@ -81,14 +83,33 @@ for (const viewport of PHONE_VIEWPORTS) {
       await expect(page).toHaveURL('/settings/blocked');
       await expect(page.locator('[data-part="blocked-list"] [data-username]')).toHaveText([poster]);
       await expectPhoneLayout(page);
-      await page.getByRole('button', { name: 'Unblock' }).click();
-      await expect(page.locator('[data-part="blocked-empty"]')).toHaveText("You haven't blocked anyone.");
+      const unblock = page.getByRole('button', { name: `Unblock ${poster}` });
+      await unblock.focus();
+      await unblock.click();
+      await expect(page.locator('[data-part="blocked-said"]')).toHaveText(`Unblocked ${poster}.`);
+      await expect(page.getByRole('button', { name: `Block ${poster} again` })).toBeFocused();
       expect(seen.deletes).toEqual([poster]);
       await expectPhoneLayout(page);
 
       // Unblocked: the offer is back.
       await page.goto(`${BUY}&amount=${B.amount}`);
       await expect(page.getByRole('button', { name: `Block ${poster}` })).toBeVisible();
+    });
+
+    test('Settings, Security links to Blocked traders (review M3)', async ({ page }) => {
+      await stubApi(page, { signedIn: true });
+      for (const [path, body] of [
+        ['**/v1/account/methods', [{ type: 'password', id: 'password', label: 'Password', createdAt: null, lastUsedAt: null }]],
+        ['**/v1/account/sessions', []],
+        ['**/v1/account/alerts', []],
+        ['**/v1/account/security/logout-timer', { idleHours: 12, adjustable: true }],
+      ] as const) {
+        await page.route(path, (r) => r.fulfill({ json: body }));
+      }
+      await page.goto('/settings/security');
+      await page.locator('[data-part="blocked-link"]').getByRole('link', { name: 'Blocked traders' }).click();
+      await expect(page).toHaveURL('/settings/blocked');
+      await expect(page.locator('[data-part="blocked-empty"]')).toHaveText("You haven't blocked anyone.");
     });
 
     test('logged out: no block action on the quote, and Blocked traders asks to log in', async ({ page }) => {

@@ -66,22 +66,36 @@ const settle = () => act(async () => {
 const byPart = (host: HTMLElement, part: string) => host.querySelector(`[data-part="${part}"]`);
 
 describe('Blocked (settings)', () => {
-  it('lists my blocks by public name, unblocks one, and shows the empty state when none are left', async () => {
+  it('lists my blocks; Unblock keeps the row with an undo, announces it, and keeps focus on the row button', async () => {
     const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
     await settle();
     const names = [...host.querySelectorAll('[data-part="blocked-list"] [data-username]')].map((e) => e.textContent);
     expect(names).toEqual(['mira.k', 'Bob']);
-    const buttons = host.querySelectorAll('[data-part="unblock"]');
-    fire(buttons[0]!, new MouseEvent('click', { bubbles: true }));
+    expect(byPart(host, 'blocked-count')?.textContent).toBe('2 blocked traders');
+    expect(host.textContent).toContain('Blocked 29 Oct 2026');
+    const first = host.querySelector<HTMLButtonElement>('[data-part="unblock"]')!;
+    expect(first.getAttribute('aria-label')).toBe('Unblock mira.k');
+    first.focus();
+    fire(first, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(calls.at(-1)).toMatchObject({ url: '/v1/account/blocks/mira.k', method: 'DELETE' });
-    expect([...host.querySelectorAll('[data-username]')].map((e) => e.textContent)).toEqual(['Bob']);
-    fire(host.querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    // The row stays, marked, with its one button turned into the undo; focus has not moved.
+    const again = host.querySelector<HTMLButtonElement>('[data-part="unblock"]')!;
+    expect(again).toBe(first);
+    expect(document.activeElement).toBe(first);
+    expect(again.getAttribute('aria-label')).toBe('Block mira.k again');
+    expect(host.textContent).toContain('Unblocked. They can see your offers again.');
+    expect(byPart(host, 'blocked-said')?.getAttribute('role')).toBe('status');
+    expect(byPart(host, 'blocked-said')?.textContent).toBe('Unblocked mira.k.');
+    expect(byPart(host, 'blocked-count')?.textContent).toBe('1 blocked trader');
+    // Undo blocks again.
+    fire(again, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(byPart(host, 'blocked-empty')?.textContent).toBe("You haven't blocked anyone.");
+    expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
+    expect(byPart(host, 'blocked-said')?.textContent).toBe('Blocked mira.k again.');
   });
 
-  it('a failed unblock keeps the row and says so inline', async () => {
+  it('review M1: a failed unblock keeps the row; a 404 drops it only when a re-read confirms it is gone', async () => {
     const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
     await settle();
     failNext = 500;
@@ -89,6 +103,25 @@ describe('Blocked (settings)', () => {
     await settle();
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('Could not unblock mira.k. Try again.');
     expect(host.querySelectorAll('[data-username]').length).toBe(2);
+    // 404, but the server still lists mira.k: the row stays and the failure is said.
+    failNext = 404;
+    fire(host.querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(host.querySelectorAll('[data-username]').length).toBe(2);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('Could not unblock mira.k. Try again.');
+    // 404 and the server no longer lists mira.k (the account was closed): the row goes.
+    blocks = blocks.filter((b) => b.displayName !== 'mira.k');
+    failNext = 404;
+    fire(host.querySelector('[data-part="unblock"]')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect([...host.querySelectorAll('[data-username]')].map((e) => e.textContent)).toEqual(['Bob']);
+  });
+
+  it('shows the empty state with no blocks', async () => {
+    blocks = [];
+    const { host } = render(<MemoryRouter><Blocked /></MemoryRouter>);
+    await settle();
+    expect(byPart(host, 'blocked-empty')?.textContent).toBe("You haven't blocked anyone.");
   });
 
   it('a list that fails to load says so', async () => {
@@ -115,17 +148,23 @@ describe('Blocked (settings)', () => {
 });
 
 describe('BlockAction', () => {
-  it('asks first, then blocks by public name and links to the Blocked list', async () => {
+  it('asks first (silent, open trades finish), then blocks by public name; focus follows each step', async () => {
     const onBlocked = vi.fn();
     const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" onBlocked={onBlocked} /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
-    expect(byPart(host, 'block-ask')?.textContent).toContain('Block mira.k?');
+    const ask = byPart(host, 'block-ask')!;
+    expect(ask.textContent).toContain('Block mira.k?');
+    expect(ask.textContent).toContain("They won't be told you blocked them.");
+    expect(ask.textContent).toContain("Open trades with them aren't affected. They finish normally.");
+    expect(document.activeElement).toBe(host.querySelector('#block-ask-h'));
     expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
     fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
     expect(onBlocked).toHaveBeenCalledOnce();
-    expect(byPart(host, 'block-done')?.querySelector('a')?.getAttribute('href')).toBe('/settings/blocked');
+    const done = byPart(host, 'block-done')!;
+    expect(done.querySelector('a')?.getAttribute('href')).toBe('/settings/blocked');
+    expect(document.activeElement).toBe(done.querySelector('[role="status"]'));
   });
 
   it('Cancel blocks nobody; a refusal is shown inline', async () => {
@@ -133,6 +172,8 @@ describe('BlockAction', () => {
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!, new MouseEvent('click', { bubbles: true }));
     expect(byPart(host, 'block-open')).not.toBeNull();
+    // Focus is back on "Block mira.k".
+    expect(document.activeElement).toBe(byPart(host, 'block-open'));
     failNext = 404;
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
     fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));

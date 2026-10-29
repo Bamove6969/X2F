@@ -8,10 +8,13 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 37 web still waits for its design and the shared popup', () => {
-  it('NEEDS_DESIGN_BLOCK: Claude Design has no board for blocking yet (brief item 14)', () => {
-    // Built from kit parts only, no new CSS: settings/Blocked.tsx (/settings/blocked) and
-    // settings/BlockAction.tsx (on the quote). When a board lands (a Blocked list, the block
-    // confirm, or a block action on the Profile board): follow it, add expectParity to
+  it('NEEDS_DESIGN_BLOCK: the Block board is not in the app canvas yet (brief item 14)', () => {
+    // Claude Design's board is drafted on origin/wip/design-brief as docs/design-boards/Block.dc.html
+    // and Block-Wide.dc.html (views: profile, chat, settings; the confirm sheet). The build follows
+    // its copy and structure with kit parts only, no new CSS: settings/Blocked.tsx
+    // (/settings/blocked, linked from Security), settings/BlockAction.tsx (on the quote). When the
+    // board lands in design/x2f-app/ with a reference: build its styling (the Blocked chip, the
+    // More menu on the profile and chat, the confirm as a Sheet), add expectParity to
     // e2e/block.spec.ts, have the owner sign off blockCopy.ts (COPY-UNSIGNED), link the Blocked list
     // from the Profile tab (Plan 5), and delete this check.
     const boards = readdirSync(`${ROOT}design/x2f-app`).filter((f) => /block/i.test(f));

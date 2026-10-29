@@ -1,11 +1,12 @@
 /**
  * "Block <name>" (Plan 3 Task 37), wherever a trader is shown to a signed-in trader: the quote
- * today; Plan 5's profile and Task 20's chat when they land. Asks once, then blocks; refusals are
- * shown inline (Plan 5 Task 21's CantDoThat popup is not on the main line yet). Kit parts only
- * (Button, x2f-note, x2f-error): Claude Design has no board for it yet (brief item 14; tripwire
- * NEEDS_DESIGN_BLOCK). Nothing is shown to the person being blocked.
+ * today; Plan 5's profile and Task 20's chat when they land. Asks once (Claude Design's Block
+ * board: what the block does, that it is silent, that open trades finish), then blocks; refusals
+ * are inline (Plan 5 Task 21's CantDoThat popup is not on the main line yet). Kit parts only.
+ * Focus (review M2): opening moves it to the question, Cancel returns it to "Block <name>", and the
+ * outcome is announced (role="status") and focused. Nothing is shown to the person being blocked.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
@@ -18,23 +19,41 @@ type State = { kind: 'idle' } | { kind: 'asking' } | { kind: 'busy' } | { kind: 
 
 export function BlockAction({ displayName, onBlocked }: { displayName: string; onBlocked?: () => void }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
+  const ask = useRef<HTMLParagraphElement>(null);
+  const open = useRef<HTMLDivElement>(null);
+  const done = useRef<HTMLParagraphElement>(null);
+  // Where focus goes after the next render: set by the step that changes the view.
+  const focusNext = useRef<'ask' | 'open' | 'done' | null>(null);
+
+  useEffect(() => {
+    const target = focusNext.current;
+    focusNext.current = null;
+    if (target === 'ask') ask.current?.focus();
+    if (target === 'done') done.current?.focus();
+    if (target === 'open') open.current?.querySelector('button')?.focus();
+  });
+
+  const go = (next: State, focus: 'ask' | 'open' | 'done' | null) => {
+    focusNext.current = focus;
+    setState(next);
+  };
 
   const block = async () => {
     setState({ kind: 'busy' });
     try {
       await blockTrader(displayName);
-      setState({ kind: 'done' });
+      go({ kind: 'done' }, 'done');
       onBlocked?.();
     } catch (e) {
       const cannot = e instanceof ApiCallError && (e.status === 404 || e.status === 400);
-      setState({ kind: 'error', text: cannot ? C.cannot : C.failed(displayName) });
+      go({ kind: 'error', text: cannot ? C.cannot : C.failed(displayName) }, 'open');
     }
   };
 
   if (state.kind === 'done') {
     return (
       <div data-part="block-done">
-        <p className="x2f-note" role="status">
+        <p className="x2f-note" role="status" tabIndex={-1} ref={done}>
           {C.done(displayName)}
         </p>
         {/* The kit's quiet button look on a router link (no new CSS). */}
@@ -47,26 +66,35 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
   if (state.kind === 'asking' || state.kind === 'busy') {
     return (
       <div role="group" aria-labelledby="block-ask-h" data-part="block-ask">
-        <p className="x2f-sheet__body" id="block-ask-h">
-          <strong>{C.confirmTitle(displayName)}</strong> {C.confirmBody}
+        <p className="x2f-sheet__body" id="block-ask-h" tabIndex={-1} ref={ask}>
+          <strong>{C.confirmTitle(displayName)}</strong>
         </p>
+        <p className="x2f-sheet__body">{C.confirmLead(displayName)}</p>
+        <ul className="x2f-sheet__body">
+          {C.cant.map((t) => (
+            <li key={t}>{t}</li>
+          ))}
+        </ul>
+        <p className="x2f-sheet__body">{C.silent}</p>
+        <p className="x2f-sheet__body">{C.openTrades}</p>
+        <p className="x2f-note">{C.later}</p>
         <Button variant="danger" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
-          {C.confirm}
+          {C.action(displayName)}
         </Button>
-        <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => setState({ kind: 'idle' })}>
+        <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => go({ kind: 'idle' }, 'open')}>
           {C.cancel}
         </Button>
       </div>
     );
   }
   return (
-    <div data-part="block">
+    <div data-part="block" ref={open}>
       {state.kind === 'error' ? (
         <p className="x2f-error" role="alert">
           {state.text}
         </p>
       ) : null}
-      <Button variant="quiet" onClick={() => setState({ kind: 'asking' })} data-part="block-open">
+      <Button variant="quiet" onClick={() => go({ kind: 'asking' }, 'ask')} data-part="block-open">
         {C.action(displayName)}
       </Button>
     </div>
