@@ -130,3 +130,15 @@ Spec 6.3 (device list and new-login alerts) should be updated to match these dec
 - All reviews and reputation go to the one account.
 - Every member action is logged and cannot be edited. The owner can switch a member off instantly.
 - Legal flag for the lawyer: an account with members trading for it looks more like a business, which may affect whether X2F counts as an exchange.
+
+## Staff pay (owner, 2026-10-29)
+
+- **When staff are paid:** at the end of each shift, when they log out. Monthly pay is dropped. X2F adds up the shift and sends it in XMR to the staff member's payout wallet. They see the total before they confirm logging out.
+- **Clawback:** if an appeal later overturns a ruling, that case's pay is taken from the next payout.
+- **Large-trade bonus (senior moderators):** the owner sets a % of the trade total. It is paid on top of the per-case rate for trades at or above the large-trade limit, and there is an optional cap per case.
+  - Recommended and on by default: the bonus is held until the 48 h appeal window closes, because XMR sent can't be recovered if someone leaves with a negative balance.
+- **Helper pay:** the owner will decide later. It stays a flat monthly placeholder for now.
+- **Board:** StaffSettings.
+- **Lead:** update spec 6.6 (staff pay is "monthly" today) and the staff pay plan.
+
+Devices and team boards are now on the canvas: LoginApprove, Devices and Team, each with a -Wide version.

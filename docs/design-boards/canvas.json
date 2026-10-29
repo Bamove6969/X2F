@@ -304,7 +304,7 @@
     },
     "StaffSettings.dc.html": {
       "expand": "fill",
-      "h": 1240,
+      "h": 1460,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Settings: limits and pay",
@@ -761,6 +761,60 @@
       "page": "all",
       "title": "F5 \u00b7 Tri-fold: three panes",
       "is_interactive": true
+    },
+    "LoginApprove.dc.html": {
+      "x": 0,
+      "y": 32500,
+      "w": 390,
+      "h": 960,
+      "page": "all",
+      "title": "G1 \u00b7 New-login approval",
+      "is_interactive": true
+    },
+    "LoginApprove-Wide.dc.html": {
+      "x": 470,
+      "y": 32500,
+      "w": 1280,
+      "h": 900,
+      "page": "all",
+      "title": "G1 \u00b7 New-login approval (wide)",
+      "is_interactive": true
+    },
+    "Devices.dc.html": {
+      "x": 1950,
+      "y": 32500,
+      "w": 390,
+      "h": 1040,
+      "page": "all",
+      "title": "G2 \u00b7 Devices",
+      "is_interactive": true
+    },
+    "Devices-Wide.dc.html": {
+      "x": 2420,
+      "y": 32500,
+      "w": 1280,
+      "h": 800,
+      "page": "all",
+      "title": "G2 \u00b7 Devices (wide)",
+      "is_interactive": true
+    },
+    "Team.dc.html": {
+      "x": 3900,
+      "y": 32500,
+      "w": 390,
+      "h": 1320,
+      "page": "all",
+      "title": "G3 \u00b7 Team members (after launch)",
+      "is_interactive": true
+    },
+    "Team-Wide.dc.html": {
+      "x": 4370,
+      "y": 32500,
+      "w": 1280,
+      "h": 900,
+      "page": "all",
+      "title": "G3 \u00b7 Team members (after launch) (wide)",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -876,6 +930,14 @@
       "kind": "title1",
       "maxW": 7480,
       "page": "all"
+    },
+    "dev1029": {
+      "x": 0,
+      "y": 32200,
+      "text": "Devices and team members \u00b7 phone + wide",
+      "kind": "title1",
+      "maxW": 7480,
+      "page": "all"
     }
   },
   "order": [
@@ -962,7 +1024,13 @@
     "Fold-Trade.dc.html",
     "Fold-Tabletop.dc.html",
     "Fold-Cover.dc.html",
-    "Fold-TriFold.dc.html"
+    "Fold-TriFold.dc.html",
+    "LoginApprove.dc.html",
+    "LoginApprove-Wide.dc.html",
+    "Devices.dc.html",
+    "Devices-Wide.dc.html",
+    "Team.dc.html",
+    "Team-Wide.dc.html"
   ],
   "pages": [
     {

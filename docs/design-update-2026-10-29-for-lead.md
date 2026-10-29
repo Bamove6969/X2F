@@ -99,7 +99,7 @@ Rules for all of these:
 |---|---|
 | New | Fold-Notes, Fold-Offers, Fold-Trade, Fold-Tabletop, Fold-Cover, Fold-TriFold |
 | Changed | BuyerPay, Main, BuyMain, News, Refunded, Ban-Notice(-Wide), Block(-Wide), Reviews(-Wide), MyOffers(-Wide), Login-Backup(-Wide) |
-| In progress, not on the canvas yet | LoginApprove, Devices, Team (each with a -Wide version) |
+| New (devices and team) | LoginApprove, Devices, Team (each with a -Wide version); StaffSettings changed (shift-end pay, large-trade bonus) |
 
 Not yet checked in a real browser: the Fold boards and the new MyOffers. Text fit was estimated.
 
