@@ -147,7 +147,7 @@ Rewritten 2026-10-29. Old Tasks 1–4 (per-side and whole-trade self-delete sett
 - Test: `apps/api/test/deleteAccount.test.ts`, `apps/web/e2e/deleteAccount.spec.ts`
 
 **Interfaces:**
-- Produces: `POST /v1/account/delete { tapId | confirm }` (confirm-it's-you, Plan 2). Refusals (409, through `CantDoThat`): `trade-open`, `dispute-open`, `appeal-window`, `lien`, `refund-dispute-window` (P7-A12). On success, in one transaction: delete login methods, sessions, devices, wallets, settings, offers, alert channels, badge prefs and running totals; keep reviews by and about the account with the name shown as "Deleted user"; the display name and login name are freed after `NAME_REUSE_DAYS` (owner to decide; default 90) so nobody can take over a known name at once.
+- Produces: `POST /v1/account/delete { tapId | confirm }` (confirm-it's-you, Plan 2). Refusals (409, through `CantDoThat`): `trade-open`, `dispute-open`, `appeal-window`, `lien`, `refund-dispute-window` (P7-A12). On success, in one transaction: delete login methods, sessions, devices, wallets, settings, offers, alert channels, badge prefs and running totals; keep reviews by and about the account with the name shown as "Deleted user"; ~~the display name and login name are freed after `NAME_REUSE_DAYS` (owner to decide; default 90) so nobody can take over a known name at once.~~ *2026-10-29b (owner): both names are burned forever (`burned_names`); see Revision 2026-10-29b.*
 - [ ] **Step 1: Write the failing tests:** each refusal; after deletion no login works and no row holds the account's names or keys; a review about the account shows "Deleted user"; the old display name can't be registered before the reuse time.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -370,7 +370,7 @@ Rewritten 2026-10-29. Phone push with an optional loud alarm and an optional bat
 - **Anonymized training copies** (6 months, 2026-10-17) were not mentioned on 2026-10-29. Plan 4 keeps 183 days until the owner confirms.
 - **Dispute after refund** (90 days in Plan 3) is longer than the 30-day delete; Task 1 keeps a refunded trade until that window closes until the lead or owner decides.
 - **I2P** waits for research and in-house testing (Plan 6 Task 27 on hold).
-- **News "don't show again"** checkbox (Plan 4 Task 28) is undecided.
+- ~~**News "don't show again"** checkbox (Plan 4 Task 28) is undecided.~~ *Settled 2026-10-29b: it exists, and a Site news bell always shows.*
 
 **Comparison gaps, decided 2026-10-29:**
 
@@ -381,3 +381,13 @@ Rewritten 2026-10-29. Phone push with an optional loud alarm and an optional bat
 | Helper support tickets | **Yes**, in categories plus "Everything else"; the owner picks who gets access | Plan 4 Tasks 30–31 |
 | Pause all my offers | **Yes**: a list of my offers, each with an on/off toggle, plus "Select all" | Plan 3 Task 36 |
 | Warrant canary | **Waits for the lawyer** (`~/x2f-comms/lawyer-questions.md`, item 1) | Plan 6, next to Task 24, if the lawyer agrees |
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's words of 2026-10-29 08:03 (`~/x2f-comms/owner-answers-2026-10-28.md`, items d and f) and Claude Design's update (`origin/wip/design-brief`).
+- **Task 18 (delete my account): deleted usernames are burned forever** (owner). The display name and the login name of a deleted account are **never reused**, and no way to bring them back is planned. `NAME_REUSE_DAYS` is dropped: Task 18 writes both names' comparison keys (the same keys as the look-alike check, spec 6.3) to `burned_names(name_key primary key, kind 'display'|'login')`, which holds no account id and no date, and registration refuses a burned key with `username-taken`. Test: a deleted account's display name and login name can never be registered again, even years later (fake clock).
+- **Task 18, OPEN (design question):** are a deleted account's trade records kept until their self-destruct date? The design assumes yes, which matches Part A (trades self-destruct on their own clock; a trade that is still open blocks the delete).
+- **Task 8 (Settings → Notifications) and News:** turning off the News popup at login ("don't show again", Plan 4 Task 28) does not belong in Notifications; the Site news bell always shows (Plan 4 Revision 2026-10-29b).
+- **Task 6 and Task 8, OPEN (design questions):** is the Jabber alert account's OMEMO fingerprint published; which Jabber apps the setup guide names (Conversations, Monal, Gajim); is the battery tip Android-only (Task 17 is Android-only today).
+- **Task 4 (Settings → Privacy) and Task 12 (lawful requests):** the privacy page must not mention the 6-month anonymized training copy until the owner confirms it (OPEN; Plan 4 keeps 183 days meanwhile).
+- **Owner questions, settled:** the News "don't show again" checkbox exists (owner, 2026-10-29b); remove it from "Still open".
