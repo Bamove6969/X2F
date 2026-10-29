@@ -94,7 +94,7 @@ export function OfferList({ side, copy, onTrade, onMessage, onNudge }: OfferList
       </header>
 
       <main className="x2f-browse__main x2f-browse__main--cards">
-        {method.kind === 'ready' && method.value === null ? <p className="x2f-browse__note">This payment method is not available.</p> : null}
+        {method.kind === 'ready' && method.value === null ? <p className="x2f-browse__note">{/* not-a-refusal: a catalog fact (the method is off the list) */}This payment method is not available.</p> : null}
         {offers.kind === 'failed' ? (
           <p className="x2f-browse__note">
             {offers.shape

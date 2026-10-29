@@ -53,6 +53,7 @@ const NOT_AUTH_CLIENT = [
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/push',
+  'POST /v1/feedback/form',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
   'POST /v1/offers',

@@ -94,6 +94,7 @@ const slots: TradeSlot[] = [];
 
 /** Adds a screen for a role × state; returns a function that removes it (for tests). */
 export function registerTradeScreen(slot: TradeSlot): () => void {
+  // not-a-refusal: a developer error, never shown
   if (slot.states.length === 0) throw new Error(`${slot.owner}: a trade screen needs at least one state`);
   for (const s of slot.states) {
     if (!TRADE_STATES.includes(s)) throw new Error(`${slot.owner}: unknown trade state ${String(s)}`);
