@@ -9,14 +9,14 @@ const FEE = '4FeeWalletAddress';
 const ATTACKER = '4SomeoneElse';
 const AMOUNT = 1_250_000_000_000n;
 
-function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState } = {}): PolicyContext {
+function ctx(role: 'buyer' | 'seller', o: { poster?: 'seller' | 'buyer'; balance?: bigint; state?: TradeState; paidAt?: string | null } = {}): PolicyContext {
   const poster = o.poster ?? 'seller';
   const { sellerFundsAtomic } = escrowPlan({ amountAtomic: AMOUNT, poster });
   return {
     role,
     own: role === 'buyer' ? { payout: BUYER } : { refund: SELLER },
     balance: o.balance ?? sellerFundsAtomic,
-    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE },
+    trade: { state: o.state ?? 'secured', poster, amountAtomic: AMOUNT, feeWallet: FEE, paidAt: o.paidAt ?? null },
     deal: { poster, amountAtomic: AMOUNT },
     signedTerms: { payout: BUYER, refund: SELLER },
   };
@@ -53,13 +53,25 @@ describe('cosignPolicy: the shapes each side may settle', () => {
   });
 
   it('buyer builds its own buyer-cancel with the moderator as co-signer', () => {
-    const c = ctx('buyer', { state: 'paid' });
+    const c = ctx('buyer', { state: 'secured' });
     expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod'))).toBe(true);
+  });
+
+  it("never a buyer-cancel once the trade is paid: no cancel after I've paid (Task 39 review I2)", () => {
+    const c = ctx('buyer', { state: 'paid' });
+    expect(cosignPolicy(c, out(expected('buyer-cancel', c), 'buyer', 'mod'))).toBe(false);
   });
 
   it('buyer builds a mutual cancel for the seller to co-sign', () => {
     const c = ctx('buyer');
     expect(cosignPolicy(c, out(expected('mutual-cancel', c), 'buyer', 'seller'))).toBe(true);
+  });
+
+  it("never a mutual cancel from the buyer once paid, nor after paid in a later state (review round 2 N4)", () => {
+    const paid = ctx('buyer', { state: 'paid', paidAt: '2026-10-30T10:00:00.000Z' });
+    expect(cosignPolicy(paid, out(expected('mutual-cancel', paid), 'buyer', 'seller'))).toBe(false);
+    const settling = ctx('buyer', { state: 'settling', paidAt: '2026-10-30T10:00:00.000Z' });
+    expect(cosignPolicy(settling, out(expected('mutual-cancel', settling), 'buyer', 'seller'))).toBe(false);
   });
 
   it('seller co-signs a buyer-built mutual cancel', () => {
@@ -246,9 +258,10 @@ describe('the trade size comes from this device, never the API', () => {
 
 describe('outcomeFor', () => {
   it('derives the outcomes the policy allows, and null when it would not', () => {
-    const b = ctx('buyer', { state: 'paid' });
+    const b = ctx('buyer', { state: 'secured' });
     const cancel = outcomeFor('buyer-cancel', b);
     expect(cancel).toEqual(out(expected('buyer-cancel', b), 'buyer', 'mod'));
+    expect(outcomeFor('buyer-cancel', ctx('buyer', { state: 'paid' }))).toBeNull();
     expect(outcomeFor('release', ctx('seller', { state: 'paid' }))).toEqual(out(expected('release', b), 'seller', 'buyer'));
     expect(outcomeFor('buyer-cancel', ctx('seller', { state: 'paid' }))).toBeNull();
     expect(outcomeFor('release', { ...b, balance: 1n })).toBeNull();

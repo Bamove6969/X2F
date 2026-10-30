@@ -95,21 +95,24 @@ export function SetupStatus({ view, escrow, refresh }: { view: TradeView; escrow
 }
 
 /**
- * Ends the trade where one side can: the buyer at any time before payment (`buyer-cancel`), the
- * seller by PROPOSING a cancel once funding has started (`propose-cancel`, which the buyer must
- * accept, so the button says so and the wait afterwards is named; review 2026-10-27, Minor 4).
+ * Ends the trade where one side can: the buyer at any time before payment (`buyer-cancel`); the
+ * seller alone only before tapping "Fund escrow" and before any coins arrive (`walk-away`,
+ * Revision 2026-10-29b), and after that only by PROPOSING a cancel in `funding`
+ * (`propose-cancel`, which the buyer must accept, so the button says so and the wait afterwards
+ * is named; review 2026-10-27, Minor 4).
  */
 export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | 'refresh'>) {
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const buyer = view.role === 'buyer';
   const proposed = !buyer && view.cancelProposedBy === 'seller' && ['setup', 'funding'].includes(view.state);
-  const canCancel = buyer ? ['setup', 'funding'].includes(view.state) : view.state === 'funding' && view.cancelProposedBy === null;
+  const walkAway = !buyer && sellerMayWalkAway(view);
+  const canCancel = buyer ? ['setup', 'funding'].includes(view.state) : walkAway || (view.state === 'funding' && view.cancelProposedBy === null);
   const cancel = async () => {
     setBusy(true);
     setErr(null);
     try {
-      await postTradeEvent(view.code, { type: buyer ? 'buyer-cancel' : 'propose-cancel' });
+      await postTradeEvent(view.code, { type: buyer ? 'buyer-cancel' : walkAway ? 'walk-away' : 'propose-cancel' });
       await refresh();
     } catch (e) {
       // not-a-refusal: 409 on cancel: the trade has moved on (wrong-state, see NOT_REFUSAL_CODES)
@@ -122,7 +125,7 @@ export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | '
     <>
       {canCancel ? (
         <Button variant="primary" disabled={busy} onClick={() => void cancel()}>
-          {buyer ? 'Cancel' : 'Propose cancel'}
+          {buyer || walkAway ? 'Cancel' : 'Propose cancel'}
         </Button>
       ) : null}
       {proposed ? (
@@ -133,6 +136,15 @@ export function CancelTrade({ view, refresh }: Pick<TradeScreenProps, 'view' | '
       {err ? <p role="alert">{err}</p> : null}
     </>
   );
+}
+
+/**
+ * The seller may still walk away alone (machine.ts `walk-away`, Revision 2026-10-29b): in `setup`,
+ * or in `funding` before "Fund escrow" was tapped and before any coins were seen.
+ */
+export function sellerMayWalkAway(v: Pick<TradeView, 'state' | 'fundStartedAt' | 'receivedAtomic' | 'fundingSeenAt'>): boolean {
+  if (v.state === 'setup') return true;
+  return v.state === 'funding' && v.fundStartedAt === null && v.receivedAtomic === '0' && v.fundingSeenAt === null;
 }
 
 /**

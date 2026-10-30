@@ -61,6 +61,7 @@ export function tradeFromView(v: RefundView): Trade {
     setupBy: date(v.setupBy, 'setupBy'),
     fundBy: date(v.fundBy, 'fundBy'),
     fundingSeenAt: date(v.fundingSeenAt, 'fundingSeenAt'),
+    fundStartedAt: date(v.fundStartedAt ?? null, 'fundStartedAt'),
     lapsedAt: null,
     securedAt: date(v.securedAt, 'securedAt'),
     payBy: date(v.payBy, 'payBy'),
@@ -79,6 +80,8 @@ export function tradeFromView(v: RefundView): Trade {
     txHash: v.txHash,
     dispute: null,
     closedAt: date(v.closedAt, 'closedAt'),
+    cancelConfirmedAt: date(v.cancelConfirmedAt ?? null, 'cancelConfirmedAt'),
+    cancelConfirmableAt: date(v.cancelConfirmableAt ?? null, 'cancelConfirmableAt'),
   };
 }
 

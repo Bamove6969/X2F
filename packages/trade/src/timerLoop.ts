@@ -5,7 +5,7 @@
  * applies these events through the trade store in order and writes them; it lands with Task 6's
  * `applyEvent`.
  */
-import { TradeRuleError, apply, nextDeadline, type Trade, type TradeEvent } from './machine.js';
+import { TradeRuleError, apply, awaitingCancelConfirm, nextDeadline, type Trade, type TradeEvent } from './machine.js';
 import { TIMERS, addMin } from './timers.js';
 
 /** How often the API timer loop runs. */
@@ -61,7 +61,8 @@ export function timerEvents(trades: readonly Trade[], maintenanceSince: Date | n
 
 function decide(t: Trade, maintenanceSince: Date | null, now: Date): TimerEvent | null {
   if (maintenanceSince !== null) {
-    if (t.closedAt !== null || t.pausedAt !== null) return null;
+    // A closed trade has no timer, except a buyer's cancel waiting for the seller's Confirm cancel.
+    if ((t.closedAt !== null && !awaitingCancelConfirm(t)) || t.pausedAt !== null) return null;
     const from = Math.max(maintenanceSince.getTime(), t.takenAt.getTime());
     return { code: t.code, event: { type: 'pause' }, at: new Date(Math.min(from, now.getTime())) };
   }

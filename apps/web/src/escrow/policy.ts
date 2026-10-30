@@ -33,6 +33,8 @@ export interface PolicyTrade {
   amountAtomic: bigint;
   /** X2F's fee wallet, from the app's build config (VITE_FEE_WALLET), never from the API. */
   feeWallet: string;
+  /** When the buyer marked paid (the API's view), null before: no cancel of any kind after it (review round 2, N4). */
+  paidAt: string | null;
 }
 
 /** The trade as this device holds it: signed by both sides at setup, size worked out on the device. */
@@ -98,8 +100,8 @@ export function signsIn(kind: SettleKind, role: 'buyer' | 'seller'): boolean {
   return r.builder === role || r.cosigner === role;
 }
 
-/** Open states in which the buyer may cancel alone after funding (Task 2). */
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested', 'settling'];
+/** Open states in which the buyer may cancel alone after funding (Task 2); never `paid` (no cancel after "I've paid", Task 39 review I2). */
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested', 'settling'];
 const RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];
 
 function samePayouts(a: readonly Payout[], b: readonly Payout[]): boolean {
@@ -156,7 +158,8 @@ function check(c: PolicyContext, o: Outcome): boolean {
     if (route('release')) return true;
     if (route('lapse-refund')) return state === 'lapsed' && c.balance < sellerFundsAtomic;
     if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state);
-    if (route('mutual-cancel')) return true;
+    // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
+    if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
     return state === 'disputed' && is('release', 'mod', 'buyer');
   }
   if (route('release')) return RELEASE_STATES.includes(state);
