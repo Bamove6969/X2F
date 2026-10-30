@@ -76,6 +76,12 @@ const login = (loginName: string, password = GOOD, b = new Browser(app)) =>
 const backup = (loginName: string, code: string, b = new Browser(app)) =>
   b.post('/v1/login/backup', { loginName, kind: 'recovery-code', code, deviceLabel: 'T' });
 
+/** Every public table's pg_stats rows (sampled values, histograms) as one text. */
+async function statsDump(db: Deps['db']) {
+  const { rows } = await db.query<{ dump: string | null }>(`select string_agg(s::text, '') as dump from pg_stats s where schemaname = 'public'`);
+  return rows[0]!.dump ?? '';
+}
+
 async function tagRow(id: string) {
   const { rows } = await deps.db.query<{ login_tag: Buffer | null; login_tag_key_id: number | null; login_name: string | null; login_key: string | null }>(
     'select login_tag, login_tag_key_id, login_name, login_key from accounts where id = $1',
@@ -464,6 +470,9 @@ describe('no plaintext login name anywhere', () => {
       const { rows } = await deps.db.query<{ dump: string | null }>(`select string_agg(t::text, '') as dump from "${table_name}" t`);
       expect(clean(rows[0]!.dump ?? ''), table_name).toBe(true);
     }
+    // The planner's samples of every column (pg_stats over pg_statistic; FU-D round-2 N1) hold none either.
+    await deps.db.query('analyze');
+    expect(clean(await statsDump(deps.db)), 'pg_stats').toBe(true);
   });
 });
 
@@ -492,6 +501,9 @@ describe('migration 012 and the tag-login-names tool', () => {
         [{ names: { displayName: 'Shown.Four4', displayKey: 'shown.four4', loginName: 'Tool.Secret4', loginKey: 'tool.secret4' } }],
       );
       expect((await db.query("select kind from name_keys where key like 'tool.%'")).rows).toHaveLength(2);
+      // As autovacuum would have done by now: the planner's samples (pg_statistic) hold the names.
+      await db.query('analyze accounts, name_keys');
+      expect((await statsDump(db)).toLowerCase()).toContain('tool.secret1');
       await migrate(db);
       // 012 ends the waiting sign-up (and only it).
       expect((await db.query('select purpose from challenges')).rows).toEqual([{ purpose: 'login' }]);
@@ -535,6 +547,11 @@ describe('migration 012 and the tag-login-names tool', () => {
         { key: 'shown.one1', kind: 'display' }, { key: 'shown.three3', kind: 'display' }, { key: 'shown.two2', kind: 'display' },
       ]);
       expect(await tagLoginNames({ db, config })).toEqual({ tagged: 0 });
+      // Migration 012 step 1's SQL, as documented (FU-D round-2 N1): no sampled name is left in pg_stats.
+      for (const sql of ['ANALYZE accounts, name_keys', 'VACUUM FULL accounts, name_keys, pg_statistic', 'CHECKPOINT']) await db.query(sql);
+      const stats = (await statsDump(db)).toLowerCase();
+      expect(stats).toContain('shown.one1');
+      expect(stats).not.toContain('tool.secret');
       await assertLoginNamesTagged(db);
       // The tagged row is found by the login lookup.
       const found = loginNameLookup(config, 'TOOL.secret1').candidates;
