@@ -12,6 +12,8 @@ import type { EscrowStatus } from '../src/escrow/runtime.js';
 import { readConfirmed, storeConfirmed, type ConfirmedTrade } from '../src/screens/quote/confirmed.js';
 import { sellerView } from '../e2e/refundViews.js';
 import { registerTradeScreen, TradeRoom, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
+import { MEMBER_TRADE_COPY } from '../src/screens/settings/teamCopy.js';
+import { refreshSession } from '../src/session/useSession.js';
 import { render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
@@ -146,6 +148,26 @@ describe('a view whose code is another trade’s (Task 24 round-3 review, Import
       expect(r.host.querySelector('[data-spy]')).not.toBeNull();
     } finally {
       off();
+    }
+  });
+});
+
+describe('a team member’s device (Plan 2 Task 18, review I1/I2)', () => {
+  it('never starts the escrow, even with a stored copy, and says the owner’s device does it', async () => {
+    storeConfirmed(CODE, STORED);
+    vi.stubGlobal('fetch', vi.fn(async (url: string) =>
+      url === '/v1/account/me'
+        ? jsonResponse({ kind: 'trader', level: 'full', displayName: 'Calcium', member: { name: 'Aurora', roles: ['trades'] } })
+        : jsonResponse({ ...sellerView(), code: CODE })));
+    refreshSession();
+    try {
+      const r = await open({ confirmed: FROM_STATE });
+      for (let i = 0; i < 5; i++) await act(async () => await Promise.resolve());
+      expect(r.host.querySelector('[data-member]')).not.toBeNull();
+      expect(r.host.textContent).toContain(MEMBER_TRADE_COPY.roomWaiting);
+      expect(client.start).not.toHaveBeenCalled();
+    } finally {
+      refreshSession();
     }
   });
 });

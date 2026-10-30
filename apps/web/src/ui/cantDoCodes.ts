@@ -47,6 +47,12 @@ export const CANT_DO_CODES = [
   // Plan 2 Task 17 review round 2 (N-I3, N-M3): a session whose login waits may not log a stronger
   // one out, answer a strong login, or hide the hold's warnings.
   'weak-session',
+  // Plan 2 Task 18: team members (owner-only actions, a role a member lacks, the member limit,
+  // and escrow signing, which stays on the account owner's device until Plan 3 Task 42).
+  'owner-only',
+  'forbidden',
+  'too-many-members',
+  'member-cannot-sign',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -165,6 +171,7 @@ export const CANT_DO_TITLE = {
   approve: "This login can't be let in",
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
+  team: "This can't be done on the team",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -186,6 +193,11 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
     case 'offer-busy':
       // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
       return "This offer can't take more trades right now. Try again later or pick another offer.";
+    // Plan 2 Task 18: a team member's take (review I2: refused until Plan 3 Task 42).
+    case 'member-cannot-sign':
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return 'Your account cannot start this trade right now.';
   }
@@ -203,6 +215,10 @@ export function postCantDoText(code: CantDoCode): string {
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
       return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+    // Plan 2 Task 18: a team member without the Offers role.
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return "Your account can't post this offer right now.";
   }
@@ -354,4 +370,27 @@ export const WEAK_SESSION_TEXT =
 /** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
 export function holdApproveText(when: string): string {
   return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
+}
+
+/** The member limit's code (Plan 2 Task 18). */
+export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
+
+/**
+ * Team members (Plan 2 Task 18): what a team refusal says, on the Team screen and on any screen a
+ * member was refused on. `max` is the member limit the API sent with `too-many-members`.
+ * COPY-UNSIGNED
+ */
+export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
+  switch (code) {
+    case 'owner-only':
+      return 'Only the account owner can do this. Team members work on offers or trades, as their roles allow.';
+    case 'forbidden':
+      return "Your team role doesn't include this. The account owner can change your roles.";
+    case 'too-many-members':
+      return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
+    case 'member-cannot-sign':
+      return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    default:
+      return "This can't be done on the team right now.";
+  }
 }

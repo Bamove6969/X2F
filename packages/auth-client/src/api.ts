@@ -57,6 +57,8 @@ export class AuthApiError extends Error {
   readonly reason?: string;
   /** How a decided approval ended (409 `approval-ended`, Task 16). */
   readonly outcome?: 'approved' | 'blocked' | 'expired';
+  /** The team member limit (409 `too-many-members`, Plan 2 Task 18). */
+  readonly max?: number;
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -82,6 +84,7 @@ export class AuthApiError extends Error {
     }
     if (typeof extra.reason === 'string' && /^[a-z-]{1,40}$/.test(extra.reason)) this.reason = extra.reason;
     if (extra.outcome === 'approved' || extra.outcome === 'blocked' || extra.outcome === 'expired') this.outcome = extra.outcome;
+    if (typeof extra.max === 'number' && Number.isInteger(extra.max) && extra.max > 0) this.max = extra.max;
   }
 }
 
@@ -184,6 +187,45 @@ export interface AccountOverview {
   termsCurrent: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
+  /**
+   * Plan 2 Task 18: set when the caller is a team member (the overview is of the account they work
+   * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
+   */
+  member?: { name: string; roles: TeamRole[] } | null;
+}
+
+/** Plan 2 Task 18: a team member's roles (spec 6.7). */
+export type TeamRole = 'offers' | 'trades';
+
+/** Plan 2 Task 18: one member or open invite, as the account owner sees it (`GET /v1/team`). */
+export interface TeamMember {
+  id: string;
+  displayName: string;
+  roles: TeamRole[];
+  status: 'invited' | 'joining' | 'active';
+  inviteExpiresAt: string | null;
+  joinedAt: string | null;
+  createdAt: string;
+}
+
+/** Plan 2 Task 18: an invite as the person invited sees it (`POST /v1/team/invite`). */
+export interface TeamInviteView {
+  /** The team account's public display name. */
+  team: string;
+  displayName: string;
+  roles: TeamRole[];
+  expiresAt: string;
+}
+
+/** Plan 2 Task 18: one row of the account owner's audit log. */
+export interface TeamAuditEntry {
+  id: string;
+  at: string;
+  memberId: string;
+  memberName: string;
+  action: string;
+  tradeCode: string | null;
+  detail: unknown;
 }
 
 /** Task 11: one signed-in device. */
@@ -194,6 +236,8 @@ export interface SessionEntry {
   createdAt: string;
   lastSeenAt: string;
   current: boolean;
+  /** Plan 2 Task 18: the team member's name for a member's session, else null (optional on older builds). */
+  member?: string | null;
 }
 
 /** Task 11: one security alert. */
@@ -368,9 +412,31 @@ export interface AuthApi {
   getLogoutTimer(): Promise<LogoutTimer>;
   /** Full trader sessions only; applies to the current session at once. */
   setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
+
+  // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
+  getTeam(): Promise<{ members: TeamMember[]; max: number }>;
+  /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
+  inviteMember(b: { displayName: string; roles: TeamRole[] } & Token): Promise<{ id: string; invite: string; expiresAt: string }>;
+  /** Confirm `team-roles` (`teamRolesAction`). */
+  setMemberRoles(id: string, b: { roles: TeamRole[] } & Token): Promise<TeamMember>;
+  /** Confirm `team-remove` (`teamRemoveAction`); the member's sessions end at once. */
+  removeMember(id: string, b: Token): Promise<void>;
+  /** Newest first, at most 200 rows. */
+  teamAudit(q?: { from?: string; to?: string; member?: string }): Promise<TeamAuditEntry[]>;
+  // The invited person's side (no session yet).
+  readInvite(b: { invite: string }): Promise<TeamInviteView>;
+  joinStart(b: { invite: string; loginName: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
+  /** The PGP key proved: the member's login exists, no session yet; add the second factor before `setupUntil`. */
+  joinFinish(b: { challengeId: string; code: string }): Promise<{ setupId: string; needs: ('security-key' | 'passkey' | 'pgp')[]; setupUntil: string }>;
+  joinSecondPgpStart(b: { setupId: string; publicKey: string }): Promise<PgpChallenge & { fingerprint: string }>;
+  joinSecondPgpFinish(b: { setupId: string; challengeId: string; code: string; deviceLabel: string }): Promise<{ status: 'ok' }>;
+  joinSecondWebAuthnStart(b: { setupId: string; kind: WebAuthnKind }): Promise<RegistrationChallenge>;
+  joinSecondWebAuthnFinish(b: { setupId: string; challengeId: string; response: RegistrationResponseJSON; deviceLabel: string; label?: string }): Promise<{
+    status: 'ok';
+  }>;
 }
 
-type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
+type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A positive whole number of seconds from a `Retry-After` header; anything else (a date, junk) is ignored. */
 function retryAfterHeader(res: Response): number | undefined {
@@ -500,5 +566,25 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
     getLogoutTimer: () => get('/v1/account/security/logout-timer'),
     setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
+
+    getTeam: () => get('/v1/team'),
+    inviteMember: (b) => post('/v1/team/invites', b),
+    setMemberRoles: (id, b) => call('PATCH', `/v1/team/members/${seg(id)}`, b),
+    removeMember: (id, b) => done(call('DELETE', `/v1/team/members/${seg(id)}`, b)),
+    teamAudit: (q = {}) => {
+      const p = new URLSearchParams();
+      if (q.from !== undefined) p.set('from', q.from);
+      if (q.to !== undefined) p.set('to', q.to);
+      if (q.member !== undefined) p.set('member', q.member);
+      const qs = p.toString();
+      return get(`/v1/team/audit${qs === '' ? '' : `?${qs}`}`);
+    },
+    readInvite: (b) => post('/v1/team/invite', b),
+    joinStart: (b) => post('/v1/team/join/start', b),
+    joinFinish: (b) => post('/v1/team/join/finish', b),
+    joinSecondPgpStart: (b) => post('/v1/team/join/second/pgp/start', b),
+    joinSecondPgpFinish: (b) => post('/v1/team/join/second/pgp/finish', b),
+    joinSecondWebAuthnStart: (b) => post('/v1/team/join/second/webauthn/start', b),
+    joinSecondWebAuthnFinish: (b) => post('/v1/team/join/second/webauthn/finish', b),
   };
 }

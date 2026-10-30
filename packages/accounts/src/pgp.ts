@@ -232,6 +232,7 @@ export const PGP_PURPOSE = {
   register: 'create your account',
   login: 'log in',
   'add-key': 'add this PGP key to your account',
+  'team-join': 'join a team as a member',
 } as const;
 
 /** ISO 8601 to the second, with `Z`. */
