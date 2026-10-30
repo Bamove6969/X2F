@@ -461,6 +461,13 @@ const PHONES: Record<string, string[]> = {
   // Round 3: Unicode dashes and spaces inside one OCR word, and OCR look-alikes.
   'Unicode separators': ['415–555–0134', '415—555—0134', '06–12–34–56–78', '415‐555‐0134', '415−555−0134', '06\u202f12\u202f34\u202f56\u202f78', '06\u00a012\u00a034\u00a056\u00a078'],
   'OCR look-alikes': ['O6 12 34 56 78', '+44 77OO 9OO123', '0612 3456 7B', '(4l5) 555-Ol34', '+49 l7l l234567'],
+  // Round 4 (review R4-I1 to R4-M3): format characters, every Unicode dash, other-number digits,
+  // combining marks after digits, and Cyrillic or Greek look-alikes.
+  'Format characters': ['+972‎50‎123‎4567', '06‎ 12‎ 34‎ 56‎ 78', '06​-12​-34​-56​-78'],
+  'Unicode dashes (Pd, ー, ｰ, ⁃)': ['090ー1234ー5678', '０９０ー１２３４ー５６７８', '090ｰ1234ｰ5678', '050־123־4567', '415⁃555⁃0134', '415⸺555⸺0134', '415〜555〜0134', '415֊555֊0134', '415᠆555᠆0134', '415⸗555⸗0134', '415︲555︲0134'],
+  'Other-number digits': ['⁰⁶ ¹² ³⁴ ⁵⁶ ⁷⁸', '₀₆ ₁₂ ₃₄ ₅₆ ₇₈', '⓪⑥ ①② ③④ ⑤⑥ ⑦⑧', '❶❷❸ ❹❺❻ ❼❽❾❿'],
+  'Combining marks after digits': ['0̂6 1̂2 3̂4 5̂6 7̂8', '0️⃣6️⃣ 12 34 56 78'],
+  'Cyrillic and Greek look-alikes': ['06 12 3Ο 56 78', '06 12 3О 56 78', '06 12 З4 56 78'],
 };
 
 describe('phone formats per country', () => {
@@ -578,5 +585,92 @@ describe('review round 3 (2026-10-30)', () => {
   it('other masked forms from the round-3 table', () => {
     expect(masked(ocr('Tel 08031234567'))).toEqual([['08031234567', 'account']]);
     expect(detectSensitiveText('call 08031234567')).toEqual(['account']);
+  });
+});
+
+describe('review round 4 (2026-10-30)', () => {
+  const ADDR = ['44AFFq5kSiGBoZ4NMDwYtN18', 'obc8AemS33DBLWs3H7otXft3', 'XjrpDtQGv7SqSsaBYBb98uNb', 'r2VBBEt7f2wfn3RVGQBEP3A'];
+
+  it('R4-I1: invisible format characters and line separators inside a number, in notes', () => {
+    for (const s of [
+      'card 4111​1111​1111​1111',
+      'card 4111‌1111‌1111‌1111',
+      'card 4111‍1111‍1111‍1111',
+      'card 4111⁠1111⁠1111⁠1111',
+      'card 4111­1111­1111­1111',
+      'card 4111‎ 1111‎ 1111‎ 1111',
+      'card 4​1​1​1​1​1​1​1​1​1​1​1​1​1​1​1',
+      'card 4111 1111 1111 1111',
+      'card 4111 1111 1111 1111',
+      'card 4111\u00851111\u00851111\u00851111',
+      'card 4111⁦1111⁩1111‏1111',
+      'card 4111﻿1111﻿1111﻿1111',
+    ]) {
+      expect(detectSensitiveText(s), JSON.stringify(s)).toEqual(['card']);
+    }
+    expect(detectSensitiveText('iban DE89​3704​0044​0532​0130​00')).toEqual(['iban']);
+    expect(detectSensitiveText('iban DE89­3704­0044­0532­0130­00')).toEqual(['iban']);
+    expect(detectSensitiveText('call 06​12​34​56​78')).toEqual(['account']);
+    expect(detectSensitiveText('call 061​234​5678')).toEqual(['account']);
+    expect(detectSensitiveText('call +972‎50‎123‎4567')).toEqual(['phone']);
+    expect(detectSensitiveText('jane​@example.com')).toEqual(['email']);
+    expect(detectSensitiveText(`send to ${ADDR.join('​')}`)).toEqual(['account']);
+  });
+
+  it('R4-I1: format characters in OCR words, with regions on the original columns', () => {
+    expect(masked(ocr('Tel 06​12​34​56​78'))).toEqual([['06​12​34​56​78', 'account']]);
+    expect(masked(ocr('Card 4111­1111­1111­1111'))).toEqual([['4111­1111­1111­1111', 'card']]);
+    // The kept code, a deleted character, then a number: 29 columns, the number starts at column 21.
+    const rs = detectSensitive(ocr('K7M2-9QXA-4FTR-8WPN​/12345678'), KEEP);
+    expect(rs).toEqual([{ x0: 200, y0: 0, x1: 290, y1: 16, kind: 'account' }]);
+    // A code written with format characters inside it is still kept.
+    expect(detectSensitive(ocr('Code K7M2​-9QXA-4FTR-8WPN'), KEEP)).toEqual([]);
+  });
+
+  it('R4-I2: every Unicode dash, the long-vowel mark and the hyphen bullet join digit groups', () => {
+    for (const s of ['電話 090ー1234ー5678', '電話 ０９０ー１２３４ー５６７８', 'call 090ｰ1234ｰ5678', 'tel 050־123־4567']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+    for (const d of ['ー', '־', '⁃', '⸺', '〜', '֊', '᠆', '⸗', '︲']) {
+      expect(detectSensitiveText(`card 4111${d}1111${d}1111${d}1111`), d).toEqual(['card']);
+    }
+    expect(masked(ocr('Tel 090ー1234ー5678'))).toEqual([['090ー1234ー5678', 'phone']]);
+    expect(masked(ocr('Card 4111⁃ 1111 1111 1111'))).toEqual(['4111⁃', '1111', '1111', '1111'].map((t) => [t, 'card']));
+    // Normalisation does not invent details.
+    for (const s of ['コーヒー 2 杯、10〜15 分', 'took 10ー15 min', 'Code K7M2ー9QXAー4FTRー8WPN done']) expect(detectSensitiveText(s), s).toEqual([]);
+  });
+
+  it('R4-M1: superscript, subscript, circled and dingbat digits are digits', () => {
+    for (const s of ['call ⁰⁶ ¹² ³⁴ ⁵⁶ ⁷⁸', 'call ₀₆ ₁₂ ₃₄ ₅₆ ₇₈', 'call ⓪⑥ ①② ③④ ⑤⑥ ⑦⑧']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+    expect(detectSensitiveText('card ④①①① ①①①① ①①①① ①①①①')).toEqual(['card']);
+    expect(detectSensitiveText('call ❶❷❸❹❺❻❼❽❾')).toEqual(['account']);
+    // Folds to several characters: ⑩ is 10, ⒈ is "1.".
+    expect(detectSensitiveText('acct ⑩⑪⑫⑬')).toEqual(['account']);
+    expect(masked(ocr('Card ④①①① ①①①① ①①①① ①①①①'))).toEqual(['④①①①', '①①①①', '①①①①', '①①①①'].map((t) => [t, 'card']));
+  });
+
+  it('R4-M2: combining marks and keycaps after digits', () => {
+    expect(detectSensitiveText('card 4111́ 1111́ 1111́ 1111')).toEqual(['card']);
+    expect(detectSensitiveText('call 0̂6 1̂2 3̂4 5̂6 7̂8')).toEqual(['phone']);
+    const key = (d: string): string => [...d].map((c) => `${c}️⃣`).join('');
+    expect(detectSensitiveText(`card ${key('4111')} 1111 1111 1111`)).toEqual(['card']);
+    expect(detectSensitiveText(`card ${key('4111111111111111')}`)).toEqual(['card']);
+    expect(masked(ocr(`Card ${key('4111')} 1111 1111 1111`))).toEqual([key('4111'), '1111', '1111', '1111'].map((t) => [t, 'card']));
+    // A combining mark on a letter is left alone.
+    expect(detectSensitiveText('Café 12, très bien')).toEqual([]);
+  });
+
+  it('R4-M3: Cyrillic and Greek look-alikes in digit groups', () => {
+    for (const s of ['call 06 12 3Ο 56 78', 'call 06 12 3О 56 78', 'call 06 12 З4 56 78']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+    expect(detectSensitiveText('iban DE89 37О4 ОО44 О532 О13О ОО')).toContain('account');
+    // Cyrillic and Greek words are not numbers.
+    for (const s of ['Отлично, 10 из 10', 'Όλα καλά 5 ο 5']) expect(detectSensitiveText(s), s).toEqual([]);
+  });
+
+  it('R4-M5: a currency code counts only as a code: capitals, not a common word, or a known lowercase code', () => {
+    for (const s of ['text 347.1234567 Ron', 'call 347.1234567 bam', '347.1234567 Cad', 'call me 347.1234567 TRY', '347.1234567 TOP']) {
+      expect(detectSensitiveText(s), s).toEqual(['phone']);
+    }
+    for (const s of ['347.1234567 EUR', '347.1234567 usd', '347.1234567 xmr', '$347.1234567', 'got 0.12345678 Monero', 'got 0.1234 CAD']) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
   });
 });
