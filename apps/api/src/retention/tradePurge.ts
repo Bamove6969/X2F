@@ -47,18 +47,38 @@ import { PURGE_ROLE } from '../trades/purge.js';
  * - Plan 5 Task 14 `trade_proofs`: delete the trade's proofs here.
  * - Plan 4 must move a dispute to `final` or `closed` (or leave `ruled` with a lapsed appeal
  *   window); until then a disputed trade is kept (fail-safe, never early).
- * - (review I4a) The moderation watch (@x2f/trade watch.ts, WATCH_CLOSED_DAYS 30, counted from
- *   when moderation SAW the close, never before the API's closed_at) keeps watching a closed
+ * - (review I4a, R2-I1) The moderation watch (@x2f/trade watch.ts, WATCH_CLOSED_DAYS 30, counted
+ *   from when moderation SAW the close, never before the API's closed_at) keeps watching a closed
  *   escrow for late funds after this purge would delete it, and watches a lapsed trade that closed
- *   empty as open forever. Before on: purge only once the watch has dropped the escrow (the
- *   moderation service confirms the drop), or keep WATCH_CLOSED_DAYS plus a margin past closed_at;
- *   and a `late-funds` report for an unknown trade code must fail LOUDLY to staff (never a quiet
- *   404). Tripwire NEEDS_I4_WATCH_DROP.
+ *   empty as open forever. Late funds are wired since Plan 3 Task 9 I/O (`late-funds`, to
+ *   `escalate`). Before on: purge only once the watch has dropped the escrow (the moderation
+ *   service confirms the drop), or keep WATCH_CLOSED_DAYS plus a margin past closed_at; and a
+ *   `late-funds` report for an unknown trade code must fail LOUDLY to staff (never a quiet 404).
+ *   The "stays off" gate requires this; tripwire NEEDS_I4_WATCH_DROP fires once the moderation
+ *   service reports a drop to the API (a `watch-dropped` kind or a `watching` value) and the purge
+ *   does not read it.
+ * - (review R2-I2) Escrow shown empty: never purge unless the escrow is shown empty (the
+ *   watcher's last facts show every incoming tx swept and nothing in the pool or newer, recorded
+ *   on the API, e.g. a per-trade `escrow_empty_at`); unknown = may hold coins (fail closed), so
+ *   the trade is kept (`escrowEmpty`/`mayHoldCoins` in RetentionFacts, `tradeDeleteAt` null while
+ *   coins may remain). The owner's surplus rule (a surplus stays in the escrow until the seller
+ *   disputes) depends on it: without it the purge would delete the trade, and the seller's way to
+ *   dispute, while the escrow still holds coins. The moderation purge deletes `mod_wallet_secrets`,
+ *   `mod_escrow_state` and `mod_party_state` only after the same fact AND the watch drop, never
+ *   off the API's deletion alone. Once the surplus rule ships, the Settings → Privacy "on" copy
+ *   needs a line that a trade whose escrow still holds coins is kept until they are sent
+ *   (COPY-UNSIGNED). Tripwire NEEDS_ESCROW_EMPTY_GATE.
  * - (review I4b) Plan 4 Task 25 liens and trading holds with `dispute_code` name a trade or
  *   dispute: the purge must keep the trade while a lien or hold names it. Tripwire NEEDS_I4_LIENS.
- * - (review I5) The x2f_moderation database keeps per-trade rows this purge never reaches:
+ * - (review I5, R2-I1) The x2f_moderation database keeps per-trade rows this purge never reaches:
  *   `mod_party_state`, `mod_wallet_secrets` and `signed_terms` (payout and refund addresses, amounts
- *   and currency). Each must be deleted with the trade (Owed). Tripwire NEEDS_I5_MOD_ROWS.
+ *   and currency), and from Plan 3 Task 9 I/O `mod_escrow_state` (the moderator's sealed escrow
+ *   wallet; with `mod_wallet_secrets` the escrow key material, deleted only once the escrow is
+ *   shown empty, see R2-I2), `mod_watch` (escrow address, watch state) and `mod_sweeps` (sweep tx
+ *   hashes; deleted only after the watch has dropped the trade, since it stops a sweep being
+ *   counted for two trades). Each must be deleted with the trade (Owed). Tripwire NEEDS_I5_MOD_ROWS.
+ * - (review R2-m1) `X2F_TRADE_PURGE=on` is refused outside tests until config.ts
+ *   `TRADE_PURGE_READY` is true; a tripwire refuses true until every seam above has landed.
  */
 
 /** Trades read per scan page. */
@@ -122,8 +142,11 @@ export async function retentionFacts(q: Queryable, code: string, now: Date): Pro
   return rows[0] ? toFacts(rows[0]) : null;
 }
 
-/** When the trade self-destructs as of `now` (TradeView.deleteAt), or null while it is kept with no date. */
+/** When the trade self-destructs as of `now` (TradeView.deleteAt), or null while it is kept with no date (and during site maintenance). */
 export async function tradeDeleteDate(q: Queryable, code: string, now: Date): Promise<Date | null> {
+  // Review R2-m2: no date during site maintenance, as no pass runs then (the room must not show a
+  // trade as self-destructed while the server still holds it).
+  if (await inMaintenance(q)) return null;
   const f = await retentionFacts(q, code, now);
   return f === null ? null : tradeDeleteAt(f);
 }

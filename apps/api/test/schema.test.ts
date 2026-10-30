@@ -6,7 +6,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
-import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
+import { TRADE_PURGE_READY, assertSigningKeyFile, loadConfig, subkey, tradePurgeFlag } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { assertLoginNamesTagged, tagLoginNames } from '../src/accounts.js';
 import { emptyDb, testDb } from './helpers/db.js';
@@ -534,6 +534,18 @@ describe('config', () => {
       expect(() => loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: bad })).toThrow(/X2F_TRADE_PURGE/);
       expect(() => loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: bad })).not.toThrow(new RegExp(`\\b${bad}\\b`));
     }
+  });
+
+  it('X2F_TRADE_PURGE=on is refused outside tests until TRADE_PURGE_READY (review R2-m1)', () => {
+    expect(TRADE_PURGE_READY).toBe(false);
+    // Outside tests (no VITEST), not ready: on stops start-up; off and the default still start.
+    expect(() => tradePurgeFlag('on', false, false)).toThrow(/X2F_TRADE_PURGE=on is refused.*TRADE_PURGE_READY/);
+    expect(tradePurgeFlag('off', false, false)).toBe(false);
+    expect(tradePurgeFlag(undefined, false, false)).toBe(false);
+    expect(() => tradePurgeFlag('ON', false, false)).toThrow(/X2F_TRADE_PURGE is malformed/);
+    // Ready, or under vitest: on turns it on.
+    expect(tradePurgeFlag('on', true, false)).toBe(true);
+    expect(tradePurgeFlag('on', false, true)).toBe(true);
   });
 
   it('refuses a key ring file owned by another user (review M4)', async () => {

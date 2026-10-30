@@ -20,14 +20,14 @@ const sqlCode = (s: string) => s.replace(/--[^\n]*/g, '');
 const tsCode = (s: string) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:'"`])\/\/[^\n]*/g, '$1');
 const sqlDir = (dir: string) =>
   existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.sql')).map((f) => sqlCode(readFileSync(`${dir}${f}`, 'utf8'))).join('\n') : '';
-/** Every .ts file under `dir`, comments stripped, by path. */
+/** Every .ts/.tsx file under `dir`, comments stripped, by path. */
 function tsTree(dir: string): Map<string, string> {
   const out = new Map<string, string>();
   if (!existsSync(dir)) return out;
   for (const f of readdirSync(dir)) {
     const p = `${dir}${f}`;
     if (statSync(p).isDirectory()) for (const [k, v] of tsTree(`${p}/`)) out.set(k, v);
-    else if (f.endsWith('.ts')) out.set(p, tsCode(readFileSync(p, 'utf8')));
+    else if (/\.tsx?$/.test(f)) out.set(p, tsCode(readFileSync(p, 'utf8')));
   }
   return out;
 }
@@ -40,6 +40,15 @@ const jobs = readFileSync(`${API}src/retentionJobs.ts`, 'utf8');
 const apiSrc = tsTree(`${API}src/`);
 const modSrc = tsTree(`${MOD}src/`);
 const config = tsCode(readFileSync(`${API}src/config.ts`, 'utf8'));
+const APPS = fileURLToPath(new URL('../../', import.meta.url));
+const TRADE_SRC = fileURLToPath(new URL('../../../packages/trade/src/', import.meta.url));
+/** Every app's src (apps/*\/src) and packages/trade/src, comments stripped, by path. */
+const allSrc = new Map<string, string>([
+  ...readdirSync(APPS).flatMap((a) => [...tsTree(`${APPS}${a}/src/`)]),
+  ...tsTree(TRADE_SRC),
+]);
+/** Every app's migrations, `--` comments stripped. */
+const allMigrations = readdirSync(APPS).map((a) => sqlDir(`${APPS}${a}/migrations/`)).join('\n');
 
 /** The moderation tables keyed by a trade code (a `trade` column), from its migrations. */
 function modTradeTables(): string[] {
@@ -49,7 +58,24 @@ function modTradeTables(): string[] {
   }
   return out.sort();
 }
-const MOD_OWED = ['mod_party_state', 'mod_wallet_secrets', 'signed_terms'];
+// mod_escrow_state, mod_watch and mod_sweeps come with Plan 3 Task 9 I/O (moderation 003/005, review
+// R2-I1): listed now so the tripwire stays green when Task 9 lands.
+const MOD_OWED = ['mod_escrow_state', 'mod_party_state', 'mod_sweeps', 'mod_wallet_secrets', 'mod_watch', 'signed_terms'];
+/** The moderator's escrow key material and party state: deleted only once the escrow is shown empty and the watch dropped it. */
+const MOD_KEYS = ['mod_escrow_state', 'mod_party_state', 'mod_wallet_secrets'];
+/** The purge (or a moderation purge) reads the escrow-empty fact (review R2-I2). */
+const ESCROW_EMPTY = /escrow_empty|escrowEmpty|mayHoldCoins/;
+/** The purge reads the moderation watch's drop of the escrow (review I4a). */
+const WATCH_DROP = /watchDropped|watch_dropped|watch-dropped/;
+/**
+ * The two lines of today's release payout (@x2f/trade payouts.ts) that pay a surplus to the
+ * seller's refund address. The owner's surplus rule (the surplus stays in the escrow until the
+ * seller disputes) must change them, so they do not count as the surplus feature landing.
+ */
+const TODAY_SURPLUS = [/const surplus = balance - f\.sellerFundsAtomic;/g, /\{ address: f\.sellerRefund, amountAtomic: surplus \}/g];
+/** TRADE_PURGE_READY (config.ts) lets X2F_TRADE_PURGE=on through outside tests (review R2-m1). */
+const ready = /\bTRADE_PURGE_READY\s*(?::\s*boolean\s*)?=\s*true\b/.test(config);
+
 
 describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
   it('NEEDS_PLAN_4_TASK_32_LEDGER: the revenue ledger holds a trade before it is purged (a real query, review M5)', () => {
@@ -79,13 +105,17 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
     }
   });
 
-  it('NEEDS_I4_WATCH_DROP: once late funds are acted on, the purge waits for the moderation watch to drop the escrow (review I4a)', () => {
+  it('NEEDS_I4_WATCH_DROP: once the moderation watch reports dropping an escrow, the purge waits for that drop (review I4a, R2-I1)', () => {
     // The watch (@x2f/trade watch.ts) keeps watching WATCH_CLOSED_DAYS after it SAW the close, and
-    // watches a lapsed trade that closed empty as open. When an app wires `late-funds` (to
-    // `escalate`), the purge must wait for the watch's drop or keep WATCH_CLOSED_DAYS plus a margin,
-    // and a late-funds report for an unknown trade must fail loudly to staff.
-    const wired = [...apiSrc, ...modSrc].filter(([p, s]) => !p.endsWith('tradePurge.ts') && /['"`]late-funds['"`]/.test(s)).map(([p]) => p);
-    if (wired.length > 0) expect(purge, `late-funds is wired in ${wired.join(', ')}: see tradePurge.ts SEAMS (I4a)`).toMatch(/WATCH_CLOSED_DAYS|watchDropped|watch_dropped/);
+    // watches a lapsed trade that closed empty as open. Late funds are wired today (Task 9 I/O,
+    // `'late-funds'`), so that condition is in the "stays off" gate below. This one fires on a FUTURE
+    // drop report: a `'watch-dropped'` kind, a `watching` value reported to the API, or a
+    // `watch_dropped` column in a migration. The purge must then read it before it deletes.
+    const report = [...allSrc]
+      .filter(([p, s]) => !p.endsWith('tradePurge.ts') && (/['"`]watch-dropped['"`]/.test(s) || /\breport\(\s*\{[^}]*\bwatching\s*:/.test(s) || (p.startsWith(API) && /['"`]watching['"`]/.test(s))))
+      .map(([p]) => p);
+    if (/\bwatch_dropped/i.test(allMigrations)) report.push('a migration (watch_dropped)');
+    if (report.length > 0) expect(purge, `a watch-drop report exists in ${report.join(', ')}: the purge must read it (tradePurge.ts SEAMS, I4a)`).toMatch(WATCH_DROP);
   });
 
   it('NEEDS_I4_LIENS: the purge keeps a trade while a lien or a trading hold names it (review I4b)', () => {
@@ -110,14 +140,47 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
     }
   });
 
+  it('NEEDS_ESCROW_EMPTY_GATE: once the surplus rule lands, the purge keeps a trade unless its escrow is shown empty (review R2-I2)', () => {
+    // Owner rule: a surplus stays in the escrow until the seller disputes. Never purge unless the
+    // escrow is shown empty; unknown = may hold coins (fail closed). Fires on `surplus` in any app's
+    // src, packages/trade/src or a migration (today's payout lines excepted), or on a watcher report
+    // kind such as `'escrow-empty'`.
+    const hits = [...allSrc]
+      .filter(([p, s]) => {
+        if (p.endsWith('tradePurge.ts')) return false;
+        const code = TODAY_SURPLUS.reduce((c, re) => c.replace(re, ''), s);
+        return /surplus/i.test(code) || /['"`]escrow-empty['"`]/.test(code);
+      })
+      .map(([p]) => p);
+    if (/surplus/i.test(allMigrations)) hits.push('a migration (surplus)');
+    if (hits.length > 0) expect(purge, `the surplus rule or an escrow-empty report exists in ${hits.join(', ')}: the purge must keep a trade unless its escrow is shown empty (tradePurge.ts SEAMS)`).toMatch(ESCROW_EMPTY);
+    // The moderation purge deletes the escrow key material only after the same fact and the watch drop.
+    const deletes = [...modSrc.values()].join('\n');
+    if (MOD_KEYS.some((t) => new RegExp(`delete from ${t}\\b`, 'i').test(deletes))) {
+      expect(deletes, 'the moderation purge deletes escrow key material: it must wait until the escrow is shown empty').toMatch(ESCROW_EMPTY);
+      expect(deletes, 'the moderation purge deletes escrow key material: it must wait for the watch drop').toMatch(/watching\s*=\s*false|not\s+watching|watchDropped|watch_dropped/);
+    }
+  });
+
+  /** Every seam above has landed (the "stays off" gate and TRADE_PURGE_READY). */
+  function expectSeamsLanded(why: string) {
+    expect(migrations, why).toMatch(/create table (if not exists )?revenue_ledger/i);
+    expect(migrations, why).toMatch(/create table (if not exists )?daily_stats/i);
+    expect(migrations, why).toMatch(/create table (if not exists )?account_totals/i);
+    // Late funds are wired (Task 9 I/O): the purge waits for the watch drop or WATCH_CLOSED_DAYS plus a margin (I4a).
+    expect(purge, why).toMatch(/WATCH_CLOSED_DAYS|watchDropped|watch_dropped/);
+    expect(purge, why).toMatch(ESCROW_EMPTY);
+    const deletes = [...modSrc.values()].join('\n');
+    for (const t of MOD_OWED) expect(deletes, why).toMatch(new RegExp(`delete from ${t}\\b`, 'i'));
+  }
+
   it('X2F_TRADE_PURGE stays off by default until every seam above has landed', () => {
     const defaultOn = /X2F_TRADE_PURGE\s*\|\|\s*['"]on['"]/.test(config);
-    if (!defaultOn) return;
-    expect(migrations).toMatch(/create table (if not exists )?revenue_ledger/i);
-    expect(migrations).toMatch(/create table (if not exists )?daily_stats/i);
-    expect(migrations).toMatch(/create table (if not exists )?account_totals/i);
-    expect(purge).toMatch(/WATCH_CLOSED_DAYS|watchDropped|watch_dropped/);
-    const deletes = [...modSrc.values()].join('\n');
-    for (const t of MOD_OWED) expect(deletes).toMatch(new RegExp(`delete from ${t}\\b`, 'i'));
+    if (defaultOn) expectSeamsLanded('X2F_TRADE_PURGE defaults to on');
+  });
+
+  it('TRADE_PURGE_READY (config.ts) stays false until every seam above has landed (review R2-m1)', () => {
+    expect(config).toMatch(/\bTRADE_PURGE_READY\b/);
+    if (ready) expectSeamsLanded('TRADE_PURGE_READY is true');
   });
 });

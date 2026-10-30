@@ -41,7 +41,8 @@ export interface Config {
    * `X2F_TRADE_PURGE` (`off` by default, or `on`): whether Plan 7's whole-trade purge deletes
    * anything. It stays off in production until the revenue ledger (Plan 4 Task 32), the daily
    * statistics (Plan 7 Task 14) and Plan 5's reviews, proofs and running totals record a trade
-   * before it goes (lead decision 2026-10-30; docs/dev-setup.md).
+   * before it goes (lead decision 2026-10-30; docs/dev-setup.md). Outside tests `on` is refused
+   * until TRADE_PURGE_READY (review R2-m1).
    */
   tradePurge: boolean;
 }
@@ -64,6 +65,27 @@ const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$
 function missing(name: string): Error {
   return new Error(`config: ${name} is missing`);
 }
+/**
+ * Review R2-m1: `X2F_TRADE_PURGE=on` is refused outside tests until this is true. It stays false
+ * until every MUST-LAND-BEFORE seam in the tradePurge.ts SEAMS has landed (docs/coordination.md
+ * Plan 7, docs/dev-setup.md); the tripwire in apps/api/test/tradePurge-tripwires.test.ts fails if
+ * it is set true before then.
+ */
+export const TRADE_PURGE_READY: boolean = false;
+
+/**
+ * `X2F_TRADE_PURGE` as a flag: `off` (default) or `on`; anything else is malformed. `on` is
+ * refused unless `ready` (TRADE_PURGE_READY) or `inTests` (vitest, which sets VITEST).
+ */
+export function tradePurgeFlag(value: string | undefined, ready: boolean, inTests: boolean): boolean {
+  const purge = value || 'off';
+  if (purge !== 'on' && purge !== 'off') throw malformed('X2F_TRADE_PURGE', 'on or off');
+  if (purge === 'on' && !ready && !inTests) {
+    throw new Error('config: X2F_TRADE_PURGE=on is refused until the self-destruct seams have landed (TRADE_PURGE_READY, docs/dev-setup.md)');
+  }
+  return purge === 'on';
+}
+
 function malformed(name: string, why: string): Error {
   return new Error(`config: ${name} is malformed (${why})`);
 }
@@ -218,9 +240,7 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
-  const purge = env.X2F_TRADE_PURGE || 'off';
-  if (purge !== 'on' && purge !== 'off') throw malformed('X2F_TRADE_PURGE', 'on or off');
-  const tradePurge = purge === 'on';
+  const tradePurge = tradePurgeFlag(env.X2F_TRADE_PURGE, TRADE_PURGE_READY, process.env.VITEST === 'true');
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
     ['X2F_LOGIN_NAME_KEYS', loginNameKeys],
