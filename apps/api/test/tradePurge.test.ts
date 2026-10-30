@@ -4,7 +4,7 @@
 import { randomBytes } from 'node:crypto';
 import { DISPUTE_KEEP_DAYS, TRADE_KEEP_DAYS, type Trade } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { startRetention, type RetentionLog } from '../src/retention.js';
 import { TRADE_CHILD_TABLES, purgeTrades, purgeTradesJob, setTradePurge, tradeDeleteDate } from '../src/retention/tradePurge.js';
@@ -181,6 +181,28 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect(await exists(t.code)).toBe(false);
   });
 
+  it('a buyer\'s dispute opened inside the 48-hour after-refund window (Task 38) keeps the trade until 90 days after it', async () => {
+    const { t } = await tradeIn('secured');
+    const refunded = await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    const closed = refunded.closedAt!;
+    await addTradeRecords(t.code);
+    // Hour 47 of TIMERS.disputeAfterRefundHours (48): the machine still accepts the buyer's dispute.
+    const button = new Date(closed.getTime() + 47 * 3_600_000);
+    expect((await openDispute(t.code, button, true)).state).toBe('disputed');
+    // Open: never, well past the 30 days and the 90.
+    expect(await tradeDeleteDate(deps.db, t.code, button)).toBeNull();
+    await purgeTrades(deps.db, new Date(button.getTime() + (DISPUTE_KEEP_DAYS + 50) * DAY));
+    expect(await exists(t.code)).toBe(true);
+    // Closed (final ruling): 90 days from the button, not 1 ms before.
+    await settleDispute(t.code, new Date(button.getTime() + 10 * DAY), 'refund-to-seller');
+    const due = new Date(button.getTime() + DISPUTE_KEEP_DAYS * DAY);
+    await purgeTrades(deps.db, new Date(due.getTime() - 1));
+    expect(await exists(t.code)).toBe(true);
+    await purgeTrades(deps.db, due);
+    expect(await exists(t.code)).toBe(false);
+    expect(await rowsNaming(t.code)).toEqual([]);
+  });
+
   it('a dispute opened while the purge waits for the trade\'s lock keeps the trade (no race)', async () => {
     const { t } = await tradeIn('released');
     const due = at(TRADE_KEEP_DAYS + 1);
@@ -200,6 +222,13 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect((await escalating).state).toBe('disputed');
     expect(await purging).toBe(0);
     expect(await exists(t.code)).toBe(true);
+  });
+
+  it('a fresh process starts with the purge off: the job touches no row until setTradePurge(true)', async () => {
+    vi.resetModules();
+    const fresh = await import('../src/retention/tradePurge.js');
+    const untouched = { query: () => Promise.reject(new Error('the purge touched the database while off')) };
+    expect(await fresh.purgeTradesJob.run(untouched as never, at(5_000))).toBe(0);
   });
 
   it('the job deletes nothing while X2F_TRADE_PURGE is off (the default)', async () => {
