@@ -1460,6 +1460,9 @@ describe('the route lists', () => {
     expect(src('trades/take.ts')).toContain("'/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }");
     expect(src('offers/routes.ts')).toContain("'/v1/offers', { preHandler: [requireTrader, requireNotHeld] }");
     expect(src('wallets/routes.ts')).toContain("'/v1/wallets/:id', { preHandler: [session, requireNotHeld] }");
+    // Plan 2 Task 18 (owner 2026-10-30): the three team writes check the hold before spending the confirm token.
+    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(3);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now);').length - 1).toBe(3);
     // The trade-finishing routes stay open during the hold, to backup sessions too.
     for (const f of ['trades/routes.ts', 'disputes/routes.ts']) {
       expect(src(f)).not.toContain('requireNotHeld');

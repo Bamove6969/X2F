@@ -828,6 +828,101 @@ function sources(dir: string): string[] {
   return out;
 }
 
+describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
+  /** Starts a hold on `accountId` (an hour old, 23 hours to go); returns its end. */
+  async function hold(accountId: string): Promise<Date> {
+    const now = deps.clock();
+    const until = new Date(now.getTime() + 23 * 3_600_000);
+    await deps.db.query(
+      `insert into account_holds (account_id, started_at, hold_until, reason, pending_change, started_methods, started_by)
+       values ($1, $2, $3, 'weak-new-device', null, '{}', null)`,
+      [accountId, new Date(now.getTime() - 3_600_000), until],
+    );
+    return until;
+  }
+  /** The hold's time is up (it ends at the next check, `holdInTx`). */
+  const timeUp = (accountId: string) =>
+    deps.db.query('update account_holds set hold_until = $2 where account_id = $1', [accountId, new Date(deps.clock().getTime() - 1000)]);
+  const teamOf = async (accountId: string) =>
+    (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
+      'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
+    )).rows;
+
+  it('an invite is refused with recovery-hold, writes nothing and spends no confirm token; after the hold the same request goes through', async () => {
+    const owner = await team();
+    const until = await hold(owner.id);
+    const displayName = `Held${++n}x`;
+    const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
+    const res = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+    expect(await teamOf(owner.id)).toEqual([]);
+    await timeUp(owner.id);
+    const ok = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+    expect(ok.statusCode, ok.body).toBe(201);
+    expect((await teamOf(owner.id)).map((r) => r.display_name)).toEqual([displayName]);
+    expect((await deps.db.query('select 1 from account_holds where account_id = $1', [owner.id])).rowCount).toBe(0);
+  });
+
+  it("a role change is refused with recovery-hold and the member's roles stay; after the hold it applies", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const until = await hold(owner.id);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'offers,trades' });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers', 'trades'], confirmToken });
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers']);
+    await timeUp(owner.id);
+    const ok = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers', 'trades'], confirmToken });
+    expect(ok.statusCode, ok.body).toBe(200);
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+  });
+
+  it('a removal is refused with recovery-hold and the member stays logged in; after the hold it ends their sessions', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const until = await hold(owner.id);
+    const confirmToken = await confirmed(owner, { kind: 'team-remove', memberId: m.id });
+    const del = () => app.inject({
+      method: 'DELETE', url: `/v1/team/members/${m.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
+    });
+    const res = await del();
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+    expect((await teamOf(owner.id))[0]!.removed_at).toBeNull();
+    expect((await m.browser.get('/v1/account/me')).statusCode).toBe(200);
+    await timeUp(owner.id);
+    expect((await del()).statusCode).toBe(204);
+    expect((await teamOf(owner.id))[0]!.removed_at).not.toBeNull();
+    expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
+  });
+
+  it('a hold that starts after the preHandler check still refuses the write, under the account lock (ownerWriteGate)', async () => {
+    const owner = await team();
+    const displayName = `Late${++n}x`;
+    const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
+    // requireConfirm runs after requireNotHeld: the hold starts right after the token is spent.
+    let until: Date | null = null;
+    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
+      const out = await orig(...args);
+      if (until === null && typeof args[0] === 'string' && args[0].includes('update confirm_tokens')) until = await hold(owner.id);
+      return out;
+    }) as never);
+    let res;
+    try {
+      res = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+    } finally {
+      q.mockRestore();
+    }
+    expect(until).not.toBeNull();
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until!.toISOString() });
+    expect(await teamOf(owner.id)).toEqual([]);
+  });
+});
+
 describe('Task 18 seams', () => {
   it('NEEDS_PLAN3_TASK42_MEMBER_KEY: members still never sign escrow until the per-member key scheme lands', () => {
     // R44 / spec 6.7 OPEN (design): releasing needs the trade's escrow key on the member's device;
@@ -861,17 +956,5 @@ describe('Task 18 seams', () => {
     // Plan 7's purge migration (701) lands, revisit these and delete this check.
     expect(readFileSync(`${ROOT}apps/api/migrations/199_team_audit_trades.sql`, 'utf8')).toMatch(/after delete on trades/);
     expect(existsSync(`${ROOT}apps/api/migrations/701_trade_purge.sql`), 'Plan 7 purge landed: decide the team log retention and roles').toBe(false);
-  });
-
-  it('NEEDS_TASKS_16_17_MEMBERS: device approval and the login-strength hold cover members once they land', () => {
-    // Plan 2 Tasks 16 (new-device approval, 3-device limit; migration 013) and 17 (24-hour hold by
-    // login strength; 014) are not on this tree. Member sessions are rows of the team account, so an
-    // account-keyed hold or ban already covers them, but: Task 16 must count member sessions toward the
-    // account's device limit and must never let a member session approve the owner's logins (approval
-    // routes are owner-only by requireSession's fail-closed default: keep them without `member`), and
-    // member logins (always two factors) are strong for Task 17. When either lands, add those tests here
-    // and delete this check.
-    const has = readdirSync(`${ROOT}apps/api/migrations`).some((f) => /^01[34]_/.test(f));
-    expect(has, 'Task 16 or 17 landed: test that member sessions count toward the device limit and never approve').toBe(false);
   });
 });

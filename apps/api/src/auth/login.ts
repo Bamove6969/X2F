@@ -98,7 +98,7 @@ export async function completeLogin(
     // A member's login (Task 18) is a session of the team account (a trader), so its strength
     // counts there (the hold, the device limit's weak-first order). Members always log in with two
     // factors (`pairAllowed`), so their logins are strong (lead's Task 18 landing rule, 2026-10-30;
-    // NEEDS_TASKS_16_17_MEMBERS), whichever valid pair they used.
+    // tests: deviceApproval.test.ts 'team members'), whichever valid pair they used.
     if (a.account.kind === 'member') strength = 'strong';
   }
   await startSession(deps, req, reply, {
