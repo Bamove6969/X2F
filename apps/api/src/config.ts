@@ -29,6 +29,8 @@ export interface Config {
   recoveryCodeKeys: Keyring;
   /** Keys that seal TOTP secrets (the file/env key store, `totpBox`); `X2F_TOTP_KEYS`. */
   totpKeys: Keyring;
+  /** Keys of the login-name tag (HMAC-SHA-256, FU-D): the only form a login name is stored in; `X2F_LOGIN_NAME_KEYS`. */
+  loginNameKeys: Keyring;
   /**
    * `X2F_LEGACY_SECRETS` (`on` by default, or `off`): whether values stored before FU-C are still
    * accepted: unpeppered password hashes, SHA-256 recovery codes and format-0 TOTP blobs. Turned off
@@ -151,7 +153,7 @@ function parseKeyring(name: string, raw: string): Keyring {
   return { current, keys };
 }
 
-/** The three rings and `serverKey` must not share a key: each secret protects one thing only. */
+/** The key rings and `serverKey` must not share a key: each secret protects one thing only. */
 function assertSeparate(serverKey: Uint8Array, rings: Array<[string, Keyring]>): void {
   const seen: Uint8Array[] = [serverKey];
   for (const [name, ring] of rings) {
@@ -205,11 +207,13 @@ export function loadConfig(env: Env): Config {
   const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
+  const loginNameKeys = parseKeyring('X2F_LOGIN_NAME_KEYS', ringSource(env, 'X2F_LOGIN_NAME_KEYS'));
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
+    ['X2F_LOGIN_NAME_KEYS', loginNameKeys],
   ]);
 
   // Task 19: Web Push needs a VAPID key pair (docs/dev-setup.md says how to make one).
@@ -227,15 +231,19 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
   };
 }
 
 /**
  * A purpose-bound key: HKDF-SHA-256 of `serverKey`, info `x2f/<label>`, 32 bytes. `totp` only
  * opens format-0 (pre-FU-C) sealed TOTP secrets until `rewrapTotpSecrets` has moved them.
+ * `login-seal` seals the login name of a sign-up waiting in its challenge (FU-D, `sealNames`).
  */
-export function subkey(config: Config, label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name'): Uint8Array {
+export function subkey(
+  config: Config,
+  label: 'totp' | 'decoy' | 'device' | 'pgp-key' | 'pgp-start' | 'name' | 'login-seal',
+): Uint8Array {
   return new Uint8Array(hkdfSync('sha256', config.serverKey, new Uint8Array(0), `x2f/${label}`, 32));
 }
 
