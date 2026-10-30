@@ -43,6 +43,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     totpKeys: testRing(),
     loginNameKeys: testRing(),
     legacySecrets: true,
+    tradePurge: true,
     ...over,
   };
 }

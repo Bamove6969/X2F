@@ -38,11 +38,10 @@ export {
 } from './money.js';
 export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
-export { TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
+export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
   BACKUP_KEEP_DAYS,
   DISPUTE_KEEP_DAYS,
-  REFUND_DISPUTE_WINDOW_MS,
   TRADE_KEEP_DAYS,
   refundDisputeWindowEndsAt,
   tradeDeleteAt,
@@ -54,6 +53,7 @@ export {
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,
+  awaitingCancelConfirm,
   newTrade,
   nextDeadline,
   releasableEta,

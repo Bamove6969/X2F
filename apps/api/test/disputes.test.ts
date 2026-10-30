@@ -109,10 +109,10 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect((await b.buyer.browser.post(dispute(b.t.code), { reason: 'other', note: 'x' })).statusCode).toBe(200);
   });
 
-  it('opens a dispute after a refund for the buyer within 90 days, never for the seller, never after', async () => {
+  it('opens a dispute after a refund for the buyer within 48 hours (owner 2026-10-29), never for the seller, never after', async () => {
     const { buyer, seller, t } = await tradeIn('secured');
     await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: 'ab'.repeat(32) }, 'system');
-    setNow(at(90 * DAY));
+    setNow(at(2 * DAY));
     await relogin(buyer, seller);
     const wrong = await seller.browser.post(dispute(t.code), { reason: 'other', note: '' });
     expect(errorOf(wrong)).toBe('wrong-party');
@@ -123,7 +123,7 @@ describe('POST /v1/trades/:code/dispute', () => {
 
     const late = await tradeIn('secured');
     await applyEvent(deps, late.t.code, { type: 'settled', kind: 'auto-refund', txHash: 'cd'.repeat(32) }, 'system');
-    setNow(at(90 * DAY + 1));
+    setNow(at(2 * DAY + 1));
     await relogin(late.buyer);
     const res = await late.buyer.browser.post(dispute(late.t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
@@ -404,7 +404,7 @@ describe('a dispute the system escalates (late funds, a lapse nobody refunded)',
 describe('one dispute per trade opening, whatever the dispute rows say', () => {
   it('refuses a second dispute on a refunded trade that had one, even once its rows are gone', async () => {
     // The reviewer's probe: the buyer disputes, the final ruling is refund-to-seller, the trade
-    // settles to refunded and the dispute closes. Inside the 90-day window the buyer may not
+    // settles to refunded and the dispute closes. Inside the 48-hour window (TIMERS.disputeAfterRefundHours) the buyer may not
     // re-open the decided case, before or after any purge of the dispute rows.
     const { buyer, t } = await tradeIn('secured');
     await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });

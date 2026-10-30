@@ -7,18 +7,14 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const API = fileURLToPath(new URL('../', import.meta.url));
+// NEEDS_TASK_38_AWAITING retired 2026-10-30: Task 38 landed and tradePurge sets awaitingAction
+// from cancel_confirmed_at (tested in tradePurge.test.ts). The purge stays off by default
+// (X2F_TRADE_PURGE) until the two checks below are met.
 const migrations = readdirSync(`${API}migrations`).map((f) => readFileSync(`${API}migrations/${f}`, 'utf8')).join('\n');
 const purge = readFileSync(`${API}src/retention/tradePurge.ts`, 'utf8');
 const jobs = readFileSync(`${API}src/retentionJobs.ts`, 'utf8');
 
 describe('Plan 7 Task 2 seams', () => {
-  it('NEEDS_TASK_38_AWAITING: a buyer-cancel refund waiting for the seller\'s Confirm cancel is never purged', () => {
-    // Plan 3 Task 38 (116_fund_started.sql) adds `cancel_confirmed_at`. When it lands, `factsSql` in
-    // tradePurge.ts must read it and set `awaitingAction` (= @x2f/trade awaitingCancelConfirm), and
-    // REFUND_DISPUTE_WINDOW_MS (packages/trade/src/retention.ts) moves to disputeAfterRefundHours.
-    if (/cancel_confirmed_at/.test(migrations)) expect(purge).toMatch(/cancel_confirmed_at/);
-  });
-
   it('NEEDS_PLAN_4_TASK_32_LEDGER: the revenue ledger holds a trade before it is purged', () => {
     if (/create table revenue_ledger/i.test(migrations)) expect(purge).toMatch(/revenue_ledger/);
   });

@@ -1,4 +1,4 @@
-import { refundDisputeWindowEndsAt, tradeDeleteAt, tradeDeleteDue, type RetentionFacts } from '@x2f/trade';
+import { awaitingCancelConfirm, refundDisputeWindowEndsAt, tradeDeleteAt, tradeDeleteDue, type RetentionFacts, type Trade } from '@x2f/trade';
 import type pg from 'pg';
 import type { Queryable } from '../db/pool.js';
 import type { RetentionJob } from '../retention.js';
@@ -21,6 +21,13 @@ import { PURGE_ROLE } from '../trades/purge.js';
  *
  * Logs nothing (the scheduler logs the job name and a count only).
  *
+ * Plan 3 Task 38: a buyer-cancel refund still waiting for the seller's Confirm cancel
+ * (`cancel_confirmed_at` null, @x2f/trade `awaitingCancelConfirm`) sets `awaitingAction`, so it is
+ * never deleted while it waits.
+ *
+ * OFF unless `X2F_TRADE_PURGE=on` (`setTradePurge`, from config in main.ts): the job is registered
+ * but deletes nothing (lead decision 2026-10-30). It goes default-on only once the seams below land.
+ *
  * SEAMS still owed before this job may go live in production (Plan 7 "Dependencies"; tripwires in
  * apps/api/test/tradePurge-tripwires.test.ts):
  * - Plan 4 Task 32 revenue ledger and Plan 7 Task 14 `collectDailyStats`: both must hold the
@@ -28,8 +35,6 @@ import { PURGE_ROLE } from '../trades/purge.js';
  * - Plan 5 Task 20 running totals (won/lost disputes and the rest) replace `completed_trades_purged`.
  * - Plan 5 reviews: null the trade code on the trade's reviews (reviews are permanent).
  * - Plan 5 Task 14 `trade_proofs`: delete the trade's proofs here.
- * - Plan 3 Task 38: a buyer-cancel refund still waiting for the seller's Confirm cancel sets
- *   `awaitingAction` (`factsSql`/`toFacts`), so it is never deleted while it waits.
  * - Plan 4 must move a dispute to `final` or `closed` (or leave `ruled` with a lapsed appeal
  *   window); until then a disputed trade is kept (fail-safe, never early).
  */
@@ -40,6 +45,9 @@ const BATCH = 200;
 interface FactRow {
   code: string;
   state: string;
+  settling: Trade['settling'];
+  paid_at: Date | null;
+  cancel_confirmed_at: Date | null;
   closed_at: Date | null;
   dispute_at: Date | null;
   dispute_opened_at: Date | null;
@@ -53,7 +61,7 @@ interface FactRow {
  * a dispute whose rows are missing.
  */
 const factsSql = (where: string, tail = ''): string => `
-  select t.code, t.state, t.closed_at, t.dispute_at,
+  select t.code, t.state, t.settling, t.paid_at, t.cancel_confirmed_at, t.closed_at, t.dispute_at,
          greatest(t.dispute_at, (select max(d.opened_at) from disputes d where d.code = t.code)) as dispute_opened_at,
          exists (
            select 1 from disputes d
@@ -74,7 +82,14 @@ function toFacts(r: FactRow): RetentionFacts {
     disputeOpenedAt: r.dispute_opened_at,
     disputeClosed: r.state !== 'disputed' && !r.dispute_pending,
     refundDisputeWindowEndsAt: refundDisputeWindowEndsAt(r.state, r.closed_at, disputed),
-    awaitingAction: false,
+    // Task 38: a buyer's cancel the seller has not confirmed yet is still in their active trades.
+    awaitingAction: awaitingCancelConfirm({
+      state: r.state as Trade['state'],
+      settling: r.settling,
+      cancelConfirmedAt: r.cancel_confirmed_at,
+      dispute: r.dispute_at === null ? null : { by: 'system', at: r.dispute_at },
+      paidAt: r.paid_at,
+    }),
   };
 }
 
@@ -212,4 +227,12 @@ async function deleteOrder(q: Queryable): Promise<string[]> {
   return TRADE_CHILD_TABLES.filter((t) => present.has(t)).map((t) => DELETE_SQL[t]);
 }
 
-export const purgeTradesJob: RetentionJob = { name: 'purgeTrades', run: purgeTrades };
+let purgeOn = false;
+
+/** Turns the whole-trade purge on or off for this process (`X2F_TRADE_PURGE`, config.tradePurge). */
+export function setTradePurge(on: boolean): void {
+  purgeOn = on;
+}
+
+/** The retention job: deletes nothing (and touches no row) unless `setTradePurge(true)`. */
+export const purgeTradesJob: RetentionJob = { name: 'purgeTrades', run: (db, now) => (purgeOn ? purgeTrades(db, now) : Promise.resolve(0)) };

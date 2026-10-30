@@ -119,9 +119,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // sentence, login-name-set), listed with their owner in docs/coordination.md. Lower these as
     // refusals move into CantDoThat; raise one only with a reviewed reason. `not-a-refusal` 40 -> 43
     // (Task 37 landing, 2026-10-29): settings/blockCopy.ts's three lines saying what a block stops
-    // the OTHER trader doing ("<name> can't: ...", the done note, "What blocking does").
+    // the OTHER trader doing ("<name> can't: ...", the done note, "What blocking does"). 43 -> 45
+    // (Tasks 38-39 landing, 2026-10-29): two warnings that explain, not refuse: PaidConfirmSheet's
+    // "After this you can't cancel the trade" and ReleaseWarning's "... and can't be taken back."
     expect(todo).toBeLessThanOrEqual(4);
-    expect(notARefusal).toBeLessThanOrEqual(43);
+    expect(notARefusal).toBeLessThanOrEqual(45);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

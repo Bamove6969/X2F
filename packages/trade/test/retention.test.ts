@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAT_AFTER_CLOSE_DAYS,
   DISPUTE_KEEP_DAYS,
-  REFUND_DISPUTE_WINDOW_MS,
   TIMERS,
   TRADE_KEEP_DAYS,
   chatPurgeDue,
@@ -56,7 +55,7 @@ describe('the one retention rule (Plan 7 Task 1, R36)', () => {
 
   it('a refunded trade is kept through the buyer\'s dispute-after-refund window (inclusive), never less than 30 days', () => {
     const w = refundDisputeWindowEndsAt('refunded', t0, false);
-    expect(w).toEqual(new Date(t0.getTime() + REFUND_DISPUTE_WINDOW_MS));
+    expect(w).toEqual(new Date(t0.getTime() + TIMERS.disputeAfterRefundHours * 3_600_000));
     const f = { ...released, refundDisputeWindowEndsAt: w };
     const deleteAt = tradeDeleteAt(f)!;
     expect(deleteAt.getTime()).toBe(Math.max(at(30).getTime(), w!.getTime() + 1));
@@ -72,8 +71,7 @@ describe('the one retention rule (Plan 7 Task 1, R36)', () => {
     expect(refundDisputeWindowEndsAt('cancelled', t0, false)).toBeNull();
     expect(refundDisputeWindowEndsAt('refunded', t0, true)).toBeNull();
     expect(refundDisputeWindowEndsAt('refunded', null, false)).toBeNull();
-    expect(REFUND_DISPUTE_WINDOW_MS).toBeGreaterThan(0);
-    expect(TIMERS).toBeDefined();
+    expect(TIMERS.disputeAfterRefundHours).toBe(48);
   });
 
   it('a closed trade still waiting for a party is never due', () => {

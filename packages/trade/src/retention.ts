@@ -32,15 +32,6 @@ export const BACKUP_KEEP_DAYS = 14;
 
 const DAY_MS = 86_400_000;
 
-/**
- * How long after a refund the buyer may still open a dispute: the state machine's own window
- * (`apply` → `open-dispute` on a `refunded` trade). SEAM (Plan 3 Task 38, `wip/lead-p3-task38`):
- * that branch replaces `TIMERS.disputeAfterRefundDays` (90) with `disputeAfterRefundHours` (48,
- * owner 2026-10-29); when it lands, this line becomes `TIMERS.disputeAfterRefundHours * 3_600_000`
- * (tsc flags it). The rule itself does not change: the window never shortens the 30 days.
- */
-export const REFUND_DISPUTE_WINDOW_MS = TIMERS.disputeAfterRefundDays * DAY_MS;
-
 export interface RetentionFacts {
   /** When the trade ended, or null while it is open (the machine nulls it while a dispute is open). */
   closedAt: Date | null;
@@ -88,10 +79,12 @@ export function tradeDeleteDue(f: RetentionFacts, now: Date): boolean {
 
 /**
  * The end of the buyer's dispute-after-refund window for a trade in `state` that ended at
- * `closedAt`: only a refunded trade with no dispute yet has one (once disputed, the dispute rule
- * applies instead).
+ * `closedAt`: the state machine's own window (`TIMERS.disputeAfterRefundHours`, 48 h, owner
+ * 2026-10-29). Only a refunded trade with no dispute yet has one (once disputed, the dispute rule
+ * applies instead). Kept for every such trade, also a cancel the machine would refuse to dispute:
+ * a longer keep is never wrong, and 48 h never reaches past the 30 days anyway.
  */
 export function refundDisputeWindowEndsAt(state: string, closedAt: Date | null, disputed: boolean): Date | null {
   if (state !== 'refunded' || disputed || !valid(closedAt)) return null;
-  return new Date(closedAt.getTime() + REFUND_DISPUTE_WINDOW_MS);
+  return new Date(closedAt.getTime() + TIMERS.disputeAfterRefundHours * 3_600_000);
 }

@@ -3,13 +3,14 @@
 // a notification in the tray is not proof the buyer read it (lead 2026-10-27). That receipt comes
 // only from Task 25's FinalAlert, once the alert is on screen in the app.
 //
-// A push can only ever show one of three fixed texts (the nudge, the trade change, the owner's
-// alert). Whatever the payload says, anything else is shown as the generic trade text, so no code,
+// A push can only ever show one of four fixed texts (the nudge, the trade change, the owner's
+// alert, and the seller's "Your input is needed to cancel this trade." of Task 39). Whatever the payload says, anything else is shown as the generic trade text, so no code,
 // amount, name, alert detail or link can reach the lock screen even if a payload were tampered
 // with. A tap opens (or focuses) this site at `/`.
 const NUDGE = 'Someone nudged you on X2F';
 const TRADE = 'Something changed in a trade on X2F';
 const ALERT = 'Something needs your attention';
+const CANCEL = 'Your input is needed to cancel this trade.';
 
 self.addEventListener('install', () => {
   void self.skipWaiting();
@@ -26,10 +27,10 @@ self.addEventListener('push', (event) => {
   } catch {
     text = '';
   }
-  const body = text === NUDGE ? NUDGE : text === ALERT ? ALERT : TRADE;
+  const body = text === NUDGE ? NUDGE : text === ALERT ? ALERT : text === CANCEL ? CANCEL : TRADE;
   // One tag per kind: replacing a same-tag notification skips the alert steps (no sound or
   // vibration), so a trade push must never land on an unread nudge's tag and go silent.
-  const tag = body === NUDGE ? 'x2f-nudge' : body === ALERT ? 'x2f-alert' : 'x2f-trade';
+  const tag = body === NUDGE ? 'x2f-nudge' : body === ALERT ? 'x2f-alert' : body === CANCEL ? 'x2f-cancel' : 'x2f-trade';
   event.waitUntil(
     (async () => {
       await self.registration.showNotification('X2F', { body, tag });

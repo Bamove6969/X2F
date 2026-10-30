@@ -37,6 +37,13 @@ export interface Config {
    * once their counts reach 0 (docs/dev-setup.md); with `off` each fails like a wrong credential.
    */
   legacySecrets: boolean;
+  /**
+   * `X2F_TRADE_PURGE` (`off` by default, or `on`): whether Plan 7's whole-trade purge deletes
+   * anything. It stays off in production until the revenue ledger (Plan 4 Task 32), the daily
+   * statistics (Plan 7 Task 14) and Plan 5's reviews, proofs and running totals record a trade
+   * before it goes (lead decision 2026-10-30; docs/dev-setup.md).
+   */
+  tradePurge: boolean;
 }
 
 /**
@@ -211,6 +218,9 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
+  const purge = env.X2F_TRADE_PURGE || 'off';
+  if (purge !== 'on' && purge !== 'off') throw malformed('X2F_TRADE_PURGE', 'on or off');
+  const tradePurge = purge === 'on';
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
     ['X2F_LOGIN_NAME_KEYS', loginNameKeys],
@@ -231,7 +241,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
+    loginNameKeys, legacySecrets, tradePurge, vapidPublic, vapidPrivate, priceSources, fxSources,
   };
 }
 

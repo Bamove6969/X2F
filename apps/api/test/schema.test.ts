@@ -44,7 +44,7 @@ describe('migrations', () => {
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
         '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql',
-        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql', '701_trade_purge.sql',
+        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql', '701_trade_purge.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -67,7 +67,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
-        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql', '701_trade_purge.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql', '701_trade_purge.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
       expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
@@ -143,7 +143,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
-        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql', '701_trade_purge.sql',
+        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql', '701_trade_purge.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
@@ -524,6 +524,16 @@ describe('config', () => {
     expect(loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: 'on' }).legacySecrets).toBe(true);
     expect(loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: 'off' }).legacySecrets).toBe(false);
     for (const bad of ['0', 'false', 'OFF', 'no']) expect(() => loadConfig({ ...FULL_ENV, X2F_LEGACY_SECRETS: bad })).toThrow(/X2F_LEGACY_SECRETS/);
+  });
+
+  it('X2F_TRADE_PURGE is off by default, accepts on and off, refuses anything else, naming only the variable (Plan 7 Task 2)', () => {
+    expect(loadConfig(FULL_ENV).tradePurge).toBe(false);
+    expect(loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: 'on' }).tradePurge).toBe(true);
+    expect(loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: 'off' }).tradePurge).toBe(false);
+    for (const bad of ['1', 'true', 'ON', 'yes']) {
+      expect(() => loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: bad })).toThrow(/X2F_TRADE_PURGE/);
+      expect(() => loadConfig({ ...FULL_ENV, X2F_TRADE_PURGE: bad })).not.toThrow(new RegExp(`\\b${bad}\\b`));
+    }
   });
 
   it('refuses a key ring file owned by another user (review M4)', async () => {

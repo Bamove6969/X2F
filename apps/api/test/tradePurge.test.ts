@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { startRetention, type RetentionLog } from '../src/retention.js';
-import { TRADE_CHILD_TABLES, purgeTrades, purgeTradesJob, tradeDeleteDate } from '../src/retention/tradePurge.js';
+import { TRADE_CHILD_TABLES, purgeTrades, purgeTradesJob, setTradePurge, tradeDeleteDate } from '../src/retention/tradePurge.js';
 import { COMPLETED_TRADES_SQL, tradeCap } from '../src/traders/stage.js';
 import { applyEvent } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -131,11 +131,11 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
   });
 
   it('a dispute opened at day 29 keeps everything until 90 days after the button, and nothing while it is open', async () => {
-    const { t } = await tradeIn('secured');
-    const refunded = await applyEvent(deps, t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
-    expect(refunded.state).toBe('refunded');
+    // Released, then late funds at day 29: the system escalates (its dispute row with the trade).
+    // A buyer's own dispute after a refund now closes after 48 hours (Task 38), so day 29 is an escalation.
+    const { t } = await tradeIn('released');
     await addTradeRecords(t.code);
-    await openDispute(t.code, at(29), true);
+    expect((await applyEvent({ ...deps, clock: () => at(29) }, t.code, { type: 'escalate' }, 'system')).state).toBe('disputed');
     // Open: never, even long after 90 days.
     await purgeTrades(deps.db, at(29 + DISPUTE_KEEP_DAYS + 50));
     expect(await exists(t.code)).toBe(true);
@@ -202,9 +202,36 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect(await exists(t.code)).toBe(true);
   });
 
+  it('the job deletes nothing while X2F_TRADE_PURGE is off (the default)', async () => {
+    const { t } = await tradeIn('released');
+    const due = at(TRADE_KEEP_DAYS + 1);
+    setTradePurge(false);
+    expect(await purgeTradesJob.run(deps.db, due)).toBe(0);
+    expect(await exists(t.code)).toBe(true);
+    setTradePurge(true);
+    expect(await purgeTradesJob.run(deps.db, due)).toBeGreaterThanOrEqual(1);
+    expect(await exists(t.code)).toBe(false);
+  });
+
+  it('never deletes a buyer\'s cancel the seller has not confirmed yet (Task 38), and does once it is confirmed', async () => {
+    const { t } = await tradeIn('secured');
+    await applyEvent(deps, t.code, { type: 'buyer-cancel' }, 'buyer');
+    const refunded = await applyEvent(deps, t.code, { type: 'settled', kind: 'buyer-cancel', txHash: tx() }, 'system');
+    expect(refunded.state).toBe('refunded');
+    expect(refunded.cancelConfirmedAt).toBeNull();
+    expect(await tradeDeleteDate(deps.db, t.code, at(500))).toBeNull();
+    await purgeTrades(deps.db, at(500));
+    expect(await exists(t.code)).toBe(true);
+    await deps.db.query('update trades set cancel_confirmed_at = $2 where code = $1', [t.code, at(1)]);
+    expect(await tradeDeleteDate(deps.db, t.code, at(500))).toEqual(new Date(refunded.closedAt!.getTime() + TRADE_KEEP_DAYS * DAY));
+    await purgeTrades(deps.db, at(500));
+    expect(await exists(t.code)).toBe(false);
+  });
+
   it('is idempotent, logs no trade code, and is the last retention job', async () => {
     const { t } = await tradeIn('released');
     const due = at(TRADE_KEEP_DAYS + 1);
+    setTradePurge(true);
     const lines: RetentionLog[] = [];
     const stop = startRetention({ db: deps.db, clock: () => due }, [purgeTradesJob], 20, (e) => void lines.push(e));
     await new Promise((r) => setTimeout(r, 300));

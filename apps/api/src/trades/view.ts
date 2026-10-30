@@ -52,6 +52,8 @@ export interface TradeView {
   setupBy: string | null;
   fundBy: string | null;
   fundingSeenAt: string | null;
+  /** When the seller tapped "Fund escrow" (Revision 2026-10-29b); after it the seller can't walk away. */
+  fundStartedAt: string | null;
   securedAt: string | null;
   payBy: string | null;
   paidAt: string | null;
@@ -66,6 +68,10 @@ export interface TradeView {
   settleBy: string | null;
   pausedAt: string | null;
   closedAt: string | null;
+  /** The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29); null until then. */
+  cancelConfirmedAt: string | null;
+  /** When the seller's Confirm cancel became available; the trade closes by itself 48 h later (owner 2026-10-29). */
+  cancelConfirmableAt: string | null;
   nextDeadline: string | null;
   /**
    * When the trade self-destructs (Plan 7 Task 3; @x2f/trade `tradeDeleteAt`): 30 days after it
@@ -133,6 +139,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     setupBy: iso(t.setupBy),
     fundBy: iso(t.fundBy),
     fundingSeenAt: iso(t.fundingSeenAt),
+    fundStartedAt: iso(t.fundStartedAt),
     securedAt: iso(t.securedAt),
     payBy: iso(t.payBy),
     paidAt: iso(t.paidAt),
@@ -142,6 +149,8 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     settleBy: iso(t.settleBy),
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
+    cancelConfirmedAt: iso(t.cancelConfirmedAt),
+    cancelConfirmableAt: iso(t.cancelConfirmableAt),
     nextDeadline: iso(nextDeadline(t)),
     deleteAt: iso(ctx.deleteAt ?? null),
     serverNow: serverNow.toISOString(),

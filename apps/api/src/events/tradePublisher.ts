@@ -17,6 +17,13 @@ export interface TradePublisherDeps extends FinalAlertDeps {
 export function tradeEventPublisher(deps: TradePublisherDeps): TradePublisher {
   return async (t: Trade, e: TradeEvent, by: By) => {
     const ev = { type: 'trade' as const, code: t.code, state: t.state };
+    if (e.type === 'return-confirmed') {
+      // Task 39: the seller's Confirm cancel is available; the owner's own notification text
+      // ("Your input is needed to cancel this trade.") goes to the seller when no stream is open.
+      deps.events.publish(t.buyerId, ev);
+      if (deps.events.publish(t.sellerId, ev) === 0) await deps.push.send(t.sellerId, 'cancel-confirm');
+      return;
+    }
     if (e.type === 'request-refund') {
       deps.events.publish(t.sellerId, ev);
       await recordFinalAlert(deps, t.code, t.buyerId);

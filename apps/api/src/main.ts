@@ -15,6 +15,7 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
+import { setTradePurge } from './retention/tradePurge.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
@@ -77,6 +78,8 @@ const deps: Deps = {
 };
 
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
+// Plan 7 Task 2: the whole-trade purge deletes nothing unless X2F_TRADE_PURGE=on (default off).
+setTradePurge(config.tradePurge);
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
 // Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
