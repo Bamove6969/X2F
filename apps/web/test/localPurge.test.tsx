@@ -4,6 +4,7 @@ import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DELETE_AT_KEY,
+  deleteAtAccount,
   localPurgeDue,
   purgeTradeLocally,
   registerLocalPurge,
@@ -70,11 +71,13 @@ describe('localPurge', () => {
 
 describe('the start-up purge waits for the server (review M1)', () => {
   const C = 'WXYZ-2345-6789';
-  const deps = (serverNow: number | null, answers: Record<string, ServerTradeAnswer>): ConfirmDeps & { asked: string[] } => {
+  const ME = 'acct-1';
+  const deps = (serverNow: number | null, answers: Record<string, ServerTradeAnswer>, me: string | null = ME): ConfirmDeps & { asked: string[] } => {
     const asked: string[] = [];
     return {
       asked,
       serverNow: () => Promise.resolve(serverNow),
+      accountId: () => Promise.resolve(me),
       trade: (code) => {
         asked.push(code);
         return Promise.resolve(answers[code] ?? { kind: 'unknown' });
@@ -101,7 +104,7 @@ describe('the start-up purge waits for the server (review M1)', () => {
 
   it('deletes only what the server confirms: gone (404), or a date still set and passed', async () => {
     for (const k of [A, B, C]) localStorage.setItem(`x2f.fund.funded.${k}`, '1');
-    rememberDeleteAt(A, iso(T));
+    rememberDeleteAt(A, iso(T), ME);
     rememberDeleteAt(B, iso(T));
     rememberDeleteAt(C, iso(T));
     const d = deps(T + 1, {
@@ -131,11 +134,50 @@ describe('the start-up purge waits for the server (review M1)', () => {
     expect(localPurgeDue(T + 1)).toEqual([]);
     expect(localPurgeDue(T + 90 * 86_400_000)).toEqual([B]);
   });
+
+  it('a 404 is gone only for the account that saw the trade (review R2-m3: another account\'s session also gets 404)', async () => {
+    const D = 'DDDD-2345-6789';
+    for (const k of [A, B, C, D]) localStorage.setItem(`x2f.fund.funded.${k}`, '1');
+    rememberDeleteAt(A, iso(T), 'acct-other'); // seen by another account on this shared device
+    rememberDeleteAt(B, iso(T)); // no account recorded (before R2-m3, or /me unreadable then)
+    rememberDeleteAt(C, iso(T), ME);
+    rememberDeleteAt(D, iso(T), ME);
+    const gone = { kind: 'gone' } as const;
+    expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: gone, [B]: gone, [C]: gone, [D]: gone }, null))).toEqual([]);
+    expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: gone, [B]: gone, [C]: gone }))).toEqual([C]);
+    for (const k of [A, B, D]) expect(localStorage.getItem(`x2f.fund.funded.${k}`)).toBe('1');
+    expect(localStorage.getItem(`x2f.fund.funded.${C}`)).toBeNull();
+    expect(localPurgeDue(T + 1)).toEqual([A, B, D]);
+    // Account A's own session later confirms it.
+    expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: gone }, 'acct-other'))).toEqual([A]);
+  });
+
+  it('the room records the signed-in account with the date, and keeps it when the account cannot be read (review R2-m3)', async () => {
+    const { rerender } = render(<Room code={A} deleteAt={iso(T)} dispute={false} now={() => new Date(T - 60_000)} account={() => Promise.resolve(ME)} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(deleteAtAccount(A)).toBe(ME);
+    rerender(<Room code={A} deleteAt={iso(T + 1)} dispute={false} now={() => new Date(T - 60_000)} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(deleteAtAccount(A)).toBe(ME);
+    expect(localPurgeDue(T + 1)).toEqual([A]);
+  });
+
+  it('reads an entry stored as a bare date (before R2-m3) as one with no account', () => {
+    localStorage.setItem(DELETE_AT_KEY, JSON.stringify({ [A]: iso(T), [B]: { at: iso(T), account: ME }, [C]: { at: 'nope' } }));
+    expect(localPurgeDue(T)).toEqual([A, B]);
+    expect(deleteAtAccount(A)).toBeNull();
+    expect(deleteAtAccount(B)).toBe(ME);
+  });
 });
 
-function Room({ code, deleteAt, dispute, now }: { code: string; deleteAt: string | null; dispute: boolean; now: () => Date }) {
+const NO_ACCOUNT = () => Promise.resolve(null);
+function Room({ code, deleteAt, dispute, now, account = NO_ACCOUNT }: { code: string; deleteAt: string | null; dispute: boolean; now: () => Date; account?: () => Promise<string | null> }) {
   const view = { deleteAt, dispute: dispute ? { by: 'buyer' as const, at: iso(T - 5) } : null };
-  const { gone } = useSelfDestruct(code, view, now);
+  const { gone } = useSelfDestruct(code, view, now, account);
   return gone ? <p data-part="gone">gone</p> : <SelfDestructNotice view={view} />;
 }
 

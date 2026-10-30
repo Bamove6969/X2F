@@ -10,7 +10,7 @@
  */
 import { useEffect, useState } from 'react';
 import type { TradeView } from '../../api/trade.js';
-import { purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
+import { currentAccountId, purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
 import '../screens.css';
 
 /** The self-destruct date as the reader's locale writes a date. */
@@ -29,32 +29,48 @@ export function selfDestructText(view: Pick<TradeView, 'deleteAt' | 'dispute'>):
 }
 
 /**
- * Remembers the trade's date on this device and, once it has passed (server time), deletes this
- * device's copies and reports `gone`.
+ * Remembers the trade's date on this device (with the signed-in account, review R2-m3) and, once
+ * it has passed (server time), deletes this device's copies and reports `gone`. `accountId` is
+ * injectable for tests.
  */
-export function useSelfDestruct(code: string, view: Pick<TradeView, 'deleteAt'>, serverClock: () => Date): { gone: boolean } {
+export function useSelfDestruct(
+  code: string,
+  view: Pick<TradeView, 'deleteAt'>,
+  serverClock: () => Date,
+  accountId: () => Promise<string | null> = currentAccountId,
+): { gone: boolean } {
   const at = view.deleteAt ?? null;
   const [gone, setGone] = useState(false);
   useEffect(() => {
     rememberDeleteAt(code, at);
     if (at === null) return;
     let stop = false;
+    let purged = false;
+    void accountId().then(
+      (id) => {
+        // Not after the purge: that would bring the entry back.
+        if (!stop && !purged && id !== null) rememberDeleteAt(code, at, id);
+      },
+      () => undefined,
+    );
     const check = () => {
       if (Date.parse(at) > serverClock().getTime()) return false;
+      purged = true;
       void purgeTradeLocally(code).then(() => {
         if (!stop) setGone(true);
       });
       return true;
     };
-    if (check()) return;
-    const wait = Date.parse(at) - serverClock().getTime();
-    if (!Number.isFinite(wait) || wait > 2 ** 31 - 1) return;
-    const id = setTimeout(check, Math.max(0, wait));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    if (!check()) {
+      const wait = Date.parse(at) - serverClock().getTime();
+      if (Number.isFinite(wait) && wait <= 2 ** 31 - 1) timer = setTimeout(check, Math.max(0, wait));
+    }
     return () => {
       stop = true;
-      clearTimeout(id);
+      clearTimeout(timer);
     };
-  }, [code, at, serverClock]);
+  }, [code, at, serverClock, accountId]);
   return { gone };
 }
 

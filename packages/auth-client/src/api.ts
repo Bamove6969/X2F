@@ -116,6 +116,11 @@ export type Suggestion = 'add-authenticator' | 'add-backup';
 
 /** Task 11: `GET /v1/account/me`. */
 export interface AccountOverview {
+  /**
+   * The account's own id, sent only to that account (Plan 7 review R2-m3: the start-up local purge
+   * trusts a 404 only for the account that saw the trade). Optional: older API builds do not send it.
+   */
+  accountId?: string;
   /** The public display name; the private login name is never sent. */
   displayName: string;
   /** True for an account made before login names existed (migration 009): it still logs in by its public display name and should set a private login name (`setLoginName`). */

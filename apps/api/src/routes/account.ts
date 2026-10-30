@@ -12,6 +12,11 @@ import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
 export interface AccountOverview {
+  /**
+   * The account's own id, sent only to that account (Plan 7 review R2-m3: the web app's start-up
+   * local purge trusts a 404 only for the account that saw the trade).
+   */
+  accountId: string;
   /** The public display name. The private login name is never sent, not even to its owner. */
   displayName: string;
   /**
@@ -138,6 +143,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   const now = deps.clock();
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
+    accountId,
     displayName: row.display_name,
     needsLoginName: row.legacy_login_name,
     kind: row.kind,

@@ -97,6 +97,7 @@ async function addRecoveryCodes(accountId: string, count: number, used = false):
 }
 
 interface Me {
+  accountId: string;
   displayName: string;
   needsLoginName: boolean;
   kind: string;
@@ -209,8 +210,9 @@ describe('GET /v1/account/me', () => {
     const res = await b.get('/v1/account/me');
     // The private login name is never sent, not even to its owner.
     expect(res.body).not.toContain(`"${username}"`);
+    // accountId: the account's own id, for the start-up local purge (Plan 7 review R2-m3).
     expect(await me(b)).toEqual({
-      displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
+      accountId: id, displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
       suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true,
     });
     await addTotp(id);

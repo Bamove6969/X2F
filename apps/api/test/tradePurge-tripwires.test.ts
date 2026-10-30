@@ -175,7 +175,11 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
   }
 
   it('X2F_TRADE_PURGE stays off by default until every seam above has landed', () => {
-    const defaultOn = /X2F_TRADE_PURGE\s*\|\|\s*['"]on['"]/.test(config);
+    // The default lives in tradePurgeFlag (`value || 'off'`) since R2-m1; an `|| 'on'` there, or at
+    // the X2F_TRADE_PURGE read, is a default of on.
+    const flagFn = /function tradePurgeFlag\b[\s\S]*?\n\}/.exec(config)?.[0] ?? '';
+    expect(flagFn, 'tradePurgeFlag (config.ts) reads X2F_TRADE_PURGE').not.toBe('');
+    const defaultOn = /X2F_TRADE_PURGE\s*\|\|\s*['"]on['"]/.test(config) || /\|\|\s*['"]on['"]/.test(flagFn) || !/\|\|\s*['"]off['"]/.test(flagFn);
     if (defaultOn) expectSeamsLanded('X2F_TRADE_PURGE defaults to on');
   });
 

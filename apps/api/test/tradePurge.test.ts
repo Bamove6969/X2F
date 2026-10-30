@@ -288,6 +288,19 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect(await exists(t.code)).toBe(false);
   });
 
+  it('shows no self-destruct date during site maintenance, as no pass runs then (review R2-m2)', async () => {
+    const { t } = await tradeIn('released');
+    const due = new Date(t.closedAt!.getTime() + TRADE_KEEP_DAYS * DAY);
+    expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual(due);
+    await deps.db.query('update site_flags set maintenance_since = $1', [at(TRADE_KEEP_DAYS)]);
+    try {
+      expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toBeNull();
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual(due);
+  });
+
   it('a fresh process starts with the purge off: the job touches no row until setTradePurge(true)', async () => {
     vi.resetModules();
     const fresh = await import('../src/retention/tradePurge.js');

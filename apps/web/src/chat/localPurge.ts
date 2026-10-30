@@ -23,6 +23,11 @@
  * a self-destruct date that has passed. A trade whose view now has no date (escalated by late
  * funds, or the purge is off: review I1) is forgotten here and kept. No answer (offline, logged
  * out, any other error) keeps everything until the next start or the trade room.
+ *
+ * A 404 is also what a session that is not a party gets (review R2-m3: on a shared device,
+ * account B's session gets 404 for A's trade). So each entry records the account that saw the
+ * trade (`accountId` from `GET /v1/account/me`), and a 404 counts as gone only while that same
+ * account is signed in. An entry with no account, or no readable account now, keeps the trade.
  */
 
 export const DELETE_AT_KEY = 'x2f.deleteAt';
@@ -54,22 +59,35 @@ function session(): Storage | null {
   }
 }
 
-/** Trade code → ISO self-destruct time, as last seen in the trade's view. */
-function readMap(): Record<string, string> {
+/** One trade's entry: its ISO self-destruct time, and the account that saw it (review R2-m3). */
+interface Entry {
+  at: string;
+  account?: string;
+}
+
+/** Trade code → entry, as last seen in the trade's view. An entry stored as a bare date (before R2-m3) has no account. */
+function readMap(): Record<string, Entry> {
   try {
     const raw = local()?.getItem(DELETE_AT_KEY) ?? null;
     if (raw === null) return {};
     const v = JSON.parse(raw) as unknown;
     if (v === null || typeof v !== 'object' || Array.isArray(v)) return {};
-    const out: Record<string, string> = {};
-    for (const [k, d] of Object.entries(v as Record<string, unknown>)) if (typeof d === 'string' && Number.isFinite(Date.parse(d))) out[k] = d;
+    const out: Record<string, Entry> = {};
+    for (const [k, d] of Object.entries(v as Record<string, unknown>)) {
+      if (typeof d === 'string' && Number.isFinite(Date.parse(d))) out[k] = { at: d };
+      else if (d !== null && typeof d === 'object' && !Array.isArray(d)) {
+        const { at, account } = d as { at?: unknown; account?: unknown };
+        if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))) continue;
+        out[k] = typeof account === 'string' && account !== '' ? { at, account } : { at };
+      }
+    }
     return out;
   } catch {
     return {};
   }
 }
 
-function writeMap(m: Record<string, string>): void {
+function writeMap(m: Record<string, Entry>): void {
   try {
     if (Object.keys(m).length === 0) local()?.removeItem(DELETE_AT_KEY);
     else local()?.setItem(DELETE_AT_KEY, JSON.stringify(m));
@@ -78,23 +96,32 @@ function writeMap(m: Record<string, string>): void {
   }
 }
 
-/** Remembers (or, with null, forgets) when `code` self-destructs. */
-export function rememberDeleteAt(code: string, deleteAt: string | null): void {
+/**
+ * Remembers (or, with null, forgets) when `code` self-destructs, and which account saw it
+ * (`account`; when not given, the account already recorded for the trade is kept).
+ */
+export function rememberDeleteAt(code: string, deleteAt: string | null, account?: string | null): void {
   const m = readMap();
   if (deleteAt === null || !Number.isFinite(Date.parse(deleteAt))) {
     if (!(code in m)) return;
     delete m[code];
   } else {
-    if (m[code] === deleteAt) return;
-    m[code] = deleteAt;
+    const who = account || m[code]?.account;
+    if (m[code]?.at === deleteAt && m[code]?.account === who) return;
+    m[code] = who ? { at: deleteAt, account: who } : { at: deleteAt };
   }
   writeMap(m);
+}
+
+/** The account recorded with `code`'s entry, or null (review R2-m3). */
+export function deleteAtAccount(code: string): string | null {
+  return readMap()[code]?.account ?? null;
 }
 
 /** The trades this device knows of whose self-destruct time has come at `nowMs` (server time). */
 export function localPurgeDue(nowMs: number): string[] {
   return Object.entries(readMap())
-    .filter(([, d]) => Date.parse(d) <= nowMs)
+    .filter(([, e]) => Date.parse(e.at) <= nowMs)
     .map(([c]) => c);
 }
 
@@ -145,9 +172,23 @@ export interface ConfirmDeps {
   serverNow(): Promise<number | null>;
   /** The trade as the server answers this session now. */
   trade(code: string): Promise<ServerTradeAnswer>;
+  /** The signed-in account (`GET /v1/account/me` `accountId`), or null when it cannot be read (review R2-m3). */
+  accountId(): Promise<string | null>;
 }
 
 const isoMs = (v: unknown): number | null => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? Date.parse(v) : null);
+
+/** The signed-in account's id by plain fetch (never `api()`), or null: signed out, an older API, any error. */
+export async function currentAccountId(): Promise<string | null> {
+  try {
+    const res = await fetch('/v1/account/me', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (!res.ok) return null;
+    const id = ((await res.json()) as { accountId?: unknown } | null)?.accountId;
+    return typeof id === 'string' && id !== '' ? id : null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * The real server, by plain fetch (never `api()`: a background check must never redirect to Terms
@@ -178,6 +219,7 @@ export const serverConfirm: ConfirmDeps = {
       return { kind: 'unknown' };
     }
   },
+  accountId: currentAccountId,
 };
 
 /**
@@ -189,9 +231,15 @@ export async function runConfirmedLocalPurge(deps: ConfirmDeps = serverConfirm):
   const now = await deps.serverNow();
   if (now === null || !Number.isFinite(now)) return [];
   const done: string[] = [];
+  let me: Promise<string | null> | undefined;
   for (const code of localPurgeDue(now)) {
     const a = await deps.trade(code);
     if (a.kind === 'gone') {
+      // Review R2-m3: a 404 is gone only for the account that saw the trade; for any other (or
+      // none known) it may just be "not a party", so the trade is kept.
+      const saw = deleteAtAccount(code);
+      me ??= deps.accountId().catch(() => null);
+      if (saw === null || saw !== (await me)) continue;
       await purgeTradeLocally(code);
       done.push(code);
     } else if (a.kind === 'view') {
