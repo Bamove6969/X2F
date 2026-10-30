@@ -155,8 +155,10 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
       expect(await mod.proveSweep!(hash!, '1'.repeat(64), [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false); // not a reduced scalar: refused before monero-ts sees it
       expect(await mod.proveSweep!(hash!, '01' + '0'.repeat(62), [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false); // a scalar, but not this tx's key
       expect(await mod.proveSweep!(hash!, 'zz', [{ address: destAddress, amountAtomic: XMR / 2n }])).toBe(false);
-      // An unrelated real tx (e.g. one a forger points the mod's key images at) proves only what it
-      // really paid: paying the right party is harmless, paying anyone else is refused.
+      // Review round 2 (R2-I1): an unrelated real tx (one a forger points the mod's key images at,
+      // e.g. another trade's release, whose key its builder or submitter holds) is never proven, even
+      // when its key proves exactly what it paid: no input of it spends one of THIS escrow's outputs
+      // (no key image of this wallet's outputs, with that output in its ring).
       const otherWallet = await newTestWallet(node.rpcUri);
       try {
         await funder.sync();
@@ -164,7 +166,7 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
         await mine(node.rpcUri, 1, funderAddress);
         const k2 = await funder.getTxKey(t2.getHash());
         expect(await mod.proveSweep!(t2.getHash(), k2, [{ address: destAddress, amountAtomic: XMR }])).toBe(false);
-        expect(await mod.proveSweep!(t2.getHash(), k2, [{ address: await otherWallet.getPrimaryAddress(), amountAtomic: XMR / 2n }])).toBe(true);
+        expect(await mod.proveSweep!(t2.getHash(), k2, [{ address: await otherWallet.getPrimaryAddress(), amountAtomic: XMR / 2n }])).toBe(false);
       } finally {
         await otherWallet.close();
       }
@@ -181,6 +183,45 @@ describe('post-release multisig info shows the moderator a seller-buyer release 
     } finally {
       await mod.stop();
       await dest.close();
+    }
+  });
+
+  it('a release paying a buyer subaddress and the fee wallet is proven with the whole tx key, additional keys included (review round 2, R2-I2)', async () => {
+    const t = await kit.newTrade();
+    await fund(t, XMR);
+    const buyerWallet = await newTestWallet(node.rpcUri);
+    const feeWallet = await newTestWallet(node.rpcUri);
+    try {
+      // What Cake, Feather and the GUI hand out by default: a subaddress.
+      const sub = (await buyerWallet.createSubaddress(0)).getAddress();
+      expect(sub.startsWith('8')).toBe(true);
+      const fee = XMR / 100n;
+      const to = [{ address: sub, amountAtomic: XMR - fee }, { address: await feeWallet.getPrimaryAddress(), amountAtomic: fee }];
+      const o: Outcome = { kind: 'release', to, builder: 'seller', cosigner: 'buyer' };
+      const [hash] = await minedWhile(node.rpcUri, funderAddress, Promise.all([t.parties.buyer.settle(o), t.parties.seller.settle(o)]));
+      await mine(node.rpcUri, 2, funderAddress);
+      // Both releasing parties sent the key, and it carries one additional key per output.
+      await expect.poll(async () => (await t.parties.mod.funds()).spendProofs?.length ?? 0, { timeout: 60_000, interval: 1000 }).toBe(2);
+      const f = await t.parties.mod.funds();
+      expect(f.outgoing?.map((x) => x.txHash)).toEqual([hash]);
+      const keys = f.spendProofs!.map((p) => {
+        expect(p.txHash).toBe(hash);
+        return p.txKey;
+      });
+      for (const key of keys) {
+        expect(key).toMatch(/^([0-9a-f]{64}){2,}$/);
+        expect(await t.parties.mod.proveSweep!(hash!, key, to)).toBe(true);
+      }
+      expect(keys[0]).toBe(keys[1]); // the builder's key from the build equals the submitter's stored one
+      // The main key alone does not prove a subaddress payout; nor does one unit more.
+      expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64), to)).toBe(false);
+      expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, [to[0]!, { ...to[1]!, amountAtomic: fee + 1n }])).toBe(false);
+      // A chunk that is not a reduced scalar is refused before monero-ts sees it (its WebAssembly aborts on one).
+      expect(await t.parties.mod.proveSweep!(hash!, keys[0]!.slice(0, 64) + '1'.repeat(64), to)).toBe(false);
+      expect(await t.parties.mod.proveSweep!(hash!, keys[0]!, to)).toBe(true); // the wallet still answers
+    } finally {
+      await buyerWallet.close();
+      await feeWallet.close();
     }
   });
 
