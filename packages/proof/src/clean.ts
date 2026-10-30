@@ -40,15 +40,32 @@ function crc32(bytes: Uint8Array): number {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-interface Piece {
-  /** PNG chunk type, or JPEG marker as a number. */
-  type: string | number;
-  start: number;
-  end: number;
+/**
+ * At most this many separate byte ranges are kept (review M9). Kept pieces that touch are merged, so
+ * a real image (IDATs in a row, JPEG tables and scans in a row) needs only a few; the cap keeps the
+ * walker's memory bounded on hostile input made of thousands of tiny alternating pieces.
+ */
+const MAX_RANGES = 4096;
+
+/** What a walk keeps: merged byte ranges on the allowlist (the header included). */
+class Kept {
+  readonly ranges: Array<[number, number]> = [];
+  /** Chunks or segments off the allowlist; only counted, never stored. */
+  dropped = 0;
+
+  add(start: number, end: number): void {
+    const last = this.ranges[this.ranges.length - 1];
+    if (last && last[1] === start) {
+      last[1] = end;
+      return;
+    }
+    if (this.ranges.length >= MAX_RANGES) throw unsupported();
+    this.ranges.push([start, end]);
+  }
 }
 
 interface Walk {
-  pieces: Piece[];
+  kept: Kept;
   /** Offset just past the end marker; anything from here on is trailing data. */
   end: number;
 }
@@ -63,7 +80,9 @@ function u32(b: Uint8Array, at: number): number {
 
 /** Every chunk of a well-formed PNG, CRCs checked, up to IEND. Throws `unsupported` otherwise. */
 function walkPng(b: Uint8Array): Walk {
-  const pieces: Piece[] = [];
+  const kept = new Kept();
+  kept.add(0, 8);
+  let first = true;
   let at = 8;
   let sawIdat = false;
   for (;;) {
@@ -75,7 +94,8 @@ function walkPng(b: Uint8Array): Walk {
     const type = String.fromCharCode(...typeBytes);
     const end = at + 12 + len;
     if (crc32(b.subarray(at + 4, at + 8 + len)) !== u32(b, at + 8 + len)) throw unsupported();
-    if (pieces.length === 0) {
+    if (first) {
+      first = false;
       if (type !== 'IHDR' || len !== 13) throw unsupported();
       const w = u32(b, at + 8);
       const h = u32(b, at + 12);
@@ -88,11 +108,12 @@ function walkPng(b: Uint8Array): Walk {
     if (critical && !PNG_KEEP.has(type)) throw unsupported();
     if (type === 'PLTE' && sawIdat) throw unsupported();
     if (type === 'IDAT') sawIdat = true;
-    pieces.push({ type, start: at, end });
+    if (PNG_KEEP.has(type)) kept.add(at, end);
+    else kept.dropped++;
     at = end;
     if (type === 'IEND') {
       if (len !== 0 || !sawIdat) throw unsupported();
-      return { pieces, end: at };
+      return { kept, end: at };
     }
   }
 }
@@ -142,7 +163,8 @@ function bodyOk(marker: number, body: Uint8Array): boolean {
     if (body.length < 6) return false;
     const nf = body[5]!;
     const width = (body[3]! << 8) | body[4]!;
-    return nf >= 1 && nf <= 4 && width > 0 && body.length === 6 + 3 * nf;
+    // Grey or YCbCr only (review M10): 2 or 4 components (CMYK, YCCK) need APP14, which is dropped.
+    return (nf === 1 || nf === 3) && width > 0 && body.length === 6 + 3 * nf;
   }
   if (marker === DRI) return body.length === 2;
   if (marker === SOS) {
@@ -159,7 +181,8 @@ function bodyOk(marker: number, body: Uint8Array): boolean {
  * markers included). Throws `unsupported` otherwise.
  */
 function walkJpeg(b: Uint8Array): Walk {
-  const pieces: Piece[] = [{ type: SOI, start: 0, end: 2 }];
+  const kept = new Kept();
+  kept.add(0, 2);
   let at = 2;
   let sawFrame = false;
   let sawScan = false;
@@ -171,8 +194,8 @@ function walkJpeg(b: Uint8Array): Walk {
     const marker = b[at + 1]!;
     if (marker === EOI) {
       if (!sawScan) throw unsupported();
-      pieces.push({ type: EOI, start: at, end: at + 2 });
-      return { pieces, end: at + 2 };
+      kept.add(at, at + 2);
+      return { kept, end: at + 2 };
     }
     // Standalone markers (SOI again, TEM, RSTn outside a scan) and 0xFF00 are not segments here.
     if (marker === SOI || marker === 0x00 || marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) throw unsupported();
@@ -188,7 +211,8 @@ function walkJpeg(b: Uint8Array): Walk {
       sawFrame = true;
     }
     if (marker !== SOS) {
-      pieces.push({ type: marker, start: at, end });
+      if (isApp) kept.dropped++;
+      else kept.add(at, end);
       at = end;
       continue;
     }
@@ -206,16 +230,16 @@ function walkJpeg(b: Uint8Array): Walk {
         p++;
       }
     }
-    pieces.push({ type: SOS, start: at, end: p });
+    kept.add(at, p);
     at = p;
   }
 }
 
 // ---------------------------------------------------------------------------------------------
 
-function walk(bytes: Uint8Array): { walk: Walk; keep: (p: Piece) => boolean; header: number } {
-  if (isPng(bytes)) return { walk: walkPng(bytes), keep: (p) => PNG_KEEP.has(p.type as string), header: 8 };
-  if (isJpeg(bytes)) return { walk: walkJpeg(bytes), keep: (p) => JPEG_KEEP.has(p.type as number), header: 0 };
+function walk(bytes: Uint8Array): Walk {
+  if (isPng(bytes)) return walkPng(bytes);
+  if (isJpeg(bytes)) return walkJpeg(bytes);
   throw unsupported();
 }
 
@@ -225,14 +249,12 @@ function walk(bytes: Uint8Array): { walk: Walk; keep: (p: Piece) => boolean; hea
  * `CleanError('unsupported')`.
  */
 export function cleanImage(bytes: Uint8Array): Uint8Array {
-  const { walk: w, keep, header } = walk(bytes);
-  const kept = w.pieces.filter(keep);
-  const out = new Uint8Array(header + kept.reduce((n, p) => n + (p.end - p.start), 0));
-  out.set(bytes.subarray(0, header), 0);
-  let at = header;
-  for (const p of kept) {
-    out.set(bytes.subarray(p.start, p.end), at);
-    at += p.end - p.start;
+  const { ranges } = walk(bytes).kept;
+  const out = new Uint8Array(ranges.reduce((n, [s, e]) => n + (e - s), 0));
+  let at = 0;
+  for (const [s, e] of ranges) {
+    out.set(bytes.subarray(s, e), at);
+    at += e - s;
   }
   return out;
 }
@@ -242,6 +264,6 @@ export function cleanImage(bytes: Uint8Array): Uint8Array {
  * follows the end marker; `CleanError('unsupported')` for anything that is not a well-formed PNG or JPEG.
  */
 export function assertClean(bytes: Uint8Array): void {
-  const { walk: w, keep } = walk(bytes);
-  if (w.end !== bytes.length || !w.pieces.every(keep)) throw new CleanError('metadata');
+  const w = walk(bytes);
+  if (w.end !== bytes.length || w.kept.dropped > 0) throw new CleanError('metadata');
 }

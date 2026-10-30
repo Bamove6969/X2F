@@ -46,6 +46,12 @@ const BLANK = '\u0000';
 const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 const B = '(?<![A-Za-z0-9])';
 const E = '(?![A-Za-z0-9])';
+/**
+ * Not inside a longer run of digit groups (review 2026-10-30 I1): `06.12.34` in the phone number
+ * `06.12.34.56.78` is not a date, and `14:32` in `14:32.555.0134` is not a time.
+ */
+const NB = '(?<!\\d[-/.:])';
+const NA = '(?![-/.:]\\d)';
 
 const DATE_TEXT: RegExp[] = [
   // Oct 16, 2026 / October 16 2026 / Oct 16
@@ -53,16 +59,20 @@ const DATE_TEXT: RegExp[] = [
   // 16 Oct 2026 / 16 October, 2026 / 16 Oct
   new RegExp(`${B}\\d{1,2}(?:st|nd|rd|th)? ${MONTH}\\.?(?:,? \\d{4})?${E}`, 'gi'),
   // 2026-10-16, optionally with a time
-  new RegExp(`${B}\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)?${E}`, 'g'),
+  new RegExp(`${NB}${B}\\d{4}[-/.]\\d{1,2}[-/.]\\d{1,2}(?:[ T]\\d{1,2}:\\d{2}(?::\\d{2})?)?${E}${NA}`, 'g'),
   // 14:32 / 14:32:05 / 2:32 PM
-  new RegExp(`${B}\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?[AaPp]\\.?[Mm]\\.?)?${E}`, 'g'),
+  new RegExp(`${NB}${B}\\d{1,2}:\\d{2}(?::\\d{2})?(?: ?[AaPp]\\.?[Mm]\\.?)?${E}${NA}`, 'g'),
 ];
 /** 16-10-2026, 10/16/26, 16.10.2026: kept only when one order is a real day and month. */
-const DATE_NUMERIC = new RegExp(`${B}(\\d{1,2})([-/.])(\\d{1,2})\\2(\\d{4}|\\d{2})${E}`, 'g');
+const DATE_NUMERIC = new RegExp(`${NB}${B}(\\d{1,2})([-/.])(\\d{1,2})\\2(\\d{4}|\\d{2})${E}${NA}`, 'g');
+/** A UK sort code label: a dashed `12-05-26` on its line is a sort code, not a date (review M5). */
+const SORT_CODE = /(?<![A-Za-z])sort[\s-]*code(?![A-Za-z])/i;
 
 function markDates(text: string, keep: boolean[]): void {
   for (const re of DATE_TEXT) for (const m of text.matchAll(re)) mark(keep, m.index, m.index + m[0].length);
+  const sortCode = SORT_CODE.test(text);
   for (const m of text.matchAll(DATE_NUMERIC)) {
+    if (sortCode && m[2] === '-' && m[4]!.length === 2) continue;
     const a = Number(m[1]);
     const b = Number(m[3]);
     const ok = (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
@@ -118,14 +128,55 @@ function mod97(iban: string): boolean {
 const DIGIT_RUN = /\d+(?:[ -]\d+)*/g;
 /** IBAN shape: country, check digits, 11-30 more letters or digits, optionally grouped. */
 const IBAN = new RegExp(`${B}[A-Z]{2}\\d{2}(?:[ -]?[A-Z0-9]){11,30}${E}`, 'g');
-/** Masked tails such as `••••1234`, `****1234`, `xx1234`. */
-const MASKED_TAIL = new RegExp(`${B}[•*●·∙xX]{2,} ?\\d{2,}`, 'g');
-const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/g;
+/**
+ * Masked tails such as `••••1234`, `****1234`, `xx1234`, and the forms OCR or banks print for them:
+ * `...1234`, `…1234`, `°°°°1234` (review M1).
+ */
+const MASKED_TAIL = new RegExp(`${B}(?:[•*●·∙°xX…]{2,}|…|\\.{3,}) ?\\d{2,}`, 'g');
+/** The digits after `ending` or `ending in` (`Account ending in 1234`). */
+const ENDING = /(?<=(?<![A-Za-z])ending(?: in)?:? ?)\d{2,}(?!\d)/gi;
+/** Letters or digits of any script in the local part and the domain (review M4: `jane@exämple.com`). */
+const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
+/** An email OCR split before its `@` (`jane.doe @example.com`): the word before belongs to it. */
+const SPLIT_EMAIL = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._%+-]+ @[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}(?![\p{L}\p{N}])/gu;
 /** Phone candidates: an optional `+`, digits with spaces, dots, dashes or brackets between them. */
 const PHONE = /(?<![A-Za-z0-9+])\+?\(?\d(?:[\d ().-]*\d)?\)?/g;
 const HANDLE = /(?<![A-Za-z0-9._%+-])[@$][A-Za-z][A-Za-z0-9_.-]*[A-Za-z0-9_]|(?<![A-Za-z0-9._%+-])[@$][A-Za-z]/g;
-/** Monero standard or integrated addresses (base58). */
-const MONERO = new RegExp(`${B}[48][1-9A-HJ-NP-Za-km-z]{94}(?:[1-9A-HJ-NP-Za-km-z]{11})?${E}`, 'g');
+/**
+ * Monero addresses, also misread, wrapped over two lines or on stagenet and testnet (review M3): any
+ * base58 token of 30 or more characters with a Monero prefix, and any token of 40 or more letters
+ * and digits that is almost all base58.
+ */
+const MONERO = new RegExp(`${B}[45789AB][1-9A-HJ-NP-Za-km-z]{29,}${E}`, 'g');
+const LONG_TOKEN = new RegExp(`${B}[0-9A-Za-z]{40,}${E}`, 'g');
+const NOT_BASE58 = /[0OIl]/g;
+
+/**
+ * Characters OCR reads in place of digits (review M2). A token of only digits and these, with at
+ * least as many digits as look-alikes, counts as digits for the digit-run rules, so `l111` in
+ * `4111 1111 1111 l111` is masked with the rest of the card.
+ */
+const LOOKALIKE = /^[0-9OolI|SB]+$/;
+const TOKEN = /[0-9A-Za-z|]+/g;
+
+/** The text with look-alikes in digit tokens turned into `0`, and which characters were turned. */
+function withLookalikeDigits(text: string): { text: string; changed: boolean[] } {
+  const chars = [...text];
+  const changed: boolean[] = new Array<boolean>(text.length).fill(false);
+  for (const m of text.matchAll(TOKEN)) {
+    const t = m[0];
+    if (!LOOKALIKE.test(t)) continue;
+    const digits = t.replace(/\D/g, '').length;
+    if (digits === 0 || t.length - digits > digits) continue;
+    for (let i = 0; i < t.length; i++) {
+      if (!/\d/.test(t[i]!)) {
+        chars[m.index + i] = '0';
+        changed[m.index + i] = true;
+      }
+    }
+  }
+  return { text: chars.join(''), changed };
+}
 
 function digitsOf(s: string): string {
   return s.replace(/\D/g, '');
@@ -154,14 +205,21 @@ function moneySpans(text: string): Span[] {
       out.push({ start: m.index, end: m.index + raw.length, kind: 'account', rank: RANK.iban });
     }
   }
-  for (const m of text.matchAll(DIGIT_RUN)) {
+  const look = withLookalikeDigits(text);
+  for (const m of look.text.matchAll(DIGIT_RUN)) {
     const digits = digitsOf(m[0]);
     const span = { start: m.index, end: m.index + m[0].length };
-    if (digits.length >= 13 && digits.length <= 19) out.push({ ...span, kind: luhn(digits) ? 'card' : 'account', rank: RANK.card });
+    // The label comes from the real digits: a run with a look-alike in it is never labelled `card`.
+    const real = !look.changed.slice(span.start, span.end).some(Boolean);
+    if (digits.length >= 13 && digits.length <= 19) out.push({ ...span, kind: real && luhn(digits) ? 'card' : 'account', rank: RANK.card });
     if (digits.length >= 6) out.push({ ...span, kind: 'account', rank: RANK.account });
   }
   for (const m of text.matchAll(MASKED_TAIL)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
+  for (const m of text.matchAll(ENDING)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
   for (const m of text.matchAll(MONERO)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
+  for (const m of text.matchAll(LONG_TOKEN)) {
+    if ((m[0].match(NOT_BASE58)?.length ?? 0) * 10 <= m[0].length) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
+  }
   for (const m of text.matchAll(EMAIL)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'email', rank: RANK.email });
   for (const m of text.matchAll(PHONE)) {
     const s = m[0];
@@ -172,6 +230,8 @@ function moneySpans(text: string): Span[] {
 }
 
 // Names: the rest of the line after a label, or the next line when the label stands alone.
+// English labels only, as built: whether to add labels for other languages is open owner question 30
+// (review M7), unchanged here.
 const LABELS = ['account holder', 'beneficiary', 'recipient', 'paid to', 'sent to', 'sender', 'payee', 'payer', 'name', 'from', 'to'];
 const LABEL = LABELS.map((l) => l.replace(' ', '\\s+')).join('|');
 /** A label at the start of the line, with or without a colon. */
@@ -281,6 +341,7 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
     const k = kept[i]!;
     const t = blanked(l.text, k);
     spans[i]!.push(...moneySpans(t), ...handleSpans(t));
+    for (const m of t.matchAll(SPLIT_EMAIL)) spans[i]!.push({ start: m.index, end: m.index + m[0].length, kind: 'email', rank: RANK.email });
     if (isAddressLine(t)) spans[i]!.push({ start: 0, end: t.length, kind: 'address', rank: RANK.address });
     const ns = nameStart(l.text);
     if (ns === 'next') {
@@ -326,8 +387,11 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
         continue;
       }
       // A word that holds a kept part: cover only its detected characters, by position in the word.
+      // Positions by character count are approximate in a proportional font, so each part reaches
+      // one more average character toward its neighbours, within the word (review M8).
       flush();
       const len = end - start;
+      const charW = (word.x1 - word.x0) / len;
       let c = start;
       while (c < end) {
         if (!best[c]) {
@@ -337,11 +401,10 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
         const kind = best[c]!.kind;
         let d = c;
         while (d < end && best[d] && best[d]!.kind === kind) d++;
-        const w = word.x1 - word.x0;
         out.push({
-          x0: Math.floor(word.x0 + (w * (c - start)) / len),
+          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start ? 1 : 0)))),
           y0: word.y0,
-          x1: Math.ceil(word.x0 + (w * (d - start)) / len),
+          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end ? 1 : 0)))),
           y1: word.y1,
           kind,
         });
@@ -352,6 +415,14 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
   });
   return out;
 }
+
+/**
+ * A number with one decimal point and its decimal part (group 1). Three digits after a single
+ * separator may be a thousands group (`123,456`), so those stay a whole number.
+ */
+const DECIMAL = /(?<!\d|\d[.,])\d+[.,](\d{1,2}|\d{4,})(?!\d|[.,]\d)/g;
+/** A range of years, `2023 - 2026` or `2023-2026`. */
+const YEAR_RANGE = /(?<!\d|\d[-/.,] ?)(?:19|20)\d{2} ?[-–—] ?(?:19|20)\d{2}(?!\d| ?[-/.,]\d)/g;
 
 /** The order `detectSensitiveText` reports kinds in (P5-A6's list). */
 const TEXT_ORDER: HiddenKind[] = ['email', 'phone', 'card', 'iban', 'account'];
@@ -366,6 +437,11 @@ export function detectSensitiveText(s: string): HiddenKind[] {
   for (const line of s.split(/\r\n|\r|\n/)) {
     const k: boolean[] = new Array<boolean>(line.length).fill(false);
     markDates(line, k);
+    // Review M6: the digits after a decimal point (`0.12345678 XMR`) and year ranges (`2023 - 2026`)
+    // are not details. Whole numbers of 6 or more digits (`250000 COP`, `1 250 000 IDR`) still are:
+    // that rule is open owner question 29, unchanged here.
+    for (const m of line.matchAll(DECIMAL)) mark(k, m.index + m[0].length - m[1]!.length, m.index + m[0].length);
+    for (const m of line.matchAll(YEAR_RANGE)) mark(k, m.index, m.index + m[0].length);
     for (const m of line.matchAll(ANY_CODE)) {
       if (/[A-Za-z]/.test(m[0]) && normalizeTradeCode(m[0]) !== null) mark(k, m.index, m.index + m[0].length);
     }
