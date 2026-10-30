@@ -355,8 +355,11 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
  */
 export function walletRoutes(app: FastifyInstance): void {
   const session = requireSession({ kinds: ['trader'] });
+  // Plan 2 Task 18 (lead default): a Trades member reads the account's list to pick the trade's
+  // payout wallet at take; adding and removing wallets stay the account owner's (owner-only).
+  const pickWallet = requireSession({ kinds: ['trader'], member: 'trades' });
   app.get('/v1/wallets/rule', { preHandler: session }, async (req) => walletRule(req.server.deps.db, req.auth.accountId));
-  app.get('/v1/wallets', { preHandler: session }, async (req) => {
+  app.get('/v1/wallets', { preHandler: pickWallet }, async (req) => {
     const deps = req.server.deps;
     return (await openWallets(deps.db, req.auth.accountId, deps.clock())).map(toJson);
   });

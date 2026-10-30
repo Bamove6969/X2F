@@ -36,6 +36,26 @@ export async function walletsAction(addresses: readonly string[]): Promise<Extra
   return { kind: 'add-wallets', addressesHash: await addressesHash(addresses), addressEnds: addressEnds(addresses) };
 }
 
+/** Plan 2 Task 18: the roles in the API's fixed order (offers, trades), comma-separated, as the confirm action binds them. */
+function rolesText(roles: readonly ('offers' | 'trades')[]): string {
+  return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).join(',');
+}
+
+/** The action an invite is confirmed for: its roles. */
+export function teamInviteAction(roles: readonly ('offers' | 'trades')[]): Extract<ConfirmAction, { kind: 'team-invite' }> {
+  return { kind: 'team-invite', roles: rolesText(roles) };
+}
+
+/** The action a roles change is confirmed for: the member and exactly the new roles. */
+export function teamRolesAction(memberId: string, roles: readonly ('offers' | 'trades')[]): Extract<ConfirmAction, { kind: 'team-roles' }> {
+  return { kind: 'team-roles', memberId, roles: rolesText(roles) };
+}
+
+/** The action removing a member (or cancelling an invite) is confirmed for. */
+export function teamRemoveAction(memberId: string): Extract<ConfirmAction, { kind: 'team-remove' }> {
+  return { kind: 'team-remove', memberId };
+}
+
 const PLATFORMS: Record<string, string> = {
   windows: 'Windows',
   macos: 'macOS',

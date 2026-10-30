@@ -38,6 +38,12 @@ export const CANT_DO_CODES = [
   // API's own codes are bad-request and not-found; this one is the web's, for the popup's
   // feedback link.
   'cannot-block',
+  // Plan 2 Task 18: team members (owner-only actions, a role a member lacks, the member limit,
+  // and escrow signing, which stays on the account owner's device until Plan 3 Task 42).
+  'owner-only',
+  'forbidden',
+  'too-many-members',
+  'member-cannot-sign',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -141,6 +147,7 @@ export const CANT_DO_TITLE = {
   extend: "You can't give more time",
   block: "You can't block this trader",
   myOffers: "Some offers can't be turned on",
+  team: "This can't be done on the team",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -272,3 +279,23 @@ export const MY_OFFERS_HIDDEN = {
   'method-unavailable': "On, hidden: this payment method isn't available right now",
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
+
+/**
+ * Team members (Plan 2 Task 18): what a team refusal says, on the Team screen and on any screen a
+ * member was refused on. `max` is the member limit the API sent with `too-many-members`.
+ * COPY-UNSIGNED
+ */
+export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
+  switch (code) {
+    case 'owner-only':
+      return 'Only the account owner can do this. Team members work on offers or trades, as their roles allow.';
+    case 'forbidden':
+      return "Your team role doesn't include this. The account owner can change your roles.";
+    case 'too-many-members':
+      return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
+    case 'member-cannot-sign':
+      return "Releasing or securing coins stays on the account owner's device for now. Ask the account owner to do this step.";
+    default:
+      return "This can't be done on the team right now.";
+  }
+}
