@@ -140,6 +140,7 @@ export const CANT_DO_TITLE = {
   nudge: "You can't nudge yet",
   extend: "You can't give more time",
   block: "You can't block this trader",
+  myOffers: "Some offers can't be turned on",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -212,3 +213,62 @@ export const CANNOT_BLOCK_CODE = 'cannot-block' satisfies CantDoCode;
 
 /** A block the API refuses: 400 (yourself) or 404 (the account was closed) on POST /v1/account/blocks. COPY-UNSIGNED */
 export const CANNOT_BLOCK = 'That trader cannot be blocked.';
+
+/**
+ * My offers (Plan 3 Task 36): why ticked offers stayed off, in CantDoThat. `n` is how many offers
+ * the refusal kept off. COPY-UNSIGNED
+ */
+export function myOffersCantDoText(code: CantDoCode, n: number): string {
+  switch (code) {
+    case 'trading-hold':
+      return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
+    case 'too-many-offers':
+      return n === 1
+        ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
+        : 'You have more offers in some markets than the limit allows now. Remove ones you no longer need, then turn these on.';
+    default:
+      return "Your account can't turn these offers on right now.";
+  }
+}
+
+/** The short line under each offer a CantDoThat refusal kept off (the popup gives the reason in full). COPY-UNSIGNED */
+export function myOffersCantDoRow(code: CantDoCode): string {
+  switch (code) {
+    case 'trading-hold':
+      return 'Stayed off: your account has a trading hold.';
+    case 'too-many-offers':
+      return 'Stayed off: over the offer limit for this market.';
+    default:
+      return 'Stayed off.';
+  }
+}
+
+/**
+ * My offers' other lines about an offer that is off or hidden: not "can't do that" refusals
+ * (maintenance, a missing wallet, a method off the catalog, an offer gone; NOT_REFUSAL_CODES), so
+ * they are said in the row with no popup. Kept here beside the refusal words they sit next to.
+ * COPY-UNSIGNED
+ */
+export function myOffersRowText(code: string): string {
+  if (isCantDoCode(code)) return myOffersCantDoRow(code);
+  switch (code) {
+    case 'trading-paused':
+      return 'Trading is paused for maintenance, so this offer stays off for now. Try again soon.';
+    case 'no-wallet':
+      return 'Add a payout wallet before turning offers on.';
+    case 'method-unavailable':
+      return "This payment method isn't available right now, so this offer stays off.";
+    case 'not-found':
+      return 'This offer was removed.';
+    default:
+      return "Something went wrong and this offer wasn't changed. Try again.";
+  }
+}
+
+/** Why a live offer is hidden (Task 36 review M4, `hidden` on GET /v1/account/offers), as its status line. COPY-UNSIGNED */
+export const MY_OFFERS_HIDDEN = {
+  'trading-paused': 'On, hidden while trading is paused',
+  'trading-hold': 'On, hidden while your account has a trading hold',
+  'method-unavailable': "On, hidden: this payment method isn't available right now",
+} as const;
+export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
