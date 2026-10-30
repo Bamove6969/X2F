@@ -21,13 +21,19 @@
  * (`runConfirmedLocalPurge`, review M1) a stored date is compared with the SERVER's time, and a
  * trade goes only once the server confirms it: the trade is gone (404), or its view still carries
  * a self-destruct date that has passed. A trade whose view now has no date (escalated by late
- * funds, or the purge is off: review I1) is forgotten here and kept. No answer (offline, logged
+ * funds, or the purge is off: review I1) is forgotten here and kept. A view with no date only
+ * because of site maintenance (`deleteAtPaused`, review R3-m2) changes nothing here: the stored
+ * date stays, so the trade's copies still go once maintenance ends. No answer (offline, logged
  * out, any other error) keeps everything until the next start or the trade room.
  *
  * A 404 is also what a session that is not a party gets (review R2-m3: on a shared device,
  * account B's session gets 404 for A's trade). So each entry records the account that saw the
- * trade (`accountId` from `GET /v1/account/me`), and a 404 counts as gone only while that same
- * account is signed in. An entry with no account, or no readable account now, keeps the trade.
+ * trade, and a 404 counts as gone only while that same account is signed in. An entry with no
+ * account, or no readable account now, keeps the trade.
+ *
+ * The account is never stored as is (review R3-m3): the entry holds a one-way tag, the SHA-256 of
+ * `accountId:code` (`accountTag`), compared at start-up. The account id (`GET /v1/account/me`)
+ * then never sits in localStorage, nor links one trade code to another.
  */
 
 export const DELETE_AT_KEY = 'x2f.deleteAt';
@@ -59,10 +65,29 @@ function session(): Storage | null {
   }
 }
 
-/** One trade's entry: its ISO self-destruct time, and the account that saw it (review R2-m3). */
+/** One trade's entry: its ISO self-destruct time, and the account that saw it as an `accountTag` (reviews R2-m3, R3-m3). */
 interface Entry {
   at: string;
   account?: string;
+}
+
+/** An `accountTag`: lower-case hex SHA-256. Anything else stored there (a raw id) is dropped on read. */
+const TAG = /^[0-9a-f]{64}$/;
+
+/**
+ * The one-way tag of `accountId` for `code` (review R3-m3): hex SHA-256 of `accountId:code`, or
+ * null when it cannot be made (no WebCrypto). A null tag records no account, which keeps the trade
+ * on a 404 (the fail-safe side).
+ */
+export async function accountTag(accountId: string, code: string): Promise<string | null> {
+  try {
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return null;
+    const d = await subtle.digest('SHA-256', new TextEncoder().encode(`${accountId}:${code}`));
+    return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  } catch {
+    return null;
+  }
 }
 
 /** Trade code → entry, as last seen in the trade's view. An entry stored as a bare date (before R2-m3) has no account. */
@@ -78,7 +103,7 @@ function readMap(): Record<string, Entry> {
       else if (d !== null && typeof d === 'object' && !Array.isArray(d)) {
         const { at, account } = d as { at?: unknown; account?: unknown };
         if (typeof at !== 'string' || !Number.isFinite(Date.parse(at))) continue;
-        out[k] = typeof account === 'string' && account !== '' ? { at, account } : { at };
+        out[k] = typeof account === 'string' && TAG.test(account) ? { at, account } : { at };
       }
     }
     return out;
@@ -98,7 +123,7 @@ function writeMap(m: Record<string, Entry>): void {
 
 /**
  * Remembers (or, with null, forgets) when `code` self-destructs, and which account saw it
- * (`account`; when not given, the account already recorded for the trade is kept).
+ * (`account`, an `accountTag`; when not given, the tag already recorded for the trade is kept).
  */
 export function rememberDeleteAt(code: string, deleteAt: string | null, account?: string | null): void {
   const m = readMap();
@@ -106,14 +131,14 @@ export function rememberDeleteAt(code: string, deleteAt: string | null, account?
     if (!(code in m)) return;
     delete m[code];
   } else {
-    const who = account || m[code]?.account;
+    const who = (account && TAG.test(account) ? account : null) || m[code]?.account;
     if (m[code]?.at === deleteAt && m[code]?.account === who) return;
     m[code] = who ? { at: deleteAt, account: who } : { at: deleteAt };
   }
   writeMap(m);
 }
 
-/** The account recorded with `code`'s entry, or null (review R2-m3). */
+/** The account tag (`accountTag`) recorded with `code`'s entry, or null (reviews R2-m3, R3-m3). */
 export function deleteAtAccount(code: string): string | null {
   return readMap()[code]?.account ?? null;
 }
@@ -164,7 +189,7 @@ export async function runLocalPurge(nowMs: number): Promise<string[]> {
 /** What the server says about a trade at start-up (`runConfirmedLocalPurge`). */
 export type ServerTradeAnswer =
   | { kind: 'gone' }
-  | { kind: 'view'; deleteAt: string | null; serverNow: string }
+  | { kind: 'view'; deleteAt: string | null; serverNow: string; paused?: boolean }
   | { kind: 'unknown' };
 
 export interface ConfirmDeps {
@@ -209,12 +234,12 @@ export const serverConfirm: ConfirmDeps = {
       const res = await fetch(`/v1/trades/${encodeURIComponent(code)}`, { credentials: 'same-origin', headers: { accept: 'application/json' } });
       if (res.status === 404) return { kind: 'gone' };
       if (!res.ok) return { kind: 'unknown' };
-      const v = (await res.json()) as { deleteAt?: unknown; serverNow?: unknown } | null;
+      const v = (await res.json()) as { deleteAt?: unknown; deleteAtPaused?: unknown; serverNow?: unknown } | null;
       const now = typeof v?.serverNow === 'string' && isoMs(v.serverNow) !== null ? v.serverNow : null;
       if (now === null) return { kind: 'unknown' };
       const at = v?.deleteAt ?? null;
       if (at !== null && isoMs(at) === null) return { kind: 'unknown' };
-      return { kind: 'view', deleteAt: at as string | null, serverNow: now };
+      return { kind: 'view', deleteAt: at as string | null, serverNow: now, paused: v?.deleteAtPaused === true };
     } catch {
       return { kind: 'unknown' };
     }
@@ -239,10 +264,13 @@ export async function runConfirmedLocalPurge(deps: ConfirmDeps = serverConfirm):
       // none known) it may just be "not a party", so the trade is kept.
       const saw = deleteAtAccount(code);
       me ??= deps.accountId().catch(() => null);
-      if (saw === null || saw !== (await me)) continue;
+      const id = await me;
+      if (saw === null || id === null || saw !== (await accountTag(id, code))) continue;
       await purgeTradeLocally(code);
       done.push(code);
     } else if (a.kind === 'view') {
+      // Review R3-m2: no date only because of site maintenance: keep the stored date as it is.
+      if (a.paused === true && a.deleteAt === null) continue;
       const at = a.deleteAt === null ? null : Date.parse(a.deleteAt);
       if (at !== null && at <= Date.parse(a.serverNow)) {
         await purgeTradeLocally(code);

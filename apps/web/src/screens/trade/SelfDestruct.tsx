@@ -7,10 +7,14 @@
  * No board yet: Claude Design owns the look, so this line uses the existing `x2f-note` class only
  * and adds no styling (test/privacy-tripwire.test.ts NEEDS_DESIGN_SELFDESTRUCT). Copy is the
  * plan's, // COPY-UNSIGNED until the owner signs it off.
+ *
+ * NEEDS_COPY (review R3-m2): during site maintenance the view has no date (`deleteAtPaused`) and
+ * the room shows no self-destruct line at all. Whether it should say something then (and what) is
+ * the owner's copy; nothing is shown until it is written.
  */
 import { useEffect, useState } from 'react';
 import type { TradeView } from '../../api/trade.js';
-import { currentAccountId, purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
+import { accountTag, currentAccountId, purgeTradeLocally, rememberDeleteAt } from '../../chat/localPurge.js';
 import '../screens.css';
 
 /** The self-destruct date as the reader's locale writes a date. */
@@ -29,30 +33,35 @@ export function selfDestructText(view: Pick<TradeView, 'deleteAt' | 'dispute'>):
 }
 
 /**
- * Remembers the trade's date on this device (with the signed-in account, review R2-m3) and, once
- * it has passed (server time), deletes this device's copies and reports `gone`. `accountId` is
- * injectable for tests.
+ * Remembers the trade's date on this device (with the signed-in account's tag, reviews R2-m3,
+ * R3-m3) and, once it has passed (server time), deletes this device's copies and reports `gone`.
+ * During site maintenance (`deleteAtPaused`, review R3-m2) the stored date is left as it is.
+ * `accountId` is injectable for tests.
  */
 export function useSelfDestruct(
   code: string,
-  view: Pick<TradeView, 'deleteAt'>,
+  view: Pick<TradeView, 'deleteAt' | 'deleteAtPaused'>,
   serverClock: () => Date,
   accountId: () => Promise<string | null> = currentAccountId,
 ): { gone: boolean } {
   const at = view.deleteAt ?? null;
+  const paused = at === null && view.deleteAtPaused === true;
   const [gone, setGone] = useState(false);
   useEffect(() => {
+    if (paused) return;
     rememberDeleteAt(code, at);
     if (at === null) return;
     let stop = false;
     let purged = false;
-    void accountId().then(
-      (id) => {
-        // Not after the purge: that would bring the entry back.
-        if (!stop && !purged && id !== null) rememberDeleteAt(code, at, id);
-      },
-      () => undefined,
-    );
+    void accountId()
+      .then((id) => (id === null ? null : accountTag(id, code)))
+      .then(
+        (tag) => {
+          // Not after the purge: that would bring the entry back.
+          if (!stop && !purged && tag !== null) rememberDeleteAt(code, at, tag);
+        },
+        () => undefined,
+      );
     const check = () => {
       if (Date.parse(at) > serverClock().getTime()) return false;
       purged = true;
@@ -70,7 +79,7 @@ export function useSelfDestruct(
       stop = true;
       clearTimeout(timer);
     };
-  }, [code, at, serverClock, accountId]);
+  }, [code, at, paused, serverClock, accountId]);
   return { gone };
 }
 

@@ -7,7 +7,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { startRetention, type RetentionLog } from '../src/retention.js';
-import { TRADE_CHILD_TABLES, purgeTrades, purgeTradesJob, setTradePurge, tradeDeleteDate } from '../src/retention/tradePurge.js';
+import { TRADE_CHILD_TABLES, purgeTrades, purgeTradesJob, setTradePurge, tradeDeleteDate, tradeSelfDestruct } from '../src/retention/tradePurge.js';
 import { COMPLETED_TRADES_SQL, tradeCap } from '../src/traders/stage.js';
 import { applyEvent } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
@@ -102,8 +102,9 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect(await tradeDeleteDate(deps.db, t.code, START)).toEqual(new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY));
     // Both traders' view carries the date (Task 3, TradeView.deleteAt).
     for (const who of [buyer, seller]) {
-      const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: string | null };
+      const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: string | null; deleteAtPaused: boolean };
       expect(v.deleteAt).toBe(new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY).toISOString());
+      expect(v.deleteAtPaused).toBe(false);
     }
 
     await purgeTrades(deps.db, new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY - 1));
@@ -289,16 +290,21 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
   });
 
   it('shows no self-destruct date during site maintenance, as no pass runs then (review R2-m2)', async () => {
-    const { t } = await tradeIn('released');
+    const { t, buyer } = await tradeIn('released');
     const due = new Date(t.closedAt!.getTime() + TRADE_KEEP_DAYS * DAY);
     expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual(due);
     await deps.db.query('update site_flags set maintenance_since = $1', [at(TRADE_KEEP_DAYS)]);
     try {
+      const v = (await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: string | null; deleteAtPaused: boolean };
+      expect(v).toMatchObject({ deleteAt: null, deleteAtPaused: true });
       expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toBeNull();
+      // Review R3-m2: the null says it is maintenance, so the device keeps its stored date.
+      expect(await tradeSelfDestruct(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual({ deleteAt: null, paused: true });
     } finally {
       await deps.db.query('update site_flags set maintenance_since = null');
     }
     expect(await tradeDeleteDate(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual(due);
+    expect(await tradeSelfDestruct(deps.db, t.code, at(TRADE_KEEP_DAYS + 1))).toEqual({ deleteAt: due, paused: false });
   });
 
   it('a fresh process starts with the purge off: the job touches no row until setTradePurge(true)', async () => {

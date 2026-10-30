@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 // Plan 7 Task 3: the self-destruct date in the trade room and this device's copies going with it.
+import { createHash } from 'node:crypto';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DELETE_AT_KEY,
+  accountTag,
   deleteAtAccount,
   localPurgeDue,
   purgeTradeLocally,
@@ -21,6 +23,8 @@ const A = 'ABCD-EFGH-JKMN';
 const B = 'PQRS-TVWX-YZ23';
 const T = Date.parse('2026-11-30T12:00:00.000Z');
 const iso = (ms: number) => new Date(ms).toISOString();
+/** The tag `accountTag` must store (review R3-m3), made independently. */
+const tagOf = (account: string, code: string) => createHash('sha256').update(`${account}:${code}`).digest('hex');
 
 beforeEach(() => {
   localStorage.clear();
@@ -104,7 +108,7 @@ describe('the start-up purge waits for the server (review M1)', () => {
 
   it('deletes only what the server confirms: gone (404), or a date still set and passed', async () => {
     for (const k of [A, B, C]) localStorage.setItem(`x2f.fund.funded.${k}`, '1');
-    rememberDeleteAt(A, iso(T), ME);
+    rememberDeleteAt(A, iso(T), tagOf(ME, A));
     rememberDeleteAt(B, iso(T));
     rememberDeleteAt(C, iso(T));
     const d = deps(T + 1, {
@@ -138,10 +142,10 @@ describe('the start-up purge waits for the server (review M1)', () => {
   it('a 404 is gone only for the account that saw the trade (review R2-m3: another account\'s session also gets 404)', async () => {
     const D = 'DDDD-2345-6789';
     for (const k of [A, B, C, D]) localStorage.setItem(`x2f.fund.funded.${k}`, '1');
-    rememberDeleteAt(A, iso(T), 'acct-other'); // seen by another account on this shared device
+    rememberDeleteAt(A, iso(T), tagOf('acct-other', A)); // seen by another account on this shared device
     rememberDeleteAt(B, iso(T)); // no account recorded (before R2-m3, or /me unreadable then)
-    rememberDeleteAt(C, iso(T), ME);
-    rememberDeleteAt(D, iso(T), ME);
+    rememberDeleteAt(C, iso(T), tagOf(ME, C));
+    rememberDeleteAt(D, iso(T), tagOf(ME, D));
     const gone = { kind: 'gone' } as const;
     expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: gone, [B]: gone, [C]: gone, [D]: gone }, null))).toEqual([]);
     expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: gone, [B]: gone, [C]: gone }))).toEqual([C]);
@@ -157,26 +161,66 @@ describe('the start-up purge waits for the server (review M1)', () => {
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(deleteAtAccount(A)).toBe(ME);
+    expect(deleteAtAccount(A)).toBe(tagOf(ME, A));
     rerender(<Room code={A} deleteAt={iso(T + 1)} dispute={false} now={() => new Date(T - 60_000)} />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
     });
-    expect(deleteAtAccount(A)).toBe(ME);
+    expect(deleteAtAccount(A)).toBe(tagOf(ME, A));
     expect(localPurgeDue(T + 1)).toEqual([A]);
   });
 
+  it('stores a one-way tag of account:code, never the account id (review R3-m3)', async () => {
+    expect(await accountTag(ME, A)).toBe(tagOf(ME, A));
+    expect(await accountTag(ME, A)).not.toBe(await accountTag(ME, B)); // no link from one trade code to another
+    render(<Room code={A} deleteAt={iso(T)} dispute={false} now={() => new Date(T - 60_000)} account={() => Promise.resolve(ME)} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    const raw = localStorage.getItem(DELETE_AT_KEY)!;
+    expect(raw).toContain(tagOf(ME, A));
+    expect(raw).not.toContain(ME);
+    // A raw id passed (or stored by an older build) is never kept as the account.
+    rememberDeleteAt(B, iso(T), ME);
+    expect(deleteAtAccount(B)).toBeNull();
+    expect(localStorage.getItem(DELETE_AT_KEY)!).not.toContain(ME);
+  });
+
+  it('a view with no date only because of site maintenance keeps the stored date (review R3-m2)', async () => {
+    localStorage.setItem(`x2f.fund.funded.${A}`, '1');
+    rememberDeleteAt(A, iso(T), tagOf(ME, A));
+    const paused = { kind: 'view', deleteAt: null, serverNow: iso(T + 1), paused: true } as const;
+    expect(await runConfirmedLocalPurge(deps(T + 1, { [A]: paused }))).toEqual([]);
+    expect(localStorage.getItem(`x2f.fund.funded.${A}`)).toBe('1');
+    expect(localPurgeDue(T + 1)).toEqual([A]);
+    expect(deleteAtAccount(A)).toBe(tagOf(ME, A));
+    // The room during maintenance: no line, nothing forgotten, nothing deleted.
+    const { host } = render(<Room code={A} deleteAt={null} paused dispute={false} now={() => new Date(T + 1)} account={() => Promise.resolve(ME)} />);
+    await act(async () => {
+      await new Promise((r) => setTimeout(r, 0));
+    });
+    expect(host.querySelector('[data-part="self-destruct"]')).toBeNull();
+    expect(host.querySelector('[data-part="gone"]')).toBeNull();
+    expect(localPurgeDue(T + 1)).toEqual([A]);
+    // Maintenance over: the server deleted the trade, and the next start-up cleans this device.
+    expect(await runConfirmedLocalPurge(deps(T + 2, { [A]: { kind: 'gone' } }))).toEqual([A]);
+    expect(localStorage.getItem(`x2f.fund.funded.${A}`)).toBeNull();
+  });
+
   it('reads an entry stored as a bare date (before R2-m3) as one with no account', () => {
-    localStorage.setItem(DELETE_AT_KEY, JSON.stringify({ [A]: iso(T), [B]: { at: iso(T), account: ME }, [C]: { at: 'nope' } }));
-    expect(localPurgeDue(T)).toEqual([A, B]);
+    const D2 = 'EEEE-2345-6789';
+    const tag = tagOf(ME, B);
+    localStorage.setItem(DELETE_AT_KEY, JSON.stringify({ [A]: iso(T), [B]: { at: iso(T), account: tag }, [C]: { at: 'nope' }, [D2]: { at: iso(T), account: ME } }));
+    expect(localPurgeDue(T)).toEqual([A, B, D2]);
     expect(deleteAtAccount(A)).toBeNull();
-    expect(deleteAtAccount(B)).toBe(ME);
+    expect(deleteAtAccount(B)).toBe(tag);
+    expect(deleteAtAccount(D2)).toBeNull(); // a raw account id (not a tag) is dropped on read (R3-m3)
   });
 });
 
 const NO_ACCOUNT = () => Promise.resolve(null);
-function Room({ code, deleteAt, dispute, now, account = NO_ACCOUNT }: { code: string; deleteAt: string | null; dispute: boolean; now: () => Date; account?: () => Promise<string | null> }) {
-  const view = { deleteAt, dispute: dispute ? { by: 'buyer' as const, at: iso(T - 5) } : null };
+function Room({ code, deleteAt, paused = false, dispute, now, account = NO_ACCOUNT }: { code: string; deleteAt: string | null; paused?: boolean; dispute: boolean; now: () => Date; account?: () => Promise<string | null> }) {
+  const view = { deleteAt, deleteAtPaused: paused, dispute: dispute ? { by: 'buyer' as const, at: iso(T - 5) } : null };
   const { gone } = useSelfDestruct(code, view, now, account);
   return gone ? <p data-part="gone">gone</p> : <SelfDestructNotice view={view} />;
 }

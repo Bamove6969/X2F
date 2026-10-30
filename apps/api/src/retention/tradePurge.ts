@@ -144,11 +144,19 @@ export async function retentionFacts(q: Queryable, code: string, now: Date): Pro
 
 /** When the trade self-destructs as of `now` (TradeView.deleteAt), or null while it is kept with no date (and during site maintenance). */
 export async function tradeDeleteDate(q: Queryable, code: string, now: Date): Promise<Date | null> {
-  // Review R2-m2: no date during site maintenance, as no pass runs then (the room must not show a
-  // trade as self-destructed while the server still holds it).
-  if (await inMaintenance(q)) return null;
+  return (await tradeSelfDestruct(q, code, now)).deleteAt;
+}
+
+/**
+ * The trade's self-destruct date as of `now` and whether it is only paused by site maintenance.
+ * Review R2-m2: no date during maintenance, as no pass runs then (the room must not show a trade as
+ * self-destructed while the server still holds it). Review R3-m2: `paused` tells the device the
+ * null is maintenance, not "kept with no date", so it keeps its stored date (TradeView.deleteAtPaused).
+ */
+export async function tradeSelfDestruct(q: Queryable, code: string, now: Date): Promise<{ deleteAt: Date | null; paused: boolean }> {
+  if (await inMaintenance(q)) return { deleteAt: null, paused: true };
   const f = await retentionFacts(q, code, now);
-  return f === null ? null : tradeDeleteAt(f);
+  return { deleteAt: f === null ? null : tradeDeleteAt(f), paused: false };
 }
 
 /**

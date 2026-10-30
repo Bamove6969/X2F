@@ -7,7 +7,7 @@ import { ApiError } from '../errors.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
-import { tradeDeleteDate } from '../retention/tradePurge.js';
+import { tradeSelfDestruct } from '../retention/tradePurge.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
@@ -86,6 +86,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const me = req.auth.accountId;
     const other = t.buyerId === me ? t.sellerId : t.buyerId;
     const now = deps.clock();
+    const selfDestruct = deps.config.tradePurge ? await tradeSelfDestruct(deps.db, t.code, now) : { deleteAt: null, paused: false };
     return toTradeView(t, me, now, {
       counterparty: await traderSummary(deps.db, other, now, me),
       profile: profile(t.methodId) ?? null,
@@ -93,7 +94,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       finalAlertSeenAt: row.final_alert_seen_at,
       // Review I1: no self-destruct date while the purge is off (X2F_TRADE_PURGE, config.tradePurge):
       // nothing is deleted then, so the room must not promise a date.
-      deleteAt: deps.config.tradePurge ? await tradeDeleteDate(deps.db, t.code, now) : null,
+      deleteAt: selfDestruct.deleteAt,
+      deleteAtPaused: selfDestruct.paused,
     });
   };
 

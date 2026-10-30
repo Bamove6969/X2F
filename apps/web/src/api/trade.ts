@@ -111,6 +111,11 @@ export interface TradeView {
    * button; null while there is no date. Absent from an older API.
    */
   deleteAt?: string | null;
+  /**
+   * True while `deleteAt` is null only because of site maintenance (review R3-m2): this device
+   * keeps the date it stored. Absent from an older API (= false).
+   */
+  deleteAtPaused?: boolean;
   serverNow: string;
 }
 
@@ -153,6 +158,7 @@ export function parseTradeView(raw: unknown): TradeView {
   if (v.deleteAt !== undefined && v.deleteAt !== null && (typeof v.deleteAt !== 'string' || !Number.isFinite(Date.parse(v.deleteAt)))) {
     throw new TradeShapeError('deleteAt');
   }
+  if (v.deleteAtPaused !== undefined && typeof v.deleteAtPaused !== 'boolean') throw new TradeShapeError('deleteAtPaused');
   return raw as TradeView;
 }
 

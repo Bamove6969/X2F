@@ -80,6 +80,11 @@ export interface TradeView {
    * (`X2F_TRADE_PURGE`, config.tradePurge; review I1): nothing self-destructs then.
    */
   deleteAt: string | null;
+  /**
+   * True while `deleteAt` is null only because of site maintenance (no purge pass runs then; review
+   * R3-m2): the device keeps the date it stored. False otherwise, and always while the purge is off.
+   */
+  deleteAtPaused: boolean;
   serverNow: string;
 }
 
@@ -93,6 +98,8 @@ export interface ViewContext {
   finalAlertSeenAt: Date | null;
   /** The self-destruct date (retention/tradePurge.ts `tradeDeleteDate`); absent = none yet. */
   deleteAt?: Date | null;
+  /** The null `deleteAt` is site maintenance (tradeSelfDestruct `paused`); absent = false. */
+  deleteAtPaused?: boolean;
 }
 
 /**
@@ -154,6 +161,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     cancelConfirmableAt: iso(t.cancelConfirmableAt),
     nextDeadline: iso(nextDeadline(t)),
     deleteAt: iso(ctx.deleteAt ?? null),
+    deleteAtPaused: ctx.deleteAtPaused === true,
     serverNow: serverNow.toISOString(),
   };
   if (role === t.poster) view.fee = { atomic: t.feeAtomic.toString() };
