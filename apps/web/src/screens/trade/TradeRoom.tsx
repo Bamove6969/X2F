@@ -31,7 +31,9 @@
  * - `refresh()`: re-read the view now (after posting an event, for example).
  * - `serverClock()`: the server's clock, from `view.serverNow` (Review Focus 3). Use it for every
  *   countdown and deadline test, never `Date.now()`.
- * - `wide`: true at 1024 px and wider (the Desktop board's room, Task 23).
+ * - `wide`: true in the wide layout, 1000 px and wider with no hinge (the Desktop board's room,
+ *   Task 23). Everywhere else, a foldable's panes included, the screen draws its phone layout: the
+ *   room puts it in the first pane and the chat in the next (Task 40, "Foldables" below).
  *
  * ### Choosing a screen
  * 1. If the escrow reports an integrity failure (`participants-mismatch`, `deal-mismatch`, or an
@@ -61,15 +63,35 @@
  * - Exactly one `[data-primary]` per screen (parity, Task 15); every phone size in Task 15's
  *   `PHONE_VIEWPORTS` (e2e/phone.ts, the one standard: 390x844 and 360x800) must fit with no
  *   horizontal scroll.
+ * - Mark the header's Chat link or button with `data-chat-link`: it is hidden while the chat has a
+ *   pane of its own (`useChatPane`), and a Chat sheet it opened closes. A Chat button that is the
+ *   screen's one `[data-primary]` (SellerWaiting) is never marked: it stays visible and moves the
+ *   focus to the chat pane (`focusChatPane`), so every layout keeps exactly one primary.
+ *
+ * ### Foldables (Task 40, src/ui/fold.ts, src/ui/Panes.tsx)
+ * The room, not the screen, lays out the panes, and the screen stays mounted in every layout:
+ * - two panes (600-999 px, or a book fold's two segments) and a tri-fold's three: the screen's
+ *   phone layout in the first pane, the counterparty and the chat (Task 20's panel through
+ *   `setTradeChat`) in the next. Not for `disputed`: the dispute room has its own chat.
+ * - tabletop: `TradeGlance` (information only) in the top half; the screen and the chat, with
+ *   every control, in the bottom half.
+ * - the flip cover screen: `TradeGlance` on top, the screen's phone layout under it.
+ * - `#chat` (the Chat links of Tasks 24-25): on a phone and on the cover screen it opens the chat
+ *   in a sheet; with a chat pane it moves the focus to its composer.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
-import { useLocation, useParams } from 'react-router';
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useLocation, useNavigate, useParams } from 'react-router';
 import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
-import { TradeChatPanel } from '../../chat/ChatPanel.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
+import { Panes } from '../../ui/Panes.js';
+import { Sheet } from '../../ui/Sheet.js';
+import { useTradeChat } from './paySeams.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
+import { TradeGlance } from './TradeGlance.js';
+import { CounterpartyCard } from './TradeTimeline.js';
 
 export interface TradeScreenProps {
   /** The trade code the room's escrow runs for (the route's, normalized): never API data. */
@@ -132,20 +154,8 @@ export function setIntegrityScreen(s: TradeScreen | null): void {
   integrityScreen = s;
 }
 
-const WIDE = '(min-width: 1024px)';
 /** How long after a deadline the room re-reads the trade (the server's timers run on the minute). */
 const DEADLINE_SLACK_MS = 1_000;
-
-function useWide(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const q = window.matchMedia(WIDE);
-      q.addEventListener('change', onChange);
-      return () => q.removeEventListener('change', onChange);
-    },
-    () => window.matchMedia(WIDE).matches,
-  );
-}
 
 type Load = { kind: 'loading' } | { kind: 'missing' } | { kind: 'failed' } | { kind: 'ready'; view: TradeView };
 
@@ -240,7 +250,8 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   useEffect(() => {
     if (hasDeal) forgetConfirmed(code);
   }, [hasDeal, code]);
-  const wide = useWide();
+  const layout = useFoldLayout();
+  const wide = layout === 'wide';
   const serverNow = view.serverNow;
   const clock = useMemo(() => makeServerClock(serverNow), [serverNow]);
   // Re-read just after the next deadline, so a screen chosen by time (`when`) switches on time.
@@ -256,22 +267,73 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
   const props: TradeScreenProps = { code: ownCode, view, escrow, refresh, serverClock: clock, wide };
   const broken = integrityFailed(escrow, view);
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
+  const Chat = useTradeChat();
+  // The dispute room lays out its own chat (follow-up); a broken trade shows only its refusal.
+  const chat = Chat !== null && view.state !== 'disputed' && !broken ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
+  const chatPane = chatPaneFor(layout, Chat !== null, view, broken);
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
-      {Screen ? (
-        <Screen {...props} />
-      ) : broken ? (
-        // Fails closed even if no screen module registered the danger state.
-        <p role="alert">Security check failed. Don't fund this trade.</p>
-      ) : (
-        <StatusCard view={view} />
-      )}
-      {/* Task 20: `/trade/<code>#chat` (the Chat link of screens without a chat of their own) opens the trade's chat here. */}
-      {hash === '#chat' ? (
-        <section id="chat" className="x2f-trade-chat">
-          <TradeChatPanel code={view.code} name={publicName(view.counterparty)} />
-        </section>
-      ) : null}
+      <Panes
+        layout={layout}
+        glance={broken ? null : <TradeGlance view={view} escrow={escrow} serverClock={clock} cover={layout === 'cover'} />}
+        glanceLabel="Trade at a glance"
+        main={
+          Screen ? (
+            <Screen {...props} />
+          ) : broken ? (
+            // Fails closed even if no screen module registered the danger state.
+            <p role="alert">Security check failed. Don't fund this trade.</p>
+          ) : (
+            <StatusCard view={view} />
+          )
+        }
+        side={
+          chatPane ? (
+            <div className="x2f-room__aside">
+              <CounterpartyCard view={view} />
+              <div className="x2f-room__chat-panel">{chat}</div>
+            </div>
+          ) : null
+        }
+        sideLabel={`Chat with ${publicName(view.counterparty)}`}
+      />
+      <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} />
     </main>
+  );
+}
+
+/** Whether the room shows the chat in a pane of its own (so a screen's Chat sheet is not needed). */
+export function chatPaneFor(layout: FoldLayout, chatInstalled: boolean, view: Pick<TradeView, 'state'>, broken = false): boolean {
+  return chatInstalled && view.state !== 'disputed' && !broken && hasPanes(layout);
+}
+
+/** `chatPaneFor` for a screen: true while the room's chat pane is showing. */
+export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
+  return chatPaneFor(useFoldLayout(), useTradeChat() !== null, view);
+}
+
+/** Moves the focus to the composer of the room's chat pane. */
+export function focusChatPane(): void {
+  document.querySelector<HTMLElement>("[data-pane='side'] :is(input, textarea, [contenteditable='true'])")?.focus();
+}
+
+/**
+ * `#chat` (the Chat links of SellerConfirm and SellerRefund): folded, the chat opens in a sheet over
+ * the room and closing it drops the hash; with a chat pane the composer gets the focus. Its draft
+ * is the same either way (useKeptText).
+ */
+function ChatHash({ hash, layout, chat, chatPane, name }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string }) {
+  const navigate = useNavigate();
+  const wanted = hash === '#chat' && chat !== null;
+  useEffect(() => {
+    if (!wanted || !chatPane) return;
+    focusChatPane();
+  }, [wanted, chatPane]);
+  // The cover screen keeps the room under its card, so its Chat links work as on a phone (round-2 review m3).
+  if (!wanted || chatPane || layout === 'wide') return null;
+  return (
+    <Sheet open title={`Chat with ${name}`} onClose={() => void navigate({ hash: '' }, { replace: true })}>
+      <div className="x2f-sheet__body">{chat}</div>
+    </Sheet>
   );
 }

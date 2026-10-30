@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
@@ -28,7 +28,9 @@ import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
-import { DesktopShell } from './ui/DesktopShell.js';
+import { DesktopHeader } from './ui/DesktopShell.js';
+import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
+import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
 import { setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
@@ -38,32 +40,23 @@ import './screens/trade/screens.js';
 // build replaces it with the board's stand-in (fixtures/payChat.ts, installed after this module loads).
 setTradeChat(TradeChatPanel);
 
-const WIDE = '(min-width: 1024px)';
-
-function useWide(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const q = window.matchMedia(WIDE);
-      q.addEventListener('change', onChange);
-      return () => q.removeEventListener('change', onChange);
-    },
-    () => window.matchMedia(WIDE).matches,
-  );
-}
-
-/** Phones get the bottom nav (on the screens whose boards have it); 1024 px and wider get the desktop shell. */
+/**
+ * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
+ * nav on the screens whose boards have it); the wide layout (1000 px and wider, no hinge) gets the
+ * desktop header (Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
+ * unfolding never remounts the screen: its route, scroll position and typed text stay.
+ */
 function Layout({ nav }: { nav: boolean }) {
-  if (useWide()) {
-    return (
-      <DesktopShell>
-        <Outlet />
-      </DesktopShell>
-    );
-  }
+  const layout = useFoldLayout();
+  useFoldAttribute(layout);
+  const wide = layout === 'wide';
   return (
-    <div data-shell="phone">
-      <Outlet />
-      {nav ? <BottomNav /> : null}
+    <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
+      {wide ? <DesktopHeader /> : null}
+      <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
+        <Outlet />
+      </div>
+      {nav && !wide ? <BottomNav /> : null}
     </div>
   );
 }
