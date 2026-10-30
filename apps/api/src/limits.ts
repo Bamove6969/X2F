@@ -76,6 +76,13 @@ export const START_BUCKET: BucketSize = { capacity: 120, perMinute: 120 };
  */
 export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
 
+/**
+ * `POST /v1/account/approvals/:id`, per session (Plan 2 Task 17 review round 4, R4-I1): a refused
+ * decision costs a session one try, so a loop against the hold runs dry instead of racing the
+ * owner's login.
+ */
+export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
+
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 

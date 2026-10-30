@@ -8,8 +8,10 @@ import type { FastifyInstance, FastifyRequest, LightMyRequestResponse } from 'fa
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, gateChange, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
-import { SECURITY_CHANGE_BUCKET } from '../src/limits.js';
+import {
+  HOLD_BLOCKED_ROUTES, HOLD_MS, LIVE_SESSION_ROUTES, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, endHoldIfOwner, gateChange, lockAccount, settleDueHolds, withTx,
+} from '../src/auth/hold.js';
+import { APPROVAL_DECISION_BUCKET, SECURITY_CHANGE_BUCKET } from '../src/limits.js';
 import { hashPassword } from '../src/auth/password.js';
 import { PUSH_SUBSCRIPTION_CAP } from '../src/push/send.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
@@ -1085,9 +1087,326 @@ describe('review round 2', () => {
         const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
         expect((await new Browser(app).post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).statusCode).toBe(200);
         const rec = ((await o.b.get('/v1/account/sessions')).json() as Array<{ id: string; level: string }>).find((s) => s.level === 'recovery')!;
+        // Review round 4 R4-M1 (lead decision 2026-10-30): only a weak session younger than the
+        // backup session is refused (the older direction is round 4's test).
+        await deps.db.query(
+          "update sessions set created_at = (select created_at from sessions where id = $2) + interval '1 second' where id = $1",
+          [await sessionOf(thief), rec.id],
+        );
         expect((await thief.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ error: 'weak-session' });
         expect((await o.b.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ ok: true });
       });
+    });
+  });
+
+  describe('review round 4', () => {
+    const lockApprovalsAs = (db: { query: (s: string, p: unknown[]) => Promise<unknown> }, accountId: string) =>
+      db.query("select pg_advisory_xact_lock(hashtextextended('x2f-approval/' || $1, 0))", [accountId]);
+    /** The owner's passkey as the hold recorded it (`started_methods`), as a strong login proves it. */
+    const ownerPasskey = async (accountId: string) => {
+      const { rows } = await deps.db.query<{ m: string[] }>('select started_methods as m from account_holds where account_id = $1', [accountId]);
+      const id = rows[0]!.m.find((x) => x.startsWith('webauthn:'))!.slice('webauthn:'.length);
+      return { kind: 'webauthn' as const, credentialId: id };
+    };
+    const weakLive = async (accountId: string) =>
+      (await deps.db.query(`select 1 from sessions where account_id = $1 and revoked_at is null and strength is distinct from 'strong'`, [accountId])).rows;
+
+    it("R4-I1: the review's reproduction: the thief's approval in flight across the owner's proof gets 401, and the waiting login gets no session", async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const b2 = new Browser(app);
+      const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
+      expect(typeof a.approvalId).toBe('string');
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      const proven = await ownerPasskey(o.id);
+      // The owner's login transaction holds the approval and account locks while the thief's
+      // decision (past its preHandler) waits on them; then `endHoldIfOwner` runs and commits.
+      const owner = await deps.db.connect();
+      let decided: Promise<LightMyRequestResponse> | undefined;
+      try {
+        await owner.query('begin');
+        await lockApprovalsAs(owner, o.id);
+        await lockAccount(owner, o.id);
+        decided = thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number });
+        await new Promise((r) => setTimeout(r, 300));
+        expect(await endHoldIfOwner(owner, { config: deps.config }, o.id, proven, now)).not.toBeNull();
+        await owner.query('commit');
+      } finally {
+        owner.release();
+      }
+      const res = await decided!;
+      expect(res.statusCode).toBe(401);
+      expect(errorOf(res)).toBe('not-authenticated');
+      expect((await b2.post(`/v1/login/approval/${a.approvalId}/poll`)).json()).toEqual({ status: 'expired' });
+      expect((await b2.get('/v1/account/me')).statusCode).toBe(401);
+      expect(await weakLive(o.id)).toEqual([]);
+      expect(await holdOf(deps, o.id)).toBeNull();
+    });
+
+    it("R4-I1: the owner's proof also ends logins still waiting for an answer (outcome expired)", async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const b2 = new Browser(app);
+      const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
+      const { rows } = await deps.db.query<{ outcome: string | null }>('select outcome from login_approvals where id = $1', [a.approvalId]);
+      expect(rows).toEqual([{ outcome: 'expired' }]);
+      // The owner's own session can no longer approve it either.
+      expect((await o.b.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number })).json()).toMatchObject({ error: 'approval-ended' });
+    });
+
+    it('R4-I1: deciding approvals is throttled per session (a refused loop during the hold runs dry: 429 slow-down)', async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const b2 = new Browser(app);
+      const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      for (let i = 0; i < APPROVAL_DECISION_BUCKET.capacity; i++) {
+        expect(errorOf(await thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number }))).toBe('recovery-hold');
+      }
+      const dry = await thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number });
+      expect(dry.statusCode).toBe(429);
+      expect(dry.json()).toMatchObject({ error: 'slow-down' });
+      // Per session: the owner's session still gets its own answer.
+      expect(errorOf(await o.b.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number }))).toBe('recovery-hold');
+    });
+
+    it('R4-M2: an approval dies with the session that granted it (the granting session logged out before collection: expired)', async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const b2 = new Browser(app);
+      const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
+      expect((await thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number })).json()).toEqual({ outcome: 'approved' });
+      expect((await o.b.delete(`/v1/account/sessions/${await sessionOf(thief)}`)).statusCode).toBe(204);
+      const before = await live(o.id);
+      expect((await b2.post(`/v1/login/approval/${a.approvalId}/poll`)).json()).toEqual({ status: 'expired' });
+      expect((await b2.get('/v1/account/me')).statusCode).toBe(401);
+      expect(await live(o.id)).toBe(before);
+      // An approval whose granting session is still live is collected as before.
+      const b3 = new Browser(app);
+      const a3 = (await passwordLogin(b3, o.name)).json() as { approvalId: string; number: number };
+      expect((await o.b.post(`/v1/account/approvals/${a3.approvalId}`, { choice: a3.number })).json()).toEqual({ outcome: 'approved' });
+      expect((await b3.post(`/v1/login/approval/${a3.approvalId}/poll`)).json()).toMatchObject({ status: 'ok' });
+    });
+
+    describe('R4-M1 (lead decision 2026-10-30): a weak full session may cancel a backup session only when it is older', () => {
+      /** A password-only owner whose sign-up session (weak, set-up window over) made recovery codes. */
+      async function weakOwnerWithCodes() {
+        const o = await passwordTrader();
+        await onboarding(deps, o.id, new Date(now.getTime() + HOUR));
+        const { codes } = (await o.b.post('/v1/account/recovery-codes', {})).json() as { codes: string[] };
+        expect(codes.length).toBeGreaterThan(1);
+        await onboarding(deps, o.id, null);
+        return { ...o, codes };
+      }
+      const backupLogin = async (name: string, code: string) => {
+        const b = new Browser(app);
+        expect((await b.post('/v1/login/backup', { loginName: name, kind: 'recovery-code', code, deviceLabel: 'X' })).statusCode).toBe(200);
+        return sessionOf(b);
+      };
+
+      it("the owner's older weak session cancels a thief's later backup session; the hold stays (fail closed)", async () => {
+        const o = await weakOwnerWithCodes();
+        setNow(new Date(now.getTime() + 60_000));
+        const rec = await backupLogin(o.name, o.codes[0]!);
+        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).json()).toEqual({ ok: true });
+        const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is not null', [rec]);
+        expect(rows).toHaveLength(1);
+        expect(await holdOf(deps, o.id)).toMatchObject({ reason: 'weak-backup-login' });
+      });
+
+      it('a weak session younger than the backup session is refused (403 weak-session) and the backup session stays', async () => {
+        const o = await weakOwnerWithCodes();
+        setNow(new Date(now.getTime() + 60_000));
+        const rec = await backupLogin(o.name, o.codes[0]!);
+        await deps.db.query("update sessions set created_at = $2::timestamptz + interval '1 second' where id = $1", [await sessionOf(o.b), now]);
+        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec}`)).json()).toEqual({ error: 'weak-session' });
+        const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null', [rec]);
+        expect(rows).toHaveLength(1);
+      });
+    });
+
+    describe('class audit: every route acting with the caller session as authority re-checks it under its lock', () => {
+      beforeAll(async () => {
+        // Revokes a flagged session at `requireSession`'s touch: after its liveness read, before the
+        // route's handler, exactly the window a request in flight across the owner's proof has.
+        await deps.db.query(`
+          create table t_revoke_on_touch (session_id uuid primary key);
+          create function t_revoke_on_touch() returns trigger language plpgsql as $$
+          begin
+            if new.last_seen_at is distinct from old.last_seen_at and old.revoked_at is null
+               and exists (select 1 from t_revoke_on_touch where session_id = new.id) then
+              new.revoked_at := new.last_seen_at;
+              delete from t_revoke_on_touch where session_id = new.id;
+            end if;
+            return new;
+          end $$;
+          create trigger t_revoke_on_touch before update on sessions for each row execute function t_revoke_on_touch();`);
+      });
+
+      function pushSub() {
+        const ecdh = createECDH('prime256v1');
+        ecdh.generateKeys();
+        return {
+          endpoint: `https://fcm.googleapis.com/fcm/send/${randomBytes(24).toString('base64url')}`,
+          keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: randomBytes(16).toString('base64url') },
+        };
+      }
+
+      /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
+      async function stateOf(accountId: string, caller: string): Promise<unknown> {
+        const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
+        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices'];
+        const out: Record<string, unknown> = {};
+        for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
+        out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
+        out.account = (await deps.db.query<{ j: unknown }>(`${agg('accounts t')} where id = $1`, [accountId])).rows[0]!.j;
+        return out;
+      }
+
+      type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
+      const del = async (b: Browser, url: string, payload?: unknown) =>
+        b.keep(await app.inject({ method: 'DELETE', url, headers: { origin: ORIGIN }, cookies: b.cookies, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }) }));
+
+      const ROWS: Record<string, () => Promise<Prepared>> = {
+        'PUT /v1/account/password': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'set-password' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken }) };
+        },
+        'POST /v1/account/pgp/finish': async () => {
+          const o = await passkeyWithPassword();
+          const key = await genKey();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'add-method', method: 'pgp' });
+          const s = await o.b.post('/v1/account/pgp/start', { publicKey: key.publicKey, confirmToken });
+          expect(s.statusCode).toBe(200);
+          const code = codeOf(await decrypt(s.json().encryptedMessage, key.privateKey));
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/pgp/finish', { challengeId: s.json().challengeId, code }) };
+        },
+        'POST /v1/account/webauthn/finish': async () => {
+          const o = await passkeyWithPassword();
+          const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'add-method', method: 'passkey' });
+          const s = await o.b.post('/v1/account/webauthn/start', { kind: 'passkey', confirmToken });
+          expect(s.statusCode).toBe(200);
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/webauthn/finish', { challengeId: s.json().challengeId, response: auth.register(s.json().options, ORIGIN) }) };
+        },
+        'POST /v1/account/totp/finish': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'add-method', method: 'totp' });
+          const s = await o.b.post('/v1/account/totp/start', { confirmToken });
+          expect(s.statusCode).toBe(200);
+          const { challengeId, secret } = s.json() as { challengeId: string; secret: string };
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/totp/finish', { challengeId, code: codeAt(secret, now) }) };
+        },
+        'POST /v1/account/recovery-codes': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/recovery-codes', { confirmToken }) };
+        },
+        'DELETE /v1/account/methods/:type/:id': async () => {
+          const o = await passkeyWithPassword();
+          const pid = (await methodsOf(o.b)).find((m) => m.type === 'password')!.id;
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'remove-method', method: 'password', id: pid });
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/account/methods/password/${pid}`, { confirmToken }) };
+        },
+        'POST /v1/account/login-name': async () => {
+          const id = await seedAccount(deps, { loginName: null });
+          const b = new Browser(app);
+          expect((await b.post('/t/login', { accountId: id })).statusCode).toBe(200);
+          const confirmToken = await tokenFor(deps, b, id, { kind: 'set-login-name' });
+          return { b, accountId: id, fire: () => b.post('/v1/account/login-name', { loginName: unique('livename'), confirmToken }) };
+        },
+        'PUT /v1/account/security/one-device': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'set-one-device', on: 'on' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/security/one-device', { on: true, confirmToken }) };
+        },
+        'PUT /v1/account/security/logout-timer': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/security/logout-timer', { idleHours: 2 }) };
+        },
+        'POST /v1/wallets': async () => {
+          const o = await passkeyWithPassword();
+          await deps.db.query('update accounts set had_wallet = true where id = $1', [o.id]);
+          const address = fakeAddress();
+          const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(o.b), accountId: o.id, action: walletAction(address), method: 'pgp' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/wallets', { app: 'feather', label: 'Main', address, confirmToken }) };
+        },
+        'DELETE /v1/wallets/:id': async () => {
+          const o = await passkeyWithPassword();
+          await deps.db.query('update accounts set had_wallet = true where id = $1', [o.id]);
+          const address = fakeAddress();
+          const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(o.b), accountId: o.id, action: walletAction(address), method: 'pgp' });
+          expect((await o.b.post('/v1/wallets', { app: 'feather', label: 'Main', address, confirmToken })).statusCode).toBe(201);
+          const wid = ((await o.b.get('/v1/wallets')).json() as Array<{ id: string }>)[0]!.id;
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/wallets/${wid}`) };
+        },
+        'POST /v1/account/approvals/:id': async () => {
+          const o = await passkeyWithPassword();
+          const a = (await passwordLogin(new Browser(app), o.name)).json() as { approvalId: string; number: number };
+          return { b: o.b, accountId: o.id, fire: () => o.b.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number }) };
+        },
+        'DELETE /v1/account/sessions/:id': async () => {
+          const o = await passkeyWithPassword();
+          const other = await sessionOf(await approvedThief(o.b, o.name));
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/account/sessions/${other}`) };
+        },
+        'DELETE /v1/account/recovery-sessions/:id': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
+          const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
+          const rb = new Browser(app);
+          expect((await rb.post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).statusCode).toBe(200);
+          const rec = await sessionOf(rb);
+          return { b: o.b, accountId: o.id, fire: () => o.b.delete(`/v1/account/recovery-sessions/${rec}`) };
+        },
+        'POST /v1/account/push': async () => {
+          const o = await passkeyWithPassword();
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/push', pushSub()) };
+        },
+        'DELETE /v1/account/push': async () => {
+          const o = await passkeyWithPassword();
+          expect((await o.b.post('/v1/account/push', pushSub())).statusCode).toBe(204);
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, '/v1/account/push') };
+        },
+        'POST /v1/account/alerts/:id/seen': async () => {
+          const o = await passkeyWithPassword();
+          const { rows } = await deps.db.query<{ id: string }>('select id from alerts where account_id = $1 and seen_at is null limit 1', [o.id]);
+          return { b: o.b, accountId: o.id, fire: () => o.b.post(`/v1/account/alerts/${rows[0]!.id}/seen`) };
+        },
+        'POST /v1/account/terms': async () => {
+          const o = await passkeyWithPassword();
+          await deps.db.query('update accounts set terms_accepted_at = null where id = $1', [o.id]);
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS }) };
+        },
+      };
+
+      it('the table covers exactly LIVE_SESSION_ROUTES', () => {
+        expect(Object.keys(ROWS).sort()).toEqual([...LIVE_SESSION_ROUTES].sort());
+      });
+
+      for (const route of Object.keys(ROWS)) {
+        it(`${route}: a session revoked after its preHandler gets 401 and writes nothing`, async () => {
+          // No real push sends (a test-transport answer would drop subscriptions).
+          vi.spyOn(app.push, 'send').mockResolvedValue(true);
+          const p = await ROWS[route]!();
+          const sid = await sessionOf(p.b);
+          // The touch must move `last_seen_at` (it only moves it forward); then the flag arms the trigger.
+          await deps.db.query('update sessions set last_seen_at = $2 where id = $1', [sid, new Date(now.getTime() - 1000)]);
+          await deps.db.query('insert into t_revoke_on_touch (session_id) values ($1)', [sid]);
+          expect((await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null', [sid])).rows).toHaveLength(1);
+          const before = await stateOf(p.accountId, sid);
+          const res = await p.fire();
+          expect(res.statusCode, `${route} ${res.body}`).toBe(401);
+          expect(errorOf(res)).toBe('not-authenticated');
+          // The revocation did happen in the window (the trigger fired), and the route wrote nothing.
+          const { rows } = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is not null', [sid]);
+          expect(rows, route).toHaveLength(1);
+          expect(await stateOf(p.accountId, sid)).toEqual(before);
+        });
+      }
     });
   });
 });

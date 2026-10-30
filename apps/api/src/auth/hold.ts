@@ -435,6 +435,25 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
 ];
 
 /**
+ * Routes that act with the calling session as their authority on the account's, a session's, an
+ * approval's or the security settings' state (review round 4, the class of R3-I1 and R4-I1): each
+ * checks, inside the transaction that writes and under the account lock, that the calling session
+ * is still live (`requireLiveSessionInTx`; the security changes through `gateChange`). Listed in
+ * docs/coordination.md with the routes left out and why.
+ */
+export const LIVE_SESSION_ROUTES: readonly string[] = [
+  ...SECURITY_CHANGE_ROUTES,
+  'DELETE /v1/wallets/:id',
+  'POST /v1/account/approvals/:id',
+  'DELETE /v1/account/sessions/:id',
+  'DELETE /v1/account/recovery-sessions/:id',
+  'POST /v1/account/push',
+  'DELETE /v1/account/push',
+  'POST /v1/account/alerts/:id/seen',
+  'POST /v1/account/terms',
+];
+
+/**
  * Routes a weak session (`weakSession`) may use only on itself (review round 2 N-I2, N-I3, N-M3;
  * round 3 R3-M2; 403 `weak-session`): ending any session but its own (a backup session included),
  * answering a strong login's approval, dropping push subscriptions (only its own go), and marking
