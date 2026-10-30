@@ -1,10 +1,12 @@
 // DisputeRoom (Plan 3 Task 27), board design/x2f-app/DisputeRoom.dc.html: the trade room while a
 // dispute is open. The "In dispute" chip is rose (Global Constraints: rose = disputes; the board
 // draws it amber). The moderator's join banner and name come only from server records
-// (GET /v1/trades/:code/dispute), never from a chat message. The chat itself is Task 20's and the
-// unblurred-proof request is Plan 5's (seams.tsx).
+// (GET /v1/trades/:code/dispute), never from a chat message. The chat itself is Task 20's
+// TradeChatPanel (it shows the spec 6.6 notice; moderator lines get ModeratorTag's badge) under the
+// server's system cards, and the unblurred-proof request is Plan 5's (seams.tsx).
 import type { ReactNode } from 'react';
 import { Link } from 'react-router';
+import { TradeChatPanel } from '../../chat/ChatPanel.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
@@ -12,7 +14,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { dayTime, inTime, repliedIn, xmrInText } from './rules.js';
-import { FallbackChat, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
+import { DisputeSystemCards, systemCardsFor, tradeProofs, UnblurredRequest } from './seams.js';
 import './dispute.css';
 
 /** "Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)" (board), or the waiting form. */
@@ -41,7 +43,7 @@ export function DisputeRoom({
   methodName: string;
   dispute: DisputeView;
   serverClock: () => Date;
-  /** Task 20's ChatPanel (seams.tsx FallbackChat until then). */
+  /** The chat (Task 20's TradeChatPanel by default; tests pass their own). */
   chat?: ReactNode;
   /** Plan 5's unblurred-proof request card (nothing until then). */
   unblurred?: ReactNode;
@@ -102,13 +104,13 @@ export function DisputeRoom({
           </div>
         </section>
 
-        <p className="dispute-chat-notice">Chats are encrypted. If a dispute is opened, a moderator can read this conversation.</p>
         {dispute.moderator === null ? (
           // The side that did not open the dispute never saw DisputeOpen's notice (COPY-UNSIGNED).
           <p className="dispute-chat-notice">A dispute is open. A moderator can read this whole chat, including messages from before the trade.</p>
         ) : null}
 
-        {chat ?? <FallbackChat trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute)} />}
+        <DisputeSystemCards trade={trade} dispute={dispute} systemCards={systemCardsFor(trade, dispute)} />
+        {chat ?? <TradeChatPanel code={trade.code} name={trade.counterparty} dispute={{ moderator: dispute.moderator?.name ?? null }} />}
         {unblurred ?? <UnblurredRequest trade={trade} dispute={dispute} />}
       </div>
     </div>

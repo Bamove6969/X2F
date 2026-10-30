@@ -1,3 +1,5 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { newTradeCode } from '@x2f/core';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -7,7 +9,7 @@ import { canonicalTimeZone, FORMATTER_CAP, formatterCacheSize, inQuietHours, loc
 import {
   NUDGE_GAP_MS, NUDGE_RETENTION_MS, RECIPIENT_LIMIT_PER_HOUR, purgeNudges, type NudgeEvent, type NudgeWiring,
 } from '../src/nudge/routes.js';
-import { pendingNudgeWiring, productionNudgeWiring, tradeSharedContext } from '../src/nudge/wiring.js';
+import { chatSharedContext, pendingNudgeWiring, productionNudgeWiring, tradeSharedContext } from '../src/nudge/wiring.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { testDb } from './helpers/db.js';
@@ -51,12 +53,25 @@ const fakeWiring: NudgeWiring = {
 
 // ---- A pool that records every SQL statement, to show drops and deliveries run the same queries ----
 
-let recording: string[] | null = null;
+/**
+ * The statements of one request only: a query is recorded when it is issued inside `recorded(fn)`'s
+ * async context. Work another request left running (the new-login push of the login before it,
+ * Plan 2 Task 17) is issued in that request's context and never counted, however it interleaves
+ * (review 2026-10-30 I7: the recording window, not the comparison).
+ */
+const requestSql = new AsyncLocalStorage<string[]>();
+
+async function recorded<T>(fn: () => Promise<T>): Promise<{ result: T; sql: string[] }> {
+  const sql: string[] = [];
+  const result = await requestSql.run(sql, fn);
+  // Copied when the response is back: delivery the request queued for later is not part of it.
+  return { result, sql: [...sql] };
+}
 
 function recordingPool(pool: pg.Pool): pg.Pool {
   const wrapQuery = (target: { query: (...a: unknown[]) => unknown }) =>
     (...a: unknown[]) => {
-      if (recording) recording.push(typeof a[0] === 'string' ? a[0] : JSON.stringify(a[0]));
+      requestSql.getStore()?.push(typeof a[0] === 'string' ? a[0] : JSON.stringify(a[0]));
       return target.query(...a);
     };
   return new Proxy(pool, {
@@ -111,7 +126,6 @@ beforeEach(() => {
   pushed.length = 0;
   hang = false;
   publishThrows = false;
-  recording = null;
 });
 
 const at = (ms: number) => new Date(now.getTime() + ms);
@@ -304,20 +318,17 @@ describe('POST /v1/nudges: silent drops look exactly like a delivered nudge (P3-
 
     // The SQL a delivered nudge runs, recorded on a fresh pair.
     const q = await pair();
-    recording = [];
-    expect((await nudge(q.from, q.to.name, q.context)).statusCode).toBe(202);
-    const deliveredSql = recording;
-    recording = null;
+    const { result: sent, sql: deliveredSql } = await recorded(() => nudge(q.from, q.to.name, q.context));
+    expect(sent.statusCode).toBe(202);
+    // The request's own statements were seen (the comparison below is not of two empty lists).
+    expect(deliveredSql.length).toBeGreaterThan(3);
     await settle();
     published.length = 0;
     pushed.length = 0;
 
     const p = await pair();
     await setup(p);
-    recording = [];
-    const res = await nudge(p.from, p.to.name, p.context);
-    const droppedSql = recording;
-    recording = null;
+    const { result: res, sql: droppedSql } = await recorded(() => nudge(p.from, p.to.name, p.context));
     expect(observable(res)).toEqual(ref);
     // Same statements in the same order: no early return for a drop (timing-equivalent).
     expect(droppedSql).toEqual(deliveredSql);
@@ -727,18 +738,78 @@ describe('shared context from real trades (Task 6)', () => {
   });
 });
 
-describe('TRIPWIRES: real wiring for Task 20 (Task 19 delivery is wired)', () => {
-  it('until then, no chat code is a shared context; delivery is left to Task 19 (no publish or sendPush stub)', async () => {
-    expect(await pendingNudgeWiring.hasSharedContext('a', 'b', 'K7Q2-M9XW')).toBe(false);
+describe('shared context from open chats (Task 20)', () => {
+  /** A chat between `seller` (who posted a sell offer) and `buyer`, inserted directly. */
+  async function seedChat(sellerId: string, buyerId: string, tradeCode: string | null = null): Promise<string> {
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents, min_trades, terms, status, created_at, updated_at)
+       values ($1, 'sell', 'zelle', 'USD', 'market', 100, 1000, 100000, 0, '', 'live', now(), now()) returning id`,
+      [sellerId],
+    );
+    const code = newTradeCode();
+    await deps.db.query(
+      'insert into chats (code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at) values ($1, $2, $3, $4, $5, now())',
+      [code, rows[0]!.id, buyerId, sellerId, tradeCode],
+    );
+    return code;
+  }
+
+  it('the two sides of an open pre-trade chat share it, either way round and in any spelling', async () => {
+    const a = await trader();
+    const b = await trader();
+    const c = await trader();
+    const chat = await seedChat(a.id, b.id);
+    const shares = chatSharedContext(deps.db);
+    expect(await shares(a.id, b.id, chat)).toBe(true);
+    expect(await shares(b.id, a.id, chat.toLowerCase().replace(/-/g, ''))).toBe(true);
+    expect(await shares(a.id, c.id, chat)).toBe(false);
+    expect(await shares(a.id, a.id, chat)).toBe(false);
+    expect(await shares(a.id, b.id, 'K7Q2-M9XW')).toBe(false);
+    expect(await productionNudgeWiring(deps.db).hasSharedContext(b.id, a.id, chat)).toBe(true);
+    expect(await pendingNudgeWiring.hasSharedContext(a.id, b.id, chat)).toBe(false);
+  });
+
+  it("a chat whose trade closed is no longer a shared context; an open trade's chat still is", async () => {
+    const a = await trader();
+    const b = await trader();
+    const shares = chatSharedContext(deps.db);
+    const done = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    await driveTo(deps, done.trade, 'released');
+    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, done.code))).toBe(false);
+    const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    // Linked to an open trade: it answers like the trade itself, so a block does not drop the nudge (lead 2026-10-29).
+    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, open.code))).toBe('open-trade');
+  });
+
+  it("under a block, a nudge from a chat linked to an open trade gets through like a trade nudge; a pre-trade chat's is dropped", async () => {
+    const a = await trader();
+    const b = await trader();
+    const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    const tradeChat = await seedChat(a.id, b.id, open.code);
+    const offerChat = await seedChat(a.id, b.id);
+    const saved = fakeWiring.hasSharedContext;
+    fakeWiring.hasSharedContext = productionNudgeWiring(deps.db).hasSharedContext;
+    try {
+      expect((await a.b.post('/v1/account/blocks', { displayName: b.name })).statusCode).toBe(204);
+      expect((await nudge(b, a.name, tradeChat)).statusCode).toBe(202);
+      await settle();
+      expect(published).toEqual([[a.id, { type: 'nudge', from: b.name, context: tradeChat }]]);
+      published.length = 0;
+      setNow(at(NUDGE_GAP_MS + MIN));
+      // The same 202, but nothing reaches the blocker.
+      expect((await nudge(b, a.name, offerChat)).statusCode).toBe(202);
+      await settle();
+      expect(published).toEqual([]);
+    } finally {
+      fakeWiring.hasSharedContext = saved;
+    }
+  });
+
+  it('delivery is left to Task 19 (no publish or sendPush stub)', () => {
     // Left out on purpose: nudge/routes.ts then delivers over app.events and app.push (test/nudge-delivery.test.ts).
     expect(pendingNudgeWiring.publish).toBeUndefined();
     expect(pendingNudgeWiring.sendPush).toBeUndefined();
     expect(productionNudgeWiring(deps.db).publish).toBeUndefined();
     expect(productionNudgeWiring(deps.db).sendPush).toBeUndefined();
-  });
-
-  it('Task 20 (chats) is not merged yet: wire hasSharedContext to open chats in nudge/wiring.ts', async () => {
-    const { rows } = await deps.db.query<{ t: string | null }>(`select to_regclass('public.chats')::text as t`);
-    expect(rows[0]!.t, 'Task 20 merged: hasSharedContext must check open chats (apps/api/src/nudge/wiring.ts)').toBeNull();
   });
 });

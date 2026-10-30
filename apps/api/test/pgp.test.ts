@@ -11,6 +11,7 @@ import { insertPgpKey, loadPgpSigner, openKey, pgpLoginRoutes } from '../src/aut
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { ApiError } from '../src/errors.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { approvedLogin } from './helpers/approval.js';
 import { testApp, testConfig, testSigner } from './helpers/app.js';
 import { inspectPublicKey } from '@x2f/accounts';
 import { codeOf, decrypt, genKey, KEY_DATE, resign, type Pair } from './helpers/pgpKeys.js';
@@ -374,6 +375,9 @@ describe('login', () => {
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
     const attacker = new Browser();
     for (let i = 0; i < 5; i++) expect((await loginStart(attacker, key)).statusCode).toBe(200);
+    // Earlier tests' PGP-alone logins on new browsers started the account's 24-hour hold, during
+    // which a login that waits opens nothing (Task 17 review round 2 N-C1); this test is about challenges.
+    await deps.db.query('delete from account_holds');
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
     const sixth = await loginStart(attacker, key);
@@ -501,7 +505,7 @@ describe('expired keys and refreshed keys', () => {
     expect(s1.statusCode).toBe(200);
     await expect(dec(s1.json().encryptedMessage, s2Only)).rejects.toThrow();
     const c1 = codeOf(await dec(s1.json().encryptedMessage, k.privateKey));
-    expect((await loginFinish(b, s1.json().challengeId, c1)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b, s1.json().challengeId, c1), (u) => b.post(u, {}))).toEqual({ status: 'ok' });
 
     // Someone sends the old public copy (no revocation) as a refresh: S2 stays revoked on the
     // server. The pasted copy picks S2, which the stored copy no longer accepts (M-2), so it gets
@@ -529,7 +533,7 @@ describe('expired keys and refreshed keys', () => {
     expect(await isDecoy(s3)).toBe(false);
     await expect(dec(s3.json().encryptedMessage, s2Only)).rejects.toThrow();
     const c3 = codeOf(await dec(s3.json().encryptedMessage, k.privateKey));
-    expect((await loginFinish(b3, s3.json().challengeId, c3)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b3, s3.json().challengeId, c3), (u) => b3.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('a key whose only encryption subkey expired (primary still valid) → key-expired, no fallback', async () => {
@@ -582,9 +586,9 @@ describe('binding', () => {
     home = await registerPgp(name, key);
   });
 
-  // Each test starts a day later, past the 12-hour logout timer: log home in afresh.
+  // Each test starts a day later, past the 12-hour logout timer: log home in afresh, in the same
+  // (trusted) browser, so no 24-hour hold starts (Task 17) and a second browser's login can wait for approval.
   beforeEach(async () => {
-    home = new Browser();
     const s = await loginStart(home, key);
     await loginFinish(home, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
   });
@@ -606,7 +610,7 @@ describe('binding', () => {
     const a = home;
     const b = new Browser();
     const sb = await loginStart(b, key);
-    await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey)));
+    await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, codeOf(await dec(sb.json().encryptedMessage, key.privateKey))), (u) => b.post(u, {}));
 
     const action = { kind: 'set-password' };
     const ca = await a.post('/v1/confirm/pgp/start', { action });
@@ -632,6 +636,9 @@ describe('binding', () => {
     const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey }); // onboarding: no token needed
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, newKey.privateKey, signerPublic));
+    // X's PGP-alone login may have started the 24-hour hold (Task 17, coolingOff.test.ts), which
+    // would refuse first; this test is about the binding.
+    await deps.db.query('delete from account_holds');
     const byX = await home.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(byX.json()).toEqual({ error: 'challenge-expired' });
   });
@@ -660,6 +667,9 @@ describe('confirm and adding a key', () => {
     // The token records how it was earned (owner, 2026-10-23: a PGP confirm makes a new wallet usable at once).
     expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
 
+    // A PGP-alone session's change waits 24 hours (Task 17, owner 2026-10-29 14:12; coolingOff.test.ts):
+    // here the session counts as strong, since this test is about the key itself.
+    await deps.db.query("update sessions set strength = 'strong' where account_id = (select id from accounts where display_key = $1)", [n.toLowerCase()]);
     const as = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey, confirmToken });
     expect(as.statusCode).toBe(200);
     const atext = await dec(as.json().encryptedMessage, k2.privateKey, signerPublic);
@@ -677,7 +687,7 @@ describe('confirm and adding a key', () => {
       const s = await loginStart(b2, mine);
       await expect(dec(s.json().encryptedMessage, theirs.privateKey)).rejects.toThrow();
       const fin = await loginFinish(b2, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, mine.privateKey)));
-      expect(fin.json()).toEqual({ status: 'ok' });
+      expect(await approvedLogin(deps, fin, (u) => b2.post(u, {}))).toEqual({ status: 'ok' });
     }
   });
 
@@ -740,7 +750,7 @@ describe('user IDs (R16)', () => {
     const b = new Browser();
     const s = await loginStart(b, v6);
     const fin = await loginFinish(b, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, v6.privateKey)));
-    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
 
     const signing = await app.inject({ method: 'GET', url: '/v1/pgp/signing-key' });
     expect(signing.body).not.toContain('a@b.c');
@@ -1012,7 +1022,7 @@ describe('review fixes', () => {
     const flood = new Browser();
     for (let i = 0; i < 6; i++) await loginStart(flood, known);
     const code = codeOf(await dec(sb.json().encryptedMessage, known.privateKey));
-    expect((await loginFinish(b, sb.json().challengeId, code)).json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, await loginFinish(b, sb.json().challengeId, code), (u) => b.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('M1: a challenge started on one origin cannot be finished from another', async () => {

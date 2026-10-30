@@ -2,6 +2,8 @@ import { MAX_MARGIN_BPS, offerRate, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { requireSession } from '../auth/sessions.js';
+import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
@@ -302,12 +304,13 @@ async function loadOfferCaps(db: Queryable): Promise<{ perMarket: number; total:
  */
 async function assertMayPost(
   client: Queryable,
-  accountId: string,
+  auth: AuthContext,
   now: Date,
   market: { side: Side; methodId: string; currency: string },
   except: string | null,
 ): Promise<void> {
-  await lockAccount(client, accountId);
+  const accountId = auth.accountId;
+  await lockAccountLive(client, auth, now);
   const refused = await accountRefusal(client, accountId, now);
   if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
@@ -327,6 +330,15 @@ async function assertMayPost(
  */
 async function lockAccount(client: Queryable, accountId: string): Promise<void> {
   await client.query('select 1 from accounts where id = $1 for update', [accountId]);
+}
+
+/**
+ * `lockAccount`, then the calling session must still be live under that lock (Tasks 16-17 review
+ * round 5 M2: an offer write in flight across the owner's proof or a logout acts for nobody; 401).
+ */
+async function lockAccountLive(client: Queryable, auth: AuthContext, now: Date): Promise<void> {
+  await lockAccount(client, auth.accountId);
+  await requireLiveSessionInTx(client, auth, now);
 }
 
 /** Why this account may not put any offer live now, or null; run after `lockAccount`. */
@@ -430,7 +442,7 @@ async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow
 }
 
 export function offerRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers', { preHandler: requireTrader }, async (req, reply) => {
+  app.post('/v1/offers', { preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
     const deps = req.server.deps;
     const o = parseNewOffer(req.body);
     const method = getMethod(o.methodId);
@@ -447,7 +459,7 @@ export function offerRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const p = o.pricing;
     const id = await inTransaction(deps.db, async (client) => {
-      await assertMayPost(client, accountId, now, o, null);
+      await assertMayPost(client, req.auth!, now, o, null);
       const { rows } = await client.query<{ id: string }>(
       `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, fixed_cents_per_xmr,
                            min_fiat_cents, max_fiat_cents, min_trades, terms, country, status, created_at, updated_at)
@@ -487,6 +499,9 @@ export function offerRoutes(app: FastifyInstance): void {
     const update = (q: Queryable) =>
       q.query(`update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
     if (status === 'live') {
+      // Task 17: an account on its 24-hour hold cannot turn an offer on (pausing or removing one is fine).
+      const until = await holdUntil(deps, accountId, req.server.events);
+      if (until !== null) throw holdRefusal(until);
       // Relisting is posting again: the same checks, in one transaction with the write (review M1).
       assertMethodAvailable(row.method_id);
       await inTransaction(deps.db, async (client) => {
@@ -496,11 +511,15 @@ export function offerRoutes(app: FastifyInstance): void {
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
-        await assertMayPost(client, accountId, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
       });
-    } else if ((await update(deps.db)).rowCount !== 1) {
-      throw new ApiError(404, 'not-found');
+    } else {
+      // Pausing or removing: no guard but a live session (review round 5 M2), under the account lock.
+      await inTransaction(deps.db, async (client) => {
+        await lockAccountLive(client, req.auth!, now);
+        if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
+      });
     }
     return { id, status };
   });
@@ -647,10 +666,15 @@ export function offerRoutes(app: FastifyInstance): void {
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
     if (status === 'live') await assertTermsCurrent(deps, accountId);
+    // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
+    if (status === 'live') {
+      const until = await holdUntil(deps, accountId, req.server.events);
+      if (until !== null) throw holdRefusal(until);
+    }
     const now = deps.clock();
 
     const results = await inTransaction(deps.db, async (client) => {
-      await lockAccount(client, accountId);
+      await lockAccountLive(client, req.auth!, now);
       const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
       const caps = status === 'live' ? await loadOfferCaps(client) : null;
       // Every live or paused offer of mine (the caps count them all), newest first as on the list.

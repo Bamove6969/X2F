@@ -229,7 +229,8 @@ describe('POST /v1/register/password', () => {
       displayName: 'Plabelnul1', loginName: 'labelnul1', password: GOOD, deviceLabel: 'a\u0000b', acceptedTerms: TERMS,
     });
     expect(res.statusCode).toBe(201);
-    const ok = await post('/v1/login/password', { loginName: 'labelnul1', password: GOOD, deviceLabel: 'c\u0000d' });
+    // From the same browser (Task 16: a new browser would wait for approval).
+    const ok = await post('/v1/login/password', { loginName: 'labelnul1', password: GOOD, deviceLabel: 'c\u0000d' }, { [DEVICE_COOKIE]: cookie(res, DEVICE_COOKIE)! });
     expect(ok.statusCode).toBe(200);
     const id = (await accountRow('labelnul1'))!.id;
     const { rows } = await deps.db.query<{ device_label: string }>(
@@ -247,9 +248,10 @@ describe('POST /v1/register/password', () => {
 
 describe('POST /v1/login/password', () => {
   it('logs in with the right password and adds one new-login alert; refuses a wrong one', async () => {
-    await register('loginok01');
+    const reg = await register('loginok01');
     const id = (await accountRow('loginok01'))!.id;
-    const ok = await login('LOGINOK01', GOOD);
+    // From the registering browser: a new one would wait for approval (Task 16, deviceApproval.test.ts).
+    const ok = await login('LOGINOK01', GOOD, { [DEVICE_COOKIE]: cookie(reg, DEVICE_COOKIE)! });
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toEqual({ status: 'ok' });
     expect(cookie(ok, SESSION_COOKIE)).toBeTruthy();
@@ -274,6 +276,10 @@ describe('POST /v1/login/password', () => {
     const first = await login('Legacy.Acct', GOOD);
     expect(first.statusCode).toBe(200);
     const session = cookie(first, SESSION_COOKIE)!;
+    // A password alone on a new device with nothing logged in starts the 24-hour hold (Task 17,
+    // coolingOff.test.ts), and this session would wait; here it counts as strong and unheld.
+    await deps.db.query('delete from account_holds where account_id = $1', [id]);
+    await deps.db.query("update sessions set strength = 'strong' where account_id = $1", [id]);
     // The creating session's onboarding window does not apply: a login session needs a confirm token.
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [id]);
     const confirmToken = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });
@@ -566,7 +572,10 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     expect(await argon2.verify(r.hash, hmac(keys.get(current)!, GOOD))).toBe(true);
     // The next login checks the peppered hash and does not hash again.
     const hash = vi.spyOn(argon2, 'hash');
-    expect((await login('legacypw1', GOOD)).statusCode).toBe(200);
+    // In the same browser: the first login started the 24-hour hold, during which only a browser
+    // already logged in may log in again (Task 17 review round 2 N-C1).
+    const jar = Object.fromEntries(ok.cookies.map((c) => [c.name, c.value]));
+    expect((await login('legacypw1', GOOD, jar)).statusCode).toBe(200);
     expect(hash).not.toHaveBeenCalled();
     expect((await row(id)).hash).toBe(r.hash);
   });
@@ -659,9 +668,9 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
   });
 
   it('a confirm with the password also rehashes a legacy hash', async () => {
-    await register('confirmrh');
+    const reg = await register('confirmrh');
     const id = (await accountRow('confirmrh'))!.id;
-    const ok = await login('confirmrh', GOOD);
+    const ok = await login('confirmrh', GOOD, { [DEVICE_COOKIE]: cookie(reg, DEVICE_COOKIE)! });
     const legacy = await argon2.hash(normalizePassword(GOOD), ARGON2_PLAIN);
     await deps.db.query('update passwords set hash = $2, pepper_id = null where account_id = $1', [id, legacy]);
     const res = await post(

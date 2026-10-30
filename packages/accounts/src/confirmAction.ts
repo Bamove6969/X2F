@@ -17,6 +17,8 @@ export type ConfirmAction =
   /** A pre-009 account sets its private login name (FU-A re-review 2). */
   | { kind: 'set-login-name' }
   | { kind: 'new-recovery-codes' }
+  /** Plan 2 Task 16: turn "One device at a time" on or off. */
+  | { kind: 'set-one-device'; on: 'on' | 'off' }
   | { kind: 'add-device-key'; signPublicHash: string };
 
 /** Canonical JSON of a flat object of strings: keys sorted, no whitespace. */
@@ -56,6 +58,8 @@ export function describeAction(a: ConfirmAction): string {
       return 'set your login name';
     case 'new-recovery-codes':
       return 'make new recovery codes';
+    case 'set-one-device':
+      return a.on === 'on' ? 'turn on One device at a time' : 'turn off One device at a time';
     case 'add-device-key':
       return 'add a trade signing key';
   }

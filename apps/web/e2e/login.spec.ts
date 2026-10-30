@@ -377,7 +377,7 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', '123456');
   await page.click('[data-part="backup-login"]');
-  await expect(page.locator('[data-part="hold-note"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
   await expect(page).toHaveURL(/\/buy$/);
@@ -392,4 +392,65 @@ test('the TOTP backup daily cap says when to try again', async ({ page }) => {
   await page.fill('#backup-code', '123456');
   await page.click('[data-part="backup-login"]');
   await expect(page.locator('[role="alert"]')).toContainText('Too many tries. Try again after');
+});
+
+// Plan 2 Task 16: a login from a new device while the account is logged in elsewhere waits for
+// that device's approval: this browser shows the number and polls until it is let in.
+test('new-device approval: the number shows, the poll lets it in, and Continue goes on', async ({ page }) => {
+  await page.route('**/v1/account/me', json(overview()));
+  const id = '11111111-1111-4111-8111-111111111111';
+  await page.route('**/v1/login/password', json({
+    status: 'approve-on-device', approvalId: id, number: 47,
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+  }));
+  let polls = 0;
+  await page.route(`**/v1/login/approval/${id}/poll`, (r) => {
+    polls++;
+    return json(polls < 2 ? { status: 'waiting', expiresAt: new Date(Date.now() + 60_000).toISOString() } : { status: 'ok', loggedOut: [] })(r);
+  });
+
+  await page.goto('/login?returnTo=%2Fbuy');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
+  // Review M5: nothing about the account's devices before approval.
+  await expect(page.locator('[data-part="approve-room"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="approve-in"]')).toBeVisible();
+  await page.click('[data-part="approve-continue"]');
+  await expect(page).toHaveURL(/\/buy$/);
+});
+
+test('new-device approval: a blocked login says so and offers a backup login', async ({ page }) => {
+  const id = '22222222-2222-4222-8222-222222222222';
+  await page.route('**/v1/login/password', json({
+    status: 'approve-on-device', approvalId: id, number: 12,
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
+  }));
+  await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'blocked' }));
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  await expect(page.locator('[data-part="approve-blocked"]')).toContainText('This login was blocked');
+  await page.click('[data-part="approve-retry"]');
+  await expect(page.locator('[data-method="password"]')).toBeVisible();
+});
+
+// Plan 2 Task 17 review round 3 (R3-M3, R3-M4): a login refused during the hold opens CantDoThat
+// with a sentence for this login (a login is never refused by the device limit any more).
+test('a login refused during the 24-hour hold opens CantDoThat: this login waits until the hold ends', async ({ page }) => {
+  await page.route('**/v1/login/password', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  const popup = page.locator('[role="dialog"] [data-part="cant-do-that"]');
+  await expect(popup).toHaveAttribute('data-from', 'recovery-hold');
+  await expect(popup).toContainText("This login can't get in until");
+  await expect(popup).not.toContainText('can still be finished');
+  await expect(page.locator('[data-part="login-error"]')).toHaveCount(0);
 });

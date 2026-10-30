@@ -128,3 +128,35 @@ export async function walletPassword(db: Queryable, keystoreKey: Uint8Array, tra
   bytes.fill(0);
   return hex;
 }
+
+/** A chat's moderator identity as kept here (hex secrets), Task 20. */
+export interface ChatModIdentity {
+  signPublic: string;
+  boxPublic: string;
+  signSecret: Uint8Array;
+  boxSecret: Uint8Array;
+}
+
+const chatAad = (chat: string): string => `x2f/mod/chat-identity/${chat}`;
+const toHex = (b: Uint8Array): string => Buffer.from(b).toString('hex');
+
+/** Seal and store a chat's moderator identity once (a second call keeps the first). */
+export async function saveChatIdentity(db: Queryable, keystoreKey: Uint8Array, chat: string, id: ChatModIdentity): Promise<void> {
+  const json = JSON.stringify({ signPublic: id.signPublic, boxPublic: id.boxPublic, signSecret: toHex(id.signSecret), boxSecret: toHex(id.boxSecret) });
+  await db.query('insert into mod_chat_identities (chat, sealed) values ($1, $2) on conflict (chat) do nothing', [
+    chat, seal(keystoreKey, chatAad(chat), new TextEncoder().encode(json)),
+  ]);
+}
+
+export async function loadChatIdentity(db: Queryable, keystoreKey: Uint8Array, chat: string): Promise<ChatModIdentity | null> {
+  const { rows } = await db.query<{ sealed: Buffer }>('select sealed from mod_chat_identities where chat = $1', [chat]);
+  const row = rows[0];
+  if (!row) return null;
+  const o = JSON.parse(new TextDecoder().decode(open(keystoreKey, chatAad(chat), row.sealed))) as Record<string, string>;
+  return {
+    signPublic: o.signPublic!,
+    boxPublic: o.boxPublic!,
+    signSecret: new Uint8Array(Buffer.from(o.signSecret!, 'hex')),
+    boxSecret: new Uint8Array(Buffer.from(o.boxSecret!, 'hex')),
+  };
+}

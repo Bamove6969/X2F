@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 // Task 18: BuyQuote and the seller quote, rendered against a stubbed API (the Task 3/4/5 shapes in
-// src/screens/quote/api.ts; see test/quote-tripwires.test.ts).
+// src/screens/quote/api.ts, all on the line now).
 import { act } from 'react';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -157,6 +157,22 @@ describe('BuyQuote', () => {
     expect(text).toContain('You send via Zelle');
     expect(text).toContain("Nothing changes after you tap Trade. satoshi_ghost then has 30 minutes to lock the XMR in escrow. You only pay once it's locked.");
     expect(host.querySelector('[data-username]')?.textContent).toBe('satoshi_ghost');
+  });
+
+  it("the header's Chat stays off until the trade starts: aria-disabled, described by its hint, and a tap opens no chat (Task 20 review I1)", async () => {
+    const { host } = await open(`${BUY}&amount=412.50`);
+    const chat = host.querySelector<HTMLButtonElement>('.x2f-quote__chat')!;
+    expect(chat.textContent).toBe('Chat');
+    expect(chat.getAttribute('aria-disabled')).toBe('true');
+    const hint = host.querySelector(`#${chat.getAttribute('aria-describedby')}`);
+    expect(hint?.textContent).toBe('Chat opens once the trade starts.');
+    expect(hint?.classList.contains('x2f-quote__chat-hint--shown')).toBe(false);
+    fire(chat, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(hint?.classList.contains('x2f-quote__chat-hint--shown')).toBe(true);
+    expect(host.querySelector('.x2f-chat')).toBeNull();
+    const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.map((c) => new URL(String(c[0]), 'http://x2f.test').pathname);
+    expect(calls).not.toContain('/v1/chats');
   });
 
   it('has no X2F fee line, no "1%" and no Deposit row; the network fee row uses the OD-4 copy', async () => {

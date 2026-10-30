@@ -84,7 +84,9 @@ describe('DisputeSlot', () => {
     expect(host.querySelector('[data-username]')?.textContent).toBe(sellerView().counterparty.displayName);
     const urls = fetchMock.mock.calls.map((c) => String(c[0]));
     expect(urls.length).toBeGreaterThan(0);
-    for (const u of urls) expect(u).toMatch(/\/v1\/trades\/[^/]+\/dispute$/);
+    // The dispute record, and the room's chat (Task 20's POST /v1/trades/:code/chat); never the trade itself.
+    for (const u of urls) expect(u).toMatch(/\/v1\/trades\/[^/]+\/(?:dispute|chat)$/);
+    expect(urls.some((u) => /\/dispute$/.test(u))).toBe(true);
     // The room's back link goes to the trader's list, not back to the room itself.
     expect(host.querySelector('a[href="/sell"]')).not.toBeNull();
   });

@@ -2,6 +2,7 @@ import { TIMERS } from '@x2f/trade';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
+import { purgeChatsJob } from '../src/chat/retention.js';
 import { purgeFeedbackForm } from '../src/feedback/form.js';
 import { purgeNudges } from '../src/nudge/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
@@ -145,7 +146,7 @@ describe('trade_events is append-only', () => {
 
 describe('retention scheduler jobs (X-12)', () => {
   it('runs purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddresses and purgeNudges', () => {
-    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges, purgeFeedbackForm]);
+    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm]);
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
   });
 });

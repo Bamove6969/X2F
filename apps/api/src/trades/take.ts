@@ -3,6 +3,8 @@ import { fiatCents, newTrade, offerRate, posterRole, type Price, type Pricing, t
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
+import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { acceptedEvent } from '../events/publicName.js';
@@ -219,7 +221,7 @@ function raceRefusal(e: unknown): ApiError | null {
 const requireTrader = requireSession({ kinds: ['trader'] });
 
 export function takeRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers/:id/take', { preHandler: requireTrader }, async (req) => {
+  app.post('/v1/offers/:id/take', { preHandler: [requireTrader, requireNotHeld] }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw notFound();
@@ -239,6 +241,9 @@ export function takeRoutes(app: FastifyInstance): void {
       // commits, so a hold can never land between the hold check below and the trade insert
       // (Task 5 review M1).
       await c.query('select id from accounts where id = any($1) order by id for update', [[takerId, posterId]]);
+      // Tasks 16-17 review round 5 M2: the taker's session must still be live under that lock (a
+      // take in flight across the owner's proof or a logout starts no trade; 401).
+      await requireLiveSessionInTx(c, req.auth, deps.clock());
       // The offer, locked against a pause or removal (PATCH) until this take commits, and read
       // again with the poster's hold and the site pause inside the transaction (Task 4 review M1).
       const r = (await c.query<OfferRow>(`${OFFER_SQL} for share of o`, [id])).rows[0];
@@ -311,6 +316,8 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
+      await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
       return t;
     });
 
