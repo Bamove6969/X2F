@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { CLIENT_EVENTS, fiatCents } from '@x2f/trade';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, RouteOptions } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
@@ -9,6 +9,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
+import { memberAccessOf } from '../src/auth/sessions.js';
 import { purgeTeamLeftovers } from '../src/team/members.js';
 import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
@@ -24,6 +25,23 @@ import { tradeApp } from './helpers/tradeApp.js';
 
 // Plan 2 Task 18: team members (spec 6.7, R44). Real Postgres, one database for the file; each
 // test makes its own team accounts.
+
+// Every route the app registers, whatever the style (app.<verb>, app.route({...}), a plugin, a path
+// in a variable), as Fastify's own onRoute hook sees it (review round 2, n4). Only recorded: the
+// hook is added to each instance before any route.
+const registered = vi.hoisted(() => [] as RouteOptions[]);
+vi.mock('fastify', async (importOriginal) => {
+  const m = await importOriginal<typeof import('fastify')>();
+  const make = m.default as unknown as (...a: unknown[]) => FastifyInstance;
+  const wrapped = Object.assign((...a: unknown[]) => {
+    const app = make(...a);
+    app.addHook('onRoute', (r) => {
+      registered.push(r);
+    });
+    return app;
+  }, m.default);
+  return { ...m, default: wrapped, fastify: wrapped };
+});
 
 const DAY = 86_400_000;
 const XMR = 1_000_000_000_000n;
@@ -693,6 +711,7 @@ describe('the audit log covers every member action (review M3)', () => {
       'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
     };
     const found: string[] = [];
+    const audited = new Set<string>();
     for (const f of sources(`${ROOT}apps/api/src`)) {
       const src = readFileSync(f, 'utf8');
       const guards = new Set<string>();
@@ -707,8 +726,27 @@ describe('the audit log covers every member action (review M3)', () => {
         found.push(route);
         if (EXEMPT[route]) return;
         expect(block, `${route} (${f}) lets members through and writes no audit row: call auditMember in its transaction, or record why not in EXEMPT`).toMatch(/auditMember\(/);
+        audited.add(route);
       });
     }
+    // The routes as registered (review round 2, n4): a member-allowed guard is one requireSession
+    // built with `member` (memberAccessOf), in any of the route's hooks, whatever the route's
+    // registration style. Each non-GET one calls auditMember in its handler, was audited in the
+    // source scan above, or is a recorded exemption.
+    const live = new Set<string>();
+    for (const r of registered) {
+      const hooks = [r.onRequest, r.preParsing, r.preValidation, r.preHandler].flat().filter(Boolean);
+      if (!hooks.some((h) => memberAccessOf(h) !== undefined)) continue;
+      for (const method of [r.method].flat()) {
+        if (method === 'GET' || method === 'HEAD') continue;
+        const route = `${method} ${r.url}`;
+        live.add(route);
+        if (EXEMPT[route] || audited.has(route)) continue;
+        expect(String(r.handler), `${route} lets members through and writes no audit row: call auditMember in its transaction, or record why not in EXEMPT`).toMatch(/auditMember\(/);
+      }
+    }
+    // The hook sees every route the source scan does (so the guard tag and the hook both work).
+    for (const r of found) expect([...live], r).toContain(r);
     // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
     for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
       'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {

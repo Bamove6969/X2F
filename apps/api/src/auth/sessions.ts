@@ -260,7 +260,7 @@ export function requireSession(
     member?: MemberAccess;
   } = {},
 ): preHandlerAsyncHookHandler {
-  return async function (req: FastifyRequest) {
+  const guard = async function (req: FastifyRequest) {
     const deps = req.server.deps;
     const token = presentedToken(req);
     if (!token) throw new ApiError(401, 'not-authenticated');
@@ -342,6 +342,20 @@ export function requireSession(
       memberName: row.member_id !== null ? row.member_name : null,
     };
   };
+  if (opts.member !== undefined) MEMBER_GUARDS.set(guard, opts.member);
+  return guard;
+}
+
+/** Which members each member-allowed guard lets through (Task 18 review round 2, n4). */
+const MEMBER_GUARDS = new WeakMap<object, MemberAccess>();
+
+/**
+ * The `member` option a `requireSession` guard was built with, or undefined for an owner-only
+ * guard and for anything else. Lets a test see, from the registered routes themselves (Fastify's
+ * onRoute), every route a team member can reach, however it was registered.
+ */
+export function memberAccessOf(handler: unknown): MemberAccess | undefined {
+  return typeof handler === 'function' ? MEMBER_GUARDS.get(handler) : undefined;
 }
 
 /** Called by every login `finish` before `startSession`: 403 `account-disabled`. */
