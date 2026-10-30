@@ -606,19 +606,19 @@ The inputs and failure modes the spec implies but no task's main tests exercise,
 - Produces:
   - `vaultSecrets(cfg: VaultConfig): Promise<Deps['secrets']>`.
   - New blob format `0x02 ‖ vault key version (u16 BE) ‖ provider ciphertext`. The AAD is the header plus the context, as in format `0x01`.
-  - Key handles are named `x2f-totp`, `x2f-pgp-key`, `x2f-pepper`, `x2f-recovery` and `x2f-mod-keystore` (moderation only). Each purpose has its own key, and the API's vault credential cannot use `x2f-mod-keystore`.
+  - Key handles are named `x2f-totp`, `x2f-pgp-key`, `x2f-pepper`, `x2f-recovery`, `x2f-login-name` (FU-D) and `x2f-mod-keystore` (moderation only). Each purpose has its own key, and the API's vault credential cannot use `x2f-mod-keystore`.
   - Per-operation calls: AES-GCM (or the provider's authenticated encryption with the context bound) for the boxes, HMAC-SHA-256 for the MACs. Keys never leave the vault.
   - **The provider never sees a raw context.** Contexts name accounts and PGP fingerprints (`x2f/totp/<accountId>`, `x2f/pgp-key/<fingerprint>`), and KMS CloudTrail logs `EncryptionContext` in clear (OpenBao's audit device logs it HMAC-ed). The adapter sends `HMAC-SHA-256(subkey('vault-ctx'), context)` as the provider's context or AAD; the full context stays in the local format-`0x02` AAD. A test asserts that no call to the fake provider carries an account id or fingerprint.
   - **Key backup and restore** for the chosen backend (D4 "Key loss"): Step 3 implements it and `rotation.md`/`incident.md` (Task 11) document it. A test restores the backed-up keys into a fresh container and opens blobs sealed before the restore.
   - `X2F_SERVER_KEY` (decoys, device cookies, PGP start) is fetched at start as a vault-wrapped data key (envelope), never from the environment, when `X2F_KEY_PROVIDER=vault`.
-  - With `vault`, setting any of `X2F_PASSWORD_PEPPERS`, `X2F_RECOVERY_CODE_KEYS`, `X2F_TOTP_KEYS` or their `_FILE` forms is a config error: there is no silent fallback.
+  - With `vault`, setting any of `X2F_PASSWORD_PEPPERS`, `X2F_RECOVERY_CODE_KEYS`, `X2F_TOTP_KEYS`, `X2F_LOGIN_NAME_KEYS` or their `_FILE` forms is a config error: there is no silent fallback.
   - A metric counter `x2f_vault_errors_total{op}`, used by Task 12.
 
 - [ ] **Step 1: Write the failing tests.**
   - The contract suites pass against the containerised vault.
   - **Review Focus 2, `vault-outage.test.ts`:** with the vault stopped mid-test:
     - password login, TOTP second factor, recovery-code login, TOTP enrolment and PGP login for a stored v4 key answer 503 `busy`;
-    - the same requests for an unknown username and an unknown PGP key answer the **same** 503 (same status, body and headers), so the outage reveals no account;
+    - the same requests for an unknown username and an unknown PGP key answer the **same** 503 (same status, body and headers), so the outage reveals no account. Every login by name makes ring-size `x2f-login-name` HMAC calls for known and unknown names alike (FU-D), so those calls fail the same way too;
     - PGP v6 keys, WebAuthn and existing sessions are unaffected;
     - the process stays up, `x2f_vault_errors_total` increases, and no env key ring is consulted;
     - when the vault comes back, the next request succeeds without a restart.

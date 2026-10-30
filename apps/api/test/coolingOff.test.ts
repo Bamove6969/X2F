@@ -9,6 +9,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, settleDueHolds } from '../src/auth/hold.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
+import { accountIdByLoginName } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
@@ -92,7 +93,7 @@ async function passwordTrader(a: FastifyInstance = app, d: Deps = deps, b = new 
   const name = unique('cool');
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
   expect(res.statusCode).toBe(201);
-  const { rows } = await d.db.query<{ id: string }>('select id from accounts where login_key = $1', [name.toLowerCase()]);
+  const rows = [{ id: (await accountIdByLoginName(d, name))! }];
   const id = rows[0]!.id;
   await onboarding(d, id, null);
   return { b, name, id };
@@ -118,7 +119,7 @@ async function passkeyTrader(b = new Browser(app)): Promise<{ b: Browser; id: st
   const name = unique('passkeyuser');
   const start = (await b.post('/v1/register/webauthn/start', { displayName: `D.${name}`, loginName: name, kind: 'passkey' })).json();
   expect((await b.post('/v1/register/webauthn/finish', { challengeId: start.challengeId, response: auth.register(start.options, ORIGIN), deviceLabel: 'Phone', acceptedTerms: TERMS })).statusCode).toBe(201);
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [name.toLowerCase()]);
+  const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, name, auth };
 }
@@ -167,7 +168,7 @@ async function pgpTrader(): Promise<{ b: Browser; id: string; key: Pair }> {
   const start = await b.post('/v1/register/pgp/start', { displayName: `G${name}`, loginName: name, publicKey: key.publicKey });
   const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey));
   expect((await b.post('/v1/register/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Laptop', acceptedTerms: TERMS })).statusCode).toBe(201);
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [name.toLowerCase()]);
+  const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   await onboarding(deps, rows[0]!.id, null);
   return { b, id: rows[0]!.id, key };
 }
@@ -347,7 +348,7 @@ describe('one weak way', () => {
     const name = unique('cool');
     await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
     expect((await b.post('/v1/account/recovery-codes', {})).statusCode).toBe(200);
-    const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [name.toLowerCase()]);
+    const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
     expect(await holdOf(deps, rows[0]!.id)).toBeNull();
   });
 

@@ -55,7 +55,8 @@ export type PendingChange =
   | { kind: 'webauthn'; credential: StoredCredential; label: string }
   | { kind: 'recovery-codes'; keyId: number; hashes: string[] }
   | { kind: 'remove-method'; type: MethodType; id: string }
-  | { kind: 'login-name'; name: string; key: string }
+  /** FU-D: the name's keyed tag under `keyId`, never the name. */
+  | { kind: 'login-name'; tag: string; keyId: number }
   | { kind: 'one-device'; on: boolean }
   | { kind: 'logout-timer'; idleHours: IdleHours };
 
@@ -175,7 +176,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
     case 'remove-method':
       return (await applyRemoval(db, config, accountId, c.type, c.id, keep, now)) > 0;
     case 'login-name':
-      await applyLoginName(db, accountId, c.name, c.key, now);
+      await applyLoginName(db, accountId, Buffer.from(c.tag, 'base64'), c.keyId, now);
       return false;
     case 'one-device':
       await applyOneDevice(db, accountId, c.on, now);

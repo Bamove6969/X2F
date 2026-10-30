@@ -13,7 +13,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { DEVICE_COOKIE, ensureDeviceCookie } from '../src/auth/device.js';
 import { completeLogin, type LoginFactor } from '../src/auth/login.js';
 import { SESSION_COOKIE, startSession } from '../src/auth/sessions.js';
-import { seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -103,7 +103,7 @@ async function signUp(label = 'Firefox on Linux') {
   const name = unique('dev');
   const res = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: label, acceptedTerms: TERMS });
   expect(res.statusCode).toBe(201);
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [name.toLowerCase()]);
+  const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
   return { a: b, name, accountId: rows[0]!.id };
 }
 

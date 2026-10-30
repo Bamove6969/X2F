@@ -1,3 +1,4 @@
+import { assertLoginNamesTagged } from './accounts.js';
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
 import { addOwnerAlert } from './alerts.js';
@@ -42,6 +43,8 @@ const attestation = fileAttestationPolicy(config.attestationDir);
 await attestation.init();
 
 const db = createPool(config.databaseUrl);
+// FU-D: no start while a login name is still stored in plaintext (migration 012 without its tool).
+await assertLoginNamesTagged(db);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
 // from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
 // owner_settings before each poll. Price health alerts go to the owner's in-app alerts and, for

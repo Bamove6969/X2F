@@ -1,6 +1,7 @@
 import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
+import { loginNameTaken, loginTags, setLoginName } from '../accounts.js';
 import type { Queryable } from '../db/pool.js';
 import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
@@ -168,17 +169,20 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
  */
 /**
  * True for a database error that means the chosen login name clashes with another account's
- * name on `POST /v1/account/login-name`: a taken key (23505 on `accounts_login_key_key` or the
- * `name_keys` primary key), or a deadlock (40P01). Two pre-009 accounts setting each other's
- * display name as their login name at the same moment each wait on the other's old login key
- * (legacy rows have login key = display key); the victim is a clash too, never a 500 (FU-A
- * round-2 Minor 1).
+ * name on `POST /v1/account/login-name`: a taken key or tag (23505 on `accounts_login_key_key`,
+ * `accounts_login_tag_key` or the `name_keys` primary key), or a deadlock (40P01). Since FU-D every
+ * name write serialises on one advisory lock and checks both namespaces first (`setLoginName`), so
+ * these are only a backstop; a deadlock between two pre-009 accounts swapping names was the case
+ * before FU-D (FU-A round-2 Minor 1). Either way the answer is a clash, never a 500.
  */
 export function isLoginNameClash(e: unknown): boolean {
   if (e === null || typeof e !== 'object') return false;
   const err = e as { code?: unknown; constraint?: unknown };
   if (err.code === '40P01') return true;
-  return err.code === '23505' && (err.constraint === 'accounts_login_key_key' || err.constraint === 'name_keys_pkey');
+  return (
+    err.code === '23505' &&
+    (err.constraint === 'accounts_login_key_key' || err.constraint === 'accounts_login_tag_key' || err.constraint === 'name_keys_pkey')
+  );
 }
 
 /** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
@@ -201,7 +205,8 @@ export function accountRoutes(app: FastifyInstance): void {
    * `set-login-name` (re-review 2: a stolen session must not quietly change how the account logs
    * in); a `login-name-set` alert (without the name) is written in the same transaction. 400 `login-name-invalid` /
    * `names-same`, 409 `login-name-set` when the account already chose its names, 409
-   * `names-unavailable` for a name taken in either namespace (the `name_keys` trigger). Each call
+   * `names-unavailable` for a name taken in either namespace (`setLoginName`, FU-D: stored only as
+   * its tag under `X2F_LOGIN_NAME_KEYS`, checked under every key of the ring). Each call
    * takes a register-budget token: a taken name answers like a sign-up's, at the same cost
    * (plan-2-review residual (b)); the login name is never echoed.
    */
@@ -225,8 +230,14 @@ export function accountRoutes(app: FastifyInstance): void {
     try {
       await client.query('begin');
       try {
-        held = await gateChange(client, req, { kind: 'login-name', name: r.name, key: r.key });
-        if (held === null) await applyLoginName(client, req.auth.accountId, r.name, r.key, d.clock());
+        // Refused at once when taken; FU-D: only the name's keyed tag may wait in the hold, never the name.
+        if (await loginNameTaken(client, d.config, req.auth.accountId, r.key)) throw new ApiError(409, 'names-unavailable');
+        const tag = loginTags(d.config, r.key).current;
+        held = await gateChange(client, req, { kind: 'login-name', tag: tag.toString('base64'), keyId: d.config.loginNameKeys.current });
+        if (held === null) {
+          await setLoginName(client, d.config, req.auth.accountId, r.key);
+          await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
+        }
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -419,11 +430,18 @@ export function accountRoutes(app: FastifyInstance): void {
   );
 }
 
-/** The write of a pre-009 account's login name (the route's, or a pending one when the hold ends by time). 409 `login-name-set` when already chosen. */
-export async function applyLoginName(db: Queryable, accountId: string, name: string, key: string, now: Date): Promise<void> {
+/**
+ * A pre-009 account's login name waiting out the hold, applied when the hold ends by time (FU-D:
+ * only its keyed tag was kept). 409 `names-unavailable` when another account took that tag
+ * meanwhile, 409 `login-name-set` when the account chose its names already.
+ */
+export async function applyLoginName(db: Queryable, accountId: string, tag: Buffer, keyId: number, now: Date): Promise<void> {
+  const taken = await db.query('select 1 from accounts where login_tag_key_id = $2 and login_tag = $3 and id <> $1', [accountId, keyId, tag]);
+  if (taken.rows.length > 0) throw new ApiError(409, 'names-unavailable');
   const updated = await db.query(
-    'update accounts set login_name = $2, login_key = $3, legacy_login_name = false where id = $1 and legacy_login_name',
-    [accountId, name, key],
+    `update accounts set login_tag = $2, login_tag_key_id = $3, login_name = null, login_key = null, legacy_login_name = false
+      where id = $1 and legacy_login_name`,
+    [accountId, tag, keyId],
   );
   if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
   await addAlert(db, accountId, 'login-name-set', {}, now);

@@ -20,7 +20,7 @@ import {
   webauthnRegistrationOptions,
 } from '../src/auth/webauthn.js';
 import { ApiError } from '../src/errors.js';
-import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, confirmTokenMethod, currentLoginTag, seedAccount as seedTagged } from './helpers/accounts.js';
 import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { createSoftAuthenticator, createTestCa, writeTestMds, type SoftAuthenticator, type TestCa } from './helpers/softAuthenticator.js';
@@ -117,6 +117,14 @@ afterEach(async () => {
   seededOwners = [];
 });
 
+/** Login names of seeded and signed-up accounts: the database holds only their tags (FU-D). */
+const loginNames = new Map<string, string>();
+async function seedAccount(...args: Parameters<typeof seedTagged>): Promise<string> {
+  const id = await seedTagged(...args);
+  if (args[1].loginName !== null) loginNames.set(id, args[1].loginName);
+  return id;
+}
+
 let nameSeq = 0;
 const uniqueName = (prefix: string) => `${prefix}${++nameSeq}x`;
 /** Sign-up names for a test login name: display name `D.<login name>`. */
@@ -139,8 +147,9 @@ async function signUp(kind: 'passkey' | 'security-key', username = uniqueName('u
     challengeId, response: auth.register(options, ORIGIN), deviceLabel: 'Laptop', acceptedTerms: TERMS,
   });
   expect(res.statusCode).toBe(201);
-  const { rows } = await deps.db.query<{ id: string }>('select id from accounts where login_key = $1', [username.toLowerCase()]);
-  return { b, auth, username, accountId: rows[0]!.id, options };
+  const accountId = (await accountIdByLoginName(deps, username))!;
+  loginNames.set(accountId, username);
+  return { b, auth, username, accountId, options };
 }
 
 async function discoverableLogin(auth: SoftAuthenticator, o: { origin?: string; rpId?: string; type?: string; b?: Browser } = {}) {
@@ -208,10 +217,10 @@ describe('passkey sign-up and discoverable login', () => {
       expect(res.statusCode).toBe(400);
       expect(res.json()).toEqual({ error: 'terms-not-accepted', version: TERMS });
     }
-    expect((await deps.db.query('select 1 from accounts where login_key = $1', [username.toLowerCase()])).rows).toEqual([]);
+    expect(await accountIdByLoginName(deps, username)).toBeUndefined();
     const ok = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
     expect(ok.statusCode).toBe(201);
-    const { rows } = await deps.db.query('select terms_version from accounts where login_key = $1', [username.toLowerCase()]);
+    const { rows } = await deps.db.query('select terms_version from accounts where id = $1', [await accountIdByLoginName(deps, username)]);
     expect(rows[0].terms_version).toBe(TERMS);
   });
 
@@ -408,6 +417,81 @@ describe('afterAuthenticate (Plan 4 mounts)', () => {
   });
 });
 
+describe('login-name tags under key rotation (FU-D)', () => {
+  const tagOf = async (accountId: string) =>
+    (await deps.db.query<{ login_tag: Buffer; login_tag_key_id: number }>('select login_tag, login_tag_key_id from accounts where id = $1', [accountId]))
+      .rows[0]!;
+
+  it('a security key logs in by a name under the old key; only a successful login re-tags the row', async () => {
+    const t = await signUp('security-key');
+    const saved = deps.config.loginNameKeys;
+    try {
+      deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+      // A wrong key, and a right key whose login afterAuthenticate stops: no re-tag.
+      expect(errorOf((await usernameLogin(createSoftAuthenticator({ backedUp: false, userVerified: true }), t.username)).res)).toBe('webauthn-failed');
+      expect(errorOf((await usernameLogin(t.auth, t.username, new Browser(), '/t/sk')).res)).toBe('account-disabled');
+      expect((await tagOf(t.accountId)).login_tag_key_id).toBe(1);
+      expect((await usernameLogin(t.auth, t.username)).res.json()).toEqual({ status: 'ok' });
+      expect(await tagOf(t.accountId)).toEqual({ login_tag: currentLoginTag(deps, t.username, 2), login_tag_key_id: 2 });
+      // No challenge payload holds the plaintext login name (the display name `D.<login name>` contains it, hence the quotes).
+      const { rows } = await deps.db.query<{ p: string }>('select payload::text as p from challenges');
+      expect(rows.filter((r) => r.p.toLowerCase().includes(`"${t.username.toLowerCase()}"`))).toEqual([]);
+    } finally {
+      deps.config.loginNameKeys = saved;
+    }
+  });
+
+  it('a failing re-tag after the session cookie is set still answers ok with the session (review M1)', async () => {
+    const t = await signUp('security-key');
+    const saved = deps.config.loginNameKeys;
+    const real = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const query = vi.spyOn(deps.db, 'query').mockImplementation(((...a: unknown[]) =>
+      String(a[0]).startsWith('update accounts set login_tag = $2, login_tag_key_id = $3 where id = $1')
+        ? Promise.reject(Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' }))
+        : real(...a)) as never);
+    try {
+      deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+      const { res } = await usernameLogin(t.auth, t.username);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ status: 'ok' });
+      expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeDefined();
+      expect((await tagOf(t.accountId)).login_tag_key_id).toBe(1);
+      query.mockRestore();
+      // The next login by name retries the re-tag.
+      expect((await usernameLogin(t.auth, t.username)).res.json()).toEqual({ status: 'ok' });
+      expect((await tagOf(t.accountId)).login_tag_key_id).toBe(2);
+    } finally {
+      query.mockRestore();
+      deps.config.loginNameKeys = saved;
+    }
+  });
+
+  it('start runs the same SQL for names under the old key, the current key, unknown and malformed', async () => {
+    const old = await signUp('security-key');
+    const saved = deps.config.loginNameKeys;
+    try {
+      deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+      const current = await signUp('security-key');
+      const b = new Browser();
+      await b.post('/v1/login/webauthn/start', {}); // the device cookie
+      const spy = spySql(deps.db);
+      try {
+        const sqlOf = async (loginName: string) => {
+          spy.clear();
+          expect((await b.post('/v1/login/webauthn/start', { loginName })).statusCode).toBe(200);
+          return spy.sql();
+        };
+        const all = [await sqlOf(old.username), await sqlOf(current.username), await sqlOf(uniqueName('ghost')), await sqlOf('bad name!')];
+        for (const sql of all.slice(1)) expect(sql).toEqual(all[0]);
+      } finally {
+        spy.restore();
+      }
+    } finally {
+      deps.config.loginNameKeys = saved;
+    }
+  });
+});
+
 describe('attestation for staff and owner (P2-I5, R1)', () => {
   async function staffAdd(b: Browser, auth: SoftAuthenticator, kind: 'passkey' | 'security-key') {
     const start = await b.post('/v1/account/webauthn/start', { kind });
@@ -491,8 +575,7 @@ describe('attestation for staff and owner (P2-I5, R1)', () => {
     const pk = createSoftAuthenticator({ backedUp: true, userVerified: true });
     await insertCredential(ownerId, key, 'security-key', true);
     await insertCredential(ownerId, pk, 'passkey', false);
-    const { rows } = await deps.db.query<{ username: string }>('select login_name as username from accounts where id = $1', [ownerId]);
-    const { res, options } = await usernameLogin(pk, rows[0]!.username);
+    const { res, options } = await usernameLogin(pk, await usernameOf(ownerId));
     const listed = options.allowCredentials.map((c: { id: string }) => c.id);
     expect(listed).toHaveLength(MAX_SECURITY_KEYS); // the key plus decoys (review I2)
     expect(listed).toContain(key.credentialId);
@@ -703,8 +786,7 @@ describe('confirm and adding a credential', () => {
 });
 
 async function usernameOf(accountId: string): Promise<string> {
-  const { rows } = await deps.db.query<{ username: string }>('select login_name as username from accounts where id = $1', [accountId]);
-  return rows[0]!.username;
+  return loginNames.get(accountId)!;
 }
 
 describe('review fixes', () => {
@@ -923,10 +1005,9 @@ describe('review fixes', () => {
     response.response.transports = ['usb', 'bogus', 'nfc', 'x'.repeat(500), 'hybrid'] as never;
     const res = await b.post('/v1/register/webauthn/finish', { challengeId, response, deviceLabel: 'L', acceptedTerms: TERMS });
     expect(res.statusCode).toBe(201);
-    const { rows } = await deps.db.query(
-      'select c.transports from webauthn_credentials c join accounts a on a.id = c.account_id where a.login_key = $1',
-      [username.toLowerCase()],
-    );
+    const { rows } = await deps.db.query('select c.transports from webauthn_credentials c where c.account_id = $1', [
+      await accountIdByLoginName(deps, username),
+    ]);
     expect(rows[0].transports).toEqual(['usb', 'nfc', 'hybrid']);
   });
 });

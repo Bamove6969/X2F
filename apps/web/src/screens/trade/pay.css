@@ -330,7 +330,11 @@
   color: var(--x2f-ink-muted);
 }
 
-/* "I've paid" and cancel sheets. */
+/* The "I've paid" sheet. */
+.x2f-paid .x2f-mono {
+  font-family: var(--x2f-font-mono);
+}
+
 .x2f-paid {
   display: flex;
   flex-direction: column;
@@ -406,20 +410,6 @@
   gap: var(--x2f-space-2);
 }
 
-.x2f-cancel {
-  display: flex;
-  flex-direction: column;
-  gap: var(--x2f-space-4);
-}
-
-.x2f-cancel__warning {
-  margin: 0;
-  font-size: 16px;
-  line-height: 22px;
-  font-weight: 600;
-  color: var(--x2f-danger);
-}
-
 .x2f-cancel__proposed {
   display: flex;
   align-items: center;
@@ -467,8 +457,9 @@
 }
 
 /* The wide room (Desktop board): a main column and a 400 px chat column, filling the shell's height
-   (the room's <main> is the DesktopShell body's child). */
-main[data-screen='trade']:has(> .x2f-room) {
+   (the room's <main> is the DesktopShell body's child; the room's panes wrapper, src/ui/Panes.tsx,
+   is display: contents in the wide layout). */
+main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   display: flex;
   flex-direction: column;
   flex-grow: 1;

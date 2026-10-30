@@ -12,6 +12,7 @@ import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
+import { startCancelReturnWatch } from './trades/cancelReturn.js';
 import { confirmationsRoute, tradeRoutes } from './trades/routes.js';
 import { disputeRoutes } from './disputes/routes.js';
 import { takeRoutes } from './trades/take.js';
@@ -251,7 +252,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
   const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
-  tradeRoutes(app, { publish: tradePublish });
+  tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });
   // Plan 3, Task 5: taking an offer, and the poster's wallet for the new trade.
@@ -261,9 +262,19 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
-  confirmationsRoute(app, options.txConfirmations);
+  confirmationsRoute(app, options.txConfirmations, tradePublish);
   // Plan 4, Task 28: the News inbox (reading needs no session).
   newsRoutes(app);
+  // Plan 3 Task 39 (owner 2026-10-29): records when a buyer's cancel refund is fully confirmed, so
+  // the seller's Confirm cancel is available and the 48-hour auto-close starts (cancelReturn.ts).
+  if (options.txConfirmations) {
+    const stopWatch = startCancelReturnWatch({ db: deps.db, clock: deps.clock, publish: tradePublish }, options.txConfirmations, (err) =>
+      app.log.error({ err }, 'cancel return watch failed'),
+    );
+    app.addHook('onClose', async () => {
+      await stopWatch();
+    });
+  }
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
 

@@ -8,6 +8,7 @@ import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
 import { assertSigningKeyFile, loadConfig, subkey } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
+import { assertLoginNamesTagged, tagLoginNames } from '../src/accounts.js';
 import { emptyDb, testDb } from './helpers/db.js';
 import { testApp, testConfig } from './helpers/app.js';
 import { hashPassword } from '../src/auth/password.js';
@@ -29,6 +30,7 @@ const FULL_ENV = {
   X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 1).toString('base64')}`,
   X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 2).toString('base64')}`,
   X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 3).toString('base64')}`,
+  X2F_LOGIN_NAME_KEYS: `1:${Buffer.alloc(32, 4).toString('base64')}`,
   // Task 19: a VAPID pair, base64url: the P-256 public point (65 bytes) and private scalar (32 bytes).
   ...VAPID,
 };
@@ -40,9 +42,9 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '013_device_approval.sql', '014_account_hold.sql',
-        '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql',
-        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
+        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql',
+        '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
     } finally {
@@ -63,9 +65,9 @@ describe('migrations', () => {
         [randomBytes(32)],
       );
       expect(await migrate(db)).toEqual([
-        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
-        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
+        '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
       expect(rows).toEqual([{ display_name: 'Old.Trader', display_key: 'old.trader', login_name: 'Old.Trader', login_key: 'old.trader', legacy_login_name: true }]);
@@ -74,9 +76,18 @@ describe('migrations', () => {
       // Only a legacy row may have equal names.
       await expect(db.query('update accounts set legacy_login_name = false where id = $1', [inserted[0]!.id])).rejects.toMatchObject({ code: '23514' });
 
-      // A pre-009 password account logs in after the migration with its old name, and is asked for a login name.
+      // A pre-009 password account logs in after the migration with its old name, and is asked for a
+      // login name. Deploy order (FU-D): migrate, `tag-login-names`, start.
       const { app, deps } = await testApp({ db });
       close = () => app.close();
+      await expect(assertLoginNamesTagged(db)).rejects.toThrow(/1 login names are not tagged yet/);
+      expect(await tagLoginNames(deps)).toEqual({ tagged: 1 });
+      await assertLoginNamesTagged(db);
+      // Tagged under the display name, still legacy; name_keys keeps the display key only.
+      expect((await db.query('select login_name, login_key, login_tag_key_id, legacy_login_name from accounts')).rows).toEqual([
+        { login_name: null, login_key: null, login_tag_key_id: deps.config.loginNameKeys.current, legacy_login_name: true },
+      ]);
+      expect((await db.query('select key, kind from name_keys')).rows).toEqual([{ key: 'old.trader', kind: 'display' }]);
       const pw = await hashPassword(deps.config, 'Correct-Horse-9');
       await db.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, now())', [inserted[0]!.id, pw.hash, pw.pepperId]);
       const login = await app.inject({
@@ -130,9 +141,9 @@ describe('migrations', () => {
       );
 
       expect(await migrate(db)).toEqual([
-        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
-        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
+        '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '306_feedback_form.sql',
       ]);
 
       expect((await db.query('select method from confirm_tokens')).rows).toEqual([{ method: 'password' }]);
@@ -251,8 +262,11 @@ describe('schema', () => {
         [randomBytes(32)],
       );
       await new Promise((r) => setTimeout(r, 100));
-      await a.query('commit');
-      await expect(second).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+      // Both observed together: `second` can reject before (or in the same read as) the commit's
+      // reply, and a rejection with no handler yet is an unhandled rejection (a flake seen 2026-10-29).
+      const [commit, raced] = await Promise.allSettled([a.query('commit'), second]);
+      expect(commit.status).toBe('fulfilled');
+      expect(raced).toMatchObject({ status: 'rejected', reason: { code: '23505', constraint: 'name_keys_pkey' } });
       await b.query('rollback');
     } finally {
       a.release();
@@ -298,6 +312,33 @@ describe('schema', () => {
     ]);
     await db.query("delete from accounts where display_key = 'mira.k'");
     expect((await db.query("select 1 from name_keys where key in ('mira.k', 'mira.other')")).rows).toEqual([]);
+  });
+
+  /** An account as the API stores it after FU-D: the login name only as a tag (here random bytes). */
+  const insertTagged = (name: string, tag: Buffer | null, keyId: number | null) =>
+    db.query(
+      `insert into accounts (display_name, display_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
+       values ($1, $2, $3, $4, 'trader', $5, now())`,
+      [name, name.toLowerCase(), tag, keyId, randomBytes(32)],
+    );
+
+  it('012: one account per login tag; tag and key id together, key id 1..32767, the login name in one form only (FU-D)', async () => {
+    const tag = randomBytes(32);
+    await insertTagged('Tagged01', tag, 1);
+    await expect(insertTagged('Tagged02', tag, 2)).rejects.toMatchObject({ code: '23505', constraint: 'accounts_login_tag_key' });
+    await expect(insertTagged('Tagged03', randomBytes(32), null)).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_tag_pair' });
+    await expect(insertTagged('Tagged04', null, 1)).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_tag_pair' });
+    await expect(insertTagged('Tagged05', randomBytes(32), 0)).rejects.toMatchObject({ code: '23514' });
+    await expect(insertTagged('Tagged06', randomBytes(32), -1)).rejects.toMatchObject({ code: '23514' });
+    await expect(
+      db.query(
+        `insert into accounts (display_name, display_key, login_name, login_key, login_tag, login_tag_key_id, kind, webauthn_user_id, created_at)
+         values ('Tagged07', 'tagged07', 'tagged.login', 'tagged.login', $1, 1, 'trader', $2, now())`,
+        [randomBytes(32), randomBytes(32)],
+      ),
+    ).rejects.toMatchObject({ code: '23514', constraint: 'accounts_login_one_form' });
+    // A tagged row's name_keys entry is its public display key only.
+    expect((await db.query("select key, kind from name_keys where key = 'tagged01'")).rows).toEqual([{ key: 'tagged01', kind: 'display' }]);
   });
 });
 
@@ -359,7 +400,7 @@ describe('config', () => {
     );
   });
 
-  it('loads the three key rings; the first entry of each is the current key (FU-C)', () => {
+  it('loads the four key rings; the first entry of each is the current key (FU-C, FU-D)', () => {
     const c = loadConfig({ ...FULL_ENV, X2F_PASSWORD_PEPPERS: ` 7:${k32(9)} , 3:${k32(8)} ` });
     expect(c.passwordPeppers.current).toBe(7);
     expect([...c.passwordPeppers.keys.keys()]).toEqual([7, 3]);
@@ -368,9 +409,14 @@ describe('config', () => {
     expect(Buffer.from(c.recoveryCodeKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 2));
     expect(c.totpKeys.current).toBe(1);
     expect(Buffer.from(c.totpKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 3));
+    expect(c.loginNameKeys.current).toBe(1);
+    expect(Buffer.from(c.loginNameKeys.keys.get(1)!)).toEqual(Buffer.alloc(32, 4));
+    const rotated = loadConfig({ ...FULL_ENV, X2F_LOGIN_NAME_KEYS: `9:${k32(12)},4:${k32(4)}` });
+    expect(rotated.loginNameKeys.current).toBe(9);
+    expect([...rotated.loginNameKeys.keys.keys()]).toEqual([9, 4]);
   });
 
-  it.each(['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS'])('needs %s', (name) => {
+  it.each(['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS'])('needs %s', (name) => {
     const env: Record<string, string> = { ...FULL_ENV };
     delete env[name];
     expect(() => loadConfig(env)).toThrow(name);
@@ -388,6 +434,11 @@ describe('config', () => {
     ['X2F_PASSWORD_PEPPERS', `1:${k32(9)},`],
     ['X2F_RECOVERY_CODE_KEYS', `x:${k32(9)}`],
     ['X2F_TOTP_KEYS', `1:${k32(9)},2:${k32(9)}`],
+    ['X2F_LOGIN_NAME_KEYS', `0:${k32(9)}`],
+    ['X2F_LOGIN_NAME_KEYS', `32768:${k32(9)}`],
+    ['X2F_LOGIN_NAME_KEYS', `1:${Buffer.alloc(31, 9).toString('base64')}`],
+    ['X2F_LOGIN_NAME_KEYS', `1:${k32(9)},1:${k32(10)}`],
+    ['X2F_LOGIN_NAME_KEYS', `1:${k32(9)},2:${k32(9)}`],
   ])('refuses malformed %s %#', (name, value) => {
     expect(() => loadConfig({ ...FULL_ENV, [name]: value })).toThrow(name);
   });
@@ -401,11 +452,20 @@ describe('config', () => {
     expect(() => loadConfig({ ...FULL_ENV, X2F_TOTP_KEYS: `1:${secret}` })).toThrow(
       expect.objectContaining({ message: expect.not.stringContaining(secret) }),
     );
+    // FU-D: the login-name ring is separate from X2F_SERVER_KEY and from each of the other rings.
+    for (const shared of [secret, k32(1), k32(2), k32(3)]) {
+      expect(() => loadConfig({ ...FULL_ENV, X2F_LOGIN_NAME_KEYS: `2:${k32(13)},1:${shared}` })).toThrow(
+        expect.objectContaining({ message: expect.stringMatching(/^config: X2F_LOGIN_NAME_KEYS .*separate/) }),
+      );
+      expect(() => loadConfig({ ...FULL_ENV, X2F_LOGIN_NAME_KEYS: `1:${shared}` })).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining(shared) }),
+      );
+    }
   });
 
   it('never echoes a key ring in its error', () => {
     const secret = Buffer.alloc(31, 5).toString('base64');
-    for (const name of ['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS']) {
+    for (const name of ['X2F_PASSWORD_PEPPERS', 'X2F_RECOVERY_CODE_KEYS', 'X2F_TOTP_KEYS', 'X2F_LOGIN_NAME_KEYS']) {
       expect(() => loadConfig({ ...FULL_ENV, [name]: `4:${secret}` })).toThrow(
         expect.objectContaining({ message: expect.not.stringContaining(secret) }),
       );
@@ -426,6 +486,34 @@ describe('config', () => {
       await chmod(file, 0o640);
       expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: file })).toThrow(/X2F_TOTP_KEYS_FILE.*chmod 600/);
       expect(() => loadConfig({ ...rest, X2F_TOTP_KEYS_FILE: join(dir, 'missing') })).toThrow(/X2F_TOTP_KEYS_FILE/);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('reads X2F_LOGIN_NAME_KEYS from X2F_LOGIN_NAME_KEYS_FILE: chmod 600, owned by the API user, not both (FU-D)', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'x2f-ring-'));
+    try {
+      const file = join(dir, 'login.keys');
+      const key = k32(14);
+      await writeFile(file, `6:${key}\n`);
+      await chmod(file, 0o600);
+      const { X2F_LOGIN_NAME_KEYS: _l, ...rest } = FULL_ENV;
+      const c = loadConfig({ ...rest, X2F_LOGIN_NAME_KEYS_FILE: file });
+      expect(c.loginNameKeys.current).toBe(6);
+      expect(Buffer.from(c.loginNameKeys.keys.get(6)!)).toEqual(Buffer.alloc(32, 14));
+      expect(() => loadConfig({ ...FULL_ENV, X2F_LOGIN_NAME_KEYS_FILE: file })).toThrow(/X2F_LOGIN_NAME_KEYS/);
+      const spy = vi.spyOn(process, 'getuid').mockReturnValue(process.getuid!() + 1);
+      try {
+        expect(() => loadConfig({ ...rest, X2F_LOGIN_NAME_KEYS_FILE: file })).toThrow(/X2F_LOGIN_NAME_KEYS_FILE.*owned by the API user/);
+      } finally {
+        spy.mockRestore();
+      }
+      await chmod(file, 0o604);
+      expect(() => loadConfig({ ...rest, X2F_LOGIN_NAME_KEYS_FILE: file })).toThrow(/X2F_LOGIN_NAME_KEYS_FILE.*chmod 600/);
+      expect(() => loadConfig({ ...rest, X2F_LOGIN_NAME_KEYS_FILE: file })).toThrow(
+        expect.objectContaining({ message: expect.not.stringContaining(key) }),
+      );
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -465,6 +553,7 @@ describe('config', () => {
     expect(subkey(c, 'totp')).toEqual(a);
     expect(subkey(c, 'decoy')).not.toEqual(a);
     expect(subkey(c, 'device')).not.toEqual(subkey(c, 'decoy'));
+    expect(subkey(c, 'login-seal')).not.toEqual(subkey(c, 'name'));
     expect(subkey(testConfig(), 'totp')).not.toEqual(a);
   });
 
