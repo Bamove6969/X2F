@@ -3,6 +3,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
+import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
@@ -159,7 +160,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     }
     let next: Trade;
     try {
-      next = await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, e, by);
+      // Review round 5 M2: the session must still be live under the account lock, taken after the
+      // trade row's (a mark-paid in flight across the owner's proof or a logout writes nothing; 401).
+      next = await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, e, by, undefined, async (client, now) => {
+        await requireLiveSessionInTx(client, req.auth, now);
+      });
     } catch (err) {
       if (err instanceof TradeRuleError) throw new ApiError(409, err.code);
       throw err;

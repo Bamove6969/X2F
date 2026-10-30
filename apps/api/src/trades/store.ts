@@ -302,6 +302,11 @@ function unchanged(prev: Trade, next: Trade): boolean {
  * the commit, with the locked row's trade before and after (Task 27 writes the dispute row there, so
  * a trade is never disputed without one). It does not run for a no-op event. If it throws, nothing
  * is written.
+ *
+ * `before` runs in the same transaction right after the trade row is locked, before anything is
+ * worked out or written (Tasks 16-17 review round 5 M2: the events route re-checks its session
+ * there; lock order trade row, then account, as `/v1/trades/:code/wallet`). If it throws, nothing
+ * is written.
  */
 export async function applyEvent(
   deps: TradeDeps,
@@ -309,6 +314,7 @@ export async function applyEvent(
   e: TradeEvent,
   by: By,
   within?: (client: pg.PoolClient, prev: Trade, next: Trade, now: Date) => Promise<void>,
+  before?: (client: pg.PoolClient, now: Date) => Promise<void>,
 ): Promise<Trade> {
   const client: pg.PoolClient = await deps.db.connect();
   let next: Trade;
@@ -318,6 +324,7 @@ export async function applyEvent(
       const row = await loadTradeRow(client, code, true);
       if (!row) throw new ApiError(404, 'not-found');
       const now = deps.clock();
+      if (before) await before(client, now);
       const prev = rowToTrade(row);
       next = apply(prev, e, by, now);
       // An event that changes nothing (the same chain numbers again, a tick with nothing due)

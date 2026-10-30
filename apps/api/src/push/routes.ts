@@ -86,10 +86,10 @@ export function pushRoutes(app: FastifyInstance): void {
     try {
       await client.query('begin');
       try {
-        // Review round 4: the subscribing session must still be live where it writes.
+        // Review round 4: the subscribing session must still be live where it writes. Its account
+        // lock (`for no key update`, which conflicts with itself) also serialises this account's
+        // posts, so the cap holds under concurrent requests (round 5 N1: no second, stronger lock).
         const caller = await requireLiveSessionInTx(client, req.auth, clock());
-        // Serialises this account's posts, so the cap holds under concurrent requests.
-        await client.query('select id from accounts where id = $1 for update', [accountId]);
         // The last account to post a browser's endpoint owns it (a shared or handed-on browser).
         await client.query(
           `insert into push_subscriptions (account_id, session_id, endpoint, p256dh, auth, created_at) values ($1, $2, $3, $4, $5, $6)

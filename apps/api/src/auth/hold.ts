@@ -24,7 +24,7 @@
  *   Nothing can be added during the hold (every change waits or is refused), so a thief's method
  *   never ends it. A waiting login opens no session during the hold (traderLogin: device trust is
  *   a copyable cookie and must not override the hold).
- * - **Weak sessions** (`weakSession`: the login waits, its sign-up window is over) may log out no
+ * - **Weak sessions** (`weakOf`: the login waits, its sign-up window is over) may log out no
  *   session but their own (review round 3 R3-M2, lead decision 2026-10-30) and a backup session
  *   younger than themselves (round 4 R4-M1, lead decision 2026-10-30), and may not answer a
  *   strong login's approval, drop another session's push subscriptions or mark the hold's own
@@ -363,18 +363,6 @@ export function weakOf(r: Pick<LiveSession, 'kind' | 'level' | 'strength' | 'onb
   return waits(r.strength);
 }
 
-/** `weakOf` for a session by id. An unknown, revoked or expired session counts as weak (review round 4 R4-I1). */
-export async function weakSession(db: Queryable, sessionId: string, now: Date): Promise<boolean> {
-  const { rows } = await db.query<{ kind: string; level: string; strength: LoginStrength | null; onboarding_until: Date | null; live: boolean }>(
-    `select a.kind, s.level, s.strength, s.onboarding_until, (s.revoked_at is null and s.expires_at > $2) as live
-       from sessions s join accounts a on a.id = s.account_id where s.id = $1`,
-    [sessionId, now],
-  );
-  const r = rows[0];
-  if (!r || !r.live) return true;
-  return weakOf(r, now);
-}
-
 /**
  * The one check of the class of review rounds 3 and 4 (R3-I1, R4-I1: an action by a session the
  * owner's proof has just revoked). Inside the transaction that performs a route's write and before
@@ -506,10 +494,39 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/account/terms',
 ];
 
-export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {};
+/**
+ * Every other route but GET that runs with a session, each with why it needs no live-session check
+ * (review round 5 M1; it was the "left out" paragraph of docs/coordination.md). The tripwire in
+ * apps/api/test/coolingOff.test.ts ("every route other than GET that runs with a session is
+ * classified") lists the app's routes behind `requireSession`: a new one fails it until it is in
+ * `LIVE_SESSION_ROUTES` (with a test row) or here with a reason. Routes with no `requireSession`
+ * (`POST /v1/logout` revokes the cookie's own session; `POST /v1/login/approval/:id/poll` checks
+ * its approval's granter instead, R4-M2) are not listed.
+ */
+export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
+  'POST /v1/account/pgp/start': 'writes only an add-key challenge bound to this session; its finish is checked',
+  'POST /v1/account/totp/start': 'writes only an enrolment challenge bound to this session; its finish is checked',
+  'POST /v1/account/webauthn/start': 'writes only a registration challenge bound to this session; its finish is checked',
+  'POST /v1/confirm/password': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
+  'POST /v1/confirm/pgp/start': 'writes only a confirm challenge bound to this session',
+  'POST /v1/confirm/pgp/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
+  'POST /v1/confirm/webauthn/start': 'writes only a confirm challenge bound to this session',
+  'POST /v1/confirm/webauthn/finish': 'writes only a confirm token bound to this session; every route that spends one and writes is checked',
+  'POST /v1/account/blocks': 'social: a block row only; no account, session, approval or security state, no obligation',
+  'DELETE /v1/account/blocks/:displayName': 'social: removes a block row only; no account, session, approval or security state',
+  'PUT /v1/account/nudges': "the caller's own nudge preferences; no session, approval or security state",
+  'POST /v1/nudges': 'a nudge to a trade counterparty; no account, session, approval or security state',
+  'POST /v1/method-suggestions': 'a method suggestion row only',
+  'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
+  'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
+  'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
+  'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
+  'POST /v1/trades/:code/final-alert-seen': 'review round 5 X1, an owner question; unchanged here',
+};
 
 /**
- * Routes a weak session (`weakSession`) may use only on itself (review round 2 N-I2, N-I3, N-M3;
+ * Routes a weak session (`weakOf`) may use only on itself (review round 2 N-I2, N-I3, N-M3;
  * round 3 R3-M2; 403 `weak-session`): ending any session but its own (a backup session included),
  * answering a strong login's approval, dropping push subscriptions (only its own go), and marking
  * the hold's and the login alerts seen.

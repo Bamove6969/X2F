@@ -771,7 +771,8 @@ describe('a session revoked while its trading request waits (review round 5 M2)'
     'POST /v1/offers': async () => {
       const who = await person();
       await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', OFFER));
-      expect((await deps.db.query('select 1 from offers where account_id = $1', [who.id])).rows).toHaveLength(0);
+      // (person() seeds removed offers for its history trades.)
+      expect((await deps.db.query("select 1 from offers where account_id = $1 and status <> 'removed'", [who.id])).rows).toHaveLength(0);
     },
     'PATCH /v1/offers/:id': async () => {
       const who = await person();
