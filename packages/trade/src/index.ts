@@ -38,12 +38,13 @@ export {
 } from './money.js';
 export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type SettleKind } from './payouts.js';
 export { moneroUri } from './moneroUri.js';
-export { TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
+export { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
   CLIENT_EVENTS,
   SYSTEM_EVENTS,
   TradeRuleError,
   apply,
+  awaitingCancelConfirm,
   newTrade,
   nextDeadline,
   releasableEta,
