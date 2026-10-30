@@ -71,7 +71,9 @@ export function tradeFromView(v: RefundView): Trade {
     settling: v.settling,
     settleFrom: null,
     settleBy: date(v.settleBy, 'settleBy'),
-    releaseClaimedAt: date(v.releaseClaimedAt, 'releaseClaimedAt'),
+    // `?? null`: a view from an API without the field (a deploy in between) must not make the
+    // dry runs throw; these events never read the claim.
+    releaseClaimedAt: date(v.releaseClaimedAt ?? null, 'releaseClaimedAt'),
     pausedAt: date(v.pausedAt, 'pausedAt'),
     txHash: v.txHash,
     dispute: null,
