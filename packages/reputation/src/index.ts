@@ -2,3 +2,4 @@
 // (Plan 5 Tasks 1-2). No I/O, no clock reads: callers pass `now`.
 export * from './reviews.js';
 export * from './stats.js';
+export * from './badges.js';
