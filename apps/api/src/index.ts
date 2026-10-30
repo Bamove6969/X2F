@@ -64,7 +64,7 @@ export {
   GIFT_CARD_GROUP, LAUNCH_PROFILE_IDS, PROFILES, catalog, getMethod, getProfile, isAvailable, isGiftCard, loadCatalog, loadProfiles,
   type CatalogMethod, type FieldKind, type MethodProfile,
 } from './methods/profiles.js';
-export { liveOfferStats, offerRoutes, TERMS_MAX, type OfferCard, type OfferDetail, type OfferStatus } from './offers/routes.js';
+export { liveOfferStats, offerRoutes, TERMS_MAX, type MyOffer, type OfferCard, type OfferDetail, type OfferStatus, type OfferSwitchRefusal, type OfferSwitchResult } from './offers/routes.js';
 export {
   capUsdCents, loadStarterSettings, opensAt, stageFor, STARTER_DEFAULTS, STARTER_SETTING_KEYS, tradeCap, usdCentsOf,
   type Stage, type StarterSettings, type TradeCap,
