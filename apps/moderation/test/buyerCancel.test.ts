@@ -8,11 +8,12 @@ import { AUTO_REFUND_MARGIN_MS } from '../src/autoRefund.js';
 import { buyerCancelStep } from '../src/buyerCancel.js';
 import { verifyRuling } from '../src/rulings.js';
 import { fromJson, toJson } from '../src/shadow.js';
-import type { DeskRecord } from '../src/desk.js';
+import { NO_DESK_FACTS, sweepKindAgrees, type DeskRecord } from '../src/desk.js';
 import {
   acked,
   DEAL,
   drained,
+  ESCROW,
   fakeNetwork,
   FUNDS,
   hash,
@@ -28,6 +29,7 @@ import {
   signal,
   TERMS,
   type Ctx,
+  type Live,
 } from './harness.js';
 
 let ctx: Ctx;
@@ -234,6 +236,203 @@ describe('owner option B: no cancel after “I’ve paid” (review I3)', () => 
     expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
     expect(m.logs.filter((x) => x === 'buyer-cancel-signing')).toHaveLength(1);
     await m.handle.stop();
+  });
+
+  it('review round 2 N2: an ARMED buyer cancel is rechecked every pass: after a trade.paid neither a late surplus nor a restart hands it to the party again', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await secured(ctx, l);
+    await acked(l, l.buyer, 'trade.cancel', {});
+    net.states.set(l.code, 'settling');
+    net.settleKinds.set(l.code, 'buyer-cancel');
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+    // The buyer's tx set has not come in yet; the buyer's old client sends trade.paid.
+    await acked(l, l.buyer, 'trade.paid', PAID);
+    // A late surplus changes the payouts: without the recheck the refund would be handed over again.
+    l.party.funds = { ...l.party.funds, balance: FUNDS + 7n, unlocked: FUNDS + 7n, incoming: [incoming(hash('a'), FUNDS, 80, true), incoming(hash('b'), 7n, 88, true)] };
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+    expect(m.logs).toContain('buyer-cancel-buyer-paid');
+    await m.handle.stop();
+    // A restart: the armed refund is not handed to the new party either.
+    const again = await moderation(ctx, fetch);
+    await again.handle.watch();
+    const p = again.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    await again.handle.watch();
+    await again.handle.watch();
+    expect(p.settles).toEqual([]);
+    expect(again.logs).toContain('buyer-cancel-buyer-paid');
+    expect(again.logs).not.toContain('buyer-cancel-signing');
+    await again.handle.stop();
+  });
+
+  it('review round 2 N2: an ARMED buyer cancel is not handed over again while the API shows a state it may not be signed in; it is once the API allows it again', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await secured(ctx, l);
+    await acked(l, l.buyer, 'trade.cancel', {});
+    net.states.set(l.code, 'settling');
+    net.settleKinds.set(l.code, 'buyer-cancel');
+    await m.handle.watch();
+    expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+    await m.handle.stop();
+    for (const [state, kind] of [['paid', null], ['settling', 'release'], ['disputed', null]] as const) {
+      net.states.set(l.code, state);
+      if (kind) net.settleKinds.set(l.code, kind);
+      else net.settleKinds.delete(l.code);
+      const again = await moderation(ctx, fetch);
+      await again.handle.watch();
+      const p = again.parties.get(l.code)!;
+      p.funds = { ...l.party.funds };
+      p.resolveReady('ignored');
+      await again.handle.watch();
+      expect(p.settles, `${state} ${kind}`).toEqual([]);
+      expect(again.logs).toContain('buyer-cancel-api-state');
+      await again.handle.stop();
+    }
+    net.states.set(l.code, 'settling');
+    net.settleKinds.set(l.code, 'buyer-cancel');
+    const back = await moderation(ctx, fetch);
+    await back.handle.watch();
+    const p = back.parties.get(l.code)!;
+    p.funds = { ...l.party.funds };
+    p.resolveReady('ignored');
+    await back.handle.watch();
+    expect(p.settles).toEqual([cancelOutcome(FUNDS)]);
+    await back.handle.stop();
+  });
+});
+
+describe('the shadow vetoes a refund sweep kind its own facts do not back (review round 2, R2-M1 defence in depth)', () => {
+  const KEY = '7'.repeat(64);
+  /** A sweep the mod did not sign, shown through an import, with a tx key that proves it. */
+  const forged = (l: Live, tx: string, spentAtomic: bigint): void => {
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: tx, txKey: KEY }] };
+    l.party.prove = () => true;
+  };
+  const settled = (net: Live['net'], code: string) => net.reports.filter((r) => r.kind === 'settled' && r.trade === code);
+
+  it('the API names lapse-refund while the shadow is secured (never lapsed): the sweep is never proven, and the 6 h fallback escalates', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await secured(ctx, l);
+    net.states.set(l.code, 'lapsed');
+    net.settleKinds.set(l.code, 'lapse-refund');
+    forged(l, hash('v'), FUNDS);
+    await m.handle.watch();
+    await m.handle.watch();
+    expect(settled(net, l.code)).toEqual([]);
+    expect(l.party.proveCalls).toEqual([]);
+    expect(m.logs).toContain('sweep-kind-vetoed');
+    expect(m.logs).toContain('sweep-unproven');
+    await m.handle.stop();
+  });
+
+  it('a real lapse: the sweep is proven once the shadow itself lapsed (delayed by at most a pass, not lost)', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await acked(l, l.seller, 'trade.terms', { refundAddress: TERMS.sellerRefund, deal: DEAL });
+    await acked(l, l.buyer, 'trade.terms', { payoutAddress: TERMS.buyerPayout, deal: DEAL });
+    const half = FUNDS / 2n;
+    l.party.funds = { ...l.party.funds, balance: half, unlocked: half, incoming: [incoming(hash('a'), half, 88, true)] };
+    await m.handle.watch();
+    later(ctx, 31 * MIN); // past the shadow's own fundBy
+    net.states.set(l.code, 'lapsed');
+    net.settleKinds.set(l.code, 'lapse-refund');
+    forged(l, hash('w'), half);
+    await m.handle.watch(); // the shadow lapses in this pass's desk step, after the sweep was checked
+    expect(settled(net, l.code)).toEqual([]);
+    expect((await record(l.code)).shadow!.lapsedAt).not.toBeNull();
+    await m.handle.watch();
+    expect(settled(net, l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: hash('w') }]);
+    expect(l.party.proveCalls.at(-1)!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: half }]);
+    await m.handle.stop();
+  });
+
+  it('the API names release (or mutual-cancel) while this desk armed a buyer cancel: never proven', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    await secured(ctx, l);
+    await acked(l, l.buyer, 'trade.cancel', {});
+    net.states.set(l.code, 'settling');
+    net.settleKinds.set(l.code, 'buyer-cancel');
+    await m.handle.watch();
+    expect((await record(l.code)).armed?.kind).toBe('buyer-cancel');
+    forged(l, hash('x'), FUNDS);
+    for (const kind of ['release', 'mutual-cancel']) {
+      net.settleKinds.set(l.code, kind);
+      await m.handle.watch();
+    }
+    expect(settled(net, l.code)).toEqual([]);
+    expect(l.party.proveCalls).toEqual([]);
+    expect(m.logs).toContain('sweep-kind-vetoed');
+    await m.handle.stop();
+  });
+
+  it('a desk that could not be opened backs no refund kind (fail safe); release and mutual-cancel are not checked by the shadow (owed under Task 9 R2-M1)', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch, { deskFails: { on: true } });
+    const t = await newTrade();
+    net.work = [t.work];
+    await m.handle.tick();
+    net.work = [];
+    const party = m.parties.get(t.code)!;
+    party.resolveReady(ESCROW);
+    net.states.set(t.code, 'setup');
+    await expect.poll(async () => {
+      await m.handle.watch();
+      return net.reports.some((r) => r.kind === 'setup-done' && r.trade === t.code);
+    }).toBe(true);
+    party.funds = { ...party.funds, balance: FUNDS, unlocked: FUNDS, incoming: [incoming(hash('a'), FUNDS, 88, true)] };
+    await m.handle.watch();
+    net.states.set(t.code, 'lapsed');
+    net.settleKinds.set(t.code, 'lapse-refund');
+    party.funds = { ...party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('y'), height: 90, spentAtomic: FUNDS }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('y'), txKey: KEY }] };
+    party.prove = () => true;
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([]);
+    expect(party.proveCalls).toEqual([]);
+    expect(m.logs).toContain('sweep-kind-vetoed');
+    net.states.set(t.code, 'settling');
+    net.settleKinds.set(t.code, 'mutual-cancel');
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([{ kind: 'settled', trade: t.code, txHash: hash('y') }]);
+    await m.handle.stop();
+  });
+});
+
+describe('sweepKindAgrees (pure)', () => {
+  const lapsed = { lapsedAt: new Date(0) } as unknown as NonNullable<DeskRecord['shadow']>;
+  const live = { lapsedAt: null } as unknown as NonNullable<DeskRecord['shadow']>;
+  const base = { armed: null, cancelSeen: false, paidSeen: false, shadow: live };
+  const armed = (kind: 'auto-refund' | 'buyer-cancel') => ({ kind, at: new Date(0) });
+  it('backs a refund kind only with its own cause; once a refund is armed, only that kind', () => {
+    expect(sweepKindAgrees(base, null)).toBe(true);
+    expect(sweepKindAgrees(base, 'release')).toBe(true);
+    expect(sweepKindAgrees(base, 'mutual-cancel')).toBe(true);
+    expect(sweepKindAgrees(base, 'auto-refund')).toBe(false);
+    expect(sweepKindAgrees({ ...base, armed: armed('auto-refund') }, 'auto-refund')).toBe(true);
+    expect(sweepKindAgrees(base, 'buyer-cancel')).toBe(false);
+    expect(sweepKindAgrees({ ...base, cancelSeen: true }, 'buyer-cancel')).toBe(true);
+    expect(sweepKindAgrees({ ...base, cancelSeen: true, paidSeen: true }, 'buyer-cancel')).toBe(false);
+    expect(sweepKindAgrees(base, 'lapse-refund')).toBe(false);
+    expect(sweepKindAgrees({ ...base, shadow: lapsed }, 'lapse-refund')).toBe(true);
+    expect(sweepKindAgrees({ ...base, shadow: null }, 'lapse-refund')).toBe(false);
+    for (const k of ['release', 'mutual-cancel', 'buyer-cancel', 'lapse-refund'] as const) {
+      expect(sweepKindAgrees({ ...base, cancelSeen: true, shadow: lapsed, armed: armed('auto-refund') }, k), k).toBe(false);
+    }
+    for (const k of ['release', 'mutual-cancel', 'auto-refund', 'lapse-refund'] as const) {
+      expect(sweepKindAgrees({ ...base, cancelSeen: true, shadow: lapsed, armed: armed('buyer-cancel') }, k), k).toBe(false);
+    }
+    for (const k of ['auto-refund', 'buyer-cancel', 'lapse-refund'] as const) expect(sweepKindAgrees(NO_DESK_FACTS, k), k).toBe(false);
   });
 });
 

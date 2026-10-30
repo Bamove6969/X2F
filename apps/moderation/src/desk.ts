@@ -115,6 +115,9 @@ export function sweepKindAgrees(r: Pick<DeskRecord, 'armed' | 'cancelSeen' | 'pa
   }
 }
 
+/** The facts of a desk that saw nothing (one that could not be opened): no refund kind agrees. */
+export const NO_DESK_FACTS: Pick<DeskRecord, 'armed' | 'cancelSeen' | 'paidSeen' | 'shadow'> = { armed: null, cancelSeen: false, paidSeen: false, shadow: null };
+
 export interface DeskOptions {
   db: pg.Pool;
   args: ModPartyArgs;

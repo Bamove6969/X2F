@@ -4,7 +4,7 @@
 // the real trader identities (Plan 1 envelopes, real signatures).
 import { createHash, randomBytes } from 'node:crypto';
 import { newTradeCode, type Role } from '@x2f/core';
-import type { Incoming, Outcome, Outgoing, PartyHandle, Transport } from '@x2f/escrow';
+import type { Incoming, Outcome, Outgoing, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { generateIdentity, open, ReplayGuard, seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
 import {
   channelFor,
@@ -125,8 +125,11 @@ export function fakeNetwork(ctx: Ctx) {
 
 /** A stand-in escrow party: scripted funds, a ready() the test resolves, every settle() recorded. */
 export interface FakeParty {
-  funds: { balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight: number; outgoing: Outgoing[] };
+  funds: { balance: bigint; unlocked: bigint; incoming: Incoming[]; chainHeight: number; outgoing: Outgoing[]; ownTxs?: string[]; spendProofs?: { from: Role; txHash: string; txKey: string }[] };
   settles: Outcome[];
+  /** proveSweep's answer (default: nothing proven); every call is recorded. */
+  prove: (txHash: string, txKey: string, minimums: Payout[]) => boolean;
+  proveCalls: { txHash: string; txKey: string; minimums: Payout[] }[];
   resolveReady: (a: string) => void;
   handle: PartyHandle;
 }
@@ -137,6 +140,8 @@ function fakeParty(): FakeParty {
   const p: FakeParty = {
     funds: { balance: 0n, unlocked: 0n, incoming: [], chainHeight: 100, outgoing: [] },
     settles: [],
+    prove: () => false,
+    proveCalls: [],
     resolveReady,
     handle: {
       ready: () => ready,
@@ -152,6 +157,10 @@ function fakeParty(): FakeParty {
       },
       importSpendInfo: async () => {
         throw new Error('not used');
+      },
+      proveSweep: async (txHash: string, txKey: string, minimums: Payout[]) => {
+        p.proveCalls.push({ txHash, txKey, minimums });
+        return p.prove(txHash, txKey, minimums);
       },
       stop: async () => {},
     },

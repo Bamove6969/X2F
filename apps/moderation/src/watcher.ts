@@ -15,7 +15,7 @@ import {
   type WatchState,
 } from '@x2f/trade';
 import type pg from 'pg';
-import type { Desk } from './desk.js';
+import { NO_DESK_FACTS, sweepKindAgrees, type Desk } from './desk.js';
 import type { Link, WatchItem } from './link.js';
 
 /**
@@ -353,8 +353,14 @@ export function createWatcher(o: WatcherOptions): Watcher {
     const state = reviveWatchState(row.state);
     // Defence in depth (Task 10 review round 2, R2-M1 note): a refund kind the API names is proven
     // against only when this trade's desk saw its cause (`sweepKindAgrees`); otherwise no proof counts.
+    // With desks configured, a desk that failed to open again counts as one that saw nothing (fail safe:
+    // a refund kind is not proven without it; `release`/`mutual-cancel` are unaffected).
+    await ensureDesk(args);
     const deskNow = desks.get(row.trade);
-    const settleKind = deskNow ? deskNow.sweepKind(item.settleKind) : item.settleKind;
+    const settleKind =
+      deskNow ? deskNow.sweepKind(item.settleKind)
+      : o.openDesk ? (sweepKindAgrees(NO_DESK_FACTS, item.settleKind) ? item.settleKind : null)
+      : item.settleKind;
     if (settleKind !== item.settleKind && (f.outgoing ?? []).some((x) => !state.sweepTxs.includes(x.txHash))) o.log({ reason: 'sweep-kind-vetoed' });
     const spend = await spendEvidence(f, state, {
       settleKind,

@@ -195,6 +195,36 @@ describe('the auto-refund', () => {
     await m.handle.stop();
   });
 
+  it('review round 2 N4: an escalation the API answers 409 wrong-state is logged apart (escalate-wrong-state), still final here, nothing signed', async () => {
+    const { net, fetch } = fakeNetwork(ctx);
+    const m = await moderation(ctx, fetch);
+    const l = await inFunding(ctx, m, net);
+    const alertAt = await refundRequested(l);
+    net.answer = (r) => (r.kind === 'alert-unseen' ? { status: 409, error: 'wrong-state' } : { status: 201 });
+    ctx.clock.now = at(alertAt, END + 1);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'alert-unseen')).toHaveLength(1);
+    expect(m.logs).toContain('escalate-wrong-state');
+    expect(m.logs).not.toContain('escalated-alert-unseen');
+    expect((await record(l.code)).escalated).toBe('alert-unseen'); // fails safe: no auto-refund on this desk afterwards
+    net.seen.set(l.code, ctx.clock.now);
+    later(ctx, 20 * MIN);
+    await m.handle.watch();
+    expect(net.reports.filter((r) => r.kind === 'alert-unseen')).toHaveLength(1);
+    expect(l.party.settles).toEqual([]);
+    await m.handle.stop();
+    // an accepted escalation keeps its own reason
+    const n2 = fakeNetwork(ctx);
+    const m2 = await moderation(ctx, n2.fetch);
+    const l2 = await inFunding(ctx, m2, n2.net);
+    const alert2 = await refundRequested(l2);
+    ctx.clock.now = at(alert2, END + 1);
+    await m2.handle.watch();
+    expect(m2.logs).toContain('escalated-alert-unseen');
+    expect(m2.logs).not.toContain('escalate-wrong-state');
+    await m2.handle.stop();
+  });
+
   it('a receipt at most 2 min after the alert: waits, and signs only at receipt + 15 min + margin', async () => {
     const { net, fetch } = fakeNetwork(ctx);
     const m = await moderation(ctx, fetch);
