@@ -1,0 +1,63 @@
+/* The warnings before paying and before releasing (Task 38; boards Warn-IvePaid, Warn-Release). */
+.x2f-warn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-warn__text {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.x2f-warn__text--strong {
+  font-weight: 600;
+}
+
+.x2f-warn__text--muted {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-warn__bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-warn__bar-head {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-warn__mono {
+  font-family: var(--x2f-font-mono);
+  color: var(--x2f-ink);
+}
+
+.x2f-warn__track {
+  display: block;
+  height: 6px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface);
+  overflow: hidden;
+}
+
+.x2f-warn__fill {
+  display: block;
+  width: var(--x2f-fill, 0%);
+  height: 100%;
+  background: var(--x2f-caution);
+}
+
+.x2f-warn__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}

@@ -13,3 +13,5 @@ import './releaseScreens.js'; // Task 24: SellerConfirm, Released
 import './refundScreens.js'; // Task 25: SellerRefund, FinalAlert
 
 import '../dispute/DisputeSlot.js'; // Task 27: DisputeRoom/DisputeRuling (disputed), the buyer's refunded view
+
+import './SellerCancelConfirm.js'; // Task 39: the seller's Confirm cancel after a buyer's cancel

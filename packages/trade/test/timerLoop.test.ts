@@ -107,6 +107,22 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(timerEvents([paused!], since, at(40))).toEqual([]);
   });
 
+  test("a buyer's cancel waiting for the seller's Confirm cancel: paused by maintenance, and closed by a tick 48 h after it became available (owner 2026-10-29)", () => {
+    let t = apply(secured(), { type: 'buyer-cancel' }, 'buyer', at(10));
+    t = sys(t, { type: 'settled', kind: 'buyer-cancel', txHash: 'aa'.repeat(32) }, at(20));
+    expect(t.closedAt).toEqual(at(20));
+    // Not yet available: nothing to tick; but maintenance still pauses it (its timer is coming).
+    expect(timerEvents([t], null, at(100))).toEqual([]);
+    expect(timerEvents([t], at(30), at(30))).toEqual([{ code: t.code, event: { type: 'pause' } }]);
+    t = sys(t, { type: 'return-confirmed', confirmations: 10 }, at(40));
+    expect(timerEvents([t], null, at(40 + 48 * 60))).toEqual([]);
+    expect(timerEvents([t], null, at(40 + 48 * 60, 1))).toEqual([{ code: t.code, event: { type: 'tick' } }]);
+    expect(pass([t], null, at(40 + 48 * 60, 1))[0]!.cancelConfirmedAt).toEqual(at(40 + 48 * 60, 1));
+    // Once confirmed it is an ordinary closed trade again: no pause, no tick.
+    const done = pass([t], null, at(40 + 48 * 60, 1))[0]!;
+    expect(timerEvents([done], at(50 * 60), at(50 * 60))).toEqual([]);
+  });
+
   test('clearing maintenance resumes every paused trade', () => {
     const paused = sys(taken(), { type: 'pause' }, at(10));
     expect(timerEvents([paused], null, at(30))).toEqual([{ code: paused.code, event: { type: 'resume' } }]);

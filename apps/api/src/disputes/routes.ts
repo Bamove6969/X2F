@@ -205,7 +205,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
 
   // Opens the dispute: the trade's `open-dispute` (the state machine decides when it is allowed:
   // the buyer only after the seller's confirm window, a refunded trade only by the buyer within
-  // 90 days) and the dispute row, in one transaction. A trade opens at most one dispute: once its
+  // 48 hours, TIMERS.disputeAfterRefundHours) and the dispute row, in one transaction. A trade opens at most one dispute: once its
   // `dispute` is set (by a trader or the system) a new one is refused, whatever rows exist, so a
   // purge of old dispute rows can never re-open a decided case.
   app.post('/v1/trades/:code/dispute', { preHandler: trader }, async (req) => {

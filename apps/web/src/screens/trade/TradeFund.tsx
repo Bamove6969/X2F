@@ -8,13 +8,19 @@
  * funded). Once the full amount is seen, the address, QR code, copy buttons and wallet link are
  * replaced by "Escrow funded" and never rendered again for that trade, across reloads.
  *
+ * "Fund escrow" is recorded with the API (`fund-started`, Revision 2026-10-29b; Task 39): when the
+ * hold that opens the wallet completes, or when the seller copies the escrow address or amount.
+ * From then on the seller can never walk away. The post runs after the wallet opens (the hold's
+ * user activation must open it first) and is re-sent on a later read while this device remembers
+ * the hold and the API does not.
+ *
  * After a short payment (review 2026-10-27, I1) the link, QR code and "Copy amount" carry only the
  * remainder, worked out from what THIS device's escrow has seen arrive (`escrow.receivedAtomic`);
  * until the device has that reading only the address is shown, with the rest as text.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { escrowPlan, formatFiat, formatXmr, moneroUri } from '@x2f/trade';
-import { methodOf, type TradeView } from '../../api/trade.js';
+import { methodOf, postTradeEvent, type TradeView } from '../../api/trade.js';
 import { Amount } from '../../ui/Amount.js';
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
@@ -258,6 +264,22 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
   const wallet = view.funding?.walletApp ?? null;
   const [opened, setOpened] = useState(() => hasFundMark(view.code, 'opened'));
   const [fallbackShown, setFallbackShown] = useState(false);
+  // "Fund escrow" tapped (Revision 2026-10-29b): tell the API once; a refusal (already recorded,
+  // or the trade moved on) or a lost answer is retried only by the effect below, on a later read.
+  const fundSent = useRef(false);
+  const fundStarted = useCallback(() => {
+    if (fundSent.current || view.state !== 'funding' || view.fundStartedAt !== null) return;
+    fundSent.current = true;
+    void postTradeEvent(view.code, { type: 'fund-started' }).then(
+      () => refresh?.(),
+      () => {
+        fundSent.current = false;
+      },
+    );
+  }, [view.code, view.state, view.fundStartedAt, refresh]);
+  useEffect(() => {
+    if (opened) fundStarted();
+  }, [opened, fundStarted]);
   const canFund = !funded && !settingUp && verified !== null;
   // The `monero:` link, QR code and copy text are built here from the device-verified address and
   // amount only; the API's `funding.uri` is never used. After a short payment they carry the
@@ -268,7 +290,13 @@ export function TradeFund({ view, escrow, serverClock, refresh }: TradeScreenPro
   const addressOnly = canFund && send === null;
   const fallback =
     canFund && (addressOnly || !phone || opened || fallbackShown) ? (
-      <FundFallback address={verified!.address} send={send} restAtomic={funds > received ? funds - received : 0n} primary={!phone || addressOnly} />
+      <FundFallback
+        address={verified!.address}
+        send={send}
+        restAtomic={funds > received ? funds - received : 0n}
+        primary={!phone || addressOnly}
+        onFundStarted={fundStarted}
+      />
     ) : null;
 
   return (

@@ -1,7 +1,7 @@
 // Task 27's slots in Task 22's trade room at /trade/:code (a fixtures-mode build served with the
 // real CSP, e2e/fixtures-serve.ts): both traders in `disputed` see the dispute room or ruling
 // (loaded from GET …/dispute; the room owns the trade view), and the buyer in `refunded` sees why
-// the XMR went back to the seller, with the 90-day "Open a dispute" (spec 2.3; owner 2026-10-29).
+// the XMR went back to the seller, with the 48-hour "Open a dispute" (owner 2026-10-29; was 90 days).
 // The API is stubbed per test with page.route in Task 6's shapes (e2e/refundViews.ts).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import type { FastifyInstance } from 'fastify';
@@ -46,7 +46,7 @@ async function openRoom(page: Page, view: TradeView, dispute: unknown = null): P
 }
 
 const buyerRefunded = (over: Partial<TradeView> = {}) =>
-  sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', closedAt: at(-2 * DAY), txHash: 'ab'.repeat(32), ...over });
+  sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', closedAt: at(-10 * 60 * 60_000), txHash: 'ab'.repeat(32), ...over });
 
 test('the buyer\'s refunded trade says the payment time ran out and offers "Open a dispute"', async ({ page }) => {
   await openRoom(page, buyerRefunded());

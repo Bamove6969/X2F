@@ -1,3 +1,4 @@
+import { TIMERS } from '@x2f/trade';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
@@ -53,18 +54,21 @@ describe('purgeTradeAddresses (P3-I12)', () => {
     expect(await purgeTradeAddresses(deps.db, at(now, TRADE_ADDRESS_RETENTION_MS + 1))).toBe(0);
   });
 
-  it('keeps a refunded trade\'s addresses at the last instant the buyer may still dispute it', async () => {
+  it('keeps a refunded trade\'s addresses through the buyer\'s dispute window and while disputed', async () => {
     const seller = await seedAccount(deps, { loginName: `seller${++n}x` });
     const buyer = await seedAccount(deps, { loginName: `buyer${n}x` });
     const { trade } = await seedTrade(deps, { sellerId: seller, buyerId: buyer, poster: 'seller' });
     await driveTo(deps, trade, 'secured');
-    const refunded = await applyEvent(deps, trade.code, { type: 'settled', kind: 'mutual-cancel', txHash: 'ab'.repeat(32) }, 'system');
+    // A no-show refund (a cancel's refund can't be disputed, owner 2026-10-29).
+    const refunded = await applyEvent(deps, trade.code, { type: 'settled', kind: 'auto-refund', txHash: 'ab'.repeat(32) }, 'system');
     expect(refunded.state).toBe('refunded');
     const edge = at(refunded.closedAt!, TRADE_ADDRESS_RETENTION_MS);
-    // The purge runs first at that exact millisecond, then the buyer's dispute arrives in it too.
-    await purgeTradeAddresses(deps.db, edge);
+    // The dispute window (48 h, owner 2026-10-29) ends long before the address retention: the
+    // purge at the window's last instant keeps them, and the dispute opened then keeps them after.
+    const lastDispute = at(refunded.closedAt!, TIMERS.disputeAfterRefundHours * 3_600_000);
+    await purgeTradeAddresses(deps.db, lastDispute);
     expect(await addresses(trade.code)).toEqual({ buyer_payout: expect.any(String), seller_refund: expect.any(String) });
-    const disputed = await applyEvent({ ...deps, clock: () => edge }, trade.code, { type: 'open-dispute' }, 'buyer');
+    const disputed = await applyEvent({ ...deps, clock: () => lastDispute }, trade.code, { type: 'open-dispute' }, 'buyer');
     expect(disputed.state).toBe('disputed');
     await purgeTradeAddresses(deps.db, at(edge, 1));
     expect(await addresses(trade.code)).toEqual({ buyer_payout: expect.any(String), seller_refund: expect.any(String) });

@@ -3,7 +3,8 @@ import type pg from 'pg';
 import { applyEvent, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 
 /**
- * The API timer loop (Plan 3 Task 9): every TIMER_LOOP_MS it reads the open trades, asks the pure
+ * The API timer loop (Plan 3 Task 9): every TIMER_LOOP_MS it reads the open trades (and a buyer's
+ * cancel awaiting the seller's Confirm cancel, Task 39), asks the pure
  * `timerEvents` which system events are due (deadline ticks, maintenance pause/resume, the lapse
  * escalation) and applies each through the trade store in order, each with its own `at` (a pause
  * is at `maintenance_since`). A trade the pure layer or the store refuses is logged by its rule
@@ -41,7 +42,15 @@ export function startTimers(deps: TimerDeps): TimerHandle {
   const log = deps.log ?? (() => {});
   const tick: TimerHandle['tick'] = async () => {
     const maintenance = deps.maintenanceSince ? await deps.maintenanceSince() : null;
-    const { rows } = await deps.db.query<TradeRow>('select * from trades where closed_at is null or paused_at is not null order by code');
+    // Open trades, paused ones, and a buyer's cancel still waiting for the seller's Confirm cancel
+    // (closed, but its 48 h auto-close and maintenance still apply: `awaitingCancelConfirm`, Task 39;
+    // the pure layer re-checks the rest of that rule).
+    const { rows } = await deps.db.query<TradeRow>(
+      `select * from trades
+        where closed_at is null or paused_at is not null
+           or (state = 'refunded' and settling = 'buyer-cancel' and cancel_confirmed_at is null and dispute_by is null and paid_at is null)
+        order by code`,
+    );
     const pass = timerEvents(rows.map(rowToTrade), maintenance, deps.clock());
     const applied: { code: string; type: string }[] = [];
     const skipped = [...pass.skipped];

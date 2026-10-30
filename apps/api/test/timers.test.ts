@@ -1,7 +1,7 @@
 // Plan 3 Task 9: the API timer loop (`startTimers`) applying `timerEvents` through the trade store.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { TIMERS, type Trade } from '@x2f/trade';
+import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, type Trade } from '@x2f/trade';
 const addMin = (d: Date, min: number): Date => new Date(d.getTime() + min * 60_000);
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -72,6 +72,32 @@ describe('startTimers', () => {
     await timers.tick();
     expect(await loadTrade(deps.db, claimed.code)).toMatchObject({ state: 'settling', settling: 'release' });
     expect(await events(claimed.code)).not.toContain('tick');
+    await timers.stop();
+  });
+
+  it("closes an unconfirmed buyer's cancel 48 h after Confirm cancel became available, though the trade is closed (Task 39)", async () => {
+    const t = await trade();
+    await driveTo({ db: deps.db, clock }, t, 'secured');
+    await applyEvent({ db: deps.db, clock }, t.code, { type: 'buyer-cancel' }, 'buyer');
+    await applyEvent({ db: deps.db, clock }, t.code, { type: 'settled', kind: 'buyer-cancel', txHash: 'fc'.repeat(32) }, 'system');
+    const confirmable = now;
+    await deps.db.query('update trades set cancel_confirmable_at = $2 where code = $1', [t.code, confirmable]);
+    const closed = (await loadTrade(deps.db, t.code))!;
+    expect(closed).toMatchObject({ state: 'refunded', cancelConfirmedAt: null });
+    expect(closed.closedAt).not.toBeNull();
+    const timers = startTimers({ db: deps.db, clock, intervalMs: 0 });
+    now = addMin(confirmable, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60);
+    await timers.tick();
+    expect((await loadTrade(deps.db, t.code))!.cancelConfirmedAt).toBeNull();
+    now = new Date(now.getTime() + 1);
+    const pass = await timers.tick();
+    expect(pass.applied).toContainEqual({ code: t.code, type: 'tick' });
+    expect((await loadTrade(deps.db, t.code))!.cancelConfirmedAt).toEqual(now);
+    // Confirmed: no longer read, nothing more is due.
+    const before = await events(t.code);
+    now = addMin(now, 60);
+    await timers.tick();
+    expect(await events(t.code)).toEqual(before);
     await timers.stop();
   });
 

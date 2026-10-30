@@ -139,7 +139,11 @@ describe('owner option B: no cancel after “I’ve paid” (review I3)', () => 
     later(ctx, 30 * MIN);
     await m.handle.watch();
     expect(l.party.settles).toEqual([]);
-    expect(m.logs).toContain('buyer-cancel-buyer-paid');
+    // Task 39: the machine (and so the shadow) refuses a buyer cancel in `paid`; cancelSeen stays false,
+    // and paidSeen would block the co-sign anyway (buyerCancelStep checks it first).
+    expect(m.logs).toContain('shadow-buyer-cancel-wrong-state');
+    expect((await record(l.code)).cancelSeen).toBe(false);
+    expect((await record(l.code)).paidSeen).toBe(true);
     await m.handle.stop();
   });
 

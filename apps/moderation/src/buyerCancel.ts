@@ -31,7 +31,7 @@ export type BuyerCancelStep =
   | { action: 'sign'; proposed: Payout[] }
   | { action: 'refuse'; reason: BuyerCancelRefusal | 'no-payout' | 'buyer-paid' };
 
-/** The API states a buyer's cancel can still be co-signed in (the machine's BUYER_CANCEL_SETTLE, less `paid`, plus funding). */
+/** The API states a buyer's cancel can still be co-signed in (the machine's BUYER_CANCEL_SETTLE, plus funding; never `paid`, Task 39). */
 const API_CANCEL_OK: readonly string[] = ['funding', 'securing', 'secured', 'refund_requested'];
 
 /** Exported for the armed refund's recheck every pass (review round 2 N2). */
