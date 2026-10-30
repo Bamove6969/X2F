@@ -21,6 +21,11 @@ create table activity_log (
   check (actor_kind <> 'staff' or actor_id is not null)
 );
 
+-- I1: one child per row, and one first row. The trigger's head check reads the transaction's
+-- snapshot, which outside READ COMMITTED can predate the previous append's commit; a uniqueness
+-- check is not bound to the snapshot, so a second child of one row is a duplicate-key error.
+create unique index activity_log_one_child on activity_log ((coalesce(prev_hash, '\x'::bytea)));
+
 create index activity_log_trade on activity_log (trade_code, id) where trade_code is not null;
 create index activity_log_actor on activity_log (actor_id, at) where actor_id is not null;
 
@@ -44,8 +49,10 @@ create trigger activity_log_no_truncate
 
 -- Each new row must extend the current head: its prev_hash is the head's hash (null only for the
 -- first row), its id comes after the head's, `at` has millisecond precision, and its hash is the
--- chain hash `appendLog` computes. The same advisory lock as `appendLog` serialises inserts, so two
--- inserts can never both extend the same head (a fork) even if one bypasses `appendLog`.
+-- chain hash `appendLog` computes. The same advisory lock as `appendLog` serialises inserts, and an
+-- insert outside READ COMMITTED is refused (its snapshot could hide the head); the unique index
+-- above is the backstop, so two inserts can never both extend the same head (a fork), even one
+-- that bypasses `appendLog`.
 create function activity_log_chain() returns trigger
   language plpgsql
   set search_path = pg_catalog, public
@@ -55,6 +62,10 @@ declare
   head_hash bytea;
   expected bytea;
 begin
+  if current_setting('transaction_isolation') <> 'read committed' then
+    raise exception 'activity_log: append only under read committed (a stale snapshot could fork the chain)'
+      using errcode = 'check_violation';
+  end if;
   perform pg_advisory_xact_lock(7240001);
   select l.id, l.hash into head_id, head_hash from activity_log l order by l.id desc limit 1;
   if head_id is null then

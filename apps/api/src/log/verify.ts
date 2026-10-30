@@ -48,10 +48,10 @@ export async function verifyLogChain(db: Queryable, from?: { id: string; hash: s
     const r = rows[0];
     if (!r) return { ok: false, brokenAt: from.id };
     const own = chainHash(r.prev_hash, fieldsOf(r));
-    if (!own.equals(r.hash) || r.hash.toString('hex') !== from.hash) return { ok: false, brokenAt: from.id };
+    if (!own.equals(r.hash) || r.hash.toString('hex') !== from.hash.toLowerCase()) return { ok: false, brokenAt: from.id };
     prev = r.hash;
     after = r.id;
-    head = { id: r.id, hash: from.hash };
+    head = { id: r.id, hash: r.hash.toString('hex') };
   }
   for (;;) {
     const { rows } = await db.query<Row>(

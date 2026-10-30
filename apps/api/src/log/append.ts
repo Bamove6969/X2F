@@ -60,8 +60,14 @@ function actorColumns(a: Actor): { kind: Actor['kind']; id: string | null; role:
 }
 
 /**
- * Appends one entry inside the caller's transaction (`client` must be in one: the advisory lock is
- * held until it ends, so appends are serialised and the chain never forks). Throws LogDetailError
+ * Appends one entry inside the caller's transaction (`client` must be in one, at READ COMMITTED:
+ * the advisory lock is held until it ends, so appends are serialised and the chain never forks;
+ * the trigger refuses any other isolation level and a unique index refuses a second child).
+ *
+ * The lock serialises every append on the site until the commit (M2). So: append LAST, just
+ * before the commit, and never await another connection (or anything slow) while the log lock is
+ * held; a caller that holds it and waits on a second pool connection that appends hangs forever,
+ * and Postgres cannot see that deadlock. Throws LogDetailError
  * for a detail its action does not allow, and TypeError for an invalid trade code or staff id.
  */
 export async function appendLog(

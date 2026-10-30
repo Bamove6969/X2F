@@ -1,5 +1,6 @@
 import {
   AFTER_REFUND_OUTCOMES,
+  BAN_REASON_CODES,
   ESCROW_OUTCOMES,
   type AccountAction,
   type RulingOutcome,
@@ -43,9 +44,22 @@ export interface RulingDraft {
   needsSecond: boolean;
 }
 
+/**
+ * Round 1 as it stood when it was appealed. The whole ruling is kept: round 1 still executes after
+ * an appeal (A1 dropped), so the executor and its verification (Tasks 13 and 14) read `round1`,
+ * never `ruling`, once `round === 2`. `involved` is R37's list, frozen at the appeal.
+ */
+export interface Round1 extends RulingDraft {
+  firstReplyAt: Date | null;
+  involved: string[];
+}
+
 export interface Dispute {
   code: string;
-  openedBy: 'buyer' | 'seller';
+  /** Migration 108 keys disputes on (code, seq): a re-escalation of the same trade is a new seq. */
+  seq: number;
+  /** `system`: opened by an escalation (110's reason `escalated`). */
+  openedBy: 'buyer' | 'seller' | 'system';
   afterRefund: boolean;
   openedAt: Date;
   replyDueAt: Date;
@@ -60,8 +74,7 @@ export interface Dispute {
   limitUsdCents: bigint;
   /** The current round's ruling (null while none is proposed). */
   ruling: RulingDraft | null;
-  /** Round 1 as it stood when it was appealed; `involved` is `seen` at that moment (R37). */
-  round1: { proposer: string; approver: string | null; outcome: RulingOutcome; involved: string[] } | null;
+  round1: Round1 | null;
   /** When round 1 was published: the anchor of `appealEndsAt` (Task 24). */
   publishedAt: Date | null;
   appealEndsAt: Date | null;
@@ -79,19 +92,33 @@ export interface Dispute {
 }
 
 export type DisputeEvent =
-  /** `role` is the assignee's role; it may be left out only when they assign themselves. */
-  | { type: 'assign'; staffId: string; role?: StaffRole }
+  /**
+   * `role` is the assignee's role, always required: the API loads it from the database, never
+   * from the request. A self-assignment's role must equal the actor's.
+   */
+  | { type: 'assign'; staffId: string; role: StaffRole }
   | { type: 'reply' }
   | { type: 'propose'; ruling: Omit<RulingDraft, 'approver' | 'needsSecond'> }
   | { type: 'approve' }
   | { type: 'send-back' }
-  | { type: 'appeal' }
+  /**
+   * `involved`: the staff ids with an activity-log entry on the trade before this appeal's own
+   * `appeal.opened` entry (`involvedIn(log, code, { beforeId })`, I3). They are added to `seen`
+   * to make `round1.involved`, so a missed `markSeen` can only widen R37's list.
+   */
+  | { type: 'appeal'; involved: readonly string[] }
   | { type: 'window-closed' }
   | { type: 'executed' }
   | { type: 'complied' }
   | { type: 'close' };
 
-export type DisputeRuleCode = 'wrong-state' | 'wrong-party' | 'too-late' | 'same-person' | 'not-eligible';
+export type DisputeRuleCode = 'wrong-state' | 'wrong-party' | 'too-late' | 'same-person' | 'not-eligible' | 'invalid-action';
+
+/** The settings the machine reads (Task 8). */
+export interface DisputeSettings {
+  appealWindowH: number;
+  firstResponseH: number;
+}
 
 export class DisputeRuleError extends Error {
   constructor(readonly code: DisputeRuleCode) {
@@ -113,7 +140,9 @@ function checkHours(name: string, v: number, min: number, max: number): void {
 
 export function newDispute(a: {
   code: string;
-  openedBy: 'buyer' | 'seller';
+  /** Defaults to 1. */
+  seq?: number;
+  openedBy: 'buyer' | 'seller' | 'system';
   afterRefund: boolean;
   usdCents: bigint;
   limitUsdCents: bigint;
@@ -122,8 +151,11 @@ export function newDispute(a: {
 }): Dispute {
   checkHours('firstResponseH', a.firstResponseH, 1, 72);
   if (!Number.isFinite(a.now.getTime())) throw new RangeError('invalid clock');
+  const seq = a.seq ?? 1;
+  if (!Number.isSafeInteger(seq) || seq < 1) throw new RangeError('seq out of range');
   return {
     code: a.code,
+    seq,
     openedBy: a.openedBy,
     afterRefund: a.afterRefund,
     openedAt: new Date(a.now.getTime()),
@@ -160,12 +192,15 @@ export function markSeen(d: Dispute, staffId: string): Dispute {
 }
 
 /**
- * A7: maintenance moves every running deadline (reply, ruling, appeal window, comply-by) by the
- * time spent in maintenance.
+ * A7: maintenance moves every deadline still running when it began (`since`: reply, ruling, appeal
+ * window, comply-by) by the time spent in maintenance. A deadline at or before `since` had already
+ * passed and stays where it was (its tick may simply not have run yet).
  */
-export function shiftDeadlines(d: Dispute, ms: number): Dispute {
+export function shiftDeadlines(d: Dispute, since: Date, ms: number): Dispute {
   if (!Number.isFinite(ms) || ms < 0) throw new RangeError('shift out of range');
-  const sh = (x: Date) => new Date(x.getTime() + ms);
+  const from = since.getTime();
+  if (!Number.isFinite(from)) throw new RangeError('invalid clock');
+  const sh = (x: Date) => (x.getTime() > from ? new Date(x.getTime() + ms) : x);
   return {
     ...d,
     replyDueAt: sh(d.replyDueAt),
@@ -175,12 +210,42 @@ export function shiftDeadlines(d: Dispute, ms: number): Dispute {
   };
 }
 
+const ISO_MS = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+/**
+ * M7: an account action as the machine accepts it. `none` and `freeze` carry nothing else; a trade
+ * or site ban carries `until` (null = permanent, else an exact ISO instant after `now`) and one of
+ * `BAN_REASON_CODES`. Any other shape or key is refused.
+ */
+function validAction(a: unknown, now: Date): a is AccountAction {
+  if (a === null || typeof a !== 'object' || Array.isArray(a)) return false;
+  const o = a as Record<string, unknown>;
+  const keys = Object.keys(o).sort().join(',');
+  if (o.kind === 'none' || o.kind === 'freeze') return keys === 'kind';
+  if (o.kind !== 'trade-ban' && o.kind !== 'site-ban') return false;
+  if (keys !== 'kind,reasonCode,until') return false;
+  if (!(BAN_REASON_CODES as readonly unknown[]).includes(o.reasonCode)) return false;
+  if (o.until === null) return true;
+  if (typeof o.until !== 'string' || !ISO_MS.test(o.until)) return false;
+  const t = Date.parse(o.until);
+  return Number.isFinite(t) && new Date(t).toISOString() === o.until && t > now.getTime();
+}
+
+/** The perm an approver needs for the action on top of `rulings.approve` (M7: tied to `can()`). */
+const actionPerm = (a: AccountAction) =>
+  a.kind === 'freeze' ? 'accounts.freeze' : a.kind === 'none' ? null : 'accounts.ban';
+
 const SYSTEM_EVENTS: readonly DisputeEvent['type'][] = ['window-closed', 'executed', 'complied', 'close'];
 
 const outcomeFits = (d: Dispute, o: RulingOutcome) =>
   (d.afterRefund ? (AFTER_REFUND_OUTCOMES as readonly string[]) : (ESCROW_OUTCOMES as readonly string[])).includes(o);
 
 const isSeniorOrOwner = (role: StaffRole) => role === 'senior' || role === 'owner';
+/** A second approver: a senior or the owner holding `rulings.approve` and the action's own perm. */
+const canApprove = (role: StaffRole, a: AccountAction) => {
+  const perm = actionPerm(a);
+  return isSeniorOrOwner(role) && can(role, 'rulings.approve') && (perm === null || can(role, perm));
+};
 
 /** Round 2 (R37): only a senior moderator or the owner with no log entry on round 1. */
 function eligibleForAppeal(d: Dispute, id: string, role: StaffRole): boolean {
@@ -196,7 +261,7 @@ function outcomeInForce(d: Dispute): RulingOutcome | null {
 }
 
 /** Round 1 published: it acts now; the appeal window runs from now. */
-function publishRound1(d: Dispute, now: Date, s: { appealWindowH: number }): Dispute {
+function publishRound1(d: Dispute, now: Date, s: DisputeSettings): Dispute {
   return {
     ...d,
     status: 'published',
@@ -237,10 +302,11 @@ export function applyDispute(
   e: DisputeEvent,
   by: Actor,
   now: Date,
-  s: { appealWindowH: number },
+  s: DisputeSettings,
 ): Dispute {
   if (!Number.isFinite(now.getTime())) throw new RangeError('invalid clock');
   checkHours('appealWindowH', s.appealWindowH, 12, 168);
+  checkHours('firstResponseH', s.firstResponseH, 1, 72);
 
   if (by.kind === 'trader') {
     if (e.type !== 'appeal') return fail('wrong-party');
@@ -248,20 +314,28 @@ export function applyDispute(
       return fail('wrong-state');
     }
     if (now.getTime() >= d.appealEndsAt.getTime()) return fail('too-late');
+    if (!Array.isArray(e.involved) || !e.involved.every((x) => typeof x === 'string')) {
+      throw new TypeError('appeal: involved must be a list of staff ids');
+    }
+    const seen = e.involved.reduce(markSeen, d).seen;
     return {
       ...d,
       status: 'appealed',
       round: 2,
+      seen,
       round1: {
-        proposer: d.ruling.proposer,
-        approver: d.ruling.approver,
-        outcome: d.ruling.outcome,
-        involved: [...d.seen],
+        ...d.ruling,
+        accountAction: structuredClone(d.ruling.accountAction),
+        firstReplyAt: d.firstReplyAt,
+        involved: [...seen],
       },
       ruling: null,
       assignee: null,
       appealBy: by.side,
       appealedAt: new Date(now.getTime()),
+      // Round 2 has its own first-reply and ruling deadlines (M4).
+      firstReplyAt: null,
+      replyDueAt: addH(now, s.firstResponseH),
       rulingDueAt: addH(now, APPEAL_GOAL_H),
     };
   }
@@ -297,15 +371,19 @@ export function applyDispute(
   // Staff.
   if (SYSTEM_EVENTS.includes(e.type) || e.type === 'appeal') return fail('wrong-party');
   if (!can(by.role, 'disputes.handle')) return fail('wrong-party');
+  // I2 (R37): nobody involved in round 1 takes any part in the appeal: not a reply, not an
+  // assignment of someone else, not a send-back. Task 11's chat and message routes apply the same.
+  if (d.round === 2 && d.round1 !== null && d.round1.involved.includes(by.id)) return fail('not-eligible');
   const seenBy = (x: Dispute, ...ids: string[]) => ids.reduce(markSeen, x);
 
   switch (e.type) {
     case 'assign': {
       if (d.status !== 'open' && d.status !== 'appealed') return fail('wrong-state');
       const self = e.staffId === by.id;
-      const role = self ? by.role : e.role;
+      const role = e.role;
+      if (self && role !== by.role) return fail('wrong-party');
       if (!self && !isSeniorOrOwner(by.role)) return fail('wrong-party');
-      if (role === undefined || !can(role, 'disputes.handle')) return fail('wrong-party');
+      if (!can(role, 'disputes.handle')) return fail('wrong-party');
       if (d.assignee !== null && !isSeniorOrOwner(by.role)) return fail('wrong-state');
       if (d.round === 2 && !eligibleForAppeal(d, e.staffId, role)) return fail('not-eligible');
       return seenBy({ ...d, assignee: e.staffId }, by.id, e.staffId);
@@ -320,12 +398,13 @@ export function applyDispute(
       if (d.status !== expected) return fail('wrong-state');
       if (d.assignee !== by.id || e.ruling.proposer !== by.id) return fail('wrong-party');
       if (!outcomeFits(d, e.ruling.outcome)) return fail('wrong-state');
+      if (!validAction(e.ruling.accountAction, now)) return fail('invalid-action');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');
       const second = needsSecond(d, e.ruling.outcome, e.ruling.accountAction);
       const ruling: RulingDraft = {
         id: e.ruling.id,
         outcome: e.ruling.outcome,
-        accountAction: e.ruling.accountAction,
+        accountAction: structuredClone(e.ruling.accountAction),
         proposer: by.id,
         approver: null,
         needsSecond: second,
@@ -337,7 +416,7 @@ export function applyDispute(
     case 'approve':
     case 'send-back': {
       if (d.status !== 'awaiting-approval' || d.ruling === null) return fail('wrong-state');
-      if (!isSeniorOrOwner(by.role)) return fail('wrong-party');
+      if (!canApprove(by.role, d.ruling.accountAction)) return fail('wrong-party');
       if (d.ruling.proposer === by.id) return fail('same-person');
       if (d.round === 2 && !eligibleForAppeal(d, by.id, by.role)) return fail('not-eligible');
       if (e.type === 'send-back') {

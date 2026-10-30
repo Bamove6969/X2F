@@ -45,7 +45,9 @@ export {
   type Dispute,
   type DisputeEvent,
   type DisputeRuleCode,
+  type DisputeSettings,
   type DisputeStatus,
+  type Round1,
   type RulingDraft,
 } from './dispute.js';
 export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';

@@ -106,11 +106,13 @@ const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 
 /**
- * The first instant at which the local wall clock in `tz` reads `target` (a `wallKey`) or later.
- * Usually one offset guess hits it; in a fall-back overlap the earlier of the two is taken; in a
- * spring-forward gap (the time never happens) it steps by minute from just before the gap.
+ * The first instant after `now` at which the local wall clock in `tz` reads `target` (a `wallKey`)
+ * or later. Usually one offset guess hits it; in a fall-back overlap the earliest one after `now`
+ * is taken (M1: in the repeated hour a window is open again and ends at the second pass of its end
+ * time, never in the past); in a spring-forward gap (the time never happens) it steps by minute
+ * from just before the gap.
  */
-function firstInstantAtOrAfter(tz: string, target: number): number {
+function firstInstantAfter(tz: string, target: number, now: number): number {
   const naive = target * MINUTE;
   const keyOf = (t: number) => {
     const l = local(tz, t);
@@ -119,7 +121,7 @@ function firstInstantAtOrAfter(tz: string, target: number): number {
   // UTC offset (ms) at an instant, ignoring seconds.
   const offsetAt = (t: number) => keyOf(t) * MINUTE - Math.floor(t / MINUTE) * MINUTE;
   const candidates = [naive - 36 * HOUR, naive, naive + 36 * HOUR].map((p) => naive - offsetAt(p));
-  const hits = candidates.filter((c) => keyOf(c) === target);
+  const hits = candidates.filter((c) => keyOf(c) === target && c > now);
   if (hits.length > 0) return Math.min(...hits);
   // A gap: start a few hours before the earliest candidate and step to the first minute past it.
   let t = Math.min(...candidates) - 3 * HOUR;
@@ -141,5 +143,5 @@ export function windowEndsAt(h: LoginHours, now: Date): Date | null {
   const addDays = start > end && l.min >= start ? 1 : 0;
   const day = new Date(Date.UTC(l.y, l.mo - 1, l.d + addDays));
   const target = wallKey(day.getUTCFullYear(), day.getUTCMonth() + 1, day.getUTCDate(), end);
-  return new Date(firstInstantAtOrAfter(h.tz, target));
+  return new Date(firstInstantAfter(h.tz, target, now.getTime()));
 }

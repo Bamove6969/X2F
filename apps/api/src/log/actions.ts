@@ -9,6 +9,8 @@ import type { TradeEvent } from '@x2f/trade';
 type Kind =
   /** An id or enum value: letters, digits and `_ . : -`, at most 64 characters. */
   | 'id'
+  /** M6: an account or staff id, a lower-case uuid (never a username or a login name). */
+  | 'uuid'
   /** A non-negative integer as a decimal string (atomic units, cents). */
   | 'amount'
   /** A finite number (a setting, a count, hours). */
@@ -43,15 +45,27 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.tick': {},
 };
 
-const RULING: Schema = { rulingId: 'id', round: 'number', outcome: 'id', accountAction: 'id', amountAtomic: 'amount' };
-const LIEN: Schema = { lienId: 'id', accountId: 'id', amountAtomic: 'amount', cause: 'id' };
-const BAN: Schema = { accountId: 'id', until: 'iso', reasonCode: 'id', permanent: 'bool' };
+/**
+ * A ruling's account action is flattened (M6): `accountAction` is its kind (`none`, `freeze`,
+ * `trade-ban`, `site-ban`), and a ban's `until` (null = permanent) and `reasonCode` are their own keys.
+ */
+const RULING: Schema = {
+  rulingId: 'id',
+  round: 'number',
+  outcome: 'id',
+  accountAction: 'id',
+  until: 'iso',
+  reasonCode: 'id',
+  amountAtomic: 'amount',
+};
+const LIEN: Schema = { lienId: 'id', accountId: 'uuid', amountAtomic: 'amount', cause: 'id' };
+const BAN: Schema = { accountId: 'uuid', until: 'iso', reasonCode: 'id', permanent: 'bool' };
 
 export const LOG_ACTIONS = {
   ...TRADE,
   // Disputes and cases (Tasks 10–11).
   'dispute.opened': { reason: 'id', afterRefund: 'bool', seq: 'number' },
-  'dispute.assigned': { staffId: 'id' },
+  'dispute.assigned': { staffId: 'uuid' },
   'case.opened': {},
   'chat.read': {},
   'chat.message-sent': {},
@@ -69,41 +83,41 @@ export const LOG_ACTIONS = {
   'ruling.executed': { rulingId: 'id', txHash: 'hex64' },
   'dispute.complied': { txHash: 'hex64' },
   // Holds, freezes and the ban stages (Tasks 11, 12, 27; the single `account.banned` is replaced).
-  'hold.placed': { accountId: 'id', side: 'id', kind: 'id' },
-  'hold.lifted': { accountId: 'id', side: 'id', kind: 'id' },
-  'account.frozen': { accountId: 'id' },
+  'hold.placed': { accountId: 'uuid', side: 'id', kind: 'id' },
+  'hold.lifted': { accountId: 'uuid', side: 'id', kind: 'id' },
+  'account.frozen': { accountId: 'uuid' },
   'account.trade-banned': BAN,
   'account.site-banned': BAN,
-  'account.ban-lifted': { accountId: 'id', kind: 'id' },
+  'account.ban-lifted': { accountId: 'uuid', kind: 'id' },
   // Written on the first request after a timed site ban's `until` (Task 27).
-  'account.reinstated': { accountId: 'id', kind: 'id' },
+  'account.reinstated': { accountId: 'uuid', kind: 'id' },
   // Liens (Task 25, rewritten 2026-10-29c) and owed fees (Revision 2026-10-29c).
   'lien.placed': LIEN,
   'lien.suspended': { lienId: 'id' },
   'lien.reactivated': { lienId: 'id' },
   'lien.voided': { lienId: 'id' },
   'lien.repaid': { lienId: 'id', repaymentCode: 'id' },
-  'fee.owed': { accountId: 'id', amountAtomic: 'amount' },
+  'fee.owed': { accountId: 'uuid', amountAtomic: 'amount' },
   // Recommended account limits (Task 26).
-  'limits.recommended': { recId: 'id', accountId: 'id', capUsd: 'number', stage: 'id' },
+  'limits.recommended': { recId: 'id', accountId: 'uuid', capUsd: 'number', stage: 'id' },
   'limits.decided': { recId: 'id', approved: 'bool' },
   // Staff management (Task 7) and per-person grants (Task 30).
   'staff.invite-created': { inviteId: 'id', role: 'id' },
   'staff.invite-cancelled': { inviteId: 'id' },
-  'staff.joined': { staffId: 'id', role: 'id' },
-  'staff.switched-off': { staffId: 'id' },
-  'staff.switched-on': { staffId: 'id', role: 'id' },
-  'staff.role-set': { staffId: 'id', from: 'id', to: 'id' },
-  'staff.hours-set': { staffId: 'id' },
-  'staff.grants-set': { staffId: 'id', ticketsHandle: 'bool' },
-  'staff.session-ended-hours': { staffId: 'id' },
+  'staff.joined': { staffId: 'uuid', role: 'id' },
+  'staff.switched-off': { staffId: 'uuid' },
+  'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
+  'staff.hours-set': { staffId: 'uuid' },
+  'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool' },
+  'staff.session-ended-hours': { staffId: 'uuid' },
   // Shifts and pay (Task 33).
   'staff.welcome-acknowledged': {},
   'shift.clocked-in': { shiftId: 'id' },
   'shift.clocked-out': { shiftId: 'id', minutes: 'number' },
   'shift.abandoned': { shiftId: 'id', ended: 'id' },
-  'pay.paid': { staffId: 'id', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
-  'pay.clawback': { staffId: 'id', usdCents: 'amount', rulingId: 'id' },
+  'pay.paid': { staffId: 'uuid', kind: 'id', usdCents: 'amount', atomic: 'amount', ref: 'id' },
+  'pay.clawback': { staffId: 'uuid', usdCents: 'amount', rulingId: 'id' },
   // The owner (Task 6).
   'owner.setup-completed': {},
   'owner.key-added': { credentialId: 'id' },
@@ -139,6 +153,7 @@ export class LogDetailError extends Error {
 }
 
 const ID = /^[A-Za-z0-9_.:-]{1,64}$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const AMOUNT = /^(0|[1-9]\d{0,39})$/;
 const HEX64 = /^[0-9a-f]{64}$/;
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
@@ -148,6 +163,8 @@ function fits(kind: Kind, v: unknown): boolean {
   switch (kind) {
     case 'id':
       return typeof v === 'string' && ID.test(v);
+    case 'uuid':
+      return typeof v === 'string' && UUID.test(v);
     case 'amount':
       return typeof v === 'string' && AMOUNT.test(v);
     case 'number':
