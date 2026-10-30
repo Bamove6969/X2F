@@ -314,6 +314,45 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     );
   };
 
+  /**
+   * The auto-refund guard for one pass (autoRefund.ts), once nothing was escalated here: on `sign` it
+   * arms the auto-refund (saved before the party is asked) and hands the seller-built refund to the
+   * party ('signed'); on `escalate` it reports. Returns the record to save otherwise.
+   */
+  const autoRefundPass = async (r: DeskRecord, s: DeskStep, now: Date): Promise<DeskRecord | 'signed'> => {
+    if (r.escalated !== null) return r;
+    const ar = autoRefundStep({
+      now,
+      shadow: r.shadow,
+      api: s.api,
+      apiRefundSince: r.apiRefundSince,
+      paidSeen: r.paidSeen,
+      paidSeenAt: r.paidSeenAt,
+      recordedRefundAddress: r.sellerRefund,
+      funds: s.funds,
+      refundFor: refundFor(r, 'auto-refund'),
+    });
+    if (ar.action === 'sign') {
+      const next: DeskRecord = { ...r, armed: { kind: 'auto-refund', at: now } };
+      await save(next);
+      settle(s.handle, 'auto-refund', ar.proposed);
+      return 'signed';
+    }
+    if (ar.action === 'escalate') {
+      const res = await o.link.report({ kind: ar.report, trade: code });
+      if (accepted(res)) {
+        // A 409 wrong-state counts as done (it fails safe: nothing is signed here afterwards) but is
+        // logged apart, so ops can tell it from an accepted escalation (review round 2 N4).
+        o.log({ reason: res.status === 409 ? 'escalate-wrong-state' : `escalated-${ar.report}` });
+        return { ...r, escalated: ar.report };
+      }
+      logOnce('escalate', `escalate-refused-${res.status}`);
+    } else if (ar.action === 'refuse') {
+      logOnce('auto-refund', `auto-refund-${ar.reason}`);
+    }
+    return r;
+  };
+
   const step = async (s: DeskStep): Promise<void> => {
     const now = o.now();
     let r: DeskRecord = { ...record };
@@ -372,6 +411,19 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       if (r.armed !== null || r.cancelSeen) logOnce('over', 'desk-trade-over');
     } else if (r.armed !== null) {
       const kind = r.armed.kind;
+      // Review round 3 R3-N1: an armed buyer cancel the buyer never builds must not switch off the
+      // auto-refund and its escalations (only the buyer can build it, so the seller would be stuck
+      // in `refund_requested` with no dispute route). While the API is not settling the buyer's
+      // cancel, the auto-refund guard runs as if nothing were armed: on `sign` the desk re-arms as
+      // the seller-built auto-refund (the payouts are identical, payoutsFor: the whole balance to the
+      // seller-signed address) and hands it to the party, which replaces the earlier outcome unless it
+      // already committed to the buyer's tx set (then that tx is the mod's own and lands as before:
+      // `ownTxs`, so the shadow's veto never applies to it); on `escalate` it reports as usual.
+      if (kind === 'buyer-cancel' && !(s.api.state === 'settling' && s.api.settleKind === 'buyer-cancel')) {
+        const ar = await autoRefundPass(r, s, now);
+        if (ar === 'signed') return;
+        r = ar;
+      }
       const { balance, unlocked } = s.funds;
       // An armed buyer cancel is rechecked every pass (review round 2 N2): never handed to the party
       // again after a `trade.paid` was opened, or while the API shows a state it may not be signed in.
@@ -406,38 +458,9 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       }
       if (bc.action === 'refuse') logOnce('buyer-cancel', `buyer-cancel-${bc.reason}`);
       // A cancel that waits or is refused never blocks the auto-refund's escalations (review M3).
-      if (r.escalated === null) {
-        const ar = autoRefundStep({
-          now,
-          shadow: r.shadow,
-          api: s.api,
-          apiRefundSince: r.apiRefundSince,
-          paidSeen: r.paidSeen,
-          paidSeenAt: r.paidSeenAt,
-          recordedRefundAddress: r.sellerRefund,
-          funds: s.funds,
-          refundFor: refundFor(r, 'auto-refund'),
-        });
-        if (ar.action === 'sign') {
-          r = { ...r, armed: { kind: 'auto-refund', at: now } };
-          await save(r);
-          settle(s.handle, 'auto-refund', ar.proposed);
-          return;
-        }
-        if (ar.action === 'escalate') {
-          const res = await o.link.report({ kind: ar.report, trade: code });
-          if (accepted(res)) {
-            r = { ...r, escalated: ar.report };
-            // A 409 wrong-state counts as done (it fails safe: nothing is signed here afterwards) but is
-            // logged apart, so ops can tell it from an accepted escalation (review round 2 N4).
-            o.log({ reason: res.status === 409 ? 'escalate-wrong-state' : `escalated-${ar.report}` });
-          } else {
-            logOnce('escalate', `escalate-refused-${res.status}`);
-          }
-        } else if (ar.action === 'refuse') {
-          logOnce('auto-refund', `auto-refund-${ar.reason}`);
-        }
-      }
+      const ar = await autoRefundPass(r, s, now);
+      if (ar === 'signed') return;
+      r = ar;
     }
     await save(r);
   };
