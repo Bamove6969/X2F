@@ -449,7 +449,8 @@ describe('C2: during the hold a weak session cannot change the password or the l
     expect(errorOf(await changePassword(deps, b, id))).toBe('recovery-hold');
     expect(errorOf(await addPasskey(deps, b, id, createSoftAuthenticator({ backedUp: true, userVerified: true })))).toBe('recovery-hold');
     expect(errorOf(await b.put('/v1/account/security/logout-timer', { idleHours: 2 }))).toBe('recovery-hold');
-    expect(errorOf(await b.post('/v1/account/terms', { version: TERMS }))).toBe('recovery-hold');
+    // Accepting the Terms is not a security change: allowed during the hold (lead decision 2026-10-30).
+    expect((await b.post('/v1/account/terms', { version: TERMS })).statusCode).toBe(204);
     expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
     expect(await holdOf(deps, id)).toMatchObject({ pending: 'remove-method' });
 

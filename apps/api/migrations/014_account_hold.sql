@@ -13,7 +13,7 @@ alter table login_approvals add column strength text not null default 'weak-sing
   check (strength in ('strong', 'weak-single', 'pgp-single'));
 
 -- The account's hold: while `hold_until > now` the account cannot start trades, post or turn on
--- offers, change payout wallets, approve new logins, change how it logs in, or accept new Terms;
+-- offers, change payout wallets, approve new logins or change how it logs in (accepting new Terms stays allowed);
 -- trades already open can still be finished.
 create table account_holds (
   account_id uuid primary key references accounts (id) on delete cascade,

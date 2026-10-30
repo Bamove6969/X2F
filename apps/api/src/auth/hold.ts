@@ -12,8 +12,8 @@
  *   3. a backup login (Task 9's recovery session; lead default), in the session's transaction.
  *   Each start records `started_methods`: the login methods the account held at that moment.
  * - **During it** (`hold_until > now`) for every session of the account: no new trades, offers or
- *   payout-wallet changes, no approving new logins, no change to how the account logs in, no new
- *   Terms (`requireNotHeld`, `HOLD_BLOCKED_ROUTES`; 403 `recovery-hold` `{ holdUntil }`). Trades
+ *   payout-wallet changes, no approving new logins, no change to how the account logs in
+ *   (`requireNotHeld`, `HOLD_BLOCKED_ROUTES`; 403 `recovery-hold` `{ holdUntil }`). Trades
  *   already open can still be finished.
  * - **Ending it:** by time (`settleHold`: the pending change applies, alert `hold-ended`); or a
  *   strong login whose methods are all in `started_methods` (`endHoldIfOwner`, inside the login's
@@ -349,7 +349,6 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'POST /v1/wallets',
   'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
-  'POST /v1/account/terms',
 ];
 
 /**

@@ -247,8 +247,9 @@ export function accountRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/account/terms',
-    // Task 17 (lead default): new Terms wait out the hold.
-    { preHandler: [requireSession({ allowRecovery: true, allowStaleTerms: true }), requireNotHeld] },
+    // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
+    // security change; refusing it could block finishing open trades).
+    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
