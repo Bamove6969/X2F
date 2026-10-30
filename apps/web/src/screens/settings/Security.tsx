@@ -17,6 +17,7 @@ import { BLOCK_COPY } from './blockCopy.js';
 import { Devices } from './Devices.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
+import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
 
 const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly number[]).includes(n);
@@ -161,6 +162,12 @@ export function Security() {
             <li className="x2f-list__row">
               <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
                 {BLOCK_COPY.title}
+              </Link>
+            </li>
+            {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
+                {TEAM_COPY.title}
               </Link>
             </li>
           </ul>

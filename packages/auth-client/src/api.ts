@@ -36,6 +36,8 @@ export class AuthApiError extends Error {
   readonly action?: string;
   /** This browser's password-login misses in a row (401 `credentials-invalid` from `loginPassword`); see `shouldSendAway`. */
   readonly misses?: number;
+  /** The team member limit (409 `too-many-members`, Plan 2 Task 18). */
+  readonly max?: number;
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -52,6 +54,7 @@ export class AuthApiError extends Error {
     if (typeof extra.version === 'string') this.version = extra.version;
     if (typeof extra.action === 'string') this.action = extra.action;
     if (typeof extra.misses === 'number' && Number.isInteger(extra.misses) && extra.misses > 0) this.misses = extra.misses;
+    if (typeof extra.max === 'number' && Number.isInteger(extra.max) && extra.max > 0) this.max = extra.max;
   }
 }
 

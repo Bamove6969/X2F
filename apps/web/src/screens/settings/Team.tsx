@@ -60,8 +60,7 @@ type CantDo = { code: CantDoCode; max?: number };
 
 function cantDoOf(e: unknown): CantDo | null {
   if (e instanceof AuthApiError && isCantDoCode(e.code)) {
-    const max = (e as AuthApiError & { max?: unknown }).max;
-    return { code: e.code, ...(typeof max === 'number' ? { max } : {}) };
+    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}) };
   }
   return null;
 }
@@ -291,7 +290,7 @@ export function Team() {
               variant="primary"
               data-primary=""
               aria-disabled={busy || name.trim() === '' || full}
-              onClick={() => (full ? setCantDo({ code: 'too-many-members', max }) : void invite())}
+              onClick={() => (full ? setCantDo({ code: 'too-many-members', max }) : name.trim() === '' ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}

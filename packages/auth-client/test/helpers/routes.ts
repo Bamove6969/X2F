@@ -53,13 +53,25 @@ export const SAMPLE_CALLS: { [K in keyof AuthApi]: Parameters<AuthApi[K]> } = {
   removeWallet: [UUID],
   getLogoutTimer: [],
   setLogoutTimer: [{ idleHours: 6 }],
+  getTeam: [],
+  inviteMember: [{ displayName: 'Sample01', roles: ['offers'] }],
+  setMemberRoles: [UUID, { roles: ['trades'] }],
+  removeMember: [UUID, {}],
+  teamAudit: [],
+  readInvite: [{ invite: 'x' }],
+  joinStart: [{ invite: 'x', loginName: 'sample.login', publicKey: 'x' }],
+  joinFinish: [{ challengeId: UUID, code: 'x' }],
+  joinSecondPgpStart: [{ setupId: UUID, publicKey: 'x' }],
+  joinSecondPgpFinish: [{ setupId: UUID, challengeId: UUID, code: 'x', deviceLabel: 'B' }],
+  joinSecondWebAuthnStart: [{ setupId: UUID, kind: 'passkey' }],
+  joinSecondWebAuthnFinish: [{ setupId: UUID, challengeId: UUID, response: RESPONSE, deviceLabel: 'B' }],
 };
 
 /**
  * The route each method must reach: its HTTP method and the server's route pattern. A method sent
  * to the wrong route (even one that exists) fails the coverage test in flows.test.ts.
  */
-export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'DELETE'} /v1/${string}` } = {
+export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'} /v1/${string}` } = {
   getTerms: 'GET /v1/terms',
   getPgpSigningKey: 'GET /v1/pgp/signing-key',
   registerPassword: 'POST /v1/register/password',
@@ -105,6 +117,18 @@ export const ROUTES: { [K in keyof AuthApi]: `${'GET' | 'POST' | 'PUT' | 'DELETE
   removeWallet: 'DELETE /v1/wallets/:id',
   getLogoutTimer: 'GET /v1/account/security/logout-timer',
   setLogoutTimer: 'PUT /v1/account/security/logout-timer',
+  getTeam: 'GET /v1/team',
+  inviteMember: 'POST /v1/team/invites',
+  setMemberRoles: 'PATCH /v1/team/members/:id',
+  removeMember: 'DELETE /v1/team/members/:id',
+  teamAudit: 'GET /v1/team/audit',
+  readInvite: 'POST /v1/team/invite',
+  joinStart: 'POST /v1/team/join/start',
+  joinFinish: 'POST /v1/team/join/finish',
+  joinSecondPgpStart: 'POST /v1/team/join/second/pgp/start',
+  joinSecondPgpFinish: 'POST /v1/team/join/second/pgp/finish',
+  joinSecondWebAuthnStart: 'POST /v1/team/join/second/webauthn/start',
+  joinSecondWebAuthnFinish: 'POST /v1/team/join/second/webauthn/finish',
 };
 
 export const methodNames = (): Array<keyof AuthApi> => Object.keys(SAMPLE_CALLS) as Array<keyof AuthApi>;

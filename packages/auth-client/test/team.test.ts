@@ -71,3 +71,11 @@ describe('team calls', () => {
     expect(bodyOf(sent[3]!)).toEqual({ confirmToken: 't3' });
   });
 });
+
+describe('team refusals', () => {
+  it('too-many-members carries the limit', async () => {
+    const { fetch } = recorder(() => Response.json({ error: 'too-many-members', max: 3 }, { status: 409 }));
+    const e = await createAuthApi({ fetch }).inviteMember({ displayName: 'Aurora', roles: ['offers'] }).catch((x: unknown) => x);
+    expect(e).toMatchObject({ status: 409, code: 'too-many-members', max: 3 });
+  });
+});

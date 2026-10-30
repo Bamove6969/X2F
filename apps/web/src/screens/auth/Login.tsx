@@ -255,6 +255,7 @@ function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pe
 function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
 
   const go = async () => {
     setBusy(true);
@@ -262,13 +263,16 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result = await loginWithPasskey(authApi, deviceLabel());
       if (result.status === 'ok') onLoggedIn();
-      else setError('This account needs a staff login. Use PGP or a security key.');
+      // A staff or team-member login (Plan 2 Task 18): the second step is what the server needs (PGP).
+      else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
       setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
   };
+
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} />;
 
   return (
     <section className="x2f-stack" data-part="passkey">

@@ -16,12 +16,14 @@ import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
 import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
+import { MemberInvite } from './screens/auth/MemberInvite.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { Security } from './screens/settings/Security.js';
+import { Team } from './screens/settings/Team.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
@@ -131,7 +133,10 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
   if (session.status !== 'signed-in') return false;
   const me = session.me;
   if (me === null || typeof me !== 'object') return false;
-  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown };
+  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown; member?: { roles?: unknown } | null };
+  // Plan 2 Task 18: a team member without Trades gets no trade stream (the API answers 403 forbidden).
+  const member = m.member;
+  if (member !== undefined && member !== null && !(Array.isArray(member.roles) && member.roles.includes('trades'))) return false;
   return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
 }
 
@@ -163,6 +168,8 @@ export function App() {
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/blocked" element={<Blocked />} />
+          <Route path="/settings/team" element={<Team />} />
+          <Route path="/team/join" element={<MemberInvite />} />
           <Route path="/news" element={<News />} />
           <Route path="/feedback" element={<Feedback />} />
         </Route>
