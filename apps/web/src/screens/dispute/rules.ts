@@ -223,11 +223,11 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
       break;
     case 'seller-sends-xmr':
       label = 'Ruling: the seller sends the XMR'; // COPY-UNSIGNED
-      title = me === 'seller' ? `You must send ${other} ${amount}` : `${other} must send you ${amount}`; // COPY-UNSIGNED
+      title = me === 'seller' ? `You must send ${other} ${amount}` : `${other} must send you ${amount}`; // COPY-UNSIGNED; not-a-refusal: what a ruling asks of a side
       break;
     case 'seller-returns-fiat':
       label = 'Ruling: the seller returns the payment'; // COPY-UNSIGNED
-      title = me === 'seller' ? `You must return ${other}'s payment` : `${other} must return your payment`; // COPY-UNSIGNED
+      title = me === 'seller' ? `You must return ${other}'s payment` : `${other} must return your payment`; // COPY-UNSIGNED; not-a-refusal: what a ruling asks of a side
       break;
     case 'no-action':
       label = 'Ruling: no action'; // COPY-UNSIGNED

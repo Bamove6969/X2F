@@ -73,7 +73,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
 - **P5-A7 Phrase wording.** Spec 5.1 says "Fast payment"; the Review board says "Fast release". Default: the phrase follows the reviewer's counterparty role: "Fast payment" when rating a buyer, "Fast release" when rating a seller. The other seven phrases are as in spec 5.1.
 - **P5-A8 Typical time (spec 5.4 "typical release time"; boards "typical payment time", "Pays in ~6 min").** `typicalMinutes` = the median of the trader's own action times over their last `TYPICAL_WINDOW = 20` completed trades: as buyer, `paidAt − securedAt` (0 when paid before secured); as seller, the `release-started` event time `− paidAt`. `null` below `TYPICAL_MIN_SAMPLES = 3`. Profile label follows the board ("typical payment time") for now; the owner picks the final words.
 - **P5-A9 Cancel rate.** Trades this trader ended alone (buyer cancel) or by proposing an accepted mutual cancel, divided by their trades that reached `funding`. `null` below 5 such trades. Shown neutrally, never as a warning (spec 2.3).
-- **P5-A10 Profile review list.** Latest `PROFILE_REVIEWS = 20` revealed reviews: stars or Neutral, phrases, note, method name and a coarse age ("2 days ago", "3 weeks ago", "Mar 2026"), never the reviewer, amount or exact time.
+- **P5-A10 Profile review list.** Latest `PROFILE_REVIEWS = 20` revealed reviews: stars or Neutral, phrases, note, method name and a coarse age (~~"2 days ago", "3 weeks ago", "Mar 2026"~~ *2026-10-29b lead default: month and year only, "Mar 2026"*), never the reviewer, amount or exact time.
 
 **Badges**
 - **P5-A11 New and the 2 Featured slots.** New takes one of the 2 Featured slots, so a New account can feature one more badge.
@@ -273,7 +273,7 @@ Each line is a default this plan builds so work can proceed; the owner confirms 
   - `POST /v1/trades/:code/review` (participant, `requireTrader`) body `ReviewInput` → 201. Refusals: 409 `not-reviewable`, 409 `review-exists`, 400 with the `ReviewError` code.
   - `assertNoPendingReview(db, accountId)` → 409 `review-pending`; called inside the take transaction for **both** taker and poster, and in `POST /v1/trades/:code/wallet`.
   - `GET /v1/offers` leaves out offers whose poster has a pending review (P5-A4).
-  - `PublicReview = { neutral; stars: number | null; phrases: string[]; note: string | null; method: string; age: string }` (P5-A10). Never a reviewer id, amount or timestamp.
+  - `PublicReview = { neutral; stars: number | null; phrases: string[]; note: string | null; method: string; age: string }` (P5-A10; `age` is month and year only, "Mar 2026", Revision 2026-10-29b). Never a reviewer id, amount or timestamp.
 
 - [ ] **Step 1: Write the failing tests** (real Postgres):
   - A released trade: both sides can review; a third account gets 404; a second POST → `review-exists`; UPDATE on `reviews` by the app role fails.
@@ -762,7 +762,7 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note.
 Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`), recorded in the spec and `HANDOFF.md` "Decided 2026-10-29 (owner)".
 
 - **All feedback is permanent** (owner, "like Amazon or Uber"). Reviews survive the 30-day trade delete (Plan 7 Task 2). So Task 3's `reviews` table must **not** reference `trades(code)`: it holds everything it needs itself (reviewer, subject, role, stars, phrases, note, trade badges, the weight, method name, the review date). The trade code is kept only until the trade is purged, then nulled. New Task 20 does this. This supersedes the 2026-10-28 line "a review references the bare trade record": there is no per-trade stub any more.
-- **What a review holds** (owner): a custom comment (the note), templated comments (the phrases), **badges that describe the trade** (new: a short owner-approved list, for example "Smooth trade", "Great communication"; `// COPY-UNSIGNED` until the owner gives the list), and a star rating. **1–5 or 1–10 is not decided:** Task 1 reads `STAR_MAX` (default 5) and P5-A1's thresholds scale with it.
+- **What a review holds** (owner): a custom comment (the note), templated comments (the phrases), **badges that describe the trade** (new: a short owner-approved list, for example "Smooth trade", "Great communication"; `// COPY-UNSIGNED` until the owner gives the list), and a star rating. ~~**1–5 or 1–10 is not decided:** Task 1 reads `STAR_MAX` (default 5) and P5-A1's thresholds scale with it.~~ *2026-10-29b: 1–5 only (design reports the owner's answer).*
 - **Review disputes** (owner): the person rated can dispute a review and have it moderated (retaliation, a competitor, doxxing and similar). This answers owner question 11 ("not built") with yes: new Task 19.
 - **Lost disputes still count** (owner). P5-A13: `completedTrades` = released trades **plus settled disputes, whoever won**. Clean record still needs zero lost disputes, from the running total. No stage drop (Plan 3 Revision 2026-10-29).
 - **Running totals instead of per-trade rows.** After the 30-day delete, stats can't be computed from `trades`. New Task 20 keeps per-account running totals (completed trades, lost disputes, cancels, trades reaching funding) updated when each trade or dispute ends. **Decided (lead call, 2026-10-29):** P5-A8 `typicalMinutes` (median of the last 20 action times) and P5-A9 cancel rate need more than a count, so each account keeps its last 20 action durations, in minutes, with no trade code or date. The owner still has to confirm the running-totals approach (answers, Q3 "pending confirmation").
@@ -781,7 +781,7 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 
 **Interfaces:**
 - Produces:
-  - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review.
+  - `review_disputes(id, review_id, reason 'retaliation'|'competitor'|'doxxing'|'other', note ≤ 1000, status 'open'|'kept'|'removed'|'note-removed', decided_by, decided_at)`; one open dispute per review. *2026-10-29b (owner): statuses `open | stands | comments-removed | removed`, and an open dispute shows "Under review" at once; see Revision 2026-10-29b.*
   - `POST /v1/reviews/:id/dispute` (the subject only, once the review is revealed). Staff: `GET /staff/v1/review-disputes`, `POST …/:id/decide { outcome, reason ≥ 20 }` (perm `reputation.review`). Each step is logged without the note text.
   - A removed review no longer counts anywhere (stats, badges, profile); its row is kept with `removed_at` so the decision can be checked.
   - The moderator sees the review and the reason. If the trade is already purged (older than 30 days), there is no chat to read; the decision rests on the review text and the reason. (See the open point in the final report.)
@@ -832,3 +832,29 @@ Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revis
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat: feedback form linked from every can't-do popup`.
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Sources: the owner's words of 2026-10-29 08:03 (`~/x2f-comms/owner-answers-2026-10-28.md`, item c), the lead's calls of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-29-lead-calls.md`) and Claude Design's update (`origin/wip/design-brief`, Reviews board). The owner's words win over the design's summary.
+
+- **Reviews are very public but anonymous** (owner). Nothing on a review can link it to whoever left it: **no username, no account number, no order or trade number**. This changes Tasks 3, 5, 6, 12 and 20:
+  - Every public review reader (profile, offer card popups, the portable record of Task 12) returns only the subject, stars, phrases, note, trade badges, method name and a coarse date. It never returns the reviewer's name or id, the trade code or anything derived from them. *Lead default (2026-10-29b), owner may change:* the date is shown as month and year only, so the exact time can't be matched to a trade.
+  - *Lead default (2026-10-29b), owner may change:* the stored link to the reviewer (Task 3's `reviewer_id`) is kept only as long as the rules need it (blind reveal, one review per trade, the rate-first gate), and is nulled together with the trade code when the trade self-destructs (Task 20, Plan 7 Task 2). The role (buyer or seller) and the weight stay.
+  - A new test in Task 20: after the trade is purged, no column of `reviews` holds the reviewer's id or the trade code; a public profile response contains neither the reviewer's name nor any trade code at any time.
+- **A disputed review immediately shows "Under review"** (owner: the benefit of the doubt goes to the person reviewed), from the moment the dispute is filed until a moderator decides. Task 19's outcomes become the owner's three: **remove some comments** (`comments-removed`: the moderator removes the note, chosen phrases or badges, and the stars stay), **let it stand** (`stands`), or **remove the review entirely** (`removed`). They replace `kept` / `removed` / `note-removed`.
+  - *Lead default (2026-10-29b), owner may change:* while "Under review", the review is shown with its label but does not count in `positivePct`, Trusted or the other badges; it counts again if it stands. That is the benefit of the doubt.
+  - **Reasons (design reports the owner's answer, 2026-10-29b):** no reason list for now. Disputing is a "Dispute" button and a required free-text reason; Task 19's `reason` enum becomes `reason_text` (≤ 1000, required), and the `note` column goes. Pickable reasons may come later from common answers.
+- **Stars are 1–5 only** (design reports the owner's answer, 2026-10-29b; the 1–10 variant is dropped). `STAR_MAX` is the constant 5, not a setting; P5-A1's thresholds stay as written. Stars are amber everywhere (design).
+- **Task 21 (feedback):**
+  - **Replies to named feedback are in the app only,** never by email: staff reply through a ticket thread and an alert (Plan 4 Revision 2026-10-29b, Tasks 30–31). Anonymous feedback has no reply.
+  - *Lead call 2026-10-29:* sending feedback anonymously does not update "last seen" (the request does not touch `sessions.last_seen_at`), and the anonymous copy promises only **"We don't record who sent it."** Tests: an anonymous send leaves `last_seen_at` unchanged; the copy is exact.
+- **Completed trades (R38, lead call):** released trades plus refunded trades that had a dispute; a settled dispute counts whoever won (P5-A13 as revised on 2026-10-29).
+
+## Revision 2026-10-29c (owner)
+
+Authority: spec (Revision 2026-10-29c, 5.4) > `rulings-and-lessons.md` (R38) > earlier revisions > this note. Source: the owner's words of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`, "Profile: owner leans to showing 'Disputes: N won, M lost'", confirmed in the lead's brief of 2026-10-29c).
+
+- **Profiles show "Disputes: N won, M lost"** (Tasks 5, 12, 20). Task 20's `account_totals` gains `won_disputes int` beside `lost_disputes`; `addToTotals` adds one to the winner's `won_disputes` and the loser's `lost_disputes` when a dispute settles. Task 5's `TraderProfile.stats` gains `disputesWon` and `disputesLost`; Task 12's profile screen shows "Disputes: 3 won, 1 lost" `// COPY-UNSIGNED` (with none: "Disputes: none"). Plan 4 Task 25's record fix after an overturned ruling swaps the two counts for round 1. Tests: a settled dispute adds one won and one lost, once; the counts survive the trade purge; an overturned ruling swaps them.
+- **A lost dispute still counts as a completed trade** (R38, unchanged), and Clean record still needs zero lost disputes.
+- **The dispute screen's footer "It appears on your profile as a lost dispute" stays** (Plan 3 Task 27, owner).
+- **Task 21 (`CantDoThat`):** the lien refusal (`lien`, Plan 4 Task 25) and the 24-hour hold refusal (`recovery-hold`, Plan 2 Task 17) use the popup.

@@ -147,7 +147,7 @@ Rewritten 2026-10-29. Old Tasks 1–4 (per-side and whole-trade self-delete sett
 - Test: `apps/api/test/deleteAccount.test.ts`, `apps/web/e2e/deleteAccount.spec.ts`
 
 **Interfaces:**
-- Produces: `POST /v1/account/delete { tapId | confirm }` (confirm-it's-you, Plan 2). Refusals (409, through `CantDoThat`): `trade-open`, `dispute-open`, `appeal-window`, `lien`, `refund-dispute-window` (P7-A12). On success, in one transaction: delete login methods, sessions, devices, wallets, settings, offers, alert channels, badge prefs and running totals; keep reviews by and about the account with the name shown as "Deleted user"; the display name and login name are freed after `NAME_REUSE_DAYS` (owner to decide; default 90) so nobody can take over a known name at once.
+- Produces: `POST /v1/account/delete { tapId | confirm }` (confirm-it's-you, Plan 2). Refusals (409, through `CantDoThat`): `trade-open`, `dispute-open`, `appeal-window`, `lien`, `refund-dispute-window` (P7-A12). On success, in one transaction: delete login methods, sessions, devices, wallets, settings, offers, alert channels, badge prefs and running totals; keep reviews by and about the account (*2026-10-29b:* reviews never show their author, so only reviews about it show "Deleted user"); ~~the display name and login name are freed after `NAME_REUSE_DAYS` (owner to decide; default 90) so nobody can take over a known name at once.~~ *2026-10-29b (owner): both names are burned forever (`burned_names`); see Revision 2026-10-29b.*
 - [ ] **Step 1: Write the failing tests:** each refusal; after deletion no login works and no row holds the account's names or keys; a review about the account shows "Deleted user"; the old display name can't be registered before the reuse time.
 - [ ] **Step 2:** Run; expect FAIL.
 - [ ] **Step 3:** Implement.
@@ -367,10 +367,10 @@ Rewritten 2026-10-29. Phone push with an optional loud alarm and an optional bat
 **Q1: answered 2026-10-29 (owner).** None of A, B or C: an undisputed trade self-destructs 30 days after it ends (the advertised self-destruct); no user-chosen times and no early delete; a disputed trade is kept 90 days from the dispute button; no per-trade stub. Part A is rewritten to match. (The old question text is in git history, commit 0e92cb6.)
 
 **Still open:**
-- **Anonymized training copies** (6 months, 2026-10-17) were not mentioned on 2026-10-29. Plan 4 keeps 183 days until the owner confirms.
+- ~~**Anonymized training copies** (6 months, 2026-10-17) were not mentioned on 2026-10-29.~~ *Dropped 2026-10-29b (design reports the owner's answer); Plan 4 Revision 2026-10-29b.*
 - **Dispute after refund** (90 days in Plan 3) is longer than the 30-day delete; Task 1 keeps a refunded trade until that window closes until the lead or owner decides.
 - **I2P** waits for research and in-house testing (Plan 6 Task 27 on hold).
-- **News "don't show again"** checkbox (Plan 4 Task 28) is undecided.
+- ~~**News "don't show again"** checkbox (Plan 4 Task 28) is undecided.~~ *Settled 2026-10-29b: it exists, and a Site news bell always shows.*
 
 **Comparison gaps, decided 2026-10-29:**
 
@@ -381,3 +381,23 @@ Rewritten 2026-10-29. Phone push with an optional loud alarm and an optional bat
 | Helper support tickets | **Yes**, in categories plus "Everything else"; the owner picks who gets access | Plan 4 Tasks 30–31 |
 | Pause all my offers | **Yes**: a list of my offers, each with an on/off toggle, plus "Select all" | Plan 3 Task 36 |
 | Warrant canary | **Waits for the lawyer** (`~/x2f-comms/lawyer-questions.md`, item 1) | Plan 6, next to Task 24, if the lawyer agrees |
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's words of 2026-10-29 08:03 (`~/x2f-comms/owner-answers-2026-10-28.md`, items d and f) and Claude Design's update (`origin/wip/design-brief`).
+- **Task 18 (delete my account): deleted usernames are burned forever** (owner). The display name and the login name of a deleted account are **never reused**, and no way to bring them back is planned. `NAME_REUSE_DAYS` is dropped: Task 18 writes both names' normalized keys (Plan 2's `username_key`) to `burned_names(name_hash primary key, kind 'display'|'login')`, as a keyed hash (HMAC under a server subkey) so the list never shows an old login name; it holds no account id and no date, and registration refuses a burned name with `username-taken`. Test: a deleted account's display name and login name can never be registered again, even years later (fake clock).
+- **Task 18 (design reports the owner's answer, 2026-10-29b):** a deleted account's trade and dispute records stay until their normal auto-delete date (30 days after the trade ends, 90 days from the dispute button). Delete removes the account, not those records; they no longer name it. Test: a trade of a deleted account is still purged on its own date, not earlier.
+- **Task 8 (Settings → Notifications) and News:** turning off the News popup at login ("don't show again", Plan 4 Task 28) does not belong in Notifications; the Site news bell always shows (Plan 4 Revision 2026-10-29b).
+- **Tasks 6 and 8, Jabber (design reports the owner's answer, 2026-10-29b):** OMEMO only, never unencrypted Jabber; alerts are sent over Tor to and from X2F's Jabber server through its onion address. The Alerts screen shows the X2F alert account's OMEMO fingerprint with "check this matches". The setup guide suggests Conversations (Android), Monal (iPhone) and Gajim (computer). The battery-saver tip shows on Android only (Task 17).
+- **Tasks 1–4 and 12 (retention text), design reports the owner's answer:** the 6-month anonymized training copy is dropped. Trade chats auto-delete 30 days after the trade ends; dispute records are kept 90 days for moderator training, with as much private detail auto-blurred as possible. The privacy page (Task 4), the lawful-requests data inventory (Task 12) and the Terms key points say exactly that and never mention a 6-month copy.
+- **OPEN conflict (dispute after refund, Task 1):** the design reports the owner said a dispute can be opened for 48 hours after a trade ends; the lead's question A recommends 30 days. Task 1's rule for a refunded trade stays until the owner settles it.
+- **Owner questions, settled:** the News "don't show again" checkbox exists (owner, 2026-10-29b); remove it from "Still open".
+
+## Revision 2026-10-29c (owner)
+
+Authority: spec (Revision 2026-10-29c) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's words of 2026-10-29 12:30–13:34 (`~/x2f-comms/owner-answers-2026-10-28.md`).
+
+- **Task 18 (delete my account), P7-A12:** the `appeal-window` refusal now spans **48 hours** after a ruling (owner, appeal window 48 h); the `lien` refusal covers Plan 4 Task 25's rewritten liens (an `active` lien after a lost dispute that requires restitution, or after an overturned ruling; a `suspended` lien during an appeal also refuses, since the appeal is open).
+- **Task 2 (purge):** the revenue ledger it fills before deleting now counts **released trades and settled disputes**, never cancels (Plan 4 Task 32). The running totals include `won_disputes` (Plan 5 Revision 2026-10-29c).
+- **Task 1 (retention), dispute after refund:** a cancel can't be disputed (owner); underpaid restitution after a ruling is an appeal within 48 hours of the dispute being finalized (owner, later 2026-10-29), so it never extends retention beyond the dispute rule. **OPEN (lead asking):** whether a buyer can open a dispute within 48 hours of a no-show refund (lead recommends yes); Task 1's rule for a refunded trade is unchanged until it is settled.
+- **Part B (alerts):** every new login sends a push alert (Plan 2 Task 17); `notify()` carries `new-login`, `hold-started` and `hold-ended`, and the Jabber channel gets them too.
