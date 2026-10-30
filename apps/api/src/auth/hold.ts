@@ -564,6 +564,11 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'POST /v1/wallets',
   'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
+  // Plan 2 Task 18 (owner 2026-10-30): every team change waits out a hold; they also check it
+  // under the account lock (team/members.ts `ownerWriteGate`).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  'DELETE /v1/team/members/:id',
 ];
 
 /**

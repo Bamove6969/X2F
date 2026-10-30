@@ -6,7 +6,7 @@ import { deviceHash } from './device.js';
 import { needsAfter, pairAllowed, parseFactor } from './methods.js';
 import { traderLogin, type ApprovalWait } from './approval.js';
 import { assertNotDisabled, startSession } from './sessions.js';
-import { loginStrength, type LoginStrength } from './strength.js';
+import type { LoginStrength } from './strength.js';
 import { SECOND_FACTOR_TTL_MS } from './totp.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -63,7 +63,7 @@ export async function completeLogin(
   await assertNotDisabled(deps.db, a.account.id);
   const now = deps.clock();
   const device = deviceHash(req);
-  /** Task 17 (owner's `STRONG_COMBOS`): a pair's strength is of both its factors, not only the second's. */
+  /** Set for a member's login (Task 18): see below. Staff and owner keep `startSession`'s default. */
   let strength: LoginStrength | undefined;
   if (a.account.kind === 'trader') {
     if (a.pendingId !== undefined) throw new ApiError(400, 'challenge-expired');
@@ -95,10 +95,11 @@ export async function completeLogin(
     if (!pending) throw new ApiError(400, 'challenge-expired');
     const first = parseFactor(pending.payload.first);
     if (first === null || !pairAllowed(a.account.kind, first, a.factor)) throw new ApiError(403, 'method-not-allowed');
-    // A member's login (Task 18) is a session of the team account, so its strength counts there
-    // (the device limit's weak-first order, which sessions may answer an approval): a PGP key and a
-    // passkey are strong in either order; two PGP keys are not on the owner's list.
-    strength = loginStrength([first.method, a.factor.method]);
+    // A member's login (Task 18) is a session of the team account (a trader), so its strength
+    // counts there (the hold, the device limit's weak-first order). Members always log in with two
+    // factors (`pairAllowed`), so their logins are strong (lead's Task 18 landing rule, 2026-10-30;
+    // NEEDS_TASKS_16_17_MEMBERS), whichever valid pair they used.
+    if (a.account.kind === 'member') strength = 'strong';
   }
   await startSession(deps, req, reply, {
     accountId: a.account.id, level: 'full', deviceLabel: a.deviceLabel, method: a.factor.method, firstSession: false,

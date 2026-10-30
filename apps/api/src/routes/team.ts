@@ -9,6 +9,8 @@
  * - `PATCH /v1/team/members/:id { roles, confirmToken }` (confirm `team-roles`) → the member.
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
  *   sessions end at once.
+ * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
+ *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
@@ -31,12 +33,14 @@ import { openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
+import { requireNotHeld, settleOf } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
 import {
+  type Caller,
   checkMemberLoginName,
   checkMemberName,
   createInvite,
@@ -137,6 +141,9 @@ async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<v
   if ((r.rowCount ?? 0) === 0) throw new ApiError(400, 'challenge-expired');
 }
 
+/** The calling session and its settle deps, for the team writes' gate (`ownerWriteGate`). */
+const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId, settle: settleOf(req) });
+
 export function teamRoutes(app: FastifyInstance): void {
   // The account owner only: a trader's full session with no member (members get `owner-only`).
   const owner = requireSession({ kinds: ['trader'] });
@@ -148,26 +155,26 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkInvite, requireNotHeld, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
-      const r = await createInvite(deps, req.auth, { name: name!, roles });
+      const r = await createInvite(deps, caller(req), { name: name!, roles });
       return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
     },
   );
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, req.auth, idParam(req), input(req).roles),
+    { preHandler: [owner, checkRoles, requireNotHeld, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
   );
 
   app.delete(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkId, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
+    { preHandler: [owner, checkId, requireNotHeld, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      await removeMember({ ...req.server.deps, events: req.server.events }, req.auth, idParam(req));
+      await removeMember({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req));
       return reply.code(204).send();
     },
   );
