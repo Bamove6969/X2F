@@ -1257,12 +1257,21 @@ describe('review round 2', () => {
       /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
       async function stateOf(accountId: string, caller: string): Promise<unknown> {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
-        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices'];
+        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit'];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
         out.account = (await deps.db.query<{ j: unknown }>(`${agg('accounts t')} where id = $1`, [accountId])).rows[0]!.j;
         return out;
+      }
+
+      /** An open team invite of `o` (Offers role); returns the member id. */
+      async function teamInvite(o: { b: Browser; id: string }): Promise<string> {
+        const displayName = unique('Mate');
+        const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
+        const r = await o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+        expect(r.statusCode, r.body).toBe(201);
+        return (r.json() as { id: string }).id;
       }
 
       type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
@@ -1380,6 +1389,25 @@ describe('review round 2', () => {
           const o = await passkeyWithPassword();
           await deps.db.query('update accounts set terms_accepted_at = null where id = $1', [o.id]);
           return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS }) };
+        },
+        // Plan 2 Task 18 (team members), at its landing.
+        'POST /v1/team/invites': async () => {
+          const o = await passkeyWithPassword();
+          const displayName = unique('Mate');
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken }) };
+        },
+        'PATCH /v1/team/members/:id': async () => {
+          const o = await passkeyWithPassword();
+          const mid = await teamInvite(o);
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-roles', memberId: mid, roles: 'offers,trades' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.patch(`/v1/team/members/${mid}`, { roles: ['offers', 'trades'], confirmToken }) };
+        },
+        'DELETE /v1/team/members/:id': async () => {
+          const o = await passkeyWithPassword();
+          const mid = await teamInvite(o);
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
         },
       };
 

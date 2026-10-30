@@ -152,7 +152,7 @@ export function teamRoutes(app: FastifyInstance): void {
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
-      const r = await createInvite(deps, req.auth.accountId, { name: name!, roles });
+      const r = await createInvite(deps, req.auth, { name: name!, roles });
       return reply.code(201).send({ id: r.id, invite: r.code, expiresAt: r.expiresAt });
     },
   );
@@ -160,14 +160,14 @@ export function teamRoutes(app: FastifyInstance): void {
   app.patch(
     '/v1/team/members/:id',
     { preHandler: [owner, checkRoles, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, req.auth.accountId, idParam(req), input(req).roles),
+    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, req.auth, idParam(req), input(req).roles),
   );
 
   app.delete(
     '/v1/team/members/:id',
     { preHandler: [owner, checkId, requireConfirm((req) => ({ kind: 'team-remove', memberId: idParam(req) }))] },
     async (req, reply) => {
-      await removeMember({ ...req.server.deps, events: req.server.events }, req.auth.accountId, idParam(req));
+      await removeMember({ ...req.server.deps, events: req.server.events }, req.auth, idParam(req));
       return reply.code(204).send();
     },
   );

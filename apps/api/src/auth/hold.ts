@@ -492,6 +492,11 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
+  // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
+  // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  'DELETE /v1/team/members/:id',
 ];
 
 /**

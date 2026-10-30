@@ -21,6 +21,7 @@ import { createAccount, type NewNames } from '../accounts.js';
 import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { requireLiveSessionInTx } from '../auth/hold.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { MAX_TEAM_MEMBERS, type TeamRole } from './perms.js';
@@ -116,23 +117,32 @@ async function inTransaction<T>(db: pg.Pool, fn: (c: pg.PoolClient) => Promise<T
   }
 }
 
+/** The calling session (`req.auth`): every write below re-checks it is still live under the account lock. */
+export interface Caller {
+  accountId: string;
+  sessionId: string;
+}
+
 /**
  * Creates an invite for the account (the account owner's session; `requireSession` already
- * refused members). The account row is locked first, so two invites cannot both pass the count.
+ * refused members). The account row is locked first (`requireLiveSessionInTx`, which also answers
+ * 401 when the calling session was revoked meanwhile: `LIVE_SESSION_ROUTES`), so two invites cannot
+ * both pass the count.
  * Invites past their time are closed first (they no longer count and free their names). 409
  * `too-many-members` at `MAX_TEAM_MEMBERS`; 409 `display-name-taken` for a name already in the team.
  */
 export async function createInvite(
   deps: Pick<Deps, 'db' | 'clock'>,
-  accountId: string,
+  caller: Caller,
   a: { name: { name: string; key: string }; roles: TeamRole[] },
 ): Promise<{ id: string; code: string; expiresAt: string }> {
+  const { accountId } = caller;
   const now = deps.clock();
   const code = randomBytes(32).toString('base64url');
   const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
   try {
     const id = await inTransaction(deps.db, async (c) => {
-      await c.query('select 1 from accounts where id = $1 for update', [accountId]);
+      await requireLiveSessionInTx(c, caller, now);
       await c.query(
         `update team_members set removed_at = $2, invite_hash = null
           where account_id = $1 and removed_at is null and joined_at is null and invite_expires_at <= $2`,
@@ -161,15 +171,18 @@ export async function createInvite(
  * member's login account is deleted (its login name, PGP keys, security keys and passkeys; review
  * M6: nothing of a removed member's login is kept) and every session of theirs is revoked, in one
  * transaction; their live streams are closed after the commit. The row itself stays, so the audit
- * log keeps the member's name. 404 for anyone else's or an already removed one.
+ * log keeps the member's name. 404 for anyone else's or an already removed one. 401 when the
+ * calling session was revoked meanwhile (`requireLiveSessionInTx`, first, under the account lock).
  */
 export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
-  accountId: string,
+  caller: Caller,
   memberId: string,
 ): Promise<void> {
+  const { accountId } = caller;
   const now = deps.clock();
   const ended = await inTransaction(deps.db, async (c) => {
+    await requireLiveSessionInTx(c, caller, now);
     const { rows } = await c.query<{ member_account_id: string | null }>(
       `update team_members set removed_at = $3, invite_hash = null
         where id = $1 and account_id = $2 and removed_at is null returning member_account_id`,
@@ -194,26 +207,32 @@ async function deleteMemberLogin(c: Queryable, memberAccountId: string): Promise
 /**
  * Sets a live member's roles (takes effect on their next request). When the new roles leave out
  * Trades, the member's live streams (which carry the account's trade events) are closed after the
- * commit (review M2). 404 for anyone else's or a removed member.
+ * commit (review M2). 404 for anyone else's or a removed member. 401 when the calling session
+ * was revoked meanwhile (`requireLiveSessionInTx`, first, under the account lock).
  */
 export async function setRoles(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
-  accountId: string,
+  caller: Caller,
   memberId: string,
   roles: TeamRole[],
 ): Promise<TeamMemberView> {
-  const { rows } = await deps.db.query<MemberRow>(
-    `update team_members set roles = $3
-      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
-    [memberId, deps.clock(), roles, accountId],
-  );
-  const row = rows[0];
-  if (!row) throw new ApiError(404, 'not-found');
-  if (!roles.includes('trades')) {
-    const s = await deps.db.query<{ id: string }>('select id from sessions where member_id = $1', [memberId]);
-    for (const r of s.rows) deps.events.closeSession(accountId, r.id);
-  }
+  const { accountId } = caller;
+  const now = deps.clock();
+  const { row, sessions } = await inTransaction(deps.db, async (c) => {
+    await requireLiveSessionInTx(c, caller, now);
+    const { rows } = await c.query<MemberRow>(
+      `update team_members set roles = $3
+        where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+        returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
+      [memberId, now, roles, accountId],
+    );
+    const r = rows[0];
+    if (!r) throw new ApiError(404, 'not-found');
+    const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
+    return { row: r, sessions: s };
+  });
+  // After the commit: a member who lost Trades loses the live streams that carry trade events.
+  for (const id of sessions) deps.events.closeSession(accountId, id);
   return toView(row);
 }
 
