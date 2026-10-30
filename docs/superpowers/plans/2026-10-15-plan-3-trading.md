@@ -1261,6 +1261,9 @@ Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revi
   - Parity for the six Fold boards, after the design's controller step puts them in `design/x2f-app/` with references.
   - A 1000x800 sideways-scroll check over the other wide rooms (release, fund, refund, dispute) at 1000–1023 px, which the wide layout reaches since the breakpoint moved from 1024 to 1000.
   - Task 20's chat panel must keep its draft in `useKeptText("chat:" + code)` (src/ui/fold.ts), as the fixture chat does.
+  - Claude Design (round-2 review m5; tripwire NEEDS_DESIGN_FOLD_GLANCE, `apps/web/test/fold.test.tsx`): the glance has no status pill (Fold-Tabletop.dc.html:25-27; the API escrow chip that filled it was review I1) and no "Open your phone to keep going." (Fold-Cover.dc.html:43; the room now stays under the card). Ask the design for a pill from `view.state` and the role, never the escrow chip, and for the cover card's wording with the room below it.
+  - Flip-phone posture: `(device-posture: folded)` is defined for a partly folded device; a closed flip's outer screen very likely reports `continuous` in Chrome on Android, so `cover` may never turn on (it fails safe to `phone`). The app-wide flip cover card above starts from a real-device check.
+  - An e2e at ≥ 1000 px with a hinge (1000x840, vertical hinge) asserting `[data-primary]` stays in the viewport (review M2's paned phone scroll, trade.css `data-fold='two'|'three'`): not pinned yet.
 
 ### Task 41: LoginApprove, Devices and Login-Backup screens (`apps/web`) — NEW 2026-10-29b
 

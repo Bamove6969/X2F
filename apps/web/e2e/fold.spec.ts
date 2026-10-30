@@ -11,6 +11,7 @@ import { PAY_SECURED } from '../src/fixtures/payBoard.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 import { startFixtures } from './fixtures-serve.js';
 import { FOLD_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
+import { sellerView } from './refundViews.js';
 
 const PORT = 4326;
 const ORIGIN = `http://127.0.0.1:${PORT}`;
@@ -178,6 +179,17 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
     await expect(page.locator('[data-pane="side"] #msg')).toHaveValue('two minutes');
   });
 
+  test('a Chat sheet that closes on unfold hands the focus to the chat pane, not the page (round-2 review m4)', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await openRoom(page);
+    await page.locator('[data-chat-link]').click();
+    await page.getByRole('dialog').locator('#msg').fill('two minutes');
+    await page.setViewportSize({ width: 840, height: 844 });
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await expect(page.locator('[data-pane="side"] #msg')).toBeFocused();
+    await expect(page.locator('[data-pane="side"] #msg')).toHaveValue('two minutes');
+  });
+
   test("the seller's waiting room keeps its one primary in two panes: Chat goes to the chat pane (review M4)", async ({ page }) => {
     await page.setViewportSize({ width: 840, height: 900 });
     await openRoom(page, { ...PAY_SECURED, role: 'seller' });
@@ -303,6 +315,19 @@ test.describe('the flip cover screen', () => {
     await needSegments(page, '(device-posture: folded)');
     await page.evaluate(() => window.__x2fSetFixtureEscrow!({ phase: 'error', error: 'escrow-failed', retryable: true }));
     await expect(page.locator('[data-pane="glance"] [data-glance-warning]')).toContainText("Don't send any money until it runs again.");
+  });
+
+  test("the room under the card keeps its Chat link: SellerRefund's Chat opens the chat sheet (round-2 review m3)", async ({ page }) => {
+    await folded(page, { width: 360, height: 380 });
+    await openRoom(page, sellerView({ code: PAY_SECURED.code }));
+    await needSegments(page, '(device-posture: folded)');
+    await expect(page.locator('html')).toHaveAttribute('data-fold', 'cover');
+    const link = page.locator('[data-pane="main"] [data-chat-link]');
+    await link.scrollIntoViewIfNeeded();
+    await link.click();
+    expect(new URL(page.url()).hash).toBe('#chat');
+    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.getByRole('dialog').locator('#msg')).toBeVisible();
   });
 
   test('an integrity failure shows its alert in every layout, the cover included (review I1)', async ({ page }) => {

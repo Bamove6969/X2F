@@ -75,9 +75,9 @@
  *   `setTradeChat`) in the next. Not for `disputed`: the dispute room has its own chat.
  * - tabletop: `TradeGlance` (information only) in the top half; the screen and the chat, with
  *   every control, in the bottom half.
- * - the flip cover screen: `TradeGlance` only.
- * - `#chat` (the Chat links of Tasks 24-25): on a phone it opens the chat in a sheet; with a chat
- *   pane it moves the focus to its composer.
+ * - the flip cover screen: `TradeGlance` on top, the screen's phone layout under it.
+ * - `#chat` (the Chat links of Tasks 24-25): on a phone and on the cover screen it opens the chat
+ *   in a sheet; with a chat pane it moves the focus to its composer.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
@@ -329,7 +329,8 @@ function ChatHash({ hash, layout, chat, chatPane, name }: { hash: string; layout
     if (!wanted || !chatPane) return;
     focusChatPane();
   }, [wanted, chatPane]);
-  if (!wanted || chatPane || layout === 'wide' || layout === 'cover') return null;
+  // The cover screen keeps the room under its card, so its Chat links work as on a phone (round-2 review m3).
+  if (!wanted || chatPane || layout === 'wide') return null;
   return (
     <Sheet open title={`Chat with ${name}`} onClose={() => void navigate({ hash: '' }, { replace: true })}>
       <div className="x2f-sheet__body">{chat}</div>

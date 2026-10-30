@@ -343,8 +343,13 @@ function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
   // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
   const paned = useChatPane(view);
   useEffect(() => {
-    if (paned) setOpen(false);
-  }, [paned]);
+    if (!paned || !open) return;
+    setOpen(false);
+    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
+    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
+    // draft, once the pane is laid out (round-2 review m4).
+    requestAnimationFrame(() => focusChatPane());
+  }, [paned, open]);
   const onChat = () => (paned ? focusChatPane() : setOpen(true));
   return (
     <>

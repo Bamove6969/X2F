@@ -1,12 +1,13 @@
 // @vitest-environment happy-dom
 // Plan 3 Task 40: the fold layout reader, the panes and the kept text (src/ui/fold.ts, Panes.tsx).
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { act, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FOLD_QUERIES, foldLayoutOf, forgetKeptText, hasPanes, paneOf, useKeptText, type FoldLayout } from '../src/ui/fold.js';
 import { Panes } from '../src/ui/Panes.js';
+import { glanceWarning } from '../src/screens/trade/TradeGlance.js';
 import { Sheet } from '../src/ui/Sheet.js';
 import { fire, render } from './render.js';
 
@@ -162,5 +163,57 @@ describe('styles/fold.css', () => {
       expect(`.a {\n  ${decl}\n}`).toMatch(banned);
     }
     expect('.a {\n  max-height: 1px;\n  gap: 2px;\n}').not.toMatch(banned);
+  });
+});
+
+describe('TradeGlance warning (round-2 review m1, m2)', () => {
+  const ok = { phase: 'ready' as const, error: null, retryable: false, refusal: null };
+  const buyer = { role: 'buyer' as const, counterparty: { displayName: 'mira.k' } };
+  const seller = { role: 'seller' as const, counterparty: { displayName: 'mira.k' } };
+
+  it('says nothing once this device is done, whatever refusal is left over', () => {
+    for (const phase of ['done', 'settled-without-device'] as const) {
+      expect(glanceWarning(buyer, { ...ok, phase, refusal: 'attempts-exhausted' })).toBeNull();
+      expect(glanceWarning(seller, { ...ok, phase, refusal: 'attempts-exhausted' })).toBeNull();
+    }
+    expect(glanceWarning(buyer, ok)).toBeNull();
+    expect(glanceWarning(seller, ok)).toBeNull();
+  });
+
+  it("uses each role's own sentences: the buyer is told not to send money, the seller never is", () => {
+    expect(glanceWarning(buyer, { ...ok, refusal: 'view-mismatch' })).toContain("Don't send any money");
+    expect(glanceWarning(buyer, { ...ok, phase: 'error', error: 'escrow-failed' as const })).toContain("Don't send any money");
+    for (const refusal of ['view-mismatch', 'amount-changed', 'attempts-exhausted', 'paid-amount-refused'] as const) {
+      const text = glanceWarning(seller, { ...ok, refusal });
+      expect(text).not.toBeNull();
+      expect(text).not.toMatch(/send any money|after you paid/);
+    }
+    expect(glanceWarning(seller, { ...ok, refusal: 'paid-amount-refused' })).toContain('mira.k');
+    expect(glanceWarning(seller, { ...ok, phase: 'error', error: 'escrow-failed' as const })).not.toMatch(/send any money/);
+  });
+
+  it('is no live region: the screen\'s own notice is the one announcement', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/TradeGlance.tsx'), 'utf8');
+    expect(src).not.toMatch(/role=["{]/);
+    expect(src).not.toMatch(/aria-live/);
+  });
+});
+
+// TRIPWIRE (round-2 review m5): the glance departs from the Fold boards, and Claude Design owns the
+// looks. Fold-Tabletop.dc.html:25-27 has a status pill ("Waiting for your payment", "Paid ·
+// waiting for …"); round 1 filled it with the API's escrow chip (review I1), so it is gone, and
+// Fold-Cover.dc.html:43's "Open your phone to keep going." is wrong now that the room stays under
+// the card. The design is asked (docs/coordination.md, Plan 3 Task 40 follow-ups) for a pill from
+// `view.state` and the role, never the escrow chip, and for the cover's wording. The Fold boards are
+// drafted on origin/wip/design-brief (docs/design-boards/Fold-*.dc.html) and not in the app canvas
+// yet. This reads the local tree only and fails once a Fold board lands in design/x2f-app/: then
+// build TradeGlance to it (pill and cover line, copy from the board wins), add parity, and delete
+// this check.
+describe('Task 40 still waits for its design', () => {
+  it('NEEDS_DESIGN_FOLD_GLANCE: no Fold board in the app canvas yet', () => {
+    const boards = join(dirname(fileURLToPath(import.meta.url)), '../../../design/x2f-app/');
+    const canvas = JSON.parse(readFileSync(`${boards}canvas.json`, 'utf8')) as { boards: Record<string, unknown> };
+    const landed = Object.keys(canvas.boards).some((b) => /^Fold/i.test(b)) || readdirSync(boards).some((f) => /^Fold/i.test(f));
+    expect(landed, 'a Fold board landed: build the glance to it (see this test)').toBe(false);
   });
 });
