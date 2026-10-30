@@ -517,6 +517,11 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'PUT /v1/account/nudges': "the caller's own nudge preferences; no session, approval or security state",
   'POST /v1/nudges': 'a nudge to a trade counterparty; no account, session, approval or security state',
   'POST /v1/method-suggestions': 'a method suggestion row only',
+  // Plan 3 Task 20 (encrypted chat), classified at its landing next to Tasks 16-17.
+  'POST /v1/chats': 'social: opens a pre-trade chat row on an offer; no account, session, approval or security state, no obligation',
+  'POST /v1/chats/:chat/envelopes': 'an encrypted chat line in a chat the caller is in; no account, session, approval or security state',
+  'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
+  'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
