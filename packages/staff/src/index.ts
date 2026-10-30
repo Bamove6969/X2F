@@ -30,3 +30,22 @@ export {
   type KeyTapIntent,
   type RulingOutcome,
 } from './intent.js';
+export {
+  APPEAL_GOAL_H,
+  COMPLY_H,
+  DisputeRuleError,
+  RULING_DEADLINE_H,
+  RULING_GOAL_H,
+  applyDispute,
+  markSeen,
+  needsSecond,
+  newDispute,
+  shiftDeadlines,
+  type Actor,
+  type Dispute,
+  type DisputeEvent,
+  type DisputeRuleCode,
+  type DisputeStatus,
+  type RulingDraft,
+} from './dispute.js';
+export { appealReviewers, involvedIn, type InvolvementEntry } from './appealReviewers.js';
