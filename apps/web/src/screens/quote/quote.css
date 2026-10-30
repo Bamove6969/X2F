@@ -52,7 +52,7 @@
   position: absolute;
   width: 1px;
   height: 1px;
-  margin: -1px;
+  /* No -1px margin: at the screen's left edge it would sit 1px past the side (e2e/phone.ts). */
   padding: 0;
   border: 0;
   overflow: hidden;
