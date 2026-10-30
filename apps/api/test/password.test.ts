@@ -276,6 +276,10 @@ describe('POST /v1/login/password', () => {
     const first = await login('Legacy.Acct', GOOD);
     expect(first.statusCode).toBe(200);
     const session = cookie(first, SESSION_COOKIE)!;
+    // A password alone on a new device with nothing logged in starts the 24-hour hold (Task 17,
+    // coolingOff.test.ts), and this session would wait; here it counts as strong and unheld.
+    await deps.db.query('delete from account_holds where account_id = $1', [id]);
+    await deps.db.query("update sessions set strength = 'strong' where account_id = $1", [id]);
     // The creating session's onboarding window does not apply: a login session needs a confirm token.
     const { rows: s } = await deps.db.query<{ id: string }>('select id from sessions where account_id = $1', [id]);
     const confirmToken = await issueConfirmToken(deps, { sessionId: s[0]!.id, accountId: id, action: { kind: 'set-login-name' }, method: 'password' });

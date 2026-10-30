@@ -56,7 +56,7 @@ export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
  * backup (recovery) session too, held or not: reading the trade, every trade event (mark paid,
  * release started and its signals, the buyer's cancel), the final alert's receipt, the
  * confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
- * (`take`: `requireNotHeld`, full sessions only).
+ * (`take` checks the hold and takes full sessions only).
  */
 export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allowHeld: true } as const satisfies Parameters<typeof requireSession>[0];
 

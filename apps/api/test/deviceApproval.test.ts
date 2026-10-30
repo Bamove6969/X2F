@@ -107,7 +107,7 @@ async function signUp(label = 'Firefox on Linux') {
   return { a: b, name, accountId: rows[0]!.id };
 }
 
-type Wait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string; devices: { loggedIn: number; max: number; oneDevice: boolean } };
+type Wait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string };
 
 async function waitFor(b: Browser, name: string): Promise<Wait> {
   const res = await b.login(name);
@@ -144,7 +144,7 @@ describe('when a login waits for approval', () => {
     const body = res.json() as Wait;
     expect(body).toEqual({
       status: 'approve-on-device', approvalId: expect.any(String), number: expect.any(Number),
-      expiresAt: new Date(now.getTime() + APPROVAL_TTL_MS).toISOString(), devices: { loggedIn: 1, max: 3, oneDevice: false },
+      expiresAt: new Date(now.getTime() + APPROVAL_TTL_MS).toISOString(),
     });
     expect(body.number).toBeGreaterThanOrEqual(10);
     expect(body.number).toBeLessThanOrEqual(99);
@@ -359,7 +359,8 @@ describe('the 3-device limit', () => {
     expect((await c.login(name)).json()).toEqual({ status: 'ok' });
     const d = new Browser('Firefox on Android');
     const w = await waitFor(d, name);
-    expect(w.devices).toEqual({ loggedIn: 3, max: 3, oneDevice: false });
+    // Review M5: the waiting device is told nothing about the account's devices.
+    expect(w).not.toHaveProperty('devices');
     expect((await a.get(`/v1/account/approvals/${w.approvalId}`)).json()).toMatchObject({ atLimit: true });
     const refused = await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number });
     expect(refused.statusCode).toBe(409);
@@ -392,7 +393,6 @@ describe('the 3-device limit', () => {
       const { a, name } = await signUp();
       expect((await a.get('/v1/account/security/devices')).json()).toEqual({ oneDevice: false, maxDevices: 1 });
       const w = await waitFor(new Browser(), name);
-      expect(w.devices).toEqual({ loggedIn: 1, max: 1, oneDevice: false });
       expect((await a.get(`/v1/account/approvals/${w.approvalId}`)).json()).toMatchObject({ atLimit: true });
       expect((await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toMatchObject({ error: 'too-many-devices' });
     } finally {
@@ -424,7 +424,6 @@ describe('"One device at a time"', () => {
     expect((await turnOn(a, accountId)).statusCode).toBe(200);
     const b = new Browser();
     const w = await waitFor(b, name);
-    expect(w.devices).toEqual({ loggedIn: 1, max: 1, oneDevice: true });
     expect((await a.get(`/v1/account/approvals/${w.approvalId}`)).json()).toMatchObject({ oneDevice: true, atLimit: false });
     const poll = await approveAndCollect(a, b, w);
     expect(poll.json()).toEqual({ status: 'ok', loggedOut: ['Firefox on Linux'] });

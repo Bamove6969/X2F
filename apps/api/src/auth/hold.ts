@@ -87,16 +87,17 @@ export async function lockAccount(db: Queryable, accountId: string): Promise<voi
 
 /** The login methods the account holds now, as `started_methods` ids. */
 export async function methodIds(db: Queryable, accountId: string): Promise<string[]> {
-  const { rows } = await db.query<{ kind: string; ref: string | Buffer | null }>(
-    `select 'password' as kind, null as ref from passwords where account_id = $1
-     union all select 'totp', null from totp where account_id = $1
+  const { rows } = await db.query<{ kind: string; ref: string | null }>(
+    `select 'password' as kind, null::text as ref from passwords where account_id = $1
+     union all select 'totp', null::text from totp where account_id = $1
      union all select 'pgp', fingerprint from pgp_keys where account_id = $1
-     union all select 'webauthn', credential_id from webauthn_credentials where account_id = $1`,
+     union all select 'webauthn', encode(credential_id, 'hex') from webauthn_credentials where account_id = $1`,
     [accountId],
   );
   return rows.map((r) => {
     if (r.ref === null) return r.kind;
-    const ref = Buffer.isBuffer(r.ref) ? r.ref.toString('base64url') : r.ref;
+    // A credential id as the login proves it: base64url (the hex form only crosses the query).
+    const ref = r.kind === 'webauthn' ? Buffer.from(r.ref, 'hex').toString('base64url') : r.ref;
     return `${r.kind}:${ref}`;
   });
 }

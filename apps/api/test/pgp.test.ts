@@ -633,6 +633,9 @@ describe('binding', () => {
     const start = await y.post('/v1/account/pgp/start', { publicKey: newKey.publicKey }); // onboarding: no token needed
     expect(start.statusCode).toBe(200);
     const code = codeOf(await dec(start.json().encryptedMessage, newKey.privateKey, signerPublic));
+    // X's PGP-alone login may have started the 24-hour hold (Task 17, coolingOff.test.ts), which
+    // would refuse first; this test is about the binding.
+    await deps.db.query('delete from account_holds');
     const byX = await home.post('/v1/account/pgp/finish', { challengeId: start.json().challengeId, code });
     expect(byX.json()).toEqual({ error: 'challenge-expired' });
   });
@@ -661,6 +664,9 @@ describe('confirm and adding a key', () => {
     // The token records how it was earned (owner, 2026-10-23: a PGP confirm makes a new wallet usable at once).
     expect(await confirmTokenMethod(deps, confirmToken)).toBe('pgp');
 
+    // A PGP-alone session's change waits 24 hours (Task 17, owner 2026-10-29 14:12; coolingOff.test.ts):
+    // here the session counts as strong, since this test is about the key itself.
+    await deps.db.query("update sessions set strength = 'strong' where account_id = (select id from accounts where display_key = $1)", [n.toLowerCase()]);
     const as = await b.post('/v1/account/pgp/start', { publicKey: k2.publicKey, confirmToken });
     expect(as.statusCode).toBe(200);
     const atext = await dec(as.json().encryptedMessage, k2.privateKey, signerPublic);

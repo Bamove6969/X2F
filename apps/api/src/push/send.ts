@@ -119,7 +119,7 @@ export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind
     [accountId, now],
   );
   const { rows } = await deps.db.query<{ id: string; endpoint: string; p256dh: string; auth: string }>(
-    'select id, endpoint, p256dh, auth from push_subscriptions where account_id = $1 and session_id is distinct from $2',
+    'select id, endpoint, p256dh, auth from push_subscriptions where account_id = $1 and ($2::uuid is null or session_id is distinct from $2)',
     [accountId, opts.exceptSession ?? null],
   );
   if (rows.length === 0) return false;

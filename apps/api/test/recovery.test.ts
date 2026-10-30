@@ -79,6 +79,13 @@ async function withTotp(accountId: string): Promise<string> {
   return new Secret({ buffer: new Uint8Array(raw).buffer }).base32;
 }
 
+/**
+ * New codes from `b`. A backup login earlier in a test started the account's 24-hour hold (Task 17),
+ * which refuses every login-method change; `endHold` ends it as the owner's strong login would
+ * (coolingOff.test.ts covers the hold itself).
+ */
+const endHold = (accountId: string) => deps.db.query('delete from account_holds where account_id = $1', [accountId]);
+
 async function newCodes(b: Browser): Promise<string[]> {
   const res = await b.post('/v1/account/recovery-codes', {});
   expect(res.statusCode).toBe(200);
@@ -174,6 +181,7 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
     for (const c of legacy) await insert(id, sha(normalizeRecoveryCode(c)!), null);
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(200);
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[0]!)).statusCode).toBe(401);
+    await endHold(id);
     await newCodes(await loggedIn(id));
     expect((await backup(new Browser(app), username, 'recovery-code', legacy[1]!)).statusCode).toBe(401);
     const { rows } = await deps.db.query('select 1 from recovery_codes where account_id = $1 and key_id is null', [id]);
@@ -226,7 +234,7 @@ describe('recovery-code keys (FU-C, ASVS 2.6.2)', () => {
 });
 
 describe('backup login with a recovery code', () => {
-  // Plan 2 Task 17 (owner, 2026-10-29; RECOVERY_CODE_ALONE_WAITS): a recovery code alone is one weak
+  // Plan 2 Task 17 (owner, 2026-10-29): a recovery code alone is one weak
   // way, so it is now held for 24 hours like a TOTP backup login (it used to have no hold).
   it('logs in once as a recovery session held 24 hours; regenerating invalidates the old set', async () => {
     const { id, username } = await account();
@@ -248,6 +256,7 @@ describe('backup login with a recovery code', () => {
     expect(again.statusCode).toBe(401);
     expect(again.json()).toEqual({ error: 'credentials-invalid' });
 
+    await endHold(id);
     await newCodes(owner);
     const old = await backup(new Browser(app), username, 'recovery-code', codes[1]!);
     expect(old.json()).toEqual({ error: 'credentials-invalid' });
@@ -389,7 +398,7 @@ describe('backup login with TOTP (P2-I1)', () => {
     }
   });
 
-  it('a recovery-code session is held too (Task 17, RECOVERY_CODE_ALONE_WAITS)', async () => {
+  it('a recovery-code session is held too (Task 17)', async () => {
     const { id, username } = await account();
     const codes = await newCodes(await loggedIn(id));
     const b = new Browser(app);

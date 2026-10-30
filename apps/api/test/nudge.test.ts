@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type pg from 'pg';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -51,12 +52,25 @@ const fakeWiring: NudgeWiring = {
 
 // ---- A pool that records every SQL statement, to show drops and deliveries run the same queries ----
 
-let recording: string[] | null = null;
+/**
+ * The statements of one request only: a query is recorded when it is issued inside `recorded(fn)`'s
+ * async context. Work another request left running (the new-login push of the login before it,
+ * Plan 2 Task 17) is issued in that request's context and never counted, however it interleaves
+ * (review 2026-10-30 I7: the recording window, not the comparison).
+ */
+const requestSql = new AsyncLocalStorage<string[]>();
+
+async function recorded<T>(fn: () => Promise<T>): Promise<{ result: T; sql: string[] }> {
+  const sql: string[] = [];
+  const result = await requestSql.run(sql, fn);
+  // Copied when the response is back: delivery the request queued for later is not part of it.
+  return { result, sql: [...sql] };
+}
 
 function recordingPool(pool: pg.Pool): pg.Pool {
   const wrapQuery = (target: { query: (...a: unknown[]) => unknown }) =>
     (...a: unknown[]) => {
-      if (recording) recording.push(typeof a[0] === 'string' ? a[0] : JSON.stringify(a[0]));
+      requestSql.getStore()?.push(typeof a[0] === 'string' ? a[0] : JSON.stringify(a[0]));
       return target.query(...a);
     };
   return new Proxy(pool, {
@@ -111,7 +125,6 @@ beforeEach(() => {
   pushed.length = 0;
   hang = false;
   publishThrows = false;
-  recording = null;
 });
 
 const at = (ms: number) => new Date(now.getTime() + ms);
@@ -304,20 +317,17 @@ describe('POST /v1/nudges: silent drops look exactly like a delivered nudge (P3-
 
     // The SQL a delivered nudge runs, recorded on a fresh pair.
     const q = await pair();
-    recording = [];
-    expect((await nudge(q.from, q.to.name, q.context)).statusCode).toBe(202);
-    const deliveredSql = recording;
-    recording = null;
+    const { result: sent, sql: deliveredSql } = await recorded(() => nudge(q.from, q.to.name, q.context));
+    expect(sent.statusCode).toBe(202);
+    // The request's own statements were seen (the comparison below is not of two empty lists).
+    expect(deliveredSql.length).toBeGreaterThan(3);
     await settle();
     published.length = 0;
     pushed.length = 0;
 
     const p = await pair();
     await setup(p);
-    recording = [];
-    const res = await nudge(p.from, p.to.name, p.context);
-    const droppedSql = recording;
-    recording = null;
+    const { result: res, sql: droppedSql } = await recorded(() => nudge(p.from, p.to.name, p.context));
     expect(observable(res)).toEqual(ref);
     // Same statements in the same order: no early return for a drop (timing-equivalent).
     expect(droppedSql).toEqual(deliveredSql);
