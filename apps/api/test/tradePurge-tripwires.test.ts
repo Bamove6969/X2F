@@ -73,6 +73,38 @@ const WATCH_DROP = /watchDropped|watch_dropped|watch-dropped/;
  * seller disputes) must change them, so they do not count as the surplus feature landing.
  */
 const TODAY_SURPLUS = [/const surplus = balance - f\.sellerFundsAtomic;/g, /\{ address: f\.sellerRefund, amountAtomic: surplus \}/g];
+/**
+ * The release case of @x2f/trade payouts.ts (from `case 'release'` to the next case or `default:`),
+ * or null when there is none (a renamed kind or a moved payout fires the tripwire too).
+ */
+function releaseCase(): string | null {
+  const f = `${TRADE_SRC}payouts.ts`;
+  if (!existsSync(f)) return null;
+  return /case\s+'release'\s*:([\s\S]*?)(?=\n\s*(?:case\s+'|default\s*:))/.exec(tsCode(readFileSync(f, 'utf8')))?.[1] ?? null;
+}
+/**
+ * Review R3-m1: every kind the moderation watcher reports to the API, classified. A new kind (in
+ * the API's `/internal/v1/reports` switch, or a `kind: '...'` / `kind === '...'` in moderation src)
+ * fails NEEDS_I4_WATCH_DROP until it is classified here: `watch-drop` if it tells the API the watch
+ * stopped watching an escrow (or anything the purge must wait for), `not-purge` otherwise. A
+ * `watch-drop` kind makes the purge read the drop (WATCH_DROP).
+ */
+const WATCHER_KINDS: Record<string, 'not-purge' | 'watch-drop'> = {
+  attestation: 'not-purge', // Task 8: the moderator's attestation of a trade's terms
+  refused: 'not-purge', // the moderator's terminal refusal of a trade (before any escrow)
+  'setup-done': 'not-purge',
+  chain: 'not-purge',
+  settled: 'not-purge',
+  'spend-unshown': 'not-purge',
+  'release-claimed': 'not-purge',
+  'late-funds': 'not-purge', // the "stays off" gate's late-funds conditions cover it (I4a, R3-m4)
+};
+/**
+ * Review R3-m1: columns of the moderation watch or of `trades` named for watching or a drop, as of
+ * today. A new one (say `trades.watch_ended_at`) fails NEEDS_I4_WATCH_DROP until it is listed here
+ * and the purge reads the drop.
+ */
+const WATCH_COLUMNS = ['mod_watch', 'watching'];
 /** TRADE_PURGE_READY (config.ts) lets X2F_TRADE_PURGE=on through outside tests (review R2-m1). */
 const ready = /\bTRADE_PURGE_READY\s*(?::\s*boolean\s*)?=\s*true\b/.test(config);
 
@@ -115,6 +147,20 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
       .filter(([p, s]) => !p.endsWith('tradePurge.ts') && (/['"`]watch-dropped['"`]/.test(s) || /\breport\(\s*\{[^}]*\bwatching\s*:/.test(s) || (p.startsWith(API) && /['"`]watching['"`]/.test(s))))
       .map(([p]) => p);
     if (/\bwatch_dropped/i.test(allMigrations)) report.push('a migration (watch_dropped)');
+    // Review R3-m1: every watcher report kind is classified (WATCHER_KINDS), whatever its name.
+    const kinds = new Set<string>();
+    const routes = apiSrc.get(`${API}src/internal/routes.ts`) ?? '';
+    for (const m of routes.matchAll(/\bcase\s+'([a-z][a-z0-9-]*)'\s*:/g)) kinds.add(m[1]!);
+    for (const src of [routes, ...modSrc.values()]) {
+      for (const m of src.matchAll(/(?<!typeof\s+[\w.]*)\bkind\s*(?::|[!=]==)\s*['"`]([a-z][a-z0-9-]*)['"`]/g)) kinds.add(m[1]!);
+    }
+    const unclassified = [...kinds].filter((k) => !(k in WATCHER_KINDS)).sort();
+    expect(unclassified, 'a new watcher report kind: classify it in WATCHER_KINDS (does the purge have to wait for it? tradePurge.ts SEAMS, I4a)').toEqual([]);
+    report.push(...[...kinds].filter((k) => WATCHER_KINDS[k] === 'watch-drop').map((k) => `the '${k}' report kind`));
+    // ... and every migration column named for watching or a drop.
+    const cols = new Set([...allMigrations.matchAll(/\b\w*(?:watch|drop)\w*\b/gi)].map((m) => m[0].toLowerCase()).filter((c) => c !== 'drop'));
+    const newCols = [...cols].filter((c) => !WATCH_COLUMNS.includes(c)).sort();
+    expect(newCols, 'a new watch or drop column in a migration: list it in WATCH_COLUMNS once the purge reads the drop (WATCH_DROP)').toEqual([]);
     if (report.length > 0) expect(purge, `a watch-drop report exists in ${report.join(', ')}: the purge must read it (tradePurge.ts SEAMS, I4a)`).toMatch(WATCH_DROP);
   });
 
@@ -153,6 +199,12 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
       })
       .map(([p]) => p);
     if (/surplus/i.test(allMigrations)) hits.push('a migration (surplus)');
+    // Review R3-m1: the surplus rule most likely lands as a DELETION in payouts.ts's release case.
+    // Today's two surplus lines must still be there, unchanged; if either is gone or changed, fire.
+    const release = releaseCase();
+    if (release === null || TODAY_SURPLUS.some((re) => !new RegExp(re.source).test(release))) {
+      hits.push(`packages/trade/src/payouts.ts (the release case ${release === null ? 'is gone' : 'no longer pays today\'s surplus lines'})`);
+    }
     if (hits.length > 0) expect(purge, `the surplus rule or an escrow-empty report exists in ${hits.join(', ')}: the purge must keep a trade unless its escrow is shown empty (tradePurge.ts SEAMS)`).toMatch(ESCROW_EMPTY);
     // The moderation purge deletes the escrow key material only after the same fact and the watch drop.
     const deletes = [...modSrc.values()].join('\n');
@@ -172,6 +224,14 @@ describe('Plan 7 Task 2 seams (MUST LAND BEFORE X2F_TRADE_PURGE=on)', () => {
     expect(purge, why).toMatch(ESCROW_EMPTY);
     const deletes = [...modSrc.values()].join('\n');
     for (const t of MOD_OWED) expect(deletes, why).toMatch(new RegExp(`delete from ${t}\\b`, 'i'));
+    // Review R3-m4: a `late-funds` report for an unknown (purged) trade code fails LOUDLY to staff,
+    // never a quiet 404: the API file that takes `late-funds` raises an owner/staff alert.
+    const lateFunds = [...apiSrc].filter(([p, s]) => !p.endsWith('tradePurge.ts') && /['"`]late-funds['"`]/.test(s));
+    expect(lateFunds.length, `${why}: no API src takes a 'late-funds' report`).toBeGreaterThan(0);
+    expect(
+      lateFunds.some(([, s]) => /\b(addOwnerAlert|pushOwnerAlert|ownerAlertSink)\b/.test(s)),
+      `${why}: a 'late-funds' report for an unknown trade must alert staff (an owner alert), not answer a quiet 404`,
+    ).toBe(true);
   }
 
   it('X2F_TRADE_PURGE stays off by default until every seam above has landed', () => {

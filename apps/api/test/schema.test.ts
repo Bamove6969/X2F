@@ -6,7 +6,7 @@ import type pg from 'pg';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { LISTEN_OPTIONS } from '../src/app.js';
 import { ApiError } from '../src/errors.js';
-import { TRADE_PURGE_READY, assertSigningKeyFile, loadConfig, subkey, tradePurgeFlag } from '../src/config.js';
+import { TRADE_PURGE_READY, assertSigningKeyFile, loadConfig, purgeTestBypass, subkey, tradePurgeFlag } from '../src/config.js';
 import { MIGRATIONS_DIR, migrate } from '../src/db/migrate.js';
 import { assertLoginNamesTagged, tagLoginNames } from '../src/accounts.js';
 import { emptyDb, testDb } from './helpers/db.js';
@@ -546,6 +546,17 @@ describe('config', () => {
     // Ready, or under vitest: on turns it on.
     expect(tradePurgeFlag('on', true, false)).toBe(true);
     expect(tradePurgeFlag('on', false, true)).toBe(true);
+  });
+
+  it('the vitest bypass of TRADE_PURGE_READY is closed by NODE_ENV=production (review R3 hardening)', () => {
+    expect(purgeTestBypass({}, { VITEST: 'true' })).toBe(true);
+    expect(purgeTestBypass({}, { VITEST: 'true', NODE_ENV: 'test' })).toBe(true);
+    expect(purgeTestBypass({}, {})).toBe(false);
+    expect(purgeTestBypass({}, { VITEST: '1' })).toBe(false);
+    // A production service with a stray VITEST: refused, whether NODE_ENV is in the process or the config env.
+    expect(purgeTestBypass({}, { VITEST: 'true', NODE_ENV: 'production' })).toBe(false);
+    expect(purgeTestBypass({ NODE_ENV: 'production' }, { VITEST: 'true' })).toBe(false);
+    expect(() => loadConfig({ ...FULL_ENV, NODE_ENV: 'production', X2F_TRADE_PURGE: 'on' })).toThrow(/X2F_TRADE_PURGE=on is refused/);
   });
 
   it('refuses a key ring file owned by another user (review M4)', async () => {

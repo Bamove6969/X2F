@@ -75,7 +75,7 @@ export const TRADE_PURGE_READY: boolean = false;
 
 /**
  * `X2F_TRADE_PURGE` as a flag: `off` (default) or `on`; anything else is malformed. `on` is
- * refused unless `ready` (TRADE_PURGE_READY) or `inTests` (vitest, which sets VITEST).
+ * refused unless `ready` (TRADE_PURGE_READY) or `inTests` (purgeTestBypass: vitest, never production).
  */
 export function tradePurgeFlag(value: string | undefined, ready: boolean, inTests: boolean): boolean {
   const purge = value || 'off';
@@ -84,6 +84,15 @@ export function tradePurgeFlag(value: string | undefined, ready: boolean, inTest
     throw new Error('config: X2F_TRADE_PURGE=on is refused until the self-destruct seams have landed (TRADE_PURGE_READY, docs/dev-setup.md)');
   }
   return purge === 'on';
+}
+
+/**
+ * The test bypass of TRADE_PURGE_READY: vitest (VITEST=true), and never in production. A
+ * production service with a stray VITEST still refuses `X2F_TRADE_PURGE=on` (review R3, hardening):
+ * NODE_ENV=production in the process or in the config's env closes the bypass.
+ */
+export function purgeTestBypass(env: Env, proc: Env = process.env): boolean {
+  return proc.VITEST === 'true' && proc.NODE_ENV !== 'production' && env.NODE_ENV !== 'production';
 }
 
 function malformed(name: string, why: string): Error {
@@ -240,7 +249,7 @@ export function loadConfig(env: Env): Config {
   const legacy = env.X2F_LEGACY_SECRETS || 'on';
   if (legacy !== 'on' && legacy !== 'off') throw malformed('X2F_LEGACY_SECRETS', 'on or off');
   const legacySecrets = legacy === 'on';
-  const tradePurge = tradePurgeFlag(env.X2F_TRADE_PURGE, TRADE_PURGE_READY, process.env.VITEST === 'true');
+  const tradePurge = tradePurgeFlag(env.X2F_TRADE_PURGE, TRADE_PURGE_READY, purgeTestBypass(env));
   assertSeparate(serverKey, [
     ['X2F_PASSWORD_PEPPERS', passwordPeppers], ['X2F_RECOVERY_CODE_KEYS', recoveryCodeKeys], ['X2F_TOTP_KEYS', totpKeys],
     ['X2F_LOGIN_NAME_KEYS', loginNameKeys],
