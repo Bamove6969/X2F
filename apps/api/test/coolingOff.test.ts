@@ -1429,7 +1429,7 @@ describe('the route lists', () => {
     const gated = ['auth/password.ts', 'auth/pgp.ts', 'auth/webauthn.ts', 'auth/totp.ts', 'auth/recovery.ts', 'auth/methods.ts', 'routes/account.ts', 'wallets/routes.ts'];
     const calls = gated.map((f) => src(f).split('await gateChange(').length - 1).reduce((a, n) => a + n, 0);
     expect(calls).toBe(SECURITY_CHANGE_ROUTES.length);
-    expect(src('trades/take.ts')).toContain("'/v1/offers/:id/take', { preHandler: [requireTrader, requireNotHeld] }");
+    expect(src('trades/take.ts')).toContain("'/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }");
     expect(src('offers/routes.ts')).toContain("'/v1/offers', { preHandler: [requireTrader, requireNotHeld] }");
     expect(src('wallets/routes.ts')).toContain("'/v1/wallets/:id', { preHandler: [session, requireNotHeld] }");
     // The trade-finishing routes stay open during the hold, to backup sessions too.
