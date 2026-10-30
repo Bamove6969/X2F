@@ -1,3 +1,4 @@
+import { assertLoginNamesTagged } from './accounts.js';
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
@@ -19,6 +20,7 @@ import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
+import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 
 function port(raw: string | undefined): number {
@@ -42,6 +44,8 @@ const attestation = fileAttestationPolicy(config.attestationDir);
 await attestation.init();
 
 const db = createPool(config.databaseUrl);
+// FU-D: no start while a login name is still stored in plaintext (migration 012 without its tool).
+await assertLoginNamesTagged(db);
 // Plan 3 Task 3 (spec 11.6): XMR/USD = median of the PRICE_SOURCES, polled every minute; USD→X
 // from the FX_SOURCES in trust order, polled every 5 minutes, with the owner's settings read from
 // owner_settings before each poll. Price health alerts go to the owner's in-app alerts and, for
@@ -77,7 +81,9 @@ const deps: Deps = {
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
-const app = await buildApi(deps);
+// Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
+const monerod = monerodUrlFromEnv(process.env);
+const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 alertLog = app.log;
 prices.start();

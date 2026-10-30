@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
 import { newTrade, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
 import type { Deps } from '../../src/app.js';
@@ -27,17 +27,32 @@ export interface SeededTrade {
 }
 
 /**
- * Inserts a trade directly in `setup`, as Task 5's take will (there is no take route yet). Both
- * payout addresses are set unless given.
+ * Inserts an offer directly for `seedTrade` (trades.offer_id references offers, migration 112). It
+ * is stored as removed, so it never shows in an offer list or a method count.
+ */
+export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: string, poster: 'seller' | 'buyer'): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into offers (account_id, side, method_id, currency, price_mode, margin_bps, min_fiat_cents, max_fiat_cents,
+                         min_trades, terms, status, created_at, updated_at)
+     values ($1, $2, 'zelle', 'USD', 'market', 0, 1000, 100000, 0, '', 'removed', $3, $3) returning id`,
+    [posterId, poster === 'seller' ? 'sell' : 'buy', deps.clock()],
+  );
+  return rows[0]!.id;
+}
+
+/**
+ * Inserts a trade directly in `setup`, as the take route does (with both payout addresses set
+ * unless given), on a fresh offer of its own unless `offerId` is given.
  */
 export async function seedTrade(
   deps: Pick<Deps, 'db' | 'clock'>,
-  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint } & Partial<TradeSides>,
+  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
+  const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
   const trade = newTrade(
     {
       code: newTradeCode(),
-      offerId: randomUUID(),
+      offerId,
       poster: a.poster,
       sellerId: a.sellerId,
       buyerId: a.buyerId,

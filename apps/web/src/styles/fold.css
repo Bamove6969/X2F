@@ -1,0 +1,219 @@
+/*
+ * Foldable phones (Plan 3 Task 40; Fold-Notes board). Layout only: colours, type and spacing come
+ * from the design tokens and the screens' own styles. `<html data-fold>` is the layout
+ * (src/ui/fold.ts). The pane rules start from it, so nothing changes in the phone and wide
+ * layouts. The only top-level rules are the phone frame's body (`display: contents`) and the
+ * glance card's own `.x2f-fold-*` classes (unique: test/css-collisions.test.ts).
+ *
+ * Where the panes go, as lengths from the viewport's left edge (top edge for tabletop):
+ *   --x2f-fold-a   where the first pane ends
+ *   --x2f-fold-b   where the second pane starts (the gap between is the hinge plus the gutter)
+ *   --x2f-fold-b-end, --x2f-fold-c   the same for the third pane of a tri-fold
+ * Width first: no segments, the middle of the screen with a 16 px gutter on it. Where the browser
+ * reports segments (Chrome on Android), the gutter sits on the hinge and is never narrower than
+ * 16 px.
+ */
+
+:root[data-fold='two'] {
+  --x2f-fold-a: calc(50% - 8px);
+  --x2f-fold-b: calc(50% + 8px);
+}
+
+@media (horizontal-viewport-segments: 2) {
+  :root[data-fold='two'] {
+    --x2f-fold-a: min(env(viewport-segment-right 0 0, 50%), calc((env(viewport-segment-right 0 0, 50%) + env(viewport-segment-left 1 0, 50%)) / 2 - 8px));
+    --x2f-fold-b: max(env(viewport-segment-left 1 0, 50%), calc((env(viewport-segment-right 0 0, 50%) + env(viewport-segment-left 1 0, 50%)) / 2 + 8px));
+  }
+}
+
+:root[data-fold='three'] {
+  --x2f-fold-a: min(env(viewport-segment-right 0 0, 33.333%), calc((env(viewport-segment-right 0 0, 33.333%) + env(viewport-segment-left 1 0, 33.333%)) / 2 - 8px));
+  --x2f-fold-b: max(env(viewport-segment-left 1 0, 33.333%), calc((env(viewport-segment-right 0 0, 33.333%) + env(viewport-segment-left 1 0, 33.333%)) / 2 + 8px));
+  --x2f-fold-b-end: min(env(viewport-segment-right 1 0, 66.667%), calc((env(viewport-segment-right 1 0, 66.667%) + env(viewport-segment-left 2 0, 66.667%)) / 2 - 8px));
+  --x2f-fold-c: max(env(viewport-segment-left 2 0, 66.667%), calc((env(viewport-segment-right 1 0, 66.667%) + env(viewport-segment-left 2 0, 66.667%)) / 2 + 8px));
+}
+
+:root[data-fold='tabletop'] {
+  --x2f-fold-top: min(env(viewport-segment-bottom 0 0, 50dvh), calc((env(viewport-segment-bottom 0 0, 50dvh) + env(viewport-segment-top 0 1, 50dvh)) / 2 - 8px));
+  --x2f-fold-bottom: max(env(viewport-segment-top 0 1, 50dvh), calc((env(viewport-segment-bottom 0 0, 50dvh) + env(viewport-segment-top 0 1, 50dvh)) / 2 + 8px));
+}
+
+/* ---- The shell ---- */
+
+/* The phone frame's body never adds a box of its own: the screens lay out as they always have. */
+[data-shell='phone'] > [data-shell-body] {
+  display: contents;
+}
+
+/* A screen that has no panes yet stays in the first pane when the hinge is real (follow-ups). */
+@media (horizontal-viewport-segments: 2) {
+  :root[data-fold='two'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade']),
+  :root[data-fold='two'] [data-shell='phone'] > nav {
+    max-width: var(--x2f-fold-a);
+  }
+}
+
+:root[data-fold='three'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade']),
+:root[data-fold='three'] [data-shell='phone'] > nav {
+  max-width: var(--x2f-fold-a);
+}
+
+/* ---- Panes (src/ui/Panes.tsx) ---- */
+
+:root:not([data-fold='two'], [data-fold='three'], [data-fold='tabletop'], [data-fold='cover']) [data-pane='main'],
+:root:not([data-fold='two'], [data-fold='three'], [data-fold='tabletop'], [data-fold='cover']) .x2f-panes {
+  display: contents;
+}
+
+:root[data-fold='two'] .x2f-panes,
+:root[data-fold='three'] .x2f-panes {
+  display: grid;
+  grid-template-columns: var(--x2f-fold-a) calc(var(--x2f-fold-b) - var(--x2f-fold-a)) minmax(0, 1fr);
+  align-items: start;
+}
+
+:root[data-fold='three'] .x2f-panes {
+  grid-template-columns:
+    var(--x2f-fold-a) calc(var(--x2f-fold-b) - var(--x2f-fold-a)) calc(var(--x2f-fold-b-end) - var(--x2f-fold-b))
+    calc(var(--x2f-fold-c) - var(--x2f-fold-b-end)) minmax(0, 1fr);
+}
+
+:root[data-fold='two'] .x2f-panes > [data-pane='main'],
+:root[data-fold='three'] .x2f-panes > [data-pane='main'] {
+  grid-column: 1;
+  min-width: 0;
+}
+
+/* Without a second pane the screen keeps the whole width when there is no hinge to keep off. */
+:root[data-fold='two'] .x2f-panes:not([data-side]) > [data-pane='main'] {
+  grid-column: 1 / -1;
+}
+
+@media (horizontal-viewport-segments: 2) {
+  :root[data-fold='two'] .x2f-panes:not([data-side]) > [data-pane='main'] {
+    grid-column: 1;
+  }
+}
+
+/* The second pane stays in view while the window scrolls the first. */
+:root[data-fold='two'] .x2f-panes > [data-pane='side'],
+:root[data-fold='three'] .x2f-panes > [data-pane='side'] {
+  grid-column: 3;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* Tabletop: look up, touch down. */
+:root[data-fold='tabletop'] .x2f-panes {
+  display: grid;
+  height: 100dvh;
+  grid-template-rows: var(--x2f-fold-top) calc(var(--x2f-fold-bottom) - var(--x2f-fold-top)) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
+}
+
+:root[data-fold='tabletop'] .x2f-panes[data-side] {
+  grid-template-columns: minmax(0, 1fr) var(--x2f-space-4) minmax(0, 1fr);
+}
+
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='glance'] {
+  grid-row: 1;
+  grid-column: 1 / -1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='main'] {
+  grid-row: 3;
+  grid-column: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+:root[data-fold='tabletop'] .x2f-panes:not([data-side]) > [data-pane='main'] {
+  grid-column: 1 / -1;
+}
+
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='side'] {
+  grid-row: 3;
+  grid-column: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A screen sized for a whole phone screen fills its segment instead, and the segment scrolls it. */
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='main'] > * {
+  height: auto;
+  min-height: 100%;
+  max-height: none;
+}
+
+/* The flip cover screen: the glance card first; the room stays under it, never hidden. */
+:root[data-fold='cover'] .x2f-panes {
+  display: flex;
+  flex-direction: column;
+}
+
+/* The chat is beside the room: its Chat link would only open it a second time. */
+:root[data-fold='two'] .x2f-panes[data-side] [data-chat-link],
+:root[data-fold='three'] .x2f-panes[data-side] [data-chat-link],
+:root[data-fold='tabletop'] .x2f-panes[data-side] [data-chat-link] {
+  display: none;
+}
+
+/* ---- Sheets and dialogs stay inside one pane (src/ui/Sheet.tsx) ----
+   Only where the hinge is real (reported segments): the backdrop still covers the whole screen, so
+   nothing behind a sheet can be tapped, and only the panel keeps to the pane that opened it. With
+   the width rules alone there is no hinge to keep off, and a sheet is as wide as on a phone
+   viewport (review I3). */
+
+@media (horizontal-viewport-segments: 2) {
+  :root[data-fold='two'] .x2f-sheet-layer > .x2f-sheet {
+    width: var(--x2f-fold-a);
+  }
+
+  :root[data-fold='two'] .x2f-sheet-layer[data-pane-of='side'] > .x2f-sheet {
+    width: auto;
+    margin-left: var(--x2f-fold-b);
+  }
+}
+
+:root[data-fold='three'] .x2f-sheet-layer > .x2f-sheet {
+  width: var(--x2f-fold-a);
+}
+
+:root[data-fold='three'] .x2f-sheet-layer[data-pane-of='side'] > .x2f-sheet {
+  width: calc(var(--x2f-fold-b-end) - var(--x2f-fold-b));
+  margin-left: var(--x2f-fold-b);
+}
+
+:root[data-fold='tabletop'] .x2f-sheet-layer > .x2f-sheet {
+  max-height: calc(100dvh - var(--x2f-fold-bottom));
+}
+
+/* ---- The trade at a glance (src/screens/trade/TradeGlance.tsx): layout only ---- */
+
+.x2f-fold-glance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-fold-glance__fact {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -1,9 +1,13 @@
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { MyOffers } from './screens/MyOffers.js';
+import { News } from './screens/News.js';
+import { Feedback } from './screens/Feedback.js';
 import { PostOffer } from './screens/PostOffer.js';
+import { Wallets } from './screens/Wallets.js';
 import { BUY_COPY } from './screens/browse/BuyCopy.js';
 import { MethodList } from './screens/browse/MethodList.js';
 import { OfferList } from './screens/browse/OfferList.js';
@@ -15,40 +19,37 @@ import { Login } from './screens/auth/Login.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
+import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
+import { Blocked } from './screens/settings/Blocked.js';
 import { Security } from './screens/settings/Security.js';
+import { SetupFlow } from './screens/setup/SetupFlow.js';
+import { Terms } from './screens/setup/Terms.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
-import { DesktopShell } from './ui/DesktopShell.js';
+import { DesktopHeader } from './ui/DesktopShell.js';
+import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
+import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
 
-const WIDE = '(min-width: 1024px)';
-
-function useWide(): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
-      const q = window.matchMedia(WIDE);
-      q.addEventListener('change', onChange);
-      return () => q.removeEventListener('change', onChange);
-    },
-    () => window.matchMedia(WIDE).matches,
-  );
-}
-
-/** Phones get the bottom nav (on the screens whose boards have it); 1024 px and wider get the desktop shell. */
+/**
+ * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
+ * nav on the screens whose boards have it); the wide layout (1000 px and wider, no hinge) gets the
+ * desktop header (Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
+ * unfolding never remounts the screen: its route, scroll position and typed text stay.
+ */
 function Layout({ nav }: { nav: boolean }) {
-  if (useWide()) {
-    return (
-      <DesktopShell>
-        <Outlet />
-      </DesktopShell>
-    );
-  }
+  const layout = useFoldLayout();
+  useFoldAttribute(layout);
+  const wide = layout === 'wide';
   return (
-    <div data-shell="phone">
-      <Outlet />
-      {nav ? <BottomNav /> : null}
+    <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
+      {wide ? <DesktopHeader /> : null}
+      <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
+        <Outlet />
+      </div>
+      {nav && !wide ? <BottomNav /> : null}
     </div>
   );
 }
@@ -137,6 +138,7 @@ export function App() {
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
+          <Route path="/profile/offers" element={<MyOffers />} />
         </Route>
         <Route element={<Layout nav={false} />}>
           <Route path="/post" element={<PostOffer />} />
@@ -145,13 +147,17 @@ export function App() {
           <Route path="/sell/:methodId/:offerId" element={<SellQuote />} />
           <Route path="/buy/:methodId/:offerId" element={<BuyQuote />} />
           <Route path="/trade/:code" element={<TradeRoom />} />
-          <Route path="/trade/:code/dispute" element={<Screen name="dispute" />} />
-          <Route path="/wallets" element={<Screen name="wallets" />} />
-          <Route path="/setup/*" element={<Screen name="setup" />} />
-          <Route path="/terms" element={<Screen name="terms" />} />
+          {/* Task 27: DisputeOpen and ?view=chat (a disputed trade's room shows the dispute through its slot). */}
+          <Route path="/trade/:code/dispute" element={<DisputeScreen />} />
+          <Route path="/wallets" element={<Wallets />} />
+          <Route path="/setup/*" element={<SetupFlow />} />
+          <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/settings/blocked" element={<Blocked />} />
+          <Route path="/news" element={<News />} />
+          <Route path="/feedback" element={<Feedback />} />
         </Route>
         <Route path="*" element={<Navigate to="/sell" replace />} />
       </Routes>

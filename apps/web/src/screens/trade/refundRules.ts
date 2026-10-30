@@ -48,6 +48,7 @@ export function tradeFromView(v: RefundView): Trade {
     fiatCents: atomic(v.fiatCents, 'fiat total'),
     confirmWindowMin: 1,
     minFiatCents: 1n,
+    // not-a-refusal: a field name in a developer error
     maxFiatCents: atomic(v.maxFiatCents, 'offer maximum'),
     grown: null,
     state: v.state,

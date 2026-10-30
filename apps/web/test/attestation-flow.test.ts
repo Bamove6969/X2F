@@ -508,6 +508,26 @@ describe('settling', () => {
       expect((await t.buyer.store.load(CODE))?.paidSeen).toBe(false);
     });
 
+    it.each([
+      ['another maximum', { maxFiatCents: '90000' }],
+      ['another poster', { poster: 'buyer' }],
+    ])('"I’ve paid" while the API view disagrees with the deal (%s; the total still agrees) is refused and fixes nothing (Task 23 round 2, I1)', async (_n, drift) => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured', ...drift });
+      expect(await t.buyer.status((s) => s.refusal === 'view-mismatch')).toMatchObject({ error: null });
+      await expect(t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) })).rejects.toThrow(/view/);
+      const rec = (await t.buyer.store.load(CODE))!;
+      expect(rec.acceptedAtomic ?? null).toBeNull();
+      expect(rec.paidSeen).toBe(false);
+      await t.parties.ticks('seller', 3);
+      expect((await t.seller.store.load(CODE))?.paidSeen).toBe(false); // no trade.paid reached the seller
+      // The view is right again: the same tap goes through.
+      t.state.view = tradeView({ state: 'secured' });
+      await t.buyer.runtime.act(CODE, { type: 'paid', fiatCents: fiatOf(AMOUNT) });
+      expect((await t.buyer.store.load(CODE))?.acceptedAtomic).toBe(AMOUNT);
+    });
+
     it('the amount the buyer confirmed is fixed by the tap itself, even if the API moves it right after', async () => {
       const t = await ready();
       t.state.view = tradeView({ state: 'securing' });
@@ -585,6 +605,19 @@ describe('settling', () => {
       // Its own tap fixes the amount and the co-sign follows.
       await pay(t.buyer);
       await until(() => t.parties.settles.some((x) => x.role === 'buyer'));
+    });
+
+    it('paidRecorded: false while the buyer knows of paid only from the API, true once its own tap fixed the amount (Task 23 review I2, I3)', async () => {
+      const t = await ready();
+      t.parties.funds = funded();
+      t.state.view = tradeView({ state: 'secured' });
+      expect(await t.buyer.status((x) => x.phase === 'ready')).toMatchObject({ paidRecorded: false });
+      t.state.view = tradeView({ state: 'paid', paidAt });
+      expect(await t.buyer.status((x) => x.refusal === 'amount-unknown')).toMatchObject({ paidRecorded: false });
+      await pay(t.buyer);
+      expect(await t.buyer.status((x) => x.paidRecorded)).toMatchObject({ refusal: null, error: null });
+      // The seller never reports it.
+      expect(await t.seller.status(() => true)).toMatchObject({ paidRecorded: false });
     });
 
     it('a release handed over before paid binds its amount: another amount is refused at the tap and for any release', async () => {
@@ -823,6 +856,19 @@ describe('settling', () => {
     const cancel = t.parties.settles.find((s) => s.o.cosigner === 'mod')!;
     expect(cancel.o).toEqual({ kind: 'release', to: [{ address: ADDR.seller, amountAtomic: funded().balance }], builder: 'buyer', cosigner: 'mod' });
     await expect(t.seller.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
+  });
+
+  it('intentKind: null for the automatic choice, the tapped kind once saved, also while the coins are still locked (Task 23 round 2, Minor 1)', async () => {
+    const t = await ready();
+    t.parties.funds = { ...funded(), unlocked: 0n };
+    t.state.view = tradeView({ state: 'secured' });
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release'); // the automatic standing release
+    expect(t.buyer.last()?.intentKind).toBeNull();
+    await t.buyer.runtime.act(CODE, { type: 'buyer-cancel' });
+    t.state.view = tradeView({ state: 'settling', settling: 'buyer-cancel' });
+    await t.parties.ticks('buyer', 2);
+    expect(await t.buyer.status((s) => s.intentKind === 'buyer-cancel')).toMatchObject({ phase: 'ready', error: null });
+    expect(t.parties.settles.some((s) => s.o.cosigner === 'mod')).toBe(false); // nothing built yet: the coins are locked
   });
 
   it('a buyer who tapped propose-cancel and then paid co-signs the release once the seller releases', async () => {
@@ -1098,12 +1144,16 @@ describe('resume on load (Review Focus 1)', () => {
     await until(() => seller.last()?.phase === 'done');
     expect((await seller.store.load(CODE))?.intent?.done).toBe(true);
     await seller.runtime.stopAll();
-    const count = t.parties.settles.length;
+    // The seller's settles only: the buyer's runtime keeps running and makes its standing release
+    // co-sign on its own tick, which under load can land after this count (a flake seen 2026-10-29).
+    const sellerSettles = () => t.parties.settles.filter((s) => s.role === 'seller').length;
+    const count = sellerSettles();
+    expect(count).toBe(1);
     const again = await t.mk('seller', { idb: seller.idb });
     await again.runtime.resumeAll();
     await until(() => again.last()?.phase === 'done');
     await new Promise((r) => setTimeout(r, 60));
-    expect(t.parties.settles.length).toBe(count);
+    expect(sellerSettles()).toBe(count);
   });
 
   it('a second tab waits for the first one’s lock and runs nothing meanwhile', async () => {

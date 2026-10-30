@@ -6,6 +6,7 @@ import { BOARD, SERVER_NOW, sellerRequestedView, sellerView } from '../e2e/refun
 import { forgetRefundRuns } from '../src/screens/trade/refundFlow.js';
 import { SellerRefund } from '../src/screens/trade/SellerRefund.js';
 import type { RefundEscrow, RefundView } from '../src/screens/trade/refundSlot.js';
+import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import { fire, render } from './render.js';
 
 const MIN = 60_000;
@@ -36,6 +37,7 @@ afterEach(() => {
 function escrowFake(amountAtomic: bigint | null = null) {
   const calls: string[] = [];
   const escrow: RefundEscrow = {
+    ...PENDING_ESCROW,
     signal: vi.fn(async (s: string) => void calls.push(`signal:${s}`)),
     buildRefund: vi.fn(async () => void calls.push('build')),
     amountAtomic,
@@ -55,6 +57,7 @@ function flakyEscrow(fail: Partial<Record<'signal' | 'build', number>>) {
     }
   };
   const escrow: RefundEscrow = {
+    ...PENDING_ESCROW,
     signal: vi.fn((s: string) => maybe('signal', `signal:${s}`)),
     buildRefund: vi.fn(() => maybe('build', 'build')),
     amountAtomic: null,
@@ -72,7 +75,7 @@ function mount(view: RefundView, o: { clock?: () => Date; escrow?: RefundEscrow;
   let current = view;
   const tree = () => (
     <MemoryRouter>
-      <SellerRefund view={current} escrow={o.fresh ? { ...e.escrow } : e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
+      <SellerRefund code={current.code} view={current} escrow={o.fresh ? { ...e.escrow } : e.escrow} refresh={refresh} serverClock={o.clock ?? clockAt(SERVER_NOW)} wide={false} />
     </MemoryRouter>
   );
   const refresh = vi.fn(async () => {
@@ -219,6 +222,17 @@ describe('SellerRefund: Give 30 more min', () => {
     expect(m.host.querySelector('[role="alert"]')).toBeNull();
   });
 
+  it('a 409 no-extensions-left (a second tab, a stale view) opens CantDoThat, not "try again" (Plan 5 Task 21, round-2 N-M4)', async () => {
+    answers[EVENTS] = [{ status: 409, body: { error: 'no-extensions-left' } }];
+    const m = mount(sellerView({ extensions: 1 }));
+    fire(m.button('Give 30 more min')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toMatch(/all the extra time it can get/);
+    expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=no-extensions-left');
+    expect(m.host.querySelector('[role="alert"]')).toBeNull();
+    expect(m.calls).toEqual([]);
+  });
+
   it('is offered after the first extension and hidden after the second', () => {
     expect(mount(sellerView({ extensions: 1 })).button('Give 30 more min')).not.toBeNull();
     const m = mount(sellerView({ extensions: 2 }));
@@ -244,7 +258,9 @@ describe('SellerRefund: Nudge', () => {
     const m = mount(sellerView());
     fire(m.button('Nudge mira.k')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(m.host.querySelector('[role="status"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+    // Plan 5 Task 21: the nudge limit opens CantDoThat (a portal on the body) with its feedback link.
+    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+    expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=too-soon');
   });
 });
 

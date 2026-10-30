@@ -33,15 +33,17 @@ interface Seen {
   takes: ({ offerId: string } & TakeBody)[];
   /** The fiat total each stubbed trade stores: fiatCents(amountAtomic, lockedRate) (OD-5). */
   storedFiatCents: bigint[];
+  /** Each POST /v1/wallets body from Task 29's Add a wallet. */
+  walletPosts: unknown[];
 }
 
 const FIXED = { ...B.offer, id: 'offer-fixed', pricing: { mode: 'fixed', centsPerXmr: '34000' }, rate: '34000' };
 const MIRA_BUYS = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
 
 async function stubApi(page: Page, s: Stub): Promise<Seen> {
-  const seen: Seen = { takes: [], storedFiatCents: [] };
+  const seen: Seen = { takes: [], storedFiatCents: [], walletPosts: [] };
   await page.route('**/v1/account/me', (r) =>
-    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader' } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
+    s.signedIn ? r.fulfill({ json: { displayName: 'viewer_1', kind: 'trader', methods: ['pgp'] } }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } }),
   );
   await page.route('**/v1/methods?*', (r) =>
     r.fulfill({ json: { live: [{ id: B.method.id, name: B.method.name, group: 'Payment apps', giftCard: false, offers: 1, bestRate: B.marketCentsPerXmr }], all: [] } }),
@@ -53,7 +55,19 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
       : r.fulfill({ status: 503, json: { error: 'price-unavailable' } });
   });
   await page.route('**/v1/offers?*', (r) => r.fulfill({ json: s.offers }));
-  await page.route('**/v1/wallets', (r) => (s.signedIn ? r.fulfill({ json: s.wallets }) : r.fulfill({ status: 401, json: { error: 'not-authenticated' } })));
+  await page.route('**/v1/wallets', (r) => {
+    if (!s.signedIn) return r.fulfill({ status: 401, json: { error: 'not-authenticated' } });
+    if (r.request().method() !== 'POST') return r.fulfill({ json: s.wallets });
+    // Task 29's Add a wallet; the stub adds them usable at once, as a first wallet is (spec 6.3).
+    const body = r.request().postDataJSON() as { wallets: { app: string; label: string; address: string }[] };
+    seen.walletPosts.push(body);
+    const added = body.wallets.map((w, i) => ({ ...w, id: `w-new-${i}`, addressEnd: w.address.slice(-6), usableFrom: '2026-10-01T00:00:00.000Z', usable: true }));
+    s.wallets = [...s.wallets, ...added];
+    return r.fulfill({ status: 201, json: added });
+  });
+  await page.route('**/v1/wallets/rule', (r) =>
+    r.fulfill({ json: { firstWallet: s.wallets.length === 0, strongMethods: [], password: 'immediate', waitHours: 24 } }),
+  );
   await page.route('**/v1/offers/*/take', async (r) => {
     const offerId = decodeURIComponent(new URL(r.request().url()).pathname.split('/')[3]!);
     const body = r.request().postDataJSON() as TakeBody;
@@ -65,7 +79,7 @@ async function stubApi(page: Page, s: Stub): Promise<Seen> {
     const rate = s.rate ?? B.marketCentsPerXmr;
     if (body.centsPerXmr !== rate) return r.fulfill({ status: 409, json: { error: 'price-changed' } });
     seen.storedFiatCents.push(fiatCents(BigInt(body.amountAtomic), { currency: B.currency, centsPerXmr: BigInt(rate) }));
-    return r.fulfill({ json: { code: B.code } });
+    return r.fulfill({ json: { code: B.code, centsPerXmr: body.centsPerXmr, fiatCents: body.fiatCents } });
   });
   return seen;
 }
@@ -130,34 +144,44 @@ test.describe('BuyQuote', () => {
     await expect(trade(page)).toHaveText('Add a wallet');
     await trade(page).click();
     await expect(page).toHaveURL(/\/wallets\?add=1&returnTo=/);
-    const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
-    // Task 29's Add a wallet adds the first wallet (no confirm needed for a first wallet) and goes back.
-    stub.wallets = [B.wallets[0]];
-    await page.goto(returnTo);
+    // Task 29's Add a wallet: a first wallet needs no confirm and works at once, so saving it goes
+    // straight back to returnTo, in this tab (the pending-take marker is per tab).
+    const popup = page.getByRole('dialog', { name: 'Before you add a wallet' });
+    await popup.getByRole('button', { name: 'Continue' }).click();
+    await page.getByLabel('Name', { exact: true }).fill('Cake Wallet');
+    await page.getByLabel(/Receive address/).fill(B.wallets[0].address);
+    await page.getByRole('button', { name: 'Save wallet' }).click();
     await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
+    expect(seen.walletPosts).toEqual([{ wallets: [{ app: 'cake', label: 'Cake Wallet', address: B.wallets[0].address }] }]);
     await expect(page.getByRole('radio', { name: /Cake Wallet/ })).toBeChecked();
     await expect(page).not.toHaveURL(/resume=/);
     expect(seen.takes).toHaveLength(0);
     await trade(page).click();
     await expect(page).toHaveURL(`/trade/${B.code}`);
-    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-cake', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
+    expect(seen.takes).toEqual([{ offerId: B.offer.id, amountAtomic: '1250000000000', walletId: 'w-new-0', centsPerXmr: B.marketCentsPerXmr, fiatCents: '41250' }]);
   });
 
-  test('logged out, Trade goes to /setup/terms; back from a stubbed setup the quote is shown again at the price now, never taken silently', async ({ page }) => {
+  test("logged out, Trade goes to setup; Welcome's Start trading comes back in the same tab and the quote is shown again at the price now, never taken silently", async ({ page }) => {
     const stub: Stub = { ...base, signedIn: false, wallets: [] };
     const seen = await stubApi(page, stub);
     await page.goto(`${BUY}&amount=${B.amount}`);
     await expect(card(page)).toContainText('1.250000 XMR');
     await trade(page).click();
-    await expect(page).toHaveURL(/\/setup\/terms\?returnTo=/);
+    // Setup starts on the Terms (Task 28), with this quote and a pending-take nonce as returnTo.
+    await expect(page).toHaveURL(/\/setup\?returnTo=/);
+    await expect(page.locator('[data-screen="setup-terms"]')).toBeVisible();
     const returnTo = new URL(page.url()).searchParams.get('returnTo')!;
+    expect(new URL(returnTo, 'http://x').searchParams.get('resume')).toMatch(/^[0-9a-f]{32}$/);
     expect(seen.takes).toHaveLength(0);
-    // The stubbed setup: an account now exists with its first wallet, and setup ends on returnTo.
+    // The steps in between are setup.spec's: here an account now exists with its first wallet, and
+    // the person is on Welcome in this same tab (the marker lives in this tab's sessionStorage).
     // Setup took a while and the feed moved: the quote the person comes back to shows the rate now.
     stub.signedIn = true;
     stub.wallets = [B.wallets[0]];
     stub.rate = '34000';
-    await page.goto(returnTo);
+    await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(returnTo)}`);
+    await page.click('[data-part="start-trading"]');
+    await expect(page).toHaveURL(/\/buy\//);
     await expect(page.getByRole('status')).toHaveText("You're back. Check the total, then tap Trade.");
     await expect(card(page)).toContainText('$340.00 / XMR');
     await expect(card(page)).toContainText('$412.50 USD');

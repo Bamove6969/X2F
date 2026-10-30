@@ -12,20 +12,27 @@ const LINKS: { to: string; label: string; match: (path: string) => boolean }[] =
 ];
 
 export function DesktopShell({ children }: { children: ReactNode }) {
-  const { pathname } = useLocation();
   return (
     <div data-shell="desktop" className="x2f-desktop">
-      <header className="x2f-desktop__header">
-        <span className="x2f-wordmark">X2F</span>
-        <nav aria-label="Main" className="x2f-desktop__nav">
-          {LINKS.map((l) => (
-            <Link key={l.to} to={l.to} aria-current={l.match(pathname) ? 'page' : undefined}>
-              {l.label}
-            </Link>
-          ))}
-        </nav>
-      </header>
+      <DesktopHeader />
       <div className="x2f-desktop__body">{children}</div>
     </div>
+  );
+}
+
+/** The Desktop board's header on its own: the app shell keeps one tree for every layout (Task 40). */
+export function DesktopHeader() {
+  const { pathname } = useLocation();
+  return (
+    <header className="x2f-desktop__header">
+      <span className="x2f-wordmark">X2F</span>
+      <nav aria-label="Main" className="x2f-desktop__nav">
+        {LINKS.map((l) => (
+          <Link key={l.to} to={l.to} aria-current={l.match(pathname) ? 'page' : undefined}>
+            {l.label}
+          </Link>
+        ))}
+      </nav>
+    </header>
   );
 }

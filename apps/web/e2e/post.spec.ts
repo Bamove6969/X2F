@@ -1,8 +1,7 @@
 // PostOffer (Task 21, board PostOffer.dc.html). The API is stubbed per test with page.route, in
 // the shapes of Task 3 (GET /v1/methods, GET /v1/price, on the main line and checked against the
-// parsers 2026-10-27) and the plan's Task 4 (POST /v1/offers, GET /v1/offers);
-// apps/web/test/post-tripwires.test.ts fails when Task 4 lands so these stubs get checked against
-// it. The method list is built from data/payment-methods.json with Task 3's own rule (a method with
+// parsers 2026-10-27) and Task 4 (POST /v1/offers, GET /v1/offers; on the main line and checked
+// against these stubs 2026-10-28: 201 { id }, 409 { error } refusals). The method list is built from data/payment-methods.json with Task 3's own rule (a method with
 // `legalReview` is unavailable and left out).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -296,7 +295,13 @@ test('logged out, Post offer goes to setup and comes back with the form intact',
   expect(posts.length).toBeLessThanOrEqual(1);
   const back = new URL(page.url()).searchParams.get('returnTo')!;
   expect(back.startsWith('/post')).toBe(true);
-  await page.goto(back);
+  // Setup's own steps are setup.spec's: here the account exists with its first wallet and Welcome's
+  // Start trading follows returnTo back to /post in this tab (the draft waits in sessionStorage).
+  await page.route('**/v1/account/me', json({ ...ME, methods: ['pgp'] }));
+  await page.route('**/v1/wallets', json([{ id: 'w1', app: 'cake', label: 'Wallet 1', addressEnd: 'k3Fz', usable: true }]));
+  await page.goto(`/setup/welcome?returnTo=${encodeURIComponent(back)}`);
+  await page.click('[data-part="start-trading"]');
+  await expect(page).toHaveURL(back);
   await expect(f(page).currency).toHaveValue('GBP');
   await expect(f(page).fixedMode).toBeChecked();
   await expect(f(page).fixed).toHaveValue('270');
