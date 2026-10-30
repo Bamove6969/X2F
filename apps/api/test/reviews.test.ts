@@ -4,8 +4,8 @@ import { REVIEW_WEIGHT_FLOOR_USD_CENTS, reviewWeight } from '@x2f/reputation';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { setLateReviewMode } from '../src/reviews/gate.js';
-import { detachReviews, reviewableSince } from '../src/reviews/store.js';
-import { applyEvent } from '../src/trades/store.js';
+import { REVIEW_DETACH_GRANULARITY, detachReviews, insertReview, reviewableSince } from '../src/reviews/store.js';
+import { applyEvent, loadTradeRow } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -185,6 +185,28 @@ describe('blind reveal (spec 5.3)', () => {
   });
 });
 
+describe("the reveal anchor is never the other side's review (round 1 M1)", () => {
+  it('A rates a released trade, then late funds escalate it: B sees exactly what B sees with no review stored, also after the old deadline', async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    const control = await tradeIn('released');
+    await jump(new Date(START.getTime() + DAY), seller);
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    // The system escalates both (late funds after the close): state disputed, no live reviewable time.
+    for (const code of [t.code, control.t.code]) await applyEvent(deps, code, { type: 'escalate' }, 'system');
+    expect((await loadTradeRow(deps.db, t.code))!.state).toBe('disputed');
+    const none = { reviewable: false, mine: null, theirs: null, revealAt: null };
+    await jump(new Date(START.getTime() + 2 * DAY), buyer, control.buyer);
+    expect(await view(control.buyer, control.t.code)).toEqual(none);
+    expect(await view(buyer, t.code)).toEqual(none);
+    // Past the old deadline (START + 7 days): still nothing, and the buyer still cannot rate.
+    await jump(new Date(START.getTime() + 8 * DAY), buyer, seller);
+    expect(await view(buyer, t.code)).toEqual(none);
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    // The seller's own view keeps its own anchor.
+    expect((await view(seller, t.code)).revealAt).toBe(new Date(START.getTime() + 7 * DAY).toISOString());
+  });
+});
+
 describe('late reviews (P5-A31)', () => {
   it("'neutral-only': a star review after the reveal is refused, Neutral passes", async () => {
     setLateReviewMode('neutral-only');
@@ -312,13 +334,107 @@ describe('reviews are final (301 triggers)', () => {
     await expect(asPurge((c) => c.query('update reviews set stars = 1 where trade_code = $1', [code]))).rejects.toThrow(/permission denied|reviews are final/);
     await expect(asPurge((c) => c.query('update reviews set trade_code = null where trade_code = $1', [code]))).rejects.toThrow(/reviews_check|reviews are final|violates/);
     expect(await asPurge((c) => detachReviews(c, code))).toBe(1);
-    const { rows } = await deps.db.query('select trade_code, reviewer_id, stars, method_id from reviews where trade_code is null and reviewable_since = $1', [START]);
+    // START + 7 days has passed (real time), so both times are truncated down to the UTC month.
+    const month = new Date('2026-10-01T00:00:00Z');
+    const { rows } = await deps.db.query('select trade_code, reviewer_id, stars, method_id from reviews where trade_code is null and reviewable_since = $1 and created_at = $1', [month]);
     expect(rows).toContainEqual({ trade_code: null, reviewer_id: null, stars: 5, method_id: 'ZELLE' });
     // A detached review stays final for the app, and the purge cannot write a code back.
     await expect(deps.db.query('delete from reviews where trade_code is null')).rejects.toThrow(/reviews are final/);
     const code2 = await oneReview();
     const n = await asPurge(async (c) => (await c.query('delete from reviews where trade_code = $1', [code2])).rowCount);
     expect(n).toBe(1);
+  });
+
+  /** A review inserted directly (no trade: the table has no foreign key to trades), with exact times. */
+  async function rawReview(reviewableSince: Date, createdAt: Date): Promise<string> {
+    const a = await trader();
+    const b = await trader();
+    const code = `RAW${randomBytes(6).toString('hex')}`;
+    await insertReview(deps.db, {
+      tradeCode: code, reviewerId: a.id, subjectId: b.id, reviewerRole: 'buyer', input: { neutral: true }, weight: 1_000n,
+      methodId: 'ZELLE', reviewableSince, createdAt,
+    });
+    return code;
+  }
+  const times = async (id: string) =>
+    (await deps.db.query<{ rs: Date; ca: Date }>('select reviewable_since as rs, created_at as ca from reviews where id = $1', [id])).rows[0]!;
+  const idOf = async (code: string) => (await deps.db.query<{ id: string }>('select id from reviews where trade_code = $1', [code])).rows[0]!.id;
+
+  it(`detach coarsens both times to the ${REVIEW_DETACH_GRANULARITY} (UTC), and no time column stays finer (round 1 I2)`, async () => {
+    expect(['day', 'week', 'month']).toContain(REVIEW_DETACH_GRANULARITY);
+    const code = await rawReview(new Date('2026-03-14T15:09:26.535Z'), new Date('2026-03-15T01:02:03.004Z'));
+    const id = await idOf(code);
+    expect(await asPurge((c) => detachReviews(c, code))).toBe(1);
+    const { rows } = await deps.db.query<{ fine: boolean }>(
+      `select reviewable_since <> date_trunc($2, reviewable_since, 'UTC') or created_at <> date_trunc($2, created_at, 'UTC') as fine
+         from reviews where id = $1`,
+      [id, REVIEW_DETACH_GRANULARITY],
+    );
+    expect(rows[0]!.fine).toBe(false);
+    if (REVIEW_DETACH_GRANULARITY === 'month') {
+      expect(await times(id)).toEqual({ rs: new Date('2026-03-01T00:00:00Z'), ca: new Date('2026-03-01T00:00:00Z') });
+    }
+    // Every column the trigger compares as a whole, and every time column of the table, is listed here.
+    const { rows: cols } = await deps.db.query<{ c: string }>(
+      `select column_name as c from information_schema.columns where table_name = 'reviews' and data_type like 'timestamp%' order by 1`,
+    );
+    expect(cols.map((r) => r.c)).toEqual(['created_at', 'reviewable_since']);
+  });
+
+  it('a review not yet revealed at detach: its reveal is rounded up, never brought forward', async () => {
+    // Reviewable one hour ago (database clock): its reveal deadline is still 7 days off.
+    const { rows } = await deps.db.query<{ t: Date }>(`select now() - interval '1 hour' as t`);
+    const since = rows[0]!.t;
+    const code = await rawReview(since, since);
+    const id = await idOf(code);
+    // Truncating it down by hand is refused, even for x2f_purge.
+    await expect(
+      asPurge((c) =>
+        c.query(
+          `update reviews set trade_code = null, reviewer_id = null, created_at = date_trunc($2, created_at, 'UTC'),
+                  reviewable_since = date_trunc($2, reviewable_since, 'UTC') where trade_code = $1 and reviewable_since <> date_trunc($2, reviewable_since, 'UTC')`,
+          [code, REVIEW_DETACH_GRANULARITY],
+        ),
+      ),
+    ).rejects.toThrow(/reviews are final/);
+    expect(await asPurge((c) => detachReviews(c, code))).toBe(1);
+    const after = await times(id);
+    expect(after.rs.getTime()).toBeGreaterThanOrEqual(since.getTime());
+    const { rows: ok } = await deps.db.query<{ up: boolean }>(
+      `select $1::timestamptz = date_trunc($3, $2::timestamptz, 'UTC') + ('1 ' || $3)::interval
+           or ($1::timestamptz = $2::timestamptz and $2::timestamptz = date_trunc($3, $2::timestamptz, 'UTC')) as up`,
+      [after.rs, since, REVIEW_DETACH_GRANULARITY],
+    );
+    expect(ok[0]!.up).toBe(true);
+    expect(after.ca.getTime()).toBeLessThanOrEqual(since.getTime());
+  });
+
+  it('only x2f_purge may coarsen, only by a whole unit, only while detaching; a second detach changes nothing', async () => {
+    const code = await rawReview(new Date('2026-03-14T15:09:26.535Z'), new Date('2026-03-15T01:02:03.004Z'));
+    const id = await idOf(code);
+    // The app role (table owner) cannot coarsen or detach.
+    await expect(deps.db.query(`update reviews set created_at = date_trunc('month', created_at, 'UTC') where id = $1`, [id])).rejects.toThrow(/reviews are final/);
+    await expect(
+      deps.db.query(`update reviews set trade_code = null, reviewer_id = null, created_at = date_trunc('month', created_at, 'UTC') where id = $1`, [id]),
+    ).rejects.toThrow(/reviews are final/);
+    // x2f_purge: a time change without the detach, a unit not allowed, or a moved time are refused.
+    await expect(asPurge((c) => c.query(`update reviews set created_at = date_trunc('month', created_at, 'UTC') where id = $1`, [id]))).rejects.toThrow(/reviews are final/);
+    await expect(
+      asPurge((c) => c.query(`update reviews set trade_code = null, reviewer_id = null, created_at = date_trunc('year', created_at, 'UTC'), reviewable_since = date_trunc('year', reviewable_since, 'UTC') where id = $1`, [id])),
+    ).rejects.toThrow(/reviews are final/);
+    await expect(
+      asPurge((c) => c.query(`update reviews set trade_code = null, reviewer_id = null, created_at = created_at + interval '1 day' where id = $1`, [id])),
+    ).rejects.toThrow(/reviews are final/);
+    await expect(
+      asPurge((c) => c.query(`update reviews set trade_code = null, reviewer_id = null, created_at = date_trunc('month', created_at, 'UTC'), reviewable_since = date_trunc('day', reviewable_since, 'UTC') where id = $1`, [id])),
+    ).rejects.toThrow(/reviews are final/);
+    expect(await times(id)).toEqual({ rs: new Date('2026-03-14T15:09:26.535Z'), ca: new Date('2026-03-15T01:02:03.004Z') });
+    expect(await asPurge((c) => detachReviews(c, code))).toBe(1);
+    const once = await times(id);
+    expect(await asPurge((c) => detachReviews(c, code))).toBe(0);
+    expect(await times(id)).toEqual(once);
+    // A detached row stays final for x2f_purge too (it cannot be coarsened again or re-attached).
+    await expect(asPurge((c) => c.query(`update reviews set created_at = date_trunc('year', created_at, 'UTC') where id = $1`, [id]))).rejects.toThrow(/reviews are final/);
   });
 
   it('a trade USD value is written once and never changes', async () => {

@@ -4,7 +4,7 @@ import { reviewWeight } from '@x2f/reputation';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { setLateReviewMode } from '../src/reviews/gate.js';
+import { hasPendingReview, setLateReviewMode } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -219,5 +219,58 @@ describe('the poster (Review Focus 5)', () => {
     expect((await loadTradeRow(deps.db, code))!.seller_refund).toBeNull();
     expect((await rate(seller, old)).statusCode).toBe(201);
     expect((await seller.browser.post(`/v1/trades/${code}/wallet`, { walletId: seller.wallet })).statusCode).toBe(204);
+  });
+});
+
+describe('My offers (review round 1 M3)', () => {
+  it("names review-pending as why a live offer is hidden, after the stop and the hold, and drops it once rated", async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const mine = async () => {
+      const res = await seller.browser.get('/v1/account/offers');
+      expect(res.statusCode, res.body).toBe(200);
+      return (res.json() as { id: string; hidden?: string }[]).find((o) => o.id === offer)!;
+    };
+    expect((await mine()).hidden).toBeUndefined();
+    const code = await released(seller, 'seller');
+    expect((await mine()).hidden).toBe('review-pending');
+    // The site's stop outranks it, as it outranks the trading hold.
+    await deps.db.query('update site_flags set trading_paused = true');
+    try {
+      expect((await mine()).hidden).toBe('trading-paused');
+    } finally {
+      await deps.db.query('update site_flags set trading_paused = false');
+    }
+    expect((await rate(seller, code)).statusCode).toBe(201);
+    expect((await mine()).hidden).toBeUndefined();
+  });
+});
+
+describe('the 301 cutoff (review round 1 M4)', () => {
+  it('a trade that became reviewable before site_flags.reviews_since never gates (but stays reviewable); one at or after it does', async () => {
+    const { rows } = await deps.db.query<{ since: string }>('select reviews_since::text as since from site_flags');
+    const saved = rows[0]!.since;
+    try {
+      const seller = await person();
+      const buyer = await person();
+      const offer = await postOffer(seller);
+      const code = await released(buyer);
+      expect((await loadTradeRow(deps.db, code))!.closed_at).toEqual(START);
+      const pending = async () => ((await buyer.browser.get('/v1/reviews/pending')).json() as { trades: unknown[] }).trades.length;
+      // Released 1 ms before the cutoff: no pending review, the offer stays listed, a take succeeds.
+      await deps.db.query('update site_flags set reviews_since = $1', [new Date(START.getTime() + 1)]);
+      expect(await hasPendingReview(deps.db, buyer.id, START)).toBe(false);
+      expect(await pending()).toBe(0);
+      expect(((await buyer.browser.get(`/v1/trades/${code}/review`)).json() as { reviewable: boolean }).reviewable).toBe(true);
+      // Released exactly at the cutoff: it gates.
+      await deps.db.query('update site_flags set reviews_since = $1', [START]);
+      expect(await hasPendingReview(deps.db, buyer.id, START)).toBe(true);
+      expect(await pending()).toBe(1);
+      expect(refusal(await take(buyer, offer))).toEqual({ status: 409, error: 'review-pending' });
+      await deps.db.query('update site_flags set reviews_since = $1', [new Date(START.getTime() + 1)]);
+      expect((await take(buyer, offer)).statusCode).toBe(200);
+    } finally {
+      await deps.db.query('update site_flags set reviews_since = $1::timestamptz', [saved]);
+    }
   });
 });
