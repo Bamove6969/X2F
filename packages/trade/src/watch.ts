@@ -17,7 +17,8 @@
  * - `settled { txHash }` only for a sweep in a block; a pool-only tx is not settled.
  * - Close both relay channels once (review I2, 2026-10-29) only after a sweep this mod's own wallet
  *   showed (`settledTx`), or when the API says closed and the escrow never received a coin (pool
- *   included). The API's word alone never closes the channels of an escrow that holds or held coins:
+ *   included); and (review round 2, R2-I1) only on a step with no late coin: the shown sweeps took
+ *   every coin the escrow received, so a step that escalates late funds never closes them. The API's word alone never closes the channels of an escrow that holds or held coins:
  *   those coins are reported late and escalate instead. A closed escrow is dropped 30 days after its LATEST close, and only while the API
  *   trade is still closed: a trade seen open again (late funds escalated it, or a dispute after a
  *   refund) keeps its watcher, and its next close restarts the 30 days.
@@ -333,10 +334,13 @@ export function watchStep(a: {
   // Review I2: only once this mod's own wallet showed a sweep, or when the escrow never received a
   // coin (pool included). A close known only from the API, of an escrow that holds or held coins,
   // keeps both channels open: the parties may still need them to settle or to deliver spend.info.
-  const closeChannels = !s.channelsClosed && (s.settledTx !== null || funds.incoming.length === 0);
-  if (closeChannels) s = { ...s, channelsClosed: true };
+  // Review round 2 (R2-I1): and only once no coin is late, i.e. the shown sweeps took every coin the
+  // escrow received. A sweep that took less (a replayed old tx sweeps nothing; a coin that arrived
+  // after the build) escalates on this same step, and that dispute needs both channels.
   const notLate = new Set([...(s.swept ?? []), ...s.sweepTxs]);
   const late = funds.incoming.filter((i) => !notLate.has(i.txHash));
+  const closeChannels = !s.channelsClosed && late.length === 0 && (s.settledTx !== null || funds.incoming.length === 0);
+  if (closeChannels) s = { ...s, channelsClosed: true };
   if (late.length > 0) {
     const facts: ChainFacts = {
       receivedAtomic: sum(late),
