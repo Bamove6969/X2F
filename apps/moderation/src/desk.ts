@@ -23,8 +23,9 @@ import { readSignal, sealAck, signalLoop, termsMatch, type ModSignal } from './s
  * - Each watcher pass (`step`), after its reports were accepted: buyer cancel first (a valid
  *   `trade.cancel` from the buyer's identity that the shadow took, never after a `trade.paid`,
  *   buyerCancel.ts), else the auto-refund guard (autoRefund.ts), which also runs while a cancel
- *   waits, so its escalation fallback is never blocked (review M3). A refund
- *   once armed is kept; its payouts are derived again from the balance this party reads, and
+ *   waits, so its escalation fallback is never blocked (review M3), and while an armed cancel is not
+ *   being settled at the API (review round 3 R3-N1: it may then re-arm as the auto-refund). A refund
+ *   once armed is kept (but for that re-arm); its payouts are derived again from the balance this party reads, and
  *   `settle` is called again only when they change (a late surplus before signing) or after a
  *   restart. The moderator never takes payouts from a tx set or the API: `settle` co-signs only a
  *   set equal to the outcome derived here (Plan 1).
@@ -99,6 +100,11 @@ export interface Desk {
  * `lapse-refund` only once the shadow itself lapsed. Once this desk armed a refund, no other kind.
  * `release` and `mutual-cancel` are not checked otherwise: the shadow gets no signal for either
  * (owed under Task 9 R2-M1: a seller-signed `trade.release` and a both-signed cancel accept).
+ * Known limit (review round 3 R3-M2): the shadow's `fundBy` counts from this service's own
+ * setup-done, so it is later than the API's by the pass and ready delay (or a mod outage). Funds that
+ * land in that gap leave the API `lapsed` while the shadow goes on to securing/secured and never
+ * lapses, so the parties' honest `lapse-refund` is vetoed for good (`sweep-kind-vetoed`) and the 6 h
+ * `spend-unshown` fallback sends it to a person. Fail safe and rare: no coin is lost or misdirected.
  */
 export function sweepKindAgrees(r: Pick<DeskRecord, 'armed' | 'cancelSeen' | 'paidSeen' | 'shadow'>, kind: SettleKind | null): boolean {
   if (kind === null) return true;
@@ -427,6 +433,13 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       const { balance, unlocked } = s.funds;
       // An armed buyer cancel is rechecked every pass (review round 2 N2): never handed to the party
       // again after a `trade.paid` was opened, or while the API shows a state it may not be signed in.
+      // Known limit (review round 3 R3-M1): an outcome already handed to the party in this process is
+      // not withdrawn when the cancel becomes blocked (`PartyHandle` has no withdraw; the party keeps
+      // its `settleOutcome`, and `inFlight` here stays set). So if the buyer's tx set arrives after a
+      // `trade.paid` was opened, the mod still co-signs that buyer-built cancel. Only the buyer can
+      // build it and it pays the seller, so the buyer can only hurt themselves (e.g. an old client
+      // after the API reverted the cancel and the buyer then paid). A restart or a payout change does
+      // stop it. A withdraw (or a no-op re-settle) is left to a later task (coordination.md).
       const blocked =
         kind !== 'buyer-cancel' ? null
         : r.paidSeen ? 'buyer-cancel-buyer-paid'
