@@ -324,7 +324,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     await secured(ctx, l);
     net.states.set(l.code, 'lapsed');
     net.settleKinds.set(l.code, 'lapse-refund');
-    forged(l, hash('v'), FUNDS);
+    forged(l, hash('c'), FUNDS);
     await m.handle.watch();
     await m.handle.watch();
     expect(settled(net, l.code)).toEqual([]);
@@ -346,12 +346,12 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     later(ctx, 31 * MIN); // past the shadow's own fundBy
     net.states.set(l.code, 'lapsed');
     net.settleKinds.set(l.code, 'lapse-refund');
-    forged(l, hash('w'), half);
+    forged(l, hash('d'), half);
     await m.handle.watch(); // the shadow lapses in this pass's desk step, after the sweep was checked
     expect(settled(net, l.code)).toEqual([]);
     expect((await record(l.code)).shadow!.lapsedAt).not.toBeNull();
     await m.handle.watch();
-    expect(settled(net, l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: hash('w') }]);
+    expect(settled(net, l.code)).toEqual([{ kind: 'settled', trade: l.code, txHash: hash('d') }]);
     expect(l.party.proveCalls.at(-1)!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: half }]);
     await m.handle.stop();
   });
@@ -366,7 +366,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     net.settleKinds.set(l.code, 'buyer-cancel');
     await m.handle.watch();
     expect((await record(l.code)).armed?.kind).toBe('buyer-cancel');
-    forged(l, hash('x'), FUNDS);
+    forged(l, hash('e'), FUNDS);
     for (const kind of ['release', 'mutual-cancel']) {
       net.settleKinds.set(l.code, kind);
       await m.handle.watch();
@@ -395,7 +395,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     await m.handle.watch();
     net.states.set(t.code, 'lapsed');
     net.settleKinds.set(t.code, 'lapse-refund');
-    party.funds = { ...party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('y'), height: 90, spentAtomic: FUNDS }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('y'), txKey: KEY }] };
+    party.funds = { ...party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('f'), height: 90, spentAtomic: FUNDS }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('f'), txKey: KEY }] };
     party.prove = () => true;
     await m.handle.watch();
     expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([]);
@@ -404,7 +404,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     net.states.set(t.code, 'settling');
     net.settleKinds.set(t.code, 'mutual-cancel');
     await m.handle.watch();
-    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([{ kind: 'settled', trade: t.code, txHash: hash('y') }]);
+    expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([{ kind: 'settled', trade: t.code, txHash: hash('f') }]);
     await m.handle.stop();
   });
 });
