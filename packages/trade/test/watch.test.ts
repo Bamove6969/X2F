@@ -1,8 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import {
-  SPEND_UNSHOWN_MS,
   WATCH_CLOSED_DAYS,
-  WATCH_RESTART_GRACE_MS,
   WATCH_INTERVAL_MS,
   newWatchState,
   settleKindFor,
@@ -47,13 +45,11 @@ const sweep = (sweptAtomic: bigint, conf: number, txHash = SETTLE, chain = CHAIN
   sweptAtomic,
 });
 
-function step(o: { state?: WatchState; apiState?: TradeState; paused?: boolean; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date; claimed?: boolean; upSince?: Date }) {
+function step(o: { state?: WatchState; apiState?: TradeState; f: EscrowFunds; spend?: SpendEvidence | null; now?: Date }) {
   return watchStep({
-    trade: { state: o.apiState ?? 'funding', ...(o.paused !== undefined ? { paused: o.paused } : {}) },
+    trade: { state: o.apiState ?? 'funding' },
     funds: o.f,
     spend: o.spend ?? null,
-    ...(o.claimed !== undefined ? { claimed: o.claimed } : {}),
-    ...(o.upSince !== undefined ? { upSince: o.upSince } : {}),
     state: o.state ?? newWatchState(),
     now: o.now ?? at(0),
   });
@@ -258,9 +254,7 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 31 },
       { kind: 'late-funds' },
     ]);
-    // Review I2: the API alone never makes the mod close the channels of an escrow its wallet saw funded.
-    expect(r.closeChannels).toBe(false);
-    expect(r.state.channelsClosed).toBe(false);
+    expect(r.closeChannels).toBe(true);
     expect(r.state.swept).toEqual([]);
     // once the sweep is shown, later facts count only the coins it did not take
     const known = step({
@@ -274,74 +268,6 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     // A is now accounted for; LATE is a new late tx, so it escalates on its own
     expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
     expect(known.state.lateReported).toEqual([HASH_A, LATE]);
-    // A sweep its own wallet showed, but LATE is still in the escrow (round 2, R2-I1): no close yet
-    expect(known.closeChannels).toBe(false);
-    expect(known.state.channelsClosed).toBe(false);
-    // ...only once a shown sweep took LATE too does the mod close the channels (once)
-    const all = step({ apiState: 'released', state: known.state, f: funds([inc(HASH_A, 1000n, 45), inc(LATE, 2n, 13)], 0n, 0n), spend: sweep(2n, 2, B2), now: at(7) });
-    expect(all.state.swept).toEqual([HASH_A, LATE]);
-    expect(all.closeChannels).toBe(true);
-    expect(all.state.channelsClosed).toBe(true);
-    expect(step({ apiState: 'released', state: all.state, f: funds([inc(HASH_A, 1000n, 46), inc(LATE, 2n, 14)], 0n, 0n), now: at(8) }).closeChannels).toBe(false);
-  });
-
-  describe('closing the relay channels (review I2): only after a sweep shown, or a close with no coins ever seen', () => {
-    for (const apiState of ['released', 'refunded', 'cancelled'] as TradeState[]) {
-      test(`the API says ${apiState} while the escrow holds coins and no sweep is shown: channels stay open, coins escalate`, () => {
-        let r = step({ apiState: 'secured', f: funds([inc(HASH_A, 1000n, 30)]) });
-        for (let i = 1; i <= 3; i++) {
-          r = step({ apiState, state: r.state, f: funds([inc(HASH_A, 1000n, 30 + i)]), now: at(i) });
-          expect(r.closeChannels).toBe(false);
-        }
-        expect(r.state.channelsClosed).toBe(false);
-        expect(r.state.lateReported).toEqual([HASH_A]);
-      });
-    }
-
-    test('a coin in the pool counts as seen: no close on the API word', () => {
-      const r = step({ apiState: 'cancelled', f: funds([inc(LATE, 50n, 0)]) });
-      expect(r.closeChannels).toBe(false);
-    });
-
-    test('a coin that came and went in a shown sweep: the shown sweep allows the close', () => {
-      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 5) });
-      expect(r.closeChannels).toBe(true);
-    });
-
-    test('a close by the API with no coin ever seen closes once', () => {
-      const r = step({ apiState: 'cancelled', f: funds([]) });
-      expect(r.closeChannels).toBe(true);
-      expect(step({ apiState: 'cancelled', state: r.state, f: funds([]), now: at(1) }).closeChannels).toBe(false);
-    });
-  });
-
-  describe('the channels close only when the shown sweep took every coin (review round 2, R2-I1)', () => {
-    test('a replayed tx mined before the escrow was funded sweeps nothing: settled and late-funds, but no close (the dispute needs the channels)', () => {
-      const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)]) });
-      // the "sweep" is 50 blocks old, the escrow's coin only 30: it cannot have spent it
-      const r = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 31)]), spend: sweep(1000n, 50), now: at(1) });
-      expect(r.state.swept).toEqual([]);
-      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }, { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 31 }, { kind: 'late-funds' }]);
-      expect(r.closeChannels).toBe(false);
-      expect(r.state.channelsClosed).toBe(false);
-      // the dispute that follows still has its channels
-      const d = step({ apiState: 'disputed', state: r.state, f: funds([inc(HASH_A, 1000n, 32)]), now: at(2) });
-      expect(d.closeChannels).toBe(false);
-    });
-
-    test('a sweep that leaves a coin behind keeps the channels open; a later shown sweep that takes it closes them, once', () => {
-      const RULING = '9'.repeat(64);
-      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 40), inc(LATE, 9n, 13)], 9n, 9n), spend: sweep(1000n, 1) });
-      expect(r.state.swept).toEqual([HASH_A]);
-      expect(r.reports.at(-1)).toEqual({ kind: 'late-funds' });
-      expect(r.closeChannels).toBe(false);
-      const disputed = step({ apiState: 'disputed', state: r.state, f: funds([inc(HASH_A, 1000n, 41), inc(LATE, 9n, 14)], 9n, 9n), now: at(1) });
-      expect(disputed.closeChannels).toBe(false);
-      const ruled = step({ apiState: 'refunded', state: disputed.state, f: funds([inc(HASH_A, 1000n, 60), inc(LATE, 9n, 33)], 0n, 0n), spend: sweep(9n, 5, RULING), now: at(2) });
-      expect(ruled.state.swept).toEqual([HASH_A, LATE]);
-      expect(ruled.closeChannels).toBe(true);
-      expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(HASH_A, 1000n, 61), inc(LATE, 9n, 34)], 0n, 0n), now: at(3) }).closeChannels).toBe(false);
-    });
   });
 
   test('a cancelled trade: close both channels; any coin arriving is late', () => {
@@ -354,10 +280,10 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     expect(r2.closeChannels).toBe(false);
   });
 
-  test('a cancel the API reports while coins sit in the escrow: those coins are late too, and the channels stay open (I2)', () => {
+  test('a cancel the API reports while coins sit in the escrow: those coins are late too', () => {
     const r = step({ apiState: 'cancelled', f: funds([inc(LATE, 50n, 0)]) });
     expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 50n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
-    expect(r.closeChannels).toBe(false);
+    expect(r.closeChannels).toBe(true);
   });
 
   test('a cancelled trade swept nothing: even an unlocked coin found at the cancel is late', () => {
@@ -514,156 +440,6 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     }
     // closed again at day 31 without the watcher ever seeing the dispute: the escalation is unconfirmed, keep watching
     expect(step({ apiState: 'refunded', state: r1.state, f: funds([inc(LATE, 50n, 12)]), now: day31 }).watching).toBe(true);
-  });
-
-  describe('no spend shown 6 h after settling started (Task 9 I/O fallback, lead 2026-10-29)', () => {
-    const coins = funds([inc(HASH_A, 1000n, 30)]);
-    const HOURS6 = SPEND_UNSHOWN_MS / 60_000;
-
-    test('escalates once, 6 h after the watcher first saw the trade settling, never earlier', () => {
-      expect(SPEND_UNSHOWN_MS).toBe(6 * 60 * 60_000);
-      let r = step({ apiState: 'paid', f: coins, now: at(0) });
-      expect(r.state.settlingSince).toBeNull();
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10) });
-      expect(r.state.settlingSince).toEqual(at(10));
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 - 1) });
-      expect(r.reports).toEqual([]);
-      expect(r.state.settlingSince).toEqual(at(10)); // the anchor never moves while settling
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6) });
-      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
-      expect(r.state.spendUnshownReported).toBe(true);
-      // once: a later step while still settling (the API not caught up) reports nothing again
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 + 1) });
-      expect(r.reports).toEqual([]);
-      // the dispute: the episode is over
-      r = step({ apiState: 'disputed', state: r.state, f: coins, now: at(10 + HOURS6 + 2) });
-      expect(r.state.settlingSince).toBeNull();
-      expect(r.state.spendUnshownReported).toBe(false);
-      expect(r.watching).toBe(true);
-    });
-
-    test('a settling episode that ends before 6 h (signing window timed out) starts the clock again next time', () => {
-      let r = step({ apiState: 'settling', f: coins, now: at(0) });
-      r = step({ apiState: 'paid', state: r.state, f: coins, now: at(16) });
-      expect(r.state.settlingSince).toBeNull();
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(HOURS6) });
-      expect(r.state.settlingSince).toEqual(at(HOURS6));
-      expect(r.reports).toEqual([]);
-      expect(step({ apiState: 'settling', state: r.state, f: coins, now: at(2 * HOURS6) }).reports).toEqual([{ kind: 'spend-unshown' }]);
-    });
-
-    test('a shown sweep settles instead; nothing escalates', () => {
-      let r = step({ apiState: 'settling', f: coins, now: at(0) });
-      r = step({ apiState: 'settling', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(HOURS6 + 5) });
-      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
-      expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(2 * HOURS6) }).reports).toEqual([]);
-    });
-
-    test('the 6 h never run while the API trade is paused (review M3): they count from the end of the pause', () => {
-      let r = step({ apiState: 'settling', f: coins, now: at(0) });
-      r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(60) });
-      expect(r.state.settlingSince).toEqual(at(60));
-      // a maintenance of 7 h: nothing escalates while paused
-      for (let m = 61; m <= 7 * 60; m += 59) {
-        r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(m) });
-        expect(r.reports).toEqual([]);
-      }
-      r = step({ apiState: 'settling', paused: true, state: r.state, f: coins, now: at(7 * 60) });
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + 1) });
-      expect(r.reports).toEqual([]);
-      expect(r.state.settlingSince).toEqual(at(7 * 60));
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + HOURS6 - 1) });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(7 * 60 + HOURS6) });
-      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
-    });
-
-    test('after a watcher restart the fallback waits WATCH_RESTART_GRACE_MS (review M3): parties resend their info to a mod that was down', () => {
-      expect(WATCH_RESTART_GRACE_MS).toBe(30 * 60_000);
-      let r = step({ apiState: 'settling', f: coins, now: at(0) });
-      // the moderation service was down for 8 h and started again at 8 h
-      const upSince = at(8 * 60);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60), upSince });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60 + 29), upSince });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(8 * 60 + 30), upSince });
-      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
-      // a watcher up for longer than the grace changes nothing
-      let q = step({ apiState: 'settling', f: coins, now: at(0), upSince: at(-60) });
-      q = step({ apiState: 'settling', state: q.state, f: coins, now: at(HOURS6), upSince: at(-60) });
-      expect(q.reports).toEqual([{ kind: 'spend-unshown' }]);
-    });
-
-    test('a state persisted before these fields counts as never seen settling', () => {
-      const old = { ...newWatchState() } as Partial<WatchState>;
-      delete old.settlingSince;
-      delete old.spendUnshownReported;
-      const r = step({ apiState: 'settling', state: old as WatchState, f: coins, now: at(0) });
-      expect(r.state.settlingSince).toEqual(at(0));
-      expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
-    });
-  });
-
-  describe('release claimed by a trade party (Task 9 I/O, lead decision b, 2026-10-29)', () => {
-    const coins = funds([inc(HASH_A, 1000n, 30)]);
-    const HOURS6 = SPEND_UNSHOWN_MS / 60_000;
-
-    test('reported once, on the first step that sees the claim; the 6 h then count from the claim', () => {
-      let r = step({ apiState: 'settling', f: coins, now: at(0) });
-      expect(r.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(5), claimed: false });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10), claimed: true });
-      expect(r.reports).toEqual([{ kind: 'release-claimed' }]);
-      expect(r.state.claimReported).toBe(true);
-      expect(r.state.claimedAt).toEqual(at(10));
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(11), claimed: true });
-      expect(r.reports).toEqual([]);
-      // 6 h after settling started but not after the claim: nothing yet
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(HOURS6 + 5), claimed: true });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6), claimed: true });
-      expect(r.reports).toEqual([{ kind: 'spend-unshown' }]);
-      r = step({ apiState: 'settling', state: r.state, f: coins, now: at(10 + HOURS6 + 1), claimed: true });
-      expect(r.reports).toEqual([]);
-      r = step({ apiState: 'disputed', state: r.state, f: coins, now: at(10 + HOURS6 + 2), claimed: true });
-      expect(r.reports).toEqual([]);
-    });
-
-    test('only while the trade is settling (review M1): a claim that arrives early is kept and reported once settling starts; never after a shown sweep', () => {
-      // A claim sent while the trade is secured (or mid-setup) is not consumed: the API would refuse it.
-      let early = step({ apiState: 'secured', f: coins, now: at(0), claimed: true });
-      expect(early.reports).toEqual([{ kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 }]);
-      expect(early.state.claimReported).toBe(false);
-      early = step({ apiState: 'paid', state: early.state, f: coins, now: at(1), claimed: true });
-      expect(early.reports).toEqual([]);
-      // the real release starts: the claim is reported then
-      early = step({ apiState: 'settling', state: early.state, f: coins, now: at(2), claimed: true });
-      expect(early.reports).toEqual([{ kind: 'release-claimed' }]);
-      expect(early.state.claimedAt).toEqual(at(2));
-      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(1), claimed: true });
-      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
-      expect(step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), now: at(2), claimed: true }).reports).toEqual([]);
-    });
-
-    test('a shown sweep before 6 h after the claim settles normally', () => {
-      let r = step({ apiState: 'settling', f: coins, now: at(0), claimed: true });
-      r = step({ apiState: 'settling', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(HOURS6 - 1), claimed: true });
-      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }]);
-      r = step({ apiState: 'released', state: r.state, f: funds([inc(HASH_A, 1000n, 30)], 0n, 0n), spend: sweep(1000n, 12), now: at(2 * HOURS6), claimed: true });
-      expect(r.reports).toEqual([]);
-    });
-
-    test('a state persisted before these fields reads as not reported', () => {
-      const old = { ...newWatchState() } as Partial<WatchState>;
-      delete old.claimReported;
-      delete old.claimedAt;
-      const r = step({ apiState: 'settling', state: { ...(old as WatchState), lastChain: { receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 30 } }, f: coins, claimed: true });
-      expect(r.reports).toEqual([{ kind: 'release-claimed' }]);
-      expect(newWatchState()).toMatchObject({ claimReported: false, claimedAt: null });
-    });
   });
 
   test('a lapse is not a close: chain facts keep flowing (the timer loop escalates it)', () => {

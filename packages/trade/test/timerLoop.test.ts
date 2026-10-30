@@ -213,14 +213,6 @@ describe('timer loop decisions (Task 9, pure)', () => {
     expect(r.skipped).toEqual([{ code: broken.code, reason: 'wrong-state' }]);
   });
 
-  test('a claimed release is never reverted by the signing window (Task 9 I/O, lead decision b)', () => {
-    const settling = apply(secured(), { type: 'release-started' }, 'seller', at(10)); // settleBy at 25
-    expect(timerEvents([settling], null, at(26))).toEqual([{ code: settling.code, event: { type: 'tick' } }]);
-    const claimed = sys(settling, { type: 'release-claimed' }, at(12));
-    for (const m of [26, 60, 10 + 6 * 60 + 1]) expect(timerEvents([claimed], null, at(m))).toEqual([]);
-    expect(pass([claimed], null, at(30))[0]!.state).toBe('settling');
-  });
-
   test('a bad clock is refused', () => {
     expect(() => timerEvents([taken()], null, new Date(Number.NaN))).toThrow(RangeError);
     expect(() => timerEvents([taken()], new Date(Number.NaN), at(1))).toThrow(RangeError);

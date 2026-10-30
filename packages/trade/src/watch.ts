@@ -15,11 +15,8 @@
  *   in blocks), no `chain` is reported: a pool sweep must not read as "the escrow is empty".
  *   wallet2's balance leaves pool deposits out, so they never count as spending.
  * - `settled { txHash }` only for a sweep in a block; a pool-only tx is not settled.
- * - Close both relay channels once (review I2, 2026-10-29) only after a sweep this mod's own wallet
- *   showed (`settledTx`), or when the API says closed and the escrow never received a coin (pool
- *   included); and (review round 2, R2-I1) only on a step with no late coin: the shown sweeps took
- *   every coin the escrow received, so a step that escalates late funds never closes them. The API's word alone never closes the channels of an escrow that holds or held coins:
- *   those coins are reported late and escalate instead. A closed escrow is dropped 30 days after its LATEST close, and only while the API
+ * - On `released`/`refunded` (our own `settled`) or `cancelled` (from the API): close both relay
+ *   channels once. A closed escrow is dropped 30 days after its LATEST close, and only while the API
  *   trade is still closed: a trade seen open again (late funds escalated it, or a dispute after a
  *   refund) keeps its watcher, and its next close restarts the 30 days.
  * - Late funds are judged by incoming transactions, never by the balance (a multisig wallet that
@@ -37,22 +34,6 @@
  *   escalates again while the first does not. A later sweep that is shown (e.g. a ruling's) takes,
  *   by the same exact-prefix rule, the oldest of the coins not yet swept. A sweep tx itself is never
  *   counted as a late coin.
- * - Fallback (lead 2026-10-29): `spend-unshown` (the API turns it into `escalate`) once the trade
- *   has been settling for SPEND_UNSHOWN_MS with no sweep shown, counted from the first step that
- *   saw it settling (`settlingSince`, persisted). Once per settling episode; an episode ends when
- *   the trade is seen in any other open state (a signing window that timed out, or the dispute).
- *   Review M3: while the API trade is paused (maintenance) the 6 h do not run (the anchor follows the
- *   pause, so they count from its end), and after the watcher (re)starts nothing escalates for
- *   WATCH_RESTART_GRACE_MS, so the parties' resends can reach a moderation service that was down.
- * - Release claimed (lead decision b, 2026-10-29): `release-claimed` (the API records it, and the
- *   signing window then no longer returns the trade to `settleFrom`) once, on the first step whose
- *   `claimed` is set: the mod's party received a sealed, signed post-release info (`spend.info`, or
- *   `spend.claim` when it is too big to send) from the buyer or seller, whether or not its import
- *   was refused. Reported only on a step that sees the trade `settling` (review M1: a claim that
- *   arrives early, e.g. while `secured`, stays pending until settling starts), never once a sweep
- *   is shown. Once per TRADE (review M4): a party sends its spend info once per trade, so a later
- *   settling episode never gets a second claim. The 6 h fallback then counts from the later of the
- *   episode's start and the claim.
  */
 import type { TradeState } from './machine.js';
 import type { SettleKind } from './payouts.js';
@@ -60,14 +41,6 @@ import { UNLOCK_CONFIRMATIONS } from './timers.js';
 
 export const WATCH_INTERVAL_MS = 15_000;
 export const WATCH_CLOSED_DAYS = 30;
-/** A trade settling this long with no sweep shown to the moderator escalates (Task 9 I/O fallback). */
-export const SPEND_UNSHOWN_MS = 6 * 60 * 60_000;
-/**
- * After the watcher (re)starts, the fallback waits this long (review M3): a buyer or seller whose
- * spend.info could not reach a moderation service that was down resends it (the party's own resends,
- * at most 60 s apart), so a sweep is shown before anything escalates.
- */
-export const WATCH_RESTART_GRACE_MS = 30 * 60_000;
 
 /**
  * One transaction paying the escrow, by absolute block height (null while in the pool). The I/O
@@ -91,11 +64,10 @@ export interface EscrowFunds {
 /**
  * A sweep of this escrow.
  *
- * RULE: the I/O layer passes a tx here only once it is SHOWN to spend this escrow's outputs by the
- * mod wallet's own outgoing view: a tx it co-signed itself, or (review I1) one it found only after
- * importing a party's multisig info AND whose tx key proves it pays at least `sweepMinimums` of the
- * mod's own signed terms (a party could forge partial key images, so the import alone is not proof).
- * A tx hash seen in a block (or reported by a party or the API) is never enough.
+ * RULE: the I/O layer passes a tx here only once it is SHOWN to spend this escrow's outputs, by
+ * the mod wallet's own `spentBy` after a multisig info import, or by checking the tx's key images
+ * against the escrow's outputs. A tx hash seen in a block (or reported by a party or the API) is
+ * never enough.
  *
  * `height` is the block it is in (null while in the pool). `sweptAtomic` is everything the sweep
  * spent: the sum of the outcome's payouts PLUS the network fee (the fee comes off payout 0, so the
@@ -114,7 +86,7 @@ export interface ChainFacts {
   confirmations: number;
 }
 
-export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' } | { kind: 'spend-unshown' } | { kind: 'release-claimed' };
+export type WatchReport = ({ kind: 'chain' } & ChainFacts) | { kind: 'settled'; txHash: string } | { kind: 'late-funds' };
 
 /** Persisted per escrow by the watcher (moderation database). */
 export interface WatchState {
@@ -134,17 +106,6 @@ export interface WatchState {
   /** A `late-funds` was reported and the API has not yet been seen `disputed`: the watch never ends meanwhile. */
   escalationPending: boolean;
   channelsClosed: boolean;
-  /**
-   * When this watcher first saw the current settling episode (null when not settling). Optional so
-   * that a state persisted before the field reads as never seen settling.
-   */
-  settlingSince?: Date | null;
-  /** `spend-unshown` was reported for the current settling episode. */
-  spendUnshownReported?: boolean;
-  /** `release-claimed` was reported (once per trade, review M4). Optional: absent reads as not reported. */
-  claimReported?: boolean;
-  /** When that report was made; the 6 h fallback counts from it when it is later than `settlingSince`. */
-  claimedAt?: Date | null;
 }
 
 export interface WatchStepResult {
@@ -170,10 +131,6 @@ export function newWatchState(): WatchState {
     reopened: false,
     escalationPending: false,
     channelsClosed: false,
-    settlingSince: null,
-    spendUnshownReported: false,
-    claimReported: false,
-    claimedAt: null,
   };
 }
 
@@ -234,16 +191,11 @@ const same = (a: ChainFacts | null, b: ChainFacts): boolean =>
   a !== null && a.receivedAtomic === b.receivedAtomic && a.unlockedAtomic === b.unlockedAtomic && a.confirmations === b.confirmations;
 
 export function watchStep(a: {
-  /** The API trade: its state, and whether it is paused for maintenance (the fallback does not run then). */
-  trade: { state: TradeState; paused?: boolean };
+  trade: { state: TradeState };
   funds: EscrowFunds;
   spend: SpendEvidence | null;
   state: WatchState;
   now: Date;
-  /** The mod's party has received a trade party's sealed post-release info (see the module comment). */
-  claimed?: boolean;
-  /** When this watcher process started; the fallback waits WATCH_RESTART_GRACE_MS after it. Absent: no grace. */
-  upSince?: Date;
 }): WatchStepResult {
   if (!(a.now instanceof Date) || Number.isNaN(a.now.getTime())) throw new RangeError('bad clock');
   checkFunds(a.funds);
@@ -280,36 +232,12 @@ export function watchStep(a: {
       // Closed by the API alone: nothing is shown to be swept, so every coin is unaccounted.
       s = { ...s, closedAt: a.now, swept: [] };
     } else {
-      // Fallback: settling with no sweep shown for SPEND_UNSHOWN_MS escalates, once per episode
-      // (after any chain facts, so the API holds the coins it escalates on).
-      // A claim is consumed only while settling (review M1): one that arrives early (secured, or
-      // mid-setup) stays pending and is reported once a settling episode starts.
-      const claimNow = a.claimed === true && s.claimReported !== true && a.trade.state === 'settling';
-      if (claimNow) s = { ...s, claimReported: true, claimedAt: a.now };
-      let escalate = false;
-      if (a.trade.state === 'settling') {
-        // Paused (maintenance): no timer runs and the parties cannot act, so the 6 h restart from
-        // the end of the pause (review M3).
-        const since = a.trade.paused === true ? a.now : (s.settlingSince ?? a.now);
-        s = { ...s, settlingSince: since, spendUnshownReported: s.spendUnshownReported === true };
-        const claimedAt = s.claimedAt ?? null;
-        const anchor = claimedAt !== null && claimedAt.getTime() > since.getTime() ? claimedAt : since;
-        const graceOver = a.upSince === undefined || a.now.getTime() - a.upSince.getTime() >= WATCH_RESTART_GRACE_MS;
-        escalate = a.trade.paused !== true && graceOver && !s.spendUnshownReported && a.now.getTime() - anchor.getTime() >= SPEND_UNSHOWN_MS;
-      } else {
-        s = { ...s, settlingSince: null, spendUnshownReported: false };
-      }
       // wallet2's balance leaves pool deposits out: compare with what came in in blocks.
       const spending = spend !== null || funds.balance < sum(funds.incoming.filter((i) => i.height !== null));
       const facts: ChainFacts = { receivedAtomic: funds.balance, unlockedAtomic: funds.unlocked, confirmations: lowest(funds.incoming, chainHeight) };
       if (!spending && !same(s.lastChain, facts)) {
         reports.push({ kind: 'chain', ...facts });
         s = { ...s, lastChain: facts };
-      }
-      if (claimNow) reports.push({ kind: 'release-claimed' });
-      if (escalate) {
-        reports.push({ kind: 'spend-unshown' });
-        s = { ...s, spendUnshownReported: true };
       }
       return { reports, closeChannels: false, state: s, watching: true };
     }
@@ -331,16 +259,10 @@ export function watchStep(a: {
     };
   }
   // Closed: close the channels once, and watch for coins no sweep took (a sweep tx itself is never a late coin).
-  // Review I2: only once this mod's own wallet showed a sweep, or when the escrow never received a
-  // coin (pool included). A close known only from the API, of an escrow that holds or held coins,
-  // keeps both channels open: the parties may still need them to settle or to deliver spend.info.
-  // Review round 2 (R2-I1): and only once no coin is late, i.e. the shown sweeps took every coin the
-  // escrow received. A sweep that took less (a replayed old tx sweeps nothing; a coin that arrived
-  // after the build) escalates on this same step, and that dispute needs both channels.
+  const closeChannels = !s.channelsClosed;
+  s = { ...s, channelsClosed: true };
   const notLate = new Set([...(s.swept ?? []), ...s.sweepTxs]);
   const late = funds.incoming.filter((i) => !notLate.has(i.txHash));
-  const closeChannels = !s.channelsClosed && late.length === 0 && (s.settledTx !== null || funds.incoming.length === 0);
-  if (closeChannels) s = { ...s, channelsClosed: true };
   if (late.length > 0) {
     const facts: ChainFacts = {
       receivedAtomic: sum(late),

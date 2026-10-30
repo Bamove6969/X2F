@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { feeFor } from '@x2f/core';
-import { escrowPlan, payoutsFor, sweepMinimums, type AttestedTerms, type SettleKind } from '../src/index.js';
+import { escrowPlan, payoutsFor, type SettleKind } from '../src/index.js';
 
 const BUYER = 'buyer-payout-address';
 const SELLER = 'seller-refund-address';
@@ -165,50 +165,5 @@ describe('payoutsFor: inconsistent inputs fail closed', () => {
 
   test('an empty address', () => {
     expect(() => payoutsFor({ ...args('auto-refund', 'buyer', AMOUNT), sellerRefund: '' })).toThrow(RangeError);
-  });
-});
-
-describe('sweepMinimums: what a sweep shown only through an import must provably pay (review I1)', () => {
-  const terms = (poster: 'seller' | 'buyer', take = AMOUNT): AttestedTerms => ({
-    deal: { poster, takeAmountAtomic: take.toString(), currency: 'EUR', centsPerXmr: '15000', maxFiatCents: '100000' },
-    buyerPayout: BUYER,
-    sellerRefund: SELLER,
-  });
-
-  test('release: at least the take-time buyer payout (fee off it on a buyer ad) and the take-time fee, to the signed addresses', () => {
-    expect(sweepMinimums({ kind: 'release', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 5n * AMOUNT })).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
-    ]);
-    expect(sweepMinimums({ kind: 'release', terms: terms('buyer'), feeWallet: FEE, sweptAtomic: AMOUNT })).toEqual([
-      { address: BUYER, amountAtomic: AMOUNT - FEE_AMOUNT },
-      { address: FEE, amountAtomic: FEE_AMOUNT },
-    ]);
-  });
-
-  test('a grown release only pays more: an honest one always meets the minimums', () => {
-    for (const poster of ['seller', 'buyer'] as const) {
-      const min = sweepMinimums({ kind: 'release', terms: terms(poster), feeWallet: FEE, sweptAtomic: 0n })!;
-      const grown = payoutsFor(args('release', poster, 3n * AMOUNT, 2n * AMOUNT));
-      for (const m of min) expect(grown.find((g) => g.address === m.address)!.amountAtomic).toBeGreaterThanOrEqual(m.amountAtomic);
-    }
-  });
-
-  test('a seller-buyer refund (lapse, mutual cancel): everything the sweep spent, to the seller', () => {
-    for (const kind of ['lapse-refund', 'mutual-cancel'] as SettleKind[]) {
-      expect(sweepMinimums({ kind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 777n })).toEqual([{ address: SELLER, amountAtomic: 777n }]);
-    }
-  });
-
-  test('a kind the moderator co-signs is never shown through an import: null', () => {
-    for (const kind of ['auto-refund', 'buyer-cancel'] as SettleKind[]) {
-      expect(sweepMinimums({ kind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 777n })).toBeNull();
-    }
-  });
-
-  test('bad input fails closed', () => {
-    expect(() => sweepMinimums({ kind: 'release', terms: { ...terms('seller'), buyerPayout: FEE }, feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
-    expect(() => sweepMinimums({ kind: 'mutual-cancel', terms: terms('seller'), feeWallet: FEE, sweptAtomic: 0n })).toThrow(RangeError);
-    expect(() => sweepMinimums({ kind: 'nope' as SettleKind, terms: terms('seller'), feeWallet: FEE, sweptAtomic: 1n })).toThrow(RangeError);
   });
 });

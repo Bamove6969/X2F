@@ -1,8 +1,6 @@
 import { assertLoginNamesTagged } from './accounts.js';
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
-import { tradeEventPublisher } from './events/tradePublisher.js';
-import { startTimers } from './trades/timers.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -97,14 +95,7 @@ await app.listen({ ...LISTEN_OPTIONS, host: process.env.X2F_HOST || '127.0.0.1',
 // to a private interface only (default 127.0.0.1) and holds no secret beyond MOD_SIGNING_PUBLIC.
 const modSigningPublic = process.env.X2F_MOD_SIGNING_PUBLIC;
 const internal = modSigningPublic
-  ? await buildInternalListener({
-      db,
-      modSigningPublic,
-      now: () => deps.clock().getTime(),
-      clock: deps.clock,
-      // Task 9: a watcher report's committed event reaches both traders like any other trade event.
-      publish: tradeEventPublisher({ events: app.events, push: app.push }),
-    })
+  ? await buildInternalListener({ db, modSigningPublic, now: () => deps.clock().getTime() })
   : null;
 if (internal) {
   await internal.listen({
@@ -114,18 +105,8 @@ if (internal) {
   });
 }
 
-// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation; maintenance pause/resume once
-// Plan 4's site_flags exists, tripwire NEEDS_SITE_FLAGS).
-const timers = startTimers({
-  db,
-  clock: deps.clock,
-  publish: tradeEventPublisher({ events: app.events, push: app.push }),
-  log: (e) => app.log.info({ reason: e.reason }, 'trade timers'),
-});
-
 const shutdown = async () => {
   await stopHolds();
-  await timers.stop(); // lets a pass in flight finish before the pool closes
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
   if (internal) await internal.close();

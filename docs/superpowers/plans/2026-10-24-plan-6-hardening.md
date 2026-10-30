@@ -1045,7 +1045,6 @@ This task builds nothing that ships. It answers, on real devices (an Android 14+
   4. The vault keys generated (Task 10).
   5. `X2F_LEGACY_SECRETS=off`.
   6. `X2F_MONERO_NETWORK=mainnet`, and the starter limits (spec 2.3) on, at the owner's values.
-     - [ ] Gate before this step: Plan 3 Task 9 R3-M1 is built (Plan 4 Task 14: re-register the relay channels after a full close for late funds, plus a relay-side registration expiry). See `2026-10-15-plan-3-trading.md` line 17.
   7. The FIDO snapshot refreshed.
   8. The production leaked list built, and its size recorded in `docs/dev-setup.md`.
   9. `npm run preflight -w @x2f/api` → `"ok":true`.

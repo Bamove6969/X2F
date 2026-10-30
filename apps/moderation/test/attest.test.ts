@@ -133,10 +133,8 @@ async function moderation(fetch: Fetch, runParty: (a: ModPartyArgs) => void = ()
       keystoreKey,
       signingSecret: modSign.secret,
       feeWallet: '5'.repeat(95),
-      relayUrl: 'ws://relay.test',
-      network: 'regtest',
     },
-    { fetch, runParty, now: () => NOW, intervalMs: 0, watchIntervalMs: 0 },
+    { fetch, runParty, now: () => NOW, intervalMs: 0 },
   );
 }
 
@@ -207,8 +205,8 @@ describe('attesting a trade', () => {
       const reasons: string[] = [];
       const net = fakeNetwork(() => [{ trade: code, participants: { buyer: buyer.reg, seller: seller.reg }, terms } as unknown as WorkItem]);
       const mod = await startModeration(
-        { apiInternalUrl: API, relayAdminUrl: RELAY, daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95), relayUrl: 'ws://relay.test', network: 'regtest' },
-        { fetch: net.fetch, now: () => NOW, intervalMs: 0, watchIntervalMs: 0, runParty: () => {}, log: (e) => void reasons.push(e.reason) },
+        { apiInternalUrl: API, relayAdminUrl: RELAY, daemonUri: 'http://127.0.0.1:1', db, keystoreKey, signingSecret: modSign.secret, feeWallet: '5'.repeat(95) },
+        { fetch: net.fetch, now: () => NOW, intervalMs: 0, log: (e) => void reasons.push(e.reason) },
       );
       expect(await mod.tick()).toEqual([]);
       expect(net.reports).toHaveLength(0);
