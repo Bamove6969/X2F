@@ -74,7 +74,7 @@ const DAY = 24 * HOUR;
  * Every 10 minutes (registered in `main.ts`): challenges expired over 1 hour ago; sessions past
  * `expires_at` or revoked over 1 hour ago; throttle rows idle over 1 hour; daily counts older than
  * 2 days; trusted devices unused 90 days; alerts older than 90 days; confirm tokens expired over
- * 1 hour ago (Task 5).
+ * 1 hour ago (Task 5); login approvals expired over 1 hour ago (Task 16).
  */
 export const purgeExpired: RetentionJob = {
   name: 'purgeExpired',
@@ -89,6 +89,8 @@ export const purgeExpired: RetentionJob = {
       ['delete from trusted_devices where last_used_at < $1', [ago(90 * DAY)]],
       ['delete from alerts where created_at < $1', [ago(90 * DAY)]],
       ['delete from confirm_tokens where expires_at < $1', [ago(HOUR)]],
+      // Task 16: approvals live minutes; the account's alerts keep the record.
+      ['delete from login_approvals where expires_at < $1', [ago(HOUR)]],
     ];
     let total = 0;
     for (const [sql, params] of statements) total += (await db.query(sql, params)).rowCount ?? 0;

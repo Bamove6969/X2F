@@ -38,6 +38,15 @@ export const CANT_DO_CODES = [
   // API's own codes are bad-request and not-found; this one is the web's, for the popup's
   // feedback link.
   'cannot-block',
+  // Plan 2 Task 16: the device limit when approving a new device (a login itself is never refused
+  // by it since Task 17 review round 2), and the cap on login approvals an account may start in an hour. The API answers the cap
+  // with 429 `slow-down` `{ reason: 'approvals' }`; this code is the web's, for the popup's
+  // feedback link (a throttle on tries stays a `slow-down` fault).
+  'too-many-devices',
+  'too-many-approvals',
+  // Plan 2 Task 17 review round 2 (N-I3, N-M3): a session whose login waits may not log a stronger
+  // one out, answer a strong login, or hide the hold's warnings.
+  'weak-session',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -109,6 +118,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  'approval-ended': 'the login request itself already ended (approved, blocked or timed out): its own state, not a rule',
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',
@@ -141,6 +151,9 @@ export const CANT_DO_TITLE = {
   extend: "You can't give more time",
   block: "You can't block this trader",
   myOffers: "Some offers can't be turned on",
+  login: "You can't log in here yet",
+  approve: "This login can't be let in",
+  devices: "That device can't be logged out from here",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -272,3 +285,57 @@ export const MY_OFFERS_HIDDEN = {
   'method-unavailable': "On, hidden: this payment method isn't available right now",
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
+
+// ---------------------------------------------------------------------------------------------
+// Plan 2 Tasks 16-17: new-device approval and the 24-hour hold. COPY-UNSIGNED (Plan 3 Task 41).
+
+/** The device limit's code. */
+export const TOO_MANY_DEVICES_CODE = 'too-many-devices' satisfies CantDoCode;
+/** The hourly cap on login approvals (the web's code for 429 `slow-down` `{ reason: 'approvals' }`). */
+export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode;
+/** The 24-hour hold's code (a held backup session, or the account's hold). */
+export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
+
+/**
+ * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
+ * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
+ * `when` is "until Tue 3:05 PM" or "for a day".
+ */
+export function holdText(when: string): string {
+  return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
+}
+
+/**
+ * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
+ * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * It says what this login cannot do and what the reader can do, whatever methods the account has
+ * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
+ * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED
+ */
+export function holdLoginText(when: string): string {
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
+}
+
+/** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */
+export const TOO_MANY_DEVICES_APPROVE =
+  'Your account is logged in on the most devices allowed, so log out a device first. Choose one to log out, or block this login.';
+
+/** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
+export const TOO_MANY_APPROVALS =
+  'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
+
+/** The code of a session whose login waits (Plan 2 Task 17 review round 2). */
+export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
+
+/**
+ * 403 `weak-session`: this device logged in with only one way of proving it's you, so it cannot
+ * log out a device that logged in more strongly (or any device during the 24-hour hold), nor
+ * answer a login made with a passkey or two ways.
+ */
+export const WEAK_SESSION_TEXT =
+  "This device logged in with only one way of proving it's you, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+
+/** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
+export function holdApproveText(when: string): string {
+  return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
+}

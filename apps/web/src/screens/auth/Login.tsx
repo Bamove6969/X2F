@@ -2,18 +2,22 @@
  * The login screen (Task 30, P3-C4). Four ways in: PGP (paste your key, decrypt the message, paste
  * the code — no login name, owner 2026-10-23), a passkey, a security key, or a login name and
  * password. A password login may ask for an authenticator code. "Use a backup" leads to the
- * recovery-code / TOTP screen. After a login the Terms screen comes first when they have changed
+ * recovery-code / TOTP screen. A trader logging in on a new device while logged in elsewhere waits
+ * for that device's approval (Plan 2 Task 16, `ApproveOnDevice`). After a login the Terms screen comes first when they have changed
  * (R10), otherwise the page returns to wherever the session expired (`returnTo`).
  */
 import { useCallback, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
 import { startAuthentication } from '@simplewebauthn/browser';
-import { loginWithPasskey, loginWithSecurityKey, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
+import { loginWithPasskey, loginWithSecurityKey, type ApprovalWait, type LoginResult, type MethodType, type PgpChallenge } from '@x2f/auth-client';
 import { returnToFrom } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
+import { ApproveOnDevice } from './ApproveOnDevice.js';
 import { afterLogin, authApi, deviceLabel, passwordLogin, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { loginFailure, shouldSendAway } from './loginRules.js';
-import { isExpired, refusalText } from './refusals.js';
+import { isExpired, loginCantDo, refusalText } from './refusals.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
 
 /**
@@ -29,8 +33,35 @@ export function Login() {
   const location = useLocation();
   const returnTo = returnToFrom(location.search);
   const [method, setMethod] = useState<Method>('choose');
+  const [waiting, setWaiting] = useState<ApprovalWait | null>(null);
+  // Plan 2 Task 16 / Plan 5 Task 21: a login refused by a rule (the device limit, the hourly cap on approvals).
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
 
   const onLoggedIn = useCallback(() => void afterLogin((to) => navigate(to), returnTo), [navigate, returnTo]);
+  const onCantDo = useCallback((e: unknown) => {
+    const c = loginCantDo(e, 'login');
+    if (c !== null) setCantDo(c);
+    return c !== null;
+  }, []);
+  const go = { onLoggedIn, onWait: setWaiting, onCantDo };
+
+  if (waiting !== null) {
+    return (
+      <main className="x2f-screen" data-screen="login">
+        <h1 className="x2f-screen__title">Log in</h1>
+        <ApproveOnDevice
+          key={waiting.approvalId}
+          wait={waiting}
+          returnTo={returnTo}
+          onLoggedIn={onLoggedIn}
+          onRestart={() => {
+            setWaiting(null);
+            setMethod('choose');
+          }}
+        />
+      </main>
+    );
+  }
 
   return (
     <main className="x2f-screen" data-screen="login">
@@ -57,10 +88,12 @@ export function Login() {
         </Button>
       )}
 
-      {method === 'pgp' ? <PgpLogin onLoggedIn={onLoggedIn} /> : null}
-      {method === 'passkey' ? <PasskeyLogin onLoggedIn={onLoggedIn} /> : null}
-      {method === 'security-key' ? <SecurityKeyLogin onLoggedIn={onLoggedIn} /> : null}
-      {method === 'password' ? <PasswordLogin onLoggedIn={onLoggedIn} /> : null}
+      {method === 'pgp' ? <PgpLogin {...go} /> : null}
+      {method === 'passkey' ? <PasskeyLogin {...go} /> : null}
+      {method === 'security-key' ? <SecurityKeyLogin {...go} /> : null}
+      {method === 'password' ? <PasswordLogin {...go} /> : null}
+
+      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.login} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
 
       <p className="x2f-screen__foot">
         <Link className="x2f-link" to={`/login/backup?returnTo=${encodeURIComponent(returnTo)}`} data-part="use-backup">
@@ -80,6 +113,14 @@ function ErrorLine({ error, part }: { error: string | null; part?: string }) {
   );
 }
 
+/** What a login step does next: open the app, or wait for a logged-in device's approval (Task 16). */
+interface Go {
+  onLoggedIn: () => void;
+  onWait: (w: ApprovalWait) => void;
+  /** Shows a rule's refusal in CantDoThat; false when `e` is not one (the step words it inline). */
+  onCantDo: (e: unknown) => boolean;
+}
+
 /** A two-factor login waiting for its second step: the account's `pendingId` and what it `needs`. */
 interface Pending {
   pendingId: string;
@@ -93,7 +134,7 @@ const NEEDS_WORDS: Partial<Record<MethodType, string>> = { pgp: 'PGP key', 'secu
  * keys, or PGP plus a passkey). It offers exactly what the server `needs`; the `pendingId` from the
  * first step names the account, so no login name is asked for.
  */
-function SecondStep({ pending, onLoggedIn }: { pending: Pending; onLoggedIn: () => void }) {
+function SecondStep({ pending, onLoggedIn, onWait, onCantDo }: { pending: Pending } & Go) {
   const offered = pending.needs.filter((m): m is 'pgp' | 'security-key' | 'passkey' => m in NEEDS_WORDS);
   const words = offered.map((m) => NEEDS_WORDS[m]!).join(' or ');
   return (
@@ -103,19 +144,19 @@ function SecondStep({ pending, onLoggedIn }: { pending: Pending; onLoggedIn: () 
       ) : (
         <p className="x2f-note">This account also needs its {words}.</p>
       )}
-      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} pendingId={pending.pendingId} /> : null}
+      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} pendingId={pending.pendingId} /> : null}
       {/* One orange action: PGP's when it is offered, else the first key's. */}
       {offered.includes('security-key') ? (
-        <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} />
+        <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />
       ) : null}
       {offered.includes('passkey') ? (
-        <SecondStepKey kind="passkey" primary={!offered.includes('pgp') && !offered.includes('security-key')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} />
+        <SecondStepKey kind="passkey" primary={!offered.includes('pgp') && !offered.includes('security-key')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />
       ) : null}
     </div>
   );
 }
 
-function SecondStepKey({ kind, primary, pendingId, onLoggedIn }: { kind: 'security-key' | 'passkey'; primary: boolean; pendingId: string; onLoggedIn: () => void }) {
+function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait, onCantDo }: { kind: 'security-key' | 'passkey'; primary: boolean; pendingId: string } & Go) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = kind === 'passkey' ? 'passkey' : 'security key';
@@ -128,10 +169,11 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn }: { kind: 'securi
       const response = await startAuthentication({ optionsJSON: options });
       const result = await authApi.loginWebAuthnFinish({ challengeId, response, deviceLabel: deviceLabel(), pendingId });
       if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
       // not-a-refusal: an account state this screen cannot handle; staff support helps
       else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
     } catch (e) {
-      setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
+      if (!onCantDo(e)) setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
     } finally {
       setBusy(false);
     }
@@ -148,7 +190,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn }: { kind: 'securi
 }
 
 /** PGP login, or (with `pendingId`) the PGP second step of a two-factor login. */
-function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pendingId?: string }) {
+function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pendingId?: string }) {
   const [publicKey, setPublicKey] = useState('');
   const [challenge, setChallenge] = useState<PgpChallenge | null>(null);
   const [code, setCode] = useState('');
@@ -178,8 +220,10 @@ function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pe
     try {
       const result: LoginResult = await pgpLoginFinish(challenge!.challengeId, code.trim());
       if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
+      if (onCantDo(e)) return;
       setError(
         isExpired(e)
           ? 'That message has expired. Send a new message and try again.'
@@ -197,7 +241,7 @@ function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pe
     );
   };
 
-  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} />;
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />;
 
   return (
     <section className="x2f-stack" data-part="pgp">
@@ -252,7 +296,7 @@ function PgpLogin({ onLoggedIn, pendingId: first }: { onLoggedIn: () => void; pe
   );
 }
 
-function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
+function PasskeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -262,9 +306,10 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result = await loginWithPasskey(authApi, deviceLabel());
       if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
       else setError('This account needs a staff login. Use PGP or a security key.');
     } catch (e) {
-      setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
+      if (!onCantDo(e)) setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
@@ -281,7 +326,7 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   );
 }
 
-function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
+function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [loginName, setLoginName] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -293,16 +338,17 @@ function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result = await loginWithSecurityKey(authApi, loginName.trim(), deviceLabel());
       if (result.status === 'ok') onLoggedIn();
+      else if (result.status === 'approve-on-device') onWait(result);
       // Staff and the owner: the second step is whatever the server needs (often PGP), never the same key again.
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
-      setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
+      if (!onCantDo(e)) setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
   };
 
-  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} />;
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />;
 
   return (
     <section className="x2f-stack" data-part="security-key">
@@ -320,7 +366,7 @@ function SecurityKeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
   );
 }
 
-function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
+function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [loginName, setLoginName] = useState('');
   const [password, setPassword] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -337,6 +383,10 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
         onLoggedIn();
         return;
       }
+      if (result.status === 'approve-on-device') {
+        onWait(result);
+        return;
+      }
       setPendingId(result.pendingId);
     } catch (e) {
       // The server counts misses per browser, so neither a reload nor a method switch resets it.
@@ -345,7 +395,7 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
         return;
       }
       // Any mismatch reads the same; an outage or a rate limit is not a miss.
-      setError(loginFailure(e));
+      if (!onCantDo(e)) setError(loginFailure(e));
     } finally {
       setBusy(false);
     }
@@ -355,10 +405,11 @@ function PasswordLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     setBusy(true);
     setError(null);
     try {
-      await authApi.loginSecondFactor({ pendingId: pendingId!, code: totp.trim() });
-      onLoggedIn();
+      const result = await authApi.loginSecondFactor({ pendingId: pendingId!, code: totp.trim() });
+      if (result.status === 'approve-on-device') onWait(result);
+      else onLoggedIn();
     } catch (e) {
-      setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
+      if (!onCantDo(e)) setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
     } finally {
       setBusy(false);
     }

@@ -31,6 +31,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 import { requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
@@ -404,7 +405,8 @@ export async function checkPgpCode(
   if (expected.sessionId !== undefined && row.session_id !== expected.sessionId) throw expired();
   if (expected.purpose === 'confirm' || expected.purpose === 'add-key') {
     const live = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [row.session_id, now]);
-    if (live.rows.length === 0) throw expired();
+    // Review round 4: a session that ended meanwhile answers as every other route does.
+    if (live.rows.length === 0) throw new ApiError(401, 'not-authenticated');
   }
   const normalized = normalizeLoginCode(code);
   const given = codeHash(normalized ?? '');
@@ -757,21 +759,25 @@ async function addKeyStart(req: FastifyRequest) {
   });
 }
 
-async function addKeyFinish(req: FastifyRequest) {
+async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const b = body(req);
   const row = await checkPgpCode(deps, req, str(b, 'challengeId'), str(b, 'code'), {
     purpose: 'add-key', accountId: req.auth.accountId, sessionId: req.auth.sessionId,
   });
   const pending = readPendingKey(row.payload, 'key');
-  const armored = openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint);
+  // The challenge holds the storable key already sealed under `subkey('pgp-key')`: stored as is.
+  const sealed = Buffer.from(pending.keyEnc, 'base64');
+  openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
   const now = deps.clock();
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
   try {
     await client.query('begin');
     try {
-      await insertPgpKey(client, deps.config, { accountId: req.auth.accountId, fingerprint: pending.fingerprint, armored, now });
-      await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'pgp', fingerprint: pending.fingerprint }, now);
+      // Task 17: a waiting login's new key starts the hold and waits in it.
+      held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc });
+      if (held === null) await applyPgpKey(client, req.auth.accountId, pending.fingerprint, sealed, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -780,7 +786,29 @@ async function addKeyFinish(req: FastifyRequest) {
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, req.auth.accountId);
+    return reply.code(202).send({ ...heldReply(held), fingerprint: pending.fingerprint });
+  }
   return { fingerprint: pending.fingerprint };
+}
+
+/**
+ * The write of an added key (the route's, or a pending one when the hold ends by time): the sealed
+ * storable key as `pendingKey` made it, alert `login-method-added`. 409 `key-in-use` when the
+ * fingerprint is on any account.
+ */
+export async function applyPgpKey(db: Queryable, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
+  try {
+    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
+      accountId, fingerprint, sealed, now,
+    ]);
+  } catch (e) {
+    const err = e as { code?: string; constraint?: string };
+    if (err.code === '23505' && err.constraint === 'pgp_keys_fingerprint_key') throw new ApiError(409, 'key-in-use');
+    throw e;
+  }
+  await addAlert(db, accountId, 'login-method-added', { method: 'pgp', fingerprint }, now);
 }
 
 /**
@@ -808,11 +836,12 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
       preHandler: [
         requireSession({ allowRecovery: true }),
         methodAllowed('pgp'),
+        requireNotHeld,
         inspectNewKey,
         requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp')] }, addKeyFinish);
+  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp'), requireNotHeld] }, addKeyFinish);
 }

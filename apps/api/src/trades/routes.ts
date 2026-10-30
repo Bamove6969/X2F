@@ -3,6 +3,7 @@ import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
+import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
 import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
@@ -57,11 +58,20 @@ export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
 }
 
 /**
+ * Plan 2 Task 17 and R42: trades already open can be finished during the 24-hour hold, from a
+ * backup (recovery) session too, held or not: reading the trade, every trade event (mark paid,
+ * release started and its signals, the buyer's cancel), the final alert's receipt, the
+ * confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
+ * (`take` checks the hold and takes full sessions only).
+ */
+export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allowHeld: true } as const satisfies Parameters<typeof requireSession>[0];
+
+/**
  * `GET /v1/trades/:code` and `POST /v1/trades/:code/events` (Task 6). Trader sessions only, and
  * participants only: anyone else gets the same 404 as for an unknown code.
  */
 export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}): void {
-  const session = requireSession({ kinds: ['trader'] });
+  const session = requireSession(FINISH_OPEN_TRADES);
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
   const txConfirmations = opts.txConfirmations ?? noConfirmations;
@@ -150,7 +160,11 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     }
     let next: Trade;
     try {
-      next = await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, e, by);
+      // Review round 5 M2: the session must still be live under the account lock, taken after the
+      // trade row's (a mark-paid in flight across the owner's proof or a logout writes nothing; 401).
+      next = await applyEvent({ db: deps.db, clock: deps.clock, publish }, row.code, e, by, undefined, async (client, now) => {
+        await requireLiveSessionInTx(client, req.auth, now);
+      });
     } catch (err) {
       if (err instanceof TradeRuleError) throw new ApiError(409, err.code);
       throw err;
@@ -178,7 +192,7 @@ export interface ConfirmationsView {
  * address ending; nobody gets an address, an amount or the tx hash.
  */
 export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations, hook: TradePublisher = noPublish): void {
-  const session = requireSession({ kinds: ['trader'] });
+  const session = requireSession(FINISH_OPEN_TRADES);
   // A recorded `return-confirmed` (Task 39) is delivered after the response, as tradeRoutes does.
   const publish: TradePublisher = async (t, e, by) => {
     setImmediate(() => {

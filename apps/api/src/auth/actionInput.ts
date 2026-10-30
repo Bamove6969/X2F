@@ -17,6 +17,7 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'set-password': {},
   'set-login-name': {},
   'new-recovery-codes': {},
+  'set-one-device': { on: (v) => v === 'on' || v === 'off' },
   'add-device-key': { signPublicHash: (v) => HEX64.test(v) },
 };
 

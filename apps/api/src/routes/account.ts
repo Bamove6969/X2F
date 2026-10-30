@@ -1,13 +1,16 @@
-import { checkLoginName, isIdleHours, type AccountKind, type IdleHours, type MethodType } from '@x2f/accounts';
+import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
-import { setLoginName } from '../accounts.js';
+import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
+import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
+import { maxDevices } from '../auth/approval.js';
+import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { STAFF_IDLE_HOURS, deadline, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -31,6 +34,8 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
+  /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
+  accountHoldUntil: string | null;
 }
 
 /**
@@ -150,6 +155,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     logoutTimer: logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
+    accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
   };
 }
 
@@ -180,6 +186,14 @@ export function isLoginNameClash(e: unknown): boolean {
   );
 }
 
+/** The confirm action of `PUT /v1/account/security/one-device`: the body's `on` must be a boolean (else 400, before any token is spent). */
+function oneDeviceAction(req: FastifyRequest): ConfirmAction {
+  const body = req.body;
+  const on = body !== null && typeof body === 'object' && !Array.isArray(body) ? (body as { on?: unknown }).on : undefined;
+  if (typeof on !== 'boolean') throw new ApiError(400, 'bad-request');
+  return { kind: 'set-one-device', on: on ? 'on' : 'off' };
+}
+
 export function accountRoutes(app: FastifyInstance): void {
   const deps = (): Deps => app.deps;
   const readAny = { allowRecovery: true, allowHeld: true } as const;
@@ -197,7 +211,7 @@ export function accountRoutes(app: FastifyInstance): void {
    * takes a register-budget token: a taken name answers like a sign-up's, at the same cost
    * (plan-2-review residual (b)); the login name is never echoed.
    */
-  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireConfirm({ kind: 'set-login-name' })] }, async (req) => {
+  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireNotHeld, requireConfirm({ kind: 'set-login-name' })] }, async (req, reply) => {
     const d = deps();
     req.server.budgets.register.take();
     const body = req.body;
@@ -213,11 +227,18 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
     const client = await d.db.connect();
+    let held: { holdUntil: Date } | null = null;
     try {
       await client.query('begin');
       try {
-        await setLoginName(client, d.config, req.auth.accountId, r.key);
-        await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
+        // Refused at once when taken; FU-D: only the name's keyed tag may wait in the hold, never the name.
+        if (await loginNameTaken(client, d.config, req.auth.accountId, r.key)) throw new ApiError(409, 'names-unavailable');
+        const tag = loginTags(d.config, r.key).current;
+        held = await gateChange(client, req, { kind: 'login-name', tag: tag.toString('base64'), keyId: d.config.loginNameKeys.current });
+        if (held === null) {
+          await setLoginName(client, d.config, req.auth.accountId, r.key);
+          await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
+        }
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -229,11 +250,17 @@ export function accountRoutes(app: FastifyInstance): void {
     } finally {
       client.release();
     }
+    if (held !== null) {
+      pushHoldStarted(req, req.auth.accountId);
+      return reply.code(202).send(heldReply(held));
+    }
     return { ok: true };
   });
 
   app.post(
     '/v1/account/terms',
+    // Task 17 (lead decision 2026-10-30): accepting the Terms is allowed during the hold (not a
+    // security change; refusing it could block finishing open trades).
     { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
@@ -241,9 +268,14 @@ export function accountRoutes(app: FastifyInstance): void {
       const body = req.body as { version?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
-      await d.db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
-        req.auth.accountId, version, d.clock(), 'trader',
-      ]);
+      const now = d.clock();
+      await withTx(d.db, async (db) => {
+        // Review round 4: the accepting session must still be live where it writes.
+        await requireLiveSessionInTx(db, req.auth, now);
+        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
+          req.auth.accountId, version, now, 'trader',
+        ]);
+      });
       return reply.code(204).send();
     },
   );
@@ -270,28 +302,20 @@ export function accountRoutes(app: FastifyInstance): void {
    * moved to `last_seen_at + idleHours` (capped by the 30-day absolute limit); a session already
    * idle that long is refused at its next request by `requireSession`.
    */
-  app.put(LOGOUT_TIMER, { preHandler: requireSession({ kinds: ['trader'] }) }, async (req) => {
+  app.put(LOGOUT_TIMER, { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req, reply) => {
     const d = deps();
     const body = req.body;
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
     const idleHours = (body as { idleHours?: unknown }).idleHours;
     if (!isIdleHours(idleHours)) throw new ApiError(400, 'bad-request');
-    const now = d.clock();
-    const policy = sessionPolicy('trader', 'full', idleHours);
     const client = await d.db.connect();
+    let held: { holdUntil: Date } | null = null;
     try {
       await client.query('begin');
       try {
-        await client.query('update accounts set idle_hours = $2 where id = $1', [req.auth.accountId, idleHours]);
-        const { rows } = await client.query<{ id: string; created_at: Date; last_seen_at: Date }>(
-          `select id, created_at, last_seen_at from sessions
-            where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
-            for update`,
-          [req.auth.accountId, now],
-        );
-        for (const s of rows) {
-          await client.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
-        }
+        // Task 17 (review M2): the logout timer is a Settings -> Security change.
+        held = await gateChange(client, req, { kind: 'logout-timer', idleHours });
+        if (held === null) await applyLogoutTimer(client, req.auth.accountId, idleHours, d.clock());
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -300,8 +324,55 @@ export function accountRoutes(app: FastifyInstance): void {
     } finally {
       client.release();
     }
+    if (held !== null) {
+      pushHoldStarted(req, req.auth.accountId);
+      return reply.code(202).send(heldReply(held));
+    }
     return logoutTimerOf('trader', idleHours);
   });
+
+  const DEVICES = '/v1/account/security/devices';
+
+  // Task 16: the device limit and "One device at a time". Reading changes nothing.
+  app.get(DEVICES, { preHandler: requireSession({ ...readAny, allowStaleTerms: true, kinds: ['trader'] }) }, async (req) => {
+    const d = deps();
+    const { rows } = await d.db.query<{ one_device: boolean }>('select one_device from accounts where id = $1', [req.auth.accountId]);
+    return { oneDevice: rows[0]!.one_device, maxDevices: await maxDevices(d.db) };
+  });
+
+  /**
+   * `PUT /v1/account/security/one-device { on, confirmToken }` (Task 16): full trader sessions only,
+   * behind confirm-it's-you for exactly that change (`set-one-device`, `on: 'on' | 'off'`). It ends
+   * no session by itself: the next approved device does. Alert `one-device-set { on }`.
+   */
+  app.put(
+    '/v1/account/security/one-device',
+    { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld, requireConfirm(oneDeviceAction)] },
+    async (req, reply) => {
+      const d = deps();
+      const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
+      const client = await d.db.connect();
+      let held: { holdUntil: Date } | null = null;
+      try {
+        await client.query('begin');
+        try {
+          held = await gateChange(client, req, { kind: 'one-device', on });
+          if (held === null) await applyOneDevice(client, req.auth.accountId, on, d.clock());
+          await client.query('commit');
+        } catch (e) {
+          await client.query('rollback');
+          throw e;
+        }
+      } finally {
+        client.release();
+      }
+      if (held !== null) {
+        pushHoldStarted(req, req.auth.accountId);
+        return reply.code(202).send(heldReply(held));
+      }
+      return { oneDevice: on, maxDevices: await maxDevices(d.db) };
+    },
+  );
 
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();
@@ -327,9 +398,22 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const { rows } = await d.db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
-      if (rows.length === 0) throw new ApiError(404, 'not-found');
-      await endSession({ ...d, events: req.server.events }, id);
+      const now = d.clock();
+      const ended = await withTx(d.db, async (db) => {
+        // Review round 4: the calling session must still be live where it writes.
+        const caller = await requireLiveSessionInTx(db, req.auth, now);
+        const { rows } = await db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
+        if (rows.length === 0) throw new ApiError(404, 'not-found');
+        // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
+        // may log out only itself, never any other session, hold or not (403 `weak-session`): the
+        // owner's weak phone keeps its session, and with it the push subscription that carries the
+        // hold's warning.
+        if (id !== req.auth.sessionId && weakOf(caller, now)) throw weakRefusal();
+        const r = await db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [id, now]);
+        return (r.rowCount ?? 0) > 0;
+      });
+      // Its streams end once the revocation has committed.
+      if (ended) req.server.events.closeSession(req.auth.accountId, id);
       return reply.code(204).send();
     },
   );
@@ -356,11 +440,77 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const r = await d.db.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2', [
-        id, req.auth.accountId, d.clock(),
-      ]);
-      if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+      const now = d.clock();
+      await withTx(d.db, async (db) => {
+        // Review round 4: the calling session must still be live where it writes.
+        const caller = await requireLiveSessionInTx(db, req.auth, now);
+        // Review round 2 N-M3: a session whose login waits cannot hide the warnings meant for the
+        // owner (the hold's alerts and the login alerts) by marking them seen (403 `weak-session`).
+        const weak = weakOf(caller, now);
+        const r = await db.query<{ kind: string }>(
+          `update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and not ($4::boolean and kind = any($5::text[])) returning kind`,
+          [id, req.auth.accountId, now, weak, OWNER_WARNINGS],
+        );
+        if ((r.rowCount ?? 0) === 0) {
+          const exists = await db.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.auth.accountId]);
+          if (exists.rows.length > 0) throw weakRefusal();
+          throw new ApiError(404, 'not-found');
+        }
+      });
       return reply.code(204).send();
     },
   );
+}
+
+/** The alerts a weak session may not mark seen (review round 2 N-M3): the hold's own and the login alerts. */
+export const OWNER_WARNINGS: readonly string[] = [
+  'hold-started', 'hold-ended', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
+];
+
+/**
+ * A pre-009 account's login name waiting out the hold, applied when the hold ends by time (FU-D:
+ * only its keyed tag was kept). Under `NAMES_LOCK` (review round 2 N-M1; `namesTaken` also counts
+ * the pending tag, so no other sign-up took it meanwhile). 409 `names-unavailable` when another
+ * account took that tag meanwhile or the tag's key is no longer the ring's current one (a tag
+ * under a rotated key could clash with a name taken under the new key, or match nothing once the
+ * old key is retired), 409 `login-name-set` when the account chose its names already. Either way
+ * the change is dropped (alert `hold-ended` `applied: false`).
+ */
+export async function applyLoginName(db: Queryable, config: Config, accountId: string, tag: Buffer, keyId: number, now: Date): Promise<void> {
+  await lockNames(db);
+  if (keyId !== config.loginNameKeys.current) throw new ApiError(409, 'names-unavailable');
+  const taken = await db.query('select 1 from accounts where login_tag_key_id = $2 and login_tag = $3 and id <> $1', [accountId, keyId, tag]);
+  if (taken.rows.length > 0) throw new ApiError(409, 'names-unavailable');
+  const updated = await db.query(
+    `update accounts set login_tag = $2, login_tag_key_id = $3, login_name = null, login_key = null, legacy_login_name = false
+      where id = $1 and legacy_login_name`,
+    [accountId, tag, keyId],
+  );
+  if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
+  await addAlert(db, accountId, 'login-name-set', {}, now);
+}
+
+/**
+ * The write of a logout timer (the route's, or a pending one when the hold ends by time): every
+ * live full session of the account gets its idle deadline moved to `last_seen_at + idleHours`
+ * (capped by the 30-day absolute limit).
+ */
+export async function applyLogoutTimer(db: Queryable, accountId: string, idleHours: IdleHours, now: Date): Promise<void> {
+  const policy = sessionPolicy('trader', 'full', idleHours);
+  await db.query('update accounts set idle_hours = $2 where id = $1', [accountId, idleHours]);
+  const { rows } = await db.query<{ id: string; created_at: Date; last_seen_at: Date }>(
+    `select id, created_at, last_seen_at from sessions
+      where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
+      for update`,
+    [accountId, now],
+  );
+  for (const s of rows) {
+    await db.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
+  }
+}
+
+/** The write of "One device at a time" (the route's, or a pending one when the hold ends by time): alert `one-device-set { on }`. */
+export async function applyOneDevice(db: Queryable, accountId: string, on: boolean, now: Date): Promise<void> {
+  await db.query('update accounts set one_device = $2 where id = $1', [accountId, on]);
+  await addAlert(db, accountId, 'one-device-set', { on }, now);
 }
