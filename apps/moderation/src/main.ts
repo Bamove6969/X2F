@@ -3,13 +3,14 @@ import { generateIdentity, type Identity, type Participants } from '@x2f/protoco
 import { channelFor, type Attestation, type ModPartyArgs } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
 import type pg from 'pg';
-import { AttestRefused, attestTrade, BadTerms } from './attest.js';
-import { loadParty, saveParty, walletPassword } from './keystore.js';
-import { createLink, type Fetch, type Link, type WorkItem } from './link.js';
+import { AttestRefused, attestChat, attestTrade, BadTerms } from './attest.js';
+import { loadChatIdentity, loadParty, saveChatIdentity, saveParty, walletPassword } from './keystore.js';
+import { createLink, type ChatWorkItem, type Fetch, type Link, type WorkItem } from './link.js';
 
-export { AttestRefused, attestTrade, BadTerms, checkWork, signAttestation, type Attested } from './attest.js';
+export { AttestRefused, attestChat, attestTrade, BadTerms, checkChatWork, checkWork, signAttestation, type Attested } from './attest.js';
+export { loadChatIdentity, saveChatIdentity, type ChatModIdentity } from './keystore.js';
 export { loadParty, migrateModeration, modSubkey, open, saveParty, seal, WALLET_PASSWORD_BYTES, walletPassword } from './keystore.js';
-export { createLink, relayRegisterMessage, type Fetch, type Link, type WorkItem } from './link.js';
+export { createLink, relayRegisterMessage, type ChatWorkItem, type Fetch, type Link, type WorkItem } from './link.js';
 
 /**
  * The moderation service: a SEPARATE process that holds the moderator keystore (MOD_KEYSTORE_KEY)
@@ -53,6 +54,8 @@ export interface ModerationDeps {
 export interface ModerationHandle {
   /** One pass over the API's work list; resolves with the trades attested and started this pass. */
   tick(): Promise<string[]>;
+  /** One pass over the API's chat work list (Task 20); resolves with the chats attested this pass. */
+  chatTick(): Promise<string[]>;
   stop(): Promise<void>;
 }
 
@@ -206,13 +209,77 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
     return done;
   };
 
+  /**
+   * Chats (Task 20): mint the moderator's chat identity, seal it and the signed attestation BEFORE
+   * anything leaves the process, then post it. The chat runs over the API (no relay channel). A
+   * restart re-posts the same attestation; a bad proof is refused for good.
+   */
+  const chatTick = async (): Promise<string[]> => {
+    const done: string[] = [];
+    let work: ChatWorkItem[];
+    try {
+      work = await link.pullChatWork();
+    } catch {
+      log({ reason: 'chat-work-unavailable' });
+      return done;
+    }
+    for (const w of work) {
+      const chat = typeof w?.chat === 'string' ? normalizeTradeCode(w.chat) : null;
+      if (chat === null) {
+        log({ reason: 'bad-chat-work' });
+        continue;
+      }
+      try {
+        const { rows } = await o.db.query<{ attestation: Attestation; sig: string }>('select attestation, sig from signed_chats where chat = $1', [chat]);
+        let signed = rows[0] && (await loadChatIdentity(o.db, o.keystoreKey, chat)) ? rows[0] : null;
+        if (!signed) {
+          const a = await attestChat({ ...w, chat }, o.signingSecret, now(), deps.newIdentity ?? generateIdentity);
+          const client = await o.db.connect();
+          try {
+            await client.query('begin');
+            await client.query('insert into signed_chats (chat, attestation, sig) values ($1, $2, $3)', [chat, a.attestation, a.sig]);
+            await saveChatIdentity(client, o.keystoreKey, chat, a.mod);
+            await client.query('commit');
+          } catch (e) {
+            await client.query('rollback');
+            throw e;
+          } finally {
+            client.release();
+          }
+          signed = { attestation: a.attestation, sig: a.sig };
+        }
+        const posted = await link.postReport({ kind: 'chat-attestation', attestation: signed.attestation, sig: signed.sig });
+        if (posted !== 201) {
+          log({ reason: `chat-report-refused-${posted}` });
+          continue;
+        }
+        await o.db.query('update signed_chats set posted_at = now() where chat = $1', [chat]);
+        log({ reason: 'chat-attested' });
+        done.push(chat);
+      } catch (e) {
+        if (!(e instanceof AttestRefused)) {
+          log({ reason: 'chat-failed' });
+          continue;
+        }
+        log({ reason: `chat-refused-${e.reason}` });
+        try {
+          const status = await link.postReport({ kind: 'chat-refused', chat, reason: e.reason });
+          if (status !== 201) log({ reason: `chat-refusal-not-recorded-${status}` });
+        } catch {
+          log({ reason: 'chat-refusal-not-recorded' });
+        }
+      }
+    }
+    return done;
+  };
+
   const intervalMs = deps.intervalMs ?? 5_000;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let running: Promise<unknown> = Promise.resolve();
   const loop = (): void => {
     if (stopped) return;
-    running = tick().finally(() => {
+    running = tick().then(chatTick).finally(() => {
       if (!stopped) timer = setTimeout(loop, intervalMs);
     });
   };
@@ -220,6 +287,7 @@ export async function startModeration(o: ModerationOptions, deps: ModerationDeps
 
   return {
     tick,
+    chatTick,
     async stop() {
       stopped = true;
       if (timer) clearTimeout(timer);

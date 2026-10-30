@@ -116,6 +116,20 @@ test('parity with the Desktop board at 1280x800', async ({ page }) => {
   await parity(page, 'Desktop', '1280x800');
 });
 
+test("wide (1280x800): SellerRefund's Chat opens the chat sheet (Task 20 round-2 review I2)", async ({ page }) => {
+  await stubTrade(page, sellerView());
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await open(page);
+  await expect(page.locator('html')).toHaveAttribute('data-fold', 'wide');
+  await page.locator('[data-chat-link]').click();
+  expect(new URL(page.url()).hash).toBe('#chat');
+  const sheet = page.getByRole('dialog', { name: `Chat with ${BOARD.buyer}` });
+  await expect(sheet.locator('#msg')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toHaveCount(0);
+  expect(new URL(page.url()).hash).toBe('');
+});
+
 test('the board copy, the warning before the tap, one primary and no CSP violations', async ({ page }) => {
   const csp: string[] = [];
   page.on('console', (m) => {

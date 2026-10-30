@@ -28,6 +28,7 @@ import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
+import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 import { EventBus, type EventBusOptions } from './events/bus.js';
@@ -273,6 +274,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   takeRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
+  chatRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.

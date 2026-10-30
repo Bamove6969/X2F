@@ -4,6 +4,7 @@
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
 import { ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
+import sodium from 'libsodium-wrappers';
 
 /** The `type` inside every chat envelope's ciphertext. */
 export const CHAT_MSG_TYPE = 'chat.msg';
@@ -116,6 +117,28 @@ export function chatIdentityProofBytes(chat: string, role: 'buyer' | 'seller', s
   // The keys are joined with no separator, so each must have its fixed length.
   if (!KEY_HEX.test(signPublic) || !KEY_HEX.test(boxPublic)) throw new TypeError('chatIdentityProofBytes: keys must be 32 bytes lower-case hex');
   return new TextEncoder().encode(`x2f/chat-identity/v1\0${code}\0${role}\0${signPublic}${boxPublic}`);
+}
+
+/**
+ * True when `proof` (hex Ed25519) verifies under `signPublic` over chatIdentityProofBytes for this
+ * chat and role, and `boxPublic` is the X25519 conversion of `signPublic`. The API checks it on
+ * `POST /v1/chats/:chat/identity` and the moderation service again before attesting. Never throws.
+ */
+export async function chatIdentityProofValid(
+  chat: string,
+  role: 'buyer' | 'seller',
+  keys: { signPublic: string; boxPublic: string; proof: string },
+): Promise<boolean> {
+  await sodium.ready;
+  try {
+    if (typeof keys?.proof !== 'string' || !/^[0-9a-f]{128}$/.test(keys.proof)) return false;
+    const msg = chatIdentityProofBytes(chat, role, keys.signPublic, keys.boxPublic);
+    const pk = sodium.from_hex(keys.signPublic);
+    if (sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(pk)) !== keys.boxPublic) return false;
+    return sodium.crypto_sign_verify_detached(sodium.from_hex(keys.proof), msg, pk);
+  } catch {
+    return false;
+  }
 }
 
 export interface ChatRetentionFacts {

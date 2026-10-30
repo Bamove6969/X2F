@@ -73,7 +73,7 @@ const deps: Deps = {
   attestation,
   pgpSigner,
   prices,
-  // Task 26: shared context from real trades (Task 6), delivery over Task 19's SSE and Web Push; chats (Task 20) pending (nudge/wiring.ts).
+  // Task 26: shared context from real trades (Task 6), open chats (Task 20), delivery over Task 19's SSE and Web Push (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
 };
 

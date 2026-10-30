@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { acceptedEvent } from '../events/publicName.js';
@@ -305,6 +306,8 @@ export function takeRoutes(app: FastifyInstance): void {
         if (refusal) throw refusal;
         throw e;
       }
+      // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
+      await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
       return t;
     });
 

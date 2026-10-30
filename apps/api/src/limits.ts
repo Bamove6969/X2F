@@ -87,35 +87,61 @@ export const APPROVAL_DECISION_BUCKET: BucketSize = { capacity: 10, perMinute: 5
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
 /**
- * One `TokenBucket` per key (a session id), each of `size`; an empty bucket throws 429 `slow-down`
- * `{ retryAfterSeconds }` (a throttle on this caller's tries, not the server being busy). At most
- * `maxKeys` buckets are kept: the oldest is dropped first (a dropped key starts full again, which
- * only a caller with that many sessions at once could use).
+ * Keyed token buckets (per account or per session; in memory, never persisted, like TokenBucket): one bucket per key,
+ * created full. An empty bucket throws 429 `slow-down` with `retryAfterSeconds` (the caller's own
+ * pace, so not 503 `busy`). At most `maxKeys` buckets are kept: past that, buckets that have
+ * refilled are forgotten first (a forgotten bucket is a full one, so nothing changes for its key),
+ * then the oldest.
  */
 export class KeyedBuckets {
-  private readonly buckets = new Map<string, TokenBucket>();
+  private readonly buckets = new Map<string, { tokens: number; last: number }>();
 
   constructor(
-    private readonly size: BucketSize,
+    private readonly bucket: BucketSize,
     private readonly clock: () => Date,
-    private readonly maxKeys = 10_000,
+    private readonly maxKeys = 100_000,
   ) {}
 
+  get size(): number {
+    return this.buckets.size;
+  }
+
+  private level(b: { tokens: number; last: number }, now: number): number {
+    return Math.min(this.bucket.capacity, b.tokens + (Math.max(0, now - b.last) * this.bucket.perMinute) / 60_000);
+  }
+
   take(key: string): void {
-    let b = this.buckets.get(key);
-    if (b === undefined) {
-      if (this.buckets.size >= this.maxKeys) this.buckets.delete(this.buckets.keys().next().value!);
-      b = new TokenBucket(this.size.capacity, this.size.perMinute, this.clock);
-      this.buckets.set(key, b);
+    const now = this.clock().getTime();
+    const old = this.buckets.get(key);
+    const tokens = old ? this.level(old, now) : this.bucket.capacity;
+    const last = old ? Math.max(old.last, now) : now;
+    if (tokens < 1) {
+      this.buckets.set(key, { tokens, last });
+      const retryAfterSeconds = Math.ceil(((1 - tokens) * 60) / this.bucket.perMinute);
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds });
     }
-    try {
-      b.take();
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'busy') throw new ApiError(429, 'slow-down', e.extra);
-      throw e;
+    // Re-inserted so the Map's order is least recently used first.
+    this.buckets.delete(key);
+    this.buckets.set(key, { tokens: tokens - 1, last });
+    if (this.buckets.size > this.maxKeys) this.prune(now);
+  }
+
+  private prune(now: number): void {
+    for (const [k, b] of this.buckets) {
+      if (this.buckets.size <= this.maxKeys) return;
+      if (this.level(b, now) >= this.bucket.capacity) this.buckets.delete(k);
+    }
+    for (const k of this.buckets.keys()) {
+      if (this.buckets.size <= this.maxKeys) return;
+      this.buckets.delete(k);
     }
   }
 }
+
+/** `POST /v1/chats` (Task 20 review M7): new pre-trade chats per trader, 20 an hour. */
+export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 };
+/** `POST /v1/chats/:chat/envelopes` (Task 20 review M7): chat lines per trader across all chats, 30 a minute. */
+export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
 
 export interface Budgets {
   register: TokenBucket;
@@ -125,6 +151,10 @@ export interface Budgets {
   securityChange: KeyedBuckets;
   /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
   approvalDecision: KeyedBuckets;
+  /** Per account. */
+  chatOpen: KeyedBuckets;
+  /** Per account. */
+  chatPost: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -135,5 +165,7 @@ export function newBudgets(clock: () => Date): Budgets {
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
+    chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
+    chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),
   };
 }

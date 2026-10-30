@@ -573,6 +573,27 @@ describe('starter limits at take (Revision 2026-10-24)', () => {
     await deps.db.query('delete from account_blocks where account_id = $1', [poster.id]);
     await taken(blocked, offer, body(blocked, tenth));
   });
+
+  it("links the pair's open pre-trade chat to the trade in the take's transaction (a take reuses the chat, Task 20)", async () => {
+    const seller = await person();
+    const buyer = await person();
+    const other = await person();
+    const offer = await postOffer(seller);
+    const chat = await buyer.browser.post('/v1/chats', { offerId: offer });
+    expect(chat.statusCode).toBe(201);
+    const code = (chat.json() as { chat: string }).chat;
+    const theirs = (await other.browser.post('/v1/chats', { offerId: offer })).json() as { chat: string };
+    const trade = await taken(buyer, offer, body(buyer, tenth));
+    const rows = (await deps.db.query('select code, trade_code from chats where code = any($1) order by code', [[code, theirs.chat]])).rows;
+    expect(rows).toEqual(
+      [
+        { code, trade_code: trade },
+        { code: theirs.chat, trade_code: null },
+      ].sort((x, y) => (x.code < y.code ? -1 : 1)),
+    );
+    // The trade's chat is that one, for both sides.
+    expect((await seller.browser.post(`/v1/trades/${trade}/chat`, {})).json()).toEqual({ chat: code, role: 'seller' });
+  });
 });
 
 describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted sheet)', () => {

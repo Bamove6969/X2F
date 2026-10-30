@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '../src/errors.js';
-import { ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets } from '../src/limits.js';
+import { ARGON2_SLOTS, KeyedBuckets, REGISTER_BUCKET, START_BUCKET, Semaphore, TokenBucket, newBudgets } from '../src/limits.js';
 
 function deferred(): { promise: Promise<void>; resolve(): void } {
   let resolve!: () => void;
@@ -112,5 +112,37 @@ describe('TokenBucket', () => {
     expect(() => register.take()).toThrow(ApiError);
     for (let i = 0; i < 120; i++) start.take();
     expect(() => start.take()).toThrow(ApiError);
+  });
+});
+
+describe('KeyedBuckets (per-account budgets, Task 20 review M7)', () => {
+  it('gives each key its own bucket, refuses with 429 slow-down and a wait, and refills', () => {
+    let t = 0;
+    const b = new KeyedBuckets({ capacity: 2, perMinute: 1 }, () => new Date(t));
+    b.take('a');
+    b.take('a');
+    const e = caught(() => b.take('a'));
+    expect(e).toBeInstanceOf(ApiError);
+    expect(e).toMatchObject({ status: 429, code: 'slow-down', extra: { retryAfterSeconds: 60 } });
+    b.take('b');
+    t = 60_000;
+    b.take('a');
+    expect(caught(() => b.take('a'))).toMatchObject({ status: 429 });
+  });
+
+  it('stays bounded: past maxKeys it forgets full buckets first, then the oldest', () => {
+    let t = 0;
+    const b = new KeyedBuckets({ capacity: 1, perMinute: 1 }, () => new Date(t), 3);
+    for (const k of ['a', 'b', 'c']) b.take(k);
+    t = 60_000; // every bucket is full again
+    b.take('d');
+    expect(b.size).toBeLessThanOrEqual(3);
+    // An empty bucket is kept over a full one while there is room to drop full ones.
+    t = 60_000;
+    const c = new KeyedBuckets({ capacity: 1, perMinute: 1 }, () => new Date(t), 2);
+    c.take('x');
+    c.take('y');
+    c.take('z');
+    expect(c.size).toBe(2);
   });
 });
