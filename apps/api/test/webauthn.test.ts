@@ -438,6 +438,31 @@ describe('login-name tags under key rotation (FU-D)', () => {
     }
   });
 
+  it('a failing re-tag after the session cookie is set still answers ok with the session (review M1)', async () => {
+    const t = await signUp('security-key');
+    const saved = deps.config.loginNameKeys;
+    const real = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const query = vi.spyOn(deps.db, 'query').mockImplementation(((...a: unknown[]) =>
+      String(a[0]).startsWith('update accounts set login_tag = $2, login_tag_key_id = $3 where id = $1')
+        ? Promise.reject(Object.assign(new Error('Connection terminated unexpectedly'), { code: '57P01' }))
+        : real(...a)) as never);
+    try {
+      deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
+      const { res } = await usernameLogin(t.auth, t.username);
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ status: 'ok' });
+      expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeDefined();
+      expect((await tagOf(t.accountId)).login_tag_key_id).toBe(1);
+      query.mockRestore();
+      // The next login by name retries the re-tag.
+      expect((await usernameLogin(t.auth, t.username)).res.json()).toEqual({ status: 'ok' });
+      expect((await tagOf(t.accountId)).login_tag_key_id).toBe(2);
+    } finally {
+      query.mockRestore();
+      deps.config.loginNameKeys = saved;
+    }
+  });
+
   it('start runs the same SQL for names under the old key, the current key, unknown and malformed', async () => {
     const old = await signUp('security-key');
     const saved = deps.config.loginNameKeys;
