@@ -312,6 +312,109 @@ describe('owner option B: no cancel after “I’ve paid” (review I3)', () => 
   });
 });
 
+describe('review round 3 R3-N1: an armed buyer cancel the buyer never builds does not switch off the auto-refund', () => {
+  const REFUND = { kind: 'release', to: [{ address: TERMS.sellerRefund, amountAtomic: FUNDS }], builder: 'seller', cosigner: 'mod' };
+  const END = FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS;
+  const at = (d: Date, ms: number): Date => new Date(d.getTime() + ms);
+
+  /**
+   * The buyer's cancel is armed and handed to the party, but the buyer never builds it; the settling
+   * window reverts, payBy passes and the seller asks for a refund. `api`: 'signal-only' leaves the API
+   * `secured` throughout (the buyer posted nothing there); 'honest' runs the API's own cancel and its
+   * settleBy revert. Returns the shadow's (and the API's) final alert.
+   */
+  async function strandedCancel(l: Live, api: 'signal-only' | 'honest'): Promise<Date> {
+    await secured(ctx, l);
+    later(ctx, 5 * MIN);
+    await acked(l, l.buyer, 'trade.cancel', {});
+    if (api === 'honest') {
+      l.net.states.set(l.code, 'settling');
+      l.net.settleKinds.set(l.code, 'buyer-cancel');
+    }
+    await l.m.handle.watch();
+    expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+    expect((await record(l.code)).armed?.kind).toBe('buyer-cancel');
+    // The buyer never builds the tx: the 15 min settling window runs out (shadow and API revert).
+    later(ctx, 20 * MIN);
+    if (api === 'honest') {
+      l.net.states.set(l.code, 'secured');
+      l.net.settleKinds.delete(l.code);
+    }
+    await l.m.handle.watch();
+    expect((await record(l.code)).shadow!.state).toBe('secured');
+    // payBy (secured + 90 min) passes; the seller asks for a refund.
+    later(ctx, 70 * MIN);
+    await acked(l, l.seller, 'trade.refund-request', {});
+    l.net.states.set(l.code, 'refund_requested');
+    const rec = await record(l.code);
+    expect(rec.shadow!.state).toBe('refund_requested');
+    l.net.alerts.set(l.code, rec.shadow!.finalAlertAt!);
+    return rec.shadow!.finalAlertAt!;
+  }
+
+  for (const api of ['signal-only', 'honest'] as const) {
+    it(`${api}: receipt at once → the seller-built auto-refund is signed at the normal time (re-armed as auto-refund, same payout)`, async () => {
+      const { net, fetch } = fakeNetwork(ctx);
+      const m = await moderation(ctx, fetch);
+      const l = await inFunding(ctx, m, net);
+      const alertAt = await strandedCancel(l, api);
+      net.seen.set(l.code, alertAt);
+      ctx.clock.now = at(alertAt, END - 1);
+      await m.handle.watch();
+      expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+      ctx.clock.now = at(alertAt, END + 1);
+      await m.handle.watch();
+      expect(l.party.settles).toEqual([cancelOutcome(FUNDS), REFUND]);
+      const rec = await record(l.code);
+      expect(rec.armed?.kind).toBe('auto-refund');
+      // The shadow's veto backs the re-armed kind (a landed buyer-cancel tx would be the mod's own tx).
+      expect(sweepKindAgrees(rec, 'auto-refund')).toBe(true);
+      expect(m.logs).toContain('auto-refund-signing');
+      // asked once; the buyer-built cancel is not handed over again
+      await m.handle.watch();
+      expect(l.party.settles).toEqual([cancelOutcome(FUNDS), REFUND]);
+      await m.handle.stop();
+      // after a restart only the auto-refund is handed over
+      const again = await moderation(ctx, fetch);
+      await again.handle.watch();
+      const p = again.parties.get(l.code)!;
+      p.funds = { ...l.party.funds };
+      p.resolveReady('ignored');
+      await again.handle.watch();
+      expect(p.settles).toEqual([REFUND]);
+      await again.handle.stop();
+    });
+
+    it(`${api}: no receipt → escalates (alert-unseen) once; nothing more signed`, async () => {
+      const { net, fetch } = fakeNetwork(ctx);
+      const m = await moderation(ctx, fetch);
+      const l = await inFunding(ctx, m, net);
+      const alertAt = await strandedCancel(l, api);
+      ctx.clock.now = at(alertAt, END + 1);
+      await m.handle.watch();
+      later(ctx, 30 * MIN);
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'alert-unseen')).toHaveLength(1);
+      expect((await record(l.code)).escalated).toBe('alert-unseen');
+      expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+      await m.handle.stop();
+    });
+
+    it(`${api}: a late receipt → escalates (alert-late); nothing more signed`, async () => {
+      const { net, fetch } = fakeNetwork(ctx);
+      const m = await moderation(ctx, fetch);
+      const l = await inFunding(ctx, m, net);
+      const alertAt = await strandedCancel(l, api);
+      net.seen.set(l.code, at(alertAt, 3 * MIN));
+      ctx.clock.now = at(alertAt, END + 1);
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.trade === l.code && r.kind === 'alert-late')).toHaveLength(1);
+      expect(l.party.settles).toEqual([cancelOutcome(FUNDS)]);
+      await m.handle.stop();
+    });
+  }
+});
+
 describe('the shadow vetoes a refund sweep kind its own facts do not back (review round 2, R2-M1 defence in depth)', () => {
   const KEY = '7'.repeat(64);
   /** A sweep the mod did not sign, shown through an import, named by both parties' spend.info (Task 9 R3-I1), with a tx key that proves it. */
