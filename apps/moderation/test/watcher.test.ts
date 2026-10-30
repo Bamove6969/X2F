@@ -692,6 +692,56 @@ describe('the chain watcher', () => {
       await m2.handle.stop();
     });
 
+    it('an honest seller-buyer sweep counts only once BOTH parties\' sealed spend.info name it (round 3, R3-I1)', async () => {
+      const { net, fetch } = fakeNetwork();
+      const logs: string[] = [];
+      const m = await moderation(fetch, logs);
+      const { code, p } = await settlingRelease(net, m);
+      p.prove = () => true;
+      // only the seller's statement, with a key that proves the minimums: not counted
+      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }] };
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toEqual([]);
+      expect(logs).toContain('sweep-unproven');
+      expect(net.closed).toEqual([]);
+      // the buyer's statement names the same tx (no key of its own): now counted, then the close
+      p.funds = { ...p.funds, spendProofs: [...p.funds.spendProofs!, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: code, txHash: hash('b') }]);
+      expect(net.closed).toHaveLength(2);
+      await m.handle.stop();
+    });
+
+    it('a decoy attack: trade B\'s real release with escrow A\'s output as a ring decoy and forged partials for mod A, named only by the seller, never counts for A and leaves the record free for B (round 3, R3-I1)', async () => {
+      const { net, fetch } = fakeNetwork();
+      const logs: string[] = [];
+      const m = await moderation(fetch, logs);
+      const a = await settlingRelease(net, m);
+      const b = await settlingRelease(net, m);
+      // Trade A: the seller alone names T_B (hash b) with T_B's tx key; the proof passes (the decoy
+      // puts A's output in the ring, T_B pays A's buyer address and fee at least A's minimums).
+      a.p.funds = { ...a.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }] };
+      a.p.prove = () => true;
+      // Trade A is watched first, more than once: it never claims T_B.
+      await m.handle.watch();
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === a.code)).toEqual([]);
+      expect(logs).toContain('sweep-unproven');
+      expect(logs).not.toContain('sweep-counted-elsewhere');
+      // Trade B: both its parties name T_B, so it counts for B.
+      b.p.funds = { ...b.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: KEY }] };
+      b.p.prove = () => true;
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: b.code, txHash: hash('b') }]);
+      expect(net.closed.sort()).toEqual([await channelFor(b.code, 'escrow'), await channelFor(b.code, 'signals')].sort());
+      // ...and A escalates through its 6 h fallback instead
+      clock = new Date(clock.getTime() + 6 * 60 * 60_000);
+      await m.handle.watch();
+      expect(net.reports.filter((r) => r.kind === 'spend-unshown' && r.trade === a.code)).toHaveLength(1);
+      expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === a.code)).toEqual([]);
+      await m.handle.stop();
+    });
+
     it('a replayed tx mined before the escrow was funded: settled, late-funds, and the channels stay open for the dispute (round 2, R2-I1)', async () => {
       const { net, fetch } = fakeNetwork();
       const m = await moderation(fetch);
