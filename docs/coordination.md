@@ -287,7 +287,7 @@ Fix round 2026-10-30 (review `docs/superpowers/reviews/2026-10-29-p3-task10.md`,
 - **Buyer cancel (owner option B, I3):** never co-signed after a `trade.paid` was opened (every pass), never for a cancel the shadow refused, and only while the API shows funding/securing/secured/refund_requested or settling as `buyer-cancel`. Decision 4 changes: no buyer cancel after an escalation (the API shows `disputed`).
 - **Desk (M2–M5):** catches up from the watcher's latest chain facts and shown sweep each pass; a failed `openDesk` is retried each pass; a waiting cancel no longer blocks escalation; nothing is signed once the trade is over; `pending` de-duplicated.
 - **Landing:** API `main.ts` passes `maintenanceSince` (`siteMaintenanceSince`), `NEEDS_SITE_FLAGS` deleted.
-- **Deploy order (lead, 2026-10-30): the API before the moderation service.** An older API refuses the new reports `alert-unseen`, `alert-late` and `refund-unverified` with 400, so an escalation sent to it is lost until the API is updated.
+- **Deploy order (lead, 2026-10-30): the API before the moderation service.** An older API refuses the new reports `alert-unseen`, `alert-late` and `refund-unverified` with 400.
 
 Re-merged the Task 9 I/O fix round (`origin/wip/second-p3-task9-io` @3dc2a58) on 2026-10-29; the three paused parts, re-checked:
 - **Migration:** `003_signals.sql` → `004_signals.sql` (the watch migration is now `003_watch.sql`; 002 is Task 20's `002_chat.sql`).
