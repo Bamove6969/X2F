@@ -33,7 +33,7 @@ import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stop
 import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
-import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
+import { focusChatPane, registerTradeScreen, useChatPane, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
@@ -339,18 +339,30 @@ function ChatSlot({ view }: { view: TradeView }) {
 
 function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
   const [open, setOpen] = useState(false);
+  // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
+  // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
+  const paned = useChatPane(view);
+  useEffect(() => {
+    if (!paned || !open) return;
+    setOpen(false);
+    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
+    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
+    // draft, once the pane is laid out (round-2 review m4).
+    requestAnimationFrame(() => focusChatPane());
+  }, [paned, open]);
+  const onChat = () => (paned ? focusChatPane() : setOpen(true));
   return (
     <>
       {primary ? (
-        <Button variant="primary" onClick={() => setOpen(true)}>
+        <Button variant="primary" onClick={onChat}>
           Chat
         </Button>
       ) : (
-        <button type="button" className="x2f-room__chat" onClick={() => setOpen(true)}>
+        <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
           Chat
         </button>
       )}
-      <Sheet open={open} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
+      <Sheet open={open && !paned} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
         <div className="x2f-sheet__body">
           <ChatSlot view={view} />
         </div>

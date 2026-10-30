@@ -1248,6 +1248,23 @@ Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revi
 - [ ] **Step 4:** `npm run check`; expect PASS.
 - [ ] **Step 5:** Commit `feat(web): foldable layouts with panes at the hinge`.
 
+**Built 2026-10-29 (`wip/lead-p3-task40`), the shell and the trade room first.** Notes from the build and its review (`~/x2f-comms/review-task40-2026-10-29.md`):
+- Hinge emulation: the pinned Chromium reports segments only under CDP `Emulation.setDeviceMetricsOverride` with `displayFeature` (`setDisplayFeaturesOverride` alone reports none), and a folded posture with `devicePosture`; `e2e/fold.spec.ts` uses those, and its skip-with-a-reason path never fires there.
+- *Lead default (review I2):* the flip cover layout turns on only when the browser reports a folded posture (`(device-posture: folded)`) on a screen under 600x480 with no segments, never from size alone (split screen, a small window and an open keyboard are the same size), and even then the room stays under the glance card, so a wrong guess costs nothing and the screen's own alerts always show.
+- *Lead default (review I3):* sheets keep to one pane only where a hinge is reported; with the width rules alone (iPad, a narrow window, the iPhone Fold) a sheet and its backdrop cover the whole screen. The backdrop always covers the whole screen.
+- The unfolded quote button already says "Trade".
+- **Follow-ups (not built):**
+  - Browse lists (Tasks 16–17) as list + detail panes (Fold-Offers board); until then a screen without panes keeps to the first pane only when a hinge is reported, and spans the width with the width rules alone.
+  - The tri-fold's third pane (list, detail, chat; Fold-TriFold): `three` puts the room in segment 1 and the chat in segment 2 and leaves segment 3 empty, for the My trades list (not built).
+  - The app-wide flip cover card for the most urgent trade, with "+N more trades" (Fold-Cover): needs an open-trades list API; today only the open trade room shows its own card.
+  - Tabletop for the screens other than the trade room (content still crosses the horizontal hinge there), and the dispute room's panes (its own chat; `disputed` gets no chat pane).
+  - Parity for the six Fold boards, after the design's controller step puts them in `design/x2f-app/` with references.
+  - A 1000x800 sideways-scroll check over the other wide rooms (release, fund, refund, dispute) at 1000–1023 px, which the wide layout reaches since the breakpoint moved from 1024 to 1000.
+  - Task 20's chat panel must keep its draft in `useKeptText("chat:" + code)` (src/ui/fold.ts), as the fixture chat does.
+  - Claude Design (round-2 review m5; tripwire NEEDS_DESIGN_FOLD_GLANCE, `apps/web/test/fold.test.tsx`): the glance has no status pill (Fold-Tabletop.dc.html:25-27; the API escrow chip that filled it was review I1) and no "Open your phone to keep going." (Fold-Cover.dc.html:43; the room now stays under the card). Ask the design for a pill from `view.state` and the role, never the escrow chip, and for the cover card's wording with the room below it.
+  - Flip-phone posture: `(device-posture: folded)` is defined for a partly folded device; a closed flip's outer screen very likely reports `continuous` in Chrome on Android, so `cover` may never turn on (it fails safe to `phone`). The app-wide flip cover card above starts from a real-device check.
+  - An e2e at ≥ 1000 px with a hinge (1000x840, vertical hinge) asserting `[data-primary]` stays in the viewport (review M2's paned phone scroll, trade.css `data-fold='two'|'three'`): not pinned yet.
+
 ### Task 41: LoginApprove, Devices and Login-Backup screens (`apps/web`) — NEW 2026-10-29b
 
 **Scope:** the screens for Plan 2 new Tasks 16 (new-device approval, 3 devices, "One device at a time") and 17 (backup-login cooling-off), on top of Task 30.

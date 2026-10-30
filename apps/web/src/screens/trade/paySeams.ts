@@ -91,6 +91,11 @@ export function usePaymentDetails(code: string): PaymentDetail[] | null {
 
 // ---- The trade chat (Task 20) ----
 
+/**
+ * Task 40: the room may move the panel between a pane of its own and the Chat sheet when the phone
+ * folds or unfolds, which remounts it; the panel keeps its draft in `useKeptText("chat:" + code)`
+ * (src/ui/fold.ts) so typed text survives the move.
+ */
 export interface TradeChatProps {
   code: string;
   /** The counterparty's public display name. */
