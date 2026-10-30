@@ -107,5 +107,5 @@ export const JOIN_COPY = {
   codeFailed: 'That code did not work. It may have expired: send a new message and try again.',
   webauthnFailed: 'That did not work. Try again, or choose another second factor.',
   nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
-  nameUnavailable: 'That login name cannot be used. Pick another.',
+  nameUnavailable: 'Pick another login name. That one is taken.',
 } as const;

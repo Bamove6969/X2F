@@ -280,6 +280,9 @@ export const MY_OFFERS_HIDDEN = {
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
 
+/** The member limit's code (Plan 2 Task 18). */
+export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
+
 /**
  * Team members (Plan 2 Task 18): what a team refusal says, on the Team screen and on any screen a
  * member was refused on. `max` is the member limit the API sent with `too-many-members`.

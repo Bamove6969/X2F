@@ -23,7 +23,7 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, teamCantDoText } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, TOO_MANY_MEMBERS_CODE, teamCantDoText } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH } from './teamCopy.js';
@@ -290,7 +290,7 @@ export function Team() {
               variant="primary"
               data-primary=""
               aria-disabled={busy || name.trim() === '' || full}
-              onClick={() => (full ? setCantDo({ code: 'too-many-members', max }) : name.trim() === '' ? undefined : void invite())}
+              onClick={() => (full ? setCantDo({ code: TOO_MANY_MEMBERS_CODE, max }) : name.trim() === '' ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}
