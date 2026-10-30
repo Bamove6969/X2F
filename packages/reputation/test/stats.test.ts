@@ -54,44 +54,51 @@ describe('positivePct', () => {
   it('one positive $10 and one negative $1,000 is 0 (floor of 0.99%)', () => {
     expect(
       positivePct([
-        { kind: 'positive', usdCents: 1_000n },
-        { kind: 'negative', usdCents: 100_000n },
+        { kind: 'positive', weight: 1_000n },
+        { kind: 'negative', weight: 100_000n },
       ]),
     ).toBe(0);
   });
   it('is null with only 3-star and Neutral reviews, or none', () => {
-    expect(positivePct([{ kind: 'neutral', usdCents: 5_000n }])).toBeNull();
+    expect(positivePct([{ kind: 'neutral', weight: 5_000n }])).toBeNull();
     expect(positivePct([])).toBeNull();
   });
   it('rounds down to a whole percent', () => {
     const rs = [
-      ...Array.from({ length: 2 }, () => ({ kind: 'positive' as const, usdCents: 1_000n })),
-      { kind: 'negative' as const, usdCents: 1_000n },
+      ...Array.from({ length: 2 }, () => ({ kind: 'positive' as const, weight: 1_000n })),
+      { kind: 'negative' as const, weight: 1_000n },
     ];
     expect(positivePct(rs)).toBe(66);
-    expect(positivePct([{ kind: 'positive', usdCents: 1n }])).toBe(100);
+    expect(positivePct([{ kind: 'positive', weight: 1n }])).toBe(100);
   });
   it('leaves out reviews under dispute or removed (Task 19), keeps stands and comments-removed', () => {
-    const base = [{ kind: 'positive' as const, usdCents: 1_000n }];
-    expect(positivePct([...base, { kind: 'negative', usdCents: 1_000n, dispute: 'open' }])).toBe(100);
-    expect(positivePct([...base, { kind: 'negative', usdCents: 1_000n, dispute: 'removed' }])).toBe(100);
-    expect(positivePct([...base, { kind: 'negative', usdCents: 1_000n, dispute: 'stands' }])).toBe(50);
-    expect(positivePct([...base, { kind: 'negative', usdCents: 1_000n, dispute: 'comments-removed' }])).toBe(50);
-    expect(positivePct([{ kind: 'positive', usdCents: 1_000n, dispute: 'open' }])).toBeNull();
+    const base = [{ kind: 'positive' as const, weight: 1_000n }];
+    expect(positivePct([...base, { kind: 'negative', weight: 1_000n, dispute: 'open' }])).toBe(100);
+    expect(positivePct([...base, { kind: 'negative', weight: 1_000n, dispute: 'removed' }])).toBe(100);
+    expect(positivePct([...base, { kind: 'negative', weight: 1_000n, dispute: 'stands' }])).toBe(50);
+    expect(positivePct([...base, { kind: 'negative', weight: 1_000n, dispute: 'comments-removed' }])).toBe(50);
+    expect(positivePct([{ kind: 'positive', weight: 1_000n, dispute: 'open' }])).toBeNull();
   });
   it('honours a minimum review count when one is set (P5-A32 option b; default 0)', () => {
     expect(PCT_MIN_REVIEWS).toBe(0);
-    const four = Array.from({ length: 4 }, () => ({ kind: 'positive' as const, usdCents: 1_000n }));
+    const four = Array.from({ length: 4 }, () => ({ kind: 'positive' as const, weight: 1_000n }));
     expect(positivePct(four, { minReviews: 5 })).toBeNull();
-    expect(positivePct([...four, { kind: 'negative', usdCents: 1_000n }], { minReviews: 5 })).toBe(80);
-    expect(positivePct([...four, { kind: 'neutral', usdCents: 1_000n }], { minReviews: 5 })).toBeNull();
+    expect(positivePct([...four, { kind: 'negative', weight: 1_000n }], { minReviews: 5 })).toBe(80);
+    expect(positivePct([...four, { kind: 'neutral', weight: 1_000n }], { minReviews: 5 })).toBeNull();
   });
-  it('steps mode changes the weights', () => {
+  it('sums the stored weight as given (M1: only the weight is kept, never the USD amount)', () => {
     const rs = [
-      { kind: 'positive' as const, usdCents: 1_000n },
-      { kind: 'negative' as const, usdCents: 100_000n },
+      { kind: 'positive' as const, weight: reviewWeight(1_000n, 'steps') },
+      { kind: 'negative' as const, weight: reviewWeight(100_000n, 'steps') },
     ];
-    expect(positivePct(rs, { mode: 'steps' })).toBe(25);
+    expect(positivePct(rs)).toBe(25);
+    expect(positivePct([{ kind: 'positive', weight: 1n }, { kind: 'negative', weight: 3n }])).toBe(25);
+    expect(() => positivePct([{ kind: 'positive', weight: 0n }])).toThrow(RangeError);
+  });
+  it('takes no USD amount', () => {
+    // @ts-expect-error usdCents is not part of WeightedReview any more
+    const r: Parameters<typeof positivePct>[0][number] = { kind: 'positive', weight: 1_000n, usdCents: 1_000n };
+    expect(r.kind).toBe('positive');
   });
 });
 

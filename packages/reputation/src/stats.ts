@@ -1,6 +1,8 @@
 // Stats maths (Plan 5 Task 1). Money stays bigint; percentages are whole numbers rounded down.
 // Built for Task 20's running totals: every input here is something an account can keep after its
-// trades are purged (review kind and weight, counts, the last 20 action durations).
+// trades are purged (review kind and its precomputed weight, counts, the last 20 action durations).
+// A review keeps only its weight (`reviewWeight` at review time), never the trade's USD amount
+// (review M1, lead 2026-10-30): a permanent, anonymous review must not carry an amount.
 import { countsInStats, type ReviewDisputeStatus } from './reviews.js';
 
 // ---- Classification (P5-A1) ----
@@ -36,8 +38,9 @@ const STEP_2_FROM_USD_CENTS = 10_000n; // $100
 const STEP_3_ABOVE_USD_CENTS = 50_000n; // $500
 
 /**
- * The weight of one review from its trade's take-time USD value. `null` (a trade taken before the
- * value was stored) weighs the floor. Never converts at today's rate; the value is never returned.
+ * The weight of one review from its trade's take-time USD value, computed once when the review is
+ * stored; only the result is kept. `null` (a trade taken before the value was stored) weighs the
+ * floor. Never converts at today's rate.
  */
 export function reviewWeight(usdCents: bigint | null, mode: WeightMode = WEIGHT_MODE): bigint {
   const v = usdCents ?? REVIEW_WEIGHT_FLOOR_USD_CENTS;
@@ -51,7 +54,8 @@ export function reviewWeight(usdCents: bigint | null, mode: WeightMode = WEIGHT_
 
 export interface WeightedReview {
   kind: ReviewKind;
-  usdCents: bigint | null;
+  /** The stored weight from `reviewWeight` (never the USD amount). */
+  weight: bigint;
   /** Task 19: an open or removed dispute takes the review out of the numbers. */
   dispute?: ReviewDisputeStatus | null;
 }
@@ -61,15 +65,15 @@ export interface WeightedReview {
  * `null` when no positive or negative review counts (or fewer than `minReviews` of them).
  * Callers pass only revealed reviews (blind reveal, spec 5.3).
  */
-export function positivePct(rs: readonly WeightedReview[], opts: { mode?: WeightMode; minReviews?: number } = {}): number | null {
-  const mode = opts.mode ?? WEIGHT_MODE;
+export function positivePct(rs: readonly WeightedReview[], opts: { minReviews?: number } = {}): number | null {
   const minReviews = opts.minReviews ?? PCT_MIN_REVIEWS;
   let pos = 0n;
   let total = 0n;
   let n = 0;
   for (const r of rs) {
     if (r.kind === 'neutral' || !countsInStats(r.dispute ?? null)) continue;
-    const w = reviewWeight(r.usdCents, mode);
+    const w = r.weight;
+    if (w < 1n) throw new RangeError('a review weight is at least 1');
     total += w;
     if (r.kind === 'positive') pos += w;
     n++;
