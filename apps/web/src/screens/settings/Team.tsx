@@ -41,7 +41,7 @@ function RolePicker({ value, onChange, idPrefix }: { value: readonly TeamRole[];
     <fieldset className="x2f-field" data-part="roles">
       <legend className="x2f-label">Roles</legend>
       {ROLES.map((r) => (
-        <label className="x2f-row" key={r} htmlFor={`${idPrefix}-${r}`}>
+        <label className="x2f-row x2f-team__role" key={r} htmlFor={`${idPrefix}-${r}`}>
           <input
             id={`${idPrefix}-${r}`}
             type="checkbox"
