@@ -5,6 +5,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
+import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -319,9 +320,13 @@ export async function applyEvent(
         `update trades set ${cols.map(([c], i) => `${c} = $${i + 2}`).join(', ')} where code = $1`,
         [code, ...cols.map(([, v]) => v)],
       );
+      const record = eventRecord(e);
       await client.query('insert into trade_events (code, at, by, event) values ($1, $2, $3, $4)', [
-        code, now, by, JSON.stringify(eventRecord(e)),
+        code, now, by, JSON.stringify(record),
       ]);
+      // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction.
+      const action = `trade.${e.type}` as const;
+      await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: code, action, detail: tradeLogDetail(record, action) });
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
