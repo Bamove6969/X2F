@@ -676,3 +676,38 @@ describe('review round 4 (2026-10-30)', () => {
     }
   });
 });
+
+describe('review round 5 (2026-10-30)', () => {
+  it('R5-M1: default-ignorable fillers are deleted and the braille blank is a space', () => {
+    for (const s of [
+      'card 4111ㅤ1111ㅤ1111ㅤ1111',
+      'card 4111ﾠ1111ﾠ1111ﾠ1111',
+      'card 4111ᅟ1111ᅟ1111ᅟ1111',
+      'card 4111⠀1111⠀1111⠀1111',
+      'card 4111 ͏1111 ͏1111 ͏1111',
+    ]) {
+      expect(detectSensitiveText(s), JSON.stringify(s)).toEqual(['card']);
+    }
+    expect(masked(ocr('Card 4111ㅤ1111ㅤ1111ㅤ1111'))).toEqual([['4111ㅤ1111ㅤ1111ㅤ1111', 'card']]);
+    // The keycap after a digit is still deleted, and a lone keycap list is not a number.
+    expect(detectSensitiveText('1️⃣ fast 2️⃣ friendly')).toEqual([]);
+  });
+
+  it('R5-M2: modifier minus, horizontal line extension and heavy minus join digit groups', () => {
+    expect(detectSensitiveText('card 4111˗1111˗1111˗1111')).toEqual(['card']);
+    expect(detectSensitiveText('card 4111⎯1111⎯1111⎯1111')).toEqual(['card']);
+    expect(detectSensitiveText('card 4111➖ 1111➖ 1111➖1111')).toEqual(detectSensitiveText('card 4111- 1111- 1111-1111'));
+    expect(detectSensitiveText('card 4111- 1111- 1111-1111')).not.toEqual([]);
+    for (const d of ['➖️', '─', '━', '⁻', '₋']) {
+      expect(detectSensitiveText(`card 4111${d}1111${d}1111${d}1111`), d).toEqual(['card']);
+    }
+  });
+
+  it('R5-M4: SOL and ADA in capitals after a decimal, and ltc, usdt, usdc in lowercase, are amounts', () => {
+    for (const s of ['paid 0.12345678 SOL', 'paid 0.12345678 ADA', 'paid 0.12345678 ltc', 'paid 0.12345678 usdt', 'paid 0.12345678 usdc']) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+    // Still words otherwise.
+    for (const s of ['paid 0.12345678 Sol', 'paid 0.12345678 ada', 'call me 347.1234567 TRY']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+  });
+});
