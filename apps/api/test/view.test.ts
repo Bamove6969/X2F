@@ -123,6 +123,22 @@ describe('GET /v1/trades/:code', () => {
     }
   });
 
+  it('sends no claim outside settling: an escalated claimed trade shows releaseClaimedAt null (lead decision M5)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, trade, 'settling');
+    await applyEvent(deps, trade.code, { type: 'release-claimed' }, 'system');
+    const escalated = await applyEvent(deps, trade.code, { type: 'escalate' }, 'system');
+    expect(escalated.state).toBe('disputed');
+    // The stored claim survives the escalation; the view does not publish it.
+    expect(escalated.releaseClaimedAt).not.toBeNull();
+    for (const who of [seller, buyer]) {
+      const v = (await who.browser.get(`/v1/trades/${trade.code}`)).json() as View;
+      expect(v).toMatchObject({ state: 'disputed', releaseClaimedAt: null });
+    }
+  });
+
   it('answers 404 to a third trader and for an unknown code, 403 to staff, 401 without a session', async () => {
     const seller = await trader();
     const buyer = await trader();
