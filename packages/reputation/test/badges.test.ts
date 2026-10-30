@@ -4,6 +4,7 @@ import {
   BadgeError,
   applyChoice,
   earnedBadges,
+  levelShown,
   nextMilestones,
   pastRepLabel,
   resolveVisibility,
@@ -264,5 +265,40 @@ describe('pastRepLabel (spec 5.5)', () => {
     expect(pastRepLabel('LocalMonero', 1240)).toBe('Verified: 1,240 trades on LocalMonero (PGP proof)');
     expect(pastRepLabel('Bisq', 7)).toBe('Verified: 7 trades on Bisq (PGP proof)');
     expect(pastRepLabel('Paxful', 1_234_567)).toBe('Verified: 1,234,567 trades on Paxful (PGP proof)');
+  });
+});
+
+describe('no automatic promotion (review M2, P5-A15)', () => {
+  it('a lost, re-earned badge does not jump back to Featured', () => {
+    let prefs = applyChoice(['trusted', 'fast', 'pgp'], fresh, 'trusted', 'featured').prefs;
+    // Trusted is lost; the trader features PGP.
+    prefs = applyChoice(['fast', 'pgp'], prefs, 'pgp', 'featured').prefs;
+    expect(prefs.levels.trusted).toBe('hover');
+    // Trusted is re-earned.
+    const back: BadgeId[] = ['trusted', 'fast', 'pgp'];
+    expect(resolveVisibility(back, prefs)).toEqual({ featured: ['fast', 'pgp'], more: ['trusted'] });
+    expect(levelShown(back, prefs, 'trusted')).toBe('hover');
+    // PGP to On hover: Trusted must stay On hover.
+    prefs = applyChoice(back, prefs, 'pgp', 'hover').prefs;
+    expect(resolveVisibility(back, prefs)).toEqual({ featured: ['fast'], more: ['trusted', 'pgp'] });
+  });
+  it('a featured level outside the saved order is not shown as Featured', () => {
+    const prefs: BadgePrefs = { chosen: true, levels: { trusted: 'featured', fast: 'featured' }, order: ['fast'] };
+    expect(resolveVisibility(['trusted', 'fast'], prefs)).toEqual({ featured: ['fast'], more: ['trusted'] });
+    expect(levelShown(['trusted', 'fast'], prefs, 'trusted')).toBe('hover');
+  });
+  it('levelShown agrees with the lists', () => {
+    const earned: BadgeId[] = ['new', 'trusted', 'trades-100', 'fast', 'pgp'];
+    const prefs: BadgePrefs = { chosen: true, levels: { pgp: 'hidden', fast: 'featured', new: 'hidden' } as BadgePrefs['levels'], order: ['fast'] };
+    const r = resolveVisibility(earned, prefs);
+    for (const id of earned) {
+      const l = levelShown(earned, prefs, id);
+      expect(l === 'featured').toBe(r.featured.includes(id));
+      expect(l === 'hover').toBe(r.more.includes(id));
+    }
+    expect(levelShown(earned, prefs, 'new')).toBe('featured');
+    expect(levelShown(earned, prefs, 'pgp')).toBe('hidden');
+    expect(levelShown(earned, prefs, 'clean-record')).toBeNull();
+    expect(levelShown(['trusted'], fresh, 'trusted')).toBe('featured');
   });
 });

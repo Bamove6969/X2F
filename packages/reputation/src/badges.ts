@@ -163,10 +163,10 @@ export function resolveVisibility(earned: readonly BadgeId[], prefs: BadgePrefs)
   if (!prefs.chosen) {
     chosen = defaultFeatured(rest, slots);
   } else {
+    // The saved order is the single source of Featured (review M2): a `featured` level outside it is
+    // never promoted (P5-A15: nothing is promoted automatically).
     const wanted = (b: BadgeId) => rest.includes(b) && levelOf(prefs, b) === 'featured';
-    const fromOrder = prefs.order.filter((b, i) => wanted(b) && prefs.order.indexOf(b) === i);
-    const others = rest.filter((b) => wanted(b) && !fromOrder.includes(b));
-    chosen = [...fromOrder, ...others].slice(0, slots);
+    chosen = prefs.order.filter((b, i) => wanted(b) && prefs.order.indexOf(b) === i).slice(0, slots);
   }
   const featured: BadgeId[] = hasNew ? ['new', ...chosen] : chosen;
   const more = rest.filter((b) => !chosen.includes(b) && (!prefs.chosen || levelOf(prefs, b) !== 'hidden'));
@@ -197,7 +197,7 @@ export function applyChoice(
   if (!prefs.chosen) {
     for (const b of earned) if (b !== 'new') levels[b] = featuredNow.includes(b) ? 'featured' : 'hover';
   }
-  let order = featuredNow.filter((b) => b !== id);
+  let order: BadgeId[] = featuredNow.filter((b) => b !== id);
   let notice: string | null = null;
 
   if (level === 'featured' && !featuredNow.includes(id)) {
@@ -213,7 +213,23 @@ export function applyChoice(
     order = featuredNow;
   }
   levels[id] = level;
+  // A `featured` level outside the new order (a badge lost and later re-earned, or a bad row) goes back
+  // to On hover, so the saved level always matches what is shown (review M2).
+  for (const b of Object.keys(levels) as BadgeId[]) {
+    if (levels[b] === 'featured' && !order.includes(b)) levels[b] = 'hover';
+  }
   return { prefs: { chosen: true, levels, order }, notice };
+}
+
+/**
+ * The level a trader sees for one earned badge, consistent with `resolveVisibility` (Task 5's
+ * `earned[].level`). `null` when the badge is not earned.
+ */
+export function levelShown(earned: readonly BadgeId[], prefs: BadgePrefs, id: BadgeId): Visibility | null {
+  if (!earned.includes(id)) return null;
+  const r = resolveVisibility(earned, prefs);
+  if (r.featured.includes(id)) return 'featured';
+  return r.more.includes(id) ? 'hover' : 'hidden';
 }
 
 /** Progress lines for Profile, Badges (board: "500 trades 212 / 500", "Clean record 88 / 100"). */
