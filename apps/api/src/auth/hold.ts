@@ -478,8 +478,24 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
  * is still live (`requireLiveSessionInTx`; the security changes through `gateChange`). Listed in
  * docs/coordination.md with the routes left out and why.
  */
+/**
+ * Trading routes that create or change obligations (review round 5 M2): take, posting and switching
+ * offers, and trade events. Each re-checks its session with `requireLiveSessionInTx` in the
+ * transaction that writes (the offer and take writes after the account lock they already take; a
+ * trade event after its trade row lock, the order of `/v1/trades/:code/wallet`). A live session
+ * still finishes every open trade. Covered by apps/api/test/take.test.ts.
+ */
+export const LIVE_SESSION_TRADING_ROUTES: readonly string[] = [
+  'POST /v1/offers/:id/take',
+  'POST /v1/offers',
+  'PATCH /v1/offers/:id',
+  'POST /v1/account/offers/status',
+  'POST /v1/trades/:code/events',
+];
+
 export const LIVE_SESSION_ROUTES: readonly string[] = [
   ...SECURITY_CHANGE_ROUTES,
+  ...LIVE_SESSION_TRADING_ROUTES,
   'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
   'DELETE /v1/account/sessions/:id',
@@ -489,6 +505,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
 ];
+
+export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {};
 
 /**
  * Routes a weak session (`weakSession`) may use only on itself (review round 2 N-I2, N-I3, N-M3;

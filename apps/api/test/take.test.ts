@@ -7,7 +7,8 @@ import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, fakeAddress, seedTrade } from './helpers/trades.js';
+import { FIAT, XMR, driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
+import { LIVE_SESSION_TRADING_ROUTES } from '../src/auth/hold.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
 // file); a fake market so each test can move the price or take the feed down.
@@ -713,4 +714,100 @@ describe('POST /v1/trades/:code/wallet (the poster\'s side, Task 19\'s accepted 
     await deps.db.query('update wallets set removed_at = $2 where account_id = $1', [poster.id, deps.clock()]);
     expect(refusal(await poster.browser.post(`/v1/trades/${code}/wallet`, { walletId: poster.wallet }))).toEqual({ status: 409, error: 'no-wallet' });
   });
+});
+
+/**
+ * Tasks 16-17 review round 5 M2 (the reviewer's reproduction): a session revoked while its request
+ * waits inside the route's transaction (the owner's proof, a logout) acts for nobody: 401
+ * `not-authenticated` and nothing written. Each row's request is fired while a separate transaction
+ * holds the rows it must wait for; once it waits, that transaction revokes the session and commits.
+ */
+describe('a session revoked while its trading request waits (review round 5 M2)', () => {
+  const sessionOf = async (accountId: string) =>
+    (await deps.db.query<{ id: string }>('select id from sessions where account_id = $1 and revoked_at is null', [accountId])).rows.map((r) => r.id);
+
+  async function revokedWhileWaiting(lock: string[], accountId: string, fire: () => Promise<{ statusCode: number; body: string; json(): unknown }>) {
+    const sids = await sessionOf(accountId);
+    expect(sids).toHaveLength(1);
+    const holder = await deps.db.connect();
+    try {
+      await holder.query('begin');
+      for (const sql of lock) await holder.query(sql);
+      const pending = fire();
+      const me = (await holder.query<{ pid: number }>('select pg_backend_pid() as pid')).rows[0]!.pid;
+      const deadline = Date.now() + 10_000;
+      for (;;) {
+        const { rows } = await deps.db.query<{ n: number }>(
+          `select count(*)::int as n from pg_stat_activity
+            where datname = current_database() and pid <> $1 and wait_event_type = 'Lock' and state = 'active'`,
+          [me],
+        );
+        if (rows[0]!.n >= 1) break;
+        if (Date.now() > deadline) throw new Error('the request never waited on the lock');
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      await holder.query('update sessions set revoked_at = $2 where id = $1', [sids[0], deps.clock()]);
+      await holder.query('commit');
+      const res = await pending;
+      expect(res.statusCode, res.body).toBe(401);
+      expect(res.json()).toEqual({ error: 'not-authenticated' });
+    } catch (e) {
+      await holder.query('rollback').catch(() => {});
+      throw e;
+    } finally {
+      holder.release();
+    }
+  }
+
+  const ROWS: Record<string, () => Promise<void>> = {
+    'POST /v1/offers/:id/take': async () => {
+      const seller = await person();
+      const buyer = await person();
+      const offer = await postOffer(seller);
+      // The reviewer's shape: the poster's account row is held, so the take waits inside its transaction.
+      await revokedWhileWaiting([`select 1 from accounts where id = '${seller.id}' for update`], buyer.id, () => take(buyer, offer, body(buyer, tenth)));
+      expect((await deps.db.query('select 1 from trades where offer_id = $1', [offer])).rows).toHaveLength(0);
+    },
+    'POST /v1/offers': async () => {
+      const who = await person();
+      await revokedWhileWaiting([`select 1 from accounts where id = '${who.id}' for update`], who.id, () => who.browser.post('/v1/offers', OFFER));
+      expect((await deps.db.query('select 1 from offers where account_id = $1', [who.id])).rows).toHaveLength(0);
+    },
+    'PATCH /v1/offers/:id': async () => {
+      const who = await person();
+      const offer = await postOffer(who);
+      await revokedWhileWaiting(
+        [`select 1 from accounts where id = '${who.id}' for update`, `select 1 from offers where id = '${offer}' for update`],
+        who.id,
+        () => who.browser.patch(`/v1/offers/${offer}`, { status: 'paused' }),
+      );
+      expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [offer])).rows[0]!.status).toBe('live');
+    },
+    'POST /v1/account/offers/status': async () => {
+      const who = await person();
+      const offer = await postOffer(who);
+      await revokedWhileWaiting(
+        [`select 1 from accounts where id = '${who.id}' for update`, `select 1 from offers where id = '${offer}' for update`],
+        who.id,
+        () => who.browser.post('/v1/account/offers/status', { ids: [offer], status: 'paused' }),
+      );
+      expect((await deps.db.query<{ status: string }>('select status from offers where id = $1', [offer])).rows[0]!.status).toBe('live');
+    },
+    'POST /v1/trades/:code/events': async () => {
+      const seller = await person();
+      const buyer = await person();
+      const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
+      const secured = await driveTo(deps, trade, 'secured');
+      await revokedWhileWaiting([`select 1 from trades where code = '${secured.code}' for update`], buyer.id, () =>
+        buyer.browser.post(`/v1/trades/${secured.code}/events`, { type: 'mark-paid', fiatCents: FIAT.toString() }),
+      );
+      expect((await loadTradeRow(deps.db, secured.code))!.state).toBe('secured');
+    },
+  };
+
+  it('the table covers exactly LIVE_SESSION_TRADING_ROUTES', () => {
+    expect(Object.keys(ROWS).sort()).toEqual([...LIVE_SESSION_TRADING_ROUTES].sort());
+  });
+
+  for (const route of Object.keys(ROWS)) it(`${route}: 401, nothing written`, ROWS[route]!);
 });

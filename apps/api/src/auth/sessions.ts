@@ -211,6 +211,9 @@ interface SessionRow {
   hold_until: Date | null;
 }
 
+/** Marks the preHandlers `requireSession` returns, so the app can list the routes that run with a session. */
+const SESSION_HOOK = Symbol('requireSession');
+
 /**
  * preHandler for routes that need a logged-in account. Defaults to full sessions of any kind.
  * 401 `not-authenticated` (missing, revoked, idle- or absolute-expired); 403 `account-disabled`
@@ -237,7 +240,7 @@ interface SessionRow {
 export function requireSession(
   opts: { allowRecovery?: boolean; allowHeld?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean; touch?: boolean } = {},
 ): preHandlerAsyncHookHandler {
-  return async function (req: FastifyRequest) {
+  const handler: preHandlerAsyncHookHandler = async function (req: FastifyRequest) {
     const deps = req.server.deps;
     const token = presentedToken(req);
     if (!token) throw new ApiError(401, 'not-authenticated');
@@ -303,6 +306,14 @@ export function requireSession(
       expiresAt: new Date(Math.min(row.expires_at.getTime(), row.last_seen_at.getTime() + policy.idleMs)),
     };
   };
+  (handler as unknown as Record<symbol, true>)[SESSION_HOOK] = true;
+  return handler;
+}
+
+/** True when a route's preHandler (one hook or a list) includes `requireSession`. */
+export function runsWithSession(preHandler: unknown): boolean {
+  const hooks = Array.isArray(preHandler) ? preHandler : [preHandler];
+  return hooks.some((h) => typeof h === 'function' && (h as unknown as Record<symbol, unknown>)[SESSION_HOOK] === true);
 }
 
 /** Called by every login `finish` before `startSession`: 403 `account-disabled`. */

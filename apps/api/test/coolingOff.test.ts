@@ -9,7 +9,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
 import {
-  HOLD_BLOCKED_ROUTES, HOLD_MS, LIVE_SESSION_ROUTES, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, endHoldIfOwner, gateChange, lockAccount, settleDueHolds, withTx,
+  HOLD_BLOCKED_ROUTES, HOLD_MS, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, LIVE_SESSION_TRADING_ROUTES, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, endHoldIfOwner, gateChange, lockAccount, settleDueHolds, withTx,
 } from '../src/auth/hold.js';
 import { APPROVAL_DECISION_BUCKET, SECURITY_CHANGE_BUCKET } from '../src/limits.js';
 import { hashPassword } from '../src/auth/password.js';
@@ -1383,8 +1383,8 @@ describe('review round 2', () => {
         },
       };
 
-      it('the table covers exactly LIVE_SESSION_ROUTES', () => {
-        expect(Object.keys(ROWS).sort()).toEqual([...LIVE_SESSION_ROUTES].sort());
+      it('the table covers exactly LIVE_SESSION_ROUTES (the trading ones in take.test.ts)', () => {
+        expect(Object.keys(ROWS).sort()).toEqual(LIVE_SESSION_ROUTES.filter((r) => !LIVE_SESSION_TRADING_ROUTES.includes(r)).sort());
       });
 
       for (const route of Object.keys(ROWS)) {
@@ -1412,6 +1412,14 @@ describe('review round 2', () => {
 });
 
 describe('the route lists', () => {
+  it('every route other than GET that runs with a session is classified: LIVE_SESSION_ROUTES or LIVE_SESSION_EXEMPT (review round 5 M1)', () => {
+    const classified = [...LIVE_SESSION_ROUTES, ...Object.keys(LIVE_SESSION_EXEMPT)];
+    expect(new Set(classified).size, 'listed twice').toBe(classified.length);
+    // Both ways: a new route fails until it is classified, and a listed route must still exist.
+    expect([...app.sessionWriteRoutes].sort()).toEqual(classified.sort());
+    for (const [route, reason] of Object.entries(LIVE_SESSION_EXEMPT)) expect(reason.length, route).toBeGreaterThan(10);
+  });
+
   it('name routes that exist; each security route gates its write, each blocked route checks the hold', () => {
     for (const r of [...SECURITY_CHANGE_ROUTES, ...HOLD_BLOCKED_ROUTES, ...WEAK_LIMITED_ROUTES]) {
       const [method, url] = r.split(' ') as ['GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', string];
