@@ -231,11 +231,17 @@ export class MoneroMultisigSession implements EscrowSession {
    * when some input's key image is the key image this wallet holds for one of its outputs AND that
    * output (by global index) is a member of that input's ring; and no input carries one of this
    * wallet's key images with a ring that lacks the output (that can only be a forged key image).
-   * A tx that existed before (another trade's release, a replay mined before the escrow was funded)
-   * never has this escrow's outputs in its rings, so a forged attribution of it is refused.
-   * The limit: a ring hides which member is real, and wallet2 takes a peer's partial key images
-   * unchecked, so a forger could still build a FRESH tx with an escrow output as a decoy; that tx
-   * must then pay the minimums from the forger's own money (see proveSweep), which is harmless.
+   * What it proves: this escrow's output is a ring member of the input whose key image this wallet
+   * holds. A replay mined before the escrow was funded can never pass (a ring cannot hold a later
+   * output), nor can a tx whose builder chose honest decoys.
+   * What it does NOT prove: that the input really spends the escrow. A ring hides which member is
+   * real, and wallet2 takes a peer's partial key images unchecked, so the key image matched here is
+   * whatever a trade party's forged partials made it. Whoever builds a tx chooses its decoys: a
+   * seller who builds ANOTHER trade's release (or a fresh tx from its own money) can put this
+   * escrow's output in a ring and make this check true for it (review round 3, R3-I1). The
+   * moderation watcher therefore counts an import-only sweep only when BOTH trade parties' sealed
+   * spend.info name its hash (apps/moderation/src/watcher.ts, `proven`), and proveSweep's payout
+   * check must also pass.
    */
   private async spendsOwnOutput(tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>): Promise<boolean> {
     const inputs = tx?.getInputs() ?? [];

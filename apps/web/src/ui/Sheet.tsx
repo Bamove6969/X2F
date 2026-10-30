@@ -1,5 +1,6 @@
-import { useEffect, useId, useRef, type KeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useId, useMemo, useRef, type KeyboardEvent, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
+import { paneOf } from './fold.js';
 import { Icon } from './icons.js';
 import './ui.css';
 
@@ -9,6 +10,8 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * A modal bottom sheet on `surface` with `radius-md` corners (design-system README: "cards,
  * primary buttons, sheets"). Escape, the close button and a tap on the backdrop call `onClose`;
  * focus moves into the sheet, stays inside it, and returns where it was when the sheet closes.
+ * On a foldable it opens inside the pane that asked for it, never across the hinge (Task 40,
+ * styles/fold.css): the pane is the one holding the focused element when the sheet opens.
  */
 export function Sheet({
   open,
@@ -23,6 +26,8 @@ export function Sheet({
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  // Read while rendering the opening, before focus moves into the sheet.
+  const pane = useMemo(() => (open ? paneOf(document.activeElement) : null), [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +59,7 @@ export function Sheet({
   };
 
   return createPortal(
-    <div className="x2f-sheet-layer">
+    <div className="x2f-sheet-layer" data-pane-of={pane ?? undefined}>
       <div className="x2f-sheet-backdrop" data-part="backdrop" aria-hidden="true" onClick={onClose} />
       <div
         ref={panel}

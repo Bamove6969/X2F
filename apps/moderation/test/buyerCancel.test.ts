@@ -310,9 +310,9 @@ describe('owner option B: no cancel after “I’ve paid” (review I3)', () => 
 
 describe('the shadow vetoes a refund sweep kind its own facts do not back (review round 2, R2-M1 defence in depth)', () => {
   const KEY = '7'.repeat(64);
-  /** A sweep the mod did not sign, shown through an import, with a tx key that proves it. */
+  /** A sweep the mod did not sign, shown through an import, named by both parties' spend.info (Task 9 R3-I1), with a tx key that proves it. */
   const forged = (l: Live, tx: string, spentAtomic: bigint): void => {
-    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: tx, txKey: KEY }] };
+    l.party.funds = { ...l.party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: tx, height: 90, spentAtomic }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: tx, txKey: KEY }, { from: 'buyer', txHash: tx, txKey: '' }] };
     l.party.prove = () => true;
   };
   const settled = (net: Live['net'], code: string) => net.reports.filter((r) => r.kind === 'settled' && r.trade === code);
@@ -395,7 +395,7 @@ describe('the shadow vetoes a refund sweep kind its own facts do not back (revie
     await m.handle.watch();
     net.states.set(t.code, 'lapsed');
     net.settleKinds.set(t.code, 'lapse-refund');
-    party.funds = { ...party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('f'), height: 90, spentAtomic: FUNDS }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('f'), txKey: KEY }] };
+    party.funds = { ...party.funds, balance: 0n, unlocked: 0n, outgoing: [{ txHash: hash('f'), height: 90, spentAtomic: FUNDS }], ownTxs: [], spendProofs: [{ from: 'seller', txHash: hash('f'), txKey: KEY }, { from: 'buyer', txHash: hash('f'), txKey: '' }] };
     party.prove = () => true;
     await m.handle.watch();
     expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === t.code)).toEqual([]);

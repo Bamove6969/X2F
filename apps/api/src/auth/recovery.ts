@@ -22,7 +22,7 @@ import { ApiError } from '../errors.js';
 import { requireConfirm } from './confirm.js';
 import { ensureDeviceCookie } from './device.js';
 import { allowedMethods, methodAllowed } from './methods.js';
-import { loginNameLookup } from '../accounts.js';
+import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 import { verifyTotp } from './totp.js';
@@ -116,8 +116,13 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   const { loginName, kind, code, deviceLabel } = strings(req.body, ['loginName', 'kind', 'code', 'deviceLabel'] as const);
   if (kind !== 'totp' && kind !== 'recovery-code') throw new ApiError(400, 'bad-request');
   const name = loginNameLookup(deps.config, loginName);
-  // Always one lookup: '' matches no login key (I-1).
-  const found = (await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [name.key ?? ''])).rows[0];
+  // Always one lookup under every key of the ring (FU-D): a malformed name's tags match no account (I-1).
+  const found = (
+    await deps.db.query<{ id: string; kind: AccountKind; login_tag_key_id: number }>(
+      `select a.id, a.kind, a.login_tag_key_id from accounts a where ${loginTagMatch('a', 1)}`,
+      [name.candidates.ids, name.candidates.tags],
+    )
+  ).rows[0];
   // R2: an account whose kind may not hold this method (staff and the owner hold neither) takes the
   // unknown-name path.
   const accountId = found && allowedMethods(found.kind).includes(kind === 'totp' ? 'totp' : 'recovery-codes') ? found.id : null;
@@ -146,6 +151,7 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
     const used = await deps.db.query('update recovery_codes set used_at = $2 where id = $1 and used_at is null', [codeId, deps.clock()]);
     if ((used.rowCount ?? 0) === 0) return refuse(key);
     await throttleReset(deps, key);
+    await retagLoginName(deps, found!, name.candidates.current);
     await startSession(deps, req, reply, { accountId, level: 'recovery', deviceLabel, method: 'recovery-code', firstSession: false });
     return { status: 'ok' as const, level: 'recovery' as const, holdUntil: null };
   }
@@ -159,6 +165,7 @@ async function backupLogin(req: FastifyRequest, reply: FastifyReply) {
   if (!ok || accountId === null) return refuse(key);
   await throttleReset(deps, key);
   await assertNotDisabled(deps.db, accountId);
+  await retagLoginName(deps, found!, name.candidates.current);
   const holdUntil = new Date(deps.clock().getTime() + RECOVERY_HOLD_MS);
   // startSession writes the `recovery-login` alert { method, holdUntil } in the same transaction.
   await startSession(deps, req, reply, { accountId, level: 'recovery', deviceLabel, method: 'totp', firstSession: false, holdUntil });
