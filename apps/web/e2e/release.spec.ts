@@ -321,6 +321,16 @@ test.describe('SellerConfirm', () => {
     await expect.poll(() => posts.length).toBe(2);
   });
 
+  test("wide (1280x800): SellerConfirm's Chat opens the chat sheet (Task 20 round-2 review I2)", async ({ page }) => {
+    await stub(page, { trade: view() });
+    await page.setViewportSize({ width: 1280, height: 800 });
+    await open(page);
+    await expect(page.locator('html')).toHaveAttribute('data-fold', 'wide');
+    await page.locator('[data-chat-link]').click();
+    expect(new URL(page.url()).hash).toBe('#chat');
+    await expect(page.getByRole('dialog', { name: 'Chat with mira.k' }).locator('#msg')).toBeVisible();
+  });
+
   test('"Payment not received" goes to the dispute screen', async ({ page }) => {
     await stub(page, { trade: view() });
     await open(page);

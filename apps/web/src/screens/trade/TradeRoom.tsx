@@ -76,10 +76,11 @@
  * - tabletop: `TradeGlance` (information only) in the top half; the screen and the chat, with
  *   every control, in the bottom half.
  * - the flip cover screen: `TradeGlance` on top, the screen's phone layout under it.
- * - `#chat` (the Chat links of Tasks 24-25): on a phone and on the cover screen it opens the chat
- *   in a sheet; with a chat pane it moves the focus to its composer.
+ * - `#chat` (the Chat links of Tasks 24-25): on a phone, on the cover screen and in the wide layout
+ *   it opens the chat in a sheet; with a chat pane (or a screen's own wide chat aside, BuyerPay) it
+ *   moves the focus to its composer once the chat is ready.
  */
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router';
 import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
@@ -297,7 +298,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         }
         sideLabel={`Chat with ${publicName(view.counterparty)}`}
       />
-      <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} />
+      <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={`${view.state}:${view.role}`} />
     </main>
   );
 }
@@ -312,25 +313,64 @@ export function useChatPane(view: Pick<TradeView, 'state'>): boolean {
   return chatPaneFor(useFoldLayout(), useTradeChat() !== null, view);
 }
 
+const COMPOSER = ":is(input, textarea, [contenteditable='true'])";
+/** The room's chat pane (two panes, three, tabletop). */
+const PANE_CHAT = "[data-pane='side']";
+/** A screen's own chat aside in the wide layout (BuyerPay's WideRoom, the Desktop board). */
+const ASIDE_CHAT = "[data-pane='main'] .x2f-room__chat-panel";
+
 /** Moves the focus to the composer of the room's chat pane. */
 export function focusChatPane(): void {
-  document.querySelector<HTMLElement>("[data-pane='side'] :is(input, textarea, [contenteditable='true'])")?.focus();
+  document.querySelector<HTMLElement>(`${PANE_CHAT} ${COMPOSER}`)?.focus();
 }
 
 /**
- * `#chat` (the Chat links of SellerConfirm and SellerRefund): folded, the chat opens in a sheet over
- * the room and closing it drops the hash; with a chat pane the composer gets the focus. Its draft
- * is the same either way (useKeptText).
+ * Focuses the composer inside `where` now, or as soon as it appears: Task 20's panel renders its
+ * composer only once the chat is ready (the resolve, the device identity and the attestation round
+ * trips), so a `#chat` that arrives first waits for it (round-2 review m3). It never takes the
+ * focus from something the user moved it to in the meantime. Returns the cleanup.
  */
-function ChatHash({ hash, layout, chat, chatPane, name }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string }) {
+export function focusComposerWhenReady(where: string): () => void {
+  const find = () => document.querySelector<HTMLElement>(`${where} ${COMPOSER}`);
+  const now = find();
+  if (now) {
+    now.focus();
+    return () => undefined;
+  }
+  const before = document.activeElement;
+  const watch = new MutationObserver(() => {
+    const el = find();
+    if (!el) return;
+    watch.disconnect();
+    if (document.activeElement === before || document.activeElement === document.body || document.activeElement === null) el.focus();
+  });
+  watch.observe(document.body, { childList: true, subtree: true });
+  return () => watch.disconnect();
+}
+
+/**
+ * `#chat` (the Chat links of SellerRefund, SellerConfirm and Released): on a phone, the cover
+ * screen and the wide layout the chat opens in a sheet over the room and closing it drops the hash
+ * (round-2 review I2: the wide room has no chat pane, so its links open the sheet too); with a chat
+ * pane, or a screen's own wide chat aside (BuyerPay), the composer gets the focus once the chat is
+ * ready, never a second panel. Its draft is the same either way (useKeptText).
+ */
+function ChatHash({ hash, layout, chat, chatPane, name, screen }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string; screen: string }) {
   const navigate = useNavigate();
   const wanted = hash === '#chat' && chat !== null;
+  const wide = layout === 'wide';
+  // Whether the screen on show draws its own chat aside (read once it is laid out).
+  const [aside, setAside] = useState<boolean | null>(null);
+  useLayoutEffect(() => {
+    setAside(wanted && wide ? document.querySelector(ASIDE_CHAT) !== null : null);
+  }, [wanted, wide, screen]);
   useEffect(() => {
-    if (!wanted || !chatPane) return;
-    focusChatPane();
-  }, [wanted, chatPane]);
-  // The cover screen keeps the room under its card, so its Chat links work as on a phone (round-2 review m3).
-  if (!wanted || chatPane || layout === 'wide') return null;
+    if (!wanted) return;
+    if (chatPane) return focusComposerWhenReady(PANE_CHAT);
+    if (wide && aside === true) return focusComposerWhenReady(ASIDE_CHAT);
+    return undefined;
+  }, [wanted, chatPane, wide, aside]);
+  if (!wanted || chatPane || (wide && aside !== false)) return null;
   return (
     <Sheet open title={`Chat with ${name}`} onClose={() => void navigate({ hash: '' }, { replace: true })}>
       <div className="x2f-sheet__body">{chat}</div>

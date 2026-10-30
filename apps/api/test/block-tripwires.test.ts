@@ -1,7 +1,8 @@
 // TRIPWIRES for Task 37 (trader-to-trader block). The routes that let one trader reach another
 // are not all on the main line yet: Task 5's take, Task 20's chat routes and Plan 5's profile.
-// (Task 20's chat routes call assertNotBlocked since 2026-10-30: NEEDS_TASK_20_BLOCK is retired;
-// apps/api/test/chat.test.ts "blocks (Task 37)" tests them.)
+// (Task 20's chat routes call assertNotBlocked since 2026-10-30: NEEDS_TASK_20_BLOCK is retired
+// as a tripwire and kept below as a permanent guard; apps/api/test/chat.test.ts "blocks (Task 37)"
+// tests the behaviour.)
 // Each must refuse a blocked pair through src/traders/blocks.ts. These checks read the local tree
 // only: each fails when its route lands without the block check, and passes once it is wired.
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -30,6 +31,15 @@ describe('Task 37: every route between two traders checks the block', () => {
     // 2026-10-29: the blocker's take of the blocked person's offer is refused too, same 404).
     const takes = ['trades/take.ts', 'offers/take.ts'].map((f) => SRC + f).filter((f) => existsSync(f));
     expect(unchecked(takes), 'the take must call assertNotBlocked (traders/blocks.ts)').toEqual([]);
+  });
+
+  it('the chat routes refuse a blocked pair (permanent guard, round-2 review m2)', () => {
+    // Every file of apps/api/src/chat/ that defines routes must go through the block check
+    // (roleInChat → assertNotBlocked, POST /v1/chats, GET /v1/chats, POST /v1/trades/:code/chat):
+    // a later chat route file that forgets it fails here.
+    const routes = sources(SRC + 'chat').filter((f) => /routes/.test(f));
+    expect(routes.length, 'apps/api/src/chat has its routes').toBeGreaterThan(0);
+    expect(unchecked(routes), 'chat routes must call assertNotBlocked').toEqual([]);
   });
 
   it("NEEDS_PROFILE_BLOCK: a trader's profile answers 404 to someone the trader blocked", () => {

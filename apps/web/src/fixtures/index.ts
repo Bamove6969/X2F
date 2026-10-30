@@ -35,6 +35,11 @@ declare global {
     __x2fEscrowFail?: boolean;
     /** Fixture builds only: FinalAlert's I've paid opens a stand-in dialog until Task 23's PaidConfirmSheet lands. */
     __x2fFixturePaidSheet?: boolean;
+    /**
+     * Fixture builds only: keep Task 20's real TradeChatPanel in the chat seam instead of the
+     * board's stand-in (src/fixtures/payChat.tsx); e2e/chat.spec.ts sets it.
+     */
+    __x2fRealChat?: boolean;
   }
 }
 
@@ -47,7 +52,7 @@ export function installFixtures(): void {
       open ? createElement('div', { role: 'dialog', 'aria-label': 'Paid sheet stand-in' }, createElement('button', { type: 'button', onClick: onClose }, 'Close')) : null,
     );
   }
-  installPayFixtures();
+  installPayFixtures(window.__x2fRealChat === true);
   const escrow = window.__x2fFixtureEscrow;
   if (!escrow) return;
   const { deal, receivedAtomic, confirmedAtomic, amountAtomic, fiatCents, ...rest } = escrow;

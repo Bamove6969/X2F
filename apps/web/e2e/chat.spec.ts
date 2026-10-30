@@ -1,5 +1,7 @@
-// The encrypted chat (Task 20) end to end in a real browser: the room's `#chat` section on a
-// fixtures build served with the real CSP, the real chat engine in the escrow worker (device
+// The encrypted chat (Task 20) end to end in a real browser: the room's chat (the `#chat` sheet on a
+// phone, the side pane with two panes) on a fixtures build served with the real CSP, with Task 20's
+// real TradeChatPanel kept in the chat seam (window.__x2fRealChat, src/fixtures/payChat.tsx; other
+// specs get the board's stand-in chat), the real chat engine in the escrow worker (device
 // identity in IndexedDB, the attestation checked against the build's pinned moderation key), and a
 // page.route stand-in for the chat API in Task 20's shapes. The other trader and the moderation
 // service are played here with libsodium and @x2f/protocol: the test seals the buyer's line, signs
@@ -113,16 +115,20 @@ async function openRoom(page: Page): Promise<void> {
   await page.addInitScript(
     ({ amountAtomic, fiatCents }) => {
       window.__x2fFixtureEscrow = { phase: 'ready', amountAtomic, fiatCents };
+      window.__x2fRealChat = true;
     },
     { amountAtomic: view.amountAtomic, fiatCents: view.fiatCents },
   );
   await page.goto(`${BASE}/trade/${CODE}#chat`);
 }
 
-test("the room's #chat: a device-bound identity, the buyer's line, and a sealed reply only the buyer and the mod open", async ({ page }) => {
+/** The room's chat sheet that `#chat` opens on a phone. */
+const chatSheet = (page: Page) => page.getByRole('dialog', { name: `Chat with ${BOARD.buyer}` });
+
+test("the room's #chat sheet: a device-bound identity, the buyer's line, and a sealed reply only the buyer and the mod open", async ({ page }) => {
   const chat = await stubChat(page);
   await openRoom(page);
-  const panel = page.locator('#chat');
+  const panel = chatSheet(page);
   await expect(panel).toContainText(NOTICE);
   await expect(panel.locator('[data-from="buyer"]')).toContainText('Hello from the buyer', { timeout: 30_000 });
   await expect(panel.locator('[data-from="buyer"] [data-username]')).toHaveText(BOARD.buyer);
@@ -151,7 +157,28 @@ test('another device of the account (the API holds another key) reads only the n
   await page.route(`**/v1/trades/${CODE}/chat`, json({ chat: CHAT, role: 'seller' }));
   await page.context().route(`**/v1/chats/${CHAT}`, json({ chat: CHAT, role: 'seller', offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: BOARD.buyer }, tradeCode: BOARD.code, disputeOpen: false, attested: true, mySignPublic: other.signPublic, createdAt: '2026-10-28T12:00:00.000Z', lastMessageAt: null }));
   await openRoom(page);
-  const panel = page.locator('#chat');
+  const panel = chatSheet(page);
   await expect(panel).toContainText('This conversation is open on another device', { timeout: 30_000 });
   await expect(panel.locator('textarea')).toHaveCount(0);
+});
+
+test('two panes: the real chat sits beside the screen, and #chat focuses its composer once the chat is ready (round-2 review m3)', async ({ page }) => {
+  await stubChat(page);
+  await page.setViewportSize({ width: 840, height: 900 });
+  await openRoom(page);
+  const pane = page.locator('[data-pane="side"]');
+  await expect(pane).toContainText(NOTICE);
+  await expect(pane.locator('[data-from="buyer"]')).toContainText('Hello from the buyer', { timeout: 30_000 });
+  await expect(pane.locator('textarea')).toBeFocused();
+  await expect(chatSheet(page)).toHaveCount(0);
+});
+
+test('wide (1280 px): #chat opens the real chat in a sheet (round-2 review I2)', async ({ page }) => {
+  await stubChat(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await openRoom(page);
+  await expect(page.locator('html')).toHaveAttribute('data-fold', 'wide');
+  const panel = chatSheet(page);
+  await expect(panel.locator('[data-from="buyer"]')).toContainText('Hello from the buyer', { timeout: 30_000 });
+  await expect(panel.locator('textarea')).toBeVisible();
 });

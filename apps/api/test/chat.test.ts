@@ -479,6 +479,12 @@ describe('chat write budgets (review M7)', () => {
     setNow(new Date(now.getTime() + 60_000));
     expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', CHAT_POST_BUCKET.capacity))).statusCode).toBe(201);
   });
+
+  it('m5: malformed posts (400) do not spend the budget', async () => {
+    const r = await readyChat();
+    for (let i = 0; i < CHAT_POST_BUCKET.capacity + 5; i++) expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, { not: 'an envelope' })).statusCode).toBe(400);
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+  });
 });
 
 describe('POST /v1/trades/:code/chat', () => {
@@ -563,6 +569,53 @@ describe('purgeChats', () => {
     expect(await exists(closed)).toBe(false);
     expect(await exists(disputed)).toBe(true);
     expect(await exists(open)).toBe(true);
+  });
+
+  /**
+   * Holds the chat's row lock in another transaction (as a post or a take does), starts the purge,
+   * waits until the purge waits on that lock, then runs `change` and commits.
+   */
+  async function raceThePurge(chat: string, at: Date, change: (q: { query: (sql: string, args: unknown[]) => Promise<unknown> }) => Promise<void>): Promise<number> {
+    const other = await deps.db.connect();
+    try {
+      await other.query('begin');
+      await other.query('select 1 from chats where code = $1 for update', [chat]);
+      const purge = purgeChats(deps.db, at);
+      for (let i = 0; ; i++) {
+        const { rows } = await deps.db.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid()`,
+        );
+        if (rows.length > 0) break;
+        if (i > 200) throw new Error('the purge never waited on the chat lock');
+        await new Promise((r) => setTimeout(r, 25));
+      }
+      await change(other);
+      await other.query('commit');
+      return await purge;
+    } finally {
+      other.release();
+    }
+  }
+
+  it('m1: a chat written to after the scan judged it idle stays (re-checked under the row lock)', async () => {
+    const t0 = new Date('2026-05-01T00:00:00Z');
+    const chat = await chatAt(t0);
+    const at = new Date(t0.getTime() + 8 * DAY);
+    await raceThePurge(chat, at, async (q) => {
+      await q.query('update chats set last_message_at = $2 where code = $1', [chat, at]);
+    });
+    expect(await exists(chat)).toBe(true);
+  });
+
+  it('m1: a pre-trade chat linked by a take after the scan stays with its new trade', async () => {
+    const t0 = new Date('2026-04-01T00:00:00Z');
+    const chat = await chatAt(t0);
+    const owners = await deps.db.query<{ buyer_account_id: string; seller_account_id: string }>('select buyer_account_id, seller_account_id from chats where code = $1', [chat]);
+    const t = await seedTrade(deps, { sellerId: owners.rows[0]!.seller_account_id, buyerId: owners.rows[0]!.buyer_account_id, poster: 'seller' });
+    await raceThePurge(chat, new Date(t0.getTime() + 8 * DAY), async (q) => {
+      await q.query('update chats set trade_code = $2 where code = $1', [chat, t.code]);
+    });
+    expect(await exists(chat)).toBe(true);
   });
 
   it('removes the envelopes with the chat, takes its due rule from a function, and is a retention job', async () => {

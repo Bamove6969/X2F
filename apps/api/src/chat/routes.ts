@@ -358,7 +358,6 @@ export function chatRoutes(app: FastifyInstance): void {
     const { row, role } = await roleInChat(deps.db, (req.params as { chat: string }).chat, req.auth.accountId);
     const ready = await deps.db.query('select 1 from chat_attestations where chat = $1', [row.code]);
     if (ready.rows.length === 0) throw new ApiError(409, 'chat-not-ready');
-    req.server.budgets.chatPost.take(req.auth.accountId);
     let env;
     try {
       env = checkChatEnvelope(req.body, await channelFor(row.code, 'chat'), role);
@@ -368,6 +367,9 @@ export function chatRoutes(app: FastifyInstance): void {
       if (e.code === 'wrong-channel' || e.code === 'wrong-sender') throw new ApiError(400, e.code);
       throw new ApiError(400, 'bad-request');
     }
+    // The budget is taken only for a well-formed envelope (round-2 review m5): a client bug's
+    // malformed posts answer 400/413 and leave the sender's budget alone.
+    req.server.budgets.chatPost.take(req.auth.accountId);
     const now = deps.clock();
     const id = await locked(req, row.code, async (q) => {
       const last = await q.query<{ seq: string | null }>(
