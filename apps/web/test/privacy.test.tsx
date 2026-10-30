@@ -12,7 +12,7 @@ import { render } from './render.js';
 afterEach(() => vi.unstubAllGlobals());
 
 async function shown(answer: () => Promise<Response>): Promise<HTMLElement> {
-  const fetchMock = vi.fn(answer);
+  const fetchMock = vi.fn((_url: RequestInfo | URL, _init?: RequestInit) => answer());
   vi.stubGlobal('fetch', fetchMock);
   const { host } = render(<Privacy />);
   await act(async () => {
