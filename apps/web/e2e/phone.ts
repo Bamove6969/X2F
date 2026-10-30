@@ -11,7 +11,8 @@ export const PHONE_VIEWPORTS: readonly ParityViewport[] = ['390x844', '360x800']
  * Foldable sizes (Plan 3 Task 40; PHONE_VIEWPORTS stays the phone standard): a flip phone's cover
  * screen (360x380, the Fold-Cover board), the two-pane edge (600), a book fold's inner screen
  * (840x900, Fold-Trade's 840 wide), the last two-pane width (999) and the wide edge (1000x840,
- * Fold-Tabletop's size). Width-only: segments are emulated in e2e/fold.spec.ts.
+ * Fold-Tabletop's size). Width-only: segments and the folded posture (which alone turns on the
+ * cover layout, review I2) are emulated in e2e/fold.spec.ts.
  */
 export const FOLD_VIEWPORTS: readonly ParityViewport[] = ['360x380', '600x900', '840x900', '999x900', '1000x840'];
 
