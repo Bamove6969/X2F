@@ -68,11 +68,18 @@ const DATE_NUMERIC = new RegExp(`${NB}${B}(\\d{1,2})([-/.])(\\d{1,2})\\2(\\d{4}|
 /** A UK sort code label: a dashed `12-05-26` on its line is a sort code, not a date (review M5). */
 const SORT_CODE = /(?<![A-Za-z])sort[\s-]*code(?![A-Za-z])/i;
 
+/**
+ * A phone-like digit group right before a 2-digit-year date, joined by a space (review R2-I2:
+ * `0470 01.02.03` is a Belgian mobile): a group starting with `0` or `+`, or of 3-4 digits.
+ */
+const PHONE_GROUP_BEFORE = /(?:^|\s)(?:\+\d{1,4}|0\d*|\d{3,4}) $/;
+
 function markDates(text: string, keep: boolean[]): void {
   for (const re of DATE_TEXT) for (const m of text.matchAll(re)) mark(keep, m.index, m.index + m[0].length);
   const sortCode = SORT_CODE.test(text);
   for (const m of text.matchAll(DATE_NUMERIC)) {
     if (sortCode && m[2] === '-' && m[4]!.length === 2) continue;
+    if (m[4]!.length === 2 && PHONE_GROUP_BEFORE.test(text.slice(0, m.index))) continue;
     const a = Number(m[1]);
     const b = Number(m[3]);
     const ok = (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
@@ -129,18 +136,25 @@ const DIGIT_RUN = /\d+(?:[ -]\d+)*/g;
 /** IBAN shape: country, check digits, 11-30 more letters or digits, optionally grouped. */
 const IBAN = new RegExp(`${B}[A-Z]{2}\\d{2}(?:[ -]?[A-Z0-9]){11,30}${E}`, 'g');
 /**
- * Masked tails such as `••••1234`, `****1234`, `xx1234`, and the forms OCR or banks print for them:
- * `...1234`, `…1234`, `°°°°1234` (review M1).
+ * Masked tails such as `••••1234`, `****1234`, `xx1234`, `°°°°1234` (review M1). The dot and
+ * ellipsis forms `...1234` and `…1234` take exactly 4 digits right after them (review R2-M1), so
+ * `Waited ... 15 minutes` is not one.
  */
-const MASKED_TAIL = new RegExp(`${B}(?:[•*●·∙°xX…]{2,}|…|\\.{3,}) ?\\d{2,}`, 'g');
-/** The digits after `ending` or `ending in` (`Account ending in 1234`). */
-const ENDING = /(?<=(?<![A-Za-z])ending(?: in)?:? ?)\d{2,}(?!\d)/gi;
+const MASKED_TAIL = new RegExp(`${B}(?:[•*●·∙°xX]{2,} ?\\d{2,}|(?:…+|\\.{3,})\\d{4}(?!\\d))`, 'g');
+/** The 4 digits after `ending` or `ending in` (`Account ending in 1234`). */
+const ENDING = /(?<=(?<![A-Za-z])ending(?: in)?:? ?)\d{4}(?!\d)/gi;
 /** Letters or digits of any script in the local part and the domain (review M4: `jane@exämple.com`). */
 const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
-/** An email OCR split before its `@` (`jane.doe @example.com`): the word before belongs to it. */
-const SPLIT_EMAIL = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._%+-]+ @[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}(?![\p{L}\p{N}])/gu;
-/** Phone candidates: an optional `+`, digits with spaces, dots, dashes or brackets between them. */
-const PHONE = /(?<![A-Za-z0-9+])\+?\(?\d(?:[\d ().-]*\d)?\)?/g;
+/**
+ * An email OCR split around its `@` (`jane.doe @example.com`, `jane.doe@ example.com`,
+ * `jane.doe @ example.com`): one space at most on each side, at least one in all.
+ */
+const SPLIT_EMAIL = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._%+-]+(?: @ ?|@ )[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}(?![\p{L}\p{N}])/gu;
+/**
+ * Phone candidates: an optional `+`, digits with spaces, dots, dashes, slashes (`0470/12.34.56`,
+ * review R2-I2) or brackets between them. Dates are blanked before this runs.
+ */
+const PHONE = /(?<![A-Za-z0-9+])\+?\(?\d(?:[\d ().\/-]*\d)?\)?/g;
 const HANDLE = /(?<![A-Za-z0-9._%+-])[@$][A-Za-z][A-Za-z0-9_.-]*[A-Za-z0-9_]|(?<![A-Za-z0-9._%+-])[@$][A-Za-z]/g;
 /**
  * Monero addresses, also misread, wrapped over two lines or on stagenet and testnet (review M3): any
@@ -149,6 +163,14 @@ const HANDLE = /(?<![A-Za-z0-9._%+-])[@$][A-Za-z][A-Za-z0-9_.-]*[A-Za-z0-9_]|(?<
  */
 const MONERO = new RegExp(`${B}[45789AB][1-9A-HJ-NP-Za-km-z]{29,}${E}`, 'g');
 const LONG_TOKEN = new RegExp(`${B}[0-9A-Za-z]{40,}${E}`, 'g');
+/**
+ * A mainnet address shortened in the middle (`44AFFq…QBEP3A`, review R2-M4): `4` or `8`, then a
+ * digit, `A` or `B` as real addresses have, at least 5 base58 characters, dots or an ellipsis, and
+ * at least 4 more.
+ */
+const MONERO_SHORT = new RegExp(`${B}[48][1-9AB][1-9A-HJ-NP-Za-km-z]{3,}(?:…|\\.{2,})[1-9A-HJ-NP-Za-km-z]{4,}${E}`, 'g');
+/** The rest of a wrapped address on the next line: a base58 token of 20 or more characters. */
+const BASE58_TAIL = new RegExp(`${B}[1-9A-HJ-NP-Za-km-z]{20,}${E}`, 'g');
 const NOT_BASE58 = /[0OIl]/g;
 
 /**
@@ -161,7 +183,8 @@ const TOKEN = /[0-9A-Za-z|]+/g;
 
 /** The text with look-alikes in digit tokens turned into `0`, and which characters were turned. */
 function withLookalikeDigits(text: string): { text: string; changed: boolean[] } {
-  const chars = [...text];
+  // UTF-16 units, as `m.index` counts them (review R2-M2: `[...text]` shifts after an emoji).
+  const chars = text.split('');
   const changed: boolean[] = new Array<boolean>(text.length).fill(false);
   for (const m of text.matchAll(TOKEN)) {
     const t = m[0];
@@ -217,6 +240,7 @@ function moneySpans(text: string): Span[] {
   for (const m of text.matchAll(MASKED_TAIL)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
   for (const m of text.matchAll(ENDING)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
   for (const m of text.matchAll(MONERO)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
+  for (const m of text.matchAll(MONERO_SHORT)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   for (const m of text.matchAll(LONG_TOKEN)) {
     if ((m[0].match(NOT_BASE58)?.length ?? 0) * 10 <= m[0].length) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   }
@@ -224,7 +248,7 @@ function moneySpans(text: string): Span[] {
   for (const m of text.matchAll(PHONE)) {
     const s = m[0];
     const digits = digitsOf(s);
-    if (digits.length >= 7 && (s.startsWith('+') || /[ ().-]/.test(s))) out.push({ start: m.index, end: m.index + s.length, kind: 'phone', rank: RANK.phone });
+    if (digits.length >= 7 && (s.startsWith('+') || /[ ()./-]/.test(s))) out.push({ start: m.index, end: m.index + s.length, kind: 'phone', rank: RANK.phone });
   }
   return out;
 }
@@ -352,6 +376,14 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
     }
   });
 
+  // A Monero-class token on one line: a base58 token of 20 or more on the next line is its rest.
+  lines.forEach((l, i) => {
+    const next = lines[i + 1];
+    if (!next || !spans[i]!.some((s) => s.rank === RANK.monero)) return;
+    const t = blanked(next.text, kept[i + 1]!);
+    for (const m of t.matchAll(BASE58_TAIL)) spans[i + 1]!.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
+  });
+
   const out: Region[] = [];
   lines.forEach((l, i) => {
     const best = visible(l.text, resolve(l.text.length, spans[i]!, kept[i]!));
@@ -421,6 +453,21 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
  * separator may be a thousands group (`123,456`), so those stay a whole number.
  */
 const DECIMAL = /(?<!\d|\d[.,])\d+[.,](\d{1,2}|\d{4,})(?!\d|[.,]\d)/g;
+/** A currency or crypto code or symbol right after or right before a number (one space allowed). */
+const MARK_AFTER = /^ ?(?:[A-Z]{3}(?![A-Za-z])|[$€£¥₹₽₩₺₴₱₦₪₫₿])/;
+const MARK_BEFORE = /(?:(?<![A-Za-z])[A-Z]{3}|[$€£¥₹₽₩₺₴₱₦₪₫₿]) ?$/;
+
+/**
+ * A decimal part of 4 or more digits is kept only when the number looks like an amount (review
+ * R2-I1, `347.1234567` is an Italian phone): the whole part is `0` or 1-3 digits without a leading
+ * zero, and a currency or crypto code or symbol is next to it (`0.12345678 XMR`).
+ */
+function longDecimalIsAmount(line: string, at: number, num: string, fracLen: number): boolean {
+  const whole = num.slice(0, num.length - fracLen - 1);
+  if (!(whole === '0' || /^[1-9]\d{0,2}$/.test(whole))) return false;
+  return MARK_AFTER.test(line.slice(at + num.length)) || MARK_BEFORE.test(line.slice(0, at));
+}
+
 /** A range of years, `2023 - 2026` or `2023-2026`. */
 const YEAR_RANGE = /(?<!\d|\d[-/.,] ?)(?:19|20)\d{2} ?[-–—] ?(?:19|20)\d{2}(?!\d| ?[-/.,]\d)/g;
 
@@ -440,7 +487,10 @@ export function detectSensitiveText(s: string): HiddenKind[] {
     // Review M6: the digits after a decimal point (`0.12345678 XMR`) and year ranges (`2023 - 2026`)
     // are not details. Whole numbers of 6 or more digits (`250000 COP`, `1 250 000 IDR`) still are:
     // that rule is open owner question 29, unchanged here.
-    for (const m of line.matchAll(DECIMAL)) mark(k, m.index + m[0].length - m[1]!.length, m.index + m[0].length);
+    for (const m of line.matchAll(DECIMAL)) {
+      if (m[1]!.length >= 4 && !longDecimalIsAmount(line, m.index, m[0], m[1]!.length)) continue;
+      mark(k, m.index + m[0].length - m[1]!.length, m.index + m[0].length);
+    }
     for (const m of line.matchAll(YEAR_RANGE)) mark(k, m.index, m.index + m[0].length);
     for (const m of line.matchAll(ANY_CODE)) {
       if (/[A-Za-z]/.test(m[0]) && normalizeTradeCode(m[0]) !== null) mark(k, m.index, m.index + m[0].length);
