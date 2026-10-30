@@ -243,6 +243,16 @@ export function createWatcher(o: WatcherOptions): Watcher {
   const backoff = new Map<string, { until: number; delayMs: number }>();
   let stopped = false;
 
+  /** Opens the trade's desk (Task 10) if it is not open; a failure is retried on the next pass (review M2). */
+  const ensureDesk = async (a: ModPartyArgs): Promise<void> => {
+    if (!o.openDesk || desks.has(a.trade)) return;
+    try {
+      desks.set(a.trade, await o.openDesk(a));
+    } catch {
+      o.log({ reason: 'desk-open-failed' });
+    }
+  };
+
   const start = (a: ModPartyArgs): Promise<void> => {
     const code = a.trade;
     if (running.has(code)) return Promise.resolve();
@@ -257,13 +267,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
         }
         running.set(code, handle);
         argsOf.set(code, a);
-        if (o.openDesk) {
-          try {
-            desks.set(code, await o.openDesk(a));
-          } catch {
-            o.log({ reason: 'desk-open-failed' });
-          }
-        }
+        await ensureDesk(a);
         handle.ready().then(
           async (address) => {
             await o.db.query('update mod_watch set escrow_address = coalesce(escrow_address, $2), updated_at = now() where trade = $1', [code, address]);
@@ -340,10 +344,19 @@ export function createWatcher(o: WatcherOptions): Watcher {
     });
     if (!(await post(row.trade, step.reports))) return true;
     // Task 10: the desk sees the same accepted facts, then decides the refunds the moderator signs alone.
+    await ensureDesk(args);
     const desk = desks.get(row.trade);
     if (desk) {
       await desk
-        .step({ handle, api: item, escrowAddress: row.escrow_address, reports: step.reports, funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked } })
+        .step({
+          handle,
+          api: item,
+          escrowAddress: row.escrow_address,
+          reports: step.reports,
+          chain: step.state.closedAt === null ? step.state.lastChain : null,
+          settledTx: step.state.settledTx,
+          funds: { balance: facts.funds.balance, unlocked: facts.funds.unlocked },
+        })
         .catch(() => o.log({ reason: 'desk-step-failed' }));
     }
     if (step.closeChannels) {
@@ -400,7 +413,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
             closedHere = false;
           }
           if (!closedHere) continue;
-          item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null };
+          item = { state: 'cancelled', settleKind: null, paused: false, finalAlertSeenAt: null, finalAlertAt: null };
         }
         const apiState = item.state as TradeState;
         try {

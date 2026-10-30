@@ -75,6 +75,10 @@ export function fakeNetwork(ctx: Ctx) {
     states: new Map<string, string>(),
     seen: new Map<string, Date>(),
     paused: new Set<string>(),
+    /** The API's own (pause-shifted) final alert per trade (Task 10 review I1). */
+    alerts: new Map<string, Date>(),
+    /** settleKindFor at the API, per trade (default null). */
+    settleKinds: new Map<string, string>(),
     reports: [] as Report[],
     unsigned: [] as string[],
     answer: (_r: Report): { status: number; error?: string } => ({ status: 201 }),
@@ -94,7 +98,14 @@ export function fakeNetwork(ctx: Ctx) {
       if (init.method === 'GET' && u.pathname === '/internal/v1/work') return reply(200, { work: net.work });
       if (init.method === 'GET' && u.pathname === '/internal/v1/watch') {
         return reply(200, {
-          trades: [...net.states].map(([trade, state]) => ({ trade, state, paused: net.paused.has(trade), finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null })),
+          trades: [...net.states].map(([trade, state]) => ({
+            trade,
+            state,
+            settleKind: net.settleKinds.get(trade) ?? null,
+            paused: net.paused.has(trade),
+            finalAlertSeenAt: net.seen.get(trade)?.toISOString() ?? null,
+            finalAlertAt: net.alerts.get(trade)?.toISOString() ?? null,
+          })),
         });
       }
       if (init.method === 'POST' && u.pathname === '/internal/v1/reports') {
@@ -202,7 +213,8 @@ export interface Mod {
   logs: string[];
 }
 
-export async function moderation(ctx: Ctx, fetch: Fetch): Promise<Mod> {
+/** `deskFails.on`: every desk open fails while set (review M2: the watcher retries it). */
+export async function moderation(ctx: Ctx, fetch: Fetch, opts: { deskFails?: { on: boolean } } = {}): Promise<Mod> {
   const parties = new Map<string, FakeParty>();
   const transports = new Map<string, FakeTransport>();
   const started: ModPartyArgs[] = [];
@@ -232,6 +244,7 @@ export async function moderation(ctx: Ctx, fetch: Fetch): Promise<Mod> {
         return p.handle;
       },
       signalsTransport: ({ channel }) => {
+        if (opts.deskFails?.on) throw new Error('desk open failed (test)');
         const t = fakeTransport();
         transports.set(channel, t);
         return t.transport;

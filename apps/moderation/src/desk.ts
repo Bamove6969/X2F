@@ -1,6 +1,6 @@
 import type { Outcome, PartyHandle, Payout, Transport } from '@x2f/escrow';
 import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol';
-import { channelFor, payoutsFor, settleKindFor, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
+import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { autoRefundStep } from './autoRefund.js';
 import { buyerCancelStep } from './buyerCancel.js';
@@ -21,11 +21,17 @@ import { readSignal, sealAck, signalLoop, termsMatch, type ModSignal } from './s
  *   signals opened here (`apply` on this service's clock). A seller's extend or refund request that
  *   arrives before the shadow's own payBy is retried each pass.
  * - Each watcher pass (`step`), after its reports were accepted: buyer cancel first (a valid
- *   `trade.cancel` from the buyer's identity), else the auto-refund guard (autoRefund.ts). A refund
+ *   `trade.cancel` from the buyer's identity that the shadow took, never after a `trade.paid`,
+ *   buyerCancel.ts), else the auto-refund guard (autoRefund.ts), which also runs while a cancel
+ *   waits, so its escalation fallback is never blocked (review M3). A refund
  *   once armed is kept; its payouts are derived again from the balance this party reads, and
  *   `settle` is called again only when they change (a late surplus before signing) or after a
  *   restart. The moderator never takes payouts from a tx set or the API: `settle` co-signs only a
  *   set equal to the outcome derived here (Plan 1).
+ * - Once the shadow or the API shows the trade closed, or this pass showed a sweep, nothing more is
+ *   signed here (late coins go to a person, P3-I6; review M4).
+ * - The shadow catches up every pass from the watcher's latest chain facts and shown sweep, so a
+ *   pass whose desk step failed loses nothing (review M2).
  */
 export interface DeskRecord {
   v: 1;
@@ -36,29 +42,38 @@ export interface DeskRecord {
   shadow: Trade | null;
   /** A valid `trade.paid` from the buyer's identity was opened (ever): no auto-refund after that. */
   paidSeen: boolean;
-  /** A valid `trade.cancel` from the buyer's identity was opened. */
+  /** When the first `trade.paid` was opened (this service's clock). */
+  paidSeenAt: Date | null;
+  /** A valid `trade.cancel` from the buyer's identity was opened and the shadow took it (review I3). */
   cancelSeen: boolean;
   /** The seller-signed refund address (equal to the attested one), or null before it arrived. */
   sellerRefund: string | null;
   /** The buyer-signed payout address (equal to the attested one), or null before it arrived. */
   buyerPayout: string | null;
-  /** Seller events the shadow refused `too-early` (signal before the shadow's own deadline), retried each pass. */
+  /** Seller events the shadow refused `too-early` (signal before the shadow's own deadline), retried each pass; at most one of each (review M5). */
   pending: Array<'extend' | 'request-refund'>;
   /** The refund this service decided to co-sign alone; kept for good. */
   armed: { kind: 'auto-refund' | 'buyer-cancel'; at: Date } | null;
   /** The escalation report the API accepted (then nothing more is decided here). */
   escalated: string | null;
-  /** When this service first saw the API show `refund_requested`. */
+  /** When this service first saw the API show `refund_requested`; restarts while the API trade is paused (review M7). */
   apiRefundSince: Date | null;
 }
 
 export interface DeskStep {
   handle: PartyHandle;
-  /** The API's watch-list item: its state, the final-alert receipt, and maintenance (`paused`). */
-  api: { state: string; finalAlertSeenAt: Date | null; paused?: boolean };
+  /**
+   * The API's watch-list item: its state and settlement kind, its own pause-shifted final alert
+   * and the receipt for it, and maintenance (`paused`).
+   */
+  api: { state: string; finalAlertSeenAt: Date | null; finalAlertAt?: Date | null; settleKind?: string | null; paused?: boolean };
   escrowAddress: string | null;
   /** The watcher reports this pass posted (all accepted). */
   reports: readonly WatchReport[];
+  /** The watcher's latest chain facts for the open trade (its state after this pass), for the catch-up (review M2). */
+  chain?: ChainFacts | null;
+  /** The sweep this service's own watcher showed (and proved), or null. */
+  settledTx?: string | null;
   /** The escrow as this pass read it from the party. */
   funds: { balance: bigint; unlocked: bigint };
 }
@@ -86,13 +101,17 @@ const ROUTE: Record<'auto-refund' | 'buyer-cancel', { builder: 'seller' | 'buyer
   'buyer-cancel': { builder: 'buyer' },
 };
 
+const CLOSED: readonly string[] = ['released', 'refunded', 'cancelled'];
+
 const accepted = (r: { status: number; error: string | null }): boolean => r.status === 201 || r.status === 200 || (r.status === 409 && r.error === 'wrong-state');
 
 const outcomeKey = (o: Outcome): string => JSON.stringify([o.builder, o.cosigner, o.to.map((p) => [p.address, p.amountAtomic.toString()])]);
 
 async function loadRecord(db: pg.Pool, trade: string): Promise<DeskRecord | null> {
   const { rows } = await db.query<{ record: unknown }>('select record from mod_trade_desk where trade = $1', [trade]);
-  return rows[0] ? (fromJson(rows[0].record) as DeskRecord) : null;
+  if (!rows[0]) return null;
+  const r = fromJson(rows[0].record) as DeskRecord;
+  return { ...r, paidSeenAt: r.paidSeenAt ?? null };
 }
 
 export async function openDesk(o: DeskOptions): Promise<Desk> {
@@ -117,6 +136,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       seq: 0,
       shadow,
       paidSeen: false,
+      paidSeenAt: null,
       cancelSeen: false,
       sellerRefund: rows[0]?.seller_terms?.address ?? null,
       buyerPayout: rows[0]?.buyer_terms?.address ?? null,
@@ -190,17 +210,19 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         break;
       }
       case 'trade.paid': {
-        next = { ...next, paidSeen: true };
+        next = { ...next, paidSeen: true, paidSeenAt: next.paidSeenAt ?? now };
         const r = feed(next.shadow, { type: 'mark-paid', fiatCents: s.fiatCents }, 'buyer', now);
         next = { ...next, shadow: r.trade };
         if (r.refused) o.log({ reason: `shadow-mark-paid-${r.refused}` });
         break;
       }
       case 'trade.cancel': {
-        next = { ...next, cancelSeen: true };
+        // Counted only when the shadow takes it (review I3): a cancel it refuses (wrong-state, no
+        // shadow) is never co-signed. A cancel in setup or before any coin closes the shadow.
         const r = feed(next.shadow, { type: 'buyer-cancel' }, 'buyer', now);
         next = { ...next, shadow: r.trade };
         if (r.refused) o.log({ reason: `shadow-buyer-cancel-${r.refused}` });
+        else next = { ...next, cancelSeen: true };
         break;
       }
       case 'trade.extend':
@@ -208,7 +230,7 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         const type = s.type === 'trade.extend' ? 'extend' : 'request-refund';
         const r = feed(next.shadow, { type }, 'seller', now);
         next = { ...next, shadow: r.trade };
-        if (r.refused === 'too-early') next = { ...next, pending: [...next.pending, type] };
+        if (r.refused === 'too-early') next = next.pending.includes(type) ? next : { ...next, pending: [...next.pending, type] };
         else if (r.refused) o.log({ reason: `shadow-${type}-${r.refused}` });
         break;
       }
@@ -277,6 +299,18 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         if (kind !== null) r = { ...r, shadow: feed(r.shadow, { type: 'settled', kind, txHash: rep.txHash }, 'system', now).trade };
       }
     }
+    // Catch-up (review M2): the watcher's latest facts, whether or not a report carried them this pass.
+    if (r.shadow && !CLOSED.includes(r.shadow.state) && s.chain) {
+      const c = s.chain;
+      const t = r.shadow;
+      if (t.receivedAtomic !== c.receivedAtomic || t.unlockedAtomic !== c.unlockedAtomic || t.confirmations !== c.confirmations) {
+        r = { ...r, shadow: feed(t, { type: 'chain', ...c }, 'system', now).trade };
+      }
+    }
+    if (r.shadow && !CLOSED.includes(r.shadow.state) && s.settledTx) {
+      const kind = settleKindFor(r.shadow);
+      if (kind !== null) r = { ...r, shadow: feed(r.shadow, { type: 'settled', kind, txHash: s.settledTx }, 'system', now).trade };
+    }
     // 2. Seller events that came before the shadow's own deadline.
     if (r.pending.length > 0) {
       const keep: DeskRecord['pending'] = [];
@@ -293,10 +327,18 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     if (r.shadow && s.api.paused === true && r.shadow.pausedAt === null) r = { ...r, shadow: feed(r.shadow, { type: 'pause' }, 'system', now).trade };
     if (r.shadow && s.api.paused !== true && r.shadow.pausedAt !== null) r = { ...r, shadow: feed(r.shadow, { type: 'resume' }, 'system', now).trade };
     if (r.shadow) r = { ...r, shadow: feed(r.shadow, { type: 'tick' }, 'system', now).trade };
-    r = { ...r, apiRefundSince: s.api.state === 'refund_requested' ? (r.apiRefundSince ?? now) : null };
+    // The refund-unverified hour does not count a maintenance pause: it restarts while paused (review M7).
+    r = { ...r, apiRefundSince: s.api.state === 'refund_requested' ? (s.api.paused === true ? now : (r.apiRefundSince ?? now)) : null };
 
-    // 3. The refunds the moderator may sign alone.
-    if (r.armed !== null) {
+    // 3. The refunds the moderator may sign alone. Never once the trade is over (review M4).
+    const over =
+      CLOSED.includes(s.api.state) ||
+      (r.shadow !== null && CLOSED.includes(r.shadow.state)) ||
+      Boolean(s.settledTx) ||
+      s.reports.some((x) => x.kind === 'settled');
+    if (over) {
+      if (r.armed !== null || r.cancelSeen) logOnce('over', 'desk-trade-over');
+    } else if (r.armed !== null) {
       const kind = r.armed.kind;
       const { balance, unlocked } = s.funds;
       if (balance > 0n && balance === unlocked) {
@@ -307,7 +349,14 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         }
       }
     } else {
-      const bc = buyerCancelStep({ cancelSeen: r.cancelSeen, recordedRefundAddress: r.sellerRefund, funds: s.funds, refundFor: refundFor(r, 'buyer-cancel') });
+      const bc = buyerCancelStep({
+        cancelSeen: r.cancelSeen,
+        paidSeen: r.paidSeen,
+        api: { state: s.api.state, settleKind: s.api.settleKind ?? null },
+        recordedRefundAddress: r.sellerRefund,
+        funds: s.funds,
+        refundFor: refundFor(r, 'buyer-cancel'),
+      });
       if (bc.action === 'sign') {
         r = { ...r, armed: { kind: 'buyer-cancel', at: now } };
         await save(r); // armed before the party is asked
@@ -315,13 +364,15 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
         return;
       }
       if (bc.action === 'refuse') logOnce('buyer-cancel', `buyer-cancel-${bc.reason}`);
-      if (bc.action === 'none' && r.escalated === null) {
+      // A cancel that waits or is refused never blocks the auto-refund's escalations (review M3).
+      if (r.escalated === null) {
         const ar = autoRefundStep({
           now,
           shadow: r.shadow,
           api: s.api,
           apiRefundSince: r.apiRefundSince,
           paidSeen: r.paidSeen,
+          paidSeenAt: r.paidSeenAt,
           recordedRefundAddress: r.sellerRefund,
           funds: s.funds,
           refundFor: refundFor(r, 'auto-refund'),

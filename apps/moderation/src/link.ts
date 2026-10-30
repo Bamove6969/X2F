@@ -34,6 +34,8 @@ export interface WatchItem {
   paused: boolean;
   /** `trades.final_alert_seen_at` when `final_alert_delivered` is true; null otherwise. */
   finalAlertSeenAt: Date | null;
+  /** `trades.final_alert_at`: the API's own, shifted by every maintenance pause it applied (Task 10 review I1). */
+  finalAlertAt: Date | null;
 }
 
 export interface Link {
@@ -123,15 +125,15 @@ export function createLink(o: {
       const body = (await res.json()) as { trades?: unknown };
       const out = new Map<string, WatchItem>();
       if (!Array.isArray(body.trades)) return out;
-      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown }>) {
+      for (const t of body.trades as Array<{ trade?: unknown; state?: unknown; settleKind?: unknown; paused?: unknown; finalAlertSeenAt?: unknown; finalAlertAt?: unknown }>) {
         if (typeof t?.trade !== 'string' || typeof t.state !== 'string') continue;
         const settleKind = SETTLE_KINDS.includes(t.settleKind as SettleKind) ? (t.settleKind as SettleKind) : null;
-        let seen: Date | null = null;
-        if (typeof t.finalAlertSeenAt === 'string') {
-          const d = new Date(t.finalAlertSeenAt);
-          if (!Number.isNaN(d.getTime())) seen = d;
-        }
-        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true, finalAlertSeenAt: seen });
+        const date = (v: unknown): Date | null => {
+          if (typeof v !== 'string') return null;
+          const d = new Date(v);
+          return Number.isNaN(d.getTime()) ? null : d;
+        };
+        out.set(t.trade, { state: t.state, settleKind, paused: t.paused === true, finalAlertSeenAt: date(t.finalAlertSeenAt), finalAlertAt: date(t.finalAlertAt) });
       }
       return out;
     },

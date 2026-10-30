@@ -15,30 +15,48 @@ import type { Trade } from '@x2f/trade';
  * FinalAlert; absent = not seen, Task 19 review 2026-10-27).
  *
  * Order:
- * 1. The API must show `refund_requested`.
+ * 1. The API must show `refund_requested`, not paused (and the shadow not paused).
  * 2. The shadow must be `refund_requested` too, with no `trade.paid` ever opened and a seller-signed
  *    refund address; otherwise nothing is signed, and once the API has shown `refund_requested`
- *    for REFUND_UNVERIFIED_MS the trade escalates (`refund-unverified`) instead of hanging.
+ *    for REFUND_UNVERIFIED_MS the trade escalates (`refund-unverified`) instead of hanging. A
+ *    `trade.paid` this service opened while the API still shows `refund_requested` PAID_CONFLICT_MS
+ *    later is a definite conflict: it escalates then (review M7).
  * 3. `shadow.finalAlertAt > shadow.payBy` (rulings Task 9: the alert only after the payment window).
- * 4. Wait until `shadow.finalAlertAt + 15 min`.
- * 5. No seen-receipt by then → escalate (`alert-unseen`).
- * 6. Wait until `final_alert_seen_at + 15 min` (a push may sit with the push service for its 15-min
- *    TTL, so the buyer's 15 minutes run from the receipt).
- * 7. Wait until the whole balance is unlocked.
- * 8. `autoRefundDecision` with the derived one-payout refund: ok → sign; otherwise refused with its
+ * 4. The API's own pause-shifted `finalAlertAt` must be on the watch list (review I1).
+ * 5. Wait until max(shadow.finalAlertAt, api.finalAlertAt) + 15 min + AUTO_REFUND_MARGIN_MS. The
+ *    API's `mark-paid` is open until ITS finalAlertAt + 15 min, and its finalAlertAt moves with
+ *    every maintenance pause the API saw, even one this service missed (a restart across the pause
+ *    start, an early refund-request signal, review I1). The margin covers a watch pass plus clock
+ *    skew between the API and this service (review M1). Taking the later alert can only delay.
+ * 6. No seen-receipt by then → escalate (`alert-unseen`).
+ * 7. A receipt more than ALERT_LATE_MS after that alert → escalate (`alert-late`, lead decision I2
+ *    option b, 2026-10-29): the API counts the buyer's 15 minutes from the alert, so a push that
+ *    sat with the push service left the buyer less than its 15 minutes; a person decides.
+ * 8. Wait until `final_alert_seen_at + 15 min + margin` (at most ALERT_LATE_MS more than 5.).
+ * 9. Wait until the whole balance is unlocked.
+ * 10. `autoRefundDecision` with the derived one-payout refund: ok → sign; otherwise refused with its
  *    reason only (and the 2. fallback escalates later).
  */
 export const REFUND_UNVERIFIED_MS = 60 * 60_000;
+/** One watch pass plus clock skew between the API and this service (review I1, M1). */
+export const AUTO_REFUND_MARGIN_MS = 60_000;
+/** A seen-receipt later than this after the alert escalates instead (lead decision I2 (b)). */
+export const ALERT_LATE_MS = 2 * 60_000;
+/** A `trade.paid` opened here while the API still shows `refund_requested` this long after: escalate (review M7). */
+export const PAID_CONFLICT_MS = 2 * 60_000;
 
 export interface AutoRefundInputs {
   now: Date;
   /** Null when the attested deal could not make a shadow trade: then nothing is ever signed alone. */
   shadow: Trade | null;
-  api: { state: string; finalAlertSeenAt: Date | null; paused?: boolean };
-  /** When this service first saw the API show `refund_requested` (this episode), or null. */
+  /** The API's watch-list item: `finalAlertAt` is the API's own, shifted by every pause it applied. */
+  api: { state: string; finalAlertSeenAt: Date | null; finalAlertAt?: Date | null; paused?: boolean };
+  /** When this service first saw the API show `refund_requested` (this episode, restarted by a pause), or null. */
   apiRefundSince: Date | null;
   /** A valid `trade.paid` from the buyer's identity was opened, ever. */
   paidSeen: boolean;
+  /** When the first one was opened (this service's clock), or null. */
+  paidSeenAt?: Date | null;
   /** The seller-signed `trade.terms` refund address, or null before it arrived. */
   recordedRefundAddress: string | null;
   /** The escrow read by this service's own party. */
@@ -53,12 +71,13 @@ export type AutoRefundWait =
   | 'receipt-too-recent'
   | 'not-unlocked'
   | 'unverified'
-  | 'paused';
+  | 'paused'
+  | 'api-final-alert-missing';
 
 export type AutoRefundStep =
   | { action: 'wait'; reason: AutoRefundWait | 'buyer-paid' | 'no-seller-terms' | 'shadow-not-refund-requested' }
   | { action: 'sign'; proposed: Payout[] }
-  | { action: 'escalate'; report: 'alert-unseen' | 'refund-unverified' }
+  | { action: 'escalate'; report: 'alert-unseen' | 'alert-late' | 'refund-unverified' }
   | { action: 'refuse'; reason: AutoRefundRefusal | 'alert-not-after-deadline' | 'no-payout' };
 
 export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
@@ -70,16 +89,24 @@ export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
   const notYet = <S extends AutoRefundStep>(s: S): AutoRefundStep => (overdue ? { action: 'escalate', report: 'refund-unverified' } : s);
 
   const t = f.shadow;
-  if (f.paidSeen || (t !== null && t.paidAt !== null)) return notYet({ action: 'wait', reason: 'buyer-paid' });
+  if (f.paidSeen || (t !== null && t.paidAt !== null)) {
+    const since = f.paidSeenAt ?? t?.paidAt ?? null;
+    if (since !== null && now >= since.getTime() + PAID_CONFLICT_MS) return { action: 'escalate', report: 'refund-unverified' };
+    return notYet({ action: 'wait', reason: 'buyer-paid' });
+  }
   if (f.recordedRefundAddress === null) return notYet({ action: 'wait', reason: 'no-seller-terms' });
   if (t === null || t.state !== 'refund_requested' || t.finalAlertAt === null || t.payBy === null) {
     return notYet({ action: 'wait', reason: 'shadow-not-refund-requested' });
   }
   if (t.finalAlertAt.getTime() <= t.payBy.getTime()) return notYet({ action: 'refuse', reason: 'alert-not-after-deadline' });
-  if (now < t.finalAlertAt.getTime() + FINAL_ALERT_MS) return { action: 'wait', reason: 'final-alert-pending' };
+  const apiAlert = f.api.finalAlertAt ?? null;
+  if (apiAlert === null || Number.isNaN(apiAlert.getTime())) return notYet({ action: 'wait', reason: 'api-final-alert-missing' });
+  const alertAt = Math.max(t.finalAlertAt.getTime(), apiAlert.getTime());
+  if (now < alertAt + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'final-alert-pending' };
   const seen = f.api.finalAlertSeenAt;
   if (seen === null || Number.isNaN(seen.getTime())) return { action: 'escalate', report: 'alert-unseen' };
-  if (now < seen.getTime() + FINAL_ALERT_MS) return { action: 'wait', reason: 'receipt-too-recent' };
+  if (seen.getTime() > alertAt + ALERT_LATE_MS) return { action: 'escalate', report: 'alert-late' };
+  if (now < seen.getTime() + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'receipt-too-recent' };
   const { balance, unlocked } = f.funds;
   if (balance <= 0n || balance !== unlocked) return { action: 'wait', reason: 'not-unlocked' };
   let proposed: Payout[];
