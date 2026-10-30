@@ -18,6 +18,12 @@ export const APPEAL_GOAL_H = 48;
 /** A6: a seller ordered `seller-sends-xmr` has this long to send it and submit a tx proof. */
 export const COMPLY_H = 24;
 
+/**
+ * Who sends an event. A staff actor's `role` must be the one the API loaded from `staff_members`
+ * for THIS request (Task 4 `requireStaff`), never a copy cached in a session, cookie or token
+ * (round-2 N2): the machine keeps no role in the dispute and checks `by.role` on every event, so a
+ * demotion takes effect on the next request only if the caller loads it fresh.
+ */
 export type Actor =
   | { kind: 'staff'; id: string; role: StaffRole }
   | { kind: 'trader'; side: 'buyer' | 'seller' }

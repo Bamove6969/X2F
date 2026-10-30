@@ -224,6 +224,49 @@ describe('approve and send back', () => {
   });
 });
 
+describe('N2: the actor role is the one loaded for this request, never a cached one', () => {
+  // The API (Task 4 requireStaff) loads the actor's role from staff_members on every request and
+  // passes that Actor here. The machine keeps no role in the dispute, so a demotion between two
+  // requests takes effect on the very next event.
+  const banPending = () =>
+    run(base({ usdCents: 1_000n }), [
+      [{ type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1)],
+      [{ type: 'propose', ruling: draft('mod-1', { accountAction: { kind: 'trade-ban', until: null, reasonCode: 'terms' } }) }, mod, at(2)],
+    ]);
+  // Task 7's staff.role-set demotes senior-2 to mod; the next request carries the fresh role.
+  const demoted: Actor = { kind: 'staff', id: 'senior-2', role: 'mod' };
+
+  test('a senior demoted mid-session cannot approve or send back a ban on the next request', () => {
+    const d = banPending();
+    expect(d.status).toBe('awaiting-approval');
+    // Before the demotion the same person could approve and send back.
+    expect(applyDispute(d, { type: 'approve' }, senior2, at(3), S).status).toBe('published');
+    expect(applyDispute(d, { type: 'send-back' }, senior2, at(3), S).status).toBe('open');
+    rule('wrong-party', () => applyDispute(d, { type: 'approve' }, demoted, at(3), S));
+    rule('wrong-party', () => applyDispute(d, { type: 'send-back' }, demoted, at(3), S));
+    // Nor hand a case to someone else (a senior power).
+    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'mod-2', role: 'mod' }, demoted, at(1), S));
+  });
+
+  test('a demoted senior cannot take an appeal', () => {
+    const appealed = run(base(), [
+      [{ type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1)],
+      [{ type: 'propose', ruling: draft('mod-1') }, mod, at(2)],
+      [{ type: 'appeal', involved: [] }, seller, at(10)],
+    ]);
+    expect(applyDispute(appealed, { type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11), S).assignee).toBe('senior-2');
+    rule('wrong-party', () => applyDispute(appealed, { type: 'assign', staffId: 'senior-2', role: 'senior' }, demoted, at(11), S));
+    rule('not-eligible', () => applyDispute(appealed, { type: 'assign', staffId: 'senior-2', role: 'mod' }, demoted, at(11), S));
+  });
+
+  test('the dispute state stores no role that a later event could trust', () => {
+    const d = applyDispute(banPending(), { type: 'approve' }, senior2, at(3), S);
+    const json = JSON.stringify(d, (_k, v: unknown) => (typeof v === 'bigint' ? v.toString() : v));
+    expect(json).not.toMatch(/"role"/);
+    for (const r of ['owner', 'senior', 'mod', 'helper']) expect(json).not.toContain(`"${r}"`);
+  });
+});
+
 describe('appeal (48 h window)', () => {
   test('a trader appeals before appealEndsAt; 1 ms before is accepted', () => {
     const d = applyDispute(published(), { type: 'appeal', involved: [] }, seller, at(50, -1), S);
