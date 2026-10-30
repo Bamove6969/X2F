@@ -117,7 +117,7 @@ describe('who may review which trade', () => {
     expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
     expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
     // The ruling is carried out (the trade ends) but the dispute is not closed yet: still not.
-    setNow(new Date(START.getTime() + DAY));
+    await jump(new Date(START.getTime() + DAY), buyer, seller);
     await applyEvent(deps, t.code, { type: 'settled', kind: 'release', txHash: tx() }, 'system');
     expect(refusal(await review(seller, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
     const closedAt = new Date(START.getTime() + 2 * DAY);
@@ -253,11 +253,13 @@ describe('what a review stores and shows', () => {
       (await buyer.browser.get(`/v1/trades/${t.code}`)).body,
     ];
     for (const b of bodies) {
-      expect(b).not.toMatch(/54321|54_321|usd|weight/i);
+      // The trade view names its currency ("USD") and its own fiat total; never the take-time USD value.
+      expect(b).not.toMatch(/54321|54_321|usd_?cents|weight/i);
       expect(b).not.toContain(buyer.id);
       expect(b).not.toContain(seller.id);
     }
-    // The review answers carry no trade code and no exact time either.
+    // The review answers carry no amount at all, no trade code and no exact time either.
+    for (const b of bodies.slice(0, 3)) expect(b).not.toMatch(/usd|cents|atomic|amount|fiat/i);
     for (const b of bodies.slice(0, 2)) {
       const v = JSON.parse(b) as { mine: Record<string, unknown>; theirs: Record<string, unknown> };
       expect(Object.keys(v.mine).sort()).toEqual(['age', 'method', 'neutral', 'note', 'phrases', 'stars', 'tradeBadges']);

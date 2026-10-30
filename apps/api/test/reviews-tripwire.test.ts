@@ -28,3 +28,15 @@ describe('review notes use Task 7 once it lands', () => {
     expect(!proofExportsDetector() || usesProof, 'Task 7 landed: call detectSensitiveText from @x2f/proof in reviews/sensitive.ts').toBe(true);
   });
 });
+
+// TRIPWIRE (Plan 5 Task 3 / Plan 7 Task 2 / Plan 5 Task 20): reviews have NO foreign key to trades
+// (they are permanent, 301_reviews.sql), so the whole-trade purge cannot be reminded by a foreign
+// key. Checks the local tree only: once apps/api/src/retention/tradePurge.ts exists, it must call
+// `detachReviews` (apps/api/src/reviews/store.ts) as x2f_purge before it deletes the trade row, so
+// no review keeps its trade code or reviewer id after the trade is gone (Revision 2026-10-29b).
+describe('the whole-trade purge forgets which trade and reviewer a review came from', () => {
+  it('NEEDS_PLAN_7_DETACH_REVIEWS: tradePurge.ts calls detachReviews once it exists', () => {
+    const purge = read('apps/api/src/retention/tradePurge.ts');
+    expect(purge === '' || /detachReviews\(/.test(purge), 'Plan 7 purge landed: call detachReviews(client, code) before deleting the trade').toBe(true);
+  });
+});
