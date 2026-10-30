@@ -158,10 +158,8 @@ describe('the start-up purge waits for the server (review M1)', () => {
 
   it('the room records the signed-in account with the date, and keeps it when the account cannot be read (review R2-m3)', async () => {
     const { rerender } = render(<Room code={A} deleteAt={iso(T)} dispute={false} now={() => new Date(T - 60_000)} account={() => Promise.resolve(ME)} />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
-    expect(deleteAtAccount(A)).toBe(tagOf(ME, A));
+    // The tag is a WebCrypto digest (async): wait for it.
+    await act(() => vi.waitFor(() => expect(deleteAtAccount(A)).toBe(tagOf(ME, A))));
     rerender(<Room code={A} deleteAt={iso(T + 1)} dispute={false} now={() => new Date(T - 60_000)} />);
     await act(async () => {
       await new Promise((r) => setTimeout(r, 0));
@@ -174,9 +172,7 @@ describe('the start-up purge waits for the server (review M1)', () => {
     expect(await accountTag(ME, A)).toBe(tagOf(ME, A));
     expect(await accountTag(ME, A)).not.toBe(await accountTag(ME, B)); // no link from one trade code to another
     render(<Room code={A} deleteAt={iso(T)} dispute={false} now={() => new Date(T - 60_000)} account={() => Promise.resolve(ME)} />);
-    await act(async () => {
-      await new Promise((r) => setTimeout(r, 0));
-    });
+    await act(() => vi.waitFor(() => expect(deleteAtAccount(A)).toBe(tagOf(ME, A))));
     const raw = localStorage.getItem(DELETE_AT_KEY)!;
     expect(raw).toContain(tagOf(ME, A));
     expect(raw).not.toContain(ME);
