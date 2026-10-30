@@ -54,13 +54,18 @@ export interface DetectOptions {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Normalisation (review R3-I3). Detection runs on a copy of each line where Unicode dashes, minus
-// signs, spaces and tabs, full-width forms and every decimal digit (`\p{Nd}`) are ASCII. The copy
-// has the same length in UTF-16 units as the original, so every index found in it is an index in
-// the original, and regions are placed over the original words.
+// Normalisation (reviews R3-I3 and R4). Detection runs on a copy of each line where every Unicode
+// dash (`\p{Pd}`, the minus sign and the marks typed as hyphens), space, tab and line separator, every
+// full-width form and every digit (`\p{Nd}`, and the other-number digits whose NFKC form is ASCII
+// digits, such as superscript and circled ones) is ASCII; invisible format characters (`\p{Cf}`) and
+// combining marks after a digit (accents, keycaps) are deleted. The copy can be shorter or longer than
+// the original, so it carries a map from each of its units back to the original, and regions are
+// placed over the original words through that map.
 
-const HYPHEN = /[\u2010-\u2015\u2212\ufe58\ufe63]/;
-const SPACE = /[\t\v\f\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]/;
+const HYPHEN = /[\p{Pd}\u2212\u2043\u30fc\uff70]/u;
+const SPACE = /[\t\v\f\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
+const FORMAT = /\p{Cf}/u;
+const MARK = /\p{M}/u;
 const ND = /\p{Nd}/u;
 const digitValues = new Map<number, string>();
 
@@ -76,26 +81,104 @@ function digitValue(cp: number): string {
   return v;
 }
 
+function isAsciiDigit(c: number): boolean {
+  return c >= 48 && c <= 57;
+}
+
+/** Circled digits with no NFKC form (dingbats): the first code point of each run of ten and its first value. */
+const CIRCLED_RUNS: Array<[number, number, number]> = [
+  [0x2776, 0x277f, 1],
+  [0x2780, 0x2789, 1],
+  [0x278a, 0x2793, 1],
+  [0x24eb, 0x24f4, 11],
+  [0x24f5, 0x24fe, 1],
+  [0x24ff, 0x24ff, 0],
+  [0x1f10b, 0x1f10c, 0],
+];
+
+/** The ASCII digits a non-decimal number character stands for, or null. */
+function otherDigits(cp: number, ch: string): string | null {
+  for (const [first, last, value] of CIRCLED_RUNS) if (cp >= first && cp <= last) return String(value + cp - first);
+  const n = ch.normalize('NFKC');
+  return n !== ch && /\d/.test(n) && /^[\x20-\x7e]+$/.test(n) ? n : null;
+}
+
 /**
- * The line with ASCII separators and digits, the same length in UTF-16 units. A digit outside the
- * BMP (two units, such as the mathematical digits) becomes its ASCII digit twice: the offsets stay
- * in line, and a doubled digit count can only make a number reach the masking thresholds sooner.
+ * A normalised line and, for each UTF-16 unit of the original, the range of normalised units it became
+ * (both halves of a surrogate pair share their code point's range; a deleted character has an empty one).
  */
-export function normalizeText(text: string): string {
+interface Normalized {
+  text: string;
+  start: number[];
+  end: number[];
+}
+
+function normalize(text: string): Normalized {
   let out = '';
+  const start: number[] = [];
+  const end: number[] = [];
   for (let i = 0; i < text.length; ) {
     const cp = text.codePointAt(i)!;
     const units = cp > 0xffff ? 2 : 1;
     const ch = text.slice(i, i + units);
     i += units;
+    const from = out.length;
+    let other: string | null;
     if (cp < 0x80 && ch !== '\t' && ch !== '\v' && ch !== '\f') out += ch;
     else if (SPACE.test(ch)) out += ' ';
-    else if (HYPHEN.test(ch)) out += '-';
+    else if (FORMAT.test(ch)) {
+      // Deleted: invisible.
+    } else if (MARK.test(ch) && isAsciiDigit(out.charCodeAt(out.length - 1))) {
+      // Deleted: a combining mark or keycap on a digit (`4\u0301`, `4\ufe0f\u20e3`).
+    } else if (HYPHEN.test(ch)) out += '-';
     else if (cp >= 0xff01 && cp <= 0xff5e) out += String.fromCharCode(cp - 0xfee0);
-    else if (ND.test(ch)) out += digitValue(cp).repeat(units);
+    else if (ND.test(ch)) out += digitValue(cp);
+    else if ((other = otherDigits(cp, ch)) !== null) out += other;
     else out += ch;
+    for (let u = 0; u < units; u++) {
+      start.push(from);
+      end.push(out.length);
+    }
   }
-  return out;
+  return { text: out, start, end };
+}
+
+/** The line as detection reads it (see `normalize`). */
+export function normalizeText(text: string): string {
+  return normalize(text).text;
+}
+
+/**
+ * Per-character results on the normalised line, carried back to the original line's UTF-16 units.
+ * A unit that became characters takes the best-ranked span among them, and is kept when all of them
+ * are; a deleted unit takes the span of its two neighbours when they have the same one, and is kept
+ * when both are.
+ */
+function toOriginal(n: Normalized, best: Array<Span | null>, keep: boolean[]): { best: Array<Span | null>; keep: boolean[] } {
+  const len = n.text.length;
+  const ob: Array<Span | null> = [];
+  const ok: boolean[] = [];
+  for (let j = 0; j < n.start.length; j++) {
+    const a = n.start[j]!;
+    const b = n.end[j]!;
+    if (a < b) {
+      let s: Span | null = null;
+      let kept = true;
+      for (let k = a; k < b; k++) {
+        const c = best[k] ?? null;
+        if (c && (!s || c.rank < s.rank)) s = c;
+        kept &&= keep[k]!;
+      }
+      ob.push(s);
+      ok.push(kept);
+    } else {
+      const before = a > 0 ? (best[a - 1] ?? null) : null;
+      const after = a < len ? (best[a] ?? null) : null;
+      ob.push(before !== null && before === after ? before : null);
+      ok.push(a > 0 && a < len && keep[a - 1]! && keep[a]!);
+    }
+  }
+  return { best: ob, keep: ok };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -262,8 +345,9 @@ const NOT_BASE58 = /[0OIl]/g;
  * least as many digits as look-alikes, counts as digits for the digit-run rules, so `l111` in
  * `4111 1111 1111 l111` is masked with the rest of the card.
  */
-const LOOKALIKE = /^[0-9OolI|SB]+$/;
-const TOKEN = /[0-9A-Za-z|]+/g;
+// Also the Cyrillic and Greek letters that look like them (review R4-M3: `3О`, `З4`).
+const LOOKALIKE = /^[0-9OolI|SBОоΟοЗІіӀЅБб]+$/;
+const TOKEN = /[0-9A-Za-z|ОоΟοЗІіӀЅБб]+/g;
 
 /**
  * The text with look-alikes in digit tokens turned into `0`, and which characters were turned.
@@ -481,8 +565,9 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
   if (code === null) throw new RangeError('keep.tradeCode is not a trade code');
   const codeRe = codePattern(code);
   const lines = linesOf(words);
-  // Detection reads the normalised text; words keep their ranges, which the normalisation preserves.
-  const texts = lines.map((l) => normalizeText(l.text));
+  // Detection reads the normalised text; results are carried back to the words through its map.
+  const norms = lines.map((l) => normalize(l.text));
+  const texts = norms.map((n) => n.text);
   const kept = texts.map((text) => {
     const k: boolean[] = new Array<boolean>(text.length).fill(false);
     markDates(text, k);
@@ -518,14 +603,15 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
 
   const out: Region[] = [];
   lines.forEach((l, i) => {
-    const best = visible(texts[i]!, resolve(texts[i]!.length, spans[i]!, kept[i]!));
+    const back = toOriginal(norms[i]!, visible(texts[i]!, resolve(texts[i]!.length, spans[i]!, kept[i]!)), kept[i]!);
+    const best = back.best;
+    const k = back.keep;
     let open: Region | null = null;
     const flush = (): void => {
       if (open) out.push(open);
       open = null;
     };
     for (const { word, start, end } of l.words) {
-      const k = kept[i]!;
       const hasKept = k.slice(start, end).some(Boolean);
       // The word's kind: the best-ranked span over any of its characters.
       let win: Span | null = null;
@@ -590,14 +676,21 @@ const ISO_4217 =
   'AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG XAU XCD XCG XDR XOF XPD XPF XPT XSU XUA YER ZAR ZMW ZWG ZWL';
 /** Common crypto codes and names. */
 const CRYPTO = 'XMR MONERO BTC ETH LTC USDT USDC BCH DAI XRP DOGE TRX SOL BNB ADA';
-/** Codes that are also everyday English words: they count only in capitals (`ALL`, not `all`). */
+/** Codes that are also everyday words: they never count, in any case (review R4-M5: `347.1234567 TRY`). */
 const WORD_CODES = new Set(['ALL', 'TOP', 'CUP', 'TRY', 'MOP', 'PEN', 'GEL', 'MAD', 'BOB', 'SOS', 'SOL', 'ADA']);
 const CURRENCY_CODES = new Set(`${ISO_4217} ${CRYPTO}`.split(' '));
+/**
+ * The codes that count when not written in capitals (`0.12345678 xmr`, `Monero`). Any other code
+ * counts only in capitals, as a code is written: `Ron`, `bam` or `Cad` next to a number is a word
+ * (review R4-M5).
+ */
+const LOWERCASE_CODES = new Set(['xmr', 'monero', 'btc', 'eth', 'eur', 'usd']);
 const SYMBOL = /[$€£¥₹₽₩₺₴₱₦₪₫₿]/;
 
 function isCurrencyWord(w: string): boolean {
   const up = w.toUpperCase();
-  return CURRENCY_CODES.has(up) && (w === up || !WORD_CODES.has(up));
+  if (WORD_CODES.has(up)) return false;
+  return w === up ? CURRENCY_CODES.has(up) : LOWERCASE_CODES.has(w.toLowerCase());
 }
 
 /** A currency or crypto code, name or symbol right after or right before a number (one space allowed). */

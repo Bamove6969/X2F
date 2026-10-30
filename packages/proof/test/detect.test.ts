@@ -463,10 +463,10 @@ const PHONES: Record<string, string[]> = {
   'OCR look-alikes': ['O6 12 34 56 78', '+44 77OO 9OO123', '0612 3456 7B', '(4l5) 555-Ol34', '+49 l7l l234567'],
   // Round 4 (review R4-I1 to R4-M3): format characters, every Unicode dash, other-number digits,
   // combining marks after digits, and Cyrillic or Greek look-alikes.
-  'Format characters': ['+972‎50‎123‎4567', '06‎ 12‎ 34‎ 56‎ 78', '06​-12​-34​-56​-78'],
+  'Format characters': ['+972\u200e50\u200e123\u200e4567', '06\u200e 12\u200e 34\u200e 56\u200e 78', '06\u200b-12\u200b-34\u200b-56\u200b-78'],
   'Unicode dashes (Pd, ー, ｰ, ⁃)': ['090ー1234ー5678', '０９０ー１２３４ー５６７８', '090ｰ1234ｰ5678', '050־123־4567', '415⁃555⁃0134', '415⸺555⸺0134', '415〜555〜0134', '415֊555֊0134', '415᠆555᠆0134', '415⸗555⸗0134', '415︲555︲0134'],
   'Other-number digits': ['⁰⁶ ¹² ³⁴ ⁵⁶ ⁷⁸', '₀₆ ₁₂ ₃₄ ₅₆ ₇₈', '⓪⑥ ①② ③④ ⑤⑥ ⑦⑧', '❶❷❸ ❹❺❻ ❼❽❾❿'],
-  'Combining marks after digits': ['0̂6 1̂2 3̂4 5̂6 7̂8', '0️⃣6️⃣ 12 34 56 78'],
+  'Combining marks after digits': ['0\u03026 1\u03022 3\u03024 5\u03026 7\u03028', '0\ufe0f\u20e36\ufe0f\u20e3 12 34 56 78'],
   'Cyrillic and Greek look-alikes': ['06 12 3Ο 56 78', '06 12 3О 56 78', '06 12 З4 56 78'],
 };
 
@@ -593,38 +593,38 @@ describe('review round 4 (2026-10-30)', () => {
 
   it('R4-I1: invisible format characters and line separators inside a number, in notes', () => {
     for (const s of [
-      'card 4111​1111​1111​1111',
-      'card 4111‌1111‌1111‌1111',
-      'card 4111‍1111‍1111‍1111',
-      'card 4111⁠1111⁠1111⁠1111',
-      'card 4111­1111­1111­1111',
-      'card 4111‎ 1111‎ 1111‎ 1111',
-      'card 4​1​1​1​1​1​1​1​1​1​1​1​1​1​1​1',
-      'card 4111 1111 1111 1111',
-      'card 4111 1111 1111 1111',
+      'card 4111\u200b1111\u200b1111\u200b1111',
+      'card 4111\u200c1111\u200c1111\u200c1111',
+      'card 4111\u200d1111\u200d1111\u200d1111',
+      'card 4111\u20601111\u20601111\u20601111',
+      'card 4111\u00ad1111\u00ad1111\u00ad1111',
+      'card 4111\u200e 1111\u200e 1111\u200e 1111',
+      'card 4\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1\u200b1',
+      'card 4111\u20281111\u20281111\u20281111',
+      'card 4111\u20291111\u20291111\u20291111',
       'card 4111\u00851111\u00851111\u00851111',
-      'card 4111⁦1111⁩1111‏1111',
-      'card 4111﻿1111﻿1111﻿1111',
+      'card 4111\u20661111\u20691111\u200f1111',
+      'card 4111\ufeff1111\ufeff1111\ufeff1111',
     ]) {
       expect(detectSensitiveText(s), JSON.stringify(s)).toEqual(['card']);
     }
-    expect(detectSensitiveText('iban DE89​3704​0044​0532​0130​00')).toEqual(['iban']);
-    expect(detectSensitiveText('iban DE89­3704­0044­0532­0130­00')).toEqual(['iban']);
-    expect(detectSensitiveText('call 06​12​34​56​78')).toEqual(['account']);
-    expect(detectSensitiveText('call 061​234​5678')).toEqual(['account']);
-    expect(detectSensitiveText('call +972‎50‎123‎4567')).toEqual(['phone']);
-    expect(detectSensitiveText('jane​@example.com')).toEqual(['email']);
-    expect(detectSensitiveText(`send to ${ADDR.join('​')}`)).toEqual(['account']);
+    expect(detectSensitiveText('iban DE89\u200b3704\u200b0044\u200b0532\u200b0130\u200b00')).toEqual(['iban']);
+    expect(detectSensitiveText('iban DE89\u00ad3704\u00ad0044\u00ad0532\u00ad0130\u00ad00')).toEqual(['iban']);
+    expect(detectSensitiveText('call 06\u200b12\u200b34\u200b56\u200b78')).toEqual(['account']);
+    expect(detectSensitiveText('call 061\u200b234\u200b5678')).toEqual(['account']);
+    expect(detectSensitiveText('call +972\u200e50\u200e123\u200e4567')).toEqual(['phone']);
+    expect(detectSensitiveText('jane\u200b@example.com')).toEqual(['email']);
+    expect(detectSensitiveText(`send to ${ADDR.join('\u200b')}`)).toEqual(['account']);
   });
 
   it('R4-I1: format characters in OCR words, with regions on the original columns', () => {
-    expect(masked(ocr('Tel 06​12​34​56​78'))).toEqual([['06​12​34​56​78', 'account']]);
-    expect(masked(ocr('Card 4111­1111­1111­1111'))).toEqual([['4111­1111­1111­1111', 'card']]);
+    expect(masked(ocr('Tel 06\u200b12\u200b34\u200b56\u200b78'))).toEqual([['06\u200b12\u200b34\u200b56\u200b78', 'account']]);
+    expect(masked(ocr('Card 4111\u00ad1111\u00ad1111\u00ad1111'))).toEqual([['4111\u00ad1111\u00ad1111\u00ad1111', 'card']]);
     // The kept code, a deleted character, then a number: 29 columns, the number starts at column 21.
-    const rs = detectSensitive(ocr('K7M2-9QXA-4FTR-8WPN​/12345678'), KEEP);
+    const rs = detectSensitive(ocr('K7M2-9QXA-4FTR-8WPN\u200b/12345678'), KEEP);
     expect(rs).toEqual([{ x0: 200, y0: 0, x1: 290, y1: 16, kind: 'account' }]);
     // A code written with format characters inside it is still kept.
-    expect(detectSensitive(ocr('Code K7M2​-9QXA-4FTR-8WPN'), KEEP)).toEqual([]);
+    expect(detectSensitive(ocr('Code K7M2\u200b-9QXA-4FTR-8WPN'), KEEP)).toEqual([]);
   });
 
   it('R4-I2: every Unicode dash, the long-vowel mark and the hyphen bullet join digit groups', () => {
@@ -633,7 +633,9 @@ describe('review round 4 (2026-10-30)', () => {
       expect(detectSensitiveText(`card 4111${d}1111${d}1111${d}1111`), d).toEqual(['card']);
     }
     expect(masked(ocr('Tel 090ー1234ー5678'))).toEqual([['090ー1234ー5678', 'phone']]);
-    expect(masked(ocr('Card 4111⁃ 1111 1111 1111'))).toEqual(['4111⁃', '1111', '1111', '1111'].map((t) => [t, 'card']));
+    // `4111⁃ 1111 …` reads as `4111- 1111 …`: masked whole, as a phone, the same as with an ASCII hyphen.
+    expect(masked(ocr('Card 4111- 1111 1111 1111'))).toEqual(['4111-', '1111', '1111', '1111'].map((t) => [t, 'phone']));
+    expect(masked(ocr('Card 4111⁃ 1111 1111 1111'))).toEqual(['4111⁃', '1111', '1111', '1111'].map((t) => [t, 'phone']));
     // Normalisation does not invent details.
     for (const s of ['コーヒー 2 杯、10〜15 分', 'took 10ー15 min', 'Code K7M2ー9QXAー4FTRー8WPN done']) expect(detectSensitiveText(s), s).toEqual([]);
   });
@@ -648,9 +650,9 @@ describe('review round 4 (2026-10-30)', () => {
   });
 
   it('R4-M2: combining marks and keycaps after digits', () => {
-    expect(detectSensitiveText('card 4111́ 1111́ 1111́ 1111')).toEqual(['card']);
-    expect(detectSensitiveText('call 0̂6 1̂2 3̂4 5̂6 7̂8')).toEqual(['phone']);
-    const key = (d: string): string => [...d].map((c) => `${c}️⃣`).join('');
+    expect(detectSensitiveText('card 4111\u0301 1111\u0301 1111\u0301 1111')).toEqual(['card']);
+    expect(detectSensitiveText('call 0\u03026 1\u03022 3\u03024 5\u03026 7\u03028')).toEqual(['phone']);
+    const key = (d: string): string => [...d].map((c) => `${c}\ufe0f\u20e3`).join('');
     expect(detectSensitiveText(`card ${key('4111')} 1111 1111 1111`)).toEqual(['card']);
     expect(detectSensitiveText(`card ${key('4111111111111111')}`)).toEqual(['card']);
     expect(masked(ocr(`Card ${key('4111')} 1111 1111 1111`))).toEqual([key('4111'), '1111', '1111', '1111'].map((t) => [t, 'card']));
