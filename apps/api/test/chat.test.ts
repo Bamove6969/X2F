@@ -217,6 +217,9 @@ describe('GET /v1/chats/:chat', () => {
 
   it("hides the other side's online status from a trader they blocked (review M5: presence through the viewer-aware summary)", async () => {
     const o = await openChat();
+    // Linked to an open trade, so the chat stays open under the block (Task 37).
+    const t = await seedTrade(deps, { sellerId: o.poster.id, buyerId: o.taker.id, poster: 'seller', offerId: o.offerId });
+    expect((await o.taker.b.post(`/v1/trades/${t.code}/chat`, {})).json()).toEqual({ chat: o.chat, role: 'buyer' });
     // The poster is online (signed in just now) and blocks the taker.
     await deps.db.query('insert into account_blocks (account_id, blocked_id, created_at) values ($1, $2, $3)', [o.poster.id, o.taker.id, now]);
     const seen = (await o.taker.b.get(`/v1/chats/${o.chat}`)).json() as { counterparty: { online: boolean; lastSeenAt: string | null } };
@@ -575,5 +578,71 @@ describe('purgeChats', () => {
     expect(await exists(r.chat)).toBe(false);
     expect((await deps.db.query('select 1 from chat_envelopes where chat = $1', [r.chat])).rows).toHaveLength(0);
     expect(RETENTION_JOBS.map((j) => j.name)).toContain('purgeChats');
+  });
+});
+
+describe('blocks (Task 37): a blocked pair cannot open or use a chat, except the chat of a trade still open', () => {
+  const block = async (blocker: string, blocked: string): Promise<void> => {
+    await deps.db.query('insert into account_blocks (account_id, blocked_id, created_at) values ($1, $2, $3)', [blocker, blocked, now]);
+  };
+
+  it('POST /v1/chats is the same 404 as an unknown offer, either way round, for a new chat and for reopening one', async () => {
+    const poster = await trader();
+    const taker = await trader();
+    const offerId = await seedOffer(poster.id);
+    await block(poster.id, taker.id);
+    const res = await taker.b.post('/v1/chats', { offerId });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual((await taker.b.post('/v1/chats', { offerId: randomUUID() })).json());
+
+    const o = await openChat();
+    await block(o.taker.id, o.poster.id);
+    expect((await o.taker.b.post('/v1/chats', { offerId: o.offerId })).statusCode).toBe(404);
+  });
+
+  it('a pre-trade chat answers 404 on every route to both sides and leaves the list', async () => {
+    const r = await readyChat();
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+    await block(r.poster.id, r.taker.id);
+    for (const who of [r.taker, r.poster]) {
+      expect((await who.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
+      expect((await who.b.get(`/v1/chats/${r.chat}/envelopes`)).statusCode).toBe(404);
+      expect((await who.b.get(`/v1/chats/${r.chat}/attestation`)).statusCode).toBe(404);
+      expect((await who.b.post(`/v1/chats/${r.chat}/identity`, identityBody(r.chat, 'buyer'))).statusCode).toBe(404);
+      expect((await who.b.get('/v1/chats')).json()).toEqual({ chats: [] });
+    }
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1))).statusCode).toBe(404);
+    expect((await r.poster.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'seller', 0))).statusCode).toBe(404);
+    // Unblocking opens it again.
+    await deps.db.query('delete from account_blocks where account_id = $1 and blocked_id = $2', [r.poster.id, r.taker.id]);
+    expect((await r.taker.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(200);
+  });
+
+  it("the chat of an open trade stays usable (the trade must finish); once the trade closes it answers 404", async () => {
+    const r = await readyChat();
+    const t = await seedTrade(deps, { sellerId: r.poster.id, buyerId: r.taker.id, poster: 'seller', offerId: r.offerId });
+    expect((await r.taker.b.post(`/v1/trades/${t.code}/chat`, {})).json()).toEqual({ chat: r.chat, role: 'buyer' });
+    await block(r.taker.id, r.poster.id);
+    expect((await r.poster.b.post(`/v1/trades/${t.code}/chat`, {})).json()).toEqual({ chat: r.chat, role: 'seller' });
+    expect((await r.poster.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(200);
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 0))).statusCode).toBe(201);
+    expect((await r.poster.b.get(`/v1/chats/${r.chat}/envelopes`)).json()).toMatchObject({ envelopes: [expect.objectContaining({ senderRole: 'buyer' })] });
+    expect((await r.poster.b.get('/v1/chats')).json()).toEqual({ chats: [expect.objectContaining({ chat: r.chat })] });
+
+    await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [t.code, now]);
+    expect((await r.poster.b.post(`/v1/trades/${t.code}/chat`, {})).statusCode).toBe(404);
+    expect((await r.poster.b.get(`/v1/chats/${r.chat}`)).statusCode).toBe(404);
+    expect((await r.taker.b.post(`/v1/chats/${r.chat}/envelopes`, await envelope(r, 'buyer', 1))).statusCode).toBe(404);
+  });
+
+  it('a new trade chat between a blocked pair is made only while the trade is open', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', offerId: await seedOffer(seller.id) });
+    await block(seller.id, buyer.id);
+    expect((await buyer.b.post(`/v1/trades/${t.code}/chat`, {})).statusCode).toBe(200);
+    const done = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', offerId: await seedOffer(seller.id) });
+    await deps.db.query("update trades set state = 'released', closed_at = $2 where code = $1", [done.code, now]);
+    expect((await buyer.b.post(`/v1/trades/${done.code}/chat`, {})).statusCode).toBe(404);
   });
 });

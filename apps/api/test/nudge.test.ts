@@ -767,7 +767,32 @@ describe('shared context from open chats (Task 20)', () => {
     await driveTo(deps, done.trade, 'released');
     expect(await shares(a.id, b.id, await seedChat(a.id, b.id, done.code))).toBe(false);
     const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
-    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, open.code))).toBe(true);
+    // Linked to an open trade: it answers like the trade itself, so a block does not drop the nudge (lead 2026-10-29).
+    expect(await shares(a.id, b.id, await seedChat(a.id, b.id, open.code))).toBe('open-trade');
+  });
+
+  it("under a block, a nudge from a chat linked to an open trade gets through like a trade nudge; a pre-trade chat's is dropped", async () => {
+    const a = await trader();
+    const b = await trader();
+    const open = await seedTrade(deps, { sellerId: a.id, buyerId: b.id, poster: 'seller' });
+    const tradeChat = await seedChat(a.id, b.id, open.code);
+    const offerChat = await seedChat(a.id, b.id);
+    const saved = fakeWiring.hasSharedContext;
+    fakeWiring.hasSharedContext = productionNudgeWiring(deps.db).hasSharedContext;
+    try {
+      expect((await a.b.post('/v1/account/blocks', { displayName: b.name })).statusCode).toBe(204);
+      expect((await nudge(b, a.name, tradeChat)).statusCode).toBe(202);
+      await settle();
+      expect(published).toEqual([[a.id, { type: 'nudge', from: b.name, context: tradeChat }]]);
+      published.length = 0;
+      setNow(at(NUDGE_GAP_MS + MIN));
+      // The same 202, but nothing reaches the blocker.
+      expect((await nudge(b, a.name, offerChat)).statusCode).toBe(202);
+      await settle();
+      expect(published).toEqual([]);
+    } finally {
+      fakeWiring.hasSharedContext = saved;
+    }
   });
 
   it('delivery is left to Task 19 (no publish or sendPush stub)', () => {

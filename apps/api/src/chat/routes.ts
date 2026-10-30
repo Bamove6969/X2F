@@ -27,6 +27,12 @@
  *
  * Every chat route needs a trader session; a chat that does not exist or does not include the
  * caller is the same 404 `not-found`. Nothing here logs a chat code, a key or a ciphertext.
+ *
+ * Blocks (Task 37, traders/blocks.ts): while either trader has blocked the other, a chat between
+ * them answers the same 404 on every route and leaves `GET /v1/chats`, and `POST /v1/chats`
+ * answers 404 as for an unknown offer. The one exception is the chat of a trade still open
+ * (`closed_at` null, as the nudge's `tradeSharedContext`): the trade must finish and a moderator
+ * may need it, so it stays usable until the trade closes (lead decision 2026-10-29).
  */
 import { newTradeCode, normalizeTradeCode } from '@x2f/core';
 import { CHAT_BODY_MAX_BYTES, channelFor, chatIdentityProofValid, ChatEnvelopeError, checkChatEnvelope } from '@x2f/trade';
@@ -34,6 +40,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { assertNotBlocked, blockedEitherWaySql } from '../traders/blocks.js';
 import { traderSummaries, type TraderSummary } from '../traders/summary.js';
 
 const requireTrader = requireSession({ kinds: ['trader'] });
@@ -111,9 +118,17 @@ export async function roleInChat(db: Queryable, raw: string, accountId: string):
   );
   const row = rows[0];
   if (!row) throw notFound();
-  if (row.buyer_account_id === accountId) return { row, role: 'buyer' };
-  if (row.seller_account_id === accountId) return { row, role: 'seller' };
-  throw notFound();
+  const role: ChatRole | null = row.buyer_account_id === accountId ? 'buyer' : row.seller_account_id === accountId ? 'seller' : null;
+  if (role === null) throw notFound();
+  if (!(await tradeOpen(db, row.trade_code))) await assertNotBlocked(db, accountId, role === 'buyer' ? row.seller_account_id : row.buyer_account_id);
+  return { row, role };
+}
+
+/** The linked trade has not closed: its chat stays usable under a block (Task 37). */
+async function tradeOpen(db: Queryable, tradeCode: string | null): Promise<boolean> {
+  if (tradeCode === null) return false;
+  const { rows } = await db.query('select 1 from trades where code = $1 and closed_at is null', [tradeCode]);
+  return rows.length > 0;
 }
 
 function identityBody(body: unknown): { signPublic: string; boxPublic: string; proof: string } {
@@ -177,13 +192,15 @@ export function chatRoutes(app: FastifyInstance): void {
       await client.query('begin');
       try {
         // The trade row is locked so two first opens (both sides at once) make one chat.
-        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string }>(
-          'select offer_id, buyer_account_id, seller_account_id from trades where code = $1 for update',
+        const { rows } = await client.query<{ offer_id: string; buyer_account_id: string; seller_account_id: string; open: boolean }>(
+          'select offer_id, buyer_account_id, seller_account_id, closed_at is null as open from trades where code = $1 for update',
           [code],
         );
         const t = rows[0];
         if (!t || (t.buyer_account_id !== me && t.seller_account_id !== me)) throw notFound();
         const role: ChatRole = t.buyer_account_id === me ? 'buyer' : 'seller';
+        // A closed trade's chat is like any other under a block (Task 37).
+        if (!t.open) await assertNotBlocked(client, me, role === 'buyer' ? t.seller_account_id : t.buyer_account_id);
         const linked = await client.query<{ code: string }>('select code from chats where trade_code = $1', [code]);
         let chat = linked.rows[0]?.code ?? null;
         chat ??= await linkChatToTrade(client, { offerId: t.offer_id, buyerAccountId: t.buyer_account_id, sellerAccountId: t.seller_account_id, tradeCode: code });
@@ -224,6 +241,8 @@ export function chatRoutes(app: FastifyInstance): void {
     const offer = rows[0];
     if (!offer) throw notFound();
     const me = req.auth.accountId;
+    // Blocked either way: the same 404 as an unknown offer (Task 37), for a new chat or a reopened one.
+    await assertNotBlocked(deps.db, me, offer.account_id);
     if (offer.account_id === me) throw new ApiError(409, 'own-offer');
     const role: ChatRole = offer.side === 'sell' ? 'buyer' : 'seller';
     const buyer = role === 'buyer' ? me : offer.account_id;
@@ -257,9 +276,11 @@ export function chatRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const me = req.auth.accountId;
     const { rows } = await deps.db.query<ChatRow>(
-      `select code, offer_id, buyer_account_id, seller_account_id, trade_code, created_at, last_message_at from chats
-        where buyer_account_id = $1 or seller_account_id = $1
-        order by coalesce(last_message_at, created_at) desc, code limit $2`,
+      `select c.code, c.offer_id, c.buyer_account_id, c.seller_account_id, c.trade_code, c.created_at, c.last_message_at from chats c
+        where (c.buyer_account_id = $1 or c.seller_account_id = $1)
+          and (exists (select 1 from trades t where t.code = c.trade_code and t.closed_at is null)
+               or not ${blockedEitherWaySql('c.buyer_account_id', 'c.seller_account_id')})
+        order by coalesce(c.last_message_at, c.created_at) desc, c.code limit $2`,
       [me, CHAT_LIST_LIMIT],
     );
     const others = rows.map((r) => (r.buyer_account_id === me ? r.seller_account_id : r.buyer_account_id));

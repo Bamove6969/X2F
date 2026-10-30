@@ -25,20 +25,23 @@ export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext
 
 /**
  * Task 20: the two accounts are the buyer and the seller of the chat `context` names, and it is
- * open: a pre-trade chat, or one linked to a trade that has not closed. The chat code has the
- * trade code's form, so any spelling the normaliser accepts names the same chat.
+ * open: a pre-trade chat (`true`), or one linked to a trade that has not closed (`'open-trade'`,
+ * so a block does not drop the nudge, as for the trade itself: lead 2026-10-29). The chat code
+ * has the trade code's form, so any spelling the normaliser accepts names the same chat.
  */
 export function chatSharedContext(db: Queryable): NudgeWiring['hasSharedContext'] {
   return async (fromId, toId, context) => {
     const code = normalizeTradeCode(context);
     if (code === null) return false;
-    const { rows } = await db.query(
-      `select 1 from chats c left join trades t on t.code = c.trade_code
+    const { rows } = await db.query<{ linked: boolean }>(
+      `select c.trade_code is not null as linked from chats c left join trades t on t.code = c.trade_code
         where c.code = $1 and (c.trade_code is null or t.closed_at is null)
           and ((c.seller_account_id = $2 and c.buyer_account_id = $3) or (c.seller_account_id = $3 and c.buyer_account_id = $2))`,
       [code, fromId, toId],
     );
-    return rows.length > 0;
+    const row = rows[0];
+    if (!row) return false;
+    return row.linked ? 'open-trade' : true;
   };
 }
 
@@ -50,7 +53,10 @@ export const pendingNudgeWiring: NudgeWiring = {
   hasSharedContext: async () => false,
 };
 
-/** What main.ts uses: real trades (Task 6), open chats (Task 20) and real delivery (Task 19). */
+/**
+ * What main.ts uses: real trades (Task 6), open chats (Task 20) and real delivery (Task 19). The
+ * trade check goes first, so a trade code answers `'open-trade'` before any chat is looked up.
+ */
 export function productionNudgeWiring(db: Queryable): NudgeWiring {
   const trade = tradeSharedContext(db);
   const chat = chatSharedContext(db);
