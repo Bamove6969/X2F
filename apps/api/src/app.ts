@@ -22,6 +22,7 @@ import { offerRoutes } from './offers/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
+import { feedbackRoutes } from './feedback/mood.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
@@ -274,6 +275,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   }
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
+  // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
+  feedbackRoutes(app);
 
   return app;
 }
