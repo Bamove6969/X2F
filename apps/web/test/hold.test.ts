@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { heldNote, holdSentence, localTime, loginCantDo, refusalText } from '../src/screens/auth/refusals.js';
-import { TOO_MANY_APPROVALS, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_LOGIN } from '../src/ui/cantDoCodes.js';
+import { heldNote, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { TOO_MANY_APPROVALS, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_LOGIN, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
 
@@ -39,6 +39,14 @@ describe('loginCantDo', () => {
 
   it('the hold when approving keeps blocking on offer', () => {
     expect(loginCantDo(new AuthApiError(403, 'recovery-hold', { holdUntil: UNTIL }), 'approve')?.text).toContain('you can still block this login');
+  });
+
+  it('round 2 N-I3: a session whose login waits cannot answer a strong login, nor log a stronger device out', () => {
+    expect(loginCantDo(new AuthApiError(403, 'weak-session'), 'approve')).toEqual({ code: 'weak-session', text: WEAK_SESSION_TEXT });
+    for (const e of [new AuthApiError(403, 'weak-session'), new ApiCallError(403, 'weak-session', {})]) {
+      expect(weakSessionCantDo(e)).toEqual({ code: 'weak-session', text: WEAK_SESSION_TEXT });
+    }
+    expect(weakSessionCantDo(new AuthApiError(404, 'not-found'))).toBeNull();
   });
 
   it('anything else is worded inline as before', () => {

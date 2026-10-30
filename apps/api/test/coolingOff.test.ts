@@ -794,6 +794,8 @@ describe('review round 2', () => {
       (await deps.db.query<{ endpoint: string }>('select endpoint from push_subscriptions where account_id = $1', [accountId])).rows.map((r) => r.endpoint);
 
     it("unsubscribing drops only the calling session's subscriptions; the cap never evicts the owner's for a weak session; the warning goes out", async () => {
+      // No real sends: the test transport's answer would drop subscriptions as a dead push service (404/410) does.
+      const send = vi.spyOn(app.push, 'send').mockResolvedValue(true);
       const o = await passkeyWithPassword();
       const mine = subscription();
       expect((await o.b.post('/v1/account/push', mine)).statusCode).toBe(204);
@@ -806,7 +808,7 @@ describe('review round 2', () => {
       expect(after).toContain(mine.endpoint);
       expect(after.length).toBeLessThanOrEqual(PUSH_SUBSCRIPTION_CAP);
       // The thief's change waits and its warning is pushed to the account (the owner's subscription is still there).
-      const send = vi.spyOn(app.push, 'send');
+      send.mockClear();
       expect((await changePassword(deps, thief, o.id)).statusCode).toBe(202);
       expect(send).toHaveBeenCalledWith(o.id, 'alert');
       // The owner's own unsubscribe still works.
