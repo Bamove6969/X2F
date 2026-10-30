@@ -107,9 +107,16 @@ export interface TradeCap {
  * (no seller-side kind yet), so such a trade ends `refunded` with `dispute_by` set; a released
  * trade whose late deposit was escalated and refunded ends the same way and still counts.
  */
-export const COMPLETED_TRADES_SQL = `(select count(*) from trades t
-   where (t.state = 'released' or (t.state = 'refunded' and t.dispute_by is not null))
-     and (t.buyer_account_id = a.id or t.seller_account_id = a.id))`;
+export const COMPLETED_TRADE_SQL = (t: string): string => `(${t}.state = 'released' or (${t}.state = 'refunded' and ${t}.dispute_by is not null))`;
+
+/**
+ * The count for account alias `a`: its trades still held, plus those Plan 7's purge has deleted
+ * (`accounts.completed_trades_purged`, 701; the purge adds each trade that matches
+ * COMPLETED_TRADE_SQL in the same transaction that deletes it, so the figure never changes).
+ */
+export const COMPLETED_TRADES_SQL = `(a.completed_trades_purged + (select count(*) from trades t
+   where ${COMPLETED_TRADE_SQL('t')}
+     and (t.buyer_account_id = a.id or t.seller_account_id = a.id)))`;
 
 /**
  * The plan's shared helper `tradeCap(deps, accountId, now)` (Revision 2026-10-24), for Task 5's

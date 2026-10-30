@@ -417,10 +417,19 @@ describe('one dispute per trade opening, whatever the dispute rows say', () => {
     expect(first.statusCode).toBe(409);
     expect(errorOf(first)).toBe('dispute-exists');
 
-    // As a purge would (Plan 4 Task 23): the rows go, the trade's dispute field stays.
-    await deps.db.query('delete from dispute_appeals where code = $1', [t.code]);
-    await deps.db.query('delete from dispute_rulings where code = $1', [t.code]);
-    await deps.db.query('delete from disputes where code = $1', [t.code]);
+    // As a purge would (Plan 4 Task 23): the rows go, the trade's dispute field stays. Only the
+    // purge role may delete dispute records (701).
+    const purger = await deps.db.connect();
+    try {
+      await purger.query('begin');
+      await purger.query('set local role x2f_purge');
+      await purger.query('delete from dispute_appeals where code = $1', [t.code]);
+      await purger.query('delete from dispute_rulings where code = $1', [t.code]);
+      await purger.query('delete from disputes where code = $1', [t.code]);
+      await purger.query('commit');
+    } finally {
+      purger.release();
+    }
     setNow(at(31 * DAY));
     await relogin(buyer);
     const again = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
@@ -448,10 +457,11 @@ describe('dispute records (108, 110)', () => {
       await client.query('begin');
       await client.query('set local role x2f_purge');
       await client.query('delete from trade_events where code = $1', [t.code]);
-      await client.query('reset role');
+      // Even the purge role (the only one that may delete a trade, 701) must handle them first.
       await expect(client.query('delete from trades where code = $1', [t.code])).rejects.toMatchObject({ code: '23503' });
       await client.query('rollback');
       await client.query('begin');
+      await client.query('set local role x2f_purge');
       // Nor can a dispute be deleted from under its ruling.
       await expect(client.query('delete from disputes where code = $1', [t.code])).rejects.toMatchObject({ code: '23503' });
       await client.query('rollback');
