@@ -25,14 +25,17 @@ create table team_members (
   -- SHA-256 of the one-time invite code; null once the invite is used.
   invite_hash bytea unique,
   invite_expires_at timestamptz not null,
-  -- The member's own login account, set when the invite is accepted.
-  member_account_id uuid unique references accounts (id) on delete cascade,
+  -- The member's own login account, set when the invite is accepted. Removing a member deletes
+  -- that login account (its login name, PGP keys, security keys and passkeys; review M6), and the
+  -- row stays, with this set to null, so the audit log keeps the member's name. A live member's
+  -- login cannot be deleted (the check below).
+  member_account_id uuid unique references accounts (id) on delete set null,
   -- When the member finished registering both login factors; until then nobody logs in as them.
   joined_at timestamptz,
   created_at timestamptz not null,
   removed_at timestamptz,
   check (member_account_id is null or member_account_id <> account_id),
-  check (joined_at is null or member_account_id is not null)
+  check (joined_at is null or member_account_id is not null or removed_at is not null)
 );
 create index team_members_account on team_members (account_id);
 -- One live member (or open invite) per name in a team.
@@ -42,9 +45,16 @@ alter table sessions add column member_id uuid references team_members (id) on d
 create index sessions_member on sessions (member_id) where member_id is not null;
 
 -- The account owner's audit log (R44): one row per member action that has an effect, written in
--- the same transaction as the action. Append-only: the trigger below refuses every update except
--- clearing `trade_code` (R36: a trade's code goes when the trade is deleted), and every delete
--- except the cascade from deleting the team account itself.
+-- the same transaction as the action. Append-only: the triggers below refuse every update except
+-- clearing `trade_code` (R36: a trade's code goes when the trade is deleted; migration 199's trigger
+-- on `trades` does it), every delete except the cascade from deleting the team account itself, and
+-- TRUNCATE always.
+--
+-- What this does NOT protect against (review M4, said plainly): the API's database user owns this
+-- table, so it can `alter table ... disable trigger` or drop it, and no GRANT or REVOKE can stop a
+-- table's owner. The rule guards against code bugs, not against a compromised API role. Making it
+-- hold against that needs a separate owner role for the schema (the API connecting as a role that
+-- only has the grants it needs), which this codebase does not do yet (Plan 7, NEEDS_PLAN7_PURGE_AUDIT).
 create table team_audit (
   id bigint generated always as identity primary key,
   account_id uuid not null references accounts (id) on delete cascade,
@@ -80,3 +90,14 @@ $$;
 create trigger team_audit_append_only
   before update or delete on team_audit
   for each row execute function team_audit_append_only();
+
+-- Row triggers do not fire on TRUNCATE (review M4): refuse it outright, as trade_events does (104).
+create function team_audit_no_truncate() returns trigger language plpgsql as $$
+begin
+  raise exception 'team_audit is append-only';
+end
+$$;
+
+create trigger team_audit_no_truncate
+  before truncate on team_audit
+  for each statement execute function team_audit_no_truncate();

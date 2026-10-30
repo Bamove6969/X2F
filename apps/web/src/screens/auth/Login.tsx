@@ -263,7 +263,9 @@ function PasskeyLogin({ onLoggedIn }: { onLoggedIn: () => void }) {
     try {
       const result = await loginWithPasskey(authApi, deviceLabel());
       if (result.status === 'ok') onLoggedIn();
-      // A staff or team-member login (Plan 2 Task 18): the second step is what the server needs (PGP).
+      // Unreachable today (Plan 2 Task 18 review M8): discoverable passkey login accepts trader
+      // accounts only (the API's webauthn.ts), and a trader's passkey login is always 'ok'. Should
+      // the API ever answer a second step here, show it: the server still decides every pair.
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
       setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));

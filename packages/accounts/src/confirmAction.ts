@@ -18,8 +18,12 @@ export type ConfirmAction =
   | { kind: 'set-login-name' }
   | { kind: 'new-recovery-codes' }
   | { kind: 'add-device-key'; signPublicHash: string }
-  /** Plan 2 Task 18: the account owner invites a team member (`roles`: the roles, comma-separated in a fixed order). */
-  | { kind: 'team-invite'; roles: string }
+  /**
+   * Plan 2 Task 18: the account owner invites a team member: `name`, their name in trade chats,
+   * exactly as typed (review M9(a): one confirm invites one named member), and `roles`, the roles
+   * comma-separated in a fixed order.
+   */
+  | { kind: 'team-invite'; name: string; roles: string }
   /** Changes one member's roles to exactly `roles`. */
   | { kind: 'team-roles'; memberId: string; roles: string }
   /** Removes one member (or cancels an invite). */
@@ -65,7 +69,7 @@ export function describeAction(a: ConfirmAction): string {
     case 'add-device-key':
       return 'add a trade signing key';
     case 'team-invite':
-      return `invite a team member (${teamRoleWords(a.roles)})`;
+      return `invite ${a.name} as a team member (${teamRoleWords(a.roles)})`;
     case 'team-roles':
       return `change a team member's roles to ${teamRoleWords(a.roles)}`;
     case 'team-remove':

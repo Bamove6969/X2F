@@ -109,3 +109,15 @@ export const JOIN_COPY = {
   nameInvalid: 'Use 5 to 20 letters, digits, dots, dashes or underscores.',
   nameUnavailable: 'Pick another login name. That one is taken.',
 } as const;
+
+/**
+ * What a team member's device shows on the trade side until Plan 3 Task 42 (review I1, I2): the
+ * account owner's device takes, accepts, secures and releases every trade, so a member never gets
+ * the accept sheet or an escrow on their device.
+ */
+export const MEMBER_TRADE_COPY = {
+  acceptedTitle: 'Your offer was taken',
+  accepted: (by: string) => `${by} took one of your team's offers. The account owner's device sets up the trade, so ask them to open X2F.`,
+  ok: 'OK',
+  roomWaiting: "Waiting for the account owner's device. It sets up, secures and releases this trade.",
+} as const;

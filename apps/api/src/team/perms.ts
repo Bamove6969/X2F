@@ -4,7 +4,8 @@
  * - **Offers:** create, delete, adjust and turn the account's offers on or off.
  * - **Trades:** take offers and accept trades for the account, set the trade's payout wallet from
  *   the account's own list, mark money sent, cancel, open a dispute or an appeal (and chat and
- *   proof, Plan 3 Task 42).
+ *   proof, Plan 3 Task 42). *Until Task 42* (review I2, lead 2026-10-30): taking, accepting (the
+ *   payout wallet) and the trade identity stay on the owner's device (`ownerDeviceOnly`).
  * - *Lead defaults (owner may change):* everything else is the account owner's alone (payout
  *   wallets, members and their roles, login methods, Settings → Security, the Terms, sessions,
  *   alerts, deleting the account): a member gets 403 `owner-only`.
@@ -17,6 +18,7 @@
  * name a role refuses members: new routes are owner-only until someone decides otherwise.
  */
 import type { TradeEvent } from '@x2f/trade';
+import type { FastifyRequest } from 'fastify';
 import { ApiError } from '../errors.js';
 
 export type TeamRole = 'offers' | 'trades';
@@ -45,6 +47,22 @@ export const MEMBER_SIGNING_EVENTS: ReadonlySet<TradeEvent['type']> = new Set<Tr
 export function assertMemberMaySend(memberId: string | null, event: TradeEvent['type']): void {
   if (memberId !== null && MEMBER_SIGNING_EVENTS.has(event)) throw new ApiError(403, 'member-cannot-sign');
 }
+
+/**
+ * A preHandler after `requireSession({ member: 'trades' })` for the steps that need the account
+ * owner's device (Plan 2 Task 18 review I2, lead decision 2026-10-30): taking an offer, setting a
+ * trade's payout wallet (the poster's accept step) and registering a trade identity. Each one makes
+ * the device that does it the trade's escrow party (its `ConfirmedTrade`, its own payout address,
+ * its trade key), and only the owner's device can be that until Plan 3 Task 42's member keys. A
+ * Trades member gets 403 `member-cannot-sign`; they still mark paid, cancel, dispute and chat on
+ * the trades the owner's device set up. Tripwire: NEEDS_PLAN3_TASK42_MEMBER_KEY (test/team.test.ts).
+ */
+export async function ownerDeviceOnly(req: FastifyRequest): Promise<void> {
+  if (req.auth.memberId !== null) throw new ApiError(403, 'member-cannot-sign');
+}
+
+/** The routes `ownerDeviceOnly` guards (the tripwire checks each still names it). */
+export const OWNER_DEVICE_ROUTES = ['POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet', 'POST /v1/trades/:code/identity'] as const;
 
 /** Parses a roles list from a request body: a non-empty set of known roles, in a fixed order. */
 export function parseRoles(raw: unknown): TeamRole[] {

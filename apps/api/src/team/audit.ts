@@ -3,11 +3,13 @@
  *
  * `auditMember` is called inside the transaction of every member action that has an effect, so
  * the row exists exactly when the action committed; for the account owner's own actions it does
- * nothing. Reads never log. The table is append-only (migration 015's trigger). Trade codes in it
- * are cleared when the trade is deleted (R36): Plan 7's purge calls `forgetAuditTrade` in the same
- * transaction (tripwire in apps/api/test/team.test.ts).
+ * nothing. Reads never log. The table is append-only (migration 015's triggers). Trade codes in it
+ * are cleared by the database itself when the trade is deleted (R36; migration 116's trigger on
+ * `trades`), so no purge can forget it.
  */
 import type { Queryable } from '../db/pool.js';
+import { ApiError } from '../errors.js';
+import type { TeamRole } from './perms.js';
 
 /** Every action the log records. */
 export type AuditAction =
@@ -31,6 +33,26 @@ export type AuditAction =
   | 'accept-cancel'
   | 'withdraw-cancel';
 
+/** The role each action needs (the route's `requireSession({ member })`), checked again live by `auditMember`. */
+export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
+  'offer-posted': 'offers',
+  'offer-paused': 'offers',
+  'offer-relisted': 'offers',
+  'offer-removed': 'offers',
+  'trade-taken': 'trades',
+  'trade-wallet-set': 'trades',
+  'final-alert-seen': 'trades',
+  'dispute-opened': 'trades',
+  'appeal-filed': 'trades',
+  'mark-paid': 'trades',
+  extend: 'trades',
+  'request-refund': 'trades',
+  'buyer-cancel': 'trades',
+  'propose-cancel': 'trades',
+  'accept-cancel': 'trades',
+  'withdraw-cancel': 'trades',
+};
+
 /** Who acted: the session's account and member (null for the account owner). */
 export interface Actor {
   accountId: string;
@@ -40,6 +62,12 @@ export interface Actor {
 /**
  * Writes one audit row for a member's action (nothing for the account owner). `detail` must hold
  * no wallet address, key, token, secret, IP address or user agent: ids and plain facts only.
+ *
+ * Review M1: `requireSession` checked the member before the handler ran, and a removal or a role
+ * change may have committed since. So the member's row is read again here `for share`, inside the
+ * action's transaction: a removal or roles change (both UPDATE that row) either waits for this
+ * action to commit, or has committed and this action is refused and rolls back: 401
+ * `not-authenticated` for a removed member, 403 `forbidden` for one who no longer holds the role.
  */
 export async function auditMember(
   q: Queryable,
@@ -48,16 +76,19 @@ export async function auditMember(
   now: Date,
 ): Promise<void> {
   if (actor.memberId === null) return;
+  const { rows } = await q.query<{ roles: TeamRole[] }>(
+    `select tm.roles from team_members tm
+      where tm.id = $1 and tm.account_id = $2 and tm.removed_at is null and tm.joined_at is not null
+      for share`,
+    [actor.memberId, actor.accountId],
+  );
+  const live = rows[0];
+  if (!live) throw new ApiError(401, 'not-authenticated');
+  if (!live.roles.includes(ACTION_ROLE[a.action])) throw new ApiError(403, 'forbidden');
   await q.query(
     'insert into team_audit (account_id, member_id, at, action, trade_code, detail) values ($1, $2, $3, $4, $5, $6)',
     [actor.accountId, actor.memberId, now, a.action, a.tradeCode ?? null, JSON.stringify(a.detail ?? {})],
   );
-}
-
-/** R36: a deleted trade's code leaves the log (the rest of each row stays with the account). */
-export async function forgetAuditTrade(q: Queryable, tradeCode: string): Promise<number> {
-  const r = await q.query('update team_audit set trade_code = null where trade_code = $1', [tradeCode]);
-  return r.rowCount ?? 0;
 }
 
 export interface AuditEntry {

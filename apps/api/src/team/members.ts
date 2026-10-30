@@ -10,7 +10,7 @@
  *   (*lead default*, owner may change): always a PGP key first, then a security key, a passkey or a
  *   second PGP key. Never a password, an authenticator code or recovery codes. Their login is an
  *   `accounts` row of kind `member`; its display name is a random placeholder nobody sees.
- * - Removing a member ends their sessions at once and closes their login for good.
+ * - Removing a member ends their sessions at once and deletes their login (review M6).
  */
 import { createHash, randomBytes } from 'node:crypto';
 import { checkDisplayName, checkLoginName, lookAlikeKey } from '@x2f/accounts';
@@ -21,6 +21,7 @@ import { createAccount } from '../accounts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
+import type { RetentionJob } from '../retention.js';
 import { MAX_TEAM_MEMBERS, type TeamRole } from './perms.js';
 
 /** An invite lives this long (as Plan 4's staff invites). */
@@ -154,23 +155,12 @@ export async function createInvite(
   }
 }
 
-/** Sets a live member's roles (takes effect on their next request). 404 for anyone else's or a removed member. */
-export async function setRoles(deps: Pick<Deps, 'db' | 'clock'>, accountId: string, memberId: string, roles: TeamRole[]): Promise<TeamMemberView> {
-  const { rows } = await deps.db.query<MemberRow>(
-    `update team_members set roles = $3
-      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
-    [memberId, deps.clock(), roles, accountId],
-  );
-  const row = rows[0];
-  if (!row) throw new ApiError(404, 'not-found');
-  return toView(row);
-}
-
 /**
  * Removes a member or cancels an invite: the row is marked removed, the invite code dies, the
- * member's login account is disabled and every session of theirs is revoked, in one transaction;
- * their live streams are closed after the commit. 404 for anyone else's or an already removed one.
+ * member's login account is deleted (its login name, PGP keys, security keys and passkeys; review
+ * M6: nothing of a removed member's login is kept) and every session of theirs is revoked, in one
+ * transaction; their live streams are closed after the commit. The row itself stays, so the audit
+ * log keeps the member's name. 404 for anyone else's or an already removed one.
  */
 export async function removeMember(
   deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
@@ -186,9 +176,7 @@ export async function removeMember(
     );
     const row = rows[0];
     if (!row) throw new ApiError(404, 'not-found');
-    if (row.member_account_id !== null) {
-      await c.query('update accounts set disabled_at = coalesce(disabled_at, $2) where id = $1', [row.member_account_id, now]);
-    }
+    if (row.member_account_id !== null) await deleteMemberLogin(c, row.member_account_id);
     const s = await c.query<{ id: string }>('update sessions set revoked_at = $2 where member_id = $1 and revoked_at is null returning id', [
       memberId, now,
     ]);
@@ -196,6 +184,61 @@ export async function removeMember(
   });
   for (const id of ended) deps.events.closeSession(accountId, id);
 }
+
+/** Deletes a member's login account (only ever a `member` row); the cascade takes its login methods and `team_members` keeps a null. */
+async function deleteMemberLogin(c: Queryable, memberAccountId: string): Promise<void> {
+  await c.query("delete from accounts where id = $1 and kind = 'member'", [memberAccountId]);
+}
+
+/**
+ * Sets a live member's roles (takes effect on their next request). When the new roles leave out
+ * Trades, the member's live streams (which carry the account's trade events) are closed after the
+ * commit (review M2). 404 for anyone else's or a removed member.
+ */
+export async function setRoles(
+  deps: Pick<Deps, 'db' | 'clock'> & { events: Pick<EventBus, 'closeSession'> },
+  accountId: string,
+  memberId: string,
+  roles: TeamRole[],
+): Promise<TeamMemberView> {
+  const { rows } = await deps.db.query<MemberRow>(
+    `update team_members set roles = $3
+      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
+    [memberId, deps.clock(), roles, accountId],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(404, 'not-found');
+  if (!roles.includes('trades')) {
+    const s = await deps.db.query<{ id: string }>('select id from sessions where member_id = $1', [memberId]);
+    for (const r of s.rows) deps.events.closeSession(accountId, r.id);
+  }
+  return toView(row);
+}
+
+/**
+ * Retention (review M6), every 10 minutes with the other jobs: closes sign-ups that ran out before
+ * the member finished (and invites past their time), and deletes every member login account that no
+ * live member uses: a removed member's (normally already gone at removal), an expired sign-up's,
+ * and one whose team account was deleted. Returns the rows touched.
+ */
+export const purgeTeamLeftovers: RetentionJob = {
+  name: 'purgeTeamLeftovers',
+  async run(db: pg.Pool, now: Date): Promise<number> {
+    return inTransaction(db, async (c) => {
+      const closed = await c.query(
+        `update team_members set removed_at = $1, invite_hash = null
+          where removed_at is null and joined_at is null and invite_expires_at <= $1`,
+        [now],
+      );
+      const gone = await c.query(
+        `delete from accounts a where a.kind = 'member'
+          and not exists (select 1 from team_members tm where tm.member_account_id = a.id and tm.removed_at is null)`,
+      );
+      return (closed.rowCount ?? 0) + (gone.rowCount ?? 0);
+    });
+  },
+};
 
 // ---------------------------------------------------------------------------------------------
 // The member's side: an invite and the sign-up

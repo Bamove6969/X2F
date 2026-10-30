@@ -41,9 +41,9 @@ function rolesText(roles: readonly ('offers' | 'trades')[]): string {
   return (['offers', 'trades'] as const).filter((r) => roles.includes(r)).join(',');
 }
 
-/** The action an invite is confirmed for: its roles. */
-export function teamInviteAction(roles: readonly ('offers' | 'trades')[]): Extract<ConfirmAction, { kind: 'team-invite' }> {
-  return { kind: 'team-invite', roles: rolesText(roles) };
+/** The action an invite is confirmed for: the member's name exactly as sent, and the roles. */
+export function teamInviteAction(name: string, roles: readonly ('offers' | 'trades')[]): Extract<ConfirmAction, { kind: 'team-invite' }> {
+  return { kind: 'team-invite', name, roles: rolesText(roles) };
 }
 
 /** The action a roles change is confirmed for: the member and exactly the new roles. */

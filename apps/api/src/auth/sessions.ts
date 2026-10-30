@@ -278,6 +278,9 @@ export function requireSession(
     const row = rows[0];
     const now = deps.clock();
     if (!row || row.revoked_at !== null) throw new ApiError(401, 'not-authenticated');
+    // Task 18 review M9(c): a member's sessions are rows of the team account (`startSession`); a
+    // session of a member login account itself is never valid, whatever inserted it.
+    if (row.kind === 'member') throw new ApiError(401, 'not-authenticated');
     // The account's current logout timer: a change applies to every live session at its next request.
     const policy = sessionPolicy(row.kind, row.level, row.idle_hours);
     if (

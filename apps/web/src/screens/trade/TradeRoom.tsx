@@ -67,7 +67,10 @@ import { useLocation, useParams } from 'react-router';
 import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
+import { memberOf } from '../../session/member.js';
+import { useSession } from '../../session/useSession.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 
 export interface TradeScreenProps {
@@ -188,6 +191,7 @@ function StatusCard({ view }: { view: TradeView }) {
 }
 
 export function TradeRoom() {
+  const session = useSession();
   const { code = '' } = useParams();
   const location = useLocation();
   const { load, refresh } = useTradeView(code);
@@ -218,10 +222,31 @@ export function TradeRoom() {
       </main>
     );
   }
+  // Plan 2 Task 18 (review I1, I2): a team member's device never runs the escrow (only the
+  // account owner's device can, until Plan 3 Task 42's member keys): wait for the session first, so
+  // the escrow worker never boots on a member's device, then show the member's room.
+  if (session.status === 'loading') return <main data-screen="trade" aria-busy="true" />;
+  if (memberOf(session) !== null) return <MemberRoom view={load.view} />;
   // The escrow starts only once the API has shown this trade to this account (review of the
   // landing, Minor 1): a visitor, a staff account or a wrong code never boots the escrow worker or
   // leaves a run polling GET /v1/trades/:code.
   return <ReadyRoom key={code} code={code} ownCode={own} view={load.view} refresh={refresh} navState={location.state} />;
+}
+
+/**
+ * A team member's trade room until Plan 3 Task 42 (NEEDS_PLAN3_TASK42_MEMBER_KEY): no escrow on
+ * this device, so no funding, check words or release here; the trade's state and a notice that the
+ * account owner's device does those steps. Kit parts only (NEEDS_DESIGN_TEAM).
+ */
+function MemberRoom({ view }: { view: TradeView }) {
+  return (
+    <main data-screen="trade" data-trade-state={view.state} data-role={view.role} data-member="">
+      <StatusCard view={view} />
+      <section className="x2f-card x2f-stack" data-part="member-waiting">
+        <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
+      </section>
+    </main>
+  );
 }
 
 /** The room once the trade has loaded: owns the trade's one escrow handle and picks the screen. */

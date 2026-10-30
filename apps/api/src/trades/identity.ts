@@ -4,6 +4,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { ownerDeviceOnly } from '../team/perms.js';
 
 /** Reading the attestation: the account owner, or a team member with Trades (Plan 2 Task 18). */
 const requireTradesRead = requireSession({ kinds: ['trader'], member: 'trades' });
@@ -12,12 +13,7 @@ const requireTradesRead = requireSession({ kinds: ['trader'], member: 'trades' }
  * member may, until a per-member key scheme exists (Plan 3 Task 42). A Trades member gets 403
  * `member-cannot-sign` (other members `forbidden`), the account owner passes.
  */
-const requireSigner = [
-  requireSession({ kinds: ['trader'], member: 'trades' }),
-  async (req: FastifyRequest) => {
-    if (req.auth.memberId !== null) throw new ApiError(403, 'member-cannot-sign');
-  },
-];
+const requireSigner = [requireSession({ kinds: ['trader'], member: 'trades' }), ownerDeviceOnly];
 
 /** Only buyer and seller register a trade identity; the mod identity is the moderation service's. */
 export type TraderRole = Extract<Role, 'buyer' | 'seller'>;

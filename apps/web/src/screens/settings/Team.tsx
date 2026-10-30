@@ -131,7 +131,7 @@ export function Team() {
         return;
       }
       const displayName = name.trim();
-      const r = await withConfirm(teamInviteAction(roles), (confirmToken) => authApi.inviteMember({ displayName, roles, confirmToken }), prove);
+      const r = await withConfirm(teamInviteAction(displayName, roles), (confirmToken) => authApi.inviteMember({ displayName, roles, confirmToken }), prove);
       setLink({ name: displayName, url: inviteLink(window.location.origin, r.invite) });
       setCopied(false);
       setName('');

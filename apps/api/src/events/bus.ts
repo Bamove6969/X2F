@@ -40,6 +40,12 @@ export class EventBus {
   private readonly streams = new Map<string, Set<StreamSink>>();
   /** The session each stream was opened by (for closeSession and closeAccount's `keep`). */
   private readonly sessionOf = new Map<StreamSink, string>();
+  /**
+   * Plan 2 Task 18 (review I1): the streams a team member opened. They receive the account's
+   * events, but never count as the account being reached: only the account owner's device runs
+   * the escrow, so a push still goes to the owner whenever no stream of the owner's own is open.
+   */
+  private readonly memberSinks = new Set<StreamSink>();
   private count = 0;
 
   constructor(o: EventBusOptions = {}) {
@@ -52,14 +58,20 @@ export class EventBus {
     return this.count;
   }
 
-  /** Adds a stream; returns its detach function, or null when a cap is reached. */
-  attach(accountId: string, sink: StreamSink, sessionId?: string): (() => void) | null {
+  /**
+   * Adds a stream; returns its detach function, or null when a cap is reached. `o.member`: a team
+   * member's stream (Plan 2 Task 18). Members' streams together may take at most `perAccount - 1`
+   * slots, so one is always left for the account owner (review I1).
+   */
+  attach(accountId: string, sink: StreamSink, sessionId?: string, o: { member?: boolean } = {}): (() => void) | null {
     const own = this.streams.get(accountId);
     if (this.count >= this.global || (own?.size ?? 0) >= this.perAccount) return null;
+    if (o.member === true && this.memberCount(own) >= this.perAccount - 1) return null;
     const set = own ?? new Set<StreamSink>();
     if (!own) this.streams.set(accountId, set);
     set.add(sink);
     if (sessionId !== undefined) this.sessionOf.set(sink, sessionId);
+    if (o.member === true) this.memberSinks.add(sink);
     this.count++;
     let attached = true;
     return () => {
@@ -73,11 +85,23 @@ export class EventBus {
     const set = this.streams.get(accountId);
     if (!set?.delete(sink)) return;
     this.sessionOf.delete(sink);
+    this.memberSinks.delete(sink);
     this.count--;
     if (set.size === 0) this.streams.delete(accountId);
   }
 
-  /** Sends `ev` to every open stream of `accountId` and no one else; returns how many were written. */
+  private memberCount(set: Set<StreamSink> | undefined): number {
+    let n = 0;
+    for (const sink of set ?? []) if (this.memberSinks.has(sink)) n++;
+    return n;
+  }
+
+  /**
+   * Sends `ev` to every open stream of `accountId` (the owner's and its team members') and no one
+   * else. Returns how many of the account OWNER's own streams were written: every caller uses it to
+   * decide whether the owner still needs a push, and a member's tab never stands in for the
+   * owner's device (Plan 2 Task 18, review I1).
+   */
   publish(accountId: string, ev: LiveEvent): number {
     const set = this.streams.get(accountId);
     if (!set) return 0;
@@ -86,7 +110,7 @@ export class EventBus {
     for (const sink of [...set]) {
       try {
         sink.send(data);
-        written++;
+        if (!this.memberSinks.has(sink)) written++;
       } catch {
         // A dead socket: drop it. Nothing is logged (the account id would be a link to activity).
         this.remove(accountId, sink);
@@ -100,9 +124,13 @@ export class EventBus {
     return written;
   }
 
-  /** True while `accountId` has at least one open stream (the final-alert proof, P3-I13). */
+  /**
+   * True while the account owner has at least one stream of their own open (the final-alert proof,
+   * P3-I13; the nudge push rule). Team members' streams do not count (Plan 2 Task 18, review I1).
+   */
   delivered(accountId: string): boolean {
-    return (this.streams.get(accountId)?.size ?? 0) > 0;
+    const set = this.streams.get(accountId);
+    return (set?.size ?? 0) > this.memberCount(set);
   }
 
   private end(accountId: string, sink: StreamSink): void {

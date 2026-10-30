@@ -394,12 +394,35 @@ export async function verifyWebAuthnRegistration(
   expectedChallenge: string | Uint8Array,
   o: { kind?: CredentialKind; label?: string } = {},
 ): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null }> {
+  const v = await verifyWebAuthnRegistrationOnly(deps, accountId, response, expectedChallenge, o);
+  await v.store(deps.db);
+  return { credentialId: v.credentialId, kind: v.kind, attested: v.attested, aaguid: v.aaguid };
+}
+
+/**
+ * `verifyWebAuthnRegistration` without the write: verifies, and returns `store(q)`, which inserts
+ * the credential through `q` (a transaction), so a caller can store it only once it has won its
+ * own race (Plan 2 Task 18 review M9(e): a team member's sign-up stores the key in the same
+ * transaction that uses up the setup and marks the member joined).
+ */
+export async function verifyWebAuthnRegistrationOnly(
+  deps: Deps,
+  accountId: string,
+  response: unknown,
+  expectedChallenge: string | Uint8Array,
+  o: { kind?: CredentialKind; label?: string } = {},
+): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null; store(q: Queryable): Promise<void> }> {
   const account = await accountById(deps.db, accountId);
   const cred = await verifyRegistration(deps, {
     accountKind: account.kind, kind: o.kind ?? null, response, expectedChallenge: challengeString(expectedChallenge),
   });
-  await insertCredential(deps.db, accountId, cred, cleanLabel(o.label, cred.kind), deps.clock());
-  return { credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid };
+  const label = cleanLabel(o.label, cred.kind);
+  return {
+    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid,
+    store: async (q) => {
+      await insertCredential(q, accountId, cred, label, deps.clock());
+    },
+  };
 }
 
 /** Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`). */

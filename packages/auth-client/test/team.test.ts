@@ -21,15 +21,15 @@ function recorder(reply: () => Response = () => Response.json({ ok: true })) {
 const bodyOf = (s: Sent): unknown => (typeof s.init.body === 'string' ? JSON.parse(s.init.body) : undefined);
 
 describe('team confirm actions', () => {
-  it('bind the roles in the API order (offers, trades), whatever order they were picked in', () => {
-    expect(teamInviteAction(['trades', 'offers'])).toEqual({ kind: 'team-invite', roles: 'offers,trades' });
-    expect(teamInviteAction(['trades'])).toEqual({ kind: 'team-invite', roles: 'trades' });
+  it('bind the name and the roles in the API order (offers, trades), whatever order they were picked in', () => {
+    expect(teamInviteAction('Alice.K', ['trades', 'offers'])).toEqual({ kind: 'team-invite', name: 'Alice.K', roles: 'offers,trades' });
+    expect(teamInviteAction('Alice.K', ['trades'])).toEqual({ kind: 'team-invite', name: 'Alice.K', roles: 'trades' });
     expect(teamRolesAction('m1', ['offers'])).toEqual({ kind: 'team-roles', memberId: 'm1', roles: 'offers' });
     expect(teamRemoveAction('m1')).toEqual({ kind: 'team-remove', memberId: 'm1' });
   });
 
   it('read in plain words on the confirm sheet', () => {
-    expect(describeAction(teamInviteAction(['offers', 'trades']))).toBe('invite a team member (Offers and Trades)');
+    expect(describeAction(teamInviteAction('Alice.K', ['offers', 'trades']))).toBe('invite Alice.K as a team member (Offers and Trades)');
     expect(describeAction(teamRolesAction('m1', ['trades']))).toBe("change a team member's roles to Trades");
     expect(describeAction(teamRemoveAction('m1'))).toBe('remove a team member');
   });

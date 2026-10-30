@@ -4,7 +4,7 @@
  * The account owner's side (a full trader session of the account owner; a member gets 403
  * `owner-only` from `requireSession`, which lets no member through unless a route says so):
  * - `GET /v1/team` → `{ members, max }`.
- * - `POST /v1/team/invites { displayName, roles, confirmToken }` (confirm `team-invite`) → 201
+ * - `POST /v1/team/invites { displayName, roles, confirmToken }` (confirm `team-invite`, bound to the name and roles) → 201
  *   `{ id, invite, expiresAt }`: `invite` is the one-time code, shown once.
  * - `PATCH /v1/team/members/:id { roles, confirmToken }` (confirm `team-roles`) → the member.
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
@@ -33,7 +33,7 @@ import { requireConfirm } from '../auth/confirm.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
-import { verifyWebAuthnRegistration, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
+import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
 import {
   checkMemberLoginName,
@@ -146,7 +146,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireConfirm((req) => ({ kind: 'team-invite', roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkInvite, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
@@ -158,7 +158,7 @@ export function teamRoutes(app: FastifyInstance): void {
   app.patch(
     '/v1/team/members/:id',
     { preHandler: [owner, checkRoles, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles(req.server.deps, req.auth.accountId, idParam(req), input(req).roles),
+    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, req.auth.accountId, idParam(req), input(req).roles),
   );
 
   app.delete(
@@ -272,14 +272,17 @@ export function teamRoutes(app: FastifyInstance): void {
       throw new ApiError(400, 'challenge-expired');
     }
     const kind = ch.method;
-    // Verifies the attestation by the staff rule (a security key must be attested; R1) and stores the credential.
-    await verifyWebAuthnRegistration(deps, setup.memberAccountId, b.response as RegistrationResponseJSON, ch.webauthn_challenge, {
+    // Verifies the attestation by the staff rule (a security key must be attested; R1). The
+    // credential is stored only in the transaction that wins the setup (review M9(e)): a lost race
+    // or a member removed meanwhile leaves nothing behind.
+    const cred = await verifyWebAuthnRegistrationOnly(deps, setup.memberAccountId, b.response as RegistrationResponseJSON, ch.webauthn_challenge, {
       kind, ...(label !== undefined ? { label } : {}),
     });
     const now = deps.clock();
     await inTransaction(deps.db, async (c) => {
       await useSetup(c, setup.id, now);
       await finishMember(c, setup.memberAccountId, now);
+      await cred.store(c);
     });
     await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: kind, firstSession: true });
     return reply.code(201).send({ status: 'ok' });

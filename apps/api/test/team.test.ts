@@ -2,16 +2,22 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { createHash, randomBytes } from 'node:crypto';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { forgetAuditTrade } from '../src/team/audit.js';
-import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS } from '../src/team/perms.js';
+import { EventBus, type StreamSink } from '../src/events/bus.js';
+import { tradeEventPublisher } from '../src/events/tradePublisher.js';
+import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
+import { purgeTeamLeftovers } from '../src/team/members.js';
+import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
+import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
+import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
-import { Browser } from './helpers/totp.js';
+import { Browser, ORIGIN } from './helpers/totp.js';
 import { driveTo, fakeAddress, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -37,12 +43,17 @@ const prices: MarketPrices = {
 let app: FastifyInstance;
 let deps: Deps;
 let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+let setNow: (d: Date) => void;
 let n = 0;
+const streams: SseStream[] = [];
 
 beforeAll(async () => {
-  ({ app, deps, trader } = await tradeApp({}, { prices, db: await testDb({ max: 8 }) }));
+  ({ app, deps, trader, setNow } = await tradeApp({}, { prices, db: await testDb({ max: 8 }) }));
+  // GET /v1/events needs a real socket (review I1 and M2 tests).
+  await app.listen({ host: '127.0.0.1', port: 0 });
 });
 afterAll(async () => {
+  for (const st of streams) st.close();
   await app.close();
   await deps.db.end();
 });
@@ -101,7 +112,7 @@ async function sessionId(b: Browser): Promise<string> {
 }
 
 async function invite(owner: Who, displayName: string, roles: Role[]) {
-  const action = { kind: 'team-invite' as const, roles: roles.join(',') };
+  const action = { kind: 'team-invite' as const, name: displayName, roles: roles.join(',') };
   const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
   return owner.browser.post('/v1/team/invites', { displayName, roles, confirmToken });
 }
@@ -144,10 +155,16 @@ describe('invites and the member limit', () => {
     const none = await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xx`, roles: ['offers'] });
     expect(none.statusCode).toBe(403);
     expect(none.json()).toEqual({ error: 'confirm-required', action: 'team-invite' });
-    const action = { kind: 'team-invite' as const, roles: 'offers' };
+    const action = { kind: 'team-invite' as const, name: `Plain${n}xy`, roles: 'offers' };
     const token = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
     const wrong = await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xy`, roles: ['offers', 'trades'], confirmToken: token });
     expect(err(wrong)).toEqual({ status: 403, error: 'confirm-invalid' });
+    // Review M9(a): the token names the member too, so it cannot invite someone else with the same roles.
+    const token2 = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
+    const otherName = await owner.browser.post('/v1/team/invites', { displayName: `Mallory${n}x`, roles: ['offers'], confirmToken: token2 });
+    expect(err(otherName)).toEqual({ status: 403, error: 'confirm-invalid' });
+    const token3 = await issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
+    expect((await owner.browser.post('/v1/team/invites', { displayName: `Plain${n}xy`, roles: ['offers'], confirmToken: token3 })).statusCode).toBe(201);
   });
 });
 
@@ -226,19 +243,26 @@ describe('roles', () => {
     expect(err(await m.browser.post(`/v1/offers/${sellerOffer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'forbidden' });
   });
 
-  it('a Trades-only member takes and marks paid, but posting an offer is forbidden', async () => {
+  it('a Trades-only member marks paid on the owner\'s trade, but taking (I2) and posting are refused', async () => {
     const owner = await team();
     const seller = await team();
     const m = await member(owner.id, ['trades']);
     expect(err(await m.browser.post('/v1/offers', OFFER))).toEqual({ status: 403, error: 'forbidden' });
-    // The account's wallet list, to pick one at take (adding or removing stays the owner's).
-    expect((await m.browser.get('/v1/wallets')).statusCode).toBe(200);
+    // The account's wallet list, address ends only (review M7; adding or removing stays the owner's).
+    const wallets = await m.browser.get('/v1/wallets');
+    expect(wallets.statusCode).toBe(200);
+    const listed = wallets.json() as Record<string, unknown>[];
+    expect(listed).toHaveLength(1);
+    expect(listed[0]).not.toHaveProperty('address');
+    expect(listed[0]!.addressEnd).toMatch(/^.{6}$/);
+    expect(JSON.stringify(listed)).not.toContain(((await owner.browser.get('/v1/wallets')).json() as { address: string }[])[0]!.address);
+    // Review I2 (lead 2026-10-30): a take makes the taking device the escrow party, and only the
+    // owner's device can be one until Plan 3 Task 42; the refused take leaves nothing behind.
     const offer = (await seller.browser.post('/v1/offers', OFFER)).json() as { id: string };
-    const taken = await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet));
-    expect(taken.statusCode, taken.body).toBe(200);
-    const code = (taken.json() as { code: string }).code;
-    const { rows } = await deps.db.query<{ buyer_account_id: string }>('select buyer_account_id from trades where code = $1', [code]);
-    expect(rows[0]!.buyer_account_id).toBe(owner.id);
+    expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
+    const none = await deps.db.query('select 1 from trades where buyer_account_id = $1', [owner.id]);
+    expect(none.rowCount).toBe(0);
+    expect(await auditRows(owner.id)).toEqual([]);
 
     const t = await seedTrade(deps, { sellerId: seller.id, buyerId: owner.id, poster: 'seller' });
     const secured = await driveTo(deps, t.trade, 'secured');
@@ -325,14 +349,43 @@ describe('the audit log', () => {
     expect(await auditRows(owner.id)).toHaveLength(rows.length);
   });
 
-  it('is append-only; only a trade code may be cleared (R36)', async () => {
+  it('is append-only: no update but clearing a trade code, no delete, no TRUNCATE (review M4)', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
     await deps.db.query(`insert into team_audit (account_id, member_id, at, action, trade_code) values ($1, $2, now(), 'mark-paid', 'AAAA-BBBB-CCCC-DDDD')`, [owner.id, m.id]);
     await expect(deps.db.query(`update team_audit set action = 'extend' where account_id = $1`, [owner.id])).rejects.toThrow(/append-only/);
     await expect(deps.db.query('delete from team_audit where account_id = $1', [owner.id])).rejects.toThrow(/append-only/);
-    expect(await forgetAuditTrade(deps.db, 'AAAA-BBBB-CCCC-DDDD')).toBe(1);
+    await expect(deps.db.query('truncate team_audit')).rejects.toThrow(/append-only/);
+    await expect(deps.db.query('truncate team_members cascade')).rejects.toThrow(/append-only/);
+    expect((await deps.db.query('update team_audit set trade_code = null where account_id = $1', [owner.id])).rowCount).toBe(1);
     expect((await auditRows(owner.id))[0]!.trade_code).toBeNull();
+  });
+
+  it('a deleted trade\'s code is cleared from the log by the database itself (R36, review M5)', async () => {
+    const owner = await team();
+    const other = await team();
+    const m = await member(owner.id, ['trades']);
+    const t = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    await deps.db.query(`insert into team_audit (account_id, member_id, at, action, trade_code) values ($1, $2, now(), 'mark-paid', $3)`, [owner.id, m.id, t.code]);
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      // trade_events only lets x2f_purge delete (104); then the trade itself, as Plan 7's purge will,
+      // written as a schema-qualified name the old regex tripwire would have missed.
+      await c.query('set local role x2f_purge');
+      await c.query('delete from trade_events where code = $1', [t.code]);
+      await c.query('reset role');
+      for (const table of ['trade_identities', 'trade_attestations', 'trade_refusals', 'trade_work_served', 'disputes']) await c.query(`delete from ${table} where code = $1`, [t.code]);
+      await c.query('delete from public.trades where code = $1', [t.code]);
+      await c.query('commit');
+    } catch (e) {
+      await c.query('rollback');
+      throw e;
+    } finally {
+      c.release();
+    }
+    const rows = await auditRows(owner.id);
+    expect(rows).toEqual([{ action: 'mark-paid', member_id: m.id, trade_code: null }]);
   });
 });
 
@@ -348,10 +401,329 @@ describe('removing a member', () => {
     });
     expect(del.statusCode, del.body).toBe(204);
     expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
-    const { rows } = await deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [m.loginId]);
-    expect(rows[0]!.disabled_at).not.toBeNull();
+    // Review M6: the member's login account (login name, keys) is deleted; the row keeps the name for the log.
+    expect((await deps.db.query('select 1 from accounts where id = $1', [m.loginId])).rowCount).toBe(0);
+    const { rows } = await deps.db.query<{ display_name: string; member_account_id: string | null; removed_at: Date | null }>(
+      'select display_name, member_account_id, removed_at from team_members where id = $1', [m.id],
+    );
+    expect(rows[0]).toMatchObject({ display_name: m.name, member_account_id: null });
+    expect(rows[0]!.removed_at).not.toBeNull();
     // The owner's own session is untouched.
     expect((await owner.browser.get('/v1/account/me')).statusCode).toBe(200);
+  });
+});
+
+async function confirmed(owner: Who, action: Parameters<typeof issueConfirmToken>[1]['action']): Promise<string> {
+  return issueConfirmToken(deps, { sessionId: await sessionId(owner.browser), accountId: owner.id, action, method: 'passkey' });
+}
+
+async function stream(b: Browser): Promise<SseStream> {
+  const st = await openEvents(app, b.cookies);
+  streams.push(st);
+  return st;
+}
+
+const fakeSink = (): StreamSink & { got: string[] } => {
+  const got: string[] = [];
+  return { got, send: (d) => void got.push(d), close: () => undefined };
+};
+
+describe('live streams and pushes with members on the team (review I1)', () => {
+  it('a member stream gets the events but never counts as the owner being reached', () => {
+    const bus = new EventBus({ perAccount: 3, global: 10 });
+    const m = fakeSink();
+    bus.attach('team', m, 's-member', { member: true });
+    expect(bus.publish('team', { type: 'trade', code: 'X', state: 'paid' })).toBe(0);
+    expect(m.got).toHaveLength(1);
+    expect(bus.delivered('team')).toBe(false);
+    const o = fakeSink();
+    const detach = bus.attach('team', o, 's-owner')!;
+    expect(bus.publish('team', { type: 'trade', code: 'X', state: 'paid' })).toBe(1);
+    expect(bus.delivered('team')).toBe(true);
+    detach();
+    expect(bus.delivered('team')).toBe(false);
+  });
+
+  it('members together never take the last per-account slot: the owner can always attach', () => {
+    const bus = new EventBus({ perAccount: 3, global: 10 });
+    expect(bus.attach('team', fakeSink(), 'a', { member: true })).not.toBeNull();
+    expect(bus.attach('team', fakeSink(), 'b', { member: true })).not.toBeNull();
+    expect(bus.attach('team', fakeSink(), 'c', { member: true })).toBeNull();
+    expect(bus.attach('team', fakeSink(), 'owner')).not.toBeNull();
+    expect(bus.attach('team', fakeSink(), 'owner2')).toBeNull();
+  });
+
+  it('a trade event pushes to the owner while only a member stream of theirs is open', async () => {
+    const bus = new EventBus();
+    const pushes: string[] = [];
+    const publish = tradeEventPublisher({ events: bus, push: { send: async (id) => (pushes.push(id), true) } });
+    bus.attach('owner-account', fakeSink(), 's', { member: true });
+    const t = { code: 'X2F-AAAA-BBBB', state: 'paid', sellerId: 'owner-account', buyerId: 'buyer-account' } as never;
+    await publish(t, { type: 'mark-paid', fiatCents: 1n } as never, 'buyer');
+    expect(pushes).toEqual(['owner-account']);
+  });
+
+  it("over the API: a member's open tab neither suppresses the owner's push nor takes the owner's slot", async () => {
+    const owner = await team();
+    const buyer = await team();
+    const m = await member(owner.id, ['trades']);
+    const send = vi.spyOn(app.push, 'send').mockResolvedValue(true);
+    try {
+      // The member fills every slot members may take (perAccount 5, one kept for the owner).
+      const mine: SseStream[] = [];
+      for (let i = 0; i < app.events.perAccount - 1; i++) mine.push(await stream(m.browser));
+      expect(mine.map((st) => st.status)).toEqual(Array(app.events.perAccount - 1).fill(200));
+      const fifth = await stream(m.browser);
+      expect(fifth.status).toBe(429);
+      expect(fifth.body).toEqual({ error: 'busy' });
+
+      // A buyer takes the owner's offer: the "accepted" reaches the member's tabs, and the owner still gets the push.
+      const offer = (await owner.browser.post('/v1/offers', OFFER)).json() as { id: string };
+      const taken = await buyer.browser.post(`/v1/offers/${offer.id}/take`, takeBody(buyer.wallet));
+      expect(taken.statusCode, taken.body).toBe(200);
+      const code = (taken.json() as { code: string }).code;
+      await mine[0]!.waitFor((e) => (e as { type?: string }).type === 'accepted');
+      await until(() => send.mock.calls.some(([id]) => id === owner.id));
+
+      // A trade event by the buyer: the owner gets the push too.
+      send.mockClear();
+      const t = await seedTrade(deps, { sellerId: owner.id, buyerId: buyer.id, poster: 'seller' });
+      const secured = await driveTo(deps, t.trade, 'secured');
+      const paid = await buyer.browser.post(`/v1/trades/${t.code}/events`, { type: 'mark-paid', fiatCents: secured.fiatCents.toString() });
+      expect(paid.statusCode, paid.body).toBe(200);
+      await until(() => send.mock.calls.some(([id]) => id === owner.id));
+      expect(code).toBeTruthy();
+
+      // The owner's own stream still attaches, and from then on stands in for the push.
+      const own = await stream(owner.browser);
+      expect(own.status).toBe(200);
+      expect(app.events.delivered(owner.id)).toBe(true);
+    } finally {
+      send.mockRestore();
+      for (const st of streams.splice(0)) st.close();
+      await until(() => !app.events.delivered(owner.id));
+    }
+  });
+});
+
+describe('role changes and removal reach a member in flight', () => {
+  it("dropping Trades ends the member's live stream at once (review M2)", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const st = await stream(m.browser);
+    expect(st.status).toBe(200);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'offers' });
+    const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers'], confirmToken });
+    expect(res.statusCode, res.body).toBe(200);
+    await st.ended;
+    // And the reconnect is refused for the role.
+    const again = await stream(m.browser);
+    expect(again.status).toBe(403);
+    expect(again.body).toEqual({ error: 'forbidden' });
+  });
+
+  /** Holds the member's row locked while `act` runs past the session gate, then applies `change` and lets it go. */
+  async function racing(memberId: string, act: () => Promise<{ statusCode: number; json(): unknown }>, change: string) {
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('select 1 from team_members where id = $1 for update', [memberId]);
+      const pending = act();
+      // The request passed requireSession (a plain read) and now waits in auditMember's `for share`.
+      for (let i = 0; i < 200; i++) {
+        const w = await deps.db.query(
+          `select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query ilike '%team_members%for share%'`,
+        );
+        if ((w.rowCount ?? 0) > 0) break;
+        await new Promise((r) => setTimeout(r, 10));
+      }
+      await c.query(change, [memberId]);
+      await c.query('commit');
+      return await pending;
+    } catch (e) {
+      await c.query('rollback').catch(() => undefined);
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
+  it('a removal that commits after the gate refuses the action and rolls it back (review M1)', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), 'update team_members set removed_at = now() where id = $1');
+    expect(err(res)).toEqual({ status: 401, error: 'not-authenticated' });
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
+    expect(await auditRows(owner.id)).toEqual([]);
+  });
+
+  it('a role drop that commits after the gate refuses the action and rolls it back (review M1)', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), `update team_members set roles = '{trades}' where id = $1`);
+    expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
+    expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
+  });
+
+  it('auditMember checks every action against the role it needs', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    const actor = { accountId: owner.id, memberId: m.id };
+    await expect(auditMember(deps.db, actor, { action: 'offer-posted' }, deps.clock())).rejects.toMatchObject({ status: 403, code: 'forbidden' });
+    await auditMember(deps.db, actor, { action: 'mark-paid', tradeCode: null }, deps.clock());
+    expect(Object.entries(ACTION_ROLE).filter(([a]) => a.startsWith('offer-')).every(([, r]) => r === 'offers')).toBe(true);
+    // Another team's account id with this member: refused as gone.
+    await expect(auditMember(deps.db, { accountId: (await team()).id, memberId: m.id }, { action: 'mark-paid' }, deps.clock())).rejects.toMatchObject({ status: 401, code: 'not-authenticated' });
+  });
+});
+
+describe('the audit log covers every member action (review M3)', () => {
+  it('trade-taken and trade-wallet-set are refused before anything is written (I2), final-alert-seen, dispute and appeal write one row each', async () => {
+    const owner = await team();
+    const other = await team();
+    const m = await member(owner.id, ['trades']);
+    // The owner posts a buy offer and another trader takes it: the owner (poster, buyer) must set the payout wallet.
+    const buyOffer = (await owner.browser.post('/v1/offers', { ...OFFER, side: 'buy' })).json() as { id: string };
+    const taken = await other.browser.post(`/v1/offers/${buyOffer.id}/take`, takeBody(other.wallet));
+    expect(taken.statusCode, taken.body).toBe(200);
+    const takenCode = (taken.json() as { code: string }).code;
+    expect(err(await m.browser.post(`/v1/trades/${takenCode}/wallet`, { walletId: owner.wallet }))).toEqual({ status: 403, error: 'member-cannot-sign' });
+    const offer = (await other.browser.post('/v1/offers', OFFER)).json() as { id: string };
+    expect(err(await m.browser.post(`/v1/offers/${offer.id}/take`, takeBody(owner.wallet)))).toEqual({ status: 403, error: 'member-cannot-sign' });
+    expect(await auditRows(owner.id)).toEqual([]);
+
+    // A dispute on a secured trade (the owner is the buyer), then an appeal of its ruling.
+    const d = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    await driveTo(deps, d.trade, 'secured');
+    const opened = await m.browser.post(`/v1/trades/${d.code}/dispute`, { reason: 'paid', note: 'a private note' });
+    expect(opened.statusCode, opened.body).toBe(200);
+    const now = deps.clock();
+    await deps.db.query(
+      `insert into dispute_rulings (code, seq, round, outcome, reason, evidence, moderator_name, ruled_at, appeal_until)
+       values ($1, 1, 1, 'release-to-buyer', 'r', '["The trade chat"]', 'sarah.v', $2, $3)`,
+      [d.code, now, new Date(now.getTime() + 2 * DAY)],
+    );
+    await deps.db.query(`update disputes set status = 'ruled' where code = $1`, [d.code]);
+    const appealed = await m.browser.post(`/v1/trades/${d.code}/appeal`, { why: 'The moderator missed my bank statement.' });
+    expect(appealed.statusCode, appealed.body).toBe(200);
+
+    // The final alert on a trade where the owner is the buyer: a member's receipt is logged but does
+    // not count as the owner seeing it (review M9(b)).
+    const f = await seedTrade(deps, { sellerId: other.id, buyerId: owner.id, poster: 'seller' });
+    const fs = await driveTo(deps, f.trade, 'secured');
+    const base = deps.clock();
+    try {
+      setNow(new Date(fs.payBy!.getTime() + 60_000));
+      expect((await other.browser.post(`/v1/trades/${f.code}/events`, { type: 'request-refund' })).statusCode).toBe(200);
+      const seen = await m.browser.post(`/v1/trades/${f.code}/final-alert-seen`, {});
+      expect(seen.statusCode, seen.body).toBe(204);
+      const { rows } = await deps.db.query<{ d: boolean | null; at: Date | null }>(
+        'select final_alert_delivered as d, final_alert_seen_at as at from trades where code = $1', [f.code],
+      );
+      expect(rows[0]).toEqual({ d: null, at: null });
+    } finally {
+      setNow(base);
+    }
+
+    const rows = await auditRows(owner.id);
+    expect(rows.map((r) => [r.action, r.trade_code])).toEqual([
+      ['dispute-opened', d.code],
+      ['appeal-filed', d.code],
+      ['final-alert-seen', f.code],
+    ]);
+    const { rows: detail } = await deps.db.query<{ detail: unknown }>('select detail from team_audit where account_id = $1 order by id', [owner.id]);
+    expect(JSON.stringify(detail)).not.toContain('private note');
+  });
+
+  it('every member-allowed route that changes something writes an audit row, or is a recorded exemption', () => {
+    // Static scan of apps/api/src: a route is member-allowed when its options name a guard built
+    // with `requireSession({ ... member: ... })` (or build one inline). A non-GET one must call
+    // `auditMember(` in its own handler, or be listed here with why it writes nothing.
+    const EXEMPT: Record<string, string> = {
+      'POST /v1/feedback/form': 'anonymous by design (Plan 5 Task 21): not an account action, and a row would tie the member to the text',
+      'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
+    };
+    const found: string[] = [];
+    for (const f of sources(`${ROOT}apps/api/src`)) {
+      const src = readFileSync(f, 'utf8');
+      const guards = new Set<string>();
+      for (const g of src.matchAll(/(?:const|let)\s+(\w+)\s*=\s*\[?\s*requireSession\(\{[^)]*member:/g)) guards.add(g[1]!);
+      const regs = [...src.matchAll(/\bapp\.(get|post|put|patch|delete)\(\s*['`]([^'`]+)['`]/g)];
+      regs.forEach((r, i) => {
+        const block = src.slice(r.index, i + 1 < regs.length ? regs[i + 1]!.index : src.length);
+        const opts = block.slice(0, block.search(/async\s*\(/));
+        const memberAllowed = /requireSession\(\{[^)]*member:/.test(opts) || [...guards].some((g) => new RegExp(`\\b${g}\\b`).test(opts));
+        if (!memberAllowed || r[1] === 'get') return;
+        const route = `${r[1]!.toUpperCase()} ${r[2]}`;
+        found.push(route);
+        if (EXEMPT[route]) return;
+        expect(block, `${route} (${f}) lets members through and writes no audit row: call auditMember in its transaction, or record why not in EXEMPT`).toMatch(/auditMember\(/);
+      });
+    }
+    // The scan sees the routes it must (so a refactor that hides them fails here, not silently).
+    for (const r of ['POST /v1/offers', 'PATCH /v1/offers/:id', 'POST /v1/account/offers/status', 'POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet',
+      'POST /v1/trades/:code/events', 'POST /v1/trades/:code/final-alert-seen', 'POST /v1/trades/:code/dispute', 'POST /v1/trades/:code/appeal', ...Object.keys(EXEMPT)]) {
+      expect(found, r).toContain(r);
+    }
+  });
+});
+
+describe('member logins (review M8, M9)', () => {
+  it("a member's passkey as the first factor (discoverable login) is refused", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
+    const { rows } = await deps.db.query<{ h: Buffer }>('select webauthn_user_id as h from accounts where id = $1', [m.loginId]);
+    await deps.db.query(
+      `insert into webauthn_credentials (account_id, credential_id, public_key, counter, kind, backed_up, device_type, attested, label, created_at)
+       values ($1, $2, $3, 0, 'passkey', true, 'multiDevice', false, 'k', $4)`,
+      [m.loginId, Buffer.from(auth.credentialId, 'base64url'), auth.cosePublicKey, deps.clock()],
+    );
+    const b = new Browser(app);
+    const start = await b.post('/v1/login/webauthn/start', {});
+    expect(start.statusCode, start.body).toBe(200);
+    const { challengeId, options } = start.json() as { challengeId: string; options: Parameters<typeof auth.authenticate>[0] };
+    const response = auth.authenticate(options, ORIGIN, { userHandle: rows[0]!.h.toString('base64url') });
+    const res = await b.post('/v1/login/webauthn/finish', { challengeId, response, deviceLabel: 'Phone' });
+    expect(err(res)).toEqual({ status: 401, error: 'webauthn-failed' });
+    expect(b.cookies['__Host-x2f_session']).toBeUndefined();
+  });
+
+  it('a session of a member login account itself is never valid (M9(c))', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    const token = randomBytes(32).toString('base64url');
+    const now = deps.clock();
+    await deps.db.query(
+      `insert into sessions (account_id, token_hash, level, device_label, created_at, last_seen_at, expires_at)
+       values ($1, $2, 'full', 'x', $3, $3, $4)`,
+      [m.loginId, createHash('sha256').update(token, 'utf8').digest(), now, new Date(now.getTime() + DAY)],
+    );
+    const res = await app.inject({ method: 'GET', url: '/v1/account/me', cookies: { '__Host-x2f_session': token } });
+    expect(err(res)).toEqual({ status: 401, error: 'not-authenticated' });
+  });
+});
+
+describe('purgeTeamLeftovers (review M6)', () => {
+  it('closes expired sign-ups and deletes every member login no live member uses', async () => {
+    const owner = await team();
+    const live = await member(owner.id, ['offers']);
+    // A sign-up that ran out: a login account with a key, never joined.
+    const stale = await seedAccount(deps, { loginName: `stalelogin${++n}`, displayName: `m-${n}-stale`, kind: 'member' });
+    const past = new Date(deps.clock().getTime() - DAY);
+    await deps.db.query(
+      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, created_at)
+       values ($1, $2, $3, '{trades}', $4, $5, $4)`,
+      [owner.id, `Stale${n}xx`, `stale${n}xx`, past, stale],
+    );
+    // A member login whose team row is gone (as after the team account is deleted).
+    const orphan = await seedAccount(deps, { loginName: `orphanlogin${++n}`, displayName: `m-${n}-orphan`, kind: 'member' });
+    expect(await purgeTeamLeftovers.run(deps.db, deps.clock())).toBeGreaterThanOrEqual(3);
+    const left = await deps.db.query<{ id: string }>('select id from accounts where id = any($1)', [[stale, orphan, live.loginId]]);
+    expect(left.rows.map((r) => r.id)).toEqual([live.loginId]);
+    expect((await live.browser.get('/v1/account/me')).statusCode).toBe(200);
+    const { rows } = await deps.db.query<{ removed: boolean }>(`select removed_at is not null as removed from team_members where display_key = $1`, [`stale${n - 1}xx`]);
+    expect(rows[0]!.removed).toBe(true);
   });
 });
 
@@ -375,22 +747,33 @@ describe('Task 18 seams', () => {
     // today it lives only on the account owner's. Plan 3 Task 42 designs a per-member key scheme
     // (3.1: X2F holds at most one key per trade). Until then `MEMBER_SIGNING_EVENTS` refuses
     // release-started and trades/identity.ts refuses registering a trade identity (member-cannot-sign),
-    // so a Trades member can take, mark paid and dispute but the escrow steps wait for the owner's
-    // device. When Task 42's key scheme lands (apps/api/src/team/memberKeys.ts or a `member_id` on
-    // trade_identities), lift these refusals there, with tests, and delete this check.
+    // so a Trades member can mark paid, cancel and dispute but the escrow steps wait for the owner's
+    // device. Review I2 (lead 2026-10-30): taking an offer and the poster's accept step (the trade's
+    // payout wallet) make the device that does them the trade's escrow party, so `ownerDeviceOnly`
+    // refuses those too (OWNER_DEVICE_ROUTES), and the web's AcceptedSheet is never offered on a
+    // member's device. When Task 42's key scheme lands (apps/api/src/team/memberKeys.ts or a
+    // `member_id` on trade_identities), lift these refusals there, with tests (a member's take,
+    // accept and room through to release), and delete this check.
     expect([...MEMBER_SIGNING_EVENTS]).toEqual(['release-started']);
-    expect(readFileSync(`${ROOT}apps/api/src/trades/identity.ts`, 'utf8')).toMatch(/member-cannot-sign/);
+    expect([...OWNER_DEVICE_ROUTES]).toEqual(['POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet', 'POST /v1/trades/:code/identity']);
+    expect(readFileSync(`${ROOT}apps/api/src/trades/identity.ts`, 'utf8')).toMatch(/requireSigner = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
+    expect(readFileSync(`${ROOT}apps/api/src/trades/take.ts`, 'utf8')).toMatch(/requireTrader = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
     const landed = existsSync(`${ROOT}apps/api/src/team/memberKeys.ts`) || /member_id/.test(
       readdirSync(`${ROOT}apps/api/migrations`).filter((f) => /identit/.test(f)).map((f) => readFileSync(`${ROOT}apps/api/migrations/${f}`, 'utf8')).join('\n'),
     );
     expect(landed, 'Plan 3 Task 42 member keys landed: lift member-cannot-sign where the scheme allows, then delete this check').toBe(false);
   });
 
-  it('NEEDS_PLAN7_PURGE_AUDIT: any code that deletes trades also clears their codes from team_audit (R36)', () => {
-    for (const f of [...sources(`${ROOT}apps/api/src`), ...sources(`${ROOT}apps/moderation/src`)]) {
-      const s = readFileSync(f, 'utf8');
-      if (/delete\s+from\s+trades\b/i.test(s)) expect(s, `${f} deletes trades: call forgetAuditTrade in the same transaction`).toMatch(/forgetAuditTrade\(/);
-    }
+  it('NEEDS_PLAN7_PURGE_AUDIT: the team log stays owner-only data until Plan 7 decides its retention and roles', () => {
+    // R36 is the database's job now (migration 199: deleting a trade clears its code from
+    // team_audit, tested above), so a purge cannot forget it. Still open for Plan 7 (review M4):
+    // (1) the API's database user owns team_audit, so its append-only triggers stop code bugs, not
+    // a compromised API role (that needs a separate schema-owner role); (2) deleting an account
+    // (Plan 7) deletes its team log by cascade: decide the log's retention then; (3) a removed
+    // member's login is deleted at removal (review M6) and purgeTeamLeftovers clears the rest. When
+    // Plan 7's purge migration (701) lands, revisit these and delete this check.
+    expect(readFileSync(`${ROOT}apps/api/migrations/199_team_audit_trades.sql`, 'utf8')).toMatch(/after delete on trades/);
+    expect(existsSync(`${ROOT}apps/api/migrations/701_trade_purge.sql`), 'Plan 7 purge landed: decide the team log retention and roles').toBe(false);
   });
 
   it('NEEDS_TASKS_16_17_MEMBERS: device approval and the login-strength hold cover members once they land', () => {

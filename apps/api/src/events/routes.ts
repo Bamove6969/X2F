@@ -72,7 +72,7 @@ export function eventRoutes(app: FastifyInstance, bus: EventBus, o: EventStreamO
         else pending.push(data);
       },
       close: end,
-    }, req.auth.sessionId);
+    }, req.auth.sessionId, { member: req.auth.memberId !== null });
     if (!detach) throw new ApiError(429, 'busy');
 
     // Check the session again now that the stream is attached (security review, TOCTOU): a

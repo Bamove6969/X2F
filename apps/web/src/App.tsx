@@ -3,6 +3,8 @@ import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } 
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { Button } from './ui/Button.js';
+import { Sheet } from './ui/Sheet.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
@@ -24,8 +26,10 @@ import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
+import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
+import { memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopShell } from './ui/DesktopShell.js';
@@ -100,7 +104,7 @@ function RouterBridge() {
  * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
  * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
-function LiveAccepted() {
+function LiveAccepted({ member }: { member: boolean }) {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
   // The trade room listens on this same connection (seams.ts liveFanOut); without a trader
@@ -114,6 +118,18 @@ function LiveAccepted() {
     else if (e.type === 'trade') liveFanOut.emit(e);
   });
   if (!accepted) return null;
+  // Plan 2 Task 18 (review I1): a team member's device never offers the accept sheet (it would
+  // store a ConfirmedTrade on a device that can never run the escrow); the owner still gets the push.
+  if (member) {
+    return (
+      <Sheet open title={MEMBER_TRADE_COPY.acceptedTitle} onClose={() => setAccepted(null)}>
+        <div className="x2f-stack" data-part="member-accepted">
+          <p>{MEMBER_TRADE_COPY.accepted(accepted.by)}</p>
+          <Button variant="primary" onClick={() => setAccepted(null)}>{MEMBER_TRADE_COPY.ok}</Button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <AcceptedSheet
       key={accepted.code}
@@ -145,7 +161,7 @@ export function App() {
   return (
     <>
       <RouterBridge />
-      {isTrader(session) ? <LiveAccepted /> : null}
+      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />

@@ -169,6 +169,11 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
     case 'offer-busy':
       // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
       return "This offer can't take more trades right now. Try again later or pick another offer.";
+    // Plan 2 Task 18: a team member's take (review I2: refused until Plan 3 Task 42).
+    case 'member-cannot-sign':
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return 'Your account cannot start this trade right now.';
   }
@@ -181,6 +186,10 @@ export function postCantDoText(code: CantDoCode): string {
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
       return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+    // Plan 2 Task 18: a team member without the Offers role.
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return "Your account can't post this offer right now.";
   }
@@ -297,7 +306,7 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
     case 'too-many-members':
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
-      return "Releasing or securing coins stays on the account owner's device for now. Ask the account owner to do this step.";
+      return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
     default:
       return "This can't be done on the team right now.";
   }

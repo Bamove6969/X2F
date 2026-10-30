@@ -120,13 +120,23 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     try {
       await client.query('begin');
       try {
-        const r = await client.query(
-          `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $3)
-            where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null`,
-          [t.code, req.auth.accountId, now],
-        );
+        // Task 18 review M9(b), lead 2026-10-30: a team member seeing the alert is not the account
+        // owner seeing it, so a member's receipt never sets `final_alert_delivered` or starts the
+        // buyer's 15 minutes for the account: it is only checked against the same state and
+        // written to the owner's audit log (the owner still gets the alert's push, review I1).
+        const r =
+          req.auth.memberId === null
+            ? await client.query(
+                `update trades set final_alert_delivered = true, final_alert_seen_at = coalesce(final_alert_seen_at, $3)
+                  where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null`,
+                [t.code, req.auth.accountId, now],
+              )
+            : await client.query(
+                `select 1 from trades
+                  where code = $1 and buyer_account_id = $2 and state = 'refund_requested' and final_alert_at is not null for share`,
+                [t.code, req.auth.accountId],
+              );
         if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
-        // Task 18: a team member's device receipt is in the account owner's audit log.
         await auditMember(client, req.auth, { action: 'final-alert-seen', tradeCode: t.code }, now);
         await client.query('commit');
       } catch (e) {
