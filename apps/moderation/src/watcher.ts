@@ -189,6 +189,11 @@ export interface SweepContext {
  * an input that spends one of this escrow's outputs: its key image as this wallet holds it, that
  * output in the ring), and a counted in-block tx is recorded for this trade (`claim`, mod_sweeps): a
  * tx already counted for another trade never counts here (`sweep-counted-elsewhere`).
+ * Review round 3 (R3-I1): the binding alone is not enough, because the builder of ANOTHER trade's
+ * release chooses its ring decoys (it can put this escrow's output in a ring and forge this mod's
+ * partials to match). So an import-only sweep counts only when BOTH trade parties' sealed spend.info
+ * name that tx hash (and one of their keys proves the minimums). This also closes R2-M1: neither
+ * party alone (nor a compromised API naming the kind) can get a tx the other did not sign counted.
  * A tx hash seen in a block or reported by a party or the API never counts. Picks the oldest sweep
  * not yet counted, a block before the pool; one that cannot be proven is logged (`sweep-unproven`)
  * and skipped, so it never settles anything (the 6 h `spend-unshown` fallback escalates instead).
@@ -231,8 +236,16 @@ async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean
     return false;
   }
   if (minimums === null) return false;
-  for (const p of f.spendProofs ?? []) {
-    if (p.txHash !== o.txHash || p.txKey === '' || (p.from !== 'buyer' && p.from !== 'seller')) continue;
+  // Round 3 (R3-I1, also R2-M1): BOTH trade parties' sealed spend.info must name this tx. A seller
+  // who builds another trade's release picks its ring decoys, so it can put this escrow's output in
+  // a ring and forge this mod's partial key images: the binding and the payout proof then pass for a
+  // tx that paid another trade. A seller-buyer settlement is signed by both, and each sends its
+  // spend.info with the hash; a forger cannot produce the other party's sealed statement.
+  const naming = (f.spendProofs ?? []).filter((p) => p.txHash === o.txHash && (p.from === 'buyer' || p.from === 'seller'));
+  if (!naming.some((p) => p.from === 'buyer') || !naming.some((p) => p.from === 'seller')) return false;
+  // Either party's key may prove the minimums (one of them may have sent no key: '').
+  for (const p of naming) {
+    if (p.txKey === '') continue;
     if (await ctx.prove(o.txHash, p.txKey, minimums)) return true;
   }
   return false;

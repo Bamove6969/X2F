@@ -584,7 +584,7 @@ describe('the chain watcher', () => {
     await m.handle.stop();
   });
 
-  describe('a sweep shown only through an import counts only with a tx-key proof (review I1)', () => {
+  describe('a sweep shown only through an import counts only with a tx-key proof (review I1) named by both parties (round 3, R3-I1)', () => {
     const KEY = '7'.repeat(64);
     const FEE_WALLET = '5'.repeat(95);
     async function settlingRelease(net: ReturnType<typeof fakeNetwork>['net'], m: Awaited<ReturnType<typeof moderation>>) {
@@ -605,11 +605,11 @@ describe('the chain watcher', () => {
       const m = await moderation(fetch, logs);
       const { code, p } = await settlingRelease(net, m);
       await m.handle.watch();
-      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: '' }] };
+      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: '' }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       await m.handle.watch();
       expect(p.proveCalls).toEqual([]);
       // a key that does not prove the payouts (the forged sweep pays someone else)
-      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }] };
+      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       await m.handle.watch();
       expect(p.proveCalls).toHaveLength(1);
       expect(net.reports.filter((r) => r.kind === 'settled' && r.trade === code)).toEqual([]);
@@ -626,7 +626,7 @@ describe('the chain watcher', () => {
       const { net, fetch } = fakeNetwork();
       const m = await moderation(fetch);
       const { code, p } = await settlingRelease(net, m);
-      p.funds = { ...p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }] };
+      p.funds = { ...p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
       p.prove = () => true;
       await m.handle.watch();
       expect(p.proveCalls).toEqual([{
@@ -647,7 +647,7 @@ describe('the chain watcher', () => {
       const m = await moderation(fetch);
       const { code, p } = await settlingRelease(net, m);
       net.kinds.set(code, 'mutual-cancel');
-      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }] };
+      p.funds = { ...p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       p.prove = () => true;
       await m.handle.watch();
       expect(p.proveCalls[0]!.minimums).toEqual([{ address: TERMS.sellerRefund, amountAtomic: XMR }]);
@@ -662,12 +662,12 @@ describe('the chain watcher', () => {
       const t3 = await settlingRelease(net, m);
       const t2 = await settlingRelease(net, m);
       // Trade 3's real release, proven.
-      t3.p.funds = { ...t3.p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }] };
+      t3.p.funds = { ...t3.p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
       t3.p.prove = () => true;
       await m.handle.watch();
       expect(net.reports.filter((r) => r.kind === 'settled')).toEqual([{ kind: 'settled', trade: t3.code, txHash: hash('b') }]);
       // Trade 2's mod wallet is made to attribute the same tx to escrow 2, with the key that proves it.
-      t2.p.funds = { ...t2.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }] };
+      t2.p.funds = { ...t2.p.funds, spendProofs: [{ from: 'seller', txHash: hash('b'), txKey: KEY }, { from: 'buyer', txHash: hash('b'), txKey: '' }] };
       t2.p.prove = () => true;
       await m.handle.watch();
       await m.handle.watch();
@@ -742,12 +742,12 @@ describe('the chain watcher', () => {
       await m.handle.stop();
     });
 
-    it('a replayed tx mined before the escrow was funded: settled, late-funds, and the channels stay open for the dispute (round 2, R2-I1)', async () => {
+    it('watchStep\'s no-close rule, with a STUBBED proof (the real spendsEscrow never proves a tx mined before the escrow was funded: a ring cannot hold a later output): such a tx is settled, then late-funds, and the channels stay open for the dispute (round 2, R2-I1; round 3, R3-M3)', async () => {
       const { net, fetch } = fakeNetwork();
       const m = await moderation(fetch);
       const { code, p } = await settlingRelease(net, m);
       // proven, but mined at height 40, below the escrow's funding at 50: it swept nothing
-      p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 40, spentAtomic: XMR }], spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }] };
+      p.funds = { ...p.funds, outgoing: [{ txHash: hash('b'), height: 40, spentAtomic: XMR }], spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
       p.prove = () => true;
       await m.handle.watch();
       expect(net.reports.filter((r) => r.trade === code && (r.kind === 'settled' || r.kind === 'late-funds')).map((r) => r.kind)).toEqual(['settled', 'late-funds']);
@@ -761,7 +761,7 @@ describe('the chain watcher', () => {
       const { net, fetch } = fakeNetwork();
       const m = await moderation(fetch);
       const { code, p } = await settlingRelease(net, m);
-      p.funds = { ...p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }] };
+      p.funds = { ...p.funds, spendProofs: [{ from: 'buyer', txHash: hash('b'), txKey: KEY }, { from: 'seller', txHash: hash('b'), txKey: '' }] };
       p.prove = () => true;
       for (const kind of [null, 'buyer-cancel', 'auto-refund']) {
         if (kind === null) net.kinds.delete(code);
