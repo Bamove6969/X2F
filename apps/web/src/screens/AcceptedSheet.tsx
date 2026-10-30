@@ -65,10 +65,10 @@ export async function loadPosterWallets(): Promise<AcceptedWallet[]> {
 }
 
 /**
- * SEAM(Task 5): `POST /v1/trades/:code/wallet { walletId }` (poster only, in `setup`, once) is
- * built by Task 5, not yet merged. This is the only call site; Task 5's tests own the route, and
- * Task 23 (trade room) checks the room moves to "Setting up escrow" end to end
- * (apps/web/e2e/accepted.spec.ts lands with it).
+ * `POST /v1/trades/:code/wallet { walletId }` → 204 (Task 5, apps/api/src/trades/take.ts: poster
+ * only, in `setup`, once; 409 `no-wallet`, `wallet-not-ready`, `wrong-party`, `wrong-state`). This
+ * is the only call site; Task 5's tests own the route, and Task 23 (trade room) checks the room
+ * moves to "Setting up escrow" end to end (apps/web/e2e/accepted.spec.ts lands with it).
  */
 export async function postTradeWallet(code: string, walletId: string): Promise<void> {
   await api(`/v1/trades/${encodeURIComponent(code)}/wallet`, { method: 'POST', body: { walletId } });

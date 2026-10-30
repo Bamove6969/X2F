@@ -1152,3 +1152,19 @@ Authority: spec > `rulings-and-lessons.md` > earlier revisions > this note. Sour
 - [ ] **Step 2:** `test-environment.md`: a stagenet copy of production built from the same release manifest, reset weekly, with no production data ever copied in.
 - [ ] **Step 3:** Run the first round before Task 23's penetration test, and record every report in `docs/security/external-audit.md` with the same fields as audit findings.
 - [ ] **Step 4:** Commit each document `docs(security): …`.
+
+## Revision 2026-10-29 (owner)
+
+Authority: spec (Revision 2026-10-29) > `rulings-and-lessons.md` > earlier revisions > this note. Source: the owner's answers of 2026-10-29 (`~/x2f-comms/owner-answers-2026-10-28.md`).
+- **F-Droid: confirmed.** X2F runs its own F-Droid repository (Task 22 Step 3 as written in Revision 2026-10-28).
+- **I2P: not decided.** Task 27 is **on hold**. Before any code: research people's concerns about I2P on the web, and test I2P browsers in-house for a secure context (WebCrypto, WebAuthn, service worker). Task 27 Step 1 becomes that research and test; the owner decides after reading it.
+- **Warrant canary: waits for the lawyer** (`~/x2f-comms/lawyer-questions.md`, item 1). Nothing is built until the lawyer answers.
+- **Off-app alerts:** OMEMO Jabber over Tor only (Plan 7 Task 6). No Nostr, no email: D23 (mail route) is dropped. Task 28's `torSocket` serves Jabber; no SMTP egress is needed.
+- **Native apps (Task 20)** also carry Plan 7 Task 16's Android alarm channel (custom sound and volume) and Task 17's optional unrestricted-battery opt-in.
+- **Security keys for staff:** Google Titan **v2 only** (the U2F-only Titan can't prove what it is) and **YubiKey Bio allowed**. Applied in the FIDO metadata allowlist (Plan 2 `fileAttestationPolicy`) at the next refresh.
+
+## Revision 2026-10-29b (owner + design)
+
+Authority: spec (Revision 2026-10-29b) > `rulings-and-lessons.md` > earlier revisions > this note.
+- **Foldable phones (owner).** The layout work lives in the web app shell (Plan 3 new Task 40), so the native apps inherit it. **Task 20 (Capacitor apps)** adds: the Android app declares `android:resizeableActivity="true"` and handles configuration changes without restarting the web view (`android:configChanges` includes `screenSize|smallestScreenSize|screenLayout|orientation`), so folding or unfolding never reloads the page and loses the user's place; the WebView gets the hinge through the same viewport-segment CSS where the Android WebView supports it, and the width-only fallback elsewhere. A test on an emulated Pixel Fold (Android Studio's foldable AVD) records that a fold mid-trade keeps the route, the scroll position and typed text (manual check in `docs/manual-checks.md`). The iPhone app (later) uses the width-only fallback.
+- **New-device approval and the backup-login cooling-off** (Plan 2 new Tasks 16–17): no Plan 6 change. Task 15's "Require a security key to log in" counts as a strong login under Task 17's `loginStrength`.

@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "migrate": "tsx src/db/migrate.ts",
     "start": "tsx src/main.ts",
-    "rewrap-totp": "tsx src/tools/rewrap-totp.ts"
+    "rewrap-totp": "tsx src/tools/rewrap-totp.ts",
+    "news": "tsx src/tools/news.ts"
   },
   "dependencies": {
     "@fastify/cookie": "11.1.2",

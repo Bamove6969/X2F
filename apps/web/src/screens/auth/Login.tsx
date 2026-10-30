@@ -99,7 +99,7 @@ function SecondStep({ pending, onLoggedIn }: { pending: Pending; onLoggedIn: () 
   return (
     <div className="x2f-field" data-part="second-step">
       {offered.length === 0 ? (
-        <p className="x2f-note">This account needs another step that this screen cannot do. Ask X2F staff support.</p>
+        <p className="x2f-note">{/* not-a-refusal: an account state this screen cannot handle; staff support helps */}This account needs another step that this screen cannot do. Ask X2F staff support.</p>
       ) : (
         <p className="x2f-note">This account also needs its {words}.</p>
       )}
@@ -128,6 +128,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn }: { kind: 'securi
       const response = await startAuthentication({ optionsJSON: options });
       const result = await authApi.loginWebAuthnFinish({ challengeId, response, deviceLabel: deviceLabel(), pendingId });
       if (result.status === 'ok') onLoggedIn();
+      // not-a-refusal: an account state this screen cannot handle; staff support helps
       else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
     } catch (e) {
       setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));

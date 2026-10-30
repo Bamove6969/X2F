@@ -1,7 +1,7 @@
 import { LISTEN_OPTIONS, buildApi, type Deps } from './app.js';
 import { buildInternalListener } from './internal/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
-import { startTimers } from './trades/timers.js';
+import { siteMaintenanceSince, startTimers } from './trades/timers.js';
 import { addOwnerAlert } from './alerts.js';
 import { fileAttestationPolicy } from './auth/attestation.js';
 import { openLeakedList } from './auth/leaked.js';
@@ -19,6 +19,7 @@ import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
 import { productionNudgeWiring } from './nudge/wiring.js';
+import { daemonConfirmations, monerodUrlFromEnv } from './trades/chain.js';
 import { ownerAlertSink } from './push/ownerAlert.js';
 
 function port(raw: string | undefined): number {
@@ -77,7 +78,9 @@ const deps: Deps = {
 // One scheduler for every purge job (X-12); the list is in retentionJobs.ts.
 const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 
-const app = await buildApi(deps);
+// Task 24: X2F's own node for the released screen's confirmations (X2F_MONEROD_URL; unset: not shown).
+const monerod = monerodUrlFromEnv(process.env);
+const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 alertLog = app.log;
 prices.start();
@@ -105,11 +108,12 @@ if (internal) {
   });
 }
 
-// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation; maintenance pause/resume once
-// Plan 4's site_flags exists, tripwire NEEDS_SITE_FLAGS).
+// Plan 3 Task 9: the timer loop (deadline ticks, lapse escalation, and maintenance pause/resume
+// from `site_flags.maintenance_since`).
 const timers = startTimers({
   db,
   clock: deps.clock,
+  maintenanceSince: () => siteMaintenanceSince(db),
   publish: tradeEventPublisher({ events: app.events, push: app.push }),
   log: (e) => app.log.info({ reason: e.reason }, 'trade timers'),
 });

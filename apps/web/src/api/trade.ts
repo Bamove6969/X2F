@@ -33,7 +33,7 @@ export const TRADE_STATES: readonly TradeState[] = [
 export type Party = 'buyer' | 'seller';
 
 /**
- * The other trader as the API shows them (apps/api/src/trades/view.ts `TraderSummary`). The name
+ * The other trader as the API shows them (apps/api/src/traders/summary.ts `TraderSummary`, Task 4). The name
  * is the PUBLIC display name (FU-A); the private login name is never sent. Read it only through
  * `publicName`.
  */
@@ -45,6 +45,8 @@ export interface TraderSummary {
   typicalMinutes: number | null;
   positivePct: number | null;
   badges: string[];
+  /** The starter-limits stage (spec 2.3, Task 4). */
+  stage: 'starter' | 'building' | 'graduated';
 }
 
 /** The counterparty's public display name; the one way screens read it (a login name is never sent or shown). */

@@ -20,6 +20,10 @@
  * `./screens.ts` (each task has its own reserved line there, so merges do not conflict).
  *
  * ### What a screen gets (`TradeScreenProps`)
+ * - `code`: the trade code the room's escrow was started with (the route's, normalized). Key
+ *   anything that is about THIS device's escrow by it, never by `view.code` (API data). The room
+ *   shows nothing but a refusal when the view's code is another trade's (Task 24 round-3 review,
+ *   Important 1), so the two agree whenever a screen renders.
  * - `view`: the latest `TradeView` (GET /v1/trades/:code). Never cache parts of it: it is
  *   re-read on every live `trade` event for this code, every `POLL_MS`, and after `refresh()`.
  * - `escrow`: the trade's one `TradeEscrow` (Task 12's `useEscrow`, behind `seams.ts`). Call its
@@ -41,26 +45,34 @@
  *
  * ### Who owns which slot (lead's plan; register only your own)
  * - Task 22: buyer and seller in `setup`, `funding`; seller in `securing` (TradeFund, SetupStatus).
- * - Task 23: buyer in `securing`, `secured`; seller in `secured` (BuyerPay, the seller's waiting room).
+ * - Task 23: buyer in `securing`, `secured`, `paid` (BuyerPay: "Marked as paid", Finish, the warned
+ *   cancel); seller in `secured` (SellerWaiting); buyer in `settling` with `when` buyer-cancel /
+ *   mutual-cancel (BuyerCancelling: the buyer's device builds the refund to the seller).
  * - Task 24: seller in `paid`; both in `settling` (release) and `released` (SellerConfirm, Released).
+ *   Task 23's guarded buyer × `settling` wins over Task 24's unguarded one for the cancel kinds.
  * - Task 25: seller in `secured` with `when` past `payBy` (SellerRefund); buyer in `refund_requested` (FinalAlert);
  *   seller in `refund_requested` (the seller's waiting room while the buyer's final alert runs).
- * - Task 27: both in `disputed`.
+ * - Task 27: both in `disputed` (DisputeRoom, DisputeRuling); buyer in `refunded` (the refund with the
+ *   90-day "Open a dispute", spec 2.3; lead 2026-10-28).
  *
  * ### Rules for every screen
  * - Show the other trader only as `publicName(view.counterparty)` inside `data-username`; never a
  *   login name (FU-A), and no text-transform on it.
- * - Exactly one `[data-primary]` per screen (parity, Task 15); phone sizes 360×640, 390×844,
- *   430×932 must fit with no horizontal scroll.
+ * - Exactly one `[data-primary]` per screen (parity, Task 15); every phone size in Task 15's
+ *   `PHONE_VIEWPORTS` (e2e/phone.ts, the one standard: 390x844 and 360x800) must fit with no
+ *   horizontal scroll.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ComponentType } from 'react';
 import { useLocation, useParams } from 'react-router';
+import { normalizeTradeCode } from '@x2f/core';
 import { ApiCallError, serverClock as makeServerClock } from '../../api/client.js';
 import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
 
 export interface TradeScreenProps {
+  /** The trade code the room's escrow runs for (the route's, normalized): never API data. */
+  code: string;
   view: TradeView;
   escrow: TradeEscrow;
   refresh(): Promise<void>;
@@ -82,6 +94,7 @@ const slots: TradeSlot[] = [];
 
 /** Adds a screen for a role × state; returns a function that removes it (for tests). */
 export function registerTradeScreen(slot: TradeSlot): () => void {
+  // not-a-refusal: a developer error, never shown
   if (slot.states.length === 0) throw new Error(`${slot.owner}: a trade screen needs at least one state`);
   for (const s of slot.states) {
     if (!TRADE_STATES.includes(s)) throw new Error(`${slot.owner}: unknown trade state ${String(s)}`);
@@ -194,14 +207,25 @@ export function TradeRoom() {
       </main>
     );
   }
+  // The API answered with another trade's view (a compromised or buggy API): fail closed before
+  // any slot renders or the escrow starts, since a screen would act on THIS route's escrow under
+  // the other trade's facts (Task 24 round-3 review, Important 1).
+  const own = normalizeTradeCode(code);
+  if (own === null || normalizeTradeCode(load.view.code) !== own) {
+    return (
+      <main data-screen="trade" data-trade-mismatch="">
+        <p role="alert">Security check failed: X2F answered with a different trade. Nothing is signed or sent from this page. Don't fund or release this trade until it shows correctly.</p>
+      </main>
+    );
+  }
   // The escrow starts only once the API has shown this trade to this account (review of the
   // landing, Minor 1): a visitor, a staff account or a wrong code never boots the escrow worker or
   // leaves a run polling GET /v1/trades/:code.
-  return <ReadyRoom key={code} code={code} view={load.view} refresh={refresh} navState={location.state} />;
+  return <ReadyRoom key={code} code={code} ownCode={own} view={load.view} refresh={refresh} navState={location.state} />;
 }
 
 /** The room once the trade has loaded: owns the trade's one escrow handle and picks the screen. */
-function ReadyRoom({ code, view, refresh, navState }: { code: string; view: TradeView; refresh: () => Promise<void>; navState: unknown }) {
+function ReadyRoom({ code, ownCode, view, refresh, navState }: { code: string; ownCode: string; view: TradeView; refresh: () => Promise<void>; navState: unknown }) {
   // What the user confirmed on the take or accept screen: the navigation's history state, else the
   // copy the quote or the accept sheet stored in this tab before navigating (history state is gone
   // in a new tab or when the trade is opened from a push notification). Task 12 needs it only for
@@ -228,7 +252,7 @@ function ReadyRoom({ code, view, refresh, navState }: { code: string; view: Trad
     return () => clearTimeout(id);
   }, [deadline, clock, refresh]);
 
-  const props: TradeScreenProps = { view, escrow, refresh, serverClock: clock, wide };
+  const props: TradeScreenProps = { code: ownCode, view, escrow, refresh, serverClock: clock, wide };
   const broken = integrityFailed(escrow, view);
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
   return (

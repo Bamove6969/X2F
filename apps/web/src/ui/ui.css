@@ -224,7 +224,15 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The method name in "Trade <code> · <method>": an inline text button, given a 44 px tap target
+   (lead's ruling 2026-10-28) so every trade header passes e2e/phone.ts. The text stays where it
+   was; the box only grows around it. */
 .x2f-method-name {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  min-width: 44px;
+  vertical-align: middle;
   padding: 0;
   border: 0;
   background: transparent;

@@ -42,6 +42,12 @@ export type ApiErrorCode =
   | 'terms-required'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
+  // Plan 3, Task 4: posting and relisting offers.
+  | 'method-unavailable'
+  | 'no-wallet'
+  | 'trading-hold'
+  | 'trading-paused'
+  | 'too-many-offers'
   // Plan 3, Task 6: the trade events route and the state machine's refusals.
   | 'event-not-allowed'
   | 'wrong-state'
@@ -51,12 +57,24 @@ export type ApiErrorCode =
   | 'no-extensions-left'
   | 'not-releasable'
   | 'total-changed'
+  // Plan 3, Task 5: taking an offer and the poster's wallet.
+  | 'own-offer'
+  | 'out-of-range'
+  | 'not-enough-trades'
+  | 'wallet-not-ready'
+  | 'already-waiting'
+  | 'ad-busy'
+  | 'price-changed'
+  | 'starter-limit'
+  | 'offer-busy'
   // Plan 3, Task 8: participant identities and the moderation attestation.
   | 'identity-exists'
   | 'identity-conflict'
   | 'bad-proof'
   | 'attestation-refused'
   | 'trade-closed'
+  // Plan 3, Task 27: a second dispute on one trade.
+  | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
   | 'no-shared-context';

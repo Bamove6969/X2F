@@ -15,8 +15,8 @@ export interface TimerDeps {
   clock: () => Date;
   publish?: TradePublisher;
   /**
-   * `site_flags.maintenance_since` (Plan 4 Task 8 builds that table and its switch). Until it
-   * lands main.ts passes nothing and maintenance is never on (tripwire NEEDS_SITE_FLAGS).
+   * `site_flags.maintenance_since` (main.ts passes `siteMaintenanceSince`; the table is
+   * `102_offers.sql`'s, Plan 4's owner tools write the switch).
    */
   maintenanceSince?: () => Promise<Date | null>;
   /** 0 runs no loop (tests drive `tick`). Default TIMER_LOOP_MS. */
@@ -29,6 +29,12 @@ export interface TimerHandle {
   /** One pass; resolves with what it applied and what it skipped. */
   tick(): Promise<{ applied: { code: string; type: string }[]; skipped: TimerPass['skipped'] }>;
   stop(): Promise<void>;
+}
+
+/** `site_flags.maintenance_since` (null: no maintenance, also when the row is missing). */
+export async function siteMaintenanceSince(db: pg.Pool): Promise<Date | null> {
+  const { rows } = await db.query<{ maintenance_since: Date | null }>('select maintenance_since from site_flags');
+  return rows[0]?.maintenance_since ?? null;
 }
 
 export function startTimers(deps: TimerDeps): TimerHandle {

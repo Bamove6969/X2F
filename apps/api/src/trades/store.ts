@@ -3,6 +3,7 @@ import { apply, type By, type Trade, type TradeEvent, type TradeState } from '@x
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
+import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 
 /**
@@ -284,8 +285,19 @@ function unchanged(prev: Trade, next: Trade): boolean {
  * publishes. An event that leaves every column as it was is a no-op: nothing is written,
  * appended or published. Throws ApiError 404 `not-found` for an unknown code and the machine's TradeRuleError
  * unchanged (callers map it); on any throw nothing is written.
+ *
+ * `within` runs inside the same transaction, after the trade and its event are written and before
+ * the commit, with the locked row's trade before and after (Task 27 writes the dispute row there, so
+ * a trade is never disputed without one). It does not run for a no-op event. If it throws, nothing
+ * is written.
  */
-export async function applyEvent(deps: TradeDeps, code: string, e: TradeEvent, by: By): Promise<Trade> {
+export async function applyEvent(
+  deps: TradeDeps,
+  code: string,
+  e: TradeEvent,
+  by: By,
+  within?: (client: pg.PoolClient, prev: Trade, next: Trade, now: Date) => Promise<void>,
+): Promise<Trade> {
   const client: pg.PoolClient = await deps.db.connect();
   let next: Trade;
   try {
@@ -314,6 +326,10 @@ export async function applyEvent(deps: TradeDeps, code: string, e: TradeEvent, b
       await client.query('insert into trade_events (code, at, by, event) values ($1, $2, $3, $4)', [
         code, now, by, JSON.stringify(eventRecord(e)),
       ]);
+      // Task 27: a system escalation writes its dispute row with the trade (a trader's own
+      // opening writes it through `within`, with the reason they gave).
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      if (within) await within(client, prev, next, now);
       await client.query('commit');
     } catch (err) {
       await client.query('rollback');

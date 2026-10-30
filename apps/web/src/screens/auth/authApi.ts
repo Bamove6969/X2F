@@ -9,6 +9,7 @@
  */
 import { createAuthApi, defaultDeviceLabel, type LoginResult, type PasswordLoginResult, type PgpChallenge } from '@x2f/auth-client';
 import { goLogin } from '../../api/client.js';
+import { hasUnseenNews } from '../news-model.js';
 
 /** Reads the error code of a 401 without consuming the body the client still has to read. */
 async function sessionGone(res: Response): Promise<boolean> {
@@ -57,8 +58,9 @@ export function passwordLogin(loginName: string, password: string): Promise<Pass
 
 /**
  * Where a fresh login lands: `me().termsCurrent === false` means the Terms changed, so the Terms
- * screen comes first and carries `returnTo` on to the original screen (Plan 2 R10); otherwise go
- * straight to `returnTo`.
+ * screen comes first and carries `returnTo` on (Plan 2 R10). Then, when this device has not shown
+ * the newest News message yet (Plan 4 Task 28, owner 2026-10-29), the News page opens and its
+ * Continue goes on to `returnTo`; otherwise go straight to `returnTo`.
  */
 export async function afterLogin(navigate: (to: string) => void, returnTo: string): Promise<void> {
   let termsCurrent = true;
@@ -68,5 +70,6 @@ export async function afterLogin(navigate: (to: string) => void, returnTo: strin
     // The login itself succeeded; carry on. Any call that needs the new Terms still answers
     // `terms-required`, which the API client routes to the Terms screen.
   }
-  navigate(termsCurrent ? returnTo : `/terms?returnTo=${encodeURIComponent(returnTo)}`);
+  const next = (await hasUnseenNews()) ? `/news?returnTo=${encodeURIComponent(returnTo)}` : returnTo;
+  navigate(termsCurrent ? next : `/terms?returnTo=${encodeURIComponent(next)}`);
 }

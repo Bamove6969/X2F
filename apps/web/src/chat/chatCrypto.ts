@@ -129,6 +129,7 @@ export function parseChatState(json: unknown, channel: string): ChatState {
 export function checkChatText(text: unknown): string {
   // A message of only whitespace and hidden characters (allowed or not) is empty.
   if (typeof text !== 'string' || text.replace(HIDDEN, '').trim() === '') throw new ChatError('bad-text', 'Message is empty');
+  // not-a-refusal: an input check on a chat message the composer shows, not a rule
   if (FORBIDDEN.test(text) || LONE_SURROGATE.test(text)) throw new ChatError('bad-text', 'Message has characters that are not allowed');
   if (new TextEncoder().encode(text).length > CHAT_TEXT_MAX_BYTES) throw new ChatError('too-large', 'Message is too long');
   return text;
