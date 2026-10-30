@@ -4,9 +4,11 @@
  * panel only ever sees verified plain lines (`ChatSnapshot`).
  *
  * - Always shows the spec 6.6 notice (P3-M2).
- * - A moderator's line carries the "X2F Moderator" badge. The engine shows one only while a dispute
- *   is open, signed by the chat's attested mod identity AND recorded by the server as the
- *   moderator, so the badge cannot be put on a trader's words.
+ * - A moderator's line: the engine shows one only while a dispute is open, signed by the chat's
+ *   attested mod identity AND recorded by the server as the moderator, so it cannot be put on a
+ *   trader's words. Inside DisputeRoom (`dispute` prop) it carries the violet badge through Task
+ *   27's ModeratorTag (only when the server's dispute record names a moderator; the badge stays in
+ *   the dispute screens, test/moderator-badge-scope.test.ts); elsewhere it reads "Moderator".
  * - Another device of the same account reads "This conversation is open on another device" and
  *   gets no composer (the chat identity lives on the device that made it).
  * - A sender whose seq skipped shows "A message is missing" before the next line (review M5).
@@ -31,7 +33,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type FormEve
 import { ApiCallError } from '../api/client.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
 import { CANT_DO_TITLE, chatCantDoText, isCantDoCode, type CantDoCode } from '../ui/cantDoCodes.js';
-import { ModeratorBadge } from '../ui/ModeratorBadge.js';
+import { ModeratorTag } from '../screens/dispute/ModeratorTag.js';
 import { BlockAction } from '../screens/settings/BlockAction.js';
 import { useTradeLive } from '../screens/trade/seams.js';
 import { ChatFailed, chatClient, openOfferChat, openTradeChat, type ChatFailure, type ChatSnapshot } from './client.js';
@@ -64,9 +66,14 @@ export interface ChatPanelProps {
   name: string;
   /** The linked trade, when there is one: its live events re-sync the panel (a dispute opening). */
   tradeCode?: string | undefined;
+  /**
+   * Set inside DisputeRoom (Task 27): the moderator the server's dispute record names, if any. The
+   * room shows its own dispute notices, and moderator lines get ModeratorTag's badge.
+   */
+  dispute?: { moderator: string | null } | undefined;
 }
 
-export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
+export function ChatPanel({ chat, name, tradeCode, dispute }: ChatPanelProps) {
   const [snap, setSnap] = useState<ChatSnapshot | null>(null);
   const [loadFailed, setLoadFailed] = useState<ChatFailure | null>(null);
   const [draft, setDraft] = useState('');
@@ -92,7 +99,7 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
       if (newest === null || id > newest) newest = id;
     }
     const grew = newest !== seen.current;
-    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'X2F Moderator' : nameRef.current}: ${incoming.text}`);
+    if (incoming) setAnnounce(`${incoming.from === 'mod' ? 'Moderator' : nameRef.current}: ${incoming.text}`);
     seen.current = newest ?? -1n;
     return grew;
   }, []);
@@ -179,9 +186,9 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={phase ?? 'loading'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
       <BlockAction displayName={name} onBlocked={() => void sync()} />
-      {snap?.disputeOpen ? (
+      {snap?.disputeOpen && dispute === undefined ? (
         <p className="x2f-chat__system" data-system="dispute">
-          A dispute is open. An X2F moderator can read this conversation and write here.
+          A dispute is open. A moderator can read this conversation and write here.
         </p>
       ) : null}
 
@@ -198,7 +205,13 @@ export function ChatPanel({ chat, name, tradeCode }: ChatPanelProps) {
           items.push(
             <li key={l.id} className="x2f-chat__line" data-from={l.from} data-mine={l.mine ? '' : undefined}>
               <span className="x2f-chat__who">
-                {l.from === 'mod' ? <ModeratorBadge /> : l.mine ? 'You' : <span data-username="">{name}</span>}
+                {l.from === 'mod' ? (
+                  dispute !== undefined && snap?.disputeOpen === true && dispute.moderator ? (
+                    <ModeratorTag from="mod" inDispute moderator={dispute.moderator} />
+                  ) : (
+                    'Moderator'
+                  )
+                ) : l.mine ? 'You' : <span data-username="">{name}</span>}
                 <span className="x2f-chat__hidden">: </span>
               </span>
               <span className="x2f-chat__text">{l.text}</span>
@@ -298,9 +311,9 @@ function useResolvedChat(open: () => Promise<string>, key: string): Resolved {
   return r;
 }
 
-function Resolving({ r, name, tradeCode }: { r: Resolved; name: string; tradeCode?: string }) {
+function Resolving({ r, name, tradeCode, dispute }: { r: Resolved; name: string; tradeCode?: string; dispute?: ChatPanelProps['dispute'] }) {
   const [closed, setClosed] = useState(false);
-  if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} />;
+  if (r.kind === 'ready') return <ChatPanel chat={r.chat} name={name} tradeCode={tradeCode} dispute={dispute} />;
   return (
     <section className="x2f-chat" aria-label={`Chat with ${name}`} data-chat-phase={r.kind === 'loading' ? 'loading' : 'failed'}>
       <p className="x2f-chat__notice">{CHAT_NOTICE}</p>
@@ -320,9 +333,9 @@ function Resolving({ r, name, tradeCode }: { r: Resolved; name: string; tradeCod
 }
 
 /** A trade's chat (Task 23's `TradeChatProps`: the trade code and the counterparty's public name). */
-export function TradeChatPanel({ code, name }: { code: string; name: string }) {
+export function TradeChatPanel({ code, name, dispute }: { code: string; name: string; dispute?: ChatPanelProps['dispute'] }) {
   const r = useResolvedChat(() => openTradeChat(code), code);
-  return <Resolving r={r} name={name} tradeCode={code} />;
+  return <Resolving r={r} name={name} tradeCode={code} dispute={dispute} />;
 }
 
 /** The pre-trade chat with an offer's poster (the quote's Chat button). */

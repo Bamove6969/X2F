@@ -70,16 +70,31 @@ describe('ChatPanel', () => {
         { id: '5', from: 'mod', text: 'Moderator here', at: null, mine: false, gapBefore: false },
       ],
     });
-    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    // Inside DisputeRoom, with a moderator on the dispute record: the badge, through ModeratorTag.
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: 'sarah.v' }} />);
     await flush();
     const items = [...host.querySelectorAll('li')].map((li) => li.textContent);
     expect(items).toEqual(['You: Sent', 'Sam: Not yet', 'A message is missing here.', 'Sam: Got it', 'X2F Moderator: Moderator here']);
     expect(host.querySelector('[data-from="seller"] [data-username]')?.textContent).toBe('Sam');
     expect(host.querySelector('[data-from="mod"] .x2f-moderator-badge')).not.toBeNull();
     expect(host.querySelectorAll('.x2f-moderator-badge')).toHaveLength(1);
-    expect(host.querySelector('[data-system="dispute"]')?.textContent).toContain('moderator can read this conversation');
+    // The room shows its own dispute notices.
+    expect(host.querySelector('[data-system="dispute"]')).toBeNull();
     // The panel never adds a second primary action to the screen it sits in.
     expect(host.querySelector('[data-primary]')).toBeNull();
+  });
+
+  it('outside the dispute room a moderator line reads "Moderator", with no badge, and the panel says a dispute is open', async () => {
+    current = snap({ disputeOpen: true, lines: [{ id: '5', from: 'mod', text: 'Moderator here', at: null, mine: false, gapBefore: false }] });
+    const { host } = render(<ChatPanel chat={CHAT} name="Sam" />);
+    await flush();
+    expect([...host.querySelectorAll('li')].map((li) => li.textContent)).toEqual(['Moderator: Moderator here']);
+    expect(host.querySelector('.x2f-moderator-badge')).toBeNull();
+    expect(host.querySelector('[data-system="dispute"]')?.textContent).toBe('A dispute is open. A moderator can read this conversation and write here.');
+    // No moderator on the dispute record: no badge in the room either.
+    const room = render(<ChatPanel chat={CHAT} name="Sam" dispute={{ moderator: null }} />);
+    await flush();
+    expect(room.host.querySelector('.x2f-moderator-badge')).toBeNull();
   });
 
   it('another device of the account reads the conversation-elsewhere notice and has no composer', async () => {
