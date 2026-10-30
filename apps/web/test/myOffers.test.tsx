@@ -144,6 +144,9 @@ describe('the model', () => {
     expect(statusLine({ ...a, hidden: 'trading-paused' })).toBe('On, hidden while trading is paused');
     expect(statusLine({ ...a, hidden: 'trading-hold' })).toBe('On, hidden while your account has a trading hold');
     expect(statusLine({ ...b, hidden: 'trading-hold' })).toBe('Off · hidden from everyone');
+    // Plan 5 Task 3 review M3: hidden until the poster rates their last trade.
+    expect(statusLine({ ...a, hidden: 'review-pending' })).toBe('On, hidden until you rate your last trade');
+    expect(parseMyOffers([{ ...RAW[0], hidden: 'review-pending' }])[0]!.hidden).toBe('review-pending');
     expect(countLine([a, b, c])).toBe('1 of 3 offers on');
     expect([allHint(0, 3), allHint(3, 3), allHint(2, 3)]).toEqual(['Pick offers to turn them on or off together.', 'All 3 offers selected.', 'Some selected: 2 of 3.']);
   });

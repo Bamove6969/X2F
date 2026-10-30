@@ -17,7 +17,8 @@ import { insertReview, reviewableSince, reviewsOfTrade, revealFacts, toPublicRev
  *   other trader's public display name.
  * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, revealAt }`: `theirs`
  *   only once revealed (both rated, or 7 days after the trade became reviewable); `revealAt` is null
- *   while the trade is not reviewable and has no review.
+ *   while the trade is not reviewable and the caller has no review of it (the anchor is the caller's
+ *   own review, else the live reviewable time, never the other side's review: round 1 M1).
  * - `POST /v1/trades/:code/review` (participant) body `ReviewInput` → 201 with no body. Refusals:
  *   409 `not-reviewable`, 409 `review-exists`, 400 with the @x2f/reputation `ReviewError` code
  *   (including P5-A31's `late-review-neutral-only` / `late-review-closed`).
@@ -88,7 +89,7 @@ export function reviewRoutes(app: FastifyInstance): void {
     const now = deps.clock();
     const since = await reviewableSince(deps.db, code);
     const reviews = await reviewsOfTrade(deps.db, code);
-    const reveal = revealFacts(since, reviews);
+    const reveal = revealFacts(since, reviews, side);
     const mine = reviews[side];
     const theirs = reviews[other(side)];
     const lateClosed = lateReviewMode() === 'closed' && theirs !== null && reveal !== null && reveal.revealed(now);
@@ -119,7 +120,7 @@ export function reviewRoutes(app: FastifyInstance): void {
       try {
         input = validateReview(req.body, rated, hasPersonalDetails);
         // P5-A31: late = the other side's review was already revealed to this reviewer.
-        const reveal = revealFacts(since, reviews);
+        const reveal = revealFacts(since, reviews, side);
         const afterReveal = reviews[rated] !== null && reveal !== null && reveal.revealed(now);
         assertLateReviewAllowed(input, afterReveal, lateReviewMode());
       } catch (e) {

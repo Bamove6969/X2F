@@ -10,7 +10,7 @@ import { currencyExponent } from '../price/currencies.js';
 import type { MarketPrices } from '../price/market.js';
 import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
-import { pendingReviewSql } from '../reviews/gate.js';
+import { hasPendingReview, pendingReviewSql } from '../reviews/gate.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
 
@@ -78,10 +78,10 @@ export interface MyOffer {
   status: 'live' | 'paused';
   /**
    * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
-   * the account's trading hold, or its method under legal review. Absent when the offer is listed
-   * or paused.
+   * the account's trading hold, a trade it has not rated yet (Plan 5 Task 3, P5-A4; review round 1
+   * M3), or its method under legal review. Absent when the offer is listed or paused.
    */
-  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
+  hidden?: 'trading-paused' | 'trading-hold' | 'review-pending' | 'method-unavailable';
   createdAt: string;
 }
 
@@ -585,7 +585,13 @@ export function offerRoutes(app: FastifyInstance): void {
               exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
       [accountId],
     );
-    const accountHidden = why[0]!.paused ? 'trading-paused' : why[0]!.held ? 'trading-hold' : null;
+    const accountHidden = why[0]!.paused
+      ? 'trading-paused'
+      : why[0]!.held
+        ? 'trading-hold'
+        : (await hasPendingReview(deps.db, accountId, deps.clock()))
+          ? 'review-pending'
+          : null;
     return rows.map((r) => {
       const p = pricingOf(r);
       const rate = rateOf(r, deps.prices);

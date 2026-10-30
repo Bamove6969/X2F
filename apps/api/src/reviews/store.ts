@@ -1,4 +1,4 @@
-import { isRevealed, revealAt, reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
+import { REVEAL_AFTER_DAYS, isRevealed, revealAt, reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
 import { getMethod } from '../methods/profiles.js';
 
@@ -91,16 +91,20 @@ export async function reviewsOfTrade(db: Queryable, code: string): Promise<{ buy
 }
 
 /**
- * The blind reveal of one trade's reviews (spec 5.3, @x2f/reputation `revealAt`). The anchor is the
- * earliest stored `reviewable_since` of its reviews (the first moment the trade could be rated),
- * else the trade's reviewable time now; null when there is neither (nothing to reveal).
+ * The blind reveal of one trade's reviews as `viewer` sees it (spec 5.3, @x2f/reputation `revealAt`).
+ * The anchor is the viewer's OWN stored review's `reviewable_since`, else the trade's reviewable time
+ * now (`live`); null when there is neither (nothing to reveal). It is never the other side's stored
+ * row (review round 1, M1): stored and live can differ (a released trade later escalated to a
+ * dispute has no live time; a dispute going `final` then `closed` moves it later), and an anchor
+ * taken from the counterparty's row would tell the viewer that the counterparty has rated, and could
+ * show their review while the viewer cannot rate.
  */
 export function revealFacts(
   live: Date | null,
   reviews: { buyer: ReviewRow | null; seller: ReviewRow | null },
+  viewer: Side,
 ): { revealAt: Date; revealed: (now: Date) => boolean } | null {
-  const stored = [reviews.buyer, reviews.seller].filter((r): r is ReviewRow => r !== null).map((r) => r.reviewable_since.getTime());
-  const anchor = stored.length > 0 ? new Date(Math.min(...stored)) : live;
+  const anchor = reviews[viewer]?.reviewable_since ?? live;
   if (anchor === null) return null;
   const facts = { reviewableSince: anchor, submitted: { buyer: reviews.buyer?.created_at ?? null, seller: reviews.seller?.created_at ?? null } };
   return { revealAt: revealAt(facts), revealed: (now) => isRevealed(facts, now) };
@@ -134,14 +138,33 @@ export async function insertReview(q: Queryable, r: NewReview): Promise<void> {
 }
 
 /**
+ * How coarse a review's times become when its trade is purged (review round 1, I2): an exact release
+ * or review time would link a permanent review to an outside record of its trade.
+ */
+export const REVIEW_DETACH_GRANULARITY: 'day' | 'week' | 'month' = 'month'; // PENDING OWNER (owner list item 27): month is a placeholder, easy to flip (day|week|month)
+
+/**
  * SEAM for the Plan 7 whole-trade purge (apps/api/src/retention/tradePurge.ts on
  * wip/lead-p7-retention) and Plan 5 Task 20: before the trade row is deleted, in the same
  * transaction and AS x2f_purge (`set local role x2f_purge`), forget which trade and which reviewer a
- * review came from. The reviews themselves stay (permanent); only `trade_code` and `reviewer_id`
- * are nulled, together (301's trigger allows exactly that to x2f_purge and nothing else). Returns
- * the number of reviews detached.
+ * review came from. The reviews themselves stay (permanent); `trade_code` and `reviewer_id` are
+ * nulled together, and the two times are coarsened to `REVIEW_DETACH_GRANULARITY` (UTC):
+ * `created_at` truncated down; `reviewable_since` truncated down once its reveal deadline (+7 days)
+ * has passed, otherwise rounded UP to the next unit start so the reveal is never brought forward.
+ * 301's trigger allows exactly that to x2f_purge and nothing else. A detached review is never
+ * matched again, so a second call is a no-op. Returns the number of reviews detached.
  */
 export async function detachReviews(q: Queryable, code: string): Promise<number> {
-  const r = await q.query('update reviews set trade_code = null, reviewer_id = null where trade_code = $1', [code]);
+  const r = await q.query(
+    `update reviews set trade_code = null, reviewer_id = null,
+       created_at = date_trunc($2, created_at, 'UTC'),
+       reviewable_since = case
+         when reviewable_since + make_interval(days => $3) <= now() then date_trunc($2, reviewable_since, 'UTC')
+         when date_trunc($2, reviewable_since, 'UTC') = reviewable_since then reviewable_since
+         else date_trunc($2, reviewable_since, 'UTC') + ('1 ' || $2)::interval
+       end
+     where trade_code = $1`,
+    [code, REVIEW_DETACH_GRANULARITY, REVEAL_AFTER_DAYS],
+  );
   return r.rowCount ?? 0;
 }

@@ -70,23 +70,44 @@ create index reviews_subject on reviews (subject_id, created_at);
 create index reviews_reviewer on reviews (reviewer_id) where reviewer_id is not null;
 
 -- Reviews are final (P5-A6, owner 2026-10-29 "permanent"): UPDATE and DELETE are refused for every
--- role, including the table owner. x2f_purge alone may (a) null trade_code and reviewer_id together,
--- changing nothing else (the whole-trade purge, Plan 7 Task 2 / Plan 5 Task 20), and (b) DELETE
--- (lead decision 2026-10-30; Task 19's review disputes keep a removed review's row with a mark of
--- their own and change this trigger in their migration). The comparison covers every column, so a
--- column added later is protected too.
+-- role, including the table owner. x2f_purge alone may (a) detach a review when its trade is purged
+-- (Plan 7 Task 2 / Plan 5 Task 20, `detachReviews` in apps/api/src/reviews/store.ts): null
+-- trade_code and reviewer_id together and coarsen the two times (review round 1, I2), changing
+-- nothing else, and (b) DELETE (lead decision 2026-10-30; Task 19's review disputes keep a removed
+-- review's row with a mark of their own and change this trigger in their migration). The comparison
+-- covers every other column, so a column added later is protected too.
+--
+-- Coarsening, for one unit u of day, week or month (UTC; the app's REVIEW_DETACH_GRANULARITY):
+-- created_at becomes date_trunc(u, created_at); reviewable_since becomes date_trunc(u, ...) only
+-- once its 7-day reveal deadline (@x2f/reputation REVEAL_AFTER_DAYS) has passed, otherwise it is
+-- rounded UP to a unit start, so the reveal is never brought forward. A detached row (trade_code
+-- null) can never be updated again.
 create function reviews_final() returns trigger
   language plpgsql
   set search_path = pg_catalog
 as $$
+declare
+  u text;
+  down timestamptz;
 begin
   if current_user = 'x2f_purge' then
     if tg_op = 'DELETE' then
       return old;
     end if;
     if old.trade_code is not null and new.trade_code is null and new.reviewer_id is null
-       and (to_jsonb(new) - 'trade_code' - 'reviewer_id') = (to_jsonb(old) - 'trade_code' - 'reviewer_id') then
-      return new;
+       and (to_jsonb(new) - 'trade_code' - 'reviewer_id' - 'created_at' - 'reviewable_since')
+         = (to_jsonb(old) - 'trade_code' - 'reviewer_id' - 'created_at' - 'reviewable_since') then
+      foreach u in array array['day', 'week', 'month'] loop
+        down := date_trunc(u, old.reviewable_since, 'UTC');
+        if new.created_at = date_trunc(u, old.created_at, 'UTC')
+           and (case
+                  when old.reviewable_since + interval '7 days' <= now() then new.reviewable_since = down
+                  when down = old.reviewable_since then new.reviewable_since = old.reviewable_since
+                  else new.reviewable_since = down + ('1 ' || u)::interval
+                end) then
+          return new;
+        end if;
+      end loop;
     end if;
   end if;
   raise exception 'reviews are final' using errcode = 'integrity_constraint_violation';
@@ -111,4 +132,10 @@ create trigger reviews_no_truncate
   for each statement execute function reviews_no_truncate();
 
 grant select, delete on reviews to x2f_purge;
-grant update (trade_code, reviewer_id) on reviews to x2f_purge;
+grant update (trade_code, reviewer_id, created_at, reviewable_since) on reviews to x2f_purge;
+
+-- 3. The gate's cutoff (review round 1, M4): the time this migration was applied. A trade that
+--    became reviewable before it never counts as a pending review (apps/api/src/reviews/gate.ts),
+--    so traders with history are not blocked on deploy; such trades stay reviewable. The default is
+--    evaluated once, for the existing single row.
+alter table site_flags add column reviews_since timestamptz not null default now();

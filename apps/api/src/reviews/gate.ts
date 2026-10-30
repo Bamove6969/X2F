@@ -26,6 +26,13 @@ export function setLateReviewMode(m: LateReviewMode): void {
   lateMode = m;
 }
 
+/**
+ * SQL (boolean): the reviewable trade (`s.since`) counts for the gate: it became reviewable at or
+ * after `site_flags.reviews_since`, the time migration 301 was applied (review round 1, M4). Trades
+ * that ended before reviews existed stay reviewable (GET/POST) but never block.
+ */
+const AFTER_CUTOFF = `s.since >= (select f.reviews_since from site_flags f)`;
+
 const REVEAL_INTERVAL = `interval '${REVEAL_AFTER_DAYS} days'`;
 
 /** SQL (boolean): the review window of a reviewable trade (`s.since`) is still open at `now`. */
@@ -43,7 +50,7 @@ export function pendingReviewSql(account: string, now: string): string {
   return `exists (
     select 1 from trades pr cross join lateral (select ${reviewableSinceSql('pr')} as since) s
      where (pr.buyer_account_id = ${account} or pr.seller_account_id = ${account})
-       and s.since is not null and ${stillOpen(now)}
+       and s.since is not null and ${AFTER_CUTOFF} and ${stillOpen(now)}
        and not exists (
          select 1 from reviews rv
           where rv.trade_code = pr.code
@@ -67,14 +74,14 @@ export interface PendingReview {
   reviewableSince: Date;
 }
 
-/** The account's pending reviews, oldest first. */
+/** The account's pending reviews (the trades the gate counts, same cutoff), oldest first. */
 export async function pendingReviews(q: Queryable, accountId: string, now: Date): Promise<PendingReview[]> {
   const { rows } = await q.query<{ code: string; counterparty: string; since: Date }>(
     `select t.code, a.display_name as counterparty, s.since
        from trades t cross join lateral (select ${reviewableSinceSql('t')} as since) s
        join accounts a on a.id = case when t.buyer_account_id = $1 then t.seller_account_id else t.buyer_account_id end
       where (t.buyer_account_id = $1 or t.seller_account_id = $1)
-        and s.since is not null and ${stillOpen('$2::timestamptz')}
+        and s.since is not null and ${AFTER_CUTOFF} and ${stillOpen('$2::timestamptz')}
         and not exists (
           select 1 from reviews rv
            where rv.trade_code = t.code and rv.reviewer_role = case when t.buyer_account_id = $1 then 'buyer' else 'seller' end)
