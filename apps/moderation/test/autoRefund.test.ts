@@ -272,11 +272,12 @@ describe('the auto-refund', () => {
     later(ctx, 2000);
     await m.handle.watch();
     const shadowAlert = (await record(l.code)).shadow!.finalAlertAt!;
-    // The API took the request 3 min later and paused for 20 min during its alert; the moderator missed the pause.
-    const apiAlert = at(shadowAlert, 3 * MIN + 20 * MIN);
+    // The API took the request 1 min later and paused for 20 min during its alert; the moderator missed the pause.
+    // (The receipt is within 2 min of the EARLIER alert, the shadow's here; later would escalate, review round 2 N1.)
+    const apiAlert = at(shadowAlert, 1 * MIN + 20 * MIN);
     net.states.set(l.code, 'refund_requested');
     net.alerts.set(l.code, apiAlert);
-    net.seen.set(l.code, at(shadowAlert, 3 * MIN + 30_000));
+    net.seen.set(l.code, at(shadowAlert, 1 * MIN + 30_000));
     for (const ms of [FINAL_ALERT_MS + 1, END + 1, 25 * MIN]) {
       ctx.clock.now = at(shadowAlert, ms);
       await m.handle.watch();
@@ -390,14 +391,14 @@ describe('the desk loses no facts (review M2)', () => {
 describe('autoRefundStep (pure)', () => {
   const T0 = new Date('2026-10-29T12:00:00Z');
   const atMin = (m: number, ms = 0) => new Date(T0.getTime() + m * MIN + ms);
-  const shadowAt = (): Trade => {
+  const shadowAt = (refundAt: Date = atMin(101)): Trade => {
     let t = machineTrade(
       { code: 'ABCD2345EFGH6789', offerId: 'o', poster: 'seller', sellerId: 's', buyerId: 'b', methodId: 'm', amountAtomic: DEAL.takeAmountAtomic, lockedRate: { currency: 'USD', centsPerXmr: DEAL.centsPerXmr }, confirmWindowMin: 120, minFiatCents: 1n, maxFiatCents: DEAL.maxFiatCents },
       T0,
     );
     t = apply(t, { type: 'setup-done', escrowAddress: 'E' }, 'system', atMin(1));
     t = apply(t, { type: 'chain', receivedAtomic: FUNDS, unlockedAtomic: FUNDS, confirmations: 10 }, 'system', atMin(10));
-    return apply(t, { type: 'request-refund' }, 'seller', atMin(101)); // payBy 100, finalAlertAt 101
+    return apply(t, { type: 'request-refund' }, 'seller', refundAt); // payBy 100, finalAlertAt 101 by default
   };
   const base = (over: Partial<AutoRefundInputs> = {}): AutoRefundInputs => ({
     now: atMin(117, 1),
@@ -445,6 +446,23 @@ describe('autoRefundStep (pure)', () => {
     expect(autoRefundStep(base({ refundFor: (b) => [{ address: OTHER_TERMS.sellerRefund, amountAtomic: b }] }))).toEqual({ action: 'refuse', reason: 'wrong-destination' });
     expect(autoRefundStep(base({ refundFor: (b) => [{ address: TERMS.sellerRefund, amountAtomic: b - 1n }, { address: TERMS.buyerPayout, amountAtomic: 1n }] }))).toEqual({ action: 'refuse', reason: 'wrong-destination' });
     expect(autoRefundStep(base({ refundFor: () => { throw new RangeError('x'); } }))).toEqual({ action: 'refuse', reason: 'no-payout' });
+  });
+
+  it('review round 2 N1: the mod was down 30 min after the API’s alert; a receipt 20 min after the API’s alert escalates (late against the EARLIER alert)', () => {
+    // The mod was down from the API's alert (12:00, here minute 101) for 30 min, so the shadow's alert
+    // is 30 min later; the receipt came 20 min after the API's alert, when its mark-paid had closed.
+    const late = base({ shadow: shadowAt(atMin(131)), api: { state: 'refund_requested', finalAlertSeenAt: atMin(121), finalAlertAt: atMin(101) }, now: atMin(147, 1) });
+    expect(late.shadow!.finalAlertAt).toEqual(atMin(131));
+    expect(autoRefundStep(late)).toEqual({ action: 'escalate', report: 'alert-late' });
+    // The wait is still counted from the later alert.
+    expect(autoRefundStep(base({ shadow: shadowAt(atMin(131)), api: { state: 'refund_requested', finalAlertSeenAt: atMin(102), finalAlertAt: atMin(101) }, now: atMin(147, -1) }))).toEqual({ action: 'wait', reason: 'final-alert-pending' });
+  });
+
+  it('review round 2 N1: in the normal order (shadow alert 10 s after the API’s) a receipt 2 min 5 s after the API’s alert escalates', () => {
+    // The seller's signal reaches the mod 10 s after the API post.
+    const normal = (seen: Date) => base({ shadow: shadowAt(atMin(101, 10_000)), api: { state: 'refund_requested', finalAlertSeenAt: seen, finalAlertAt: atMin(101) }, now: atMin(120) });
+    expect(autoRefundStep(normal(atMin(103, 5_000)))).toEqual({ action: 'escalate', report: 'alert-late' });
+    expect(autoRefundStep(normal(atMin(103))).action).toBe('sign');
   });
 });
 

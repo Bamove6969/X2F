@@ -29,9 +29,10 @@ import type { Trade } from '@x2f/trade';
  *    start, an early refund-request signal, review I1). The margin covers a watch pass plus clock
  *    skew between the API and this service (review M1). Taking the later alert can only delay.
  * 6. No seen-receipt by then → escalate (`alert-unseen`).
- * 7. A receipt more than ALERT_LATE_MS after that alert → escalate (`alert-late`, lead decision I2
- *    option b, 2026-10-29): the API counts the buyer's 15 minutes from the alert, so a push that
- *    sat with the push service left the buyer less than its 15 minutes; a person decides.
+ * 7. A receipt more than ALERT_LATE_MS after the EARLIER of the two alerts → escalate (`alert-late`,
+ *    lead decision I2 option b, 2026-10-29; min, review round 2 N1): the API counts the buyer's 15
+ *    minutes from its own alert, so a push that sat with the push service left the buyer less than
+ *    its 15 minutes; a person decides. Taking the earlier alert can only escalate more often.
  * 8. Wait until `final_alert_seen_at + 15 min + margin` (at most ALERT_LATE_MS more than 5.).
  * 9. Wait until the whole balance is unlocked.
  * 10. `autoRefundDecision` with the derived one-payout refund: ok → sign; otherwise refused with its
@@ -105,7 +106,10 @@ export function autoRefundStep(f: AutoRefundInputs): AutoRefundStep {
   if (now < alertAt + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'final-alert-pending' };
   const seen = f.api.finalAlertSeenAt;
   if (seen === null || Number.isNaN(seen.getTime())) return { action: 'escalate', report: 'alert-unseen' };
-  if (seen.getTime() > alertAt + ALERT_LATE_MS) return { action: 'escalate', report: 'alert-late' };
+  // Late against the EARLIER alert (review round 2 N1): the API's mark-paid window runs from its own
+  // alert, and the shadow's is usually the later one (the seller's signal follows the API post, or the
+  // mod was down), so comparing with the later one would sign for a buyer whose window had closed.
+  if (seen.getTime() > Math.min(t.finalAlertAt.getTime(), apiAlert.getTime()) + ALERT_LATE_MS) return { action: 'escalate', report: 'alert-late' };
   if (now < seen.getTime() + FINAL_ALERT_MS + AUTO_REFUND_MARGIN_MS) return { action: 'wait', reason: 'receipt-too-recent' };
   const { balance, unlocked } = f.funds;
   if (balance <= 0n || balance !== unlocked) return { action: 'wait', reason: 'not-unlocked' };
