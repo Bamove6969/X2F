@@ -117,6 +117,20 @@ describe('Team (settings)', () => {
     expect(popup?.textContent).toContain('A team can have at most 3 members.');
   });
 
+  it("during the account's 24-hour hold a team change opens CantDoThat with the hold's sentence (owner 2026-10-30)", async () => {
+    inviteReply = { status: 403, body: { error: 'recovery-hold', holdUntil: '2026-10-31T10:00:00.000Z' } };
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
+    await settle();
+    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    const popup = byPart(document, 'cant-do-that');
+    expect(popup?.getAttribute('data-from')).toBe('recovery-hold');
+    expect(popup?.textContent).toContain('Your account is on a 24-hour hold');
+    expect(byPart(host, 'invite-url')).toBeNull();
+  });
+
   it('a team member opening the screen gets owner-only through CantDoThat', async () => {
     teamStatus = 403;
     render(<MemoryRouter><Team /></MemoryRouter>);

@@ -23,9 +23,10 @@ import {
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat, isCantDoCode, type CantDoCode } from '../../ui/CantDoThat.js';
-import { CANT_DO_TITLE, TOO_MANY_MEMBERS_CODE, teamCantDoText } from '../../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, HOLD_CODE, TOO_MANY_MEMBERS_CODE, teamCantDoText } from '../../ui/cantDoCodes.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { holdSentence } from '../auth/refusals.js';
 import { JOIN_PATH, ROLE_WORDS, TEAM_COPY as C, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
 
@@ -56,11 +57,11 @@ function RolePicker({ value, onChange, idPrefix }: { value: readonly TeamRole[];
   );
 }
 
-type CantDo = { code: CantDoCode; max?: number };
+type CantDo = { code: CantDoCode; max?: number; holdUntil?: string };
 
 function cantDoOf(e: unknown): CantDo | null {
   if (e instanceof AuthApiError && isCantDoCode(e.code)) {
-    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}) };
+    return { code: e.code, ...(e.max !== undefined ? { max: e.max } : {}), ...(e.holdUntil !== undefined ? { holdUntil: e.holdUntil } : {}) };
   }
   return null;
 }
@@ -350,7 +351,12 @@ export function Team() {
         {cantDo !== null ? (
           <CantDoThat
             title={CANT_DO_TITLE.team}
-            body={teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})}
+            body={
+              // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
+              cantDo.code === HOLD_CODE
+                ? holdSentence(cantDo.holdUntil)
+                : teamCantDoText(cantDo.code, cantDo.max !== undefined ? { max: cantDo.max } : {})
+            }
             from={cantDo.code}
             onClose={() => setCantDo(null)}
           />
