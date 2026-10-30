@@ -203,6 +203,25 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect(await rowsNaming(t.code)).toEqual([]);
   });
 
+  it('a dispute on day 0 refunded by the final ruling on day 95 keeps the trade through the 48 h after-refund window (review I3)', async () => {
+    const { t } = await tradeIn('secured');
+    await addTradeRecords(t.code);
+    expect((await openDispute(t.code, at(0))).state).toBe('disputed');
+    // Round 2 (final) refunds the seller on day 95: the button + 90 days is already past.
+    await settleDispute(t.code, at(95), 'refund-to-seller');
+    const refunded = (await deps.db.query<{ state: string; closed_at: Date }>('select state, closed_at from trades where code = $1', [t.code])).rows[0]!;
+    expect(refunded.state).toBe('refunded');
+    const windowEnd = new Date(refunded.closed_at.getTime() + 48 * 3_600_000);
+    expect(await tradeDeleteDate(deps.db, t.code, at(95))).toEqual(new Date(windowEnd.getTime() + 1));
+    await purgeTrades(deps.db, at(95, 10 * 60_000)); // the next 10-minute pass
+    expect(await exists(t.code)).toBe(true);
+    await purgeTrades(deps.db, windowEnd);
+    expect(await exists(t.code)).toBe(true);
+    await purgeTrades(deps.db, new Date(windowEnd.getTime() + 1));
+    expect(await exists(t.code)).toBe(false);
+    expect(await rowsNaming(t.code)).toEqual([]);
+  });
+
   it('a dispute opened while the purge waits for the trade\'s lock keeps the trade (no race)', async () => {
     const { t } = await tradeIn('released');
     const due = at(TRADE_KEEP_DAYS + 1);

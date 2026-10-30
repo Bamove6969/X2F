@@ -66,12 +66,24 @@ describe('the one retention rule (Plan 7 Task 1, R36)', () => {
     expect(tradeDeleteAt(short)).toEqual(at(30));
   });
 
-  it('only an undisputed refunded trade has a refund window', () => {
+  it('only a refunded trade has a refund window', () => {
     expect(refundDisputeWindowEndsAt('released', t0, false)).toBeNull();
+    expect(refundDisputeWindowEndsAt('released', t0, true)).toBeNull();
     expect(refundDisputeWindowEndsAt('cancelled', t0, false)).toBeNull();
-    expect(refundDisputeWindowEndsAt('refunded', t0, true)).toBeNull();
     expect(refundDisputeWindowEndsAt('refunded', null, false)).toBeNull();
     expect(TIMERS.disputeAfterRefundHours).toBe(48);
+  });
+
+  it('a previously disputed trade refunded later keeps the 48 h after-refund window too (review I3)', () => {
+    // The machine still accepts a buyer's dispute up to closedAt + 48 h on a refunded trade that
+    // already had a dispute. Dispute on day 0, final ruling refunds on day 95: button + 90 is past.
+    const w = refundDisputeWindowEndsAt('refunded', at(95), true);
+    expect(w).toEqual(new Date(at(95).getTime() + TIMERS.disputeAfterRefundHours * 3_600_000));
+    const f = { ...released, closedAt: at(95), disputeOpenedAt: t0, disputeClosed: true, refundDisputeWindowEndsAt: w };
+    expect(tradeDeleteAt(f)).toEqual(new Date(w!.getTime() + 1));
+    expect(tradeDeleteDue(f, at(95))).toBe(false);
+    expect(tradeDeleteDue(f, w!)).toBe(false);
+    expect(tradeDeleteDue(f, new Date(w!.getTime() + 1))).toBe(true);
   });
 
   it('a closed trade still waiting for a party is never due', () => {
