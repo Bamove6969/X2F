@@ -34,7 +34,8 @@ export type BuyerCancelStep =
 /** The API states a buyer's cancel can still be co-signed in (the machine's BUYER_CANCEL_SETTLE, less `paid`, plus funding). */
 const API_CANCEL_OK: readonly string[] = ['funding', 'securing', 'secured', 'refund_requested'];
 
-const apiAllows = (a: BuyerCancelInputs['api']): boolean =>
+/** Exported for the armed refund's recheck every pass (review round 2 N2). */
+export const apiAllows = (a: BuyerCancelInputs['api']): boolean =>
   API_CANCEL_OK.includes(a.state) || (a.state === 'settling' && a.settleKind === 'buyer-cancel');
 
 export function buyerCancelStep(f: BuyerCancelInputs): BuyerCancelStep {

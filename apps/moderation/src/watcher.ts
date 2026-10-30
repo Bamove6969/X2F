@@ -351,8 +351,13 @@ export function createWatcher(o: WatcherOptions): Watcher {
       return true;
     }
     const state = reviveWatchState(row.state);
+    // Defence in depth (Task 10 review round 2, R2-M1 note): a refund kind the API names is proven
+    // against only when this trade's desk saw its cause (`sweepKindAgrees`); otherwise no proof counts.
+    const deskNow = desks.get(row.trade);
+    const settleKind = deskNow ? deskNow.sweepKind(item.settleKind) : item.settleKind;
+    if (settleKind !== item.settleKind && (f.outgoing ?? []).some((x) => !state.sweepTxs.includes(x.txHash))) o.log({ reason: 'sweep-kind-vetoed' });
     const spend = await spendEvidence(f, state, {
-      settleKind: item.settleKind,
+      settleKind,
       terms: args.terms,
       feeWallet: args.feeWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),

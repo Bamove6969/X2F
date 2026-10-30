@@ -3,7 +3,7 @@ import { ReplayGuard, type Envelope, type ReplayGuardJSON } from '@x2f/protocol'
 import { channelFor, payoutsFor, settleKindFor, type ChainFacts, type ModPartyArgs, type SettleKind, type Trade, type TradeEvent, type WatchReport } from '@x2f/trade';
 import type pg from 'pg';
 import { autoRefundStep } from './autoRefund.js';
-import { buyerCancelStep } from './buyerCancel.js';
+import { apiAllows, buyerCancelStep } from './buyerCancel.js';
 import type { Link } from './link.js';
 import { applyShadow, fromJson, newShadow, toJson } from './shadow.js';
 import { readSignal, sealAck, signalLoop, termsMatch, type ModSignal } from './signals.js';
@@ -84,6 +84,35 @@ export interface Desk {
   stop(): Promise<void>;
   /** A copy of the current record (tests). */
   record(): DeskRecord;
+  /**
+   * The settlement kind a shown sweep may be proven against (defence in depth for Task 9 R2-M1): the
+   * API's kind when this desk's own facts agree with it, else null (the sweep stays unproven and the
+   * 6 h `spend-unshown` fallback escalates). See `sweepKindAgrees`.
+   */
+  sweepKind(apiKind: SettleKind | null): SettleKind | null;
+}
+
+/**
+ * Do this desk's own facts allow a sweep of `kind` (review round 2, R2-M1 note)? A refund kind only
+ * when this service saw its cause: `auto-refund` only if this desk armed the auto-refund,
+ * `buyer-cancel` only after a buyer's `trade.cancel` the shadow took and no `trade.paid`,
+ * `lapse-refund` only once the shadow itself lapsed. Once this desk armed a refund, no other kind.
+ * `release` and `mutual-cancel` are not checked otherwise: the shadow gets no signal for either
+ * (owed under Task 9 R2-M1: a seller-signed `trade.release` and a both-signed cancel accept).
+ */
+export function sweepKindAgrees(r: Pick<DeskRecord, 'armed' | 'cancelSeen' | 'paidSeen' | 'shadow'>, kind: SettleKind | null): boolean {
+  if (kind === null) return true;
+  if (r.armed !== null && r.armed.kind !== kind) return false;
+  switch (kind) {
+    case 'auto-refund':
+      return r.armed?.kind === 'auto-refund';
+    case 'buyer-cancel':
+      return r.cancelSeen && !r.paidSeen;
+    case 'lapse-refund':
+      return r.shadow !== null && r.shadow.lapsedAt !== null;
+    default:
+      return true;
+  }
 }
 
 export interface DeskOptions {
@@ -341,7 +370,16 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
     } else if (r.armed !== null) {
       const kind = r.armed.kind;
       const { balance, unlocked } = s.funds;
-      if (balance > 0n && balance === unlocked) {
+      // An armed buyer cancel is rechecked every pass (review round 2 N2): never handed to the party
+      // again after a `trade.paid` was opened, or while the API shows a state it may not be signed in.
+      const blocked =
+        kind !== 'buyer-cancel' ? null
+        : r.paidSeen ? 'buyer-cancel-buyer-paid'
+        : !apiAllows({ state: s.api.state, settleKind: s.api.settleKind ?? null }) ? 'buyer-cancel-api-state'
+        : null;
+      if (blocked !== null) {
+        logOnce('armed', blocked);
+      } else if (balance > 0n && balance === unlocked) {
         try {
           settle(s.handle, kind, refundFor(r, kind)(balance));
         } catch {
@@ -387,7 +425,9 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
           const res = await o.link.report({ kind: ar.report, trade: code });
           if (accepted(res)) {
             r = { ...r, escalated: ar.report };
-            o.log({ reason: `escalated-${ar.report}` });
+            // A 409 wrong-state counts as done (it fails safe: nothing is signed here afterwards) but is
+            // logged apart, so ops can tell it from an accepted escalation (review round 2 N4).
+            o.log({ reason: res.status === 409 ? 'escalate-wrong-state' : `escalated-${ar.report}` });
           } else {
             logOnce('escalate', `escalate-refused-${res.status}`);
           }
@@ -408,5 +448,6 @@ export async function openDesk(o: DeskOptions): Promise<Desk> {
       await loop.done.catch(() => undefined);
     },
     record: () => structuredClone(record),
+    sweepKind: (apiKind) => (sweepKindAgrees(record, apiKind) ? apiKind : null),
   };
 }
