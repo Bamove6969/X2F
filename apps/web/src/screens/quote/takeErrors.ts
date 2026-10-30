@@ -2,6 +2,7 @@
 // noted). The words name only the caller's own situation: a starter-limit refusal names the
 // caller's own stage and cap and nothing about the other side (spec 2.3, Revision 2026-10-24).
 import { ApiCallError } from '../../api/client.js';
+import { CANT_DO_TITLE, isCantDoCode, takeCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { STAGE_NAMES, fiatWhole, type QuoteOffer } from './quoteModel.js';
 
 const GENERIC = 'The trade could not start. Try again.';
@@ -22,27 +23,29 @@ function capCents(extra: Record<string, unknown>): bigint | null {
   return typeof v === 'string' && /^\d{1,15}$/.test(v) ? BigInt(v) : null;
 }
 
+/**
+ * The refusal code when the take was refused by a rule (shown in CantDoThat, Plan 5 Task 21),
+ * else null (shown inline: a moved price, a busy offer, a network failure).
+ */
+export function takeCantDo(e: unknown): CantDoCode | null {
+  return e instanceof ApiCallError && isCantDoCode(e.code) ? e.code : null;
+}
+
+/** CantDoThat's title on the quote (COPY-UNSIGNED, in the refusal text map). */
+export const TAKE_CANT_TITLE = CANT_DO_TITLE.take;
+
+/** The words for a refused take: a rule refusal from the text map (shown in CantDoThat), else inline. */
 export function takeRefusal(e: unknown, offer: QuoteOffer): string {
   if (!(e instanceof ApiCallError)) return GENERIC;
+  if (isCantDoCode(e.code)) {
+    // Only a starter-limit refusal carries a stage and a cap; for the rest both read as null.
+    const stage = ownStage(e.extra);
+    const cap = capCents(e.extra);
+    return takeCantDoText(e.code, { stageName: stage === null ? null : STAGE_NAMES[stage], capText: cap === null ? null : fiatWhole(cap, 'USD'), maxOpen: maxOpen(e.extra), minTrades: offer.minTrades });
+  }
   switch (e.code) {
-    case 'starter-limit': {
-      const stage = ownStage(e.extra);
-      // No stage: the limit is the other side's, which is never named (Task 5 sends nothing about it).
-      if (stage === null) return 'This trade is above a trading limit right now. Try a smaller amount or another offer.';
-      const open = maxOpen(e.extra);
-      if (open !== null) return `Your account is on ${STAGE_NAMES[stage]} limits: at most ${open} open ${open === 1 ? 'trade' : 'trades'} at once. Finish one first.`;
-      const cap = capCents(e.extra);
-      const limit = cap === null ? '' : ` up to ${fiatWhole(cap, 'USD')} per trade`;
-      return `Your account is on ${STAGE_NAMES[stage]} limits${limit}. Try a smaller amount.`;
-    }
-    case 'own-offer':
-      return 'This is your own offer.';
     case 'out-of-range':
       return "That amount is outside this offer's range.";
-    case 'not-enough-trades':
-      return `This offer needs at least ${offer.minTrades} completed ${offer.minTrades === 1 ? 'trade' : 'trades'}.`;
-    case 'trading-hold':
-      return 'Your account is on a trading hold while a dispute is open, so it cannot start trades.';
     case 'trading-paused':
       return 'Trading is paused for maintenance. Try again soon.';
     case 'price-unavailable':
@@ -51,14 +54,10 @@ export function takeRefusal(e: unknown, offer: QuoteOffer): string {
       // The quote re-fetches the price when it sees this refusal (Quote.tsx), so the total is fresh.
       return 'The price moved. Check the new total and tap Trade again.';
     case 'method-unavailable':
+      // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return 'This payment method is not available.';
     case 'wallet-not-ready':
       return 'That wallet is still waiting before it can be used. Pick another.';
-    case 'already-waiting':
-      return 'You already have a trade on this offer waiting to be funded.';
-    case 'offer-busy':
-      // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
-      return "This offer can't take more trades right now. Try again later or pick another offer.";
     case 'ad-busy':
       return 'Someone is already taking this offer for that amount. Try again in a few minutes.';
     default:

@@ -6,11 +6,14 @@
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router';
 import { IDLE_HOURS, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { holdSentence } from '../auth/refusals.js';
 import { Alerts } from './Alerts.js';
+import { BLOCKED_PATH } from './BlockAction.js';
+import { BLOCK_COPY } from './blockCopy.js';
 import { Devices } from './Devices.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
@@ -152,6 +155,16 @@ export function Security() {
         <Devices prove={prove} />
         <LogoutTimer />
         <Alerts />
+        {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
+        <section className="x2f-card" data-part="blocked-link" aria-label={BLOCK_COPY.title}>
+          <ul className="x2f-list">
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
+                {BLOCK_COPY.title}
+              </Link>
+            </li>
+          </ul>
+        </section>
         {confirmUi}
       </main>
     </ConfirmOpenProvider>

@@ -58,7 +58,7 @@ export function WalletPicker({
       })}
       {waiting > 0 ? (
         <span className="x2f-quote__muted-sm">
-          {waiting === 1 ? '1 more wallet is still waiting and cannot be picked yet.' : `${waiting} more wallets are still waiting and cannot be picked yet.`}
+          {waiting === 1 ? '1 more wallet is still waiting and cannot be picked yet.' : `${waiting} more wallets are still waiting and cannot be picked yet.`}{/* not-a-refusal: explains the payout-wallet wait */}
         </span>
       ) : null}
       <Link to={addHref} className="x2f-quote__add">
