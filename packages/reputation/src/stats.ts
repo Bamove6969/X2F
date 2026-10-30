@@ -127,6 +127,9 @@ export const CANCEL_RATE_MIN_TRADES = 5;
 
 /** Trades this trader ended alone or by a mutual cancel they proposed, over trades that reached funding. */
 export function cancelRatePct(a: { cancelledByMe: number; reachedFunding: number }): number | null {
+  for (const n of [a.cancelledByMe, a.reachedFunding]) {
+    if (!Number.isInteger(n) || n < 0) throw new RangeError('cancel-rate counts must be whole numbers >= 0');
+  }
   if (a.reachedFunding < CANCEL_RATE_MIN_TRADES) return null;
   return Math.min(100, Math.floor((a.cancelledByMe * 100) / a.reachedFunding));
 }

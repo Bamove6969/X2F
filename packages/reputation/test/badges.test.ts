@@ -112,6 +112,12 @@ describe('earnedBadges', () => {
     expect(vet(yearsAgo(5, 1))).toEqual(['veteran-3']);
     expect(vet(yearsAgo(9))).toEqual(['veteran-5']);
   });
+  it('a 29 February account turns Veteran on 1 March in a common year (review M5)', () => {
+    const f = facts({ accountCreatedAt: new Date('2024-02-29T10:00:00Z') });
+    expect(earnedBadges(f, new Date('2025-02-28T23:59:59Z'))).not.toContain('veteran-1');
+    expect(earnedBadges(f, new Date('2025-03-01T10:00:00Z'))).toContain('veteran-1');
+    expect(earnedBadges(f, new Date('2028-02-29T10:00:00Z'))).toContain('veteran-3');
+  });
   it('Trusted needs 100 trades and 98%', () => {
     expect(earnedBadges(facts({ completedTrades: 150, positivePct: 97 }), NOW)).not.toContain('trusted');
     expect(earnedBadges(facts({ completedTrades: 150, positivePct: null }), NOW)).not.toContain('trusted');

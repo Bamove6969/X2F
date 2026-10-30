@@ -39,6 +39,12 @@ describe('reviewWeight (P5-A2)', () => {
     expect(reviewWeight(50_000n)).toBe(50_000n);
     expect(reviewWeight(10_000_000n)).toBe(100_000n);
   });
+  it('a zero or negative value weighs the floor (review M5)', () => {
+    expect(reviewWeight(0n)).toBe(1_000n);
+    expect(reviewWeight(-5n)).toBe(1_000n);
+    expect(reviewWeight(0n, 'steps')).toBe(1n);
+    expect(reviewWeight(-5n, 'steps')).toBe(1n);
+  });
   it('a trade with no stored USD value weighs the floor (pre-migration trades)', () => {
     expect(reviewWeight(null)).toBe(1_000n);
   });
@@ -173,6 +179,11 @@ describe('cancelRatePct (P5-A9)', () => {
     expect(cancelRatePct({ cancelledByMe: 1, reachedFunding: 50 })).toBe(2);
     expect(cancelRatePct({ cancelledByMe: 1, reachedFunding: 3 * 17 })).toBe(1);
     expect(cancelRatePct({ cancelledByMe: 0, reachedFunding: 5 })).toBe(0);
+  });
+  it('refuses negative or fractional counts (review M5)', () => {
+    expect(() => cancelRatePct({ cancelledByMe: -1, reachedFunding: 10 })).toThrow(RangeError);
+    expect(() => cancelRatePct({ cancelledByMe: 1, reachedFunding: -10 })).toThrow(RangeError);
+    expect(() => cancelRatePct({ cancelledByMe: 0.5, reachedFunding: 10 })).toThrow(RangeError);
   });
   it('never exceeds 100', () => {
     expect(cancelRatePct({ cancelledByMe: 9, reachedFunding: 5 })).toBe(100);
