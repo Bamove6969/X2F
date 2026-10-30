@@ -69,6 +69,7 @@ import { ApiCallError, serverClock as makeServerClock } from '../../api/client.j
 import { getTrade, TRADE_STATES, type Party, type TradeState, type TradeView } from '../../api/trade.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
 import { integrityFailed, POLL_MS, useTradeEscrow, useTradeLive, type ConfirmedTrade, type TradeEscrow } from './seams.js';
+import { SelfDestructed, SelfDestructNotice, useSelfDestruct } from './SelfDestruct.js';
 
 export interface TradeScreenProps {
   /** The trade code the room's escrow runs for (the route's, normalized): never API data. */
@@ -252,9 +253,19 @@ function ReadyRoom({ code, ownCode, view, refresh, navState }: { code: string; o
     return () => clearTimeout(id);
   }, [deadline, clock, refresh]);
 
+  // Plan 7 Task 3: the self-destruct date, and this device's copies going when it passes.
+  const { gone } = useSelfDestruct(ownCode, view, clock);
+
   const props: TradeScreenProps = { code: ownCode, view, escrow, refresh, serverClock: clock, wide };
   const broken = integrityFailed(escrow, view);
   const Screen = broken ? integrityScreen : screenFor(view, clock().getTime());
+  if (gone && !broken) {
+    return (
+      <main data-screen="trade" data-trade-state="self-destructed" data-role={view.role}>
+        <SelfDestructed />
+      </main>
+    );
+  }
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role}>
       {Screen ? (
@@ -265,6 +276,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState }: { code: string; o
       ) : (
         <StatusCard view={view} />
       )}
+      <SelfDestructNotice view={view} />
     </main>
   );
 }

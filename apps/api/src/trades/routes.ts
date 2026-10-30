@@ -6,6 +6,7 @@ import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
+import { tradeDeleteDate } from '../retention/tradePurge.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
 
 /** Task 3's `getProfile`; the default (until Task 3 is wired in) knows no profiles. */
@@ -84,6 +85,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,
+      deleteAt: await tradeDeleteDate(deps.db, t.code, now),
     });
   };
 

@@ -67,6 +67,12 @@ export interface TradeView {
   pausedAt: string | null;
   closedAt: string | null;
   nextDeadline: string | null;
+  /**
+   * When the trade self-destructs (Plan 7 Task 3; @x2f/trade `tradeDeleteAt`): 30 days after it
+   * ends, 90 days from the dispute button for a disputed trade. Null while it is open, a dispute is
+   * pending, or it waits for a party: there is no date yet.
+   */
+  deleteAt: string | null;
   serverNow: string;
 }
 
@@ -78,6 +84,8 @@ export interface ViewContext {
   sellerWalletApp: string | null;
   /** `trades.final_alert_seen_at` (not a machine field). */
   finalAlertSeenAt: Date | null;
+  /** The self-destruct date (retention/tradePurge.ts `tradeDeleteDate`); absent = none yet. */
+  deleteAt?: Date | null;
 }
 
 /**
@@ -135,6 +143,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     pausedAt: iso(t.pausedAt),
     closedAt: iso(t.closedAt),
     nextDeadline: iso(nextDeadline(t)),
+    deleteAt: iso(ctx.deleteAt ?? null),
     serverNow: serverNow.toISOString(),
   };
   if (role === t.poster) view.fee = { atomic: t.feeAtomic.toString() };
