@@ -52,13 +52,36 @@ describe('SettleWait', () => {
     expect(host.textContent).not.toMatch(/waiting for the network/);
   });
 
+  it('names signing only for a trader who builds or co-signs this kind (escrow/policy ROUTE)', () => {
+    const line = (over: Partial<TradeView>) => render(<SettleWait view={settling(over)} serverClock={clock} />).host.textContent;
+    // Signers: the seller builds a release and an auto-refund; the buyer builds its cancel; mutual: both.
+    expect(line({ role: 'seller', settling: 'release' })).toBe('10 min left to sign');
+    expect(line({ role: 'buyer', settling: 'release' })).toBe('10 min left to sign');
+    expect(line({ role: 'seller', settling: 'auto-refund' })).toBe('10 min left to sign');
+    expect(line({ role: 'buyer', settling: 'buyer-cancel' })).toBe('10 min left to sign');
+    expect(line({ role: 'seller', settling: 'mutual-cancel' })).toBe('10 min left to sign');
+    // Not signers (the mod co-signs): a neutral line, no call to act.
+    expect(line({ role: 'buyer', settling: 'auto-refund' })).toBe('Being signed, 10 min left');
+    expect(line({ role: 'seller', settling: 'buyer-cancel' })).toBe('Being signed, 10 min left');
+  });
+
+  it('no time line once settleBy has passed (before the tick reverts) or when it is unreadable', () => {
+    for (const settleBy of [at(-1), NOW, 'not a date']) {
+      const { host } = render(<SettleWait view={settling({ settleBy })} serverClock={clock} />);
+      expect(host.textContent).toBe('');
+      expect(host.querySelector('[role="timer"]')).toBeNull();
+    }
+  });
+
   it('shows nothing outside settling', () => {
     const { host } = render(<SettleWait view={sellerView()} serverClock={clock} />);
     expect(host.textContent).toBe('');
   });
 });
 
-describe('StatusCard while settling (no Task 24 screen on this line)', () => {
+// On the main line the status card is reached while settling only by kinds no screen owns (the
+// seller in buyer-cancel/mutual-cancel, both sides in auto-refund/lapse-refund); Task 24 owns release.
+describe('StatusCard while settling (kinds no Task 23/24 screen owns)', () => {
   it('claimed: the wait line, no timer; unclaimed: the window; dispute access untouched (settleBy still in the view)', () => {
     const c = render(<StatusCard view={claimed({ settleBy: at(-20) })} serverClock={clock} />);
     expect(c.host.textContent).toContain('Release sent, waiting for the network');

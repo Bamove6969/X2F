@@ -92,6 +92,12 @@ const ROUTE: Record<SettleKind, { builder: Party; cosigner: Party }> = {
   'mutual-cancel': { builder: 'buyer', cosigner: 'seller' },
 };
 
+/** Whether this trader builds or co-signs the settlement of this kind (from ROUTE; the mod's part is never a trader's). */
+export function signsIn(kind: SettleKind, role: 'buyer' | 'seller'): boolean {
+  const r = ROUTE[kind];
+  return r.builder === role || r.cosigner === role;
+}
+
 /** Open states in which the buyer may cancel alone after funding (Task 2). */
 const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested', 'settling'];
 const RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling'];

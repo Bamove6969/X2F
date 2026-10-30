@@ -6,10 +6,17 @@
  * counts down to `settleBy` on the server clock. `settleBy` itself is unchanged, so dispute access
  * after it is whatever the dispute screens already allow.
  *
- * Screens that own `settling` (Task 24's release screens) can embed `SettleWait`; the room's plain
- * status card shows it for every settling kind no screen owns yet.
+ * Who reaches it on the main line (Tasks 23 and 24 merged): release settling is Task 24's (the
+ * buyer's `Released`, the seller's `SellerConfirm` in its releasing look) and the buyer's own
+ * cancel is Task 23's `BuyerCancelling`; none of those shows a deadline. The room's plain status
+ * card, and so `SettleWait`, is left with the seller in `buyer-cancel`/`mutual-cancel` and both
+ * sides in `auto-refund`/`lapse-refund`. The release branch is kept for a future embed but is not
+ * reachable in the room. The time line names signing only for a trader who builds or co-signs this
+ * kind (escrow/policy.ts ROUTE); everyone else gets a neutral line. Past `settleBy` (before the
+ * server's tick reverts the trade) or with an unreadable `settleBy`, no time line is shown.
  */
 import type { TradeView } from '../../api/trade.js';
+import { signsIn } from '../../escrow/policy.js';
 import { Countdown } from '../../ui/Countdown.js';
 
 export type SettleWaitKind = 'claimed' | 'window';
@@ -25,11 +32,12 @@ export function SettleWait({
   view,
   serverClock,
 }: {
-  view: Pick<TradeView, 'state' | 'settling' | 'settleBy' | 'releaseClaimedAt'>;
+  view: Pick<TradeView, 'state' | 'settling' | 'settleBy' | 'releaseClaimedAt' | 'role'>;
   serverClock: () => Date;
 }) {
   const kind = settleWaitOf(view);
   if (kind === 'claimed') {
+    // COPY-UNSIGNED: no copy board covers the settling wait lines yet.
     return (
       <p className="x2f-settle-wait" data-settle-wait="claimed">
         {view.settling === 'release' ? 'Release sent' : 'Refund sent'}, waiting for the network
@@ -37,9 +45,15 @@ export function SettleWait({
     );
   }
   if (kind === 'window' && view.settleBy !== null) {
+    const ends = Date.parse(view.settleBy);
+    // Unreadable, or already past on the server clock: no "0 min" line.
+    if (!Number.isFinite(ends) || ends <= serverClock().getTime()) return null;
+    const signer = view.settling !== null && signsIn(view.settling, view.role);
+    const timer = <Countdown deadline={view.settleBy} serverClock={serverClock} format="minutes" />;
+    // COPY-UNSIGNED: no copy board covers the settling wait lines yet.
     return (
       <p className="x2f-settle-wait" data-settle-wait="window">
-        <Countdown deadline={view.settleBy} serverClock={serverClock} format="minutes" /> left to sign
+        {signer ? <>{timer} left to sign</> : <>Being signed, {timer} left</>}
       </p>
     );
   }
