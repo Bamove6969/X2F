@@ -45,6 +45,7 @@ export const METHODS: MethodDef[] = [
     id: 'password',
     name: 'Password',
     cta: 'Continue with a password',
+    // not-a-refusal: explains the password rules
     desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.',
   },
 ];

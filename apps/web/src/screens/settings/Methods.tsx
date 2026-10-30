@@ -16,6 +16,8 @@ import {
   type WebAuthnKind,
 } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { refusalText } from '../auth/refusals.js';
@@ -31,7 +33,6 @@ const LABELS: Record<MethodType, string> = {
   'recovery-codes': 'Recovery codes',
 };
 
-const LAST_METHOD_MESSAGE = 'That is your only way to log in. Add another login method before removing this one.';
 
 /** The methods that log in on their own; an authenticator app and recovery codes only back them up. */
 const LOGIN_METHODS: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
@@ -49,6 +50,8 @@ type Adding = 'none' | 'password' | 'pgp' | 'totp' | 'recovery-codes';
 export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<string> }) {
   const [methods, setMethods] = useState<MethodEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 409 `last-login-method` (or the same check here first): CantDoThat until closed (Plan 5 Task 21).
+  const [lastMethod, setLastMethod] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
 
@@ -75,7 +78,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
 
   const remove = async (m: MethodEntry) => {
     if (methods !== null && isOnlyLogin(m, methods)) {
-      setError(LAST_METHOD_MESSAGE);
+      setLastMethod(true);
       return;
     }
     setBusy(true);
@@ -88,7 +91,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       );
       await refresh();
     } catch (e) {
-      if (e instanceof AuthApiError && e.code === 'last-login-method') setError(LAST_METHOD_MESSAGE);
+      if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
       else if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not remove that method. Try again.'));
     } finally {
       setBusy(false);
@@ -105,6 +108,7 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
           {error}
         </p>
       ) : null}
+      {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
 
       <ul className="x2f-list" data-part="method-list">
         {(methods ?? []).map((m) => (

@@ -5,8 +5,8 @@
 // `stage`), read through the browse screens' `parseOffers` (Task 16) so both read one shape;
 // `GET /v1/price` and `GET /v1/methods` are Task 3 as on the line (apps/api/src/price/routes.ts:
 // `{ currency, centsPerXmr, exponent, at, usdCentsPerXmr }`, checked 2026-10-27); `POST
-// /v1/offers/:id/take` is plan Task 5; `GET /v1/wallets` is Plan 2 as built. The guessed ones are
-// listed in test/quote-tripwires.test.ts.
+// /v1/offers/:id/take` is plan Task 5; `GET /v1/wallets` is Plan 2 as built. Every one is on the
+// line now (Task 5 2026-10-28), so the quote's tripwire file is gone (retired 2026-10-30).
 import { ApiCallError, api } from '../../api/client.js';
 import { ApiShapeError, parseOffers, type Offer } from '../browse/api.js';
 import type { AdSide, MarketNow, QuoteOffer } from './quoteModel.js';
@@ -125,14 +125,24 @@ export async function fetchWallets(signal?: AbortSignal): Promise<PickWallet[]> 
 export interface TakeRequest {
   amountAtomic: bigint;
   walletId: string;
-  /** The quoted rate. The server locks exactly it, or refuses 409 `price-changed` when the market moved past the offer's tolerance. */
+  /**
+   * The quoted rate. It only detects a move: the server always locks its own rate now and refuses
+   * 409 `price-changed` when that differs from this by more than 0.5% (a fixed price: at all).
+   */
   centsPerXmr: bigint;
   /** The quoted total, fiatCents(amountAtomic, centsPerXmr), as shown (OD-5). */
   fiatCents: bigint;
 }
 
-/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code. */
-export async function takeOffer(offerId: string, body: TakeRequest): Promise<string> {
+/** What the take locked: the trade's code, and the server's rate and total (lead decision 2026-10-29). */
+export interface Taken {
+  code: string;
+  centsPerXmr: bigint;
+  fiatCents: bigint;
+}
+
+/** `POST /v1/offers/:id/take` (Task 5) → the new trade's code and the rate and total that locked. */
+export async function takeOffer(offerId: string, body: TakeRequest): Promise<Taken> {
   const o = obj(await api(`/v1/offers/${encodeURIComponent(offerId)}/take`, { method: 'POST', body }), 'take');
-  return str(o, 'code', 'take');
+  return { code: str(o, 'code', 'take'), centsPerXmr: big(o, 'centsPerXmr', 'take'), fiatCents: big(o, 'fiatCents', 'take') };
 }

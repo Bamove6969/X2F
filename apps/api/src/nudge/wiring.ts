@@ -6,7 +6,8 @@ import type { NudgeWiring } from './routes.js';
  * Task 6: the two accounts are the buyer and the seller of the trade `context` names, and it has
  * not closed. A trade stays open while disputed, and lapsed with funds still in the escrow
  * (`closed_at` is null), so a nudge can still wake the other side then. Any spelling the trade
- * code normaliser accepts (lower case, no hyphens) names the same trade.
+ * code normaliser accepts (lower case, no hyphens) names the same trade. Answers `'open-trade'`,
+ * so a block between the two does not drop the nudge (Task 37 review N1).
  */
 export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext'] {
   return async (fromId, toId, context) => {
@@ -18,7 +19,7 @@ export function tradeSharedContext(db: Queryable): NudgeWiring['hasSharedContext
           and ((seller_account_id = $2 and buyer_account_id = $3) or (seller_account_id = $3 and buyer_account_id = $2))`,
       [code, fromId, toId],
     );
-    return rows.length > 0;
+    return rows.length > 0 ? 'open-trade' : false;
   };
 }
 

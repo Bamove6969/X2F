@@ -677,16 +677,16 @@ describe('review fixes (Task 4 review round 2, 2026-10-28)', () => {
     await deps.db.query('update sessions set last_seen_at = $2 where account_id = $1', [q.id, new Date(deps.clock().getTime() - DAY)]);
     const shown = { online: true, lastSeenAt: deps.clock().toISOString() };
     const hidden = { online: false, lastSeenAt: null };
-    for (const [who, want, order] of [
-      [anon, shown, [pOffer, qOffer]],
-      [other.browser, shown, [pOffer, qOffer]],
-      [blocked.browser, hidden, [qOffer, pOffer]],
-    ] as const) {
+    for (const who of [anon, other.browser]) {
       const cards = await list('side=sell&method=ZELLE&currency=JPY&sort=online', who);
-      expect(cards.map((c) => c.id)).toEqual(order);
-      expect(cards.find((c) => c.id === pOffer)!.poster).toMatchObject(want);
-      expect(((await who.get(`/v1/offers/${pOffer}`)).json() as Card).poster).toMatchObject(want);
+      expect(cards.map((c) => c.id)).toEqual([pOffer, qOffer]);
+      expect(cards.find((c) => c.id === pOffer)!.poster).toMatchObject(shown);
+      expect(((await who.get(`/v1/offers/${pOffer}`)).json() as Card).poster).toMatchObject(shown);
     }
+    // Since Task 37 the blocked viewer does not see p's offers at all (list and 404), so p's
+    // presence cannot reach them through an offer (apps/api/test/blocks.test.ts).
+    expect((await list('side=sell&method=ZELLE&currency=JPY&sort=online', blocked.browser)).map((c) => c.id)).toEqual([qOffer]);
+    expect((await blocked.browser.get(`/v1/offers/${pOffer}`)).statusCode).toBe(404);
     // The trade view's counterparty too.
     const { code } = await seedTrade(deps, { sellerId: p.id, buyerId: blocked.id, poster: 'seller' });
     const res = await blocked.browser.get(`/v1/trades/${code}`);
