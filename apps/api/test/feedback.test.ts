@@ -116,12 +116,17 @@ describe('POST /v1/feedback', () => {
   it('a failed insert does not use up a send', async () => {
     setNow(new Date('2026-11-15T12:00:00Z'));
     const { b } = await login('dbfail1');
+    const before = logs.length;
     await deps.db.query('alter table platform_feedback rename to platform_feedback_away');
     try {
-      for (let i = 0; i < FEEDBACK_DAILY; i++) expect((await b.post('/v1/feedback', { mood: 'ok' })).statusCode).toBe(500);
+      for (let i = 0; i < FEEDBACK_DAILY; i++) expect((await b.post('/v1/feedback', { mood: 'ok', note: SECRET })).statusCode).toBe(500);
     } finally {
       await deps.db.query('alter table platform_feedback_away rename to platform_feedback');
     }
+    // The error is logged (so the capture works), but never the note or its query parameters.
+    const text = logs.slice(before).join('\n');
+    expect(text).not.toBe('');
+    expect(text).not.toContain('walrus-pelican');
     for (let i = 0; i < FEEDBACK_DAILY; i++) expect((await b.post('/v1/feedback', { mood: 'ok', note: `ok${i}` })).statusCode).toBe(202);
     expect(await rows()).toHaveLength(FEEDBACK_DAILY);
   });
