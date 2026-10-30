@@ -369,3 +369,95 @@ describe('review round 1 (2026-10-30)', () => {
     expect(rs[0]).toEqual({ x0: 190, y0: 0, x1: 290, y1: 16, kind: 'email' });
   });
 });
+
+describe('review round 2 (2026-10-30)', () => {
+  it('R2-I1: single-dot phone numbers in notes are still refused', () => {
+    for (const s of ['chiamami 347.1234567', 'call 02.12345678', 'call 0612.345678']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+  });
+
+  it('R2-I1: long decimals next to a currency or crypto code still pass', () => {
+    for (const s of ['Great trade, got 0.12345678 XMR fast', 'got 12.3456789012 XMR', 'Rate 1.0234 EUR/XMR', 'Paid 0,123456 BTC']) expect(detectSensitiveText(s), s).toEqual([]);
+  });
+
+  it('R2-I2: Belgian slash and space forms are masked', () => {
+    expect(maskedTexts(ocr('Tel 0470/12.34.56'))).toEqual(['0470/12.34.56']);
+    expect(maskedTexts(ocr('Tel +32 470/12.34.56'))).toEqual(['+32', '470/12.34.56']);
+    expect(detectSensitiveText('call 0470/12.34.56')).toEqual(['phone']);
+    expect(masked(ocr('Tel 0470 01.02.03'))).toEqual([
+      ['0470', 'phone'],
+      ['01.02.03', 'phone'],
+    ]);
+    expect(maskedTexts(ocr('Tel +32 470 01.02.03'))).toEqual(['+32', '470', '01.02.03']);
+    expect(detectSensitiveText('call me 0470 01.02.03')).toEqual(['phone']);
+  });
+
+  it('R2-I2: dates are still kept', () => {
+    expect(maskedTexts(ocr('Sent 16.10.26'))).toEqual([]);
+    expect(maskedTexts(ocr('412.50 sent on 16.10.26'))).toEqual([]);
+    expect(maskedTexts(ocr('Sent 16/10/2026'))).toEqual([]);
+    expect(detectSensitiveText('Sent 16.10.26')).toEqual([]);
+  });
+
+  it('R2-M1: dot and ellipsis tails and "ending" need exactly 4 digits', () => {
+    for (const s of ['Waited ... 15 minutes', 'Waited.... 15 minutes', 'ok … 20 min', 'trade ending in 10 minutes']) expect(detectSensitiveText(s), s).toEqual([]);
+    expect(detectSensitiveText('card ending in 1234')).toEqual(['account']);
+    expect(detectSensitiveText('card ...1234')).toEqual(['account']);
+    expect(detectSensitiveText('card …1234')).toEqual(['account']);
+  });
+
+  it('R2-M2: the look-alike pass is not shifted by an emoji', () => {
+    expect(masked(ocr('😀 Card 4111 1111 1111 l111'))).toEqual(['4111', '1111', '1111', 'l111'].map((t) => [t, 'account']));
+    expect(detectSensitiveText('👍 Card 4111 1111 1111 l111')).toEqual(['account']);
+    expect(maskedTexts(ocr('😀 1S😀 4111 1111 1111 1111'))).toEqual(['4111', '1111', '1111', '1111']);
+  });
+
+  it('R2-M3: an email split after the @', () => {
+    expect(masked(ocr('Contact jane.doe@ example.com'))).toEqual([
+      ['jane.doe@', 'email'],
+      ['example.com', 'email'],
+    ]);
+    expect(maskedTexts(ocr('Contact jane.doe @ example.com'))).toEqual(['jane.doe', '@', 'example.com']);
+  });
+
+  it('R2-M4: truncated Monero addresses and the short second half of a wrapped one', () => {
+    expect(masked(ocr('To 44AFFq...QBEP3A'))).toContainEqual(['44AFFq...QBEP3A', 'account']);
+    expect(masked(ocr('Wallet 44AFFq…QBEP3A'))).toEqual([['44AFFq…QBEP3A', 'account']]);
+    expect(detectSensitiveText('send to 44AFFq…QBEP3A')).toEqual(['account']);
+    const addr = '4A' + 'x9Yz'.repeat(23) + 'q';
+    const first = addr.slice(0, 70);
+    const second = addr.slice(70);
+    expect(masked(ocr(first, second))).toEqual([
+      [first, 'account'],
+      [second, 'account'],
+    ]);
+    for (const s of ['Anyway...thanks', '41st...street', 'Bye...see you']) expect(detectSensitiveText(s), s).toEqual([]);
+  });
+});
+
+/** Real-world phone formats per supported country (round 2): each must be masked as a phone. */
+const PHONES: Record<string, string[]> = {
+  US: ['(415) 555-0134', '415-555-0134', '415.555.0134', '+1 415 555 0134', '+1 (415) 555-0134'],
+  UK: ['07700 900123', '+44 7700 900123', '020 7946 0958', '(020) 7946 0958'],
+  CA: ['(416) 555-0199', '+1 416-555-0199', '416.555.0199'],
+  DE: ['030 1234567', '+49 30 1234567', '0171/1234567', '0171 1234567', '+49 (0)171 1234567', '030/12345678'],
+  FR: ['06 12 34 56 78', '06.12.34.56.78', '+33 6 12 34 56 78', '01-02-03-04-05', '+33 6.12.34.56.78'],
+  NL: ['06-12345678', '+31 6 12345678', '020 123 4567', '020-1234567'],
+  ES: ['612 34 56 78', '+34 612 345 678', '91 123 45 67', '612 345 678'],
+  IT: ['347 123 4567', '347.1234567', '+39 06 1234 5678', '02.12345678', '+39 347 1234567'],
+  BE: ['0470/12.34.56', '0470 12 34 56', '+32 470 12 34 56', '0470 01.02.03', '+32 470 01.02.03', '02/123.45.67', '0470.12.34.56'],
+};
+
+describe('phone formats per country', () => {
+  for (const [country, phones] of Object.entries(PHONES)) {
+    it(`${country}: masked in OCR words, refused in notes, dates and amounts nearby kept`, () => {
+      for (const p of phones) {
+        const words = p.split(' ');
+        expect(masked(ocr(`Tel ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
+        expect(masked(ocr(`412.50 on 16.10.26 to ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
+        expect(masked(ocr(`Oct 16, 2026 14:32 ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
+        expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
+        expect(detectSensitiveText(`Paid on 16.10.26 at 14:32, call me ${p}`), p).toEqual(['phone']);
+      }
+    });
+  }
+});
