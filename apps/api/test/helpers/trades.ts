@@ -46,7 +46,7 @@ export async function seedOffer(deps: Pick<Deps, 'db' | 'clock'>, posterId: stri
  */
 export async function seedTrade(
   deps: Pick<Deps, 'db' | 'clock'>,
-  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string } & Partial<TradeSides>,
+  a: { sellerId: string; buyerId: string; poster: 'seller' | 'buyer'; amountAtomic?: bigint; offerId?: string; methodId?: string; usdCents?: bigint } & Partial<TradeSides>,
 ): Promise<SeededTrade> {
   const offerId = a.offerId ?? (await seedOffer(deps, a.poster === 'seller' ? a.sellerId : a.buyerId, a.poster));
   const trade = newTrade(
@@ -56,7 +56,7 @@ export async function seedTrade(
       poster: a.poster,
       sellerId: a.sellerId,
       buyerId: a.buyerId,
-      methodId: 'zelle',
+      methodId: a.methodId ?? 'zelle',
       amountAtomic: a.amountAtomic ?? AMOUNT,
       lockedRate: RATE,
       confirmWindowMin: 120,
@@ -70,7 +70,7 @@ export async function seedTrade(
     sellerRefund: a.sellerRefund !== undefined ? a.sellerRefund : fakeAddress(),
     sellerWalletApp: a.sellerWalletApp !== undefined ? a.sellerWalletApp : 'cake',
   };
-  await insertTrade(deps.db, trade, sides);
+  await insertTrade(deps.db, trade, sides, a.usdCents ?? null);
   return { code: trade.code, trade, sides };
 }
 

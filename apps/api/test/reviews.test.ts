@@ -1,0 +1,326 @@
+import { randomBytes } from 'node:crypto';
+import type { FastifyInstance } from 'fastify';
+import { REVIEW_WEIGHT_FLOOR_USD_CENTS, reviewWeight } from '@x2f/reputation';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import type { Deps } from '../src/app.js';
+import { setLateReviewMode } from '../src/reviews/gate.js';
+import { detachReviews, reviewableSince } from '../src/reviews/store.js';
+import { applyEvent } from '../src/trades/store.js';
+import { driveTo, seedTrade } from './helpers/trades.js';
+import { tradeApp } from './helpers/tradeApp.js';
+
+// Plan 5 Task 3: reviews with blind reveal (spec 5.1, 5.3), real Postgres. The gate on the take,
+// the poster's wallet route and the offer lists is in reviews-gate.test.ts.
+
+let app: FastifyInstance;
+let deps: Deps;
+let setNow: (d: Date) => void;
+let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
+type Who = Awaited<ReturnType<typeof trader>>;
+
+const START = new Date('2026-10-17T12:00:00Z');
+const MIN = 60_000;
+const DAY = 24 * 60 * MIN;
+const tx = () => randomBytes(32).toString('hex');
+
+beforeAll(async () => {
+  ({ app, deps, trader, setNow } = await tradeApp());
+});
+afterAll(async () => {
+  await app.close();
+});
+afterEach(() => {
+  setLateReviewMode('any');
+});
+
+/** Moves the clock and logs both browsers in again (a jump of days ends their sessions). */
+async function jump(to: Date, ...who: Who[]) {
+  setNow(to);
+  for (const w of who) expect((await w.browser.post('/t/login', { accountId: w.id })).statusCode).toBe(200);
+}
+
+async function tradeIn(state: Parameters<typeof driveTo>[2], usdCents?: bigint) {
+  setNow(START);
+  const seller = await trader();
+  const buyer = await trader();
+  const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', methodId: 'ZELLE', ...(usdCents === undefined ? {} : { usdCents }) });
+  const t = await driveTo(deps, trade, state);
+  return { seller, buyer, t };
+}
+
+const GOOD = { neutral: false, stars: 5, phrases: ['Friendly'], tradeBadges: ['Smooth trade'], note: 'Smooth one' };
+const review = (who: Who, code: string, body: unknown = GOOD) => who.browser.post(`/v1/trades/${code}/review`, body);
+const view = async (who: Who, code: string) => {
+  const res = await who.browser.get(`/v1/trades/${code}/review`);
+  expect(res.statusCode, res.body).toBe(200);
+  return res.json() as { reviewable: boolean; mine: unknown; theirs: unknown; revealAt: string | null };
+};
+const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
+
+/** What Plan 4 writes when the trade's current dispute ends: a final ruling, then `closed`. */
+async function closeDispute(code: string, at: Date) {
+  await deps.db.query(`update disputes set status = 'closed', closed_at = $2 where code = $1`, [code, at]);
+}
+
+describe('who may review which trade', () => {
+  it('a released trade: both sides can review once, a third account gets 404, a second POST is review-exists', async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await view(buyer, t.code)).reviewable).toBe(true);
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'review-exists' });
+    expect((await review(seller, t.code, { neutral: true })).statusCode).toBe(201);
+    const stranger = await trader();
+    expect(refusal(await review(stranger, t.code))).toEqual({ status: 404, error: 'not-found' });
+    expect((await stranger.browser.get(`/v1/trades/${t.code}/review`)).statusCode).toBe(404);
+    expect((await stranger.browser.get(`/v1/trades/NOPE/review`)).statusCode).toBe(404);
+    // The reviewer's side and subject come from the trade, never the body.
+    const { rows } = await deps.db.query('select reviewer_role, reviewer_id, subject_id from reviews where trade_code = $1 order by reviewer_role', [t.code]);
+    expect(rows).toEqual([
+      { reviewer_role: 'buyer', reviewer_id: buyer.id, subject_id: seller.id },
+      { reviewer_role: 'seller', reviewer_id: seller.id, subject_id: buyer.id },
+    ]);
+  });
+
+  it('refuses a body the rules refuse, with the ReviewError code (the side being rated picks the Fast phrase)', async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    // The buyer rates the seller: "Fast release" is right, "Fast payment" is not.
+    expect(refusal(await review(buyer, t.code, { ...GOOD, phrases: ['Fast payment'] }))).toEqual({ status: 400, error: 'bad-phrase' });
+    expect(refusal(await review(buyer, t.code, { ...GOOD, stars: 6 }))).toEqual({ status: 400, error: 'bad-stars' });
+    expect(refusal(await review(buyer, t.code, { neutral: true, stars: 3 }))).toEqual({ status: 400, error: 'neutral-with-details' });
+    expect(refusal(await review(buyer, t.code, { ...GOOD, note: 'a\nb' }))).toEqual({ status: 400, error: 'note-multiline' });
+    expect(refusal(await review(buyer, t.code, { ...GOOD, note: 'x'.repeat(121) }))).toEqual({ status: 400, error: 'note-too-long' });
+    // NEEDS_TASK_7_SENSITIVE_TEXT: the local stand-in for @x2f/proof's detectSensitiveText.
+    for (const note of ['mail me at bob@example.com', 'call +1 555 123 4567', 'IBAN DE89 3704 0044 0532 0130 00', `4${'A'.repeat(94)}`]) {
+      expect(refusal(await review(buyer, t.code, { ...GOOD, note })), note).toEqual({ status: 400, error: 'note-personal-details' });
+    }
+    expect((await review(buyer, t.code, { ...GOOD, phrases: ['Fast release'] })).statusCode).toBe(201);
+    expect((await review(seller, t.code, { ...GOOD, phrases: ['Fast payment'] })).statusCode).toBe(201);
+  });
+
+  it('a mutual-cancelled, buyer-cancelled or auto-refunded trade with no dispute is not-reviewable', async () => {
+    for (const kind of ['mutual-cancel', 'buyer-cancel', 'auto-refund'] as const) {
+      const { buyer, t } = await tradeIn('secured');
+      await applyEvent(deps, t.code, { type: 'settled', kind, txHash: tx() }, 'system');
+      expect(await reviewableSince(deps.db, t.code), kind).toBeNull();
+      expect(refusal(await review(buyer, t.code)), kind).toEqual({ status: 409, error: 'not-reviewable' });
+      expect(await view(buyer, t.code)).toEqual({ reviewable: false, mine: null, theirs: null, revealAt: null });
+    }
+  });
+
+  it('an open trade is not-reviewable', async () => {
+    const { buyer, t } = await tradeIn('paid');
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+  });
+
+  it('a disputed trade is not-reviewable while the dispute is open, reviewable from its close', async () => {
+    const { seller, buyer, t } = await tradeIn('secured');
+    expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    // The ruling is carried out (the trade ends) but the dispute is not closed yet: still not.
+    setNow(new Date(START.getTime() + DAY));
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'release', txHash: tx() }, 'system');
+    expect(refusal(await review(seller, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    const closedAt = new Date(START.getTime() + 2 * DAY);
+    await closeDispute(t.code, closedAt);
+    expect(await reviewableSince(deps.db, t.code)).toEqual(closedAt);
+    await jump(new Date(START.getTime() + 3 * DAY), buyer, seller);
+    expect((await review(seller, t.code, { neutral: true })).statusCode).toBe(201);
+    // Whatever the outcome: a refund to the seller after a dispute is reviewable too.
+    const b = await tradeIn('secured');
+    expect((await b.seller.browser.post(`/v1/trades/${b.t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    await applyEvent(deps, b.t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
+    await deps.db.query(`update disputes set status = 'final' where code = $1`, [b.t.code]);
+    expect(await reviewableSince(deps.db, b.t.code)).toEqual(START);
+    expect((await review(b.buyer, b.t.code)).statusCode).toBe(201);
+  });
+
+  it('a no-show refund is not-reviewable; after a dispute-after-refund opens and closes, reviewable from the close', async () => {
+    const { seller, buyer, t } = await tradeIn('secured');
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'auto-refund', txHash: tx() }, 'system');
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    setNow(new Date(START.getTime() + 60 * MIN));
+    expect((await buyer.browser.post(`/v1/trades/${t.code}/dispute`, { reason: 'paid', note: '' })).statusCode).toBe(200);
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
+    // Plan 4 ends it: the trade ends again and the dispute closes.
+    setNow(new Date(START.getTime() + DAY));
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
+    const closedAt = new Date(START.getTime() + DAY + 5 * MIN);
+    await closeDispute(t.code, closedAt);
+    expect(await reviewableSince(deps.db, t.code)).toEqual(closedAt);
+    await jump(new Date(START.getTime() + DAY + 10 * MIN), buyer, seller);
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    expect((await view(seller, t.code)).revealAt).toBe(new Date(closedAt.getTime() + 7 * DAY).toISOString());
+  });
+});
+
+describe('blind reveal (spec 5.3)', () => {
+  it("neither sees the other's review until both rated", async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    await jump(new Date(START.getTime() + DAY), buyer, seller);
+    expect((await review(seller, t.code, { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [] })).statusCode).toBe(201);
+    const early = await view(buyer, t.code);
+    expect(early).toMatchObject({ reviewable: true, mine: null, theirs: null, revealAt: new Date(START.getTime() + 7 * DAY).toISOString() });
+    // The seller sees their own review, not the buyer's (there is none yet).
+    expect(await view(seller, t.code)).toMatchObject({ reviewable: false, theirs: null, mine: { neutral: false, stars: 2, phrases: ['Slow'] } });
+    await jump(new Date(START.getTime() + 2 * DAY), buyer, seller);
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    const both = new Date(START.getTime() + 2 * DAY).toISOString();
+    expect(await view(buyer, t.code)).toEqual({
+      reviewable: false,
+      mine: { neutral: false, stars: 5, phrases: ['Friendly'], tradeBadges: ['Smooth trade'], note: 'Smooth one', method: 'Zelle', age: 'Oct 2026' },
+      theirs: { neutral: false, stars: 2, phrases: ['Slow'], tradeBadges: [], note: null, method: 'Zelle', age: 'Oct 2026' },
+      revealAt: both,
+    });
+    expect((await view(seller, t.code)).theirs).toMatchObject({ stars: 5 });
+  });
+
+  it('with only one review, theirs appears at reviewableSince + 7 days exactly and not 1 ms earlier', async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    const at = START.getTime() + 7 * DAY;
+    await jump(new Date(at - 1), buyer);
+    expect((await view(buyer, t.code)).theirs).toBeNull();
+    setNow(new Date(at));
+    expect((await view(buyer, t.code)).theirs).toMatchObject({ stars: 5 });
+  });
+});
+
+describe('late reviews (P5-A31)', () => {
+  it("'neutral-only': a star review after the reveal is refused, Neutral passes", async () => {
+    setLateReviewMode('neutral-only');
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    await jump(new Date(START.getTime() + 7 * DAY), buyer);
+    expect(refusal(await review(buyer, t.code))).toEqual({ status: 400, error: 'late-review-neutral-only' });
+    expect((await review(buyer, t.code, { neutral: true })).statusCode).toBe(201);
+  });
+
+  it("'neutral-only' before the reveal takes any review", async () => {
+    setLateReviewMode('neutral-only');
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    await jump(new Date(START.getTime() + 7 * DAY - 1), buyer);
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+  });
+
+  it("'closed': no review once the other side's is revealed", async () => {
+    setLateReviewMode('closed');
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    await jump(new Date(START.getTime() + 7 * DAY), buyer);
+    expect((await view(buyer, t.code)).reviewable).toBe(false);
+    expect(refusal(await review(buyer, t.code, { neutral: true }))).toEqual({ status: 400, error: 'late-review-closed' });
+  });
+});
+
+describe('GET /v1/reviews/pending', () => {
+  it("lists the caller's unrated reviewable trades with the counterparty's display name, oldest first", async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    setNow(new Date(START.getTime() + MIN));
+    const other = await trader();
+    const { trade } = await seedTrade(deps, { sellerId: other.id, buyerId: buyer.id, poster: 'seller' });
+    await driveTo(deps, trade, 'released');
+    const res = await buyer.browser.get('/v1/reviews/pending');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({
+      trades: [
+        { code: t.code, counterparty: seller.displayName, reviewableSince: START.toISOString() },
+        { code: trade.code, counterparty: other.displayName, reviewableSince: new Date(START.getTime() + MIN).toISOString() },
+      ],
+    });
+    expect(res.body).not.toContain(seller.loginName);
+    expect((await review(buyer, t.code, { neutral: true })).statusCode).toBe(201);
+    expect(((await buyer.browser.get('/v1/reviews/pending')).json() as { trades: unknown[] }).trades).toHaveLength(1);
+    expect((await app.inject({ method: 'GET', url: '/v1/reviews/pending' })).statusCode).toBe(401);
+  });
+});
+
+describe('what a review stores and shows', () => {
+  it('stores only the weight from the take-time USD value, and no answer carries an amount, a weight or an id', async () => {
+    // The take stores the trade's USD value (301; tested in reviews-gate.test.ts); seeded here.
+    const { seller, buyer, t } = await tradeIn('released', 54_321n);
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    expect((await review(seller, t.code, { neutral: true })).statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ weight: string }>('select weight from reviews where trade_code = $1', [t.code]);
+    expect(rows.map((r) => r.weight)).toEqual([reviewWeight(54_321n).toString(), reviewWeight(54_321n).toString()]);
+    // No column of reviews holds money.
+    const cols = (await deps.db.query<{ column_name: string }>(`select column_name from information_schema.columns where table_name = 'reviews'`)).rows.map((r) => r.column_name);
+    expect(cols.filter((c) => /usd|cent|amount|atomic|fiat/.test(c))).toEqual([]);
+    const bodies = [
+      (await buyer.browser.get(`/v1/trades/${t.code}/review`)).body,
+      (await seller.browser.get(`/v1/trades/${t.code}/review`)).body,
+      (await buyer.browser.get('/v1/reviews/pending')).body,
+      (await buyer.browser.get(`/v1/trades/${t.code}`)).body,
+    ];
+    for (const b of bodies) {
+      expect(b).not.toMatch(/54321|54_321|usd|weight/i);
+      expect(b).not.toContain(buyer.id);
+      expect(b).not.toContain(seller.id);
+    }
+    // The review answers carry no trade code and no exact time either.
+    for (const b of bodies.slice(0, 2)) {
+      const v = JSON.parse(b) as { mine: Record<string, unknown>; theirs: Record<string, unknown> };
+      expect(Object.keys(v.mine).sort()).toEqual(['age', 'method', 'neutral', 'note', 'phrases', 'stars', 'tradeBadges']);
+      expect(JSON.stringify([v.mine, v.theirs])).not.toContain(t.code);
+      expect(JSON.stringify([v.mine, v.theirs])).not.toMatch(/T\d\d:\d\d/);
+    }
+  });
+
+  it('a trade with no stored USD value weighs the floor', async () => {
+    const { buyer, t } = await tradeIn('released');
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    const { rows } = await deps.db.query<{ weight: string }>('select weight from reviews where trade_code = $1', [t.code]);
+    expect(rows[0]!.weight).toBe(REVIEW_WEIGHT_FLOOR_USD_CENTS.toString());
+  });
+});
+
+describe('reviews are final (301 triggers)', () => {
+  async function oneReview() {
+    const { buyer, t } = await tradeIn('released');
+    expect((await review(buyer, t.code)).statusCode).toBe(201);
+    return t.code;
+  }
+
+  it('UPDATE, DELETE and TRUNCATE by the app role are refused', async () => {
+    const code = await oneReview();
+    await expect(deps.db.query('update reviews set stars = 1 where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
+    await expect(deps.db.query('update reviews set trade_code = null, reviewer_id = null where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
+    await expect(deps.db.query('delete from reviews where trade_code = $1', [code])).rejects.toThrow(/reviews are final/);
+    await expect(deps.db.query('truncate reviews')).rejects.toThrow(/reviews are final/);
+  });
+
+  async function asPurge<T>(fn: (c: import('pg').PoolClient) => Promise<T>): Promise<T> {
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('set local role x2f_purge');
+      const out = await fn(c);
+      await c.query('commit');
+      return out;
+    } catch (e) {
+      await c.query('rollback');
+      throw e;
+    } finally {
+      c.release();
+    }
+  }
+
+  it('x2f_purge may detach a review from its trade and reviewer (nothing else), and may delete', async () => {
+    const code = await oneReview();
+    await expect(asPurge((c) => c.query('update reviews set stars = 1 where trade_code = $1', [code]))).rejects.toThrow(/permission denied|reviews are final/);
+    await expect(asPurge((c) => c.query('update reviews set trade_code = null where trade_code = $1', [code]))).rejects.toThrow(/reviews_check|reviews are final|violates/);
+    expect(await asPurge((c) => detachReviews(c, code))).toBe(1);
+    const { rows } = await deps.db.query('select trade_code, reviewer_id, stars, method_id from reviews where trade_code is null and reviewable_since = $1', [START]);
+    expect(rows).toContainEqual({ trade_code: null, reviewer_id: null, stars: 5, method_id: 'ZELLE' });
+    // A detached review stays final for the app, and the purge cannot write a code back.
+    await expect(deps.db.query('delete from reviews where trade_code is null')).rejects.toThrow(/reviews are final/);
+    const code2 = await oneReview();
+    const n = await asPurge(async (c) => (await c.query('delete from reviews where trade_code = $1', [code2])).rowCount);
+    expect(n).toBe(1);
+  });
+
+  it('a trade USD value is written once and never changes', async () => {
+    const { t } = await tradeIn('released');
+    await expect(deps.db.query('update trades set usd_cents = 1 where code = $1', [t.code])).rejects.toThrow(/USD value never changes/);
+  });
+});

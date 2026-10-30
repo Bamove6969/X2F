@@ -38,9 +38,13 @@ export const CANT_DO_CODES = [
   // API's own codes are bad-request and not-found; this one is the web's, for the popup's
   // feedback link.
   'cannot-block',
-  // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
-  // pending, Plan 4's lien and trade ban): check them when those land.
+  // Plan 5 Task 3: rate your last trade first (the rate-first gate, spec 5.1), and P5-A31's late
+  // review rules (owner OPEN; only the default 'any' is in force today).
   'review-pending',
+  'late-review-neutral-only',
+  'late-review-closed',
+  // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
+  // ban): check them when those land.
   'lien',
   'trade-ban',
 ] as const;
@@ -109,6 +113,20 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  // Plan 5 Task 3: reviews.
+  'not-reviewable': 'the trade cannot be rated (its state: not released, or a dispute not yet over)',
+  'review-exists': 'already rated (a double submit)',
+  'bad-shape': 'an input check on the review form',
+  'bad-stars': 'an input check on the review form',
+  'bad-phrase': 'an input check on the review form',
+  'duplicate-phrase': 'an input check on the review form',
+  'bad-trade-badge': 'an input check on the review form',
+  'duplicate-trade-badge': 'an input check on the review form',
+  'note-too-long': 'an input check on the typed note',
+  'note-multiline': 'an input check on the typed note',
+  'note-bad-character': 'an input check on the typed note',
+  'note-personal-details': 'an input check on the typed note (remove personal details)',
+  'neutral-with-details': 'an input check on the review form',
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',

@@ -7,6 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { acceptedEvent } from '../events/publicName.js';
 import { getProfile, isAvailable } from '../methods/profiles.js';
+import { assertNoPendingReview, hasPendingReview } from '../reviews/gate.js';
 import type { MarketPrices } from '../price/market.js';
 import { assertNotBlocked } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, tradeCap, usdCentsOf, type TradeCap } from '../traders/stage.js';
@@ -257,6 +258,13 @@ export function takeRoutes(app: FastifyInstance): void {
       // No site_flags row fails closed.
       if (flags.paused !== false) throw new ApiError(409, 'trading-paused');
       if (flags.held) throw new ApiError(409, 'trading-hold');
+      // Plan 5 Task 3, the rate-first gate (spec 5.1, P5-A4), for both sides, under the account locks
+      // above (a review submitted meanwhile is seen at the next take). The taker's own pending review
+      // is named (409 `review-pending`); the poster's is the generic `offer-busy`, so a taker learns
+      // nothing of the poster's account (as Task 5 review M6 does for the poster's open trades). The
+      // offer lists already leave such a poster's offers out.
+      await assertNoPendingReview(c, takerId, now);
+      if (await hasPendingReview(c, posterId, now)) throw new ApiError(409, 'offer-busy');
       const wallet = await pickWallet(c, takerId, b.walletId, now);
       const completed = (
         await c.query<{ n: number }>(`select ${COMPLETED_TRADES_SQL}::int as n from accounts a where a.id = $1`, [takerId])
@@ -268,7 +276,9 @@ export function takeRoutes(app: FastifyInstance): void {
       const rate = lockRate(r, b.centsPerXmr, deps.prices);
       const total = fiatCents(b.amountAtomic, rate);
       if (total < BigInt(r.min_fiat_cents) || total > BigInt(r.max_fiat_cents)) throw new ApiError(409, 'out-of-range');
-      await checkStarterLimits(c, { takerId, posterId, usd: () => usdCents(r.currency, b.amountAtomic, total, deps.prices), now });
+      // The trade's USD value, counted against the caps and kept (301) to weigh its reviews (Plan 5 Task 3).
+      const usd = usdCents(r.currency, b.amountAtomic, total, deps.prices);
+      await checkStarterLimits(c, { takerId, posterId, usd: () => usd, now });
 
       const poster = posterRole(r.side);
       const profile = getProfile(r.method_id) ?? getProfile(FALLBACK_PROFILE);
@@ -295,7 +305,7 @@ export function takeRoutes(app: FastifyInstance): void {
           ? { buyerPayout: wallet.address, sellerRefund: null, sellerWalletApp: null }
           : { buyerPayout: null, sellerRefund: wallet.address, sellerWalletApp: wallet.app };
       try {
-        await insertTrade(c, t, sides);
+        await insertTrade(c, t, sides, usd);
       } catch (e) {
         const refusal = raceRefusal(e);
         if (refusal) throw refusal;
@@ -342,6 +352,8 @@ export function takeRoutes(app: FastifyInstance): void {
       await c.query('select id from accounts where id = $1 for update', [me]);
       const held = await c.query('select 1 from trading_holds where account_id = $1 and lifted_at is null', [me]);
       if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
+      // Plan 5 Task 3: the poster rates their last trade before setting up a new one (P5-A4).
+      await assertNoPendingReview(c, me, now);
       await c.query('select id from wallets where id = $1 and account_id = $2 for share', [walletId, me]);
       const w = await pickWallet(c, me, walletId, now);
       // Once only, and only while in setup: the conditions stay in the UPDATE too.

@@ -77,7 +77,26 @@ export type ApiErrorCode =
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.
   | 'too-soon'
-  | 'no-shared-context';
+  | 'no-shared-context'
+  // Plan 5, Task 3: reviews and the rate-first gate.
+  | 'not-reviewable'
+  | 'review-exists'
+  | 'review-pending'
+  // Plan 5, Task 3: @x2f/reputation's ReviewError codes, answered as 400 (reviews/routes.ts checks
+  // at compile time that every ReviewErrorCode is listed here).
+  | 'bad-shape'
+  | 'bad-stars'
+  | 'bad-phrase'
+  | 'duplicate-phrase'
+  | 'bad-trade-badge'
+  | 'duplicate-trade-badge'
+  | 'note-too-long'
+  | 'note-multiline'
+  | 'note-bad-character'
+  | 'note-personal-details'
+  | 'neutral-with-details'
+  | 'late-review-neutral-only'
+  | 'late-review-closed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

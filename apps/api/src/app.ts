@@ -19,6 +19,7 @@ import type { TradePublisher } from './trades/store.js';
 import { walletRoutes } from './wallets/routes.js';
 import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
+import { reviewRoutes } from './reviews/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
@@ -274,6 +275,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   }
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
+  // Plan 5, Task 3: reviews with blind reveal (the gate is wired into the take and wallet routes).
+  reviewRoutes(app);
 
   return app;
 }
