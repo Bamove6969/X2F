@@ -150,7 +150,7 @@ export function cleanJpeg(): Uint8Array {
 export function metadataJpeg(): Uint8Array {
   const app0 = segment(0xe0, latin1('JFIF\0\x01\x01\0\0\x01\0\x01\0\0'));
   const app1 = segment(0xe1, latin1('Exif\0\0MM\0*\0\0\0\x08 GPSLatitude 51.5007 Model Pixel 9 DateTimeOriginal 2026:10:16 14:32:05'));
-  const app13 = segment(0xed, latin1('Photoshop 3.0\08BIM\x04\x04 caption Jane Doe'));
+  const app13 = segment(0xed, latin1('Photoshop 3.0\x008BIM\x04\x04 caption Jane Doe'));
   const com = segment(0xfe, latin1('Created with a phone camera'));
   const [dqt, sof0, dht, dri, scan] = jpegCore();
   return concat(SOI, app0, app1, dqt!, app13, sof0!, dht!, com, dri!, scan!, EOI);

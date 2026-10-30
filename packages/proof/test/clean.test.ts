@@ -104,7 +104,7 @@ describe('cleanImage: PNG', () => {
 
   it('refuses a bad CRC, a truncated file, an unknown critical chunk and a missing IHDR', () => {
     const bad = read('clean.png').slice();
-    bad[8 + 4 + 4 + 13] ^= 0xff; // IHDR CRC
+    bad[8 + 4 + 4 + 13] = bad[8 + 4 + 4 + 13]! ^ 0xff; // IHDR CRC
     expect(code(() => cleanImage(bad))).toBe('unsupported');
     const png = read('clean.png');
     expect(code(() => cleanImage(png.subarray(0, png.length - 5)))).toBe('unsupported');
