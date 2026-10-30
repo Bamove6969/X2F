@@ -1,7 +1,6 @@
 -- Plan 2 follow-up FU-D (owner, 2026-10-25): the private login name is stored only as a keyed tag,
 -- so a stolen database holds no login names once step 1 below, with its ANALYZE / VACUUM FULL /
--- CHECKPOINT as a database superuser, has run and
--- every backup and WAL archive from before it is gone.
+-- CHECKPOINT as a database superuser, has run and every backup and WAL archive from before it is gone.
 --
 -- login_tag = HMAC-SHA-256 under the X2F_LOGIN_NAME_KEYS key `login_tag_key_id` of
 -- "x2f/login-name\0" || the lower-cased NFC login name. A login looks the name up under every key in
