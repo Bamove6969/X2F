@@ -481,8 +481,8 @@ describe('chat write budgets (review M7)', () => {
 describe('POST /v1/trades/:code/chat', () => {
   /** A trade between the two traders of a chat-less pair, from a real offer of the poster. */
   async function tradeOn(offerId: string, seller: { id: string }, buyer: { id: string }): Promise<string> {
-    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
-    await deps.db.query('update trades set offer_id = $2 where code = $1', [t.code, offerId]);
+    // A trade's offer is fixed at take (Task 5's trades_set_once_deal), so it is seeded on the offer.
+    const t = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller', offerId });
     return t.code;
   }
 
@@ -514,7 +514,8 @@ describe('POST /v1/trades/:code/chat', () => {
     expect(view).toMatchObject({ tradeCode: code, role: 'buyer' });
   });
 
-  it('is 404 for anyone else or an unknown code, and 409 chat-unavailable without an offers row', async () => {
+  it('is 404 for anyone else or an unknown code', async () => {
+    // (409 chat-unavailable, a trade with no offers row, cannot happen since Task 5's trades_offer_fk.)
     const seller = await trader();
     const buyer = await trader();
     const offerId = await seedOffer(seller.id);
@@ -523,8 +524,6 @@ describe('POST /v1/trades/:code/chat', () => {
     expect((await stranger.b.post(`/v1/trades/${code}/chat`, {})).statusCode).toBe(404);
     expect((await buyer.b.post(`/v1/trades/${newTradeCode()}/chat`, {})).statusCode).toBe(404);
     expect((await buyer.b.post('/v1/trades/nope/chat', {})).statusCode).toBe(404);
-    const orphan = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'seller' });
-    expect((await buyer.b.post(`/v1/trades/${orphan.code}/chat`, {})).json()).toEqual({ error: 'chat-unavailable' });
     expect((await new Browser(app).post(`/v1/trades/${code}/chat`, {})).statusCode).toBe(401);
   });
 });
