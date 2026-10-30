@@ -12,6 +12,7 @@ import { Icon } from '../ui/icons.js';
 import { RadioChips } from './browse/RadioChips.js';
 import { fetchMethods, fetchPrice, postOffer, type PickMethod, type PriceQuote, type Side } from './post/api.js';
 import { COUNTRIES } from './post/countries.js';
+import { MY_OFFERS_PATH } from './myoffers/model.js';
 import {
   DEFAULT_FORM,
   FEE_SENTENCE,
@@ -427,6 +428,11 @@ export function PostOffer() {
           </div>
           <span className="post-muted">{FEE_SENTENCE}</span>
         </section>
+
+        {/* Task 36: the way to My offers (no board places it yet: NEEDS_DESIGN_MYOFFERS). */}
+        <Link className="x2f-button x2f-button--quiet" to={MY_OFFERS_PATH} data-part="my-offers">
+          My offers
+        </Link>
       </main>
 
       <footer className="post-footer">
