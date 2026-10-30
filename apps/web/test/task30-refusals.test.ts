@@ -25,13 +25,18 @@ describe('waitSentence', () => {
 });
 
 describe('holdSentence', () => {
-  it('names the local time the hold ends', () => {
-    expect(holdSentence('2026-10-27T15:00:00Z')).toBe(`You logged in with a backup, so changes to your account wait until ${localTime(new Date('2026-10-27T15:00:00Z'))}.`);
+  it('names the local time the hold ends, what still works and what ends it (Plan 2 Task 17)', () => {
+    const t = holdSentence('2026-10-27T15:00:00Z');
+    expect(t).toContain(`wait until ${localTime(new Date('2026-10-27T15:00:00Z'))}.`);
+    expect(t).toContain('Trades already open can still be finished.');
+    expect(t).toContain('a passkey, a security key, or your password and authenticator code');
+    // Owner 2026-10-29 14:12: a PGP key alone does not end the hold.
+    expect(t).not.toContain('PGP');
   });
 
   it('without a time (or a broken one) says a day', () => {
-    expect(holdSentence(null)).toBe('You logged in with a backup, so changes to your account wait for a day.');
-    expect(holdSentence('not a date')).toBe('You logged in with a backup, so changes to your account wait for a day.');
+    expect(holdSentence(null)).toContain('wait for a day.');
+    expect(holdSentence('not a date')).toContain('wait for a day.');
   });
 });
 

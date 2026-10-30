@@ -5,8 +5,8 @@
 // `stage`), read through the browse screens' `parseOffers` (Task 16) so both read one shape;
 // `GET /v1/price` and `GET /v1/methods` are Task 3 as on the line (apps/api/src/price/routes.ts:
 // `{ currency, centsPerXmr, exponent, at, usdCentsPerXmr }`, checked 2026-10-27); `POST
-// /v1/offers/:id/take` is plan Task 5; `GET /v1/wallets` is Plan 2 as built. The guessed ones are
-// listed in test/quote-tripwires.test.ts.
+// /v1/offers/:id/take` is plan Task 5; `GET /v1/wallets` is Plan 2 as built. Every one is on the
+// line now (Task 5 2026-10-28), so the quote's tripwire file is gone (retired 2026-10-30).
 import { ApiCallError, api } from '../../api/client.js';
 import { ApiShapeError, parseOffers, type Offer } from '../browse/api.js';
 import type { AdSide, MarketNow, QuoteOffer } from './quoteModel.js';

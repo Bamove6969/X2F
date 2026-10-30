@@ -63,9 +63,17 @@ export function setEscrowClient(c: EscrowClient | null): void {
   client = c;
 }
 
+let worker: Worker | null = null;
+
+/** The one escrow worker of this page (the escrow and the chat engine share it, Task 20). */
+export function escrowWorker(): Worker {
+  worker ??= new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'x2f-escrow' });
+  return worker;
+}
+
 /** The escrow client, starting the worker (and resuming every stored trade) on first use. */
 export function escrowClient(): EscrowClient {
-  client ??= workerClient(new Worker(new URL('./worker.ts', import.meta.url), { type: 'module', name: 'x2f-escrow' }));
+  client ??= workerClient(escrowWorker());
   return client;
 }
 

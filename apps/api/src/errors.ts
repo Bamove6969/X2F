@@ -40,6 +40,12 @@ export type ApiErrorCode =
   | 'wallet-exists'
   | 'terms-not-accepted'
   | 'terms-required'
+  // Plan 2 Task 16: new-device approval.
+  | 'approval-ended'
+  | 'too-many-devices'
+  // Plan 2 Task 17 (review round 2 N-I3, N-M3): a session whose login waits may not end, vet or
+  // hide what a stronger login does.
+  | 'weak-session'
   // Plan 3 (Task 3 onwards).
   | 'price-unavailable'
   // Plan 3, Task 4: posting and relisting offers.
@@ -73,6 +79,13 @@ export type ApiErrorCode =
   | 'bad-proof'
   | 'attestation-refused'
   | 'trade-closed'
+  // Plan 3, Task 20: the encrypted chat.
+  | 'own-offer'
+  | 'chat-not-ready'
+  | 'stale-seq'
+  | 'wrong-channel'
+  | 'wrong-sender'
+  | 'chat-unavailable'
   // Plan 3, Task 27: a second dispute on one trade.
   | 'dispute-exists'
   // Plan 3, Task 26: the nudge sender's own limits.

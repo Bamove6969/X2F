@@ -1,6 +1,6 @@
 /**
  * "Block <name>" (Plan 3 Task 37), wherever a trader is shown to a signed-in trader: the quote
- * today; Plan 5's profile and Task 20's chat when they land. Asks once (Claude Design's Block
+ * and Task 20's ChatPanel (under its notice) today; Plan 5's profile when it lands. Asks once (Claude Design's Block
  * board: what the block does, that it is silent, that open trades finish), then blocks. A block
  * the API refuses (400 yourself, 404 a closed account) opens CantDoThat (Plan 5 Task 21) with its
  * feedback link; a failure (network, server) stays inline. Kit parts only.

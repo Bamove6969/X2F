@@ -9,8 +9,10 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   AuthApiError,
   addWebAuthnKey,
+  isHeld,
   withConfirm,
   type ConfirmAction,
+  type Held,
   type MethodEntry,
   type MethodType,
   type WebAuthnKind,
@@ -20,7 +22,7 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, LAST_METHOD_CODE, LAST_METHOD_MESSAGE } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { refusalText } from '../auth/refusals.js';
+import { heldNote, refusalText } from '../auth/refusals.js';
 import { RecoveryCodes } from './RecoveryCodes.js';
 import { Totp } from './Totp.js';
 
@@ -54,6 +56,15 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const [lastMethod, setLastMethod] = useState(false);
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<Adding>('none');
+  // Plan 2 Task 17: a change made from a login with one way of proving it's you waits out the hold.
+  const [held, setHeld] = useState<string | null>(null);
+  const noteHeld = useCallback((h: Held | undefined) => {
+    if (h !== undefined) setHeld(heldNote(h.holdUntil));
+  }, []);
+  const done = (h?: Held) => {
+    noteHeld(h);
+    void refresh().finally(() => setAdding('none'));
+  };
 
   const refresh = useCallback(async () => {
     setMethods(await authApi.listMethods());
@@ -66,8 +77,9 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
   const addWebAuthn = async (kind: WebAuthnKind) => {
     setBusy(true);
     setError(null);
+    setHeld(null);
     try {
-      await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove);
+      noteHeld(await withConfirm({ kind: 'add-method', method: kind }, (t) => addWebAuthnKey(authApi, kind, t !== undefined ? { confirmToken: t } : {}), prove));
       await refresh();
     } catch (e) {
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not add that method. Try again.'));
@@ -83,12 +95,13 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
     }
     setBusy(true);
     setError(null);
+    setHeld(null);
     try {
-      await withConfirm(
+      noteHeld(await withConfirm(
         { kind: 'remove-method', method: m.type, id: m.id },
         (t) => authApi.removeMethod(m.type, m.id, t !== undefined ? { confirmToken: t } : {}),
         prove,
-      );
+      ));
       await refresh();
     } catch (e) {
       if (e instanceof AuthApiError && e.code === LAST_METHOD_CODE) setLastMethod(true);
@@ -106,6 +119,11 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       {error !== null ? (
         <p className="x2f-error" role="alert" data-part="methods-error">
           {error}
+        </p>
+      ) : null}
+      {held !== null ? (
+        <p className="x2f-note" role="status" data-part="held-note">
+          {held}
         </p>
       ) : null}
       {lastMethod ? <CantDoThat title={CANT_DO_TITLE.methods} body={LAST_METHOD_MESSAGE} from={LAST_METHOD_CODE} onClose={() => setLastMethod(false)} /> : null}
@@ -143,18 +161,18 @@ export function Methods({ prove }: { prove: (action: ConfirmAction) => Promise<s
       </div>
 
       {adding === 'password' ? (
-        <AddPassword prove={prove} onDone={() => void refresh().finally(() => setAdding('none'))} onCancel={() => setAdding('none')} />
+        <AddPassword prove={prove} onDone={done} onCancel={() => setAdding('none')} />
       ) : null}
       {adding === 'pgp' ? (
-        <AddPgpKey prove={prove} onDone={() => void refresh().finally(() => setAdding('none'))} onCancel={() => setAdding('none')} />
+        <AddPgpKey prove={prove} onDone={done} onCancel={() => setAdding('none')} />
       ) : null}
-      {adding === 'totp' ? <Totp prove={prove} onDone={() => void refresh().finally(() => setAdding('none'))} onCancel={() => setAdding('none')} /> : null}
+      {adding === 'totp' ? <Totp prove={prove} onDone={done} onCancel={() => setAdding('none')} /> : null}
       {adding === 'recovery-codes' ? <RecoveryCodes prove={prove} onDone={() => setAdding('none')} /> : null}
     </section>
   );
 }
 
-function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (held?: Held) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -164,8 +182,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     setBusy(true);
     setError(null);
     try {
-      await withConfirm({ kind: 'set-password' }, (t) => authApi.setPassword({ password, ...(t !== undefined ? { confirmToken: t } : {}) }), prove);
-      onDone();
+      onDone(await withConfirm({ kind: 'set-password' }, (t) => authApi.setPassword({ password, ...(t !== undefined ? { confirmToken: t } : {}) }), prove));
     } catch (e) {
       if (e instanceof AuthApiError && e.code === 'password-weak') setError('That password is too weak: use at least 10 characters with upper and lower case, a number and a symbol.');
       else if (e instanceof AuthApiError && e.code === 'password-leaked') setError('That password has been seen in a breach. Pick another.');
@@ -198,7 +215,7 @@ function AddPassword({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
   );
 }
 
-function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (held?: Held) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [publicKey, setPublicKey] = useState('');
   const [message, setMessage] = useState<{ challengeId: string; encryptedMessage: string } | null>(null);
@@ -227,8 +244,8 @@ function AddPgpKey({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => P
     setBusy(true);
     setError(null);
     try {
-      await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
-      onDone();
+      const r = await authApi.addPgpKeyFinish({ challengeId: message!.challengeId, code: code.trim() });
+      onDone(isHeld(r) ? r : undefined);
     } catch (e) {
       setError(refusalText(e, 'That code did not work. It may have expired.', { expired: 'That message has expired. Start again for a new one.' }));
     } finally {

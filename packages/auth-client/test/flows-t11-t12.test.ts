@@ -16,10 +16,12 @@ import {
   loginWithSecurityKey,
   walletAction,
   walletsAction,
+  isHeld,
   withConfirm,
   type AuthApi,
+  type Held,
 } from '../src/index.js';
-import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
+import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
 const GOOD = 'Correct-Horse-9';
@@ -128,7 +130,8 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
 
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     srv.advance(10_000);
 
     const address = fakeAddress();
@@ -156,12 +159,19 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
     await addWebAuthnKey(own.api, 'passkey', {}, ceremonyOf(soft));
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     const token = await confirmWithWebAuthn(fresh.api, await walletAction(fakeAddress()), ceremonyOf(soft));
     const e = apiError(await failure(fresh.api.addWallet({ app: 'cake', label: 'Other', address: fakeAddress(), confirmToken: token })));
     expect(e.code).toBe('confirm-invalid');
   });
 });
+
+/** Wallets added at once (these sessions' logins are strong or in their sign-up window: never a Task 17 hold). */
+function addedNow<T>(r: T[] | Held): T[] {
+  if (isHeld(r)) throw new Error('the add waited out the 24-hour hold');
+  return r;
+}
 
 describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', () => {
   const drafts = (list: string[]) => list.map((address, i) => ({ app: 'cake' as const, label: `W${i + 1}`, address }));
@@ -173,7 +183,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
 
-    const first = await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) });
+    const first = addedNow(await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) }));
     expect(first.map((w) => w.usable)).toEqual([true, true]);
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 });
 
@@ -183,7 +193,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
       expect(a).toEqual(action);
       return (await own.api.confirmPassword({ password: GOOD, action: a })).confirmToken;
     });
-    const added = await withConfirm(action, (t) => own.api.addWallets({ wallets: drafts(list), confirmToken: t }), prove);
+    const added = addedNow(await withConfirm(action, (t) => own.api.addWallets({ wallets: drafts(list), confirmToken: t }), prove));
     expect(prove).toHaveBeenCalledTimes(1);
     expect(added.map((w) => w.address)).toEqual(list);
     expect(added.every((w) => !w.usable)).toBe(true);
@@ -222,14 +232,15 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     await own.api.addWallet({ app: 'cake', label: 'First', address: fakeAddress() });
 
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    // Task 16: `own` is still logged in, so this new browser is approved first.
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     await expect(fresh.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: ['pgp', 'passkey'], password: 'none', waitHours: 24 });
     const list = [fakeAddress(), fakeAddress()];
-    const added = await withConfirm(
+    const added = addedNow(await withConfirm(
       await walletsAction(list),
       (t) => fresh.api.addWallets({ wallets: drafts(list), confirmToken: t }),
       (a) => confirmWithWebAuthn(fresh.api, a, ceremonyOf(soft)),
-    );
+    ));
     expect(added.map((w) => w.usable)).toEqual([true, true]);
   });
 
@@ -256,5 +267,50 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     await expect(browser.me()).resolves.toMatchObject({
       displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
     });
+  });
+});
+
+describe('new-device approval (Plan 2 Task 16)', () => {
+  async function passwordUser(): Promise<{ own: Jar; username: string }> {
+    const own = jar();
+    const { version } = await own.api.getTerms();
+    const username = uniqueName('appr');
+    await own.api.registerPassword({ displayName: `D${username}`, loginName: username, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
+    return { own, username };
+  }
+
+  it('a new browser waits; the logged-in one taps the number; the poll lets it in', async () => {
+    const { own, username } = await passwordUser();
+    const other = jar();
+    const wait = await other.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: 'Browser on Android' });
+    if (wait.status !== 'approve-on-device') throw new Error(`expected a wait, got ${wait.status}`);
+    await expect(other.api.pollLoginApproval(wait.approvalId)).resolves.toEqual({ status: 'waiting', expiresAt: wait.expiresAt });
+    const [view] = await own.api.listApprovals();
+    expect(view).toMatchObject({ id: wait.approvalId, deviceLabel: 'Browser on Android', atLimit: false, oneDevice: false });
+    await expect(own.api.getApproval(wait.approvalId)).resolves.toEqual(view);
+    expect(view!.choices).toContain(wait.number);
+    await expect(own.api.decideApproval(wait.approvalId, { choice: wait.number })).resolves.toEqual({ outcome: 'approved' });
+    await expect(other.api.pollLoginApproval(wait.approvalId)).resolves.toEqual({ status: 'ok', loggedOut: [] });
+    expect((await other.api.me()).level).toBe('full');
+    const ended = apiError(await failure(own.api.decideApproval(wait.approvalId, { block: true })));
+    expect(ended.code).toBe('approval-ended');
+    expect(ended.outcome).toBe('approved');
+  });
+
+  it('a block ends it; cancel ends it too; the device settings read back', async () => {
+    const { own, username } = await passwordUser();
+    const b = jar();
+    const w1 = await b.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL });
+    if (w1.status !== 'approve-on-device') throw new Error('expected a wait');
+    await expect(own.api.decideApproval(w1.approvalId, { block: true })).resolves.toEqual({ outcome: 'blocked' });
+    await expect(b.api.pollLoginApproval(w1.approvalId)).resolves.toEqual({ status: 'blocked' });
+    const w2 = await b.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL });
+    if (w2.status !== 'approve-on-device') throw new Error('expected a wait');
+    await b.api.cancelLoginApproval(w2.approvalId);
+    await expect(own.api.listApprovals()).resolves.toEqual([]);
+    await expect(own.api.getDeviceSettings()).resolves.toEqual({ oneDevice: false, maxDevices: 3 });
+    const refused = apiError(await failure(own.api.setOneDevice({ on: true })));
+    expect(refused.code).toBe('confirm-required');
+    expect(refused.action).toBe('set-one-device');
   });
 });

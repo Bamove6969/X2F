@@ -2,7 +2,7 @@
 import { payoutsFor, escrowPlan } from '@x2f/trade';
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { parseDispute, type DisputeTrade, type DisputeView } from '../src/screens/dispute/api.js';
 import { DisputeEntry } from '../src/screens/dispute/DisputeEntry.js';
 import { disputeScreenFor } from '../src/screens/dispute/DisputeScreen.js';
@@ -252,6 +252,24 @@ describe('DisputeOpen', () => {
 });
 
 describe('DisputeRoom', () => {
+  // The room's chat is Task 20's TradeChatPanel: here its POST /v1/trades/:code/chat answers 404 (no network).
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'not-found' }), { status: 404, headers: { 'content-type': 'application/json' } })));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  it('shows the chat (Task 20) under the system cards, with the spec 6.6 notice once', async () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRoom trade={t} methodName="Zelle" dispute={dispute()} serverClock={at(200)} />));
+    expect(host.querySelector('[role="log"][aria-label="Dispute events"]')).not.toBeNull();
+    expect(host.querySelector('section.x2f-chat')).not.toBeNull();
+    expect(host.textContent!.split('Chats are encrypted.').length - 1).toBe(1);
+    await act(async () => {
+      for (let i = 0; i < 5; i++) await Promise.resolve();
+    });
+    expect(fetch).toHaveBeenCalledWith(`/v1/trades/${t.code}/chat`, expect.objectContaining({ method: 'POST' }));
+  });
+
   it('tells both sides, before a moderator joins, that the whole chat is readable now (fix round, Minor 11)', () => {
     const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
     const line = 'A dispute is open. A moderator can read this whole chat, including messages from before the trade.';

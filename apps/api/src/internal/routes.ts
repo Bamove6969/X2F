@@ -233,6 +233,120 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
     return reply.send({ work });
   }));
 
+  // ── Task 20: chats ─────────────────────────────────────────────────────────
+  // The chats both traders have registered a chat identity for, with no attestation yet and not
+  // refused, least recently served first (as the trade work list).
+  app.get('/internal/v1/chat-work', guard('/internal/v1/chat-work', async (_req, reply) => {
+    const { rows } = await o.db.query<{ chat: string; buyer_sign: string; buyer_box: string; buyer_proof: string; seller_sign: string; seller_box: string; seller_proof: string }>(
+      `with picked as (
+         select c.code as chat,
+                bi.sign_public as buyer_sign, bi.box_public as buyer_box, bi.proof as buyer_proof,
+                si.sign_public as seller_sign, si.box_public as seller_box, si.proof as seller_proof
+           from chats c
+           join chat_identities bi on bi.chat = c.code and bi.role = 'buyer'
+           join chat_identities si on si.chat = c.code and si.role = 'seller'
+           left join chat_attestations a on a.chat = c.code
+           left join chat_refusals r on r.chat = c.code
+           left join chat_work_served w on w.chat = c.code
+          where a.chat is null and r.chat is null
+          order by w.served_at nulls first, c.created_at, c.code
+          limit $1
+       ), served as (
+         insert into chat_work_served (chat, served_at)
+         select chat, $2 from picked
+         on conflict (chat) do update set served_at = excluded.served_at
+       )
+       select * from picked`,
+      [o.workLimit ?? WORK_LIMIT, new Date(now())],
+    );
+    const work = rows.map((r) => ({
+      chat: r.chat,
+      participants: {
+        buyer: { signPublic: r.buyer_sign, boxPublic: r.buyer_box, proof: r.buyer_proof },
+        seller: { signPublic: r.seller_sign, boxPublic: r.seller_box, proof: r.seller_proof },
+      },
+    }));
+    return reply.send({ work });
+  }));
+
+  /** `{ kind: 'chat-refused', chat, reason }`: the moderation service will never attest this chat. */
+  const refuseChat = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    const keys = Object.keys(body);
+    if (keys.length !== 3 || !['kind', 'chat', 'reason'].every((k) => keys.includes(k))) throw new Refused(400, 'bad-body');
+    if (body.reason !== 'bad-proof' && body.reason !== 'bad-work') throw new Refused(400, 'bad-body');
+    const code = typeof body.chat === 'string' ? normalizeTradeCode(body.chat) : null;
+    if (code === null) throw new Refused(400, 'bad-body');
+    const { rowCount } = await o.db.query(
+      `insert into chat_refusals (chat, reason, created_at)
+       select c.code, $2, now() from chats c
+         join chat_identities bi on bi.chat = c.code and bi.role = 'buyer'
+         join chat_identities si on si.chat = c.code and si.role = 'seller'
+         left join chat_attestations a on a.chat = c.code
+        where c.code = $1 and a.chat is null
+       on conflict (chat) do nothing`,
+      [code, body.reason],
+    );
+    if (rowCount === 0) {
+      const again = await o.db.query('select 1 from chat_refusals where chat = $1', [code]);
+      if (again.rows.length === 0) throw new Refused(409, 'not-refusable');
+    }
+    log({ reason: 'internal-chat-refused' });
+    return reply.code(201).send({ ok: true });
+  };
+
+  /**
+   * `{ kind: 'chat-attestation', attestation, sig }`: stored only if signed by MOD_SIGNING_PUBLIC,
+   * for a known chat, with exactly the two registered trader keys, channels exactly
+   * `{ chat: channelFor(chat, 'chat') }`, and no terms (a chat attests no deal).
+   */
+  const attestChat = async (body: Record<string, unknown>, reply: { code(n: number): { send(b: unknown): unknown } }): Promise<unknown> => {
+    const keys = Object.keys(body);
+    if (keys.length !== 3 || !['kind', 'attestation', 'sig'].every((k) => keys.includes(k))) throw new Refused(400, 'bad-body');
+    const attestation = body.attestation;
+    const sig = body.sig;
+    if (!isPlainObject(attestation) || typeof sig !== 'string') throw new Refused(400, 'bad-body');
+    let sigOk = false;
+    try {
+      const sigBytes = sodium.from_hex(sig);
+      sigOk = sigBytes.length === sodium.crypto_sign_BYTES && sodium.crypto_sign_verify_detached(sigBytes, attestationBytes(attestation as unknown as Attestation), modKey);
+    } catch {
+      sigOk = false;
+    }
+    if (!sigOk) throw new Refused(400, 'bad-attestation');
+    const a = attestation as unknown as Attestation;
+    if ('terms' in attestation) throw new Refused(400, 'bad-attestation');
+    const code = typeof a.trade === 'string' ? normalizeTradeCode(a.trade) : null;
+    if (code === null) throw new Refused(400, 'bad-attestation');
+    const ch = a.channels;
+    if (!isPlainObject(ch) || Object.keys(ch).length !== 1 || ch.chat !== (await channelFor(code, 'chat'))) throw new Refused(400, 'bad-channel');
+    const { rows } = await o.db.query<{ buyer_sign: string; buyer_box: string; seller_sign: string; seller_box: string }>(
+      `select bi.sign_public as buyer_sign, bi.box_public as buyer_box, si.sign_public as seller_sign, si.box_public as seller_box
+         from chats c
+         join chat_identities bi on bi.chat = c.code and bi.role = 'buyer'
+         join chat_identities si on si.chat = c.code and si.role = 'seller'
+        where c.code = $1`,
+      [code],
+    );
+    const reg = rows[0];
+    if (!reg) throw new Refused(409, 'not-ready');
+    const p = a.participants;
+    if (
+      !isPlainObject(p) ||
+      p.buyer?.signPublic !== reg.buyer_sign || p.buyer?.boxPublic !== reg.buyer_box ||
+      p.seller?.signPublic !== reg.seller_sign || p.seller?.boxPublic !== reg.seller_box
+    ) {
+      throw new Refused(409, 'participant-mismatch');
+    }
+    const refused = await o.db.query('select 1 from chat_refusals where chat = $1', [code]);
+    if (refused.rows.length > 0) throw new Refused(409, 'refused');
+    await o.db.query(
+      'insert into chat_attestations (chat, attestation, sig, created_at) values ($1, $2, $3, now()) on conflict (chat) do nothing',
+      [code, attestation, sig],
+    );
+    log({ reason: 'internal-chat-attested' });
+    return reply.code(201).send({ ok: true });
+  };
+
   // An attestation the moderation service signed. Stored only if it is signed by MOD_SIGNING_PUBLIC,
   // names a known trade, and lists exactly the buyer and seller keys the two traders registered
   // (so even a buggy moderation cannot bind a key the real trader never registered), with channels
@@ -245,6 +359,8 @@ export async function buildInternalListener(o: InternalOptions, log: (e: { reaso
   app.post('/internal/v1/reports', guard('/internal/v1/reports', async (req, reply) => {
     const body = req.body;
     if (isPlainObject(body) && body.kind === 'refused') return refuse(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-refused') return refuseChat(body, reply);
+    if (isPlainObject(body) && body.kind === 'chat-attestation') return attestChat(body, reply);
     if (!isPlainObject(body) || body.kind !== 'attestation') throw new Refused(400, 'bad-body');
     const attestation = body.attestation;
     const sig = body.sig;

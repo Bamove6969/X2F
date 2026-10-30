@@ -2,9 +2,8 @@
 // below stands in until that task lands; apps/web/test/dispute-tripwires.test.ts fails when it does,
 // so the real part gets wired in here and the stand-in deleted.
 //
-// - Chat (Task 20, wip/second-p3-t20): DisputeRoom's message list and composer are Task 20's
-//   ChatPanel (Plan 4 Task 15 adds moderator messages and system cards to it). Until then the room
-//   shows the server's own system cards (dispute opened, moderator joined) and no composer.
+// - Chat (Task 20): DisputeRoom's message list and composer are Task 20's TradeChatPanel (wired
+//   2026-10-30), under the server's own system cards (dispute opened, moderator joined) drawn here.
 // - Proof pipeline (Plan 5 Tasks 13-15): "Add more evidence" on DisputeOpen and the unblurred-proof
 //   request on DisputeRoom. Spec 4.2: metadata is stripped and private details blurred on the device,
 //   and the unblurred copy goes to the moderator only. Plan 5 builds that pipeline; until then no
@@ -22,10 +21,10 @@ export interface ChatSlotProps {
   systemCards: { at: string; text: string }[];
 }
 
-/** NEEDS_TASK_20: replace with Task 20's ChatPanel (sealed to buyer, seller and the trade's moderator key). */
-export function FallbackChat({ systemCards }: ChatSlotProps): ReactNode {
+/** The server's own system cards of the dispute, above the chat (from server records only). */
+export function DisputeSystemCards({ systemCards }: ChatSlotProps): ReactNode {
   return (
-    <div role="log" aria-label="Trade chat" className="dispute-log">
+    <div role="log" aria-label="Dispute events" className="dispute-log">
       {systemCards.map((c) => (
         <div key={`${c.at}${c.text}`} className="dispute-system-card">
           {clockTime(new Date(c.at))} · {c.text}

@@ -18,7 +18,7 @@ import {
   type AuthApi,
 } from '../src/index.js';
 import { ROUTES, callSample, methodNames } from './helpers/routes.js';
-import { Jar, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
+import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
 
 const GOOD = 'Correct-Horse-9';
@@ -42,6 +42,10 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
   'GET /v1/account/push',
+  'GET /v1/chats',
+  'GET /v1/chats/:chat',
+  'GET /v1/chats/:chat/attestation',
+  'GET /v1/chats/:chat/envelopes',
   'GET /v1/events',
   'GET /v1/methods',
   'GET /v1/news',
@@ -57,12 +61,16 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/account/blocks',
   'POST /v1/account/offers/status',
   'POST /v1/account/push',
+  'POST /v1/chats',
+  'POST /v1/chats/:chat/envelopes',
+  'POST /v1/chats/:chat/identity',
   'POST /v1/feedback/form',
   'POST /v1/method-suggestions',
   'POST /v1/nudges',
   'POST /v1/offers',
   'POST /v1/offers/:id/take',
   'POST /v1/trades/:code/appeal',
+  'POST /v1/trades/:code/chat',
   'POST /v1/trades/:code/dispute',
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/final-alert-seen',
@@ -157,8 +165,10 @@ describe('the client covers the API', () => {
 describe('onboarding', () => {
   it('PGP sign-up, then a passkey as backup without a confirm prompt; both log in', async () => {
     const { username, key, soft } = await pgpUserWithPasskey();
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
-    await expect(loginPgp(jar().api, username, key)).resolves.toEqual({ status: 'ok' });
+    // Task 16: the sign-up browser is still logged in, so each new browser is approved first.
+    const [j1, j2] = [jar(), jar()];
+    await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
+    await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
   });
 
   it('passkey sign-up through the ceremony wrapper', async () => {
@@ -167,7 +177,8 @@ describe('onboarding', () => {
     await expect(registerWithWebAuthn(jar().api, { displayName: `D${username}`, loginName: username }, 'passkey', LABEL, terms(), ceremonyOf(soft))).resolves.toEqual({
       displayName: `D${username}`,
     });
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
+    const fresh = jar();
+    await expect(approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
   });
 
   it('password sign-up: a leaked or weak password is refused with its reason, then a good one works', async () => {
@@ -195,7 +206,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('a change 10 seconds after a fresh login goes through withConfirm: one proof, and the token is single-use', async () => {
     const { soft } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     srv.advance(10_000);
 
     let token: string | undefined;
@@ -215,7 +226,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('without a token the API asks for one, naming the action', async () => {
     const { soft } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft));
+    await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     const e = apiError(await failure(fresh.api.newRecoveryCodes({})));
     expect(e.code).toBe('confirm-required');
     expect(e.action).toBe('new-recovery-codes');
@@ -224,7 +235,7 @@ describe('confirm it\'s you (P2-C2)', () => {
   it('PGP proof: the challenge names the action and the code buys a token for it alone', async () => {
     const { username, key } = await pgpUserWithPasskey();
     const fresh = jar();
-    await loginPgp(fresh.api, username, key);
+    await approved(srv, fresh, loginPgp(fresh.api, username, key));
     const prove = vi.fn(async (action: Parameters<AuthApi['confirmPgpStart']>[0]['action']) => {
       const start = await fresh.api.confirmPgpStart({ action });
       const text = await decrypt(start.encryptedMessage, key.privateKey, srv.deps.pgpSigner.publicArmored, srv.now());
@@ -270,16 +281,21 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // At once, with no time passing: the user's own browser (trusted device cookie) logs in with the password,
     await expect(own.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL })).resolves.toEqual({ status: 'ok' });
     // a fresh browser logs in with the passkey (discoverable) and with PGP,
-    await expect(loginWithPasskey(jar().api, LABEL, ceremonyOf(soft))).resolves.toEqual({ status: 'ok' });
-    await expect(loginPgp(jar().api, username, key)).resolves.toEqual({ status: 'ok' });
+    // Task 16: the sign-up browser is still logged in, so each new browser is approved first.
+    const [j1, j2] = [jar(), jar()];
+    await expect(approved(srv, j1, loginWithPasskey(j1.api, LABEL, ceremonyOf(soft)))).resolves.toEqual({ status: 'ok' });
+    await expect(approved(srv, j2, loginPgp(j2.api, username, key))).resolves.toEqual({ status: 'ok' });
     // and the live session gets a confirm token by passkey and uses it.
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array) });
-    // So does a confirm by password from the trusted browser, still with no time passing.
+    // Plan 2 Task 17: that session logged in with the password alone, so the change waits out the
+    // 24-hour hold (it is not refused by the flood).
+    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array), status: 'held' });
+    // So does a confirm by password from the trusted browser, still with no time passing; the next
+    // change is refused by the hold, not by the flood.
     const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
     expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    await expect(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken })).resolves.toMatchObject({ codes: expect.any(Array) });
+    expect(apiError(await failure(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken }))).code).toBe('recovery-hold');
 
     // The flood is still in force for the stranger.
     expect(apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
