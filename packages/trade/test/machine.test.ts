@@ -852,9 +852,10 @@ describe('release-claimed (Task 9 I/O, lead decision b, 2026-10-29)', () => {
   });
 
   test('a new settling episode starts unclaimed', () => {
-    // a buyer-cancel settling that reverted, then a new one: never carries an old claim
+    // a buyer-cancel settling that reverted, then a new one: never carries an old claim. Since Tasks
+    // 38-39 a buyer cannot cancel after "I've paid", so the reverted trade is an unpaid `secured` one.
     const old: Trade = { ...settling(), releaseClaimedAt: at(55) };
-    const fresh = apply({ ...old, state: 'paid', settling: null, settleFrom: null, settleBy: null }, { type: 'buyer-cancel' }, 'buyer', at(70));
+    const fresh = apply({ ...old, state: 'secured', paidAt: null, confirmBy: null, settling: null, settleFrom: null, settleBy: null }, { type: 'buyer-cancel' }, 'buyer', at(70));
     expect(fresh.state).toBe('settling');
     expect(fresh.releaseClaimedAt).toBeNull();
   });
