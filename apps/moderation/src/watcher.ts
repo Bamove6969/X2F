@@ -163,6 +163,11 @@ export interface SweepContext {
   feeWallet: string;
   /** PartyHandle.proveSweep (absent: nothing shown only through an import is ever proven). */
   prove?: PartyHandle['proveSweep'];
+  /**
+   * Review round 2 (R2-I1 b): records the sweep tx for this trade (mod_sweeps, durable) and answers
+   * whether it is this trade's: false when it was already counted for another trade. Absent: no record (tests of the pure parts).
+   */
+  claim?: (txHash: string) => Promise<boolean>;
   log: (e: { reason: string }) => void;
 }
 
@@ -180,6 +185,10 @@ export interface SweepContext {
  * but the mod's (it received the other signer's in the release's export round). It could therefore
  * send partials that make the mod's wallet attribute ANY in-block tx to the escrow. With the proof,
  * such a "forged" sweep is harmless: that tx really paid the right parties what they are owed.
+ * Review round 2 (R2-I1): the proof is bound to THIS escrow (proveSweep is true only for a tx with
+ * an input that spends one of this escrow's outputs: its key image as this wallet holds it, that
+ * output in the ring), and a counted in-block tx is recorded for this trade (`claim`, mod_sweeps): a
+ * tx already counted for another trade never counts here (`sweep-counted-elsewhere`).
  * A tx hash seen in a block or reported by a party or the API never counts. Picks the oldest sweep
  * not yet counted, a block before the pool; one that cannot be proven is logged (`sweep-unproven`)
  * and skipped, so it never settles anything (the 6 h `spend-unshown` fallback escalates instead).
@@ -190,11 +199,27 @@ export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepConte
     .sort((a, b) => (a.height ?? Number.MAX_SAFE_INTEGER) - (b.height ?? Number.MAX_SAFE_INTEGER));
   for (const o of fresh) {
     const evidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic };
-    if ((f.ownTxs ?? []).includes(o.txHash)) return evidence;
-    if (o.height !== null && (await proven(o, f, ctx))) return evidence;
-    ctx.log({ reason: 'sweep-unproven' });
+    const own = (f.ownTxs ?? []).includes(o.txHash);
+    if (!own && !(o.height !== null && (await proven(o, f, ctx)))) {
+      ctx.log({ reason: 'sweep-unproven' });
+      continue;
+    }
+    // Round 2 (R2-I1 b): one tx counts for one trade only, whoever showed it (own txs too: a forged
+    // attribution of trade A's mod-signed release to escrow B must not count for B).
+    if (o.height !== null && ctx.claim && !(await ctx.claim(o.txHash))) {
+      ctx.log({ reason: 'sweep-counted-elsewhere' });
+      continue;
+    }
+    return evidence;
   }
   return null;
+}
+
+/** mod_sweeps (migration 005): records `txHash` for `trade` unless another trade has it; true when it is this trade's. */
+export async function claimSweep(db: pg.Pool, trade: string, txHash: string): Promise<boolean> {
+  await db.query('insert into mod_sweeps (tx_hash, trade) values ($1, $2) on conflict (tx_hash) do nothing', [txHash, trade]);
+  const { rows } = await db.query<{ trade: string }>('select trade from mod_sweeps where tx_hash = $1', [txHash]);
+  return rows[0]?.trade === trade;
 }
 
 async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean> {
@@ -310,6 +335,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       terms: args.terms,
       feeWallet: args.feeWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
+      claim: (txHash) => claimSweep(o.db, row.trade, txHash),
       log: o.log,
     });
     const step = watchStep({
