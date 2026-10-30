@@ -19,7 +19,7 @@ import {
 const H = 3_600_000;
 const T0 = new Date('2027-02-01T10:00:00.000Z');
 const at = (h: number, ms = 0) => new Date(T0.getTime() + h * H + ms);
-const S = { appealWindowH: 48 };
+const S = { appealWindowH: 48, firstResponseH: 4 };
 
 const owner: Actor = { kind: 'staff', id: 'owner-1', role: 'owner' };
 const senior: Actor = { kind: 'staff', id: 'senior-1', role: 'senior' };
@@ -71,7 +71,7 @@ function run(d: Dispute, steps: [DisputeEvent, Actor, Date][]): Dispute {
 /** Assigned to mod-1 and published at hour 2 (below the limit). */
 function published(o: Partial<Parameters<typeof newDispute>[0]> = {}, outcome: RulingDraft['outcome'] = 'release-to-buyer') {
   return run(base(o), [
-    [{ type: 'assign', staffId: 'mod-1' }, mod, at(1)],
+    [{ type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1)],
     [{ type: 'propose', ruling: draft('mod-1', { outcome }) }, mod, at(2)],
   ]);
 }
@@ -117,40 +117,40 @@ describe('needsSecond', () => {
 
 describe('assign', () => {
   test('by staff with disputes.handle, only when unassigned', () => {
-    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     expect(d.assignee).toBe('mod-1');
     expect(d.seen).toEqual(['mod-1']);
-    rule('wrong-state', () => applyDispute(d, { type: 'assign', staffId: 'mod-2' }, mod2, at(1), S));
+    rule('wrong-state', () => applyDispute(d, { type: 'assign', staffId: 'mod-2', role: 'mod' }, mod2, at(1), S));
   });
   test('a senior or the owner may take over', () => {
-    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
-    expect(applyDispute(d, { type: 'assign', staffId: 'senior-1' }, senior, at(1), S).assignee).toBe('senior-1');
-    expect(applyDispute(d, { type: 'assign', staffId: 'owner-1' }, owner, at(1), S).assignee).toBe('owner-1');
+    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
+    expect(applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(1), S).assignee).toBe('senior-1');
+    expect(applyDispute(d, { type: 'assign', staffId: 'owner-1', role: 'owner' }, owner, at(1), S).assignee).toBe('owner-1');
   });
   test('a mod can only take a case for themselves; a senior can hand it to a mod', () => {
     rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'mod-2', role: 'mod' }, mod, at(1), S));
     expect(applyDispute(base(), { type: 'assign', staffId: 'mod-2', role: 'mod' }, senior, at(1), S).assignee).toBe('mod-2');
     expect(applyDispute(base(), { type: 'assign', staffId: 'mod-2', role: 'mod' }, senior, at(1), S).seen).toEqual(['senior-1', 'mod-2']);
-    // Handing a case to someone else needs their role, and they must handle disputes.
-    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'mod-2' }, senior, at(1), S));
+    // The assignee's role always comes with the event (the API loads it); a self-assign must match the actor's.
+    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'senior-1', role: 'owner' }, senior, at(1), S));
     rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'helper-1', role: 'helper' }, senior, at(1), S));
   });
   test('a trader, the system or a helper gets wrong-party', () => {
-    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'x' }, system, at(1), S));
-    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'helper-1' }, helper, at(1), S));
+    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'x', role: 'mod' }, system, at(1), S));
+    rule('wrong-party', () => applyDispute(base(), { type: 'assign', staffId: 'helper-1', role: 'helper' }, helper, at(1), S));
   });
 });
 
 describe('reply', () => {
   test('sets firstReplyAt the first time only', () => {
-    let d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    let d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     d = applyDispute(d, { type: 'reply' }, mod, at(2), S);
     expect(d.firstReplyAt).toEqual(at(2));
     d = applyDispute(d, { type: 'reply' }, mod, at(3), S);
     expect(d.firstReplyAt).toEqual(at(2));
   });
   test('only the assignee, a senior or the owner', () => {
-    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     rule('wrong-party', () => applyDispute(d, { type: 'reply' }, mod2, at(2), S));
     expect(applyDispute(d, { type: 'reply' }, senior, at(2), S).seen).toEqual(['mod-1', 'senior-1']);
   });
@@ -165,7 +165,7 @@ describe('propose', () => {
     expect(d.ruling).toMatchObject({ id: 'r1', proposer: 'mod-1', approver: null, needsSecond: false });
   });
   test('the assignee only', () => {
-    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     rule('wrong-party', () => applyDispute(d, { type: 'propose', ruling: draft('mod-2') }, mod2, at(2), S));
     rule('wrong-party', () => applyDispute(d, { type: 'propose', ruling: draft('senior-1') }, senior, at(2), S));
     // The draft names the actor, never someone else.
@@ -178,11 +178,11 @@ describe('propose', () => {
     expect(d.ruling?.needsSecond).toBe(true);
   });
   test('outcome and case type must match', () => {
-    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    const d = applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     rule('wrong-state', () =>
       applyDispute(d, { type: 'propose', ruling: draft('mod-1', { outcome: 'seller-sends-xmr' }) }, mod, at(2), S),
     );
-    const r = applyDispute(base({ afterRefund: true }), { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    const r = applyDispute(base({ afterRefund: true }), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     rule('wrong-state', () => applyDispute(r, { type: 'propose', ruling: draft('mod-1') }, mod, at(2), S));
     rule('wrong-state', () =>
       applyDispute(r, { type: 'propose', ruling: draft('mod-1', { outcome: 'bogus' as never }) }, mod, at(2), S),
@@ -208,7 +208,7 @@ describe('approve and send back', () => {
   });
   test('approving your own proposal is same-person', () => {
     const d = run(base({ usdCents: 100_000n }), [
-      [{ type: 'assign', staffId: 'senior-1' }, senior, at(1)],
+      [{ type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(1)],
       [{ type: 'propose', ruling: draft('senior-1') }, senior, at(2)],
     ]);
     rule('same-person', () => applyDispute(d, { type: 'approve' }, senior, at(3), S));
@@ -226,43 +226,55 @@ describe('approve and send back', () => {
 
 describe('appeal (48 h window)', () => {
   test('a trader appeals before appealEndsAt; 1 ms before is accepted', () => {
-    const d = applyDispute(published(), { type: 'appeal' }, seller, at(50, -1), S);
+    const d = applyDispute(published(), { type: 'appeal', involved: [] }, seller, at(50, -1), S);
     expect(d.status).toBe('appealed');
     expect(d.round).toBe(2);
     expect(d.appealBy).toBe('seller');
     expect(d.appealedAt).toEqual(at(50, -1));
     expect(d.assignee).toBeNull();
     expect(d.ruling).toBeNull();
-    expect(d.round1).toEqual({ proposer: 'mod-1', approver: null, outcome: 'release-to-buyer', involved: ['mod-1'] });
+    expect(d.round1).toEqual({
+      id: 'r1',
+      outcome: 'release-to-buyer',
+      accountAction: { kind: 'none' },
+      proposer: 'mod-1',
+      approver: null,
+      needsSecond: false,
+      firstReplyAt: null,
+      involved: ['mod-1'],
+    });
+    // Round 2 gets its own first-reply deadline (M4).
+    expect(d.replyDueAt).toEqual(at(50 + 4, -1));
+    expect(d.firstReplyAt).toBeNull();
     expect(d.rulingDueAt).toEqual(at(50 + APPEAL_GOAL_H, -1));
   });
   test('at appealEndsAt exactly: too-late', () => {
-    rule('too-late', () => applyDispute(published(), { type: 'appeal' }, buyer, at(50), S));
+    rule('too-late', () => applyDispute(published(), { type: 'appeal', involved: [] }, buyer, at(50), S));
   });
   test('a second appeal is wrong-state', () => {
-    const d = applyDispute(published(), { type: 'appeal' }, seller, at(10), S);
-    rule('wrong-state', () => applyDispute(d, { type: 'appeal' }, buyer, at(10), S));
+    const d = applyDispute(published(), { type: 'appeal', involved: [] }, seller, at(10), S);
+    rule('wrong-state', () => applyDispute(d, { type: 'appeal', involved: [] }, buyer, at(10), S));
   });
   test('an appeal is allowed after the coins moved (A1 dropped: it fixes the record)', () => {
     const d = run(published(), [
       [{ type: 'executed' }, system, at(3)],
-      [{ type: 'appeal' }, seller, at(20)],
+      [{ type: 'appeal', involved: [] }, seller, at(20)],
     ]);
     expect(d.status).toBe('appealed');
     expect(d.executedAt).toEqual(at(3));
   });
   test('staff and the system cannot appeal', () => {
-    rule('wrong-party', () => applyDispute(published(), { type: 'appeal' }, owner, at(10), S));
-    rule('wrong-party', () => applyDispute(published(), { type: 'appeal' }, system, at(10), S));
+    rule('wrong-party', () => applyDispute(published(), { type: 'appeal', involved: [] }, owner, at(10), S));
+    rule('wrong-party', () => applyDispute(published(), { type: 'appeal', involved: [] }, system, at(10), S));
   });
   test('only from published', () => {
-    rule('wrong-state', () => applyDispute(base(), { type: 'appeal' }, buyer, at(1), S));
+    rule('wrong-state', () => applyDispute(base(), { type: 'appeal', involved: [] }, buyer, at(1), S));
   });
 });
 
 describe('a trader may send only appeal', () => {
   const events: DisputeEvent[] = [
-    { type: 'assign', staffId: 'x' },
+    { type: 'assign', staffId: 'x', role: 'mod' },
     { type: 'reply' },
     { type: 'propose', ruling: draft('x') },
     { type: 'approve' },
@@ -359,12 +371,12 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
   // Round 1: mod-1 assigned and proposed, senior-1 read the case (seen), the owner approved.
   function appealed() {
     let d = run(base({ usdCents: 100_000n }), [
-      [{ type: 'assign', staffId: 'mod-1' }, mod, at(1)],
+      [{ type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1)],
       [{ type: 'propose', ruling: draft('mod-1') }, mod, at(2)],
       [{ type: 'approve' }, owner, at(3)],
     ]);
     d = markSeen(d, 'senior-1');
-    return applyDispute(d, { type: 'appeal' }, seller, at(10), S);
+    return applyDispute(d, { type: 'appeal', involved: [] }, seller, at(10), S);
   }
 
   test('round 1 involvement is frozen at the appeal', () => {
@@ -372,17 +384,37 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
   });
   test('only an uninvolved senior or the owner can take the appeal', () => {
     const d = appealed();
-    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'mod-2' }, mod2, at(11), S));
-    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-1' }, senior, at(11), S));
-    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'owner-1' }, owner, at(11), S));
-    // The owner (involved) may still hand it to an uninvolved senior.
-    expect(applyDispute(d, { type: 'assign', staffId: 'senior-2', role: 'senior' }, owner, at(11), S).assignee).toBe('senior-2');
-    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'mod-2', role: 'mod' }, owner, at(11), S));
-    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, owner, at(11), S));
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'mod-2', role: 'mod' }, mod2, at(11), S));
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(11), S));
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'owner-1', role: 'owner' }, owner, at(11), S));
+    // I2: an involved person cannot even hand the appeal to someone else.
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-2', role: 'senior' }, owner, at(11), S));
+    // An uninvolved senior may hand it to another uninvolved senior, never to a mod or an involved one.
+    const fresh: Actor = { kind: 'staff', id: 'senior-3', role: 'senior' };
+    expect(applyDispute(d, { type: 'assign', staffId: 'senior-2', role: 'senior' }, fresh, at(11), S).assignee).toBe('senior-2');
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'mod-2', role: 'mod' }, fresh, at(11), S));
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, fresh, at(11), S));
+  });
+  test('I2: anyone involved in round 1 is refused every round-2 staff event', () => {
+    const d = appealed();
+    rule('not-eligible', () => applyDispute(d, { type: 'reply' }, senior, at(11), S));
+    rule('not-eligible', () => applyDispute(d, { type: 'reply' }, owner, at(11), S));
+    const taken = applyDispute(d, { type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11), S);
+    rule('not-eligible', () => applyDispute(taken, { type: 'reply' }, owner, at(12), S));
+    rule('not-eligible', () => applyDispute(taken, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(12), S));
+    const pending = applyDispute(taken, { type: 'propose', ruling: draft('senior-2', { id: 'r2' }) }, senior2, at(12), S);
+    rule('not-eligible', () => applyDispute(pending, { type: 'send-back' }, owner, at(13), S));
+    // The uninvolved reviewer can reply.
+    expect(applyDispute(taken, { type: 'reply' }, senior2, at(12), S).firstReplyAt).toEqual(at(12));
+  });
+  test('I3: the involved list from the log is added to seen at the appeal', () => {
+    const d = applyDispute(published(), { type: 'appeal', involved: ['senior-1'] }, buyer, at(10), S);
+    expect(d.round1?.involved.sort()).toEqual(['mod-1', 'senior-1']);
+    rule('not-eligible', () => applyDispute(d, { type: 'assign', staffId: 'senior-1', role: 'senior' }, senior, at(11), S));
   });
   test('round 2 by an uninvolved senior; overturned is recorded at final', () => {
     const d = run(appealed(), [
-      [{ type: 'assign', staffId: 'senior-2' }, senior2, at(11)],
+      [{ type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11)],
       [{ type: 'propose', ruling: draft('senior-2', { id: 'r2', outcome: 'refund-to-seller' }) }, senior2, at(12)],
     ]);
     // Still at the limit: a second approver, who must not be involved either.
@@ -391,9 +423,9 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
     rule('not-eligible', () => applyDispute(d, { type: 'approve' }, senior, at(13), S));
   });
   test('round 2 final below the limit: decision overruled', () => {
-    let d = run(published(), [[{ type: 'appeal' }, buyer, at(10)]]);
+    let d = run(published(), [[{ type: 'appeal', involved: [] }, buyer, at(10)]]);
     d = run(d, [
-      [{ type: 'assign', staffId: 'senior-2' }, senior2, at(11)],
+      [{ type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11)],
       [{ type: 'propose', ruling: draft('senior-2', { id: 'r2', outcome: 'refund-to-seller' }) }, senior2, at(12)],
     ]);
     // Round 1's coins moved (or move) under round 1; the case waits for that, then closes.
@@ -404,19 +436,19 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
   test('round 2 final after execution: decision stands → closed', () => {
     let d = run(published(), [
       [{ type: 'executed' }, system, at(3)],
-      [{ type: 'appeal' }, buyer, at(10)],
-      [{ type: 'assign', staffId: 'owner-1' }, owner, at(11)],
+      [{ type: 'appeal', involved: [] }, buyer, at(10)],
+      [{ type: 'assign', staffId: 'owner-1', role: 'owner' }, owner, at(11)],
       [{ type: 'propose', ruling: draft('owner-1', { id: 'r2' }) }, owner, at(12)],
     ]);
     expect(d.status).toBe('closed');
     expect(d.overturned).toBe(false);
     // No second appeal.
-    rule('wrong-state', () => applyDispute(d, { type: 'appeal' }, seller, at(13), S));
+    rule('wrong-state', () => applyDispute(d, { type: 'appeal', involved: [] }, seller, at(13), S));
   });
   test('an after-refund appeal that keeps seller-sends-xmr restarts the comply time', () => {
     const d = run(published({ afterRefund: true }, 'seller-sends-xmr'), [
-      [{ type: 'appeal' }, seller, at(10)],
-      [{ type: 'assign', staffId: 'senior-2' }, senior2, at(11)],
+      [{ type: 'appeal', involved: [] }, seller, at(10)],
+      [{ type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11)],
       [{ type: 'propose', ruling: draft('senior-2', { id: 'r2', outcome: 'seller-sends-xmr' }) }, senior2, at(12)],
     ]);
     expect(d.status).toBe('complying');
@@ -424,7 +456,7 @@ describe('appeal review (R37: nobody involved, no fallback)', () => {
   });
   test('send-back in round 2 returns to appealed', () => {
     let d = run(appealed(), [
-      [{ type: 'assign', staffId: 'senior-2' }, senior2, at(11)],
+      [{ type: 'assign', staffId: 'senior-2', role: 'senior' }, senior2, at(11)],
       [{ type: 'propose', ruling: draft('senior-2', { id: 'r2' }) }, senior2, at(12)],
     ]);
     const fresh: Actor = { kind: 'staff', id: 'senior-3', role: 'senior' };
@@ -438,7 +470,7 @@ describe('purity', () => {
   test('applyDispute never changes its input', () => {
     const d = base();
     const snapshot = structuredClone(d);
-    applyDispute(d, { type: 'assign', staffId: 'mod-1' }, mod, at(1), S);
+    applyDispute(d, { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
     expect(d).toEqual(snapshot);
   });
   test('an invalid clock or window setting is refused', () => {
@@ -448,11 +480,55 @@ describe('purity', () => {
 });
 
 describe('shiftDeadlines (A7: maintenance)', () => {
-  test('moves every running deadline by the time spent in maintenance', () => {
-    const d = shiftDeadlines(published({ afterRefund: true }, 'seller-sends-xmr'), 2 * H);
+  test('moves every deadline still running when maintenance began', () => {
+    const d = shiftDeadlines(published({ afterRefund: true }, 'seller-sends-xmr'), at(3), 2 * H);
     expect(d.replyDueAt).toEqual(at(6));
     expect(d.rulingDueAt).toEqual(at(50));
     expect(d.appealEndsAt).toEqual(at(52));
     expect(d.complyBy).toEqual(at(2 + COMPLY_H + 2));
+  });
+  test('M4: a deadline that had passed when maintenance began stays passed', () => {
+    // The appeal window ended at hour 50; maintenance ran 50.5–51.5 before the window-closed tick.
+    const d = shiftDeadlines(published(), at(50, H / 2), H);
+    expect(d.appealEndsAt).toEqual(at(50));
+    expect(d.replyDueAt).toEqual(at(4));
+    // A deadline exactly at the start of maintenance had passed.
+    expect(shiftDeadlines(published(), at(50), H).appealEndsAt).toEqual(at(50));
+  });
+  test('refuses a bad shift', () => {
+    expect(() => shiftDeadlines(base(), at(1), -1)).toThrow(RangeError);
+    expect(() => shiftDeadlines(base(), new Date(Number.NaN), 1)).toThrow(RangeError);
+  });
+});
+
+describe('M5: dispute identity and a system opener', () => {
+  test('seq and openedBy system', () => {
+    const d = base({ openedBy: 'system', seq: 2 });
+    expect(d.openedBy).toBe('system');
+    expect(d.seq).toBe(2);
+    expect(base().seq).toBe(1);
+    expect(() => base({ seq: 0 })).toThrow(RangeError);
+    expect(() => base({ seq: 1.5 })).toThrow(RangeError);
+  });
+});
+
+describe('M7: the account action is checked at propose', () => {
+  const assigned = () => applyDispute(base(), { type: 'assign', staffId: 'mod-1', role: 'mod' }, mod, at(1), S);
+  const propose = (accountAction: unknown) => () =>
+    applyDispute(assigned(), { type: 'propose', ruling: draft('mod-1', { accountAction: accountAction as never }) }, mod, at(2), S);
+  test('refuses a malformed action', () => {
+    rule('invalid-action', propose({ kind: 'ban' }));
+    rule('invalid-action', propose({ kind: 'site-ban', until: 'tomorrow', reasonCode: 'terms' }));
+    rule('invalid-action', propose({ kind: 'site-ban', until: at(1).toISOString(), reasonCode: 'terms' }));
+    rule('invalid-action', propose({ kind: 'trade-ban', until: null, reasonCode: 'rude' }));
+    rule('invalid-action', propose({ kind: 'trade-ban', until: null }));
+    rule('invalid-action', propose({ kind: 'freeze', until: null }));
+    rule('invalid-action', propose(null));
+  });
+  test('accepts the valid shapes', () => {
+    expect(propose({ kind: 'none' })().status).toBe('published');
+    expect(propose({ kind: 'freeze' })().status).toBe('awaiting-approval');
+    expect(propose({ kind: 'site-ban', until: at(100).toISOString(), reasonCode: 'abuse' })().status).toBe('awaiting-approval');
+    expect(propose({ kind: 'trade-ban', until: null, reasonCode: 'terms' })().status).toBe('awaiting-approval');
   });
 });

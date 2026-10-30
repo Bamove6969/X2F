@@ -77,6 +77,18 @@ describe('windowEndsAt', () => {
     expect(windowEndsAt(h, at('2027-11-07T03:00:00Z'))?.toISOString()).toBe('2027-11-07T05:30:00.000Z');
   });
 
+  test('M1: in the repeated hour the window is open again and ends at the second 01:30, never in the past', () => {
+    const h: LoginHours = { days: ['Sat'], start: '22:00', end: '01:30', tz: 'America/New_York' };
+    expect(inWindow(h, at('2027-11-07T05:45:00Z'))).toBe(false); // 01:45 EDT
+    expect(inWindow(h, at('2027-11-07T06:10:00Z'))).toBe(true); // 01:10 EST, the second pass
+    expect(windowEndsAt(h, at('2027-11-07T06:10:00Z'))?.toISOString()).toBe('2027-11-07T06:30:00.000Z');
+    // Every minute of the night: when in the window, the end is after now.
+    for (let t = Date.parse('2027-11-07T02:00:00Z'); t < Date.parse('2027-11-07T08:00:00Z'); t += 60_000) {
+      const now = new Date(t);
+      if (inWindow(h, now)) expect(windowEndsAt(h, now)!.getTime()).toBeGreaterThan(t);
+    }
+  });
+
   test('a same-day window ends today', () => {
     expect(windowEndsAt(berlinWeek, at('2027-03-29T08:00:00Z'))?.toISOString()).toBe('2027-03-29T15:00:00.000Z');
   });

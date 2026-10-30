@@ -140,6 +140,61 @@ describe('appendLog and the chain', () => {
     }
   });
 
+  for (const level of ['repeatable read', 'serializable'] as const) {
+    it(`I1: an append under ${level} with a stale snapshot cannot fork the chain`, async () => {
+      const db = await testDb();
+      try {
+        await append(db);
+        const b = await db.connect();
+        try {
+          await b.query(`begin isolation level ${level}`);
+          await b.query('select 1 from activity_log');
+          // A appends and commits after B's snapshot was taken.
+          await append(db, { action: 'site.resumed' });
+          await expect(appendLog(b, { at: now, actor: owner, tradeCode: null, action: 'site.stopped', detail: {} })).rejects.toThrow(
+            /read committed|activity_log_one_child|duplicate key/,
+          );
+          await b.query('rollback');
+        } finally {
+          b.release();
+        }
+        expect((await verifyLogChain(db)).ok).toBe(true);
+      } finally {
+        await db.end();
+      }
+    });
+  }
+
+  it('I1: the unique index refuses two children of one row even with the triggers off', async () => {
+    const db = await testDb();
+    try {
+      const first = await append(db);
+      await append(db);
+      await db.query('alter table activity_log disable trigger user');
+      try {
+        await expect(
+          db.query(`insert into activity_log (at, actor_kind, action, detail, prev_hash, hash) values ($1, 'system', 'site.stopped', '{}', $2, $3)`, [
+            now, Buffer.from(first.hash, 'hex'), Buffer.alloc(32, 1),
+          ]),
+        ).rejects.toThrow(/activity_log_one_child/);
+        await expect(
+          db.query(`insert into activity_log (at, actor_kind, action, detail, prev_hash, hash) values ($1, 'system', 'site.stopped', '{}', null, $2)`, [
+            now, Buffer.alloc(32, 2),
+          ]),
+        ).rejects.toThrow(/activity_log_one_child/);
+      } finally {
+        await db.query('alter table activity_log enable trigger user');
+      }
+    } finally {
+      await db.end();
+    }
+  });
+
+  it('verify accepts a checkpoint hash in upper case (M6)', async () => {
+    const a = await append(deps.db);
+    expect((await verifyLogChain(deps.db, { id: a.id, hash: a.hash.toUpperCase() })).ok).toBe(true);
+  });
+
   it('a removed row breaks the chain at the next one', async () => {
     const db = await testDb();
     try {
@@ -163,6 +218,16 @@ describe('details', () => {
     expect(() => assertDetail('dispute.assigned', { staffId: { a: 1 } })).toThrow(LogDetailError);
     expect(() => assertDetail('dispute.assigned', { staffId: 'two words' })).toThrow(LogDetailError);
     expect(() => assertDetail('ruling.proposed', { amountAtomic: '-1' })).toThrow(LogDetailError);
+    // M6: account and staff ids are uuids, never a name.
+    expect(() => assertDetail('account.frozen', { accountId: 'alice' })).toThrow(LogDetailError);
+    expect(() => assertDetail('dispute.assigned', { staffId: 'bob.mod' })).toThrow(LogDetailError);
+    expect(() => assertDetail('lien.placed', { accountId: randomUUID().toUpperCase() })).toThrow(LogDetailError);
+    expect(() => assertDetail('account.frozen', { accountId: randomUUID() })).not.toThrow();
+    // The ruling's account action is flattened: its kind, end and reason code.
+    expect(() =>
+      assertDetail('ruling.proposed', { accountAction: 'site-ban', until: '2027-03-01T00:00:00.000Z', reasonCode: 'abuse' }),
+    ).not.toThrow();
+    expect(() => assertDetail('ruling.proposed', { accountAction: { kind: 'none' } })).toThrow(LogDetailError);
     expect(() => assertDetail('nope' as never, {})).toThrow(LogDetailError);
     expect(() => assertDetail('ruling.proposed', { rulingId: randomUUID(), round: 1, outcome: 'release-to-buyer', amountAtomic: '125' })).not.toThrow();
   });
@@ -195,6 +260,15 @@ describe('trade events', () => {
     for (const r of log.rows) expect(r.detail).not.toMatch(/address|End"/i);
     expect((await verifyLogChain(deps.db)).ok).toBe(true);
   });
+
+  it('M2: the log lock is taken last, so a hook may append on another connection without a hang', async () => {
+    const t = await trade();
+    await applyEvent(deps, t.code, { type: 'setup-done', escrowAddress: fakeAddress() }, 'system', async () => {
+      await append(deps.db, { actor: mod, tradeCode: t.code, action: 'case.opened' });
+    });
+    const { rows } = await deps.db.query<{ action: string }>('select action from activity_log where trade_code = $1 order by id', [t.code]);
+    expect(rows.map((r) => r.action)).toEqual(['case.opened', 'trade.setup-done']);
+  }, 15_000);
 
   it('a rolled-back applyEvent writes no entry', async () => {
     const t = await trade();

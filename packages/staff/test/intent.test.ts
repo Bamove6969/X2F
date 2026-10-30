@@ -51,6 +51,18 @@ describe('sha256', () => {
     const bytes = new Uint8Array(300).map((_, i) => (i * 37) & 0xff);
     expect(hex(sha256(bytes))).toBe(nodeSha(bytes));
   });
+
+  test('M8: every length from 0 to 1024 bytes, seeded random content', () => {
+    let seed = 0x2f2f2f2f;
+    const next = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed >>> 24;
+    };
+    for (let len = 0; len <= 1024; len++) {
+      const bytes = new Uint8Array(len).map(() => next());
+      expect(hex(sha256(bytes))).toBe(nodeSha(bytes));
+    }
+  });
 });
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';

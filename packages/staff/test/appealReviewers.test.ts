@@ -10,20 +10,32 @@ const staff = [
   { id: 'helper-1', role: 'helper' as const },
 ];
 
-describe('involvedIn (R37: any log entry by a person on that dispute)', () => {
+describe('involvedIn (R37: any log entry by a person on that dispute, up to the appeal)', () => {
   const log: InvolvementEntry[] = [
-    { tradeCode: CODE, actorKind: 'staff', actorId: 'mod-1', action: 'chat.read' },
-    { tradeCode: CODE, actorKind: 'staff', actorId: 'senior-1', action: 'chat.message-sent' },
-    { tradeCode: CODE, actorKind: 'trader', actorId: null, action: 'appeal.opened' },
-    { tradeCode: CODE, actorKind: 'system', actorId: null, action: 'ruling.executed' },
-    { tradeCode: 'AAAA-BBBB-CCCC-DDDD', actorKind: 'staff', actorId: 'senior-2', action: 'case.opened' },
-    { tradeCode: null, actorKind: 'staff', actorId: 'owner-1', action: 'settings.changed' },
+    { id: '1', tradeCode: CODE, actorKind: 'staff', actorId: 'mod-1', action: 'chat.read' },
+    { id: '2', tradeCode: CODE, actorKind: 'staff', actorId: 'senior-1', action: 'chat.message-sent' },
+    { id: '3', tradeCode: 'AAAA-BBBB-CCCC-DDDD', actorKind: 'staff', actorId: 'senior-2', action: 'case.opened' },
+    { id: '4', tradeCode: null, actorKind: 'staff', actorId: 'owner-1', action: 'settings.changed' },
+    { id: '9', tradeCode: CODE, actorKind: 'trader', actorId: null, action: 'appeal.opened' },
+    { id: '10', tradeCode: CODE, actorKind: 'system', actorId: null, action: 'ruling.executed' },
+    // Round 2: the reviewer's own entries come after the appeal.
+    { id: '11', tradeCode: CODE, actorKind: 'staff', actorId: 'senior-2', action: 'dispute.assigned' },
+    { id: '12', tradeCode: CODE, actorKind: 'staff', actorId: 'senior-2', action: 'case.opened' },
   ];
-  test('staff with any entry on the trade, matched on the normalised code', () => {
-    expect([...involvedIn(log, 'k7m29qxa4ftr8wpn')].sort()).toEqual(['mod-1', 'senior-1']);
+  test('staff with an entry on the trade before the appeal, matched on the normalised code', () => {
+    expect([...involvedIn(log, 'k7m29qxa4ftr8wpn', { beforeId: '9' })].sort()).toEqual(['mod-1', 'senior-1']);
   });
-  test('an invalid code matches nothing', () => {
-    expect(involvedIn(log, 'nope').size).toBe(0);
+  test("I3: a reviewer's own round-2 entries never make them ineligible", () => {
+    const involved = involvedIn(log, CODE, { beforeId: '9' });
+    expect(appealReviewers(staff, involved)).toEqual(['owner-1', 'senior-2']);
+  });
+  test('ids compare as numbers, not text', () => {
+    expect([...involvedIn(log, CODE, { beforeId: '10' })].sort()).toEqual(['mod-1', 'senior-1']);
+    expect([...involvedIn(log, CODE, { beforeId: '100' })].sort()).toEqual(['mod-1', 'senior-1', 'senior-2']);
+  });
+  test('an invalid code or cut-off matches nothing or throws', () => {
+    expect(involvedIn(log, 'nope', { beforeId: '9' }).size).toBe(0);
+    expect(() => involvedIn(log, CODE, { beforeId: 'x' })).toThrow(RangeError);
   });
 });
 
