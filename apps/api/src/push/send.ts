@@ -19,7 +19,7 @@ export const PUSH_PAYLOADS: Readonly<Record<PushKind, string>> = Object.freeze({
   alert: 'Something needs your attention',
   // Plan 2 Task 16: a new device waits for approval (the push names nothing else).
   login: 'Someone is logging in. Is this you?',
-  // Plan 2 Task 17 (owner, 2026-10-29): every new login.
+  // Plan 2 Task 17 (owner, 2026-10-29): every new login, to the account's other devices.
   'new-login': 'New login to your account',
 });
 
@@ -101,7 +101,12 @@ export const webPushTransport: PushTransport = makeWebPushTransport();
  * least one push service answered 201 (accepted for delivery). A 404 or 410 means the browser
  * dropped the subscription: the row is deleted. Anything else is logged as its status only.
  */
-export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind): Promise<boolean> {
+export interface PushOptions {
+  /** Skip the subscriptions of this session (Task 17: a new login is pushed to the account's other devices only). */
+  exceptSession?: string;
+}
+
+export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind, opts: PushOptions = {}): Promise<boolean> {
   // A trader's subscription whose session has ended (expired; a revoked one is already deleted by
   // the trigger) is never sent to: it is deleted here. The owner's belong to the account and are
   // exempt: an owner whose session idled out is away, which is when the price-health push matters
@@ -114,8 +119,8 @@ export async function sendPush(deps: PushDeps, accountId: string, kind: PushKind
     [accountId, now],
   );
   const { rows } = await deps.db.query<{ id: string; endpoint: string; p256dh: string; auth: string }>(
-    'select id, endpoint, p256dh, auth from push_subscriptions where account_id = $1',
-    [accountId],
+    'select id, endpoint, p256dh, auth from push_subscriptions where account_id = $1 and session_id is distinct from $2',
+    [accountId, opts.exceptSession ?? null],
   );
   if (rows.length === 0) return false;
   const options = pushRequestOptions(deps.config);

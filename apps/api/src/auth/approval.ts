@@ -7,7 +7,7 @@
  *   open full session on another device and either this browser is not trusted for the account
  *   (`isTrusted`) or the account is at its device limit (`max_devices`, default 3; 1 with "One
  *   device at a time"). Instead it gets `{ status: 'approve-on-device', approvalId, number,
- *   expiresAt, devices }`. A browser already holding a live full session of the account, or an
+ *   expiresAt }` (nothing about the account's devices: review M5). A browser already holding a live full session of the account, or an
  *   account with no open full session, logs in as before (the no-device case is OPEN: Revision
  *   2026-10-29b; until decided it works as today). Backup logins (recovery sessions) are Task 17's.
  * - **Binding.** The approval is bound to the new browser twice: its device-cookie hash and a fresh
@@ -17,8 +17,8 @@
  *   `crypto.randomInt` (through `approvalRandom`, the test seam). The new device shows `number`; the
  *   logged-in device is offered the three (`choices`), never told which is right. The right one
  *   approves; a wrong one blocks (a random tap has 1/3 odds and one try), as does "No, block it".
- * - **Expiry and limits.** An approval is open for `APPROVAL_TTL_MS` (2 minutes), and an approved
- *   one must start its session within another 2 minutes. A new approval from the same browser
+ * - **Expiry and limits.** An approval is open for `APPROVAL_TTL_MS` (5 minutes, the plan's lead
+ *   default), and an approved one must start its session within another 5 minutes. A new approval from the same browser
  *   supersedes that browser's open one; at most `MAX_OPEN_APPROVALS` are open per account (the
  *   oldest expires); at most `APPROVALS_PER_HOUR` start per account per hour (then 429 `slow-down`).
  *   Every check-and-write is serialised per account by an advisory lock.
@@ -37,16 +37,18 @@
  */
 import { createHash, randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
-import { coolingOf, endCoolingIfOwner, provenBeforeCooling, loginStrength, sessionStrength, startCooling, type LoginFactorKind, type ProvenMethod } from './strength.js';
-import { assertNotDisabled, cleanLabel, endOtherSessions, endSession, presentedTokenHash, requireSession, startSession } from './sessions.js';
+import { endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, startHold, type ProvenMethod } from './hold.js';
+import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
+import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
 /** How long the new device waits for a decision, and how long an approved login may take to collect its session. */
-export const APPROVAL_TTL_MS = 2 * 60_000;
+export const APPROVAL_TTL_MS = 5 * 60_000;
 /** Open approvals per account; a new one beyond this expires the oldest. */
 export const MAX_OPEN_APPROVALS = 3;
 /** Approvals one account may start per rolling hour (approval spam). */
@@ -58,15 +60,7 @@ export const APPROVAL_COOKIE = '__Host-x2f_approval';
 /** The trader login methods that can wait for approval (a password login with TOTP counts as `password`). */
 export type ApprovalMethod = 'pgp' | 'passkey' | 'security-key' | 'password';
 
-export interface DeviceRoom {
-  /** Full sessions open now (and approved logins not yet collected). */
-  loggedIn: number;
-  /** The account's limit: `max_devices`, or 1 with "One device at a time". */
-  max: number;
-  oneDevice: boolean;
-}
-
-export type ApprovalWait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string; devices: DeviceRoom };
+export type ApprovalWait = { status: 'approve-on-device'; approvalId: string; number: number; expiresAt: string };
 
 /** The test seam for the "no patterns" rule (spec 6.2): every number comes from `crypto.randomInt`. */
 export const approvalRandom = { int: (min: number, max: number): number => randomInt(min, max) };
@@ -127,7 +121,7 @@ export async function maxDevices(db: Queryable): Promise<number> {
 }
 
 const sha256 = (s: string): Buffer => createHash('sha256').update(s).digest();
-const lockAccount = (db: Queryable, accountId: string) =>
+const lockApprovals = (db: Queryable, accountId: string) =>
   db.query("select pg_advisory_xact_lock(hashtextextended('x2f-approval/' || $1, 0))", [accountId]);
 
 /** Open full sessions of the account plus approved logins not yet collected (they become sessions). */
@@ -143,7 +137,7 @@ async function devicesInUse(db: Queryable, accountId: string, now: Date, exceptT
   return rows[0]!.n;
 }
 
-async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: Queryable) => Promise<T>): Promise<T> {
+async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await deps.db.connect();
   try {
     await client.query('begin');
@@ -164,6 +158,12 @@ async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: Queryable) => Promise<
  * The end of every trader login whose credentials passed (`completeLogin`'s trader branch, password
  * login without TOTP, the TOTP second factor): either a full session now (`{ status: 'ok' }`) or an
  * approval to wait for (see the module comment). Staff and owner accounts never get here.
+ *
+ * Task 17, all in this one transaction with the account locked (review I2): a hold whose time is
+ * up settles first; a strong login whose methods all predate a running hold (the real owner) skips
+ * the approval (the approving devices may be the thief's) but not the device limit (409
+ * `too-many-devices`, review M6), and ends the hold; a waiting login on a device not trusted for
+ * the account with nothing logged in to approve it starts the hold with its session.
  */
 export async function traderLogin(
   deps: Deps,
@@ -175,47 +175,61 @@ export async function traderLogin(
     deviceLabel: string;
     /** Task 17: the factors this login proved (one, or password and TOTP). */
     factors: LoginFactorKind[];
-    /** Task 17: what a strong login proved, so it can end a cooling-off started before that method was added. */
+    /** Task 17: what a strong login proved, so it can end a hold started while that method was held. */
     proven?: ProvenMethod;
   },
 ): Promise<{ status: 'ok' } | ApprovalWait> {
-  const strength = sessionStrength(loginStrength(a.factors));
+  const strength = loginStrength(a.factors);
   ensureDeviceCookie(req, reply);
   const device = deviceHash(req)!;
   const now = deps.clock();
   const presented = presentedTokenHash(req);
   const secret = randomBytes(32).toString('base64url');
+  const settle = { config: deps.config, events: req.server.events };
 
-  let noApprover = false;
-  const wait = await withTx(deps, async (db) => {
+  type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait };
+  const out = await withTx(deps, async (db): Promise<Outcome> => {
+    await lockApprovals(db, a.accountId);
     await lockAccount(db, a.accountId);
+    const session = async (startsHold: boolean): Promise<Outcome> => {
+      // The real owner's strong login ends a running hold before its session starts.
+      if (strength === 'strong' && a.proven !== undefined) await endHoldIfOwner(db, settle, a.accountId, a.proven, now);
+      const s = await openSession(db, deps, req, reply, {
+        accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
+      });
+      if (startsHold) await startHold(db, a.accountId, now, { reason: 'weak-new-device', startedBy: s.sessionId });
+      return { kind: 'session', after: s.after };
+    };
     const acct = await db.query<{ kind: string; one_device: boolean }>('select kind, one_device from accounts where id = $1', [a.accountId]);
     const row = acct.rows[0];
-    if (!row || row.kind !== 'trader') return null;
+    if (!row || row.kind !== 'trader') return session(false);
+    // A hold whose time is up is settled here (its pending change applies) before anything is counted.
+    const hold = await holdInTx(db, settle, a.accountId, now);
     // This browser already holds a live full session of the account: it is a logged-in device.
     if (presented !== null) {
       const own = await db.query(
         `select 1 from sessions where account_id = $1 and token_hash = $2 and level = 'full' and revoked_at is null and expires_at > $3`,
         [a.accountId, presented, now],
       );
-      if (own.rows.length > 0) return null;
+      if (own.rows.length > 0) return session(false);
     }
     const open = await db.query<{ n: number }>(
       `select count(*)::int as n from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2`,
       [a.accountId, now],
     );
-    // No logged-in device to approve it: the login goes on; a weak one on a new device cools the
-    // account off for 24 hours (Task 17, owner 2026-10-29).
-    if (open.rows[0]!.n === 0) {
-      if (strength === 'weak' && !(await isTrusted(deps, a.accountId, device))) noApprover = true;
-      return null;
-    }
-    // Task 17: the real owner's strong login during a cooling-off goes straight in and ends it.
-    if (strength === 'strong' && a.proven !== undefined && (await provenBeforeCooling(db, a.accountId, a.proven, now))) return null;
+    // No logged-in device to approve it: the login goes on; a waiting one on a new device holds
+    // the account for 24 hours (Task 17, owner 2026-10-29).
+    if (open.rows[0]!.n === 0) return session(waits(strength) && !(await isTrusted(deps, a.accountId, device)));
     const max = row.one_device ? 1 : await maxDevices(db);
     const inUse = await devicesInUse(db, a.accountId, now, presented);
+    // Task 17: the real owner's strong login during a hold goes straight in (no approval) but
+    // still within the device limit; it ends the hold (`session`).
+    if (hold !== null && strength === 'strong' && a.proven !== undefined && ownerProof(hold, a.proven)) {
+      if (inUse >= max) throw new ApiError(409, 'too-many-devices');
+      return session(false);
+    }
     const trusted = await isTrusted(deps, a.accountId, device);
-    if (trusted && inUse < max) return null;
+    if (trusted && inUse < max) return session(false);
 
     const hourAgo = new Date(now.getTime() - 3_600_000);
     const recent = await db.query<{ n: number; oldest: Date | null }>(
@@ -249,25 +263,19 @@ export async function traderLogin(
     );
     const approvalId = ins.rows[0]!.id;
     await addAlert(db, a.accountId, 'login-approval', { approvalId, deviceLabel, method: a.method }, now);
-    return {
-      status: 'approve-on-device' as const, approvalId, number, expiresAt: expiresAt.toISOString(),
-      devices: { loggedIn: inUse, max, oneDevice: row.one_device },
-    };
+    // Review M5: nothing about the account's devices goes to a device nobody has approved yet.
+    return { kind: 'wait', wait: { status: 'approve-on-device', approvalId, number, expiresAt: expiresAt.toISOString() } };
   });
 
-  if (wait === null) {
-    await startSession(deps, req, reply, {
-      accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
-    });
-    if (noApprover) await startCooling(deps.db, a.accountId, now, 'weak-login-new-device');
-    else if (strength === 'strong' && a.proven !== undefined) await endCoolingIfOwner(deps.db, a.accountId, a.proven, now);
+  if (out.kind === 'session') {
+    out.after();
     return { status: 'ok' };
   }
   void reply.setCookie(APPROVAL_COOKIE, secret, { ...COOKIE_ATTRS, maxAge: Math.ceil((2 * APPROVAL_TTL_MS) / 1000) });
   // Hints only, after commit: the logged-in devices fetch the approval over their own session.
-  req.server.events.publish(a.accountId, { type: 'login-approval', id: wait.approvalId });
+  req.server.events.publish(a.accountId, { type: 'login-approval', id: out.wait.approvalId });
   void req.server.push.send(a.accountId, 'login').catch(() => undefined);
-  return wait;
+  return out.wait;
 }
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -295,7 +303,7 @@ interface ApprovalRow {
   ends: 'one-device' | 'session' | null;
   end_session: string | null;
   used_at: Date | null;
-  strength: 'strong' | 'weak';
+  strength: LoginStrength;
 }
 
 /**
@@ -334,43 +342,47 @@ async function poll(req: FastifyRequest, reply: FastifyReply): Promise<PollResul
     clear();
     return { status: 'expired' };
   }
-  // Approved: collected once, before its deadline.
-  const claimed = await deps.db.query<ApprovalRow>(
-    `update login_approvals set used_at = $2 where id = $1 and outcome = 'approved' and used_at is null and expires_at > $2 returning *`,
-    [row.id, now],
-  );
-  const won = claimed.rows[0];
-  clear();
-  if (!won) return { status: 'expired' };
-  await assertNotDisabled(deps.db, won.account_id);
-  const sessionId = await startSession(deps, req, reply, {
-    accountId: won.account_id, level: 'full', deviceLabel: won.session_label, method: won.method, firstSession: false, strength: won.strength,
+  // Approved: collected once, before its deadline, in one transaction with the session and the
+  // logouts the approval asked for (review M7).
+  const done = await withTx(deps, async (db) => {
+    const claimed = await db.query<ApprovalRow>(
+      `update login_approvals set used_at = $2 where id = $1 and outcome = 'approved' and used_at is null and expires_at > $2 returning *`,
+      [row.id, now],
+    );
+    const won = claimed.rows[0];
+    if (!won) return null;
+    await assertNotDisabled(db, won.account_id);
+    const s = await openSession(db, deps, req, reply, {
+      accountId: won.account_id, level: 'full', deviceLabel: won.session_label, method: won.method, firstSession: false, strength: won.strength,
+    });
+    const ended = await endForNewDevice(db, now, won, s.sessionId);
+    return { s, ended, accountId: won.account_id };
   });
-  const loggedOut = await endForNewDevice(deps, req, won, sessionId);
-  return { status: 'ok', loggedOut };
+  clear();
+  if (done === null) return { status: 'expired' };
+  done.s.after();
+  for (const id of done.ended.ids) req.server.events.closeSession(done.accountId, id);
+  return { status: 'ok', loggedOut: done.ended.labels };
 }
 
-/** Ends what the approval said (every other session, or the one chosen at the limit); returns their labels. */
-async function endForNewDevice(deps: Deps, req: FastifyRequest, a: ApprovalRow, sessionId: string): Promise<string[]> {
-  const now = deps.clock();
-  const end = { db: deps.db, clock: deps.clock, events: req.server.events };
-  let labels: string[] = [];
+/** Ends what the approval said (every other session, or the one chosen at the limit), in the caller's transaction; returns their ids and labels. */
+async function endForNewDevice(db: Queryable, now: Date, a: ApprovalRow, sessionId: string): Promise<{ ids: string[]; labels: string[] }> {
+  let ended: Array<{ id: string; device_label: string }> = [];
   if (a.ends === 'one-device') {
-    const { rows } = await deps.db.query<{ device_label: string }>(
-      `select device_label from sessions where account_id = $1 and id <> $2 and revoked_at is null and expires_at > $3 order by created_at`,
+    ended = (await db.query<{ id: string; device_label: string }>(
+      `update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null returning id, device_label`,
       [a.account_id, sessionId, now],
-    );
-    labels = rows.map((r) => r.device_label);
-    await endOtherSessions(end, a.account_id, sessionId);
+    )).rows;
   } else if (a.ends === 'session' && a.end_session !== null) {
-    const { rows } = await deps.db.query<{ device_label: string }>(
-      `select device_label from sessions where id = $1 and account_id = $2 and revoked_at is null`,
-      [a.end_session, a.account_id],
-    );
-    if ((await endSession(end, a.end_session)) > 0) labels = rows.map((r) => r.device_label);
+    ended = (await db.query<{ id: string; device_label: string }>(
+      `update sessions set revoked_at = $3 where id = $1 and account_id = $2 and revoked_at is null returning id, device_label`,
+      [a.end_session, a.account_id, now],
+    )).rows;
   }
-  if (labels.length > 0) await addAlert(deps.db, a.account_id, 'logged-out-by-new-device', { deviceLabels: labels, count: labels.length }, now);
-  return labels;
+  // Only live sessions are listed (an expired one ends as well, but was not "logged in").
+  const labels = ended.map((r) => r.device_label);
+  if (labels.length > 0) await addAlert(db, a.account_id, 'logged-out-by-new-device', { deviceLabels: labels, count: labels.length }, now);
+  return { ids: ended.map((r) => r.id), labels };
 }
 
 /** `POST /v1/login/approval/:id/cancel`: the new device stops waiting (the request ends as expired). */
@@ -446,7 +458,7 @@ async function decide(req: FastifyRequest) {
   const device = deviceHash(req);
   const now = deps.clock();
   return withTx(deps, async (db) => {
-    await lockAccount(db, accountId);
+    await lockApprovals(db, accountId);
     const { rows } = await db.query<ApprovalRow & { one_device: boolean }>(
       `select l.*, a.one_device from login_approvals l join accounts a on a.id = l.account_id
         where l.id = $1 and l.account_id = $2 for update of l`,
@@ -464,9 +476,10 @@ async function decide(req: FastifyRequest) {
       }, now);
       return { outcome: 'blocked' as const };
     }
-    // Task 17: an account cooling off approves no new device (blocking stays possible).
-    const cooling = await coolingOf(db, accountId, now);
-    if (cooling !== null) throw new ApiError(403, 'cooling-off', { coolingUntil: cooling.until.toISOString() });
+    // Task 17: an account on its 24-hour hold approves no new device (blocking stays possible).
+    await lockAccount(db, accountId);
+    const hold = await holdInTx(db, { config: deps.config, events: req.server.events }, accountId, now);
+    if (hold !== null) throw holdRefusal(hold.holdUntil);
     let ends: 'one-device' | 'session' | null = null;
     let endId: string | null = null;
     if (row.one_device) {

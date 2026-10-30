@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { requireNotCooling } from '../auth/strength.js';
+import { requireNotHeld } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -366,12 +366,12 @@ export function walletRoutes(app: FastifyInstance): void {
     {
       preHandler: [
         session,
-        requireNotCooling,
+        requireNotHeld,
         checkWalletInput,
         walletConfirm,
       ],
     },
     addHandler,
   );
-  app.delete('/v1/wallets/:id', { preHandler: [session, requireNotCooling] }, removeHandler);
+  app.delete('/v1/wallets/:id', { preHandler: [session, requireNotHeld] }, removeHandler);
 }

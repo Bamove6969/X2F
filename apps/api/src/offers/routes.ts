@@ -2,7 +2,7 @@ import { MAX_MARGIN_BPS, offerRate, type Pricing, type Side } from '@x2f/trade';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { requireSession } from '../auth/sessions.js';
-import { coolingOf, requireNotCooling } from '../auth/strength.js';
+import { holdRefusal, holdUntil, requireNotHeld } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
@@ -423,7 +423,7 @@ async function markOpensAt(deps: Deps, viewerId: string, rows: readonly OfferRow
 }
 
 export function offerRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers', { preHandler: [requireTrader, requireNotCooling] }, async (req, reply) => {
+  app.post('/v1/offers', { preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
     const deps = req.server.deps;
     const o = parseNewOffer(req.body);
     const method = getMethod(o.methodId);
@@ -480,9 +480,9 @@ export function offerRoutes(app: FastifyInstance): void {
     const update = (q: Queryable) =>
       q.query(`update offers set status = $2, updated_at = $3 where id = $1 and account_id = $4 and status <> 'removed'`, [id, status, now, accountId]);
     if (status === 'live') {
-      // Task 17: an account cooling off cannot turn an offer on (pausing or removing one is fine).
-      const cooling = await coolingOf(deps.db, accountId, now);
-      if (cooling !== null) throw new ApiError(403, 'cooling-off', { coolingUntil: cooling.until.toISOString() });
+      // Task 17: an account on its 24-hour hold cannot turn an offer on (pausing or removing one is fine).
+      const until = await holdUntil(deps, accountId, req.server.events);
+      if (until !== null) throw holdRefusal(until);
       // Relisting is posting again: the same checks, in one transaction with the write (review M1).
       assertMethodAvailable(row.method_id);
       await inTransaction(deps.db, async (client) => {
@@ -637,6 +637,11 @@ export function offerRoutes(app: FastifyInstance): void {
     const accountId = req.auth!.accountId;
     // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
     if (status === 'live') await assertTermsCurrent(deps, accountId);
+    // Task 17: no offer goes on during the account's 24-hour hold (403 `recovery-hold` for the whole call).
+    if (status === 'live') {
+      const until = await holdUntil(deps, accountId, req.server.events);
+      if (until !== null) throw holdRefusal(until);
+    }
     const now = deps.clock();
 
     const results = await inTransaction(deps.db, async (client) => {

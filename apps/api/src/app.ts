@@ -8,7 +8,6 @@ import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
-import { securityChangeHook } from './auth/strength.js';
 import { logoutRoute } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
@@ -34,7 +33,7 @@ import { EventBus, type EventBusOptions } from './events/bus.js';
 import { eventRoutes, type EventStreamOptions } from './events/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
 import { pushRoutes } from './push/routes.js';
-import { sendPush, webPushTransport, type PushKind, type PushTransport } from './push/send.js';
+import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -85,7 +84,7 @@ declare module 'fastify' {
     /** Task 19: live events to each account's own open streams (`publish`, `delivered`). */
     events: EventBus;
     /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
-    push: { send(accountId: string, kind: PushKind): Promise<boolean> };
+    push: { send(accountId: string, kind: PushKind, opts?: PushOptions): Promise<boolean> };
   }
 }
 
@@ -178,7 +177,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('events', events);
   const transport = options.pushTransport ?? webPushTransport;
   app.decorate('push', {
-    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind),
+    send: (accountId: string, kind: PushKind, opts?: PushOptions) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
   });
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
@@ -206,9 +205,6 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
 
   // CSRF: before any body is parsed, unsafe methods need an exact configured Origin (Task 4).
   app.addHook('onRequest', originHook);
-
-  // Plan 2 Task 17: a weak session's password or login-method change starts the 24-hour cooling-off.
-  securityChangeHook(app);
 
   // Only JSON bodies: the built-in text/plain parser would let a cross-site form post a JSON body.
   app.removeContentTypeParser('text/plain');

@@ -4,6 +4,7 @@ import argon2 from 'argon2';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type { Deps } from '../app.js';
 import type { Config } from '../config.js';
+import type { Queryable } from '../db/pool.js';
 import { addAlert } from '../alerts.js';
 import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
 import { ApiError } from '../errors.js';
@@ -13,6 +14,7 @@ import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import {
   claimPasswordTry, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss, visitorReset,
@@ -311,7 +313,7 @@ const checkNewPassword: preHandlerAsyncHookHandler = async function (req) {
  * recovery exemptions. In one transaction: the new hash, alert `login-method-added`, every other
  * session of the account ended and alert `sessions-ended` when any were; the calling session goes on.
  */
-async function setPasswordHandler(req: FastifyRequest) {
+async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const password = checkedPassword.get(req);
   if (password === undefined) throw new ApiError(400, 'bad-request');
@@ -319,24 +321,15 @@ async function setPasswordHandler(req: FastifyRequest) {
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
+  let ended = 0;
   try {
     await client.query('begin');
     try {
-      await client.query(
-        `insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)
-         on conflict (account_id) do update set hash = excluded.hash, pepper_id = excluded.pepper_id, updated_at = excluded.updated_at`,
-        [accountId, hash, pepperId, now],
-      );
-      await addAlert(client, accountId, 'login-method-added', { method: 'password' }, now);
-      const ended = await client.query(
-        'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
-        [accountId, sessionId, now],
-      );
-      const count = ended.rowCount ?? 0;
-      if (count > 0) await addAlert(client, accountId, 'sessions-ended', { count, reason: 'password-set' }, now);
+      // Task 17: a waiting login's change starts the hold and waits in it (in this transaction).
+      held = await gateChange(client, req, { kind: 'password', hash, pepperId });
+      if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
       await client.query('commit');
-      // The other sessions are revoked: end their live streams now, not at the stream lifetime.
-      req.server.events.closeAccount(accountId, sessionId);
     } catch (e) {
       await client.query('rollback');
       throw e;
@@ -344,7 +337,40 @@ async function setPasswordHandler(req: FastifyRequest) {
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, accountId);
+    return reply.code(202).send(heldReply(held));
+  }
+  // The other sessions are revoked: end their live streams now, not at the stream lifetime.
+  if (ended > 0) req.server.events.closeAccount(accountId, sessionId);
   return { ok: true };
+}
+
+/**
+ * The write of a password change (the route's, or a pending one when the hold ends by time): the
+ * new hash, alert `login-method-added`, every session but `keepSessionId` ended and alert
+ * `sessions-ended` when any were. Returns how many sessions it ended.
+ */
+export async function applyPassword(
+  db: Queryable,
+  accountId: string,
+  p: { hash: string; pepperId: number },
+  keepSessionId: string | null,
+  now: Date,
+): Promise<number> {
+  await db.query(
+    `insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)
+     on conflict (account_id) do update set hash = excluded.hash, pepper_id = excluded.pepper_id, updated_at = excluded.updated_at`,
+    [accountId, p.hash, p.pepperId, now],
+  );
+  await addAlert(db, accountId, 'login-method-added', { method: 'password' }, now);
+  const ended = await db.query(
+    'update sessions set revoked_at = $3 where account_id = $1 and id is distinct from $2 and revoked_at is null',
+    [accountId, keepSessionId, now],
+  );
+  const count = ended.rowCount ?? 0;
+  if (count > 0) await addAlert(db, accountId, 'sessions-ended', { count, reason: 'password-set' }, now);
+  return count;
 }
 
 /**
@@ -366,6 +392,8 @@ export function passwordRoutes(app: FastifyInstance): void {
       preHandler: [
         requireSession({ allowRecovery: true }),
         methodAllowed('password'),
+        // Task 17: refused during the hold before a confirm token is spent (the gate checks again).
+        requireNotHeld,
         checkNewPassword,
         requireConfirm({ kind: 'set-password' }, { onboarding: true, recovery: true }),
       ],

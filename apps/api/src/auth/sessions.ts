@@ -7,7 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import type { EventBus } from '../events/bus.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, trustDevice } from './device.js';
-import type { SessionStrength } from './strength.js';
+import type { LoginStrength } from './strength.js';
 
 export const SESSION_COOKIE = '__Host-x2f_session';
 /** 32 random bytes, base64url without padding. */
@@ -84,31 +84,39 @@ export function deadline(createdAt: Date, now: Date, p: { idleMs: number; absolu
   return new Date(Math.min(createdAt.getTime() + p.absoluteMs, now.getTime() + p.idleMs));
 }
 
+export interface NewSession {
+  accountId: string;
+  level: SessionLevel;
+  deviceLabel: string;
+  method: LoginMethod;
+  firstSession: boolean;
+  holdUntil?: Date;
+  /**
+   * Task 17: how strong the login was (`loginStrength`). Default: a passkey or security key alone
+   * is strong; anything else single waits (`pgp-single` for a PGP key, else `weak-single`). A
+   * password with its TOTP code passes 'strong'.
+   */
+  strength?: LoginStrength;
+}
+
 /**
- * Starts a session after a successful login or register. Always mints a new token (a presented
- * cookie is never reused, so a planted one cannot be fixed); a session cookie the request carried
- * is revoked; the device is trusted; later logins (not the first session) add an alert. A
- * recovery session stores `holdUntil` as its hold (Task 9's TOTP backup login).
+ * The statements of a new session, inside the caller's transaction (`db` a client after `begin`).
+ * Always mints a new token (a presented cookie is never reused, so a planted one cannot be fixed);
+ * a session cookie the request carried is revoked; the device is trusted; later logins (not the
+ * first session) add an alert. A recovery session stores `holdUntil` as its hold (Task 9's TOTP
+ * backup login). Returns the session id and `after`, which the caller runs once the transaction
+ * has committed: it ends the replaced session's streams, pushes `new-login` to the account's
+ * other devices and sets the cookie (nothing reaches the browser if the transaction rolls back).
  */
-export async function startSession(
-  deps: Pick<Deps, 'db' | 'clock'>,
+export async function openSession(
+  db: Queryable,
+  deps: Pick<Deps, 'clock'>,
   req: FastifyRequest,
   reply: FastifyReply,
-  a: {
-    accountId: string;
-    level: SessionLevel;
-    deviceLabel: string;
-    method: LoginMethod;
-    firstSession: boolean;
-    holdUntil?: Date;
-    /**
-     * Task 17: how strong the login was. Default: a recovery session or a password alone is weak,
-     * a PGP key, passkey or security key strong; a password with its TOTP code passes 'strong'.
-     */
-    strength?: SessionStrength;
-  },
-): Promise<string> {
-  const strength: SessionStrength = a.strength ?? (a.level === 'recovery' || a.method === 'password' || a.method === 'totp' || a.method === 'recovery-code' ? 'weak' : 'strong');
+  a: NewSession,
+): Promise<{ sessionId: string; after: () => void }> {
+  const strength: LoginStrength =
+    a.strength ?? (a.method === 'passkey' || a.method === 'security-key' ? 'strong' : a.method === 'pgp' ? 'pgp-single' : 'weak-single');
   const now = deps.clock();
   const token = randomBytes(32).toString('base64url');
   const label = cleanLabel(a.deviceLabel);
@@ -116,54 +124,65 @@ export async function startSession(
   const device = deviceHash(req);
   const presented = presentedToken(req);
 
-  const client = await deps.db.connect();
-  let sessionId: string;
+  const acct = await db.query<{ kind: AccountKind; idle_hours: IdleHours }>('select kind, idle_hours from accounts where id = $1', [a.accountId]);
+  const row = acct.rows[0];
+  if (!row) throw new ApiError(401, 'not-authenticated');
+  const policy = sessionPolicy(row.kind, a.level, row.idle_hours);
+  const expiresAt = deadline(now, now, policy);
   /** The session this browser's cookie named, revoked by this login (its streams end too). */
   let replaced: { id: string; account_id: string } | null = null;
-  let absoluteMs: number;
-  let expiresAt: Date;
+  if (presented) {
+    const old = await db.query<{ id: string; account_id: string }>(
+      'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
+      [tokenHash(presented), now],
+    );
+    replaced = old.rows[0] ?? null;
+  }
+  const { rows } = await db.query<{ id: string }>(
+    `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength)
+     values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9) returning id`,
+    [
+      a.accountId, tokenHash(token), a.level, label,
+      a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
+      now, expiresAt,
+      // Task 9: only a recovery session carries a hold (see `requireSession`'s `allowHeld`).
+      a.level === 'recovery' ? (a.holdUntil ?? null) : null,
+      strength,
+    ],
+  );
+  const sessionId = rows[0]!.id;
+  if (device) await trustDevice({ db, clock: deps.clock }, a.accountId, device);
+  if (!a.firstSession) {
+    if (a.level === 'recovery') {
+      const detail: Record<string, string> = { method: a.method, deviceLabel: label };
+      if (a.holdUntil) detail.holdUntil = a.holdUntil.toISOString();
+      await addAlert(db, a.accountId, 'recovery-login', detail, now);
+    } else {
+      await addAlert(db, a.accountId, 'new-login', { method: a.method, deviceLabel: label }, now);
+    }
+  }
+  const after = () => {
+    if (replaced) req.server.events.closeSession(replaced.account_id, replaced.id);
+    // Task 17 (owner, 2026-10-29): every new login is pushed to the account's other devices.
+    if (!a.firstSession) void req.server.push.send(a.accountId, 'new-login', { exceptSession: sessionId }).catch(() => undefined);
+    void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(policy.absoluteMs / 1000) });
+  };
+  return { sessionId, after };
+}
+
+/** `openSession` in a transaction of its own, then its `after`. Returns the session id. */
+export async function startSession(
+  deps: Pick<Deps, 'db' | 'clock'>,
+  req: FastifyRequest,
+  reply: FastifyReply,
+  a: NewSession,
+): Promise<string> {
+  const client = await deps.db.connect();
+  let opened: { sessionId: string; after: () => void };
   try {
     await client.query('begin');
     try {
-      const acct = await client.query<{ kind: AccountKind; idle_hours: IdleHours }>(
-        'select kind, idle_hours from accounts where id = $1',
-        [a.accountId],
-      );
-      const row = acct.rows[0];
-      if (!row) throw new ApiError(401, 'not-authenticated');
-      const policy = sessionPolicy(row.kind, a.level, row.idle_hours);
-      absoluteMs = policy.absoluteMs;
-      expiresAt = deadline(now, now, policy);
-      if (presented) {
-        const old = await client.query<{ id: string; account_id: string }>(
-          'update sessions set revoked_at = $2 where token_hash = $1 and revoked_at is null returning id, account_id',
-          [tokenHash(presented), now],
-        );
-        replaced = old.rows[0] ?? null;
-      }
-      const { rows } = await client.query<{ id: string }>(
-        `insert into sessions (account_id, token_hash, level, device_label, onboarding_until, created_at, last_seen_at, expires_at, hold_until, strength)
-         values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9) returning id`,
-        [
-          a.accountId, tokenHash(token), a.level, label,
-          a.firstSession ? new Date(now.getTime() + ONBOARDING_MS) : null,
-          now, expiresAt,
-          // Task 9: only a recovery session carries a hold (see `requireSession`'s `allowHeld`).
-          a.level === 'recovery' ? (a.holdUntil ?? null) : null,
-          strength,
-        ],
-      );
-      sessionId = rows[0]!.id;
-      if (device) await trustDevice({ db: client, clock: deps.clock }, a.accountId, device);
-      if (!a.firstSession) {
-        if (a.level === 'recovery') {
-          const detail: Record<string, string> = { method: a.method, deviceLabel: label };
-          if (a.holdUntil) detail.holdUntil = a.holdUntil.toISOString();
-          await addAlert(client, a.accountId, 'recovery-login', detail, now);
-        } else {
-          await addAlert(client, a.accountId, 'new-login', { method: a.method, deviceLabel: label }, now);
-        }
-      }
+      opened = await openSession(client, deps, req, reply, a);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -172,12 +191,8 @@ export async function startSession(
   } finally {
     client.release();
   }
-  if (replaced) req.server.events.closeSession(replaced.account_id, replaced.id);
-  // Task 17 (owner, 2026-10-29): every new login is pushed to the account's devices ("New login to your account").
-  if (!a.firstSession) void req.server.push.send(a.accountId, 'new-login').catch(() => undefined);
-
-  void reply.setCookie(SESSION_COOKIE, token, { ...COOKIE_ATTRS, maxAge: Math.floor(absoluteMs / 1000) });
-  return sessionId;
+  opened.after();
+  return opened.sessionId;
 }
 
 interface SessionRow {

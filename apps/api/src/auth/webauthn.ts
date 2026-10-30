@@ -25,6 +25,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { assertMethodAllowed } from './methods.js';
 import { requireSession, startSession } from './sessions.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 
 export type CredentialKind = 'passkey' | 'security-key';
 
@@ -795,15 +796,19 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const kind = credentialKind(ch.method);
   assertMethodAllowed(req.auth.kind, kind);
   const cred = await verifyRegistration(deps, { accountKind: req.auth.kind, kind, response: body.response, expectedChallenge: ch.webauthn_challenge! });
+  const stored = storedCredential(cred);
+  const clean = cleanLabel(label, kind);
   const now = deps.clock();
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
   try {
     await client.query('begin');
     try {
-      // The account row is locked so two parallel finishes cannot both pass the security-key count.
-      await client.query('select 1 from accounts where id = $1 for update', [req.auth.accountId]);
-      await insertCredential(client, req.auth.accountId, cred, cleanLabel(label, kind), now);
-      await addAlert(client, req.auth.accountId, 'login-method-added', { method: kind }, now);
+      // Task 17: the gate locks the account row first; a waiting login's new key starts the hold
+      // and waits in it (it cannot log in, or end the hold, before the hold ends by time).
+      held = await gateChange(client, req, { kind: 'webauthn', credential: stored, label: clean });
+      // The account row is locked (by the gate) so two parallel finishes cannot both pass the security-key count.
+      if (held === null) await applyCredential(client, req.auth.accountId, stored, clean, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -812,7 +817,27 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, req.auth.accountId);
+    return reply.code(202).send(heldReply(held));
+  }
   return reply.code(201).send({ ok: true });
+}
+
+/** A verified credential in the form a pending change keeps it (JSON: the public key as base64url). */
+export type StoredCredential = Omit<NewCredential, 'publicKey'> & { publicKey: string };
+
+const storedCredential = (c: NewCredential): StoredCredential => ({ ...c, publicKey: Buffer.from(c.publicKey).toString('base64url') });
+
+/**
+ * The write of an added passkey or security key (the route's, or a pending one when the hold ends
+ * by time), with the account row locked by the caller: the security-key limit, the insert, alert
+ * `login-method-added`.
+ */
+export async function applyCredential(db: Queryable, accountId: string, c: StoredCredential, label: string, now: Date): Promise<void> {
+  await db.query('select 1 from accounts where id = $1 for no key update', [accountId]);
+  await insertCredential(db, accountId, { ...c, publicKey: Buffer.from(c.publicKey, 'base64url') }, label, now);
+  await addAlert(db, accountId, 'login-method-added', { method: c.kind }, now);
 }
 
 /**
@@ -832,10 +857,11 @@ export function webauthnRoutes(app: FastifyInstance): void {
     {
       preHandler: [
         requireSession({ allowRecovery: true }),
+        requireNotHeld,
         requireConfirm(addKeyAction, { onboarding: true, recovery: true }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/webauthn/finish', { preHandler: requireSession({ allowRecovery: true }) }, addKeyFinish);
+  app.post('/v1/account/webauthn/finish', { preHandler: [requireSession({ allowRecovery: true }), requireNotHeld] }, addKeyFinish);
 }

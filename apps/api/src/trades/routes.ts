@@ -52,11 +52,20 @@ export async function tradeFor(req: FastifyRequest): Promise<TradeRow> {
 }
 
 /**
+ * Plan 2 Task 17 and R42: trades already open can be finished during the 24-hour hold, from a
+ * backup (recovery) session too, held or not: reading the trade, every trade event (mark paid,
+ * release started and its signals, the buyer's cancel), the final alert's receipt, the
+ * confirmations, and opening a dispute (disputes/routes.ts). Starting a trade stays refused
+ * (`take`: `requireNotHeld`, full sessions only).
+ */
+export const FINISH_OPEN_TRADES = { kinds: ['trader'], allowRecovery: true, allowHeld: true } as const satisfies Parameters<typeof requireSession>[0];
+
+/**
  * `GET /v1/trades/:code` and `POST /v1/trades/:code/events` (Task 6). Trader sessions only, and
  * participants only: anyone else gets the same 404 as for an unknown code.
  */
 export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}): void {
-  const session = requireSession({ kinds: ['trader'] });
+  const session = requireSession(FINISH_OPEN_TRADES);
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
   // Delivery (Task 19: streams, pushes, the final alert) runs after the actor's request, as the
@@ -158,7 +167,7 @@ export interface ConfirmationsView {
  * address ending; nobody gets an address, an amount or the tx hash.
  */
 export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations): void {
-  const session = requireSession({ kinds: ['trader'] });
+  const session = requireSession(FINISH_OPEN_TRADES);
   app.get('/v1/trades/:code/confirmations', { preHandler: session }, async (req): Promise<ConfirmationsView> => {
     const row = await tradeFor(req);
     const t = rowToTrade(row);

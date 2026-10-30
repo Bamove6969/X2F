@@ -25,6 +25,7 @@ import { methodAllowed } from './methods.js';
 import { requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { traderLogin } from './approval.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 import { assertNotDisabled, requireSession } from './sessions.js';
 import { throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
 
@@ -243,7 +244,7 @@ async function enrolStart(req: FastifyRequest) {
  * right code clears the streak and uses the challenge up with `consumeChallenge`, so it enrols
  * once even in parallel.
  */
-async function enrolFinish(req: FastifyRequest) {
+async function enrolFinish(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const b = body(req);
   const challengeId = str(b, 'challengeId');
@@ -272,18 +273,16 @@ async function enrolFinish(req: FastifyRequest) {
     throw expired();
   }
 
+  // Sealed again with a fresh nonce; the enrolment code's step counts as used.
+  const sealedNow = sealSecret(deps, req.auth.accountId, bytes);
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
   try {
     await client.query('begin');
     try {
-      // Sealed again with a fresh nonce; the enrolment code's step counts as used.
-      await client.query(
-        `insert into totp (account_id, secret_enc, last_step, created_at) values ($1, $2, $3, $4)
-         on conflict (account_id) do update set secret_enc = excluded.secret_enc, last_step = excluded.last_step,
-           created_at = excluded.created_at`,
-        [req.auth.accountId, sealSecret(deps, req.auth.accountId, bytes), step, now],
-      );
-      await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'totp' }, now);
+      // Task 17: a waiting login's enrolment starts the hold and waits in it.
+      held = await gateChange(client, req, { kind: 'totp', secretEnc: sealedNow.toString('base64'), step });
+      if (held === null) await applyTotp(client, req.auth.accountId, sealedNow, step, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -292,7 +291,22 @@ async function enrolFinish(req: FastifyRequest) {
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, req.auth.accountId);
+    return reply.code(202).send(heldReply(held));
+  }
   return { ok: true };
+}
+
+/** The write of a TOTP enrolment (the route's, or a pending one when the hold ends by time); replaces an earlier one. */
+export async function applyTotp(db: Queryable, accountId: string, secretEnc: Buffer, step: number, now: Date): Promise<void> {
+  await db.query(
+    `insert into totp (account_id, secret_enc, last_step, created_at) values ($1, $2, $3, $4)
+     on conflict (account_id) do update set secret_enc = excluded.secret_enc, last_step = excluded.last_step,
+       created_at = excluded.created_at`,
+    [accountId, secretEnc, step, now],
+  );
+  await addAlert(db, accountId, 'login-method-added', { method: 'totp' }, now);
 }
 
 /**
@@ -347,9 +361,9 @@ async function secondFactor(req: FastifyRequest, reply: FastifyReply) {
 export function totpRoutes(app: FastifyInstance): void {
   app.post(
     '/v1/account/totp/start',
-    { preHandler: [requireSession(), methodAllowed('totp'), requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: true })] },
+    { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld, requireConfirm({ kind: 'add-method', method: 'totp' }, { onboarding: true })] },
     enrolStart,
   );
-  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp')] }, enrolFinish);
+  app.post('/v1/account/totp/finish', { preHandler: [requireSession(), methodAllowed('totp'), requireNotHeld] }, enrolFinish);
   app.post('/v1/login/second-factor', secondFactor);
 }

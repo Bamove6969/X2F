@@ -3,6 +3,7 @@ import { TradeRuleError, type Party, type Trade } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
+import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
@@ -186,7 +187,8 @@ export interface DisputeRouteOptions {
 }
 
 export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = {}): void {
-  const trader = requireSession({ kinds: ['trader'] });
+  // Plan 2 Task 17: a dispute on an open trade can be opened (and followed) during the hold, from a backup session too.
+  const trader = requireSession(FINISH_OPEN_TRADES);
   const hook = opts.publish ?? noPublish;
   const publish: TradePublisher = async (t, e, by) => {
     try {

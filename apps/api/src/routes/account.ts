@@ -7,6 +7,7 @@ import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
+import { gateChange, heldReply, holdUntil, pushHoldStarted, requireNotHeld } from '../auth/hold.js';
 import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -31,8 +32,8 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
-  /** Task 17: the end of the account's 24-hour cooling-off while one runs, else null. */
-  coolingUntil: string | null;
+  /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
+  accountHoldUntil: string | null;
 }
 
 /**
@@ -128,9 +129,8 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     terms_version: string | null;
     level: SessionLevel;
     hold_until: Date | null;
-    cooling_until: Date | null;
   }>(
-    `select a.display_name, a.legacy_login_name, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until, a.cooling_until
+    `select a.display_name, a.legacy_login_name, a.kind, a.idle_hours, a.terms_version, s.level, s.hold_until
        from accounts a join sessions s on s.account_id = a.id
       where a.id = $1 and s.id = $2`,
     [accountId, sessionId],
@@ -153,7 +153,7 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     logoutTimer: logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
-    coolingUntil: row.cooling_until !== null && row.cooling_until.getTime() > now.getTime() ? row.cooling_until.toISOString() : null,
+    accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
   };
 }
 
@@ -205,7 +205,7 @@ export function accountRoutes(app: FastifyInstance): void {
    * takes a register-budget token: a taken name answers like a sign-up's, at the same cost
    * (plan-2-review residual (b)); the login name is never echoed.
    */
-  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireConfirm({ kind: 'set-login-name' })] }, async (req) => {
+  app.post('/v1/account/login-name', { preHandler: [requireSession(), requireNotHeld, requireConfirm({ kind: 'set-login-name' })] }, async (req, reply) => {
     const d = deps();
     req.server.budgets.register.take();
     const body = req.body;
@@ -221,15 +221,12 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
     const client = await d.db.connect();
+    let held: { holdUntil: Date } | null = null;
     try {
       await client.query('begin');
       try {
-        const updated = await client.query(
-          'update accounts set login_name = $2, login_key = $3, legacy_login_name = false where id = $1 and legacy_login_name',
-          [req.auth.accountId, r.name, r.key],
-        );
-        if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
-        await addAlert(client, req.auth.accountId, 'login-name-set', {}, d.clock());
+        held = await gateChange(client, req, { kind: 'login-name', name: r.name, key: r.key });
+        if (held === null) await applyLoginName(client, req.auth.accountId, r.name, r.key, d.clock());
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -241,12 +238,17 @@ export function accountRoutes(app: FastifyInstance): void {
     } finally {
       client.release();
     }
+    if (held !== null) {
+      pushHoldStarted(req, req.auth.accountId);
+      return reply.code(202).send(heldReply(held));
+    }
     return { ok: true };
   });
 
   app.post(
     '/v1/account/terms',
-    { preHandler: requireSession({ allowRecovery: true, allowStaleTerms: true }) },
+    // Task 17 (lead default): new Terms wait out the hold.
+    { preHandler: [requireSession({ allowRecovery: true, allowStaleTerms: true }), requireNotHeld] },
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const version = d.config.termsVersion;
@@ -282,28 +284,20 @@ export function accountRoutes(app: FastifyInstance): void {
    * moved to `last_seen_at + idleHours` (capped by the 30-day absolute limit); a session already
    * idle that long is refused at its next request by `requireSession`.
    */
-  app.put(LOGOUT_TIMER, { preHandler: requireSession({ kinds: ['trader'] }) }, async (req) => {
+  app.put(LOGOUT_TIMER, { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld] }, async (req, reply) => {
     const d = deps();
     const body = req.body;
     if (body === null || typeof body !== 'object' || Array.isArray(body)) throw new ApiError(400, 'bad-request');
     const idleHours = (body as { idleHours?: unknown }).idleHours;
     if (!isIdleHours(idleHours)) throw new ApiError(400, 'bad-request');
-    const now = d.clock();
-    const policy = sessionPolicy('trader', 'full', idleHours);
     const client = await d.db.connect();
+    let held: { holdUntil: Date } | null = null;
     try {
       await client.query('begin');
       try {
-        await client.query('update accounts set idle_hours = $2 where id = $1', [req.auth.accountId, idleHours]);
-        const { rows } = await client.query<{ id: string; created_at: Date; last_seen_at: Date }>(
-          `select id, created_at, last_seen_at from sessions
-            where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
-            for update`,
-          [req.auth.accountId, now],
-        );
-        for (const s of rows) {
-          await client.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
-        }
+        // Task 17 (review M2): the logout timer is a Settings -> Security change.
+        held = await gateChange(client, req, { kind: 'logout-timer', idleHours });
+        if (held === null) await applyLogoutTimer(client, req.auth.accountId, idleHours, d.clock());
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -311,6 +305,10 @@ export function accountRoutes(app: FastifyInstance): void {
       }
     } finally {
       client.release();
+    }
+    if (held !== null) {
+      pushHoldStarted(req, req.auth.accountId);
+      return reply.code(202).send(heldReply(held));
     }
     return logoutTimerOf('trader', idleHours);
   });
@@ -331,17 +329,17 @@ export function accountRoutes(app: FastifyInstance): void {
    */
   app.put(
     '/v1/account/security/one-device',
-    { preHandler: [requireSession({ kinds: ['trader'] }), requireConfirm(oneDeviceAction)] },
-    async (req) => {
+    { preHandler: [requireSession({ kinds: ['trader'] }), requireNotHeld, requireConfirm(oneDeviceAction)] },
+    async (req, reply) => {
       const d = deps();
       const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
-      const now = d.clock();
       const client = await d.db.connect();
+      let held: { holdUntil: Date } | null = null;
       try {
         await client.query('begin');
         try {
-          await client.query('update accounts set one_device = $2 where id = $1', [req.auth.accountId, on]);
-          await addAlert(client, req.auth.accountId, 'one-device-set', { on }, now);
+          held = await gateChange(client, req, { kind: 'one-device', on });
+          if (held === null) await applyOneDevice(client, req.auth.accountId, on, d.clock());
           await client.query('commit');
         } catch (e) {
           await client.query('rollback');
@@ -349,6 +347,10 @@ export function accountRoutes(app: FastifyInstance): void {
         }
       } finally {
         client.release();
+      }
+      if (held !== null) {
+        pushHoldStarted(req, req.auth.accountId);
+        return reply.code(202).send(heldReply(held));
       }
       return { oneDevice: on, maxDevices: await maxDevices(d.db) };
     },
@@ -414,4 +416,39 @@ export function accountRoutes(app: FastifyInstance): void {
       return reply.code(204).send();
     },
   );
+}
+
+/** The write of a pre-009 account's login name (the route's, or a pending one when the hold ends by time). 409 `login-name-set` when already chosen. */
+export async function applyLoginName(db: Queryable, accountId: string, name: string, key: string, now: Date): Promise<void> {
+  const updated = await db.query(
+    'update accounts set login_name = $2, login_key = $3, legacy_login_name = false where id = $1 and legacy_login_name',
+    [accountId, name, key],
+  );
+  if ((updated.rowCount ?? 0) === 0) throw new ApiError(409, 'login-name-set');
+  await addAlert(db, accountId, 'login-name-set', {}, now);
+}
+
+/**
+ * The write of a logout timer (the route's, or a pending one when the hold ends by time): every
+ * live full session of the account gets its idle deadline moved to `last_seen_at + idleHours`
+ * (capped by the 30-day absolute limit).
+ */
+export async function applyLogoutTimer(db: Queryable, accountId: string, idleHours: IdleHours, now: Date): Promise<void> {
+  const policy = sessionPolicy('trader', 'full', idleHours);
+  await db.query('update accounts set idle_hours = $2 where id = $1', [accountId, idleHours]);
+  const { rows } = await db.query<{ id: string; created_at: Date; last_seen_at: Date }>(
+    `select id, created_at, last_seen_at from sessions
+      where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
+      for update`,
+    [accountId, now],
+  );
+  for (const s of rows) {
+    await db.query('update sessions set expires_at = $2 where id = $1', [s.id, deadline(s.created_at, s.last_seen_at, policy)]);
+  }
+}
+
+/** The write of "One device at a time" (the route's, or a pending one when the hold ends by time): alert `one-device-set { on }`. */
+export async function applyOneDevice(db: Queryable, accountId: string, on: boolean, now: Date): Promise<void> {
+  await db.query('update accounts set one_device = $2 where id = $1', [accountId, on]);
+  await addAlert(db, accountId, 'one-device-set', { on }, now);
 }
