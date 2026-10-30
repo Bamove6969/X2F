@@ -20,6 +20,8 @@ import { usableWallets } from '../wallets/routes.js';
  * - `PATCH /v1/offers/:id { status }` (the poster only) → `{ id, status }`.
  * - `GET /v1/offers?side&method&currency&sort=best|online|trades` (no session, P3-M9) → `OfferCard[]`.
  * - `GET /v1/offers/:id` (no session) → `OfferDetail`; a paused offer only to its poster.
+ * - Task 36: `GET /v1/account/offers` (`requireTrader`) → `MyOffer[]`, and
+ *   `POST /v1/account/offers/status { ids: string[] | 'all', status }` → per-offer results.
  *
  * A signed-in trader never sees the offers of someone they blocked or who blocked them (Task 37,
  * traders/blocks.ts): the list leaves them out and the single-offer route answers 404.
@@ -56,6 +58,49 @@ export interface OfferDetail extends OfferCard {
 }
 
 export type OfferStatus = 'live' | 'paused' | 'removed';
+
+/** One of my offers on `GET /v1/account/offers` (Task 36): live or paused, never removed. */
+export interface MyOffer {
+  id: string;
+  side: Side;
+  methodId: string;
+  /** The catalog's name for the method (the id when the catalog no longer has it). */
+  methodName: string;
+  currency: string;
+  /** The offer's price per XMR now (`offerRate`); null for a market offer while the feed is down. */
+  rate: string | null;
+  pricing: OfferCard['pricing'];
+  minFiatCents: string;
+  maxFiatCents: string;
+  minTrades: number;
+  country?: string;
+  status: 'live' | 'paused';
+  /**
+   * A live offer that nobody can see right now, and why (review M4): the site's emergency stop,
+   * the account's trading hold, or its method under legal review. Absent when the offer is listed
+   * or paused.
+   */
+  hidden?: 'trading-paused' | 'trading-hold' | 'method-unavailable';
+  createdAt: string;
+}
+
+/**
+ * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
+ * relisting (`trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
+ * or `not-found` for an id that is not one of my live or paused offers.
+ */
+export type OfferSwitchRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
+
+/** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
+export interface OfferSwitchResult {
+  id: string;
+  /** Absent for `not-found`. */
+  status?: 'live' | 'paused';
+  refused?: OfferSwitchRefusal;
+}
+
+/** At most this many ids in one `POST /v1/account/offers/status` (the caps keep an account far below it). */
+export const SWITCH_MAX_IDS = 100;
 
 const SORTS = ['best', 'online', 'trades'] as const;
 type Sort = (typeof SORTS)[number];
@@ -254,13 +299,9 @@ async function assertMayPost(
   market: { side: Side; methodId: string; currency: string },
   except: string | null,
 ): Promise<void> {
-  await client.query('select 1 from accounts where id = $1 for update', [accountId]);
-  const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
-  // No site_flags row fails closed.
-  if (flags.rows[0]?.trading_paused !== false) throw new ApiError(409, 'trading-paused');
-  const held = await client.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
-  if ((held.rowCount ?? 0) > 0) throw new ApiError(409, 'trading-hold');
-  if ((await usableWallets(client, accountId, now)).length === 0) throw new ApiError(409, 'no-wallet');
+  await lockAccount(client, accountId);
+  const refused = await accountRefusal(client, accountId, now);
+  if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
   const { rows } = await client.query<{ same: number; total: number }>(
     `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
@@ -269,6 +310,27 @@ async function assertMayPost(
   );
   const c = rows[0]!;
   if (c.same >= caps.perMarket || c.total >= caps.total) throw new ApiError(409, 'too-many-offers');
+}
+
+/**
+ * The first lock every offer write of an account takes (Task 4 lock order: accounts(A) `for update`,
+ * then site_flags `for share`, then offer rows). Task 5's take locks the accounts first too, then
+ * the offer, so no path holds an offer row while waiting for an account row.
+ */
+async function lockAccount(client: Queryable, accountId: string): Promise<void> {
+  await client.query('select 1 from accounts where id = $1 for update', [accountId]);
+}
+
+/** Why this account may not put any offer live now, or null; run after `lockAccount`. */
+type AccountRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet';
+async function accountRefusal(client: Queryable, accountId: string, now: Date): Promise<AccountRefusal | null> {
+  const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
+  // No site_flags row fails closed.
+  if (flags.rows[0]?.trading_paused !== false) return 'trading-paused';
+  const held = await client.query('select 1 from trading_holds where account_id = $1 and lifted_at is null limit 1', [accountId]);
+  if ((held.rowCount ?? 0) > 0) return 'trading-hold';
+  if ((await usableWallets(client, accountId, now)).length === 0) return 'no-wallet';
+  return null;
 }
 
 /** Runs `fn` in one transaction on its own client. */
@@ -288,6 +350,19 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
 }
 
 const requireTrader = requireSession({ kinds: ['trader'] });
+/**
+ * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
+ * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
+ * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
+ * (round-2 review m1, lead decision 2026-10-29).
+ */
+const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true });
+
+/** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
+async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
+  const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
+  if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
+}
 // Browsing: a signed-in trader's session, read only (no touch), when there is one.
 const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true });
 
@@ -380,13 +455,16 @@ export function offerRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ id });
   });
 
-  app.patch('/v1/offers/:id', { preHandler: requireTrader }, async (req) => {
+  app.patch('/v1/offers/:id', { preHandler: requireTraderStaleOk }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     const body = req.body;
     if (!isObject(body) || Object.keys(body).length !== 1) throw bad();
     const status = body.status;
     if (typeof status !== 'string' || !(STATUSES as readonly string[]).includes(status)) throw bad();
+    // Pausing and removing work on stale Terms (R10 lead decisions 2026-10-29: shutting off never
+    // waits for new Terms); relisting does not.
+    if (status === 'live') await assertTermsCurrent(deps, req.auth!.accountId);
     if (!UUID.test(id)) throw new ApiError(404, 'not-found');
     const { rows } = await deps.db.query<{ account_id: string; status: OfferStatus; method_id: string }>(
       'select account_id, status, method_id from offers where id = $1',
@@ -480,5 +558,131 @@ export function offerRoutes(app: FastifyInstance): void {
     const card = toCard(r, poster, rateOf(r, deps.prices));
     if (viewerId !== null && !mine) await markOpensAt(deps, viewerId, [r], [card]);
     return { ...card, side: r.side, methodId: r.method_id, currency: r.currency, terms: r.terms, status: r.status };
+  });
+
+  /**
+   * Task 36, My offers: every live and paused offer of mine, newest first. Removed offers are gone.
+   */
+  app.get('/v1/account/offers', { preHandler: requireTraderStaleOk }, async (req): Promise<MyOffer[]> => {
+    const deps = req.server.deps;
+    const accountId = req.auth!.accountId;
+    const { rows } = await deps.db.query<OfferRow & { created_at: Date }>(
+      `select ${OFFER_COLUMNS}, o.created_at from offers o
+        where o.account_id = $1 and o.status <> 'removed' order by o.created_at desc, o.id`,
+      [accountId],
+    );
+    // Why a live offer is not listed now (review M4), in LISTED's terms; no site_flags row is a stop.
+    const { rows: why } = await deps.db.query<{ paused: boolean; held: boolean }>(
+      `select not coalesce((select f.trading_paused = false from site_flags f), false) as paused,
+              exists (select 1 from trading_holds h where h.account_id = $1 and h.lifted_at is null) as held`,
+      [accountId],
+    );
+    const accountHidden = why[0]!.paused ? 'trading-paused' : why[0]!.held ? 'trading-hold' : null;
+    return rows.map((r) => {
+      const p = pricingOf(r);
+      const rate = rateOf(r, deps.prices);
+      const out: MyOffer = {
+        id: r.id, side: r.side, methodId: r.method_id, methodName: getMethod(r.method_id)?.name ?? r.method_id,
+        currency: r.currency, rate: rate === null ? null : rate.toString(),
+        pricing: p.mode === 'fixed' ? { mode: 'fixed', centsPerXmr: p.centsPerXmr.toString() } : { mode: 'market', marginBps: p.marginBps },
+        minFiatCents: r.min_fiat_cents,
+        maxFiatCents: r.max_fiat_cents, minTrades: r.min_trades, status: r.status as 'live' | 'paused',
+        createdAt: r.created_at.toISOString(),
+      };
+      if (r.country !== null) out.country = r.country;
+      if (r.status === 'live') {
+        const hidden = accountHidden ?? (isAvailable(r.method_id) ? null : 'method-unavailable');
+        if (hidden !== null) out.hidden = hidden;
+      }
+      return out;
+    });
+  });
+
+  /**
+   * Task 36: `POST /v1/account/offers/status { ids: string[] | 'all', status: 'live' | 'paused' }`
+   * turns some or all of my offers on or off → `{ status, results: OfferSwitchResult[] }`.
+   *
+   * Decided (Task 36 builder, 2026-10-29): **per-offer results in one transaction**, not
+   * all-or-nothing. Every offer that may switch does, every one that may not stays as it was and is
+   * named with its reason; the reply is 200 even when every offer was refused. Turning on runs the
+   * relist guards for each offer (paused site, trading hold, no usable wallet, the caps counted as
+   * relisting counts them, the method's availability), in PATCH's order: method, account, caps.
+   * Turning off has no guard: it always succeeds, under a hold, during an emergency stop and on a
+   * stale Terms version too (R10 lead decision 2026-10-29); turning on needs the current Terms
+   * (403 `terms-required` for the whole call). The web always sends explicit ids (review M1) in
+   * batches of at most SWITCH_MAX_IDS (M5); `'all'` stays for other clients. Removed offers and other accounts' offers are
+   * never touched (`not-found` when named). An offer already in the asked status counts as done.
+   *
+   * Locks follow Task 4's order: the account row `for update` first (so this and any post, relist or
+   * take of the account run one at a time), then site_flags `for share` (turning on only), then the
+   * account's offer rows `for update`.
+   */
+  app.post('/v1/account/offers/status', { preHandler: requireTraderStaleOk }, async (req) => {
+    const deps = req.server.deps;
+    const body = req.body;
+    if (!isObject(body) || Object.keys(body).sort().join(',') !== 'ids,status') throw bad();
+    const status = body.status;
+    if (status !== 'live' && status !== 'paused') throw bad();
+    const ids = body.ids;
+    let wanted: string[] | 'all';
+    if (ids === 'all') wanted = 'all';
+    // An id that is not a (lower-case) UUID is not-found, as PATCH answers 404 for it (review N2).
+    else if (Array.isArray(ids) && ids.length >= 1 && ids.length <= SWITCH_MAX_IDS && ids.every((i) => typeof i === 'string' && i.length <= 64)) {
+      wanted = [...new Set(ids as string[])];
+    } else throw bad();
+    const accountId = req.auth!.accountId;
+    // Turning off works on stale Terms (R10 lead decision 2026-10-29); turning on does not.
+    if (status === 'live') await assertTermsCurrent(deps, accountId);
+    const now = deps.clock();
+
+    const results = await inTransaction(deps.db, async (client) => {
+      await lockAccount(client, accountId);
+      const refusedAll = status === 'live' ? await accountRefusal(client, accountId, now) : null;
+      const caps = status === 'live' ? await loadOfferCaps(client) : null;
+      // Every live or paused offer of mine (the caps count them all), newest first as on the list.
+      const { rows: mine } = await client.query<{ id: string; side: Side; method_id: string; currency: string; status: 'live' | 'paused' }>(
+        `select id, side, method_id, currency, status from offers where account_id = $1 and status <> 'removed'
+          order by created_at desc, id for update`,
+        [accountId],
+      );
+      const byId = new Map(mine.map((o) => [o.id, o]));
+      const targets = wanted === 'all' ? mine.map((o) => o.id) : wanted;
+      const out: OfferSwitchResult[] = [];
+      const switched: string[] = [];
+      for (const id of targets) {
+        const o = byId.get(id);
+        if (!o) {
+          out.push({ id, refused: 'not-found' });
+          continue;
+        }
+        if (o.status === status) {
+          out.push({ id, status });
+          continue;
+        }
+        if (status === 'live') {
+          // PATCH's order (review N1): the method first, then the account's guards, then the caps.
+          let refused: OfferSwitchRefusal | null = isAvailable(o.method_id) ? refusedAll : 'method-unavailable';
+          if (refused === null) {
+            // As relisting counts: every other live or paused offer of mine (this one left out).
+            let same = 0;
+            for (const x of mine) if (x.id !== id && x.side === o.side && x.method_id === o.method_id && x.currency === o.currency) same++;
+            if (same >= caps!.perMarket || mine.length - 1 >= caps!.total) refused = 'too-many-offers';
+          }
+          if (refused !== null) {
+            out.push({ id, status: o.status, refused });
+            continue;
+          }
+        }
+        switched.push(id);
+        out.push({ id, status });
+      }
+      if (switched.length > 0) {
+        await client.query(`update offers set status = $2, updated_at = $3 where account_id = $1 and id = any($4::uuid[]) and status <> 'removed'`, [
+          accountId, status, now, switched,
+        ]);
+      }
+      return out;
+    });
+    return { status, results };
   });
 }
