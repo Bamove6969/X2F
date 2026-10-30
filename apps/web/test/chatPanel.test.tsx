@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 import { act } from 'react';
+import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { CHAT_NOTICE, ChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
+import { CHAT_NOTICE, ChatPanel, OfferChatPanel, OTHER_DEVICE, TradeChatPanel } from '../src/chat/ChatPanel.js';
 import { ChatFailed, setChatClient, type ChatClient, type ChatSnapshot } from '../src/chat/client.js';
 import { emitChatLive } from '../src/chat/live.js';
 import { render } from './render.js';
@@ -229,6 +230,46 @@ describe('ChatPanel', () => {
   });
 });
 
+describe('ChatPanel: block (Task 37)', () => {
+  it("offers Block <name> in the chat; after a block it re-syncs (an offer chat then answers 404, a trade chat stays)", async () => {
+    const fetch = vi.fn(async () => new Response(null, { status: 204 }));
+    vi.stubGlobal('fetch', fetch);
+    const { host } = render(
+      <MemoryRouter>
+        <ChatPanel chat={CHAT} name="Sam" />
+      </MemoryRouter>,
+    );
+    await flush();
+    const open = host.querySelector<HTMLButtonElement>('[data-part="block-open"]');
+    expect(open?.textContent).toBe('Block Sam');
+    // In the chat's header area: after the notice, before the messages.
+    const order = [...host.querySelectorAll('.x2f-chat__notice, [data-part="block-open"], .x2f-chat__lines')];
+    expect(order.map((e) => e.className || 'block')).toEqual(['x2f-chat__notice', expect.stringContaining('x2f-button'), 'x2f-chat__lines']);
+    const before = client.sync.mock.calls.length;
+    act(() => open!.click());
+    act(() => host.querySelector<HTMLButtonElement>('[data-part="block-confirm"]')!.click());
+    await flush();
+    expect(fetch).toHaveBeenCalledWith('/v1/account/blocks', expect.objectContaining({ method: 'POST' }));
+    expect(host.querySelector('[data-part="block-done"]')?.textContent).toContain('You blocked Sam.');
+    expect(client.sync.mock.calls.length).toBe(before + 1);
+  });
+
+  it('a chat that answers 404 after the block shows no composer and says it has been closed', async () => {
+    const { host } = render(
+      <MemoryRouter>
+        <ChatPanel chat={CHAT} name="Sam" />
+      </MemoryRouter>,
+    );
+    await flush();
+    expect(host.querySelector('textarea')).not.toBeNull();
+    client.sync.mockRejectedValue(new ChatFailed('not-found'));
+    act(() => emitChatLive(CHAT));
+    await flush();
+    expect(host.querySelector('textarea')).toBeNull();
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('This chat has been closed.');
+  });
+});
+
 describe('TradeChatPanel', () => {
   it("opens the trade's chat through POST /v1/trades/:code/chat", async () => {
     const fetch = vi.fn(async () => new Response(JSON.stringify({ chat: CHAT, role: 'buyer' }), { status: 200, headers: { 'content-type': 'application/json' } }));
@@ -246,7 +287,25 @@ describe('TradeChatPanel', () => {
     const { host } = render(<TradeChatPanel code="AAAA-BBBB-CCCC-DDDD" name="Sam" />);
     await flush();
     await flush();
-    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The chat for this trade is not available.');
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('This trade has no chat.');
+    expect(client.sync).not.toHaveBeenCalled();
+  });
+});
+
+describe('OfferChatPanel', () => {
+  it('a refused open (own-offer) goes through CantDoThat with its feedback link (Plan 5 Task 21)', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ error: 'own-offer' }), { status: 409, headers: { 'content-type': 'application/json' } })));
+    const { host } = render(
+      <MemoryRouter>
+        <OfferChatPanel offerId="8c1f9a52-3a4e-4f0b-9d55-6c1e2b7a9f10" name="Sam" />
+      </MemoryRouter>,
+    );
+    await flush();
+    await flush();
+    const popup = document.querySelector('[data-part="cant-do-that"]');
+    expect(popup?.getAttribute('data-from')).toBe('own-offer');
+    expect(popup?.textContent).toContain('This is your own offer.');
+    expect(host.querySelector('textarea')).toBeNull();
     expect(client.sync).not.toHaveBeenCalled();
   });
 });

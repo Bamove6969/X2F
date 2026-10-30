@@ -109,6 +109,16 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
+  'chat-not-ready': 'the chat is still being secured (wait)',
+  'stale-seq': 'a device step out of order (the engine re-syncs; a fault)',
+  'wrong-channel': 'a device check (a fault)',
+  'wrong-sender': 'a device check (a fault)',
+  'chat-unavailable': 'the trade has no chat (cannot happen since Task 5\'s offer key; a fault)',
+  'mod-not-allowed': "a device check: a moderator line outside a dispute is not shown (the chat's own rule)",
+  'bad-message': 'a device check on a received line (a fault)',
+  'bad-text': 'an input check on the typed message',
+  'too-large': 'an input check on the typed message',
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',
@@ -141,6 +151,7 @@ export const CANT_DO_TITLE = {
   extend: "You can't give more time",
   block: "You can't block this trader",
   myOffers: "Some offers can't be turned on",
+  chat: "This chat can't open",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -165,6 +176,11 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
     default:
       return 'Your account cannot start this trade right now.';
   }
+}
+
+/** What a refused chat open says (Task 20: today only 409 own-offer, a poster on their own offer). */
+export function chatCantDoText(code: CantDoCode): string {
+  return code === 'own-offer' ? 'This is your own offer.' : "You can't open this chat right now.";
 }
 
 /** What a refused Post offer says. */
