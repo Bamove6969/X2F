@@ -467,8 +467,9 @@
 }
 
 /* The wide room (Desktop board): a main column and a 400 px chat column, filling the shell's height
-   (the room's <main> is the DesktopShell body's child). */
-main[data-screen='trade']:has(> .x2f-room) {
+   (the room's <main> is the DesktopShell body's child; the room's panes wrapper, src/ui/Panes.tsx,
+   is display: contents in the wide layout). */
+main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   display: flex;
   flex-direction: column;
   flex-grow: 1;
