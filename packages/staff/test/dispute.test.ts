@@ -475,7 +475,8 @@ describe('purity', () => {
   });
   test('an invalid clock or window setting is refused', () => {
     expect(() => applyDispute(base(), { type: 'reply' }, owner, new Date(Number.NaN), S)).toThrow(RangeError);
-    expect(() => applyDispute(base(), { type: 'reply' }, owner, at(1), { appealWindowH: 0 })).toThrow(RangeError);
+    expect(() => applyDispute(base(), { type: 'reply' }, owner, at(1), { ...S, appealWindowH: 0 })).toThrow(RangeError);
+    expect(() => applyDispute(base(), { type: 'reply' }, owner, at(1), { ...S, firstResponseH: 0 })).toThrow(RangeError);
   });
 });
 
