@@ -251,8 +251,11 @@ describe('schema', () => {
         [randomBytes(32)],
       );
       await new Promise((r) => setTimeout(r, 100));
-      await a.query('commit');
-      await expect(second).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+      // Both observed together: `second` can reject before (or in the same read as) the commit's
+      // reply, and a rejection with no handler yet is an unhandled rejection (a flake seen 2026-10-29).
+      const [commit, raced] = await Promise.allSettled([a.query('commit'), second]);
+      expect(commit.status).toBe('fulfilled');
+      expect(raced).toMatchObject({ status: 'rejected', reason: { code: '23505', constraint: 'name_keys_pkey' } });
       await b.query('rollback');
     } finally {
       a.release();
