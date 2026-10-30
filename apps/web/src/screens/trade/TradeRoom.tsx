@@ -300,7 +300,7 @@ function ReadyRoom({ code, ownCode, view, refresh, navState, hash }: { code: str
         }
         sideLabel={`Chat with ${publicName(view.counterparty)}`}
       />
-      <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={`${view.state}:${view.role}`} />
+      <ChatHash hash={hash} layout={layout} chat={chat} chatPane={chatPane} name={publicName(view.counterparty)} screen={Screen} />
     </main>
   );
 }
@@ -357,11 +357,14 @@ export function focusComposerWhenReady(where: string): () => void {
  * pane, or a screen's own wide chat aside (BuyerPay), the composer gets the focus once the chat is
  * ready, never a second panel. Its draft is the same either way (useKeptText).
  */
-function ChatHash({ hash, layout, chat, chatPane, name, screen }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string; screen: string }) {
+function ChatHash({ hash, layout, chat, chatPane, name, screen }: { hash: string; layout: FoldLayout; chat: ReactNode; chatPane: boolean; name: string; screen: unknown }) {
   const navigate = useNavigate();
   const wanted = hash === '#chat' && chat !== null;
   const wide = layout === 'wide';
-  // Whether the screen on show draws its own chat aside (read once it is laid out).
+  // Whether the screen on show draws its own chat aside (read once it is laid out). Keyed on the
+  // chosen screen component, not on state and role: a screen can change by time within one state
+  // (seller × `secured`: SellerWaiting with its aside, then SellerRefund past `payBy` with none;
+  // Task 20 round-3 review n1).
   const [aside, setAside] = useState<boolean | null>(null);
   useLayoutEffect(() => {
     setAside(wanted && wide ? document.querySelector(ASIDE_CHAT) !== null : null);
