@@ -9,6 +9,11 @@
 // links no row to anyone; a restart forgets it). Over it, the answer is still 202 and nothing is
 // stored, so the prompt never shows a refusal for what is only a courtesy.
 //
+// Flood cap (lead decision 2026-10-30, review M2): at most FEEDBACK_GLOBAL_DAILY rows a UTC day from
+// everyone together, counted in the table itself (so it holds across API processes and restarts).
+// Beyond it a send is dropped the same way: 202, nothing stored. A flood can then crowd out genuine
+// sends for the rest of that day, but never bury a year of notes. Parallel sends may pass it by a few.
+//
 // The same database-level residual as the feedback form applies (Postgres keeps insertion order in
 // xmin/ctid; see form.ts and docs/coordination.md). The route does not touch the session.
 //
@@ -27,6 +32,8 @@ export type FeedbackMood = (typeof FEEDBACK_MOODS)[number];
 export const FEEDBACK_NOTE_MAX = 500;
 /** Sends per account per UTC day (in memory only, P5-A19). */
 export const FEEDBACK_DAILY = 3;
+/** Rows a UTC day from all accounts together; beyond it a send is a silent 202 (lead decision, review M2). */
+export const FEEDBACK_GLOBAL_DAILY = 5000;
 /** P5-A19: rows are deleted after a year. */
 export const FEEDBACK_RETENTION_DAYS = 365;
 /** The staff page's counts cover this many days. */
@@ -121,6 +128,9 @@ export function feedbackRoutes(app: FastifyInstance): void {
     // insert fails: a database error never uses up one of the account's sends.
     sent.set(accountId, count + 1);
     try {
+      const full = await req.server.deps.db.query<{ n: number }>('select count(*)::int as n from platform_feedback where created_on = $1::date', [today]);
+      // Over the shared daily cap: the same 202, nothing stored (the account's send is used up).
+      if ((full.rows[0]?.n ?? 0) >= FEEDBACK_GLOBAL_DAILY) return reply.code(202).send({});
       await req.server.deps.db.query('insert into platform_feedback (mood, note, created_on) values ($1, $2, $3)', [f.mood, f.note, today]);
     } catch (e) {
       if (day === today) sent.set(accountId, Math.max(0, (sent.get(accountId) ?? 1) - 1));

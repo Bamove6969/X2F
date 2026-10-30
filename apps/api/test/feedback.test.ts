@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { FEEDBACK_DAILY, FEEDBACK_NOTE_MAX, feedbackMoodCounts, listFeedback, purgeFeedback } from '../src/feedback/mood.js';
+import { FEEDBACK_DAILY, FEEDBACK_GLOBAL_DAILY, FEEDBACK_NOTE_MAX, feedbackMoodCounts, listFeedback, purgeFeedback } from '../src/feedback/mood.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -111,6 +111,27 @@ describe('POST /v1/feedback', () => {
     setNow(new Date('2026-12-02T00:00:01Z'));
     expect((await b.post('/v1/feedback', { mood: 'great', note: 'next day' })).statusCode).toBe(202);
     expect((await rows()).map((r) => r.note)).toContain('next day');
+  });
+
+  it(`stores at most ${FEEDBACK_GLOBAL_DAILY} rows a UTC day from everyone together; beyond it still 202, nothing stored (review M2)`, async () => {
+    // Fill today to one under the cap, plus rows on other days that must not count.
+    await deps.db.query(
+      "insert into platform_feedback (mood, created_on) select 'ok', '2026-10-29' from generate_series(1, $1::int)",
+      [FEEDBACK_GLOBAL_DAILY - 1],
+    );
+    await deps.db.query("insert into platform_feedback (mood, created_on) values ('ok', '2026-10-28'), ('ok', '2026-10-28')");
+    const a = await login('moodcap1');
+    const b = await login('moodcap2');
+    expect((await a.b.post('/v1/feedback', { mood: 'great', note: 'last one in' })).statusCode).toBe(202);
+    expect((await b.b.post('/v1/feedback', { mood: 'needs-work', note: SECRET })).statusCode).toBe(202);
+    const today = await deps.db.query<{ n: number }>("select count(*)::int as n from platform_feedback where created_on = '2026-10-29'");
+    expect(today.rows[0]!.n).toBe(FEEDBACK_GLOBAL_DAILY);
+    expect((await deps.db.query("select 1 from platform_feedback where note = 'last one in'")).rowCount).toBe(1);
+    expect((await deps.db.query('select 1 from platform_feedback where note = $1', [SECRET])).rowCount).toBe(0);
+    // A new UTC day takes sends again.
+    setNow(new Date('2026-10-30T00:00:01Z'));
+    expect((await b.b.post('/v1/feedback', { mood: 'ok', note: 'next day' })).statusCode).toBe(202);
+    expect((await deps.db.query("select created_on::text as d from platform_feedback where note = 'next day'")).rows).toEqual([{ d: '2026-10-30' }]);
   });
 
   it('a failed insert does not use up a send', async () => {
