@@ -57,14 +57,17 @@ export interface DetectOptions {
 // Normalisation (reviews R3-I3 and R4). Detection runs on a copy of each line where every Unicode
 // dash (`\p{Pd}`, the minus sign and the marks typed as hyphens), space, tab and line separator, every
 // full-width form and every digit (`\p{Nd}`, and the other-number digits whose NFKC form is ASCII
-// digits, such as superscript and circled ones) is ASCII; invisible format characters (`\p{Cf}`) and
-// combining marks after a digit (accents, keycaps) are deleted. The copy can be shorter or longer than
+// digits, such as superscript and circled ones) is ASCII; invisible format characters (`\p{Cf}`), the
+// other default-ignorable characters (fillers such as U+3164, variation selectors; review R5-M1) and
+// combining marks after a digit (accents, keycaps) are deleted, and the braille blank U+2800 is a space.
+// Dash look-alikes outside `\p{Pd}` (modifier, superscript and subscript minus, heavy minus, horizontal
+// line extension and box-drawing lines; review R5-M2) are hyphens. The copy can be shorter or longer than
 // the original, so it carries a map from each of its units back to the original, and regions are
 // placed over the original words through that map.
 
-const HYPHEN = /[\p{Pd}\u2212\u2043\u30fc\uff70]/u;
-const SPACE = /[\t\v\f\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
-const FORMAT = /\p{Cf}/u;
+const HYPHEN = /[\p{Pd}\u02d7\u207b\u208b\u2212\u2043\u23af\u2500\u2501\u2574\u2576\u2578\u257a\u2796\u30fc\uff70]/u;
+const SPACE = /[\t\v\f\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u2800\u3000]/;
+const FORMAT = /[\p{Cf}\p{Default_Ignorable_Code_Point}]/u;
 const MARK = /\p{M}/u;
 const ND = /\p{Nd}/u;
 const digitValues = new Map<number, string>();
@@ -676,7 +679,7 @@ const ISO_4217 =
   'AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG XAU XCD XCG XDR XOF XPD XPF XPT XSU XUA YER ZAR ZMW ZWG ZWL';
 /** Common crypto codes and names. */
 const CRYPTO = 'XMR MONERO BTC ETH LTC USDT USDC BCH DAI XRP DOGE TRX SOL BNB ADA';
-/** Codes that are also everyday words: they never count, in any case (review R4-M5: `347.1234567 TRY`). */
+/** Codes that are also everyday words: they never count, in any case (review R4-M5: `347.1234567 TRY`), except `CAPITAL_AFTER_CODES`. */
 const WORD_CODES = new Set(['ALL', 'TOP', 'CUP', 'TRY', 'MOP', 'PEN', 'GEL', 'MAD', 'BOB', 'SOS', 'SOL', 'ADA']);
 const CURRENCY_CODES = new Set(`${ISO_4217} ${CRYPTO}`.split(' '));
 /**
@@ -684,7 +687,9 @@ const CURRENCY_CODES = new Set(`${ISO_4217} ${CRYPTO}`.split(' '));
  * counts only in capitals, as a code is written: `Ron`, `bam` or `Cad` next to a number is a word
  * (review R4-M5).
  */
-const LOWERCASE_CODES = new Set(['xmr', 'monero', 'btc', 'eth', 'eur', 'usd']);
+const LOWERCASE_CODES = new Set(['xmr', 'monero', 'btc', 'eth', 'ltc', 'usdt', 'usdc', 'eur', 'usd']);
+/** Crypto codes in `WORD_CODES` that count in capitals right after a decimal number (`0.12345678 SOL`, review R5-M4). */
+const CAPITAL_AFTER_CODES = new Set(['SOL', 'ADA']);
 const SYMBOL = /[$€£¥₹₽₩₺₴₱₦₪₫₿]/;
 
 function isCurrencyWord(w: string): boolean {
@@ -696,7 +701,9 @@ function isCurrencyWord(w: string): boolean {
 /** A currency or crypto code, name or symbol right after or right before a number (one space allowed). */
 function markAfter(rest: string): boolean {
   const m = /^ ?(?:([A-Za-z]+)(?![A-Za-z])|(\S))/.exec(rest);
-  return m !== null && (m[1] !== undefined ? isCurrencyWord(m[1]) : SYMBOL.test(m[2]!));
+  if (m === null) return false;
+  if (m[1] === undefined) return SYMBOL.test(m[2]!);
+  return isCurrencyWord(m[1]) || CAPITAL_AFTER_CODES.has(m[1]);
 }
 
 function markBefore(head: string): boolean {
