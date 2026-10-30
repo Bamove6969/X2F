@@ -6,7 +6,7 @@
  */
 import { amountForFunds, escrowPlan, fiatCents as fiatFor, type Price } from './money.js';
 import { SETTLE_KINDS, type SettleKind } from './payouts.js';
-import { TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
+import { SELLER_CONFIRM_CANCEL_TIMEOUT_H, TIMERS, UNLOCK_CONFIRMATIONS, addMin } from './timers.js';
 
 export type TradeState =
   | 'setup'
@@ -62,6 +62,11 @@ export interface Trade {
   setupBy: Date | null;
   fundBy: Date | null;
   fundingSeenAt: Date | null;
+  /**
+   * When the seller tapped "Fund escrow" (the `fund-started` event, Revision 2026-10-29b): from
+   * then on the seller can never walk away (`walk-away` → wrong-state).
+   */
+  fundStartedAt: Date | null;
   /** When the funding window lapsed (for the lapse co-sign timer). */
   lapsedAt: Date | null;
   securedAt: Date | null;
@@ -78,6 +83,18 @@ export interface Trade {
   txHash: string | null;
   dispute: { by: By; at: Date } | null;
   closedAt: Date | null;
+  /**
+   * The seller's "Confirm cancel" after a buyer-cancel refund (owner 2026-10-29, option B with a
+   * seller confirm step): the trade is officially cancelled only from then; before it, both apps
+   * say "Cancelling: returning the XMR to the seller".
+   */
+  cancelConfirmedAt: Date | null;
+  /**
+   * When the seller's Confirm cancel became available: the server first saw the buyer-cancel
+   * refund with all its confirmations (system event `return-confirmed`). The trade closes as
+   * cancelled by itself SELLER_CONFIRM_CANCEL_TIMEOUT_H after it (owner 2026-10-29).
+   */
+  cancelConfirmableAt: Date | null;
 }
 
 export type TradeEvent =
@@ -91,6 +108,18 @@ export type TradeEvent =
   | { type: 'propose-cancel' }
   | { type: 'accept-cancel' }
   | { type: 'withdraw-cancel' }
+  /** The seller tapped "Fund escrow" (Revision 2026-10-29b): recorded once, in `funding`. */
+  | { type: 'fund-started' }
+  /**
+   * The seller confirms a buyer's cancel once the returned XMR has all its confirmations (owner
+   * 2026-10-29). `returnConfirmations` is read by the server from its own node for the trade's
+   * refund tx, never taken from the request.
+   */
+  | { type: 'confirm-cancel'; returnConfirmations: number }
+  /** The server saw the buyer-cancel refund tx with all its confirmations (its own node): Confirm cancel is now available. */
+  | { type: 'return-confirmed'; confirmations: number }
+  /** The seller ends the trade before funding (Revision 2026-10-29b): only before "Fund escrow" and before any coins. */
+  | { type: 'walk-away' }
   | { type: 'release-started' }
   | { type: 'settled'; kind: SettleKind; txHash: string }
   | { type: 'open-dispute' }
@@ -99,7 +128,7 @@ export type TradeEvent =
   | { type: 'resume' }
   | { type: 'tick' };
 
-export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick'] as const;
+export const SYSTEM_EVENTS = ['setup-done', 'chain', 'settled', 'escalate', 'pause', 'resume', 'tick', 'return-confirmed'] as const;
 export const CLIENT_EVENTS = [
   'mark-paid',
   'extend',
@@ -108,6 +137,9 @@ export const CLIENT_EVENTS = [
   'propose-cancel',
   'accept-cancel',
   'withdraw-cancel',
+  'fund-started',
+  'walk-away',
+  'confirm-cancel',
   'release-started',
   'open-dispute',
 ] as const;
@@ -130,17 +162,23 @@ const fail = (code: TradeRuleCode): never => {
 const SYSTEM = new Set<string>(SYSTEM_EVENTS);
 const CLIENT = new Set<string>(CLIENT_EVENTS);
 
-/** States in which either side may propose, accept or withdraw a mutual cancel. */
-const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
-/** States from which the buyer's cancel becomes a refund settlement. */
-const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured', 'paid', 'refund_requested'];
+/**
+ * States in which either side may propose, accept or withdraw a mutual cancel. Never `paid`: no
+ * cancel of any kind after "I've paid" (owner, Revision 2026-10-29b).
+ */
+const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
+/** States from which the buyer's cancel becomes a refund settlement (never `paid`, Revision 2026-10-29b). */
+const BUYER_CANCEL_SETTLE: readonly TradeState[] = ['securing', 'secured', 'refund_requested'];
 const CLOSED: readonly TradeState[] = ['released', 'refunded', 'cancelled'];
 /** States in which a settlement seen on chain is recorded: every open state an escrow can hold coins in. */
 const SETTLED_FROM: readonly TradeState[] = ['funding', 'securing', 'secured', 'settling', 'disputed', 'paid', 'refund_requested', 'lapsed'];
 /** States in which extra XMR grows the trade: before "I've paid" and before any refund or settlement starts. */
 const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
-/** Client events still accepted during maintenance: the buyer's own payment and cancel. */
-const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel'];
+/**
+ * Client events still accepted during maintenance: the buyer's own payment and cancel, and the
+ * seller's "Fund escrow" record (it only takes the seller's walk-away away; their wallet opens anyway).
+ */
+const WHILE_PAUSED: readonly string[] = ['mark-paid', 'buyer-cancel', 'fund-started'];
 /** The longest seller confirm window (wires, 24 h). */
 const MAX_CONFIRM_WINDOW_MIN = 1440;
 
@@ -197,6 +235,7 @@ export function newTrade(
     setupBy: addMin(now, TIMERS.setupMin),
     fundBy: null,
     fundingSeenAt: null,
+    fundStartedAt: null,
     lapsedAt: null,
     securedAt: null,
     payBy: null,
@@ -212,7 +251,25 @@ export function newTrade(
     txHash: null,
     dispute: null,
     closedAt: null,
+    cancelConfirmedAt: null,
+    cancelConfirmableAt: null,
   };
+}
+
+/**
+ * A buyer's cancel whose refund has settled and that the seller has not confirmed yet (owner
+ * 2026-10-29): it stays among the seller's active trades ("Your input is needed to cancel this
+ * trade."), and timers and maintenance still apply to it although it is closed.
+ */
+export function awaitingCancelConfirm(t: Pick<Trade, 'state' | 'settling' | 'cancelConfirmedAt' | 'dispute' | 'paidAt'>): boolean {
+  // Never once the buyer marked paid: that refund keeps the buyer's dispute instead (review I1).
+  return t.state === 'refunded' && t.settling === 'buyer-cancel' && t.cancelConfirmedAt === null && t.dispute === null && t.paidAt === null;
+}
+
+/** When an unconfirmed buyer's cancel closes by itself, or null before Confirm cancel became available. */
+function cancelAutoCloseAt(t: Trade): Date | null {
+  if (!awaitingCancelConfirm(t) || t.cancelConfirmableAt === null) return null;
+  return addMin(t.cancelConfirmableAt, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60);
 }
 
 function checkNow(now: Date): void {
@@ -315,6 +372,9 @@ function onTick(t: Trade, now: Date): Trade {
     case 'settling':
       if (!past(now, t.settleBy)) return t;
       return { ...t, state: t.settleFrom ?? fail('wrong-state'), settling: null, settleFrom: null, settleBy: null };
+    case 'refunded':
+      // The seller never tapped Confirm cancel: it closes as cancelled by itself (owner 2026-10-29).
+      return past(now, cancelAutoCloseAt(t)) ? { ...t, cancelConfirmedAt: now } : t;
     default:
       return t;
   }
@@ -342,6 +402,7 @@ function onResume(t: Trade, now: Date): Trade {
     settleBy: move(t.settleBy),
     finalAlertAt: opens(t.finalAlertAt, TIMERS.finalAlertMin),
     lapsedAt: opens(t.lapsedAt, TIMERS.lapseCosignMin),
+    cancelConfirmableAt: opens(t.cancelConfirmableAt, SELLER_CONFIRM_CANCEL_TIMEOUT_H * 60),
   };
 }
 
@@ -359,8 +420,14 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
       return open();
     case 'refunded': {
       if (by !== 'buyer') return fail('wrong-party');
+      // A cancel itself can't be disputed (owner 2026-10-29, question 4): the buyer's own cancel,
+      // or one both agreed to, with the buyer never having marked paid. A cancel refund that lands
+      // after "I've paid" (a held-back refund broadcast once the buyer paid) keeps the dispute
+      // (review I1). A moderator's refund to the seller is built as mutual-cancel, but only after
+      // a dispute, which this leaves as it was.
+      if (t.dispute === null && t.paidAt === null && (t.settling === 'buyer-cancel' || t.settling === 'mutual-cancel')) return fail('wrong-state');
       const closed = t.closedAt ?? fail('wrong-state');
-      const limit = closed.getTime() + TIMERS.disputeAfterRefundDays * 24 * 60 * 60_000;
+      const limit = closed.getTime() + TIMERS.disputeAfterRefundHours * 60 * 60_000;
       if (now.getTime() > limit) return fail('too-late');
       return open();
     }
@@ -414,7 +481,9 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
     case 'escalate': {
       // Only when the escrow holds coins: a lapse nobody refunded, or late funds after the end.
       if (s !== 'lapsed' && !CLOSED.includes(s)) return fail('wrong-state');
-      if (t.receivedAtomic <= 0n) return fail('wrong-state');
+      // A buyer's cancel whose refund never showed all its confirmations (Task 39 review M3) goes to a
+      // moderator whatever the escrow reads: nobody knows where the coins are.
+      if (t.receivedAtomic <= 0n && !awaitingCancelConfirm(t)) return fail('wrong-state');
       return { ...t, state: 'disputed', dispute: { by: 'system', at: now }, closedAt: null };
     }
 
@@ -435,8 +504,8 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
         paidAt: now,
         confirmBy: addMin(base(t, now), t.confirmWindowMin),
         finalAlertAt: null,
-        // The buyer has paid: a seller's standing offer to cancel no longer applies.
-        cancelProposedBy: t.cancelProposedBy === 'seller' ? null : t.cancelProposedBy,
+        // No cancel after "I've paid" (Revision 2026-10-29b): any open proposal is withdrawn here.
+        cancelProposedBy: null,
       };
 
     case 'extend':
@@ -454,17 +523,18 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
 
     case 'buyer-cancel':
       if (by !== 'buyer') return fail('wrong-party');
+      if (t.paidAt !== null) return fail('wrong-state');
       if (s === 'setup' || (s === 'funding' && t.receivedAtomic === 0n)) return close(t, 'cancelled', now);
       if (s === 'funding' || BUYER_CANCEL_SETTLE.includes(s)) return startSettling(t, 'buyer-cancel', now);
       return fail('wrong-state');
 
     case 'propose-cancel':
-      if (!CANCEL_STATES.includes(s)) return fail('wrong-state');
+      if (!CANCEL_STATES.includes(s) || t.paidAt !== null) return fail('wrong-state');
       if (t.cancelProposedBy !== null) return fail('wrong-state');
       return { ...t, cancelProposedBy: by as Party };
 
     case 'accept-cancel':
-      if (!CANCEL_STATES.includes(s) || t.cancelProposedBy === null) return fail('wrong-state');
+      if (!CANCEL_STATES.includes(s) || t.paidAt !== null || t.cancelProposedBy === null) return fail('wrong-state');
       if (t.cancelProposedBy === by) return fail('wrong-party');
       if (t.receivedAtomic === 0n && t.fundingSeenAt === null) return close({ ...t, cancelProposedBy: null }, 'cancelled', now);
       if (!t.releasable) return fail('not-releasable');
@@ -474,6 +544,36 @@ export function apply(t: Trade, e: TradeEvent, by: By, now: Date): Trade {
       if (!CANCEL_STATES.includes(s) || t.cancelProposedBy === null) return fail('wrong-state');
       if (t.cancelProposedBy !== by) return fail('wrong-party');
       return { ...t, cancelProposedBy: null };
+
+    case 'fund-started':
+      if (by !== 'seller') return fail('wrong-party');
+      if (s !== 'funding' || t.fundStartedAt !== null) return fail('wrong-state');
+      return { ...t, fundStartedAt: now };
+
+    case 'walk-away':
+      // Before funding either side can walk away; the seller never after tapping "Fund escrow" or
+      // once any coins are seen (Revision 2026-10-29b). The buyer's walk-away is `buyer-cancel`.
+      if (by !== 'seller') return fail('wrong-party');
+      if (s === 'setup') return close(t, 'cancelled', now);
+      if (s === 'funding' && t.fundStartedAt === null && t.receivedAtomic === 0n && t.fundingSeenAt === null) return close(t, 'cancelled', now);
+      return fail('wrong-state');
+
+    case 'return-confirmed':
+      if (!awaitingCancelConfirm(t) || t.cancelConfirmableAt !== null) return fail('wrong-state');
+      if (!Number.isSafeInteger(e.confirmations) || e.confirmations < 0) throw new RangeError('bad confirmations');
+      if (e.confirmations < UNLOCK_CONFIRMATIONS) return fail('too-early');
+      // During maintenance the 48 hours count from the resume (as every deadline set while paused).
+      return { ...t, cancelConfirmableAt: base(t, now) };
+
+    case 'confirm-cancel':
+      if (by !== 'seller') return fail('wrong-party');
+      if (!awaitingCancelConfirm(t)) return fail('wrong-state');
+      if (!Number.isSafeInteger(e.returnConfirmations) || e.returnConfirmations < 0) throw new RangeError('bad confirmations');
+      // Greyed out until the return has the same confirmations the trade uses everywhere (10). Once
+      // the server recorded that count (cancelConfirmableAt) it is trusted: a node that is briefly
+      // down when the seller taps does not take the button away again (review M1).
+      if (t.cancelConfirmableAt === null && e.returnConfirmations < UNLOCK_CONFIRMATIONS) return fail('too-early');
+      return { ...t, cancelConfirmedAt: now };
 
     case 'release-started':
       if (by !== 'seller') return fail('wrong-party');
@@ -502,6 +602,8 @@ export function nextDeadline(t: Trade): Date | null {
       return t.finalAlertAt === null ? null : addMin(t.finalAlertAt, TIMERS.finalAlertMin);
     case 'settling':
       return t.settleBy;
+    case 'refunded':
+      return cancelAutoCloseAt(t);
     default:
       return null;
   }

@@ -43,6 +43,11 @@ const TRADE: Record<`trade.${TradeEvent['type']}`, Schema> = {
   'trade.pause': {},
   'trade.resume': {},
   'trade.tick': {},
+  // Plan 3 Tasks 38-39 (cancel rules): counts only, no addresses.
+  'trade.fund-started': {},
+  'trade.walk-away': {},
+  'trade.confirm-cancel': { returnConfirmations: 'number' },
+  'trade.return-confirmed': { confirmations: 'number' },
 };
 
 /**

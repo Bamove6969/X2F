@@ -1,7 +1,9 @@
 /**
- * The "I've paid" confirmation step (spec 2.2 step 7; Plan 3 Task 23): the buyer ticks "I sent
- * exactly $412.50 via Zelle with <code> in the memo", then Yes, I've paid or Not yet. Yes hands
- * the total the sheet showed to `onYes`; a trade that grew meanwhile comes back as
+ * The "I've paid" confirmation step, the second of the owner's two steps (spec 2.2 step 7; Plan 3
+ * Task 23, reworked by Task 39 to the BuyerPay board of 2026-10-29b): "Mark this trade as paid?",
+ * the REQUIRED tick "I sent exactly $412.50 by Zelle with the memo <code>.", the plain "After this
+ * you can't cancel the trade" line, then Yes, mark as paid (disabled until ticked) or Not yet.
+ * Yes hands the total the sheet showed to `onYes`; a trade that grew meanwhile comes back as
  * `total-changed`, and the sheet asks again with the new total (Revision 2026-10-21).
  */
 import { useEffect, useId, useState } from 'react';
@@ -58,7 +60,7 @@ export function PaidConfirmSheet({
   };
 
   return (
-    <Sheet open={open} title="I've paid" onClose={onNotYet}>
+    <Sheet open={open} title="Mark this trade as paid?" onClose={onNotYet}>
       <div className="x2f-sheet__body x2f-paid">
         {grewTo !== null ? (
           <p className="x2f-paid__grew" role="status">
@@ -68,10 +70,11 @@ export function PaidConfirmSheet({
         <label htmlFor={boxId} className="x2f-paid__check">
           <input id={boxId} type="checkbox" checked={ticked} onChange={(e) => setTicked(e.target.checked)} />
           <span>
-            I sent exactly {fiatText} via {methodName} with {code} in the memo
+            I sent exactly <strong>{fiatText}</strong> by {methodName} with the memo <span className="x2f-mono">{code}</span>.
           </span>
         </label>
-        <p className="x2f-paid__note">Sending without proof makes disputes harder.</p>
+        {/* not-a-refusal: the board's plain notice before the buyer confirms (no cancel after "I've paid"); nothing is refused here */}
+        <p className="x2f-paid__note">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
         {error !== null ? (
           <p className="x2f-paid__error" role="alert">
             {error}
@@ -79,7 +82,7 @@ export function PaidConfirmSheet({
         ) : null}
         <div className="x2f-paid__actions">
           <Button variant="primary" disabled={!ticked || busy} aria-busy={busy || undefined} onClick={() => void yes()}>
-            Yes, I've paid
+            Yes, mark as paid
           </Button>
           <Button variant="quiet" onClick={onNotYet}>
             Not yet

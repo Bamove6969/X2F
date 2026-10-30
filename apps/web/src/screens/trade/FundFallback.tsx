@@ -50,6 +50,7 @@ export function FundFallback({
   restAtomic,
   primary,
   write = clipboardWrite,
+  onFundStarted,
 }: {
   address: string;
   /** Null: show the address only (no QR code, no amount to copy). */
@@ -59,12 +60,15 @@ export function FundFallback({
   /** On a desktop (and whenever there is no wallet link) "Copy address" is the screen's one primary action. */
   primary: boolean;
   write?: CopyWrite;
+  /** Copying the address or amount counts as tapping "Fund escrow" (TradeFund posts `fund-started`, Revision 2026-10-29b). */
+  onFundStarted?: () => void;
 }) {
   const uri = send?.uri ?? null;
   const qr = useMemo(() => (uri === null ? null : qrPath(uri)), [uri]);
   const [copied, setCopied] = useState<'address' | 'amount' | 'failed' | null>(null);
   const copy = (what: 'address' | 'amount') => {
     if (what === 'amount' && send === null) return;
+    onFundStarted?.();
     write(what === 'address' ? address : exactXmr(send!.atomic)).then(
       () => setCopied(what),
       () => setCopied('failed'),

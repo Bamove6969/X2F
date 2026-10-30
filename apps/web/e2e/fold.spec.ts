@@ -151,12 +151,13 @@ test.describe('width rules (Safari on the iPhone Fold, and any browser without s
     await page.setViewportSize({ width: 800, height: 900 });
     await openRoom(page);
     expect(await fold(page)).toBe('two');
+    // The primary may open a warning sheet (role alertdialog, Task 38), so find the sheet by its class.
     await page.locator('[data-primary]').first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
+    await expect(page.locator('.x2f-sheet')).toBeVisible();
     const backdrop = await box(page, '.x2f-sheet-backdrop');
     expect(backdrop.x).toBeLessThanOrEqual(0.5);
     expect(backdrop.width).toBeGreaterThanOrEqual(799.5);
-    const dialog = await box(page, '[role="dialog"]');
+    const dialog = await box(page, '.x2f-sheet');
     expect(dialog.width).toBeGreaterThanOrEqual(799.5);
     // The chat pane and the room behind the sheet are under the backdrop.
     for (const [x, y] of [
@@ -214,8 +215,8 @@ test.describe('a book fold open: two segments (Chrome on Android)', () => {
     expect(side.x).toBeGreaterThanOrEqual(HINGE.offset + HINGE.mask - 0.5);
     expect(await crossing(page, 'x', HINGE.offset, HINGE.offset + HINGE.mask)).toEqual([]);
     await page.locator('[data-primary]').first().click();
-    await expect(page.getByRole('dialog')).toBeVisible();
-    const dialog = await box(page, '[role="dialog"]');
+    await expect(page.locator('.x2f-sheet')).toBeVisible();
+    const dialog = await box(page, '.x2f-sheet');
     expect(dialog.x + dialog.width).toBeLessThanOrEqual(HINGE.offset + 0.5);
     expect(await crossing(page, 'x', HINGE.offset, HINGE.offset + HINGE.mask)).toEqual([]);
   });
@@ -267,7 +268,7 @@ test.describe('tabletop: half folded', () => {
     expect(await crossing(page, 'y', 412, 428)).toEqual([]);
     // A sheet opens in the bottom half.
     await page.locator('[data-primary]').first().click();
-    expect((await box(page, '[role="dialog"]')).y).toBeGreaterThanOrEqual(428 - 0.5);
+    expect((await box(page, '.x2f-sheet')).y).toBeGreaterThanOrEqual(428 - 0.5);
     await page.keyboard.press('Escape');
     // Flat again: off by itself.
     await halfFold.flat();
