@@ -538,7 +538,8 @@ describe('config PRICE_SOURCES', () => {
     X2F_SERVER_KEY: Buffer.alloc(32, 1).toString('base64'), X2F_MONERO_NETWORK: 'stagenet', X2F_TERMS_VERSION: 'v1',
     X2F_PGP_SIGNING_KEY_PATH: '/k', X2F_PGP_SIGNING_FINGERPRINT: 'a'.repeat(40),
       X2F_PASSWORD_PEPPERS: `1:${Buffer.alloc(32, 11).toString('base64')}`, X2F_RECOVERY_CODE_KEYS: `1:${Buffer.alloc(32, 12).toString('base64')}`,
-      X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`, ...VAPID_ENV,
+      X2F_TOTP_KEYS: `1:${Buffer.alloc(32, 13).toString('base64')}`, X2F_LOGIN_NAME_KEYS: `1:${Buffer.alloc(32, 14).toString('base64')}`,
+      ...VAPID_ENV,
   };
   it('defaults to the three proposed sources and refuses an unknown one', () => {
     expect(loadConfig(env).priceSources).toEqual(['kraken', 'bitfinex', 'coingecko']);

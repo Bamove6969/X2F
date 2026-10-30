@@ -108,7 +108,8 @@ describe('GET /v1/methods', () => {
     for (const list of [body.live, body.all]) {
       for (const id of ['SBP', 'MIR', 'YOOMONEY']) expect(list.map((r) => r.id)).not.toContain(id);
     }
-    expect(calls.at(-1)).toEqual({ side: 'buy', currency: 'USD' });
+    // No cookie: no viewer, so no block filter (Task 37 added viewerId to the query).
+    expect(calls.at(-1)).toEqual({ side: 'buy', currency: 'USD', viewerId: null });
     const zelle = body.all.find((r) => r.id === 'ZELLE');
     expect(zelle).toEqual({ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 1, bestRate: '33000' });
     const venmo = body.all.find((r) => r.id === 'VENMO');
