@@ -1163,12 +1163,16 @@ describe('resume on load (Review Focus 1)', () => {
     await until(() => seller.last()?.phase === 'done');
     expect((await seller.store.load(CODE))?.intent?.done).toBe(true);
     await seller.runtime.stopAll();
-    const count = t.parties.settles.length;
+    // The seller's settles only: the buyer's runtime keeps running and makes its standing release
+    // co-sign on its own tick, which under load can land after this count (a flake seen 2026-10-29).
+    const sellerSettles = () => t.parties.settles.filter((s) => s.role === 'seller').length;
+    const count = sellerSettles();
+    expect(count).toBe(1);
     const again = await t.mk('seller', { idb: seller.idb });
     await again.runtime.resumeAll();
     await until(() => again.last()?.phase === 'done');
     await new Promise((r) => setTimeout(r, 60));
-    expect(t.parties.settles.length).toBe(count);
+    expect(sellerSettles()).toBe(count);
   });
 
   it('a second tab waits for the first one’s lock and runs nothing meanwhile', async () => {

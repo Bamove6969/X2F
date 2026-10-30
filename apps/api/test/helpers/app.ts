@@ -41,6 +41,7 @@ export function testConfig(over: Partial<Config> = {}): Config {
     passwordPeppers: testRing(),
     recoveryCodeKeys: testRing(),
     totpKeys: testRing(),
+    loginNameKeys: testRing(),
     legacySecrets: true,
     ...over,
   };
