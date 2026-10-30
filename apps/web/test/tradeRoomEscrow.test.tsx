@@ -11,7 +11,7 @@ import { setEscrowClient, type EscrowClient } from '../src/escrow/useEscrow.js';
 import type { EscrowStatus } from '../src/escrow/runtime.js';
 import { readConfirmed, storeConfirmed, type ConfirmedTrade } from '../src/screens/quote/confirmed.js';
 import { sellerView } from '../e2e/refundViews.js';
-import { TradeRoom } from '../src/screens/trade/TradeRoom.js';
+import { registerTradeScreen, TradeRoom, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
 import { render } from './render.js';
 
 const CODE = 'K7M2-9QXA-4FTR-8WPN';
@@ -23,7 +23,7 @@ let client: EscrowClient & { start: ReturnType<typeof vi.fn<EscrowClient["start"
 /** Pushes a status to the room's subscription. */
 let push: (s: EscrowStatus) => void = () => undefined;
 
-const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null };
+const IDLE: EscrowStatus = { phase: 'idle', error: null, retryable: false, refusal: null, checkWords: null, keepOpen: false, role: null, amountAtomic: null, fiatCents: null, escrowAddress: null, deal: null, receivedAtomic: null, confirmedAtomic: null, paidRecorded: false, intentKind: null };
 const jsonResponse = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
 
 beforeEach(() => {
@@ -54,8 +54,8 @@ function Go({ state }: { state: unknown }) {
   return null;
 }
 
-async function open(state?: unknown): Promise<void> {
-  render(
+async function open(state?: unknown): Promise<ReturnType<typeof render>> {
+  const r = render(
     <MemoryRouter initialEntries={['/go']}>
       <Routes>
         <Route path="/go" element={<Go state={state} />} />
@@ -64,6 +64,7 @@ async function open(state?: unknown): Promise<void> {
     </MemoryRouter>,
   );
   for (let i = 0; i < 5; i++) await act(async () => await Promise.resolve());
+  return r;
 }
 
 describe('the room starts Task 12’s escrow with what the user confirmed', () => {
@@ -106,5 +107,45 @@ describe('the room starts Task 12’s escrow with what the user confirmed', () =
     expect(readConfirmed(CODE)).toEqual(STORED);
     await act(async () => push({ ...IDLE, phase: 'setting-up', deal }));
     expect(readConfirmed(CODE)).toBeNull();
+  });
+});
+
+describe('a view whose code is another trade’s (Task 24 round-3 review, Important 1)', () => {
+  const OTHER = 'Z3H8-6RNB-2DWC-5JTE';
+  const STATES = ['setup', 'funding', 'securing', 'secured', 'paid', 'settling', 'released', 'refund_requested', 'disputed'] as const;
+
+  it('fails closed in every state and role: no slot, no escrow start, a refusal', async () => {
+    const shown: string[] = [];
+    const Spy = ({ view }: TradeScreenProps) => {
+      shown.push(view.state);
+      return <p data-spy="">slot</p>;
+    };
+    const off = STATES.map((s) => registerTradeScreen({ owner: 'test', role: 'any', states: [s], when: () => true, screen: Spy }));
+    try {
+      for (const role of ['seller', 'buyer'] as const) {
+        for (const state of STATES) {
+          vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...sellerView(), role, state, code: OTHER })));
+          const r = await open({ confirmed: FROM_STATE });
+          expect(r.host.querySelector('[data-spy]')).toBeNull();
+          expect(r.host.querySelector('[role=alert]')!.textContent).toContain('X2F answered with a different trade');
+          r.unmount();
+        }
+      }
+      expect(shown).toEqual([]);
+      expect(client.start).not.toHaveBeenCalled();
+    } finally {
+      off.forEach((f) => f());
+    }
+  });
+
+  it('the same code written differently (lower case, no dashes) is the same trade', async () => {
+    const off = registerTradeScreen({ owner: 'test', role: 'any', states: ['funding'], when: () => true, screen: () => <p data-spy="">slot</p> });
+    try {
+      vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({ ...sellerView(), state: 'funding', code: CODE.toLowerCase().replace(/-/g, '') })));
+      const r = await open();
+      expect(r.host.querySelector('[data-spy]')).not.toBeNull();
+    } finally {
+      off();
+    }
   });
 });

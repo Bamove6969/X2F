@@ -20,6 +20,20 @@ afterAll(async () => {
 const FEE = (AMOUNT / 100n).toString(); // 12500000000
 type View = Record<string, unknown> & { role: string; state: string; funding: Record<string, unknown> | null };
 
+/** Every object key and every leaf value (as a string) in a JSON value, at any depth. */
+function walk(v: unknown): { keys: string[]; leaves: string[] } {
+  if (v === null || typeof v !== 'object') return { keys: [], leaves: [String(v)] };
+  const entries: [string | null, unknown][] = Array.isArray(v) ? v.map((x) => [null, x]) : Object.entries(v);
+  const out = { keys: [] as string[], leaves: [] as string[] };
+  for (const [k, x] of entries) {
+    const w = walk(x);
+    if (k !== null) out.keys.push(k);
+    out.keys.push(...w.keys);
+    out.leaves.push(...w.leaves);
+  }
+  return out;
+}
+
 describe('GET /v1/trades/:code', () => {
   for (const poster of ['seller', 'buyer'] as const) {
     it(`shows the fee only to the poster in every state (poster ${poster})`, async () => {
@@ -35,9 +49,15 @@ describe('GET /v1/trades/:code', () => {
         const tk = (await takerB.browser.get(`/v1/trades/${trade.code}`)).json() as View;
         expect(p.role).toBe(poster);
         expect(p.fee).toEqual({ atomic: FEE });
+        expect(walk(p).leaves).toContain(FEE); // the check below would see a leaked fee
         expect(tk.role).not.toBe(poster);
         expect('fee' in tk, tk.state).toBe(false);
-        expect(JSON.stringify(tk)).not.toMatch(/fee/i);
+        // No key names a fee anywhere in the view, and no value is the fee amount. Not a text search
+        // for "fee": random values (the tx hash, the trade code, the base58 escrow address and its
+        // monero: link a seller taker sees while funding) can spell it (flakes 2026-10-28/30).
+        const { keys, leaves } = walk(tk);
+        expect(keys.filter((k) => /fee/i.test(k)), tk.state).toEqual([]);
+        expect(leaves, tk.state).not.toContain(FEE);
         const step = steps[i];
         if (step) await applyEvent(deps, trade.code, step.e, step.by);
       }
@@ -158,7 +178,7 @@ describe('toTradeView', () => {
     const seller = await trader();
     const buyer = await trader();
     const { trade } = await seedTrade(deps, { sellerId: seller.id, buyerId: buyer.id, poster: 'buyer' });
-    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] };
+    const cp: TraderSummary = { displayName: 'x', completedTrades: 0, online: false, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'starter' };
     expect(() => toTradeView(trade, '00000000-0000-0000-0000-000000000000', new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toThrow();
     expect(toTradeView(trade, buyer.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null }).fee).toEqual({ atomic: FEE });
     expect('fee' in toTradeView(trade, seller.id, new Date(), { counterparty: cp, profile: null, sellerWalletApp: null, finalAlertSeenAt: null })).toBe(false);

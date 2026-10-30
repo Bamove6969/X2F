@@ -92,9 +92,12 @@ export interface EscrowSession {
   /**
    * What a tx provably pays (review I1): with its secret key, the amount each address received
    * (monero check_tx_key), the tx's network fee and whether it is in a block. Null when the key does
-   * not fit the tx or the tx is unknown. Optional for test doubles.
+   * not fit the tx or the tx is unknown. `txKey` may carry additional tx keys (a subaddress payout,
+   * review round 2 R2-I2). `spendsEscrow` (R2-I1): an input of the tx carries the key image this
+   * wallet holds for one of its own outputs, with that output in the input's ring (see the Monero
+   * engine). Optional for test doubles.
    */
-  proveTx?(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[] } | null>;
+  proveTx?(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null>;
   exportState(): Promise<string>;
   /** Import every peer's state in one call; importing them separately leaves stale data. */
   importState(peers: string[]): Promise<void>;

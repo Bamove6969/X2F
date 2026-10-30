@@ -57,6 +57,31 @@ export function isScalar(hex: string): boolean {
   return v !== 0n && v < GROUP_ORDER;
 }
 
+/**
+ * A tx secret key as wallet2's get_tx_key gives it (review round 2, R2-I2): the main key, then one
+ * additional key per output when the tx pays a subaddress among other destinations
+ * (`need_additional_txkeys`), concatenated. A tx has at most 16 outputs, so 1 to 17 chunks.
+ */
+export const TX_KEY = /^(?:[0-9a-f]{64}){1,17}$/;
+
+/** A TX_KEY whose every 32-byte chunk is a reduced, non-zero scalar (each one reaches the derivation). */
+export function isTxKey(hex: string): boolean {
+  if (!TX_KEY.test(hex)) return false;
+  for (let i = 0; i < hex.length; i += 64) if (!isScalar(hex.slice(i, i + 64))) return false;
+  return true;
+}
+
+/** key_offsets as the daemon gives them (the first absolute, each next one relative) → absolute output indices. */
+function absoluteRing(offsets: readonly (number | bigint)[]): bigint[] {
+  const out: bigint[] = [];
+  let at = 0n;
+  for (const o of offsets) {
+    at += BigInt(o);
+    out.push(at);
+  }
+  return out;
+}
+
 function walletConfig(network: EscrowNetwork, daemonUri: string, password: string): MoneroWalletConfig {
   return new MoneroWalletConfig({
     // regtest uses the mainnet address format
@@ -162,16 +187,17 @@ export class MoneroMultisigSession implements EscrowSession {
     if (!TX_HASH.test(txHash)) return null;
     try {
       const k = await this.wallet.getTxKey(txHash);
-      return typeof k === 'string' && TX_HASH.test(k) ? k : null;
+      return typeof k === 'string' && TX_KEY.test(k) ? k : null;
     } catch {
       return null; // "No tx secret key is stored for this tx"
     }
   }
 
-  async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[] } | null> {
+  async proveTx(txHash: string, txKey: string, addresses: string[]): Promise<{ inBlock: boolean; feeAtomic: bigint; received: bigint[]; spendsEscrow: boolean } | null> {
     // A key that is not a reduced scalar aborts monero-ts's WebAssembly (an assertion in
-    // generate_key_derivation), which breaks every later wallet call: refuse it here.
-    if (!TX_HASH.test(txHash) || !isScalar(txKey)) return null;
+    // generate_key_derivation), which breaks every later wallet call: refuse it here. Every chunk of
+    // a key with additional tx keys (a subaddress payout, R2-I2) is checked the same way.
+    if (!TX_HASH.test(txHash) || !isTxKey(txKey)) return null;
     let tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>;
     try {
       tx = await timed((async () => (await this.daemonClient()).getTx(txHash))(), 'tx lookup');
@@ -192,7 +218,48 @@ export class MoneroMultisigSession implements EscrowSession {
         return null; // a key that does not fit, or an address of another network
       }
     }
-    return { inBlock: tx.getIsConfirmed() === true && tx.getInTxPool() !== true, feeAtomic: typeof fee === 'bigint' ? fee : 0n, received };
+    return {
+      inBlock: tx.getIsConfirmed() === true && tx.getInTxPool() !== true,
+      feeAtomic: typeof fee === 'bigint' ? fee : 0n,
+      received,
+      spendsEscrow: await this.spendsOwnOutput(tx),
+    };
+  }
+
+  /**
+   * Review round 2 (R2-I1): does `tx` spend one of THIS wallet's (the escrow's) outputs? True only
+   * when some input's key image is the key image this wallet holds for one of its outputs AND that
+   * output (by global index) is a member of that input's ring; and no input carries one of this
+   * wallet's key images with a ring that lacks the output (that can only be a forged key image).
+   * What it proves: this escrow's output is a ring member of the input whose key image this wallet
+   * holds. A replay mined before the escrow was funded can never pass (a ring cannot hold a later
+   * output), nor can a tx whose builder chose honest decoys.
+   * What it does NOT prove: that the input really spends the escrow. A ring hides which member is
+   * real, and wallet2 takes a peer's partial key images unchecked, so the key image matched here is
+   * whatever a trade party's forged partials made it. Whoever builds a tx chooses its decoys: a
+   * seller who builds ANOTHER trade's release (or a fresh tx from its own money) can put this
+   * escrow's output in a ring and make this check true for it (review round 3, R3-I1). The
+   * moderation watcher therefore counts an import-only sweep only when BOTH trade parties' sealed
+   * spend.info name its hash (apps/moderation/src/watcher.ts, `proven`), and proveSweep's payout
+   * check must also pass.
+   */
+  private async spendsOwnOutput(tx: Awaited<ReturnType<MoneroDaemonRpc['getTx']>>): Promise<boolean> {
+    const inputs = tx?.getInputs() ?? [];
+    if (inputs.length === 0) return false;
+    const mine = new Map<string, bigint>();
+    for (const o of await this.wallet.getOutputs({ accountIndex: 0 })) {
+      const ki = o.getKeyImage()?.getHex();
+      const index = o.getIndex();
+      if (typeof ki === 'string' && /^[0-9a-f]{64}$/.test(ki) && (typeof index === 'number' || typeof index === 'bigint')) mine.set(ki, BigInt(index));
+    }
+    let bound = 0;
+    for (const input of inputs) {
+      const own = mine.get(input.getKeyImage()?.getHex() ?? '');
+      if (own === undefined) continue;
+      if (!absoluteRing(input.getRingOutputIndices() ?? []).includes(own)) return false;
+      bound++;
+    }
+    return bound > 0;
   }
 
   exportState(): Promise<string> {
@@ -233,7 +300,7 @@ export class MoneroMultisigSession implements EscrowSession {
     const decoded = (await this.wallet.describeMultisigTxSet(txSet)).getTxs().map(describe);
     checkTxSet(decoded, payouts, balance);
     const txKey = txs[0]!.getKey();
-    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations), ...(typeof txKey === 'string' && TX_HASH.test(txKey) ? { txKey } : {}) };
+    return { txSet, payouts: decoded.flatMap((tx) => tx.destinations), ...(typeof txKey === 'string' && TX_KEY.test(txKey) ? { txKey } : {}) };
   }
 
   async checkRelease(txSet: string, expected: Payout[]): Promise<void> {

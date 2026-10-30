@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BOARD, SERVER_NOW, buyerAlertView } from '../e2e/refundViews.js';
 import { FinalAlert, setFinalAlertPaidSheet, type PaidSheetProps } from '../src/screens/trade/FinalAlert.js';
 import type { RefundView } from '../src/screens/trade/refundSlot.js';
+import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import { advance, fire, render } from './render.js';
 
 const MIN = 60_000;
@@ -26,12 +27,12 @@ afterEach(() => {
   setFinalAlertPaidSheet(null);
 });
 
-const escrow = { signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined), amountAtomic: null };
+const escrow = { ...PENDING_ESCROW, signal: vi.fn(async () => undefined), buildRefund: vi.fn(async () => undefined), amountAtomic: null };
 
 function mount(view: RefundView, clock: () => Date) {
   const r = render(
     <MemoryRouter>
-      <FinalAlert view={view} escrow={escrow} refresh={async () => undefined} serverClock={clock} wide={false} />
+      <FinalAlert code={view.code} view={view} escrow={escrow} refresh={async () => undefined} serverClock={clock} wide={false} />
     </MemoryRouter>,
   );
   const paid = () => [...r.host.querySelectorAll('button')].find((b) => b.textContent === "I've paid")!;
@@ -112,7 +113,7 @@ describe('FinalAlert (buyer, refund_requested)', () => {
     expect(requests).toEqual([seen]);
     rerender(
       <MemoryRouter>
-        <FinalAlert view={buyerAlertView()} escrow={escrow} refresh={async () => undefined} serverClock={() => new Date(SERVER_NOW)} wide={false} />
+        <FinalAlert code={buyerAlertView().code} view={buyerAlertView()} escrow={escrow} refresh={async () => undefined} serverClock={() => new Date(SERVER_NOW)} wide={false} />
       </MemoryRouter>,
     );
     act(() => {

@@ -274,10 +274,15 @@ describe('chain watcher decisions (Task 9, pure)', () => {
     // A is now accounted for; LATE is a new late tx, so it escalates on its own
     expect(known.reports).toEqual([{ kind: 'chain', receivedAtomic: 2n, unlockedAtomic: 0n, confirmations: 0 }, { kind: 'late-funds' }]);
     expect(known.state.lateReported).toEqual([HASH_A, LATE]);
-    // ...and only now, with a sweep its own wallet showed, does the mod close the channels (once)
-    expect(known.closeChannels).toBe(true);
-    expect(known.state.channelsClosed).toBe(true);
-    expect(step({ apiState: 'released', state: known.state, f: funds([inc(HASH_A, 1000n, 33), inc(LATE, 2n, 1)], 0n, 0n), now: at(7) }).closeChannels).toBe(false);
+    // A sweep its own wallet showed, but LATE is still in the escrow (round 2, R2-I1): no close yet
+    expect(known.closeChannels).toBe(false);
+    expect(known.state.channelsClosed).toBe(false);
+    // ...only once a shown sweep took LATE too does the mod close the channels (once)
+    const all = step({ apiState: 'released', state: known.state, f: funds([inc(HASH_A, 1000n, 45), inc(LATE, 2n, 13)], 0n, 0n), spend: sweep(2n, 2, B2), now: at(7) });
+    expect(all.state.swept).toEqual([HASH_A, LATE]);
+    expect(all.closeChannels).toBe(true);
+    expect(all.state.channelsClosed).toBe(true);
+    expect(step({ apiState: 'released', state: all.state, f: funds([inc(HASH_A, 1000n, 46), inc(LATE, 2n, 14)], 0n, 0n), now: at(8) }).closeChannels).toBe(false);
   });
 
   describe('closing the relay channels (review I2): only after a sweep shown, or a close with no coins ever seen', () => {
@@ -307,6 +312,35 @@ describe('chain watcher decisions (Task 9, pure)', () => {
       const r = step({ apiState: 'cancelled', f: funds([]) });
       expect(r.closeChannels).toBe(true);
       expect(step({ apiState: 'cancelled', state: r.state, f: funds([]), now: at(1) }).closeChannels).toBe(false);
+    });
+  });
+
+  describe('the channels close only when the shown sweep took every coin (review round 2, R2-I1)', () => {
+    test('a replayed tx mined before the escrow was funded sweeps nothing: settled and late-funds, but no close (the dispute needs the channels)', () => {
+      const open = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 30)]) });
+      // the "sweep" is 50 blocks old, the escrow's coin only 30: it cannot have spent it
+      const r = step({ apiState: 'settling', state: open.state, f: funds([inc(HASH_A, 1000n, 31)]), spend: sweep(1000n, 50), now: at(1) });
+      expect(r.state.swept).toEqual([]);
+      expect(r.reports).toEqual([{ kind: 'settled', txHash: SETTLE }, { kind: 'chain', receivedAtomic: 1000n, unlockedAtomic: 1000n, confirmations: 31 }, { kind: 'late-funds' }]);
+      expect(r.closeChannels).toBe(false);
+      expect(r.state.channelsClosed).toBe(false);
+      // the dispute that follows still has its channels
+      const d = step({ apiState: 'disputed', state: r.state, f: funds([inc(HASH_A, 1000n, 32)]), now: at(2) });
+      expect(d.closeChannels).toBe(false);
+    });
+
+    test('a sweep that leaves a coin behind keeps the channels open; a later shown sweep that takes it closes them, once', () => {
+      const RULING = '9'.repeat(64);
+      const r = step({ apiState: 'settling', f: funds([inc(HASH_A, 1000n, 40), inc(LATE, 9n, 13)], 9n, 9n), spend: sweep(1000n, 1) });
+      expect(r.state.swept).toEqual([HASH_A]);
+      expect(r.reports.at(-1)).toEqual({ kind: 'late-funds' });
+      expect(r.closeChannels).toBe(false);
+      const disputed = step({ apiState: 'disputed', state: r.state, f: funds([inc(HASH_A, 1000n, 41), inc(LATE, 9n, 14)], 9n, 9n), now: at(1) });
+      expect(disputed.closeChannels).toBe(false);
+      const ruled = step({ apiState: 'refunded', state: disputed.state, f: funds([inc(HASH_A, 1000n, 60), inc(LATE, 9n, 33)], 0n, 0n), spend: sweep(9n, 5, RULING), now: at(2) });
+      expect(ruled.state.swept).toEqual([HASH_A, LATE]);
+      expect(ruled.closeChannels).toBe(true);
+      expect(step({ apiState: 'refunded', state: ruled.state, f: funds([inc(HASH_A, 1000n, 61), inc(LATE, 9n, 34)], 0n, 0n), now: at(3) }).closeChannels).toBe(false);
     });
   });
 

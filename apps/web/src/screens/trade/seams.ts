@@ -119,6 +119,8 @@ export const PENDING_ESCROW: TradeEscrow = {
   deal: null,
   receivedAtomic: null,
   confirmedAtomic: null,
+  paidRecorded: false,
+  intentKind: null,
   amountAtomic: null,
   fiatCents: null,
   error: null,

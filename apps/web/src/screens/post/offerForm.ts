@@ -1,6 +1,7 @@
 // PostOffer's form logic (Task 21; board PostOffer.dc.html; spec 2.2 step 5, 2.3, 11.6). Fiat is
 // bigint minor units; the form takes only two-decimal currencies until formatFiat takes the
 // currency's exponent (Revision 2026-10-20).
+import { CANT_DO_TITLE, isCantDoCode, postCantDoText, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { CURRENCIES } from '../browse/api.js';
 import type { PostOfferBody, PriceQuote, Side } from './api.js';
 import { isCountryCode } from './countries.js';
@@ -155,7 +156,22 @@ export function afterPostPath(side: Side, methodId: string, currency: string): s
   return `/${side === 'sell' ? 'buy' : 'sell'}/${encodeURIComponent(methodId)}?currency=${encodeURIComponent(currency)}`;
 }
 
-export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed';
+export type FieldError = 'method' | 'country' | 'min' | 'max' | 'fixed' | 'terms';
+
+/** The longest terms the API stores (apps/api/src/offers/routes.ts TERMS_MAX). */
+export const TERMS_MAX = 4000;
+/**
+ * The characters the API refuses in terms (apps/api/src/offers/routes.ts BAD_TERMS_CHAR, keep in
+ * step): control characters other than newline and tab, and bidi overrides and isolates.
+ */
+export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/u;
+export const TERMS_BAD_TEXT = 'Your terms contain hidden characters (for example from copying formatted text). Retype the part you pasted.';
+export const TERMS_LONG_TEXT = `Keep your terms under ${TERMS_MAX.toLocaleString('en-US')} characters.`;
+
+/** The terms as the API stores them: line breaks as newlines, no space at either end. */
+export function cleanTerms(t: string): string {
+  return t.replace(/\r\n?/g, '\n').trim();
+}
 
 export interface ValidateContext {
   /** The chosen method is a gift card, so the card's country is required and sent. */
@@ -174,6 +190,7 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
   const amountError = 'Enter an amount, like 50 or 2,000.';
   if (min === null || min === 0n) errors.min = amountError;
   if (max === null || max === 0n) errors.max = amountError;
+  // not-a-refusal: an input check on the two amounts
   if (min !== null && max !== null && min > 0n && max > 0n && min > max) errors.min = "The smallest trade can't be more than the largest.";
   let fixed: bigint | null = null;
   if (f.priceMode === 'fixed') {
@@ -184,6 +201,9 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       if (check.kind === 'refuse') errors.fixed = check.text;
     }
   }
+  const terms = cleanTerms(f.terms);
+  if (BAD_TERMS_CHAR.test(terms)) errors.terms = TERMS_BAD_TEXT;
+  else if ([...terms].length > TERMS_MAX) errors.terms = TERMS_LONG_TEXT;
   if (Object.keys(errors).length > 0) return { errors };
   return {
     errors,
@@ -195,20 +215,29 @@ export function validate(f: FormState, ctx: ValidateContext = {}): { errors: Par
       minFiatCents: min!,
       maxFiatCents: max!,
       minTrades: f.minTrades,
-      terms: f.terms.trim(),
+      terms,
       ...(giftCard ? { country: f.country } : {}),
     },
   };
 }
 
 /** The API refusals a poster can meet (plan Task 4), as plain text. */
+/** CantDoThat's title when Post offer is refused by a rule (Plan 5 Task 21; in the refusal text map). */
+export const POST_CANT_TITLE = CANT_DO_TITLE.post;
+
+/** The refusal code when Post offer was refused by a rule (shown in CantDoThat), else null. */
+export function postCantDo(code: string): CantDoCode | null {
+  return isCantDoCode(code) ? code : null;
+}
+
+/** The words for a refused Post offer; a CANT_DO_CODES refusal is shown in CantDoThat, the rest inline. */
 export function refusalText(code: string): string {
+  if (isCantDoCode(code)) return postCantDoText(code);
   switch (code) {
-    case 'trading-hold':
-      return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'trading-paused':
       return 'Trading is paused for maintenance. Your offer was not posted. Try again soon.';
     case 'method-unavailable':
+      // not-a-refusal: a catalog fact (the method is off the list), see NOT_REFUSAL_CODES
       return "This payment method isn't available right now. Choose another one.";
     default:
       return "Something went wrong and your offer wasn't posted. Try again.";

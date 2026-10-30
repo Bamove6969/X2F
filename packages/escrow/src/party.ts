@@ -130,7 +130,9 @@ export interface PartyHandle {
    */
   importSpendInfo(info: string): Promise<void>;
   /**
-   * Review I1: true only when the tx is in a block and its secret key proves it pays at least
+   * Review I1: true only when the tx is in a block, spends one of this escrow's outputs (round 2,
+   * R2-I1: an input with this wallet's key image for that output, the output in its ring; see the
+   * Monero engine's proveTx), and its secret key (additional keys included, R2-I2) proves it pays at least
    * `minimums` (payout 0 may be short by exactly the tx's network fee, which comes off it). Read in
    * the party's work queue. Optional so that test doubles may leave it out (then nothing is proven).
    */
@@ -203,6 +205,12 @@ const SPEND_CLAIM = 'spend.claim:0';
 /** Review M2: a refused spend.info from one sender is tried again at most this often. */
 export const SPEND_IMPORT_RETRY_MS = 30_000;
 const KEY_HEX = /^[0-9a-f]{64}$/;
+/**
+ * A tx secret key with any additional tx keys (review round 2, R2-I2): wallet2 concatenates one per
+ * output when a tx pays a subaddress among other destinations; at most 16 outputs. Same as the Monero
+ * engine's TX_KEY (kept here so the party never loads monero-ts); the engine checks every chunk is a scalar.
+ */
+const TX_KEY = /^(?:[0-9a-f]{64}){1,17}$/;
 const MAX_KEX_ROUND = 12;
 const MAX_ATTEMPT = 20;
 const KEX = /^msig\.kex:(\d{1,2})$/;
@@ -255,7 +263,8 @@ function wellFormed(p: Record<string, unknown>, from: Role): boolean {
   if (key === ADDR) return Object.keys(p).length === 4 && typeof p.address === 'string' && typeof p.prev === 'string' && echoOk();
   if (key === READY) return exactStrings(p, ['key', 'address']);
   if (key === SPEND_INFO) {
-    return from !== 'mod' && exactStrings(p, ['key', 'hex', 'txHash', 'txKey']) && KEY_HEX.test(p.txHash as string) && (p.txKey === '' || KEY_HEX.test(p.txKey as string));
+    // txKey may carry additional tx keys (a release paying a subaddress; review round 2, R2-I2).
+    return from !== 'mod' && exactStrings(p, ['key', 'hex', 'txHash', 'txKey']) && KEY_HEX.test(p.txHash as string) && (p.txKey === '' || TX_KEY.test(p.txKey as string));
   }
   if (key === SPEND_ACK) return from === 'mod' && exactStrings(p, ['key']);
   if (key === SPEND_CLAIM) return from !== 'mod' && exactStrings(p, ['key']);
@@ -1011,6 +1020,10 @@ export function runParty(a: PartyArgs): PartyHandle {
               extra.spendClaims = [...(state.claims ?? [])];
               if (extra.outgoing) extra.outgoing = await shownOutgoing(extra.outgoing);
               const rel = state.release;
+              // The txs this mod signed. 'superseded' counts too (review round 2, R2-M3): the mod signed
+              // that tx, so if it is in the wallet's outgoing view at all it landed after all and is
+              // the mod's own spend of this escrow; while it has not landed it is not in `outgoing`
+              // and so never reaches the watcher.
               extra.ownTxs = rel?.txHash && (rel.phase === 'signed' || rel.phase === 'done' || rel.phase === 'superseded') ? [rel.txHash] : [];
               extra.spendProofs = Object.entries(state.received[SPEND_INFO] ?? {}).map(([from, r]) => ({
                 from: from as Role,
@@ -1065,7 +1078,9 @@ export function runParty(a: PartyArgs): PartyHandle {
           try {
             if (!session.proveTx || minimums.length === 0) return resolve(false);
             const r = await session.proveTx(txHash, txKey, minimums.map((m) => m.address));
-            if (r === null || !r.inBlock || r.received.length !== minimums.length) return resolve(false);
+            // Review round 2 (R2-I1): the tx must spend one of THIS escrow's outputs (spendsEscrow), so
+            // another trade's release, or an old tx, can never be counted for this escrow.
+            if (r === null || !r.inBlock || r.spendsEscrow !== true || r.received.length !== minimums.length) return resolve(false);
             // Payout 0 bears the network fee (buildRelease subtracts it from output 0), up to the
             // largest fee a release may carry: a tx cannot "pay" payout 0 by burning a huge fee.
             const fee = r.feeAtomic > MAX_NETWORK_FEE ? MAX_NETWORK_FEE : r.feeAtomic;

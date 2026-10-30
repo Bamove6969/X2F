@@ -186,7 +186,9 @@ interface SessionRow {
  * (checked on every request); 403 `recovery-session` unless `allowRecovery`; 403
  * `wrong-account-kind` when `kinds` excludes the account; 403 `terms-required` `{ version }` for a
  * trader on a stale Terms version unless `allowStaleTerms` (R10: only logout, me, terms, methods
- * and sessions routes set it). Touches `last_seen_at` (and moves `expires_at`) unless `touch: false`:
+ * and sessions routes set it, plus, by lead decision 2026-10-29 (Plan 3 Task 36), the routes that
+ * shut offers off or read my own: `GET /v1/account/offers`, `POST /v1/account/offers/status`
+ * (turning on still checks the Terms) and `PATCH /v1/offers/:id` (relisting still checks them)). Touches `last_seen_at` (and moves `expires_at`) unless `touch: false`:
  * a long-lived or self-reconnecting request such as `GET /v1/events` must never count as activity,
  * or an open tab would keep an idle session alive past its logout timer (review 2026-10-27, I1).
  *
@@ -195,6 +197,11 @@ interface SessionRow {
  * route unless that route also sets `allowHeld` (only routes that change nothing, such as reading
  * the account or its methods). So every add-method route (PGP, WebAuthn, password) is held without
  * a per-route check; at exactly `hold_until` the session passes.
+ *
+ * One recorded exception (owner, 2026-10-29; Plan 5 Task 21): `POST /v1/feedback/form` sets
+ * `allowHeld` although it writes a row, because the owner wants everyone who is refused, a held
+ * backup session included, to be able to say so. It changes nothing about the account: a feedback
+ * row, at most FEEDBACK_FORM_DAILY a day. Tested in apps/api/test/feedbackForm.test.ts.
  */
 export function requireSession(
   opts: { allowRecovery?: boolean; allowHeld?: boolean; kinds?: AccountKind[]; allowStaleTerms?: boolean; touch?: boolean } = {},

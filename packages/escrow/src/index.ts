@@ -11,7 +11,7 @@ export {
   type TxStatus,
 } from './engine.js';
 export { MAX_NETWORK_FEE, checkPayouts, checkTxSet, type DescribedTx } from './verify.js';
-export { MoneroMultisigEngine, MoneroMultisigSession, isScalar, type EscrowNetwork } from './monero.js';
+export { MoneroMultisigEngine, MoneroMultisigSession, TX_KEY, isScalar, isTxKey, type EscrowNetwork } from './monero.js';
 export {
   FINAL_ALERT_MS,
   autoRefundDecision,

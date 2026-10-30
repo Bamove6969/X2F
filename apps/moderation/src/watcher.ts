@@ -163,6 +163,11 @@ export interface SweepContext {
   feeWallet: string;
   /** PartyHandle.proveSweep (absent: nothing shown only through an import is ever proven). */
   prove?: PartyHandle['proveSweep'];
+  /**
+   * Review round 2 (R2-I1 b): records the sweep tx for this trade (mod_sweeps, durable) and answers
+   * whether it is this trade's: false when it was already counted for another trade. Absent: no record (tests of the pure parts).
+   */
+  claim?: (txHash: string) => Promise<boolean>;
   log: (e: { reason: string }) => void;
 }
 
@@ -180,6 +185,15 @@ export interface SweepContext {
  * but the mod's (it received the other signer's in the release's export round). It could therefore
  * send partials that make the mod's wallet attribute ANY in-block tx to the escrow. With the proof,
  * such a "forged" sweep is harmless: that tx really paid the right parties what they are owed.
+ * Review round 2 (R2-I1): the proof is bound to THIS escrow (proveSweep is true only for a tx with
+ * an input that spends one of this escrow's outputs: its key image as this wallet holds it, that
+ * output in the ring), and a counted in-block tx is recorded for this trade (`claim`, mod_sweeps): a
+ * tx already counted for another trade never counts here (`sweep-counted-elsewhere`).
+ * Review round 3 (R3-I1): the binding alone is not enough, because the builder of ANOTHER trade's
+ * release chooses its ring decoys (it can put this escrow's output in a ring and forge this mod's
+ * partials to match). So an import-only sweep counts only when BOTH trade parties' sealed spend.info
+ * name that tx hash (and one of their keys proves the minimums). This also closes R2-M1: neither
+ * party alone (nor a compromised API naming the kind) can get a tx the other did not sign counted.
  * A tx hash seen in a block or reported by a party or the API never counts. Picks the oldest sweep
  * not yet counted, a block before the pool; one that cannot be proven is logged (`sweep-unproven`)
  * and skipped, so it never settles anything (the 6 h `spend-unshown` fallback escalates instead).
@@ -190,11 +204,27 @@ export async function spendEvidence(f: Funds, state: WatchState, ctx: SweepConte
     .sort((a, b) => (a.height ?? Number.MAX_SAFE_INTEGER) - (b.height ?? Number.MAX_SAFE_INTEGER));
   for (const o of fresh) {
     const evidence = { txHash: o.txHash, height: o.height, sweptAtomic: o.spentAtomic };
-    if ((f.ownTxs ?? []).includes(o.txHash)) return evidence;
-    if (o.height !== null && (await proven(o, f, ctx))) return evidence;
-    ctx.log({ reason: 'sweep-unproven' });
+    const own = (f.ownTxs ?? []).includes(o.txHash);
+    if (!own && !(o.height !== null && (await proven(o, f, ctx)))) {
+      ctx.log({ reason: 'sweep-unproven' });
+      continue;
+    }
+    // Round 2 (R2-I1 b): one tx counts for one trade only, whoever showed it (own txs too: a forged
+    // attribution of trade A's mod-signed release to escrow B must not count for B).
+    if (o.height !== null && ctx.claim && !(await ctx.claim(o.txHash))) {
+      ctx.log({ reason: 'sweep-counted-elsewhere' });
+      continue;
+    }
+    return evidence;
   }
   return null;
+}
+
+/** mod_sweeps (migration 005): records `txHash` for `trade` unless another trade has it; true when it is this trade's. */
+export async function claimSweep(db: pg.Pool, trade: string, txHash: string): Promise<boolean> {
+  await db.query('insert into mod_sweeps (tx_hash, trade) values ($1, $2) on conflict (tx_hash) do nothing', [txHash, trade]);
+  const { rows } = await db.query<{ trade: string }>('select trade from mod_sweeps where tx_hash = $1', [txHash]);
+  return rows[0]?.trade === trade;
 }
 
 async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean> {
@@ -206,8 +236,16 @@ async function proven(o: Outgoing, f: Funds, ctx: SweepContext): Promise<boolean
     return false;
   }
   if (minimums === null) return false;
-  for (const p of f.spendProofs ?? []) {
-    if (p.txHash !== o.txHash || p.txKey === '' || (p.from !== 'buyer' && p.from !== 'seller')) continue;
+  // Round 3 (R3-I1, also R2-M1): BOTH trade parties' sealed spend.info must name this tx. A seller
+  // who builds another trade's release picks its ring decoys, so it can put this escrow's output in
+  // a ring and forge this mod's partial key images: the binding and the payout proof then pass for a
+  // tx that paid another trade. A seller-buyer settlement is signed by both, and each sends its
+  // spend.info with the hash; a forger cannot produce the other party's sealed statement.
+  const naming = (f.spendProofs ?? []).filter((p) => p.txHash === o.txHash && (p.from === 'buyer' || p.from === 'seller'));
+  if (!naming.some((p) => p.from === 'buyer') || !naming.some((p) => p.from === 'seller')) return false;
+  // Either party's key may prove the minimums (one of them may have sent no key: '').
+  for (const p of naming) {
+    if (p.txKey === '') continue;
     if (await ctx.prove(o.txHash, p.txKey, minimums)) return true;
   }
   return false;
@@ -310,6 +348,7 @@ export function createWatcher(o: WatcherOptions): Watcher {
       terms: args.terms,
       feeWallet: args.feeWallet,
       ...(handle.proveSweep ? { prove: (h, k, m) => handle.proveSweep!(h, k, m) } : {}),
+      claim: (txHash) => claimSweep(o.db, row.trade, txHash),
       log: o.log,
     });
     const step = watchStep({
