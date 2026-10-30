@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError, useServerClock } from '../../api/client.js';
 import { postTradeEvent } from '../../api/trade.js';
+import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { HoldButton } from '../../ui/HoldButton.js';
 import { Icon } from '../../ui/icons.js';
@@ -300,9 +301,10 @@ export function SellerConfirm({
         />
         {hint !== null ? <span className="x2f-release__hint">{hint}</span> : null}
         {checked && !acked && !warnOpen && warnDue ? (
-          <button type="button" className="x2f-button x2f-button--quiet" onClick={() => setWarnOpen(true)}>
+          // COPY-UNSIGNED (review M6): the kit's quiet button; not on the Warn-Release board.
+          <Button variant="quiet" onClick={() => setWarnOpen(true)}>
             Show the warning again
-          </button>
+          </Button>
         ) : null}
         {problem !== null && !done ? (
           <span role="alert" className="x2f-release__error">
