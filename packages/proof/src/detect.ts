@@ -40,6 +40,64 @@ const RANK = { iban: 0, card: 1, email: 2, phone: 3, handle: 4, monero: 5, accou
 /** Marks a kept character in the text the classifiers see, so no match can run across it. */
 const BLANK = '\u0000';
 
+/**
+ * UPI IDs (`name@bank`, the payment address on Indian UPI screenshots) are masked as `account` in
+ * images and refused in notes (review R3-M3).
+ */
+// PENDING OWNER (owner item 34): whether UPI IDs are in scope at all; on until the owner decides.
+export const UPI_IDS = true;
+
+/** Detection options. Only for tests and the pending owner flag; callers pass nothing. */
+export interface DetectOptions {
+  /** Mask UPI IDs (`name@bank`); defaults to `UPI_IDS`. */
+  upiIds?: boolean;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Normalisation (review R3-I3). Detection runs on a copy of each line where Unicode dashes, minus
+// signs, spaces and tabs, full-width forms and every decimal digit (`\p{Nd}`) are ASCII. The copy
+// has the same length in UTF-16 units as the original, so every index found in it is an index in
+// the original, and regions are placed over the original words.
+
+const HYPHEN = /[\u2010-\u2015\u2212\ufe58\ufe63]/;
+const SPACE = /[\t\v\f\u00a0\u1680\u2000-\u200a\u202f\u205f\u3000\ufeff]/;
+const ND = /\p{Nd}/u;
+const digitValues = new Map<number, string>();
+
+/** The value of a decimal digit: Unicode encodes each digit set as a run of ten from zero. */
+function digitValue(cp: number): string {
+  let v = digitValues.get(cp);
+  if (v === undefined) {
+    let zero = cp;
+    while (zero > 0 && ND.test(String.fromCodePoint(zero - 1))) zero--;
+    v = String((cp - zero) % 10);
+    digitValues.set(cp, v);
+  }
+  return v;
+}
+
+/**
+ * The line with ASCII separators and digits, the same length in UTF-16 units. A digit outside the
+ * BMP (two units, such as the mathematical digits) becomes its ASCII digit twice: the offsets stay
+ * in line, and a doubled digit count can only make a number reach the masking thresholds sooner.
+ */
+export function normalizeText(text: string): string {
+  let out = '';
+  for (let i = 0; i < text.length; ) {
+    const cp = text.codePointAt(i)!;
+    const units = cp > 0xffff ? 2 : 1;
+    const ch = text.slice(i, i + units);
+    i += units;
+    if (cp < 0x80 && ch !== '\t' && ch !== '\v' && ch !== '\f') out += ch;
+    else if (SPACE.test(ch)) out += ' ';
+    else if (HYPHEN.test(ch)) out += '-';
+    else if (cp >= 0xff01 && cp <= 0xff5e) out += String.fromCharCode(cp - 0xfee0);
+    else if (ND.test(ch)) out += digitValue(cp).repeat(units);
+    else out += ch;
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------------------------------------
 // Kept spans: dates, times, the trade code, the trade amount.
 
@@ -65,14 +123,23 @@ const DATE_TEXT: RegExp[] = [
 ];
 /** 16-10-2026, 10/16/26, 16.10.2026: kept only when one order is a real day and month. */
 const DATE_NUMERIC = new RegExp(`${NB}${B}(\\d{1,2})([-/.])(\\d{1,2})\\2(\\d{4}|\\d{2})${E}${NA}`, 'g');
+/** `16. 10. 2026`: a spaced date (Czech, Polish, German), 4-digit year only (review R3-M5). */
+const DATE_SPACED = new RegExp(`${NB}${B}(\\d{1,2})\\. (\\d{1,2})\\. (\\d{4})${E}${NA}`, 'g');
+/** `16.10.2026-17.10.2026`: a range of two numeric dates with 4-digit years (review R3-M5). */
+const DATE_RANGE = new RegExp(`${NB}${B}(\\d{1,2})([./])(\\d{1,2})\\2(\\d{4}) ?- ?(\\d{1,2})\\2(\\d{1,2})\\2(\\d{4})${E}${NA}`, 'g');
 /** A UK sort code label: a dashed `12-05-26` on its line is a sort code, not a date (review M5). */
 const SORT_CODE = /(?<![A-Za-z])sort[\s-]*code(?![A-Za-z])/i;
 
 /**
  * A phone-like digit group right before a 2-digit-year date, joined by a space (review R2-I2:
- * `0470 01.02.03` is a Belgian mobile): a group starting with `0` or `+`, or of 3-4 digits.
+ * `0470 01.02.03` is a Belgian mobile): a group starting with `0` or `+`, or of 3-4 digits, after
+ * a space, the line start or `)` (review R3-I2: `+32 (0)470 01.02.03`).
  */
-const PHONE_GROUP_BEFORE = /(?:^|\s)(?:\+\d{1,4}|0\d*|\d{3,4}) $/;
+const PHONE_GROUP_BEFORE = /(?:^|[\s)])(?:\+\d{1,4}|0\d*|\d{3,4}) $/;
+
+function dayMonth(a: number, b: number): boolean {
+  return (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
+}
 
 function markDates(text: string, keep: boolean[]): void {
   for (const re of DATE_TEXT) for (const m of text.matchAll(re)) mark(keep, m.index, m.index + m[0].length);
@@ -80,10 +147,13 @@ function markDates(text: string, keep: boolean[]): void {
   for (const m of text.matchAll(DATE_NUMERIC)) {
     if (sortCode && m[2] === '-' && m[4]!.length === 2) continue;
     if (m[4]!.length === 2 && PHONE_GROUP_BEFORE.test(text.slice(0, m.index))) continue;
-    const a = Number(m[1]);
-    const b = Number(m[3]);
-    const ok = (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
-    if (ok) mark(keep, m.index, m.index + m[0].length);
+    if (dayMonth(Number(m[1]), Number(m[3]))) mark(keep, m.index, m.index + m[0].length);
+  }
+  for (const m of text.matchAll(DATE_SPACED)) {
+    if (dayMonth(Number(m[1]), Number(m[2]))) mark(keep, m.index, m.index + m[0].length);
+  }
+  for (const m of text.matchAll(DATE_RANGE)) {
+    if (dayMonth(Number(m[1]), Number(m[3])) && dayMonth(Number(m[5]), Number(m[6]))) mark(keep, m.index, m.index + m[0].length);
   }
 }
 
@@ -99,7 +169,14 @@ function codePattern(normalized: string): RegExp {
 }
 
 /** Any well-formed trade code (grouped, with at least one letter), for review notes. */
-const ANY_CODE = new RegExp(`${B}[0-9A-Za-z]{4}(?:-[0-9A-Za-z]{4}){3}${E}`, 'g');
+// Not inside a longer dashed run, and not a valid IBAN: `DE89-3704-0044-0532-0130-00` and the
+// 16-character `BE68-5390-0754-7034` are IBANs, not trade codes (found with review R3-I3's tests).
+const ANY_CODE = new RegExp(`(?<![0-9A-Za-z]-)${B}[0-9A-Za-z]{4}(?:-[0-9A-Za-z]{4}){3}${E}(?!-[0-9A-Za-z])`, 'g');
+
+function isIban(s: string): boolean {
+  const c = s.replace(/-/g, '').toUpperCase();
+  return /^[A-Z]{2}\d{2}/.test(c) && mod97(c);
+}
 
 function mark(keep: boolean[], start: number, end: number): void {
   for (let i = start; i < end; i++) keep[i] = true;
@@ -140,16 +217,21 @@ const IBAN = new RegExp(`${B}[A-Z]{2}\\d{2}(?:[ -]?[A-Z0-9]){11,30}${E}`, 'g');
  * ellipsis forms `...1234` and `…1234` take exactly 4 digits right after them (review R2-M1), so
  * `Waited ... 15 minutes` is not one.
  */
-const MASKED_TAIL = new RegExp(`${B}(?:[•*●·∙°xX]{2,} ?\\d{2,}|(?:…+|\\.{3,})\\d{4}(?!\\d))`, 'g');
+const MASKED_TAIL = new RegExp(`${B}(?:[•*●·∙°xX]{2,} ?\\d{2,}|(?:…+|\\.{3,}|[•*●xX])\\d{4}(?!\\d))`, 'g');
 /** The 4 digits after `ending` or `ending in` (`Account ending in 1234`). */
 const ENDING = /(?<=(?<![A-Za-z])ending(?: in)?:? ?)\d{4}(?!\d)/gi;
+/** In notes, not a year (`contract ending in 2026`, review R3-M5). Images keep the wider rule. */
+const ENDING_NOTES = /(?<=(?<![A-Za-z])ending(?: in)?:? ?)(?!19\d\d|20\d\d)\d{4}(?!\d)/gi;
 /** Letters or digits of any script in the local part and the domain (review M4: `jane@exämple.com`). */
-const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}/gu;
+// The top-level domain may hold a digit OCR misread (`example.c0m`, review R3-M3), not only digits.
+const EMAIL = /[\p{L}\p{N}._%+-]+@[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.(?=\p{N}*\p{L})[\p{L}\p{N}]{2,}/gu;
 /**
- * An email OCR split around its `@` (`jane.doe @example.com`, `jane.doe@ example.com`,
- * `jane.doe @ example.com`): one space at most on each side, at least one in all.
+ * An email OCR split around its `@` or its last dot (`jane.doe @example.com`, `jane.doe@ example.com`,
+ * `jane@example .com`, review R3-M3): one space at most on each side of each. Images only.
  */
-const SPLIT_EMAIL = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._%+-]+(?: @ ?|@ )[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)*\.\p{L}{2,}(?![\p{L}\p{N}])/gu;
+const SPLIT_EMAIL = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._%+-]+ ?@ ?[\p{L}\p{N}-]+(?:\.[\p{L}\p{N}-]+)* ?\. ?(?=\p{N}*\p{L})[\p{L}\p{N}]{2,}(?![\p{L}\p{N}])/gu;
+/** A UPI ID or an email cut before its dot: `name@bank` with no top-level domain (R3-M3, `UPI_IDS`). */
+const UPI_ID = /(?<![\p{L}\p{N}._%+@-])[\p{L}\p{N}._-]+@\p{L}[\p{L}\p{N}]+(?![\p{L}\p{N}@_-]|\.[\p{L}\p{N}])/gu;
 /**
  * Phone candidates: an optional `+`, digits with spaces, dots, dashes, slashes (`0470/12.34.56`,
  * review R2-I2) or brackets between them. Dates are blanked before this runs.
@@ -168,7 +250,9 @@ const LONG_TOKEN = new RegExp(`${B}[0-9A-Za-z]{40,}${E}`, 'g');
  * digit, `A` or `B` as real addresses have, at least 5 base58 characters, dots or an ellipsis, and
  * at least 4 more.
  */
-const MONERO_SHORT = new RegExp(`${B}[48][1-9AB][1-9A-HJ-NP-Za-km-z]{3,}(?:…|\\.{2,})[1-9A-HJ-NP-Za-km-z]{4,}${E}`, 'g');
+const MONERO_SHORT = new RegExp(`${B}[48][1-9AB][1-9A-HJ-NP-Za-km-z]{3,}\\s*(?:…|\\.{2,})\\s*[1-9A-HJ-NP-Za-km-z]{4,}${E}`, 'g');
+/** A base58 token, for following an address split over words or lines (review R3-M2). */
+const BASE58_TOKEN = new RegExp(`${B}[1-9A-HJ-NP-Za-km-z]+${E}`, 'g');
 /** The rest of a wrapped address on the next line: a base58 token of 20 or more characters. */
 const BASE58_TAIL = new RegExp(`${B}[1-9A-HJ-NP-Za-km-z]{20,}${E}`, 'g');
 const NOT_BASE58 = /[0OIl]/g;
@@ -181,8 +265,11 @@ const NOT_BASE58 = /[0OIl]/g;
 const LOOKALIKE = /^[0-9OolI|SB]+$/;
 const TOKEN = /[0-9A-Za-z|]+/g;
 
-/** The text with look-alikes in digit tokens turned into `0`, and which characters were turned. */
-function withLookalikeDigits(text: string): { text: string; changed: boolean[] } {
+/**
+ * The text with look-alikes in digit tokens turned into `0`, and which characters were turned.
+ * `loose` turns any such token with one digit or more (`l7l`), for the phone rule (review R3-M4).
+ */
+function withLookalikeDigits(text: string, loose = false): { text: string; changed: boolean[] } {
   // UTF-16 units, as `m.index` counts them (review R2-M2: `[...text]` shifts after an emoji).
   const chars = text.split('');
   const changed: boolean[] = new Array<boolean>(text.length).fill(false);
@@ -190,7 +277,7 @@ function withLookalikeDigits(text: string): { text: string; changed: boolean[] }
     const t = m[0];
     if (!LOOKALIKE.test(t)) continue;
     const digits = t.replace(/\D/g, '').length;
-    if (digits === 0 || t.length - digits > digits) continue;
+    if (digits === 0 || (!loose && t.length - digits > digits)) continue;
     for (let i = 0; i < t.length; i++) {
       if (!/\d/.test(t[i]!)) {
         chars[m.index + i] = '0';
@@ -206,7 +293,7 @@ function digitsOf(s: string): string {
 }
 
 /** The money classes (P5-A6): cards, IBANs, account numbers, Monero addresses, emails, phones. */
-function moneySpans(text: string): Span[] {
+function moneySpans(text: string, notes: boolean, upi: boolean): Span[] {
   const out: Span[] = [];
   for (const m of text.matchAll(IBAN)) {
     // Labelled `iban` when the match, or a prefix of it that ends at a group break (`… 00 EUR`),
@@ -234,22 +321,64 @@ function moneySpans(text: string): Span[] {
     const span = { start: m.index, end: m.index + m[0].length };
     // The label comes from the real digits: a run with a look-alike in it is never labelled `card`.
     const real = !look.changed.slice(span.start, span.end).some(Boolean);
-    if (digits.length >= 13 && digits.length <= 19) out.push({ ...span, kind: real && luhn(digits) ? 'card' : 'account', rank: RANK.card });
+    // A run right after `+` is an international phone number, never a card (`+52 1 55 1234 5678`).
+    const intl = look.text[m.index - 1] === '+';
+    if (digits.length >= 13 && digits.length <= 19 && !intl) out.push({ ...span, kind: real && luhn(digits) ? 'card' : 'account', rank: RANK.card });
     if (digits.length >= 6) out.push({ ...span, kind: 'account', rank: RANK.account });
   }
   for (const m of text.matchAll(MASKED_TAIL)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
-  for (const m of text.matchAll(ENDING)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
+  for (const m of text.matchAll(notes ? ENDING_NOTES : ENDING)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
   for (const m of text.matchAll(MONERO)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   for (const m of text.matchAll(MONERO_SHORT)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   for (const m of text.matchAll(LONG_TOKEN)) {
     if ((m[0].match(NOT_BASE58)?.length ?? 0) * 10 <= m[0].length) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   }
   for (const m of text.matchAll(EMAIL)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'email', rank: RANK.email });
-  for (const m of text.matchAll(PHONE)) {
+  if (upi) for (const m of text.matchAll(UPI_ID)) out.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.account });
+  // Phones are found on the text with look-alikes read as digits (`(4l5) 555-Ol34`, review R3-M4).
+  for (const m of withLookalikeDigits(text, true).text.matchAll(PHONE)) {
     const s = m[0];
     const digits = digitsOf(s);
     if (digits.length >= 7 && (s.startsWith('+') || /[ ()./-]/.test(s))) out.push({ start: m.index, end: m.index + s.length, kind: 'phone', rank: RANK.phone });
   }
+  return out;
+}
+
+/**
+ * Monero addresses split over several words or lines (review R3-M2): a base58 token of 20 or more
+ * characters starting with `4` or `8`, followed by a base58 token of 8 or more as the next word or
+ * as the first word of the next line, starts a chain; the whole chain is masked.
+ */
+function moneroChains(texts: string[]): Span[][] {
+  const tokens = texts.map((t) => [...t.matchAll(BASE58_TOKEN)].map((m) => ({ start: m.index, end: m.index + m[0].length })));
+  const out: Span[][] = texts.map(() => []);
+  const next = (i: number, j: number): [number, number] | null => {
+    const line = tokens[i]!;
+    const cur = line[j]!;
+    const after = line[j + 1];
+    if (after) {
+      const gap = texts[i]!.slice(cur.end, after.start);
+      return /^\s+$/.test(gap) && after.end - after.start >= 8 ? [i, j + 1] : null;
+    }
+    if (texts[i]!.slice(cur.end).trim() !== '') return null;
+    const first = tokens[i + 1]?.[0];
+    if (!first || texts[i + 1]!.slice(0, first.start).trim() !== '' || first.end - first.start < 8) return null;
+    return [i + 1, 0];
+  };
+  tokens.forEach((line, i) => {
+    line.forEach((tok, j) => {
+      if (tok.end - tok.start < 20 || !/^[48]/.test(texts[i]!.slice(tok.start))) return;
+      let at: [number, number] | null = next(i, j);
+      if (!at) return;
+      out[i]!.push({ start: tok.start, end: tok.end, kind: 'account', rank: RANK.monero });
+      for (let n = 0; at && n < 64; n++) {
+        const [a, b] = at;
+        const t = tokens[a]![b]!;
+        out[a]!.push({ start: t.start, end: t.end, kind: 'account', rank: RANK.monero });
+        at = next(a, b);
+      }
+    });
+  });
   return out;
 }
 
@@ -346,47 +475,50 @@ function visible(text: string, best: Array<Span | null>): Array<Span | null> {
  * kind on a line, in reading order. Never covers the trade code (in any grouping or case, after
  * `normalizeTradeCode`'s look-alike mapping), the trade amount or a date.
  */
-export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
+export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOptions = {}): Region[] {
+  const upi = opts.upiIds ?? UPI_IDS;
   const code = normalizeTradeCode(keep.tradeCode);
   if (code === null) throw new RangeError('keep.tradeCode is not a trade code');
   const codeRe = codePattern(code);
   const lines = linesOf(words);
-  const kept = lines.map((l) => {
-    const k: boolean[] = new Array<boolean>(l.text.length).fill(false);
-    markDates(l.text, k);
-    for (const m of l.text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
-    for (const a of findAmounts(l.text, keep.exponent)) {
+  // Detection reads the normalised text; words keep their ranges, which the normalisation preserves.
+  const texts = lines.map((l) => normalizeText(l.text));
+  const kept = texts.map((text) => {
+    const k: boolean[] = new Array<boolean>(text.length).fill(false);
+    markDates(text, k);
+    for (const m of text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
+    for (const a of findAmounts(text, keep.exponent)) {
       if ((a.marker !== null || a.decimals) && a.value === keep.fiatCents) mark(k, a.start, a.end);
     }
     return k;
   });
   const spans: Span[][] = lines.map(() => []);
-  lines.forEach((l, i) => {
-    const k = kept[i]!;
-    const t = blanked(l.text, k);
-    spans[i]!.push(...moneySpans(t), ...handleSpans(t));
+  const blankedTexts = texts.map((text, i) => blanked(text, kept[i]!));
+  moneroChains(blankedTexts).forEach((c, i) => spans[i]!.push(...c));
+  texts.forEach((text, i) => {
+    const t = blankedTexts[i]!;
+    spans[i]!.push(...moneySpans(t, false, upi), ...handleSpans(t));
     for (const m of t.matchAll(SPLIT_EMAIL)) spans[i]!.push({ start: m.index, end: m.index + m[0].length, kind: 'email', rank: RANK.email });
     if (isAddressLine(t)) spans[i]!.push({ start: 0, end: t.length, kind: 'address', rank: RANK.address });
-    const ns = nameStart(l.text);
+    const ns = nameStart(text);
     if (ns === 'next') {
       const next = spans[i + 1];
-      if (next && lines[i + 1]) next.push({ start: 0, end: lines[i + 1]!.text.length, kind: 'name', rank: RANK.name });
+      if (next && texts[i + 1] !== undefined) next.push({ start: 0, end: texts[i + 1]!.length, kind: 'name', rank: RANK.name });
     } else if (ns >= 0) {
-      spans[i]!.push({ start: ns, end: l.text.length, kind: 'name', rank: RANK.name });
+      spans[i]!.push({ start: ns, end: text.length, kind: 'name', rank: RANK.name });
     }
   });
 
   // A Monero-class token on one line: a base58 token of 20 or more on the next line is its rest.
-  lines.forEach((l, i) => {
-    const next = lines[i + 1];
-    if (!next || !spans[i]!.some((s) => s.rank === RANK.monero)) return;
-    const t = blanked(next.text, kept[i + 1]!);
+  texts.forEach((_, i) => {
+    const t = blankedTexts[i + 1];
+    if (t === undefined || !spans[i]!.some((s) => s.rank === RANK.monero)) return;
     for (const m of t.matchAll(BASE58_TAIL)) spans[i + 1]!.push({ start: m.index, end: m.index + m[0].length, kind: 'account', rank: RANK.monero });
   });
 
   const out: Region[] = [];
   lines.forEach((l, i) => {
-    const best = visible(l.text, resolve(l.text.length, spans[i]!, kept[i]!));
+    const best = visible(texts[i]!, resolve(texts[i]!.length, spans[i]!, kept[i]!));
     let open: Region | null = null;
     const flush = (): void => {
       if (open) out.push(open);
@@ -453,9 +585,31 @@ export function detectSensitive(words: OcrWord[], keep: Keep): Region[] {
  * separator may be a thousands group (`123,456`), so those stay a whole number.
  */
 const DECIMAL = /(?<!\d|\d[.,])\d+[.,](\d{1,2}|\d{4,})(?!\d|[.,]\d)/g;
-/** A currency or crypto code or symbol right after or right before a number (one space allowed). */
-const MARK_AFTER = /^ ?(?:[A-Z]{3}(?![A-Za-z])|[$€£¥₹₽₩₺₴₱₦₪₫₿])/;
-const MARK_BEFORE = /(?:(?<![A-Za-z])[A-Z]{3}|[$€£¥₹₽₩₺₴₱₦₪₫₿]) ?$/;
+/** ISO 4217 codes (review R3-I1: an allowlist, so `TEL` or `SMS` is not a currency). */
+const ISO_4217 =
+  'AED AFN ALL AMD ANG AOA ARS AUD AWG AZN BAM BBD BDT BGN BHD BIF BMD BND BOB BOV BRL BSD BTN BWP BYN BZD CAD CDF CHE CHF CHW CLF CLP CNY COP COU CRC CUC CUP CVE CZK DJF DKK DOP DZD EGP ERN ETB EUR FJD FKP GBP GEL GHS GIP GMD GNF GTQ GYD HKD HNL HRK HTG HUF IDR ILS INR IQD IRR ISK JMD JOD JPY KES KGS KHR KMF KPW KRW KWD KYD KZT LAK LBP LKR LRD LSL LYD MAD MDL MGA MKD MMK MNT MOP MRU MUR MVR MWK MXN MXV MYR MZN NAD NGN NIO NOK NPR NZD OMR PAB PEN PGK PHP PKR PLN PYG QAR RON RSD RUB RWF SAR SBD SCR SDG SEK SGD SHP SLE SLL SOS SRD SSP STN SVC SYP SZL THB TJS TMT TND TOP TRY TTD TWD TZS UAH UGX USD USN UYI UYU UYW UZS VED VES VND VUV WST XAF XAG XAU XCD XCG XDR XOF XPD XPF XPT XSU XUA YER ZAR ZMW ZWG ZWL';
+/** Common crypto codes and names. */
+const CRYPTO = 'XMR MONERO BTC ETH LTC USDT USDC BCH DAI XRP DOGE TRX SOL BNB ADA';
+/** Codes that are also everyday English words: they count only in capitals (`ALL`, not `all`). */
+const WORD_CODES = new Set(['ALL', 'TOP', 'CUP', 'TRY', 'MOP', 'PEN', 'GEL', 'MAD', 'BOB', 'SOS', 'SOL', 'ADA']);
+const CURRENCY_CODES = new Set(`${ISO_4217} ${CRYPTO}`.split(' '));
+const SYMBOL = /[$€£¥₹₽₩₺₴₱₦₪₫₿]/;
+
+function isCurrencyWord(w: string): boolean {
+  const up = w.toUpperCase();
+  return CURRENCY_CODES.has(up) && (w === up || !WORD_CODES.has(up));
+}
+
+/** A currency or crypto code, name or symbol right after or right before a number (one space allowed). */
+function markAfter(rest: string): boolean {
+  const m = /^ ?(?:([A-Za-z]+)(?![A-Za-z])|(\S))/.exec(rest);
+  return m !== null && (m[1] !== undefined ? isCurrencyWord(m[1]) : SYMBOL.test(m[2]!));
+}
+
+function markBefore(head: string): boolean {
+  const m = /(?:(?<![A-Za-z])([A-Za-z]+)|(\S)) ?$/.exec(head);
+  return m !== null && (m[1] !== undefined ? isCurrencyWord(m[1]) : SYMBOL.test(m[2]!));
+}
 
 /**
  * A decimal part of 4 or more digits is kept only when the number looks like an amount (review
@@ -465,7 +619,7 @@ const MARK_BEFORE = /(?:(?<![A-Za-z])[A-Z]{3}|[$€£¥₹₽₩₺₴₱₦₪�
 function longDecimalIsAmount(line: string, at: number, num: string, fracLen: number): boolean {
   const whole = num.slice(0, num.length - fracLen - 1);
   if (!(whole === '0' || /^[1-9]\d{0,2}$/.test(whole))) return false;
-  return MARK_AFTER.test(line.slice(at + num.length)) || MARK_BEFORE.test(line.slice(0, at));
+  return markAfter(line.slice(at + num.length)) || markBefore(line.slice(0, at));
 }
 
 /** A range of years, `2023 - 2026` or `2023-2026`. */
@@ -479,9 +633,11 @@ const TEXT_ORDER: HiddenKind[] = ['email', 'phone', 'card', 'iban', 'account'];
  * number and Monero address (as `account`). Each kind once, in a fixed order. Dates and trade codes
  * are not details.
  */
-export function detectSensitiveText(s: string): HiddenKind[] {
+export function detectSensitiveText(s: string, opts: DetectOptions = {}): HiddenKind[] {
+  const upi = opts.upiIds ?? UPI_IDS;
   const found = new Set<HiddenKind>();
-  for (const line of s.split(/\r\n|\r|\n/)) {
+  const lines = s.split(/\r\n|\r|\n/).map(normalizeText);
+  const keeps = lines.map((line) => {
     const k: boolean[] = new Array<boolean>(line.length).fill(false);
     markDates(line, k);
     // Review M6: the digits after a decimal point (`0.12345678 XMR`) and year ranges (`2023 - 2026`)
@@ -493,10 +649,16 @@ export function detectSensitiveText(s: string): HiddenKind[] {
     }
     for (const m of line.matchAll(YEAR_RANGE)) mark(k, m.index, m.index + m[0].length);
     for (const m of line.matchAll(ANY_CODE)) {
-      if (/[A-Za-z]/.test(m[0]) && normalizeTradeCode(m[0]) !== null) mark(k, m.index, m.index + m[0].length);
+      if (/[A-Za-z]/.test(m[0]) && !isIban(m[0]) && normalizeTradeCode(m[0]) !== null) mark(k, m.index, m.index + m[0].length);
     }
-    const best = visible(line, resolve(line.length, moneySpans(blanked(line, k)), k));
+    return k;
+  });
+  const blankedLines = lines.map((line, i) => blanked(line, keeps[i]!));
+  const chains = moneroChains(blankedLines);
+  lines.forEach((line, i) => {
+    const spans = [...moneySpans(blankedLines[i]!, true, upi), ...chains[i]!];
+    const best = visible(line, resolve(line.length, spans, keeps[i]!));
     for (const b of best) if (b) found.add(b.kind);
-  }
+  });
   return TEXT_ORDER.filter((k) => found.has(k));
 }

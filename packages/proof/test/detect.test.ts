@@ -489,6 +489,8 @@ describe('review round 3 (2026-10-30)', () => {
   it('R3-I3: Unicode dashes, spaces, tabs and digits in notes', () => {
     expect(detectSensitiveText('card 4111–1111–1111–1111')).toEqual(['card']);
     expect(detectSensitiveText('iban DE89–3704–0044–0532–0130–00')).toEqual(['iban']);
+    expect(detectSensitiveText('iban BE68-5390-0754-7034')).toEqual(['iban']);
+    expect(detectSensitiveText('Code K7M2-9QXA-4FTR-8WPN')).toEqual([]);
     expect(detectSensitiveText('card 4111\u00a01111\u00a01111\u00a01111')).toEqual(['card']);
     expect(detectSensitiveText('iban DE89\u00a03704\u00a00044\u00a00532\u00a00130\u00a000')).toEqual(['iban']);
     expect(detectSensitiveText('call 06\u202f12\u202f34\u202f56\u202f78')).toEqual(['phone']);
