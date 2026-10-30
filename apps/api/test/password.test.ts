@@ -572,7 +572,10 @@ describe('pepper (FU-C, ASVS 2.4.5)', () => {
     expect(await argon2.verify(r.hash, hmac(keys.get(current)!, GOOD))).toBe(true);
     // The next login checks the peppered hash and does not hash again.
     const hash = vi.spyOn(argon2, 'hash');
-    expect((await login('legacypw1', GOOD)).statusCode).toBe(200);
+    // In the same browser: the first login started the 24-hour hold, during which only a browser
+    // already logged in may log in again (Task 17 review round 2 N-C1).
+    const jar = Object.fromEntries(ok.cookies.map((c) => [c.name, c.value]));
+    expect((await login('legacypw1', GOOD, jar)).statusCode).toBe(200);
     expect(hash).not.toHaveBeenCalled();
     expect((await row(id)).hash).toBe(r.hash);
   });

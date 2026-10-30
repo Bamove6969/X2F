@@ -10,7 +10,7 @@
  * from Task 29's address book (wallets-model.ts).
  */
 import { useState } from 'react';
-import { walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
+import { isHeld, walletsAction, withConfirm, type WalletApp, type WalletDraft } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
@@ -57,11 +57,14 @@ export function Wallet() {
     const draft: WalletDraft = { app, label: FIRST_WALLET_LABEL, address: trimmed };
     try {
       const action = await walletsAction([trimmed]);
-      const [added] = await withConfirm(
+      const result = await withConfirm(
         action,
         (t) => authApi.addWallets({ wallets: [draft], ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
+      // Plan 2 Task 17 review round 2 N-I4: after the sign-up's first 30 minutes a login with one
+      // way of proving it's you adds no wallet at once (202 held); it is saved and added at the hold's end.
+      const added = isHeld(result) ? undefined : result[0];
       update({ wallet: { app, addressEnd: added?.addressEnd ?? trimmed.slice(-4) } });
       go('welcome');
     } catch (e) {

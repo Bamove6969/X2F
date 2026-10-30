@@ -352,14 +352,15 @@ export interface AuthApi {
   /**
    * The first wallet during sign-up needs no token; every later one does (P2-C2): use `withConfirm`.
    * Confirmed with PGP, a passkey or a security key it is usable at once; with a password (and any
-   * TOTP code) `usableFrom` is 24 hours later.
+   * TOTP code) `usableFrom` is 24 hours later. From a login that waits (Task 17; PGP alone
+   * included, lead decision 2026-10-30) nothing is added yet: 202 `Held` (the 24-hour hold).
    */
-  addWallet(b: WalletDraft & Token): Promise<Wallet>;
+  addWallet(b: WalletDraft & Token): Promise<Wallet | Held>;
   /**
    * Several wallets (1-10) under one confirm, action `add-wallets` (see `walletsAction`). They share
    * one `usableFrom`: one wait for the batch, not one each.
    */
-  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[]>;
+  addWallets(b: { wallets: WalletDraft[] } & Token): Promise<Wallet[] | Held>;
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;

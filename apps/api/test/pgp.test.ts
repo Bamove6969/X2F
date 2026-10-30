@@ -375,6 +375,9 @@ describe('login', () => {
     const codeA = codeOf(await dec(sa.json().encryptedMessage, key.privateKey));
     const attacker = new Browser();
     for (let i = 0; i < 5; i++) expect((await loginStart(attacker, key)).statusCode).toBe(200);
+    // Earlier tests' PGP-alone logins on new browsers started the account's 24-hour hold, during
+    // which a login that waits opens nothing (Task 17 review round 2 N-C1); this test is about challenges.
+    await deps.db.query('delete from account_holds');
     const fin = await loginFinish(a, sa.json().challengeId, codeA);
     expect(fin.json()).toEqual({ status: 'ok' });
     const sixth = await loginStart(attacker, key);
@@ -583,9 +586,9 @@ describe('binding', () => {
     home = await registerPgp(name, key);
   });
 
-  // Each test starts a day later, past the 12-hour logout timer: log home in afresh.
+  // Each test starts a day later, past the 12-hour logout timer: log home in afresh, in the same
+  // (trusted) browser, so no 24-hour hold starts (Task 17) and a second browser's login can wait for approval.
   beforeEach(async () => {
-    home = new Browser();
     const s = await loginStart(home, key);
     await loginFinish(home, s.json().challengeId, codeOf(await dec(s.json().encryptedMessage, key.privateKey)));
   });

@@ -16,8 +16,10 @@ import {
   loginWithSecurityKey,
   walletAction,
   walletsAction,
+  isHeld,
   withConfirm,
   type AuthApi,
+  type Held,
 } from '../src/index.js';
 import { Jar, approved, ceremonyOf, failure, startServer, uniqueName, type Server } from './helpers/server.js';
 import { staffWithKeyAndPgp } from './helpers/staff.js';
@@ -165,6 +167,12 @@ describe('every later wallet goes through withConfirm (P2-C2)', () => {
   });
 });
 
+/** Wallets added at once (these sessions' logins are strong or in their sign-up window: never a Task 17 hold). */
+function addedNow<T>(r: T[] | Held): T[] {
+  if (isHeld(r)) throw new Error('the add waited out the 24-hour hold');
+  return r;
+}
+
 describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', () => {
   const drafts = (list: string[]) => list.map((address, i) => ({ app: 'cake' as const, label: `W${i + 1}`, address }));
 
@@ -175,7 +183,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     await own.api.registerPassword({ displayName: `D${login}`, loginName: login, password: GOOD, deviceLabel: LABEL, acceptedTerms: version });
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: true, strongMethods: [], password: 'immediate', waitHours: 24 });
 
-    const first = await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) });
+    const first = addedNow(await own.api.addWallets({ wallets: drafts([fakeAddress(), fakeAddress()]) }));
     expect(first.map((w) => w.usable)).toEqual([true, true]);
     await expect(own.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: [], password: 'waits', waitHours: 24 });
 
@@ -185,7 +193,7 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
       expect(a).toEqual(action);
       return (await own.api.confirmPassword({ password: GOOD, action: a })).confirmToken;
     });
-    const added = await withConfirm(action, (t) => own.api.addWallets({ wallets: drafts(list), confirmToken: t }), prove);
+    const added = addedNow(await withConfirm(action, (t) => own.api.addWallets({ wallets: drafts(list), confirmToken: t }), prove));
     expect(prove).toHaveBeenCalledTimes(1);
     expect(added.map((w) => w.address)).toEqual(list);
     expect(added.every((w) => !w.usable)).toBe(true);
@@ -228,11 +236,11 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
     await approved(srv, fresh, loginWithPasskey(fresh.api, LABEL, ceremonyOf(soft)));
     await expect(fresh.api.getWalletRule()).resolves.toEqual({ firstWallet: false, strongMethods: ['pgp', 'passkey'], password: 'none', waitHours: 24 });
     const list = [fakeAddress(), fakeAddress()];
-    const added = await withConfirm(
+    const added = addedNow(await withConfirm(
       await walletsAction(list),
       (t) => fresh.api.addWallets({ wallets: drafts(list), confirmToken: t }),
       (a) => confirmWithWebAuthn(fresh.api, a, ceremonyOf(soft)),
-    );
+    ));
     expect(added.map((w) => w.usable)).toEqual([true, true]);
   });
 

@@ -347,7 +347,14 @@ export async function weakSession(db: Queryable, sessionId: string, now: Date): 
 /** 403 `weak-session`: the calling session's login waits, so it may not do this to a stronger login. */
 export const weakRefusal = (): ApiError => new ApiError(403, 'weak-session');
 
-/** preHandler after `requireSession`: 403 `recovery-hold` `{ holdUntil }` while the account's hold runs. */
+/**
+ * preHandler after `requireSession`: 403 `recovery-hold` `{ holdUntil }` while the account's hold runs.
+ *
+ * Review round 2 N-M4 (note only): this is an unlocked read, so a take, offer or wallet request
+ * racing a hold that is just starting can still pass. Only the session that starts the hold gains
+ * from that, and it could have acted a moment earlier anyway. The security changes themselves are
+ * checked under the account lock (`gateChange`).
+ */
 export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
   const until = await holdUntil(req.server.deps, req.auth.accountId, req.server.events, req.log);
   if (until !== null) throw holdRefusal(until);
