@@ -4,11 +4,12 @@
 import { createECDH, createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { addressEnd, type ConfirmAction } from '@x2f/accounts';
-import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
+import type { FastifyInstance, FastifyRequest, LightMyRequestResponse } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { AddressValidator, Deps } from '../src/app.js';
 import { issueConfirmToken } from '../src/auth/confirm.js';
-import { HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, settleDueHolds } from '../src/auth/hold.js';
+import { HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, WEAK_LIMITED_ROUTES, gateChange, lockAccount, settleDueHolds, withTx } from '../src/auth/hold.js';
+import { SECURITY_CHANGE_BUCKET } from '../src/limits.js';
 import { hashPassword } from '../src/auth/password.js';
 import { PUSH_SUBSCRIPTION_CAP } from '../src/push/send.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
@@ -972,6 +973,122 @@ describe('review round 2', () => {
     // The owner's strong session can.
     const hs = list.find((x) => x.kind === 'hold-started')!;
     expect((await o.b.post(`/v1/account/alerts/${hs.id}/seen`)).statusCode).toBe(204);
+  });
+
+  describe('review round 3', () => {
+    /** The gate as a security route calls it, for a session whose request passed its preHandlers earlier. */
+    const gateAs = (accountId: string, sessionId: string) =>
+      withTx(deps.db, (db) =>
+        gateChange(db, { server: app, auth: { accountId, sessionId, level: 'full' }, log: app.log } as unknown as FastifyRequest, { kind: 'logout-timer', idleHours: 2 }),
+      );
+
+    it("R3-I1: a thief's change in flight across the owner's proof starts no new hold: the gate refuses a revoked session (401)", async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const w = await sessionOf(thief);
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
+      expect(await holdOf(deps, o.id)).toBeNull();
+      expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
+      // The thief's request read its session before the owner's commit and reaches the gate after it.
+      await expect(gateAs(o.id, w)).rejects.toMatchObject({ statusCode: 401, code: 'not-authenticated' });
+      expect(await holdOf(deps, o.id)).toBeNull();
+      // An expired session is refused the same way.
+      const t2 = await approvedThief(o.b, o.name);
+      const s2 = await sessionOf(t2);
+      await deps.db.query('update sessions set expires_at = $2 where id = $1', [s2, now]);
+      await expect(gateAs(o.id, s2)).rejects.toMatchObject({ statusCode: 401 });
+      expect(await holdOf(deps, o.id)).toBeNull();
+    });
+
+    it('R3-I1: PUT /v1/account/password is throttled per session (a refused loop runs dry: 429 slow-down)', async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      const confirmToken = await tokenFor(deps, thief, o.id, { kind: 'set-password' });
+      for (let i = 0; i < SECURITY_CHANGE_BUCKET.capacity; i++) {
+        expect(errorOf(await thief.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken }))).toBe('recovery-hold');
+      }
+      const dry = await thief.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken });
+      expect(dry.statusCode).toBe(429);
+      expect(dry.json()).toMatchObject({ error: 'slow-down' });
+      // Per session: the owner's own session is not throttled by the thief's loop.
+      const ownToken = await tokenFor(deps, o.b, o.id, { kind: 'set-password' });
+      expect(errorOf(await o.b.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken: ownToken }))).toBe('recovery-hold');
+    });
+
+    it('R3-I1: a confirm token is single-use (a second change with it is refused)', async () => {
+      const o = await passkeyTrader();
+      const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'set-password' });
+      expect((await o.b.put('/v1/account/password', { password: GOOD, confirmToken })).statusCode).toBe(200);
+      expect(errorOf(await o.b.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken }))).toBe('confirm-invalid');
+    });
+
+    it('R3-M1: an approval approved before a hold cannot be collected during it (403 recovery-hold, no session)', async () => {
+      const o = await passwordTrader();
+      const t2 = new Browser(app);
+      const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
+      expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
+      expect((await o.b.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      const before = await live(o.id);
+      const res = await t2.post(`/v1/login/approval/${w.approvalId}/poll`);
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toMatchObject({ error: 'recovery-hold', holdUntil: in24h() });
+      expect(await live(o.id)).toBe(before);
+      expect((await t2.get('/v1/account/me')).statusCode).toBe(401);
+    });
+
+    it("R3-M1: a collection racing the owner's proof waits for it and gets nothing (no weak session outlives the proof)", async () => {
+      const o = await passkeyWithPassword();
+      const thief = await approvedThief(o.b, o.name);
+      const t2 = new Browser(app);
+      const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
+      expect((await thief.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
+      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      // The owner's proof, statement by statement as `endHoldIfOwner` runs them, with the poll in between.
+      const owner = await deps.db.connect();
+      let polled: Promise<LightMyRequestResponse> | undefined;
+      try {
+        await owner.query('begin');
+        await lockAccount(owner, o.id);
+        await owner.query('delete from account_holds where account_id = $1', [o.id]);
+        await owner.query(`update sessions set revoked_at = $2 where account_id = $1 and revoked_at is null and strength is distinct from 'strong'`, [o.id, now]);
+        polled = t2.post(`/v1/login/approval/${w.approvalId}/poll`);
+        await new Promise((r) => setTimeout(r, 300));
+        await owner.query(`update login_approvals set outcome = 'expired' where account_id = $1 and outcome = 'approved' and used_at is null`, [o.id]);
+        await owner.query('commit');
+      } finally {
+        owner.release();
+      }
+      expect((await polled!).json()).toEqual({ status: 'expired' });
+      const weak = await deps.db.query(`select 1 from sessions where account_id = $1 and revoked_at is null and strength is distinct from 'strong'`, [o.id]);
+      expect(weak.rows).toEqual([]);
+    });
+
+    describe('R3-M2 (lead decision 2026-10-30): a weak session may log out only itself, hold or not', () => {
+      it("outside a hold it cannot log out the owner's weak phone (its push subscription stays)", async () => {
+        const o = await passwordTrader();
+        const t2 = new Browser(app);
+        const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
+        expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
+        expect((await t2.post(`/v1/login/approval/${w.approvalId}/poll`)).json()).toMatchObject({ status: 'ok' });
+        expect(await holdOf(deps, o.id)).toBeNull();
+        expect((await t2.delete(`/v1/account/sessions/${await sessionOf(o.b)}`)).json()).toEqual({ error: 'weak-session' });
+        expect((await o.b.get('/v1/account/me')).statusCode).toBe(200);
+        expect((await t2.delete(`/v1/account/sessions/${await sessionOf(t2)}`)).statusCode).toBe(204);
+      });
+
+      it("it cannot cancel a backup session either; the owner's strong session can", async () => {
+        const o = await passkeyWithPassword();
+        const thief = await approvedThief(o.b, o.name);
+        const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'new-recovery-codes' });
+        const { codes } = (await o.b.post('/v1/account/recovery-codes', { confirmToken })).json() as { codes: string[] };
+        expect((await new Browser(app).post('/v1/login/backup', { loginName: o.name, kind: 'recovery-code', code: codes[0]!, deviceLabel: 'X' })).statusCode).toBe(200);
+        const rec = ((await o.b.get('/v1/account/sessions')).json() as Array<{ id: string; level: string }>).find((s) => s.level === 'recovery')!;
+        expect((await thief.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ error: 'weak-session' });
+        expect((await o.b.delete(`/v1/account/recovery-sessions/${rec.id}`)).json()).toEqual({ ok: true });
+      });
+    });
   });
 });
 

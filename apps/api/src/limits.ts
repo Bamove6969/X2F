@@ -70,6 +70,12 @@ export const REGISTER_BUCKET: BucketSize = { capacity: 20, perMinute: 20 };
 /** All `/v1/login/*` and `/v1/register/*\/start` routes and `login/password`. */
 export const START_BUCKET: BucketSize = { capacity: 120, perMinute: 120 };
 
+/**
+ * `PUT /v1/account/password`, per session (Plan 2 Task 17 review round 3, R3-I1): a refused change
+ * costs a session one try, so a loop against the hold runs dry instead of racing the owner's login.
+ */
+export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 };
+
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
