@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { newTradeCode } from '@x2f/core';
 import { newTrade, type By, type Trade, type TradeEvent, type TradeState } from '@x2f/trade';
 import type { Deps } from '../../src/app.js';
+import { insertReview } from '../../src/reviews/store.js';
 import { applyEvent, insertTrade, type TradeSides } from '../../src/trades/store.js';
 
 export const XMR = 1_000_000_000_000n;
@@ -96,4 +97,27 @@ export async function driveTo(deps: Pick<Deps, 'db' | 'clock'>, t: Trade, state:
     if (step.to === state) return cur;
   }
   throw new Error(`happy path never reaches ${state}`);
+}
+
+/**
+ * Plan 5 Task 3: both sides of an ended trade leave a Neutral review, so a history seeded for
+ * stages or counts does not trip the rate-first gate (a reviewable, unrated trade blocks the take
+ * and hides the poster's offers). Inserted directly, as the review route would.
+ */
+export async function seedReviews(deps: Pick<Deps, 'db' | 'clock'>, code: string): Promise<void> {
+  const { rows } = await deps.db.query<{ buyer_account_id: string; seller_account_id: string; method_id: string }>(
+    'select buyer_account_id, seller_account_id, method_id from trades where code = $1',
+    [code],
+  );
+  const t = rows[0]!;
+  const now = deps.clock();
+  for (const [reviewerRole, reviewerId, subjectId] of [
+    ['buyer', t.buyer_account_id, t.seller_account_id],
+    ['seller', t.seller_account_id, t.buyer_account_id],
+  ] as const) {
+    await insertReview(deps.db, {
+      tradeCode: code, reviewerId, subjectId, reviewerRole, input: { neutral: true }, weight: 1_000n,
+      methodId: t.method_id, reviewableSince: now, createdAt: now,
+    });
+  }
 }

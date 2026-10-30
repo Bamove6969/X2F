@@ -7,7 +7,7 @@ import { insertTrade, loadTradeRow, rowToTrade } from '../src/trades/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
-import { XMR, fakeAddress, seedTrade } from './helpers/trades.js';
+import { XMR, fakeAddress, seedReviews, seedTrade } from './helpers/trades.js';
 
 // Plan 3 Task 5: taking an offer, and the poster's wallet route. Real Postgres (one database per
 // file); a fake market so each test can move the price or take the feed down.
@@ -77,6 +77,7 @@ async function person(stage: 'starter' | 'building' | 'graduated' = 'graduated')
       const other = await seedAccount(deps, { loginName: `cp${Math.random().toString(36).slice(2, 12)}` });
       const { code } = await seedTrade(deps, { sellerId: t.id, buyerId: other, poster: 'seller' });
       await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, now]);
+      await seedReviews(deps, code);
     }
   }
   return { ...t, wallet: w.id, address: w.address };
