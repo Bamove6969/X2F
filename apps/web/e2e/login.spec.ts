@@ -439,17 +439,18 @@ test('new-device approval: a blocked login says so and offers a backup login', a
   await expect(page.locator('[data-method="password"]')).toBeVisible();
 });
 
-// Plan 2 Task 16 (review M6): the owner's own login during a hold at the device limit is refused
-// through CantDoThat (Plan 5 Task 21), not inline.
-test('a login at the device limit opens CantDoThat: log out a device first', async ({ page }) => {
-  await page.route('**/v1/login/password', json({ error: 'too-many-devices' }, 409));
+// Plan 2 Task 17 review round 3 (R3-M3, R3-M4): a login refused during the hold opens CantDoThat
+// with a sentence for this login (a login is never refused by the device limit any more).
+test('a login refused during the 24-hour hold opens CantDoThat: this login waits until the hold ends', async ({ page }) => {
+  await page.route('**/v1/login/password', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
   await page.goto('/login');
   await page.click('[data-method="password"]');
   await page.fill('#login-name', 'nightowl');
   await page.fill('#login-password', 'Correct-Horse-9!');
   await page.click('[data-part="password-login"]');
   const popup = page.locator('[role="dialog"] [data-part="cant-do-that"]');
-  await expect(popup).toHaveAttribute('data-from', 'too-many-devices');
-  await expect(popup).toContainText('Log out a device first');
+  await expect(popup).toHaveAttribute('data-from', 'recovery-hold');
+  await expect(popup).toContainText("This login can't get in until");
+  await expect(popup).not.toContainText('can still be finished');
   await expect(page.locator('[data-part="login-error"]')).toHaveCount(0);
 });

@@ -393,13 +393,13 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const { rows } = await d.db.query<{ strength: string | null }>('select strength from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
+      const { rows } = await d.db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
       if (rows.length === 0) throw new ApiError(404, 'not-found');
-      // Review round 2 N-I3: a session whose login waits may not log out a strong session, nor any
-      // other session during the account's hold (403 `weak-session`); it can always end itself.
-      if (id !== req.auth.sessionId && (await weakSession(d.db, req.auth.sessionId, d.clock()))) {
-        if (rows[0]!.strength === 'strong' || (await holdUntil(d, req.auth.accountId, req.server.events, req.log)) !== null) throw weakRefusal();
-      }
+      // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
+      // may log out only itself, never any other session, hold or not (403 `weak-session`): the
+      // owner's weak phone keeps its session, and with it the push subscription that carries the
+      // hold's warning.
+      if (id !== req.auth.sessionId && (await weakSession(d.db, req.auth.sessionId, d.clock()))) throw weakRefusal();
       await endSession({ ...d, events: req.server.events }, id);
       return reply.code(204).send();
     },

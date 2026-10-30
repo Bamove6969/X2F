@@ -38,8 +38,8 @@ export const CANT_DO_CODES = [
   // API's own codes are bad-request and not-found; this one is the web's, for the popup's
   // feedback link.
   'cannot-block',
-  // Plan 2 Task 16: the device limit (approving a new device, or the owner's own login during a
-  // hold), and the cap on login approvals an account may start in an hour. The API answers the cap
+  // Plan 2 Task 16: the device limit when approving a new device (a login itself is never refused
+  // by it since Task 17 review round 2), and the cap on login approvals an account may start in an hour. The API answers the cap
   // with 429 `slow-down` `{ reason: 'approvals' }`; this code is the web's, for the popup's
   // feedback link (a throttle on tries stays a `slow-down` fault).
   'too-many-devices',
@@ -305,9 +305,15 @@ export function holdText(when: string): string {
   return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
 }
 
-/** 409 `too-many-devices` on a login (the owner's own login during a hold, at the device limit). */
-export const TOO_MANY_DEVICES_LOGIN =
-  'Your account is logged in on the most devices allowed. Log out a device first, from Settings, Security on one of them, then log in here.';
+/**
+ * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
+ * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * It says what this login cannot do and what the reader can do, whatever methods the account has
+ * (the login screen does not know them). COPY-UNSIGNED
+ */
+export function holdLoginText(when: string): string {
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open.`;
+}
 
 /** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */
 export const TOO_MANY_DEVICES_APPROVE =

@@ -3,8 +3,8 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { heldNote, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
-import { TOO_MANY_APPROVALS, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_LOGIN, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
+import { heldNote, holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { TOO_MANY_APPROVALS, TOO_MANY_DEVICES_APPROVE, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
 
@@ -24,10 +24,22 @@ describe('the 24-hour hold', () => {
 });
 
 describe('loginCantDo', () => {
-  it('the device limit, on a login and when approving', () => {
+  it('the device limit when approving; a login is never refused by it (round 3 R3-M4: no login text)', () => {
     const e = new AuthApiError(409, 'too-many-devices');
-    expect(loginCantDo(e, 'login')).toEqual({ code: 'too-many-devices', text: TOO_MANY_DEVICES_LOGIN });
     expect(loginCantDo(e, 'approve')).toEqual({ code: 'too-many-devices', text: TOO_MANY_DEVICES_APPROVE });
+    expect(loginCantDo(e, 'login')).toBeNull();
+  });
+
+  it('round 3 R3-M3: a login refused during the hold says this login cannot get in until it ends, and what the reader can do', () => {
+    const t = loginCantDo(new AuthApiError(403, 'recovery-hold', { holdUntil: UNTIL }), 'login');
+    expect(t).toEqual({ code: 'recovery-hold', text: holdLoginSentence(UNTIL) });
+    expect(t!.text).toContain(`This login can't get in until ${localTime(new Date(UNTIL))}.`);
+    expect(t!.text).toContain('If not, wait and log in again when the hold ends.');
+    expect(t!.text).toContain('If you had a passkey, a security key, or an authenticator code set up before the hold');
+    // Nothing it cannot keep: this login finishes no trades, and the account's held changes are not the reader's to make here.
+    expect(t!.text).not.toContain('can still be finished');
+    expect(t!.text).not.toContain('wallet changes');
+    expect(holdLoginSentence(null)).toContain("This login can't get in for a day.");
   });
 
   it('the hourly cap on approvals, but not a throttle on tries', () => {

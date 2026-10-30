@@ -306,6 +306,11 @@ async function confirmHandler(req: FastifyRequest, reply: FastifyReply) {
 /** The new password of `PUT /v1/account/password`, checked before `requireConfirm` so a refusal never uses up a token. */
 const checkedPassword = new WeakMap<FastifyRequest, string>();
 
+/** 429 `slow-down` `{ retryAfterSeconds }` once the calling session has used its `SECURITY_CHANGE_BUCKET`. */
+const throttlePasswordChange: preHandlerAsyncHookHandler = async function (req) {
+  req.server.budgets.securityChange.take(req.auth.sessionId);
+};
+
 const checkNewPassword: preHandlerAsyncHookHandler = async function (req) {
   const { password } = strings(req.body, ['password'] as const);
   await assertNewPassword(req.server.deps, password);
@@ -315,7 +320,7 @@ const checkNewPassword: preHandlerAsyncHookHandler = async function (req) {
 /**
  * `PUT /v1/account/password { password, confirmToken? }`: sets or replaces the account's password.
  * Behind `requireSession({ allowRecovery: true })` (a held TOTP backup session is refused by
- * `requireSession` until its hold ends), `assertMethodAllowed` (staff and the owner never get one,
+ * `requireSession` until its hold ends), a per-session throttle (`SECURITY_CHANGE_BUCKET`, 429 `slow-down`), `assertMethodAllowed` (staff and the owner never get one,
  * R2), the password checks, then `requireConfirm({ kind: 'set-password' })` with the onboarding and
  * recovery exemptions. In one transaction: the new hash, alert `login-method-added`, every other
  * session of the account ended and alert `sessions-ended` when any were; the calling session goes on.
@@ -398,6 +403,8 @@ export function passwordRoutes(app: FastifyInstance): void {
       ...opts,
       preHandler: [
         requireSession({ allowRecovery: true }),
+        // Review round 3 R3-I1: tries per session, refused ones included (a loop against the hold runs dry).
+        throttlePasswordChange,
         methodAllowed('password'),
         // Task 17: refused during the hold before a confirm token is spent (the gate checks again).
         requireNotHeld,

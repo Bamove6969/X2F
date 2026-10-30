@@ -399,8 +399,15 @@ async function poll(req: FastifyRequest, reply: FastifyReply): Promise<PollResul
     return { status: 'expired' };
   }
   // Approved: collected once, before its deadline, in one transaction with the session and the
-  // logouts the approval asked for (review M7).
+  // logouts the approval asked for (review M7). Review round 3 R3-M1: under the same locks as a
+  // login (so it runs wholly before or after the owner's proof, `endHoldIfOwner`), a hold whose time
+  // is up settles first, and during a running hold a login that waits opens no session (403
+  // `recovery-hold`, as at login; the approval stays uncollected until it expires).
   const done = await withTx(deps, async (db) => {
+    await lockApprovals(db, row.account_id);
+    await lockAccount(db, row.account_id);
+    const hold = await holdInTx(db, settleOf(req), row.account_id, now);
+    if (hold !== null && waits(row.strength)) throw holdRefusal(hold.holdUntil);
     const claimed = await db.query<ApprovalRow>(
       `update login_approvals set used_at = $2 where id = $1 and outcome = 'approved' and used_at is null and expires_at > $2 returning *`,
       [row.id, now],

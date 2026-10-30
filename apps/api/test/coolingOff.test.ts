@@ -991,13 +991,13 @@ describe('review round 2', () => {
       expect(await holdOf(deps, o.id)).toBeNull();
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
       // The thief's request read its session before the owner's commit and reaches the gate after it.
-      await expect(gateAs(o.id, w)).rejects.toMatchObject({ statusCode: 401, code: 'not-authenticated' });
+      await expect(gateAs(o.id, w)).rejects.toMatchObject({ status: 401, code: 'not-authenticated' });
       expect(await holdOf(deps, o.id)).toBeNull();
       // An expired session is refused the same way.
       const t2 = await approvedThief(o.b, o.name);
       const s2 = await sessionOf(t2);
       await deps.db.query('update sessions set expires_at = $2 where id = $1', [s2, now]);
-      await expect(gateAs(o.id, s2)).rejects.toMatchObject({ statusCode: 401 });
+      await expect(gateAs(o.id, s2)).rejects.toMatchObject({ status: 401 });
       expect(await holdOf(deps, o.id)).toBeNull();
     });
 

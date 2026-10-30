@@ -7,7 +7,7 @@ export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
 export {
-  ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
+  ARGON2_SLOTS, KeyedBuckets, REGISTER_BUCKET, SECURITY_CHANGE_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
 } from './limits.js';
 export { startRetention, type RetentionJob, type RetentionLog } from './retention.js';
 export { addAlert, type AlertKind } from './alerts.js';

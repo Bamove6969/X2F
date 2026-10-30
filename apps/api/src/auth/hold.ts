@@ -24,10 +24,18 @@
  *   Nothing can be added during the hold (every change waits or is refused), so a thief's method
  *   never ends it. A waiting login opens no session during the hold (traderLogin: device trust is
  *   a copyable cookie and must not override the hold).
- * - **Weak sessions** (`weakSession`: the login waits, its sign-up window is over) may not end a
- *   strong session, answer a strong login's approval, drop another session's push subscriptions or
- *   mark the hold's own alerts seen (`WEAK_LIMITED_ROUTES`; 403 `weak-session`).
- * - Every read-modify-write of a hold locks the account row first (`lockAccount`).
+ * - **Weak sessions** (`weakSession`: the login waits, its sign-up window is over) may log out no
+ *   session but their own (review round 3 R3-M2, lead decision 2026-10-30), and may not answer a
+ *   strong login's approval, drop another session's push subscriptions or mark the hold's own
+ *   alerts seen (`WEAK_LIMITED_ROUTES`; 403 `weak-session`).
+ * - Every read-modify-write of a hold locks the account row first (`lockAccount`); the approval
+ *   paths (login, deciding, collecting an approved login) take the approval lock before it.
+ * - **Lock order note** (review round 3 R3-M5): `POST /v1/account/login-name` takes `NAMES_LOCK`
+ *   (`loginNameTaken`) before the account lock (`gateChange`), while settling that account's held
+ *   login name takes the account lock before `NAMES_LOCK` (`applyLoginName`). If both run at once
+ *   Postgres reports a deadlock (40P01) and aborts one: harmless, as the route answers 409
+ *   `names-unavailable` and the settle's savepoint drops the change. Left as it is on purpose; new
+ *   code should take the account lock last.
  */
 import type { IdleHours, MethodType } from '@x2f/accounts';
 import type { FastifyBaseLogger, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
@@ -362,6 +370,8 @@ export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
 
 /**
  * Inside a security route's transaction, before its write (the routes in `SECURITY_CHANGE_ROUTES`):
+ * - the calling session revoked or expired by now (checked under the account lock): 401
+ *   `not-authenticated` (review round 3 R3-I1);
  * - staff and owner accounts: null (they always log in with two factors; no hold);
  * - a running hold: 403 `recovery-hold` `{ holdUntil }`, for every session of the account;
  * - a session whose login waits (outside its sign-up's first 30 minutes, and other than a backup
@@ -374,10 +384,14 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
   await lockAccount(db, accountId);
+  // Review round 3 R3-I1: the session must still be live under the lock. `requireSession` read it
+  // before this transaction, so a request in flight across the owner's proof (which revokes it,
+  // `endHoldIfOwner`, under the same lock) would otherwise start a new hold for a revoked session.
   const { rows } = await db.query<{ kind: string; strength: LoginStrength | null; onboarding_until: Date | null; level: string; hold_until: Date | null }>(
     `select a.kind, s.strength, s.onboarding_until, s.level, s.hold_until
-       from sessions s join accounts a on a.id = s.account_id where s.id = $1 and a.id = $2`,
-    [sessionId, accountId],
+       from sessions s join accounts a on a.id = s.account_id
+      where s.id = $1 and a.id = $2 and s.revoked_at is null and s.expires_at > $3`,
+    [sessionId, accountId, now],
   );
   const row = rows[0];
   if (!row) throw new ApiError(401, 'not-authenticated');
@@ -422,12 +436,14 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
 
 /**
  * Routes a weak session (`weakSession`) may use only on itself (review round 2 N-I2, N-I3, N-M3;
- * 403 `weak-session`): ending a strong session (any other session during a hold), answering a
- * strong login's approval, dropping push subscriptions (only its own go), and marking the hold's
- * and the login alerts seen.
+ * round 3 R3-M2; 403 `weak-session`): ending any session but its own (a backup session included),
+ * answering a strong login's approval, dropping push subscriptions (only its own go), and marking
+ * the hold's and the login alerts seen.
  */
 export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/sessions/:id',
+  // Review round 3 R3-M2: a weak session logs out no other session, a backup one included.
+  'DELETE /v1/account/recovery-sessions/:id',
   'POST /v1/account/approvals/:id',
   'DELETE /v1/account/push',
   'POST /v1/account/push',

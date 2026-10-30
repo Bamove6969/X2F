@@ -26,7 +26,7 @@ import { allowedMethods, methodAllowed } from './methods.js';
 import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { assertNotDisabled, openSession, requireSession } from './sessions.js';
 import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
-import { endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireNotHeld, startHold, withTx } from './hold.js';
+import { endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireNotHeld, startHold, weakRefusal, weakSession, withTx } from './hold.js';
 import { loginStrength, waits, type LoginStrength } from './strength.js';
 import type { Queryable } from '../db/pool.js';
 import { verifyTotp } from './totp.js';
@@ -221,8 +221,8 @@ async function backupSession(
 }
 
 /**
- * `DELETE /v1/account/recovery-sessions/:id` (any full session of the account): ends that recovery
- * session. When the caller's own login was strong and that backup session started the account's
+ * `DELETE /v1/account/recovery-sessions/:id` (any full session of the account whose login did not
+ * wait; a weak one gets 403 `weak-session`, review round 3 R3-M2): ends that recovery session. When the caller's own login was strong and that backup session started the account's
  * hold, the hold ends too (review M1; alert `hold-ended`), in the same transaction.
  */
 async function cancelRecovery(req: FastifyRequest) {
@@ -231,6 +231,8 @@ async function cancelRecovery(req: FastifyRequest) {
   if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
+  // Review round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits logs out no other session.
+  if (await weakSession(deps.db, sessionId, now)) throw weakRefusal();
   await withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
     const r = await db.query(

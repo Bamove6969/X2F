@@ -79,10 +79,43 @@ export const SECURITY_CHANGE_BUCKET: BucketSize = { capacity: 10, perMinute: 5 }
 /** `POST /v1/method-suggestions` (Plan 3 Task 3): rows carry no account, so one budget for everyone. */
 export const SUGGEST_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
 
+/**
+ * One `TokenBucket` per key (a session id), each of `size`; an empty bucket throws 429 `slow-down`
+ * `{ retryAfterSeconds }` (a throttle on this caller's tries, not the server being busy). At most
+ * `maxKeys` buckets are kept: the oldest is dropped first (a dropped key starts full again, which
+ * only a caller with that many sessions at once could use).
+ */
+export class KeyedBuckets {
+  private readonly buckets = new Map<string, TokenBucket>();
+
+  constructor(
+    private readonly size: BucketSize,
+    private readonly clock: () => Date,
+    private readonly maxKeys = 10_000,
+  ) {}
+
+  take(key: string): void {
+    let b = this.buckets.get(key);
+    if (b === undefined) {
+      if (this.buckets.size >= this.maxKeys) this.buckets.delete(this.buckets.keys().next().value!);
+      b = new TokenBucket(this.size.capacity, this.size.perMinute, this.clock);
+      this.buckets.set(key, b);
+    }
+    try {
+      b.take();
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'busy') throw new ApiError(429, 'slow-down', e.extra);
+      throw e;
+    }
+  }
+}
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
   suggest: TokenBucket;
+  /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
+  securityChange: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -91,5 +124,6 @@ export function newBudgets(clock: () => Date): Budgets {
     register: new TokenBucket(REGISTER_BUCKET.capacity, REGISTER_BUCKET.perMinute, clock),
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
+    securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
   };
 }
