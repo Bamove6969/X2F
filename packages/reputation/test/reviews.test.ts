@@ -76,14 +76,23 @@ describe('validateReview', () => {
     const ok = 'a'.repeat(120);
     expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note: ok }, 'buyer', none))).toBe('no-throw');
     expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note: ok + 'a' }, 'buyer', none))).toBe('note-too-long');
-    for (const br of ['a\nb', 'a\rb', 'a\u2028b', 'a\u2029b']) {
+    for (const br of ['a\nb', 'a\rb', 'a\u2028b', 'a\u2029b', 'a\u000Bb', 'a\u000Cb', 'a\u0085b']) {
       expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note: br }, 'buyer', none))).toBe('note-multiline');
+    }
+    // Other controls and bidi embeddings/overrides/isolates (review M3).
+    const bad = ['a\u0000b', 'a\tb', 'a\u001Bb', 'a\u007Fb', 'a\u009Bb', ...[0x202a, 0x202b, 0x202c, 0x202d, 0x202e, 0x2066, 0x2067, 0x2068, 0x2069].map((c) => `a${String.fromCodePoint(c)}b`)];
+    for (const note of bad) {
+      expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note }, 'buyer', none))).toBe('note-bad-character');
     }
     expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note: 'mail me' }, 'buyer', () => true))).toBe('note-personal-details');
   });
   it('counts note length in characters, not UTF-16 units', () => {
     const emojiish = '\u{1F600}'.repeat(120);
     expect(codeOf(() => validateReview({ neutral: false, stars: 5, phrases: [], note: emojiish }, 'buyer', none))).toBe('no-throw');
+  });
+  it('normalises the note to NFC before the length check', () => {
+    const decomposed = 'e\u0301'.repeat(120);
+    expect(validateReview({ neutral: false, stars: 5, phrases: [], note: decomposed }, 'buyer', none)).toMatchObject({ note: '\u00e9'.repeat(120) });
   });
   it('drops an empty or blank note and trims a kept one', () => {
     expect(validateReview({ neutral: false, stars: 4, phrases: [], note: '   ' }, 'buyer', none)).toEqual({ neutral: false, stars: 4, phrases: [], tradeBadges: [] });

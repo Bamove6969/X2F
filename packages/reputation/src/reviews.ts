@@ -42,6 +42,7 @@ export type ReviewErrorCode =
   | 'duplicate-trade-badge'
   | 'note-too-long'
   | 'note-multiline'
+  | 'note-bad-character'
   | 'note-personal-details'
   | 'neutral-with-details'
   | 'late-review-neutral-only'
@@ -55,7 +56,9 @@ export class ReviewError extends Error {
 }
 
 const STAR_KEYS = new Set(['neutral', 'stars', 'phrases', 'tradeBadges', 'note']);
-const LINE_BREAK = /[\r\n\u2028\u2029\u0085]/;
+const LINE_BREAK = /[\n\v\f\r\u0085\u2028\u2029]/;
+/** Other controls (C0, DEL, C1) and bidi embeddings, overrides and isolates (review M3). */
+const BAD_CHARACTER = /[\p{Cc}\u202A-\u202E\u2066-\u2069]/u;
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -98,9 +101,10 @@ export function validateReview(i: unknown, rated: Side, hasPersonalDetails: (not
   checkList(tradeBadges, TRADE_BADGES, 'bad-trade-badge', 'duplicate-trade-badge');
 
   const out: ReviewInput = { neutral: false, stars: stars as Stars, phrases, tradeBadges };
-  const note = typeof i.note === 'string' ? i.note.trim() : '';
+  const note = typeof i.note === 'string' ? i.note.normalize('NFC').trim() : '';
   if (note !== '') {
     if (LINE_BREAK.test(note)) throw new ReviewError('note-multiline');
+    if (BAD_CHARACTER.test(note)) throw new ReviewError('note-bad-character');
     if ([...note].length > REVIEW_NOTE_MAX) throw new ReviewError('note-too-long');
     if (hasPersonalDetails(note)) throw new ReviewError('note-personal-details');
     out.note = note;
