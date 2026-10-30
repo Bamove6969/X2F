@@ -17,7 +17,8 @@ import { checkDisplayName, checkLoginName, lookAlikeKey } from '@x2f/accounts';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { createAccount } from '../accounts.js';
+import { createAccount, type NewNames } from '../accounts.js';
+import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
@@ -310,21 +311,29 @@ export async function checkMemberLoginName(db: Queryable, raw: unknown): Promise
  */
 export async function startMember(
   c: Queryable,
-  a: { inviteId: string; loginName: { name: string; key: string }; now: Date; addKey: (memberAccountId: string) => Promise<void> },
+  config: Config,
+  a: { inviteId: string; names: NewNames; now: Date; addKey: (memberAccountId: string) => Promise<void> },
 ): Promise<{ memberId: string; memberAccountId: string; teamId: string; setupUntil: Date }> {
   const invite = await openInvite(c, { id: a.inviteId }, a.now, true);
-  // The placeholder display name: random, never shown (accounts.display_name is not null and unique).
-  const placeholder = `m-${randomBytes(8).toString('hex')}`;
-  const memberAccountId = await createAccount(c, {
-    displayName: placeholder, displayKey: placeholder, loginName: a.loginName.name, loginKey: a.loginName.key,
-    kind: 'member', termsVersion: null, now: a.now,
-  });
+  // FU-D: the login name is stored only as its keyed tag (createAccount); the display name is the
+  // random placeholder `memberNames` made, never shown.
+  const memberAccountId = await createAccount(c, config, { ...a.names, kind: 'member', termsVersion: null, now: a.now });
   await a.addKey(memberAccountId);
   const setupUntil = new Date(Math.max(invite.invite_expires_at.getTime(), a.now.getTime() + SETUP_MIN_MS));
   await c.query('update team_members set member_account_id = $2, invite_hash = null, invite_expires_at = $3 where id = $1', [
     invite.id, memberAccountId, setupUntil,
   ]);
   return { memberId: invite.id, memberAccountId, teamId: invite.account_id, setupUntil };
+}
+
+/**
+ * A member login account's names: the checked login name's key and a random placeholder display
+ * name nobody sees (accounts.display_name is not null and unique). The join challenge keeps them
+ * only sealed (`sealNames`, FU-D), as a trader's sign-up does.
+ */
+export function memberNames(loginKey: string): NewNames {
+  const placeholder = `m-${randomBytes(8).toString('hex')}`;
+  return { displayName: placeholder, displayKey: placeholder, loginKey };
 }
 
 /**

@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { fiatCents } from '@x2f/trade';
+import { CLIENT_EVENTS, fiatCents } from '@x2f/trade';
 import type { FastifyInstance } from 'fastify';
 import { createHash, randomBytes } from 'node:crypto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -565,6 +565,11 @@ describe('role changes and removal reach a member in flight', () => {
     expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
   });
 
+  it('every trade event a member may send has an audit action and its role (a new client event fails here)', () => {
+    const sendable = CLIENT_EVENTS.filter((e) => !MEMBER_SIGNING_EVENTS.has(e) && e !== 'open-dispute');
+    for (const e of sendable) expect(ACTION_ROLE[e as keyof typeof ACTION_ROLE], e).toBe('trades');
+  });
+
   it('auditMember checks every action against the role it needs', async () => {
     const owner = await team();
     const m = await member(owner.id, ['trades']);
@@ -754,7 +759,7 @@ describe('Task 18 seams', () => {
     // member's device. When Task 42's key scheme lands (apps/api/src/team/memberKeys.ts or a
     // `member_id` on trade_identities), lift these refusals there, with tests (a member's take,
     // accept and room through to release), and delete this check.
-    expect([...MEMBER_SIGNING_EVENTS]).toEqual(['release-started']);
+    expect([...MEMBER_SIGNING_EVENTS]).toEqual(['release-started', 'fund-started']);
     expect([...OWNER_DEVICE_ROUTES]).toEqual(['POST /v1/offers/:id/take', 'POST /v1/trades/:code/wallet', 'POST /v1/trades/:code/identity']);
     expect(readFileSync(`${ROOT}apps/api/src/trades/identity.ts`, 'utf8')).toMatch(/requireSigner = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);
     expect(readFileSync(`${ROOT}apps/api/src/trades/take.ts`, 'utf8')).toMatch(/requireTrader = \[requireSession\(\{[^}]*\}\), ownerDeviceOnly\]/);

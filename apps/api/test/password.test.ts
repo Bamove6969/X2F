@@ -10,7 +10,7 @@ import { DEVICE_COOKIE } from '../src/auth/device.js';
 import { DUMMY_HASH, hashPassword, pepperedPassword } from '../src/auth/password.js';
 import { SESSION_COOKIE, requireSession } from '../src/auth/sessions.js';
 import { ARGON2_SLOTS, Semaphore } from '../src/limits.js';
-import { seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { spySql } from './helpers/sqlSpy.js';
@@ -81,8 +81,8 @@ const login = (loginName: string, password: string, cookies: Record<string, stri
 
 async function accountRow(loginName: string) {
   const { rows } = await deps.db.query<{ id: string; terms_version: string | null; terms_accepted_at: Date | null }>(
-    'select id, terms_version, terms_accepted_at from accounts where login_key = $1',
-    [loginName.toLowerCase()],
+    'select id, terms_version, terms_accepted_at from accounts where id = $1',
+    [await accountIdByLoginName(deps, loginName)],
   );
   return rows[0];
 }
@@ -418,7 +418,7 @@ describe('POST /v1/login/password', () => {
 
   it('refuses a disabled account after the password checks out', async () => {
     await register('disabled1');
-    await deps.db.query('update accounts set disabled_at = $2 where login_key = $1', ['disabled1', now]);
+    await deps.db.query('update accounts set disabled_at = $2 where id = $1', [await accountIdByLoginName(deps, 'disabled1'), now]);
     expect((await login('disabled1', 'Wrong-Horse-9')).json()).toMatchObject({ error: 'credentials-invalid' });
     const res = await login('disabled1', GOOD);
     expect(res.statusCode).toBe(403);

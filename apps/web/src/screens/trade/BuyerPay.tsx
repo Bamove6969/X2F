@@ -6,11 +6,14 @@
  * owns the escrow handle and picks the screen; these screens only show the view and act.
  *
  * Every action records the event with the API first, then asks the escrow (Task 12's order):
- * - I've paid → PaidConfirmSheet → `mark-paid { fiatCents }` (the total the sheet showed), then
- *   `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A `total-changed` refusal sends
- *   nothing: the trade is re-read and the sheet asks again with the new total.
+ * - I've paid → (PayWarning, once per trade, Task 38) → PaidConfirmSheet → `mark-paid { fiatCents }`
+ *   (the total the sheet showed), then `escrow.markPaid(fiatCents)` (the `trade.paid` signal). A
+ *   `total-changed` refusal sends nothing: the trade is re-read and the sheet asks again with the
+ *   new total. PayWarning also opens when the screen opens while the escrow still confirms
+ *   (Revision 2026-10-29b).
  * - Cancel trade (buyer, spec 2.3): one tap before "I've paid" (`buyer-cancel`, then
- *   `escrow.buyerCancel()`, which sends `trade.cancel`); after it, CancelSheet's warning first.
+ *   `escrow.buyerCancel()`, which sends `trade.cancel`). After "I've paid" there is no cancel at
+ *   all (owner, Revision 2026-10-29b; Task 39): the link is gone and the API refuses it.
  * - The seller never cancels alone: Propose cancel / Withdraw (mutual cancel); the buyer gets an
  *   accept/decline card, and Accept is `accept-cancel` then `escrow.proposeCancelSign()`.
  */
@@ -26,21 +29,23 @@ import { MethodExplainer } from '../../ui/MethodExplainer.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
-import { CancelProposalCard, CancelSheet, SellerCancelControls } from './CancelSheet.js';
+import { CancelProposalCard, SellerCancelControls } from './CancelSheet.js';
 import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { PayWarning } from './PayWarning.js';
+import { setWarned, warned } from './warned.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
-import { registerTradeScreen, type TradeSlot } from './TradeRoom.js';
+import { focusChatPane, registerTradeScreen, useChatPane, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
 /**
  * Task 23's trade-room slots (Task 22's slot interface, TradeRoom.tsx), registered at import
- * (screens.ts imports this file). Task 23 also takes `paid` for the buyer ("Marked as paid", Finish,
- * the warned cancel); both extra slots are in TradeRoom.tsx's ownership list and docs/coordination.md.
+ * (screens.ts imports this file). Task 23 also takes `paid` for the buyer ("Marked as paid", Finish);
+ * both extra slots are in TradeRoom.tsx's ownership list and docs/coordination.md.
  */
 export const TASK23_SLOTS: readonly TradeSlot[] = [
   { owner: 'Task 23', role: 'buyer', states: ['securing', 'secured', 'paid'], screen: BuyerPay },
@@ -339,18 +344,30 @@ function ChatSlot({ view }: { view: TradeView }) {
 
 function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
   const [open, setOpen] = useState(false);
+  // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
+  // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
+  const paned = useChatPane(view);
+  useEffect(() => {
+    if (!paned || !open) return;
+    setOpen(false);
+    // The sheet already closed (`open && !paned`) and handed the focus back to the header Chat,
+    // hidden now under [data-chat-link]: give it to the pane's composer, which holds the same
+    // draft, once the pane is laid out (round-2 review m4).
+    requestAnimationFrame(() => focusChatPane());
+  }, [paned, open]);
+  const onChat = () => (paned ? focusChatPane() : setOpen(true));
   return (
     <>
       {primary ? (
-        <Button variant="primary" onClick={() => setOpen(true)}>
+        <Button variant="primary" onClick={onChat}>
           Chat
         </Button>
       ) : (
-        <button type="button" className="x2f-room__chat" onClick={() => setOpen(true)}>
+        <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
           Chat
         </button>
       )}
-      <Sheet open={open} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
+      <Sheet open={open && !paned} title={`Chat with ${publicName(view.counterparty)}`} onClose={() => setOpen(false)}>
         <div className="x2f-sheet__body">
           <ChatSlot view={view} />
         </div>
@@ -412,7 +429,6 @@ export function BuyerPay(p: TradeScreenProps) {
   const chip = escrowChip(view);
   const action = useTradeAction(p);
   const [paySheet, setPaySheet] = useState(false);
-  const [cancelSheet, setCancelSheet] = useState(false);
   const [finishing, setFinishing] = useState(false);
   const [finishError, setFinishError] = useState<string | null>(null);
   const cancelMode = buyerCancelMode(view);
@@ -426,6 +442,22 @@ export function BuyerPay(p: TradeScreenProps) {
   const needsFinish = paid && !escrow.paidRecorded && (escrow.refusal === 'amount-unknown' || escrow.refusal === 'view-mismatch');
   const finishBlocked = finishBlock(view, escrow);
   const finishOk = finishBlocked === null;
+  // Task 38: the warning before paying, until the buyer goes past it once for this trade (keyed
+  // by the room's code). It opens with the screen while the escrow still confirms (Revision
+  // 2026-10-29b), and in front of the "I've paid" sheet.
+  const [warnGone, setWarnGone] = useState(() => warned('pay', p.code));
+  const [warnOpen, setWarnOpen] = useState(() => !paid && !warned('pay', p.code) && escrowConfirming(view));
+  const onIvePaid = () => {
+    if (block !== null) return;
+    if (warnGone) setPaySheet(true);
+    else setWarnOpen(true);
+  };
+  const pastWarning = () => {
+    setWarned('pay', p.code);
+    setWarnGone(true);
+    setWarnOpen(false);
+    setPaySheet(true);
+  };
 
   const finish = async () => {
     if (!finishOk || finishing || escrow.fiatCents === null) return;
@@ -440,24 +472,18 @@ export function BuyerPay(p: TradeScreenProps) {
     }
   };
 
-  const cancelNow = async () => {
-    const ok = await action.run({ type: 'buyer-cancel' }, () => escrow.buyerCancel(), "Couldn't start the refund. Try again.");
-    if (ok) setCancelSheet(false);
-  };
   const onCancel = async () => {
-    if (cancelMode === 'warn') return setCancelSheet(true);
     // The one-tap cancel trusts no view up to POLL_MS old: "I've paid" may have landed meanwhile
-    // (another tab, or a mark-paid whose answer was lost), and then the warning comes first (review Minor 4).
+    // (another tab, or a mark-paid whose answer was lost), and then there is no cancel (review
+    // Minor 4; Revision 2026-10-29b). The API refuses it in `paid` too.
     const fresh = await getTrade(view.code).catch(() => null);
     if (fresh === null) return action.setError("Couldn't check the trade. Check your connection and try again.");
-    const mode = buyerCancelMode(fresh);
-    if (mode === 'warn') return setCancelSheet(true);
-    if (mode === 'none') return void p.refresh();
-    await cancelNow();
+    if (buyerCancelMode(fresh) === 'none') return void p.refresh();
+    await action.run({ type: 'buyer-cancel' }, () => escrow.buyerCancel(), "Couldn't start the refund. Try again.");
   };
 
   const primary = !paid ? (
-    <Button variant="primary" disabled={block !== null} onClick={() => block === null && setPaySheet(true)}>
+    <Button variant="primary" disabled={block !== null} onClick={onIvePaid}>
       I've paid
     </Button>
   ) : needsFinish ? (
@@ -527,7 +553,7 @@ export function BuyerPay(p: TradeScreenProps) {
           {refusal}
         </p>
       ) : null}
-      {action.error !== null && !cancelSheet ? (
+      {action.error !== null ? (
         <p className="x2f-room__error" role="alert">
           {action.error}
         </p>
@@ -537,7 +563,7 @@ export function BuyerPay(p: TradeScreenProps) {
   const sheets = (
     <>
       <PaidFlowSheet view={view} escrow={escrow} refresh={p.refresh} open={paySheet && !paid} onClose={() => setPaySheet(false)} />
-      <CancelSheet open={cancelSheet} busy={action.busy} error={cancelSheet ? action.error : null} onConfirm={() => void cancelNow()} onClose={() => setCancelSheet(false)} />
+      <PayWarning open={warnOpen && !paid} bar={chip?.bar ?? null} onWait={() => setWarnOpen(false)} onPaid={pastWarning} />
     </>
   );
   const title = (

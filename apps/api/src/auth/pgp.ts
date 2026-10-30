@@ -20,7 +20,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, type NewNames } from '../accounts.js';
+import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -671,7 +671,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', purposeText: PGP_PURPOSE.register,
-    armoredKeys: [storable], payload: { names, key: pending },
+    armoredKeys: [storable], payload: { names: sealNames(deps.config, names), key: pending },
   });
   return { ...issued, fingerprint: inspection.fingerprint };
 }
@@ -686,7 +686,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   const code = str(b, 'code');
   const deviceLabel = str(b, 'deviceLabel');
   const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'register' });
-  const { names } = row.payload as { names: NewNames };
+  const names = openNames(deps.config, row.payload.names);
   const pending = readPendingKey(row.payload, 'key');
   const armored = openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint);
 
@@ -696,7 +696,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
       await insertPgpKey(client, deps.config, { accountId, fingerprint: pending.fingerprint, armored, now });
       await client.query('commit');
     } catch (e) {

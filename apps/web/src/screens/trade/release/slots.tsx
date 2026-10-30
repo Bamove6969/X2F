@@ -39,7 +39,7 @@ export interface ReleaseRoomProps {
 /** The trade header's Chat link (the board's); the chat itself is Task 20's ChatPanel in the room. */
 function ChatLink({ code }: { code: string }) {
   return (
-    <Link className="x2f-release__chat" to={`/trade/${code}#chat`}>
+    <Link className="x2f-release__chat" to={`/trade/${code}#chat`} data-chat-link="">
       Chat
     </Link>
   );

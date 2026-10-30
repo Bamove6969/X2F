@@ -27,6 +27,7 @@
 import type { RegistrationResponseJSON } from '@simplewebauthn/server';
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
+import { openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
@@ -42,6 +43,7 @@ import {
   finishMember,
   inviteView,
   listMembers,
+  memberNames,
   openInvite,
   removeMember,
   setRoles,
@@ -203,8 +205,10 @@ export function teamRoutes(app: FastifyInstance): void {
     const b = body(req);
     const invite = await openInvite(deps.db, { code: b.invite }, deps.clock());
     const loginName = await checkMemberLoginName(deps.db, b.loginName);
+    // FU-D: the login name waits in the challenge only sealed, never in clear.
+    const names = sealNames(deps.config, memberNames(loginName.key));
     return issueTeamJoinChallenge(deps, req, {
-      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, loginName },
+      accountId: null, publicKey: str(b, 'publicKey'), payload: { step: 'first', inviteId: invite.id, names },
     });
   });
 
@@ -214,17 +218,15 @@ export function teamRoutes(app: FastifyInstance): void {
     const deps = req.server.deps;
     const b = body(req);
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), null);
-    const p = proved.payload as { step?: unknown; inviteId?: unknown; loginName?: { name?: unknown; key?: unknown } };
-    if (p.step !== 'first' || typeof p.inviteId !== 'string' || typeof p.loginName?.name !== 'string' || typeof p.loginName.key !== 'string') {
-      throw new ApiError(400, 'challenge-expired');
-    }
-    const loginName = { name: p.loginName.name, key: p.loginName.key };
+    const p = proved.payload as { step?: unknown; inviteId?: unknown; names?: unknown };
+    if (p.step !== 'first' || typeof p.inviteId !== 'string') throw new ApiError(400, 'challenge-expired');
+    const names = openNames(deps.config, p.names);
     const inviteId = p.inviteId;
     const now = deps.clock();
     const device = deviceHash(req)!;
     const setup = await inTransaction(deps.db, async (c) => {
-      const m = await startMember(c, {
-        inviteId, loginName, now,
+      const m = await startMember(c, deps.config, {
+        inviteId, names, now,
         addKey: (memberAccountId) => insertPgpKey(c, deps.config, { accountId: memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now }),
       });
       const { rows } = await c.query<{ id: string }>(

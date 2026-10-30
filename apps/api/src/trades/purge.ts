@@ -13,8 +13,9 @@ export const PURGE_ROLE = 'x2f_purge';
  * disputed after its refund). Runs as `x2f_purge`, which may update only those two columns and
  * only to null. Returns the number of trades changed.
  *
- * Strictly more: the buyer may still dispute a refund at exactly `closedAt` + 90 days (the state
- * machine's `now <= limit`), so the addresses stay through that instant.
+ * Strictly more. The buyer's dispute after a refund now closes 48 hours after it (owner
+ * 2026-10-29, TIMERS.disputeAfterRefundHours; it was 90 days), so the addresses outlive that
+ * window by far; Plan 7 may shorten this retention.
  */
 export async function purgeTradeAddresses(db: pg.Pool, now: Date): Promise<number> {
   const client = await db.connect();

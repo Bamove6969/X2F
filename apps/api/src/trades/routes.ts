@@ -6,6 +6,7 @@ import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { auditMember, type AuditAction } from '../team/audit.js';
 import { assertMemberMaySend } from '../team/perms.js';
+import { recordReturnConfirmed } from './cancelReturn.js';
 import { noConfirmations, type TxConfirmations } from './chain.js';
 import { applyEvent, loadTradeRow, noPublish, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
 import { roleOf, toTradeView, traderSummary, type TradeView } from './view.js';
@@ -17,6 +18,8 @@ export interface TradeRouteOptions {
   /** Task 19's event bus; a no-op until then. */
   publish?: TradePublisher;
   profile?: ProfileLookup;
+  /** X2F's own node (the confirmations route's lookup): the seller's `confirm-cancel` needs the refund's confirmations. */
+  txConfirmations?: TxConfirmations;
 }
 
 type ClientEventType = (typeof CLIENT_EVENTS)[number];
@@ -40,7 +43,9 @@ function clientEvent(body: unknown): TradeEvent {
     if (typeof cents !== 'string' || !CENTS.test(cents)) throw new ApiError(400, 'bad-request');
     return { type, fiatCents: BigInt(cents) };
   }
-  return { type: type as Exclude<ClientEventType, 'mark-paid'> };
+  // The count is filled in by the route from X2F's own node, never from the body.
+  if (type === 'confirm-cancel') return { type, returnConfirmations: 0 };
+  return { type: type as Exclude<ClientEventType, 'mark-paid' | 'confirm-cancel'> };
 }
 
 /** The trade for a path code, or 404 for a malformed or unknown code. */
@@ -62,6 +67,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
   const session = requireSession({ kinds: ['trader'], member: 'trades' });
   const hook = opts.publish ?? noPublish;
   const profile = opts.profile ?? (() => null);
+  const txConfirmations = opts.txConfirmations ?? noConfirmations;
   // Delivery (Task 19: streams, pushes, the final alert) runs after the actor's request, as the
   // nudge routes' `deliver` does: the store calls this after its commit, and setImmediate keeps
   // it out of the response, so the actor's response time says nothing about the counterparty's
@@ -158,6 +164,20 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
     const by = roleOf(rowToTrade(row), req.auth.accountId);
     if (by === null) throw new ApiError(404, 'not-found');
     const deps = req.server.deps;
+    // Once the server recorded the full count (cancel_confirmable_at) the node is not asked again (review M1).
+    if (e.type === 'confirm-cancel' && row.tx_hash !== null && row.cancel_confirmable_at === null) {
+      // "Confirm cancel" stays greyed out until the returned XMR has all its confirmations (owner
+      // 2026-10-29): the count is X2F's node's for this trade's own refund tx; unknown counts as 0.
+      let n: number | null = null;
+      try {
+        n = await txConfirmations(row.tx_hash);
+      } catch (err) {
+        req.log.warn({ err }, 'confirmations lookup failed');
+      }
+      e.returnConfirmations = n ?? 0;
+      // The first full count also starts the 48 hours, if the watcher has not yet (cancelReturn.ts).
+      await recordReturnConfirmed({ db: deps.db, clock: deps.clock, publish }, row, n);
+    }
     let next: Trade;
     try {
       // A member's event is in the account owner's audit log, in the event's transaction (only when it changed the trade).
@@ -190,8 +210,16 @@ export interface ConfirmationsView {
  * settled (no tx yet) → 409 `wrong-state`. The buyer of a release also gets their own payout
  * address ending; nobody gets an address, an amount or the tx hash.
  */
-export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations): void {
+export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations = noConfirmations, hook: TradePublisher = noPublish): void {
   const session = requireSession({ kinds: ['trader'], member: 'trades' });
+  // A recorded `return-confirmed` (Task 39) is delivered after the response, as tradeRoutes does.
+  const publish: TradePublisher = async (t, e, by) => {
+    setImmediate(() => {
+      Promise.resolve()
+        .then(() => hook(t, e, by))
+        .catch((err: unknown) => app.log.error({ err }, 'trade publish failed'));
+    });
+  };
   app.get('/v1/trades/:code/confirmations', { preHandler: session }, async (req): Promise<ConfirmationsView> => {
     const row = await tradeFor(req);
     const t = rowToTrade(row);
@@ -205,6 +233,8 @@ export function confirmationsRoute(app: FastifyInstance, lookup: TxConfirmations
       // A fixed line: the logger reduces the error to its class and code (never the hash or the node's URL).
       req.log.warn({ err }, 'confirmations lookup failed');
     }
+    // A buyer's cancel: the first full count makes the seller's Confirm cancel available (owner 2026-10-29).
+    await recordReturnConfirmed({ db: req.server.deps.db, clock: req.server.deps.clock, publish }, row, confirmations);
     const out: ConfirmationsView = { confirmations, target: UNLOCK_CONFIRMATIONS };
     if (role === 'buyer' && t.state === 'released' && row.buyer_payout !== null) out.payoutEnd = addressEnd(row.buyer_payout);
     return out;

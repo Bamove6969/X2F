@@ -31,7 +31,9 @@ export type AuditAction =
   | 'buyer-cancel'
   | 'propose-cancel'
   | 'accept-cancel'
-  | 'withdraw-cancel';
+  | 'withdraw-cancel'
+  | 'walk-away'
+  | 'confirm-cancel';
 
 /** The role each action needs (the route's `requireSession({ member })`), checked again live by `auditMember`. */
 export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
@@ -51,6 +53,8 @@ export const ACTION_ROLE: Readonly<Record<AuditAction, TeamRole>> = {
   'propose-cancel': 'trades',
   'accept-cancel': 'trades',
   'withdraw-cancel': 'trades',
+  'walk-away': 'trades',
+  'confirm-cancel': 'trades',
 };
 
 /** Who acted: the session's account and member (null for the account owner). */

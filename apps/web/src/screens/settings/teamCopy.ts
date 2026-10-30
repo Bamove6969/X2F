@@ -35,6 +35,8 @@ const AUDIT_WORDS: Record<string, string> = {
   'propose-cancel': 'proposed cancelling',
   'accept-cancel': 'agreed to cancel',
   'withdraw-cancel': 'withdrew a cancel',
+  'walk-away': 'walked away from the trade',
+  'confirm-cancel': 'confirmed the cancel',
 };
 
 export const TEAM_COPY = {

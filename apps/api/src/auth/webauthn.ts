@@ -13,7 +13,9 @@ import {
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
-import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, type NewNames } from '../accounts.js';
+import {
+  assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, openNames, retagLoginName, sealNames,
+} from '../accounts.js';
 import { subkey } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
@@ -573,14 +575,16 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     }
 
     const pendingId = optStr(body, 'pendingId');
-    let found: { id: string; kind: AccountKind } | null;
+    let found: { id: string; kind: AccountKind; login_tag_key_id: number | null } | null;
     let afterPgp: boolean;
     let tag: string;
+    // FU-D: a row under an older login-name key moves to the current key once a login by name succeeds.
+    let retag: { from: number; tag: string } | undefined;
     if (body.loginName === undefined && pendingId !== undefined) {
       // The second step of a staff or owner login, no name (review I3): the pending login from this
       // device names the account. Anything else gets a decoy under the pendingId's tag.
       const pending = await pendingPgpAccount(deps, req, pendingId);
-      found = pending !== null && opts.kinds.includes(pending.kind) ? pending : null;
+      found = pending !== null && opts.kinds.includes(pending.kind) ? { ...pending, login_tag_key_id: null } : null;
       afterPgp = found !== null;
       tag = pendingTag(deps, pendingId);
     } else {
@@ -589,11 +593,16 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       const name = loginNameLookup(deps.config, loginName);
       tag = name.tag;
       // The same queries for a real account, an unknown name and a malformed one (review M3): an
-      // account lookup ('' matches no login key) and a credentials lookup (NIL_UUID matches none).
-      const { rows } = await deps.db.query<{ id: string; kind: AccountKind }>('select id, kind from accounts where login_key = $1', [
-        name.key ?? '',
-      ]);
+      // account lookup under every key of the ring (FU-D; a malformed name's tags match nothing) and
+      // a credentials lookup (NIL_UUID matches none).
+      const { rows } = await deps.db.query<{ id: string; kind: AccountKind; login_tag_key_id: number }>(
+        `select a.id, a.kind, a.login_tag_key_id from accounts a where ${loginTagMatch('a', 1)}`,
+        [name.candidates.ids, name.candidates.tags],
+      );
       found = rows[0] && opts.kinds.includes(rows[0].kind) ? rows[0] : null;
+      if (found !== null && found.login_tag_key_id !== deps.config.loginNameKeys.current) {
+        retag = { from: found.login_tag_key_id!, tag: name.candidates.current.toString('base64url') };
+      }
       // The pending-step lookup runs whenever a pendingId is given, whatever the account, so the
       // query count does not reveal a staff login name (second review).
       afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
@@ -622,7 +631,10 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       accountId: account?.id ?? null, sessionId: null, purpose: 'login', method: 'security-key', challenge: options.challenge,
       // The pendingId this start was given (any, even one that matched nothing): `finish` uses it and
       // refuses a different one, so a second step is bound to the pending login it was started for.
-      payload: { mode: 'login-name', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}) },
+      payload: {
+        mode: 'login-name', listed: creds.map((c) => b64url(c.credential_id)), ...(pendingId !== undefined ? { pendingId } : {}),
+        ...(account !== null && retag !== undefined ? { retag } : {}),
+      },
     });
     return { challengeId, options };
   });
@@ -657,13 +669,18 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     }
     assertCredentialAllowed(row.account_kind, { kind: row.kind, attested: row.attested });
     if (ch.payload.mode !== 'discoverable') assertListed(ch, row);
-    return completeLogin(deps, req, reply, {
+    const result = await completeLogin(deps, req, reply, {
       account: { id: row.account_id, kind: row.account_kind },
       factor: { method: row.kind, credentialId: b64url(row.credential_id), attested: row.attested },
       ...(boundPending !== undefined ? { pendingId: boundPending } : {}),
       deviceLabel,
       ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}),
     });
+    const retag = ch.payload.retag as { from?: unknown; tag?: unknown } | undefined;
+    if (ch.payload.mode === 'login-name' && typeof retag?.from === 'number' && typeof retag.tag === 'string') {
+      await retagLoginName(deps, { id: row.account_id, login_tag_key_id: retag.from }, Buffer.from(retag.tag, 'base64url'));
+    }
+    return result;
   });
 }
 
@@ -713,7 +730,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });
   const challengeId = await storeChallenge(deps, req, {
     accountId: null, sessionId: null, purpose: 'register', method: kind, challenge: options.challenge,
-    payload: { names, userId: b64url(userID) },
+    payload: { names: sealNames(deps.config, names), userId: b64url(userID) },
   });
   return { challengeId, options };
 }
@@ -730,7 +747,8 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   const ch = await consumeChallenge(deps.db, challengeId, deps.clock());
   if (!ch || ch.purpose !== 'register' || ch.account_id !== null || ch.webauthn_challenge === null) throw expired();
   const kind = credentialKind(ch.method);
-  const { names, userId } = ch.payload as { names: NewNames; userId: string };
+  const names = openNames(deps.config, ch.payload.names);
+  const { userId } = ch.payload as { userId: string };
   const cred = await verifyRegistration(deps, { accountKind: 'trader', kind, response: body.response, expectedChallenge: ch.webauthn_challenge });
 
   const now = deps.clock();
@@ -739,7 +757,7 @@ async function registerFinish(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
       await client.query('update accounts set webauthn_user_id = $2 where id = $1', [accountId, Buffer.from(userId, 'base64url')]);
       await insertCredential(client, accountId, cred, cleanLabel(label, kind), now);
       await client.query('commit');

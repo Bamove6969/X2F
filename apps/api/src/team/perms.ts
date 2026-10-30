@@ -37,11 +37,12 @@ export function hasRole(roles: readonly string[], need: MemberAccess): boolean {
 
 /**
  * Trade events a member may never send: each one starts a step that needs the trade's party key
- * (signing the release), so it stays on the account owner's device until the per-member key
+ * (signing the release) or is the escrow device's own report (`fund-started`: the seller's device
+ * began funding, Plan 3 Task 39), so it stays on the account owner's device until the per-member key
  * scheme exists (R44). The buyer's cancel, a refund request and the mutual cancel only record a
  * choice; the signing they lead to is done by the owner's device (Plan 3 Task 42).
  */
-export const MEMBER_SIGNING_EVENTS: ReadonlySet<TradeEvent['type']> = new Set<TradeEvent['type']>(['release-started']);
+export const MEMBER_SIGNING_EVENTS: ReadonlySet<TradeEvent['type']> = new Set<TradeEvent['type']>(['release-started', 'fund-started']);
 
 /** 403 `member-cannot-sign` for a member session sending a signing event. */
 export function assertMemberMaySend(memberId: string | null, event: TradeEvent['type']): void {
