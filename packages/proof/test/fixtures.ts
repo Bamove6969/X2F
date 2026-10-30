@@ -1,7 +1,7 @@
 // Builds the image fixtures in test/fixtures/ (Plan 5 Task 7). The files are checked in;
 // clean.test.ts checks they still match this builder, and rewrites them when run with
-// X2F_WRITE_FIXTURES=1. Node-only (zlib), so it lives under test/, never src/.
-import { deflateSync } from 'node:zlib';
+// X2F_WRITE_FIXTURES=1. The zlib streams use stored (uncompressed) blocks built here, so the bytes
+// never depend on the zlib version Node ships.
 
 function crc32(bytes: Uint8Array): number {
   let c = ~0;
@@ -10,6 +10,31 @@ function crc32(bytes: Uint8Array): number {
     for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
   }
   return ~c >>> 0;
+}
+
+function adler32(bytes: Uint8Array): number {
+  let a = 1;
+  let b = 0;
+  for (const x of bytes) {
+    a = (a + x) % 65521;
+    b = (b + a) % 65521;
+  }
+  return ((b << 16) | a) >>> 0;
+}
+
+/** A zlib stream of stored deflate blocks: deterministic, and any inflater reads it. */
+export function zlibStored(data: Uint8Array): Uint8Array {
+  const parts: Uint8Array[] = [Uint8Array.of(0x78, 0x01)];
+  for (let at = 0; at === 0 || at < data.length; at += 0xffff) {
+    const block = data.subarray(at, at + 0xffff);
+    const last = at + 0xffff >= data.length ? 1 : 0;
+    const len = block.length;
+    parts.push(Uint8Array.of(last, len & 0xff, len >> 8, ~len & 0xff, (~len >> 8) & 0xff), block);
+  }
+  const tail = new Uint8Array(4);
+  new DataView(tail.buffer).setUint32(0, adler32(data));
+  parts.push(tail);
+  return concat(...parts);
 }
 
 export function pngChunk(type: string, data: Uint8Array): Uint8Array {
@@ -64,24 +89,24 @@ function ihdr(): Uint8Array {
 
 /** A clean PNG: IHDR, two IDATs, IEND. */
 export function cleanPng(): Uint8Array {
-  const z = deflateSync(pngRaw());
+  const z = zlibStored(pngRaw());
   const half = Math.floor(z.length / 2);
   return concat(PNG_SIGNATURE, ihdr(), pngChunk('IDAT', z.subarray(0, half)), pngChunk('IDAT', z.subarray(half)), pngChunk('IEND', new Uint8Array(0)));
 }
 
 /** The same image carrying every metadata chunk the plan names. */
 export function metadataPng(): Uint8Array {
-  const z = deflateSync(pngRaw());
+  const z = zlibStored(pngRaw());
   const exif = concat(latin1('MM\0*\0\0\0\x08'), latin1('GPS 51.5007N 0.1246W Model Pixel 9 DateTimeOriginal 2026:10:16 14:32:05'));
   return concat(
     PNG_SIGNATURE,
     ihdr(),
-    pngChunk('iCCP', concat(latin1('Display P3\0\0'), deflateSync(latin1('icc profile bytes')))),
+    pngChunk('iCCP', concat(latin1('Display P3\0\0'), zlibStored(latin1('icc profile bytes')))),
     pngChunk('pHYs', Uint8Array.of(0, 0, 0x0b, 0x13, 0, 0, 0x0b, 0x13, 1)),
     pngChunk('tIME', Uint8Array.of(0x07, 0xea, 10, 16, 14, 32, 5)),
     pngChunk('tEXt', latin1('Comment\0Screenshot of Jane Doe bank app')),
     pngChunk('iTXt', latin1('XML:com.adobe.xmp\0\0\0\0\0<x:xmpmeta>GPS</x:xmpmeta>')),
-    pngChunk('zTXt', concat(latin1('Author\0\0'), deflateSync(latin1('Jane Doe')))),
+    pngChunk('zTXt', concat(latin1('Author\0\0'), zlibStored(latin1('Jane Doe')))),
     pngChunk('eXIf', exif),
     pngChunk('IDAT', z),
     pngChunk('IEND', new Uint8Array(0)),

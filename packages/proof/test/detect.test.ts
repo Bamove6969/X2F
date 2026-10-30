@@ -159,6 +159,12 @@ describe('detectSensitive: addresses', () => {
     expect(maskedTexts(ocr('1012 AB Amsterdam'))).toEqual(['1012', 'AB', 'Amsterdam']);
   });
 
+  it('masks postcode lines (FR, ES, IT)', () => {
+    expect(maskedTexts(ocr('75001 Paris'))).toEqual(['75001', 'Paris']);
+    expect(maskedTexts(ocr('28013 Madrid'))).toEqual(['28013', 'Madrid']);
+    expect(maskedTexts(ocr('00184 Roma RM'))).toEqual(['00184', 'Roma', 'RM']);
+  });
+
   it('a street word with no number is not an address', () => {
     expect(maskedTexts(ocr('Wall Street Bank'))).toEqual([]);
   });
