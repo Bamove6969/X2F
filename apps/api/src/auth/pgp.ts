@@ -405,7 +405,8 @@ export async function checkPgpCode(
   if (expected.sessionId !== undefined && row.session_id !== expected.sessionId) throw expired();
   if (expected.purpose === 'confirm' || expected.purpose === 'add-key') {
     const live = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [row.session_id, now]);
-    if (live.rows.length === 0) throw expired();
+    // Review round 4: a session that ended meanwhile answers as every other route does.
+    if (live.rows.length === 0) throw new ApiError(401, 'not-authenticated');
   }
   const normalized = normalizeLoginCode(code);
   const given = codeHash(normalized ?? '');

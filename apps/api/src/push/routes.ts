@@ -1,6 +1,6 @@
 import { createECDH } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
-import { weakSession } from '../auth/hold.js';
+import { requireLiveSessionInTx, weakOf, withTx } from '../auth/hold.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { canonicalEndpoint } from './endpoint.js';
@@ -63,7 +63,7 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
  * means the calling session's own (Plan 2 Task 17 review round 2 N-I2: pushes are the 24-hour
  * hold's warning, so one session must not silence the others); an owner's, the account's. At the
  * cap (`PUSH_SUBSCRIPTION_CAP` per account) the oldest go, but a trader session whose login waits
- * (`weakSession`) only ever displaces its own: with the cap full of other sessions' subscriptions,
+ * (`weakOf`) only ever displaces its own: with the cap full of other sessions' subscriptions,
  * its new one is not kept. Traders and the owner
  * (the owner's price-health push, spec 11.6; staff in a later plan); full sessions only.
  * No answer ever repeats an endpoint or a key, and none is logged (the request body is redacted
@@ -86,6 +86,8 @@ export function pushRoutes(app: FastifyInstance): void {
     try {
       await client.query('begin');
       try {
+        // Review round 4: the subscribing session must still be live where it writes.
+        const caller = await requireLiveSessionInTx(client, req.auth, clock());
         // Serialises this account's posts, so the cap holds under concurrent requests.
         await client.query('select id from accounts where id = $1 for update', [accountId]);
         // The last account to post a browser's endpoint owns it (a shared or handed-on browser).
@@ -96,7 +98,7 @@ export function pushRoutes(app: FastifyInstance): void {
                  auth = excluded.auth, created_at = excluded.created_at`,
           [accountId, req.auth.sessionId, sub.endpoint, sub.p256dh, sub.auth, clock()],
         );
-        if (req.auth.kind === 'trader' && (await weakSession(client, req.auth.sessionId, clock()))) {
+        if (req.auth.kind === 'trader' && weakOf(caller, clock())) {
           // Review round 2 N-I2: only this session's own subscriptions make room for it.
           await client.query(
             `delete from push_subscriptions where id in (
@@ -126,16 +128,19 @@ export function pushRoutes(app: FastifyInstance): void {
     const body: unknown = req.body;
     // A trader's session drops only its own subscriptions (review round 2 N-I2); the owner's belong to the account.
     const session = req.auth.kind === 'trader' ? req.auth.sessionId : null;
-    if (body === undefined || body === null) {
-      await app.deps.db.query('delete from push_subscriptions where account_id = $1 and ($2::uuid is null or session_id = $2)', [
-        req.auth.accountId, session,
-      ]);
-    } else {
+    let endpoint: string | null = null;
+    if (body !== undefined && body !== null) {
       if (!isObject(body) || Object.keys(body).some((k) => k !== 'endpoint') || typeof body.endpoint !== 'string') refuse();
-      await app.deps.db.query('delete from push_subscriptions where account_id = $1 and endpoint = $2 and ($3::uuid is null or session_id = $3)', [
-        req.auth.accountId, body.endpoint, session,
-      ]);
+      endpoint = body.endpoint;
     }
+    await withTx(app.deps.db, async (db) => {
+      // Review round 4: the unsubscribing session must still be live where it writes.
+      await requireLiveSessionInTx(db, req.auth, app.deps.clock());
+      await db.query(
+        'delete from push_subscriptions where account_id = $1 and ($2::text is null or endpoint = $2) and ($3::uuid is null or session_id = $3)',
+        [req.auth.accountId, endpoint, session],
+      );
+    });
     return reply.code(204).send();
   });
 }

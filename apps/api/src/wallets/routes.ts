@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from '../auth/hold.js';
+import { gateChange, heldReply, pushHoldStarted, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -368,6 +368,8 @@ async function removeHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
+      // Review round 4: the removing session must still be live where it writes.
+      await requireLiveSessionInTx(client, req.auth, now);
       const { rows } = await client.query<{ app: WalletApp; label: string; address: string }>(
         `update wallets set removed_at = $3 where id = $1 and account_id = $2 and removed_at is null
          returning app, label, address`,

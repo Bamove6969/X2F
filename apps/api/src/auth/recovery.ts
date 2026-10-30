@@ -26,8 +26,10 @@ import { allowedMethods, methodAllowed } from './methods.js';
 import { loginNameLookup, loginTagMatch, retagLoginName } from '../accounts.js';
 import { assertNotDisabled, openSession, requireSession } from './sessions.js';
 import { NIL_UUID, dailyCap, throttleCheck, throttleFail, throttleKey, throttleReset } from './throttle.js';
-import { endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireNotHeld, startHold, weakRefusal, weakSession, withTx } from './hold.js';
-import { loginStrength, waits, type LoginStrength } from './strength.js';
+import {
+  endHoldOfSession, gateChange, heldReply, holdInTx, lockAccount, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, startHold, weakOf, weakRefusal, withTx,
+} from './hold.js';
+import { loginStrength, waits } from './strength.js';
 import type { Queryable } from '../db/pool.js';
 import { verifyTotp } from './totp.js';
 
@@ -221,9 +223,14 @@ async function backupSession(
 }
 
 /**
- * `DELETE /v1/account/recovery-sessions/:id` (any full session of the account whose login did not
- * wait; a weak one gets 403 `weak-session`, review round 3 R3-M2): ends that recovery session. When the caller's own login was strong and that backup session started the account's
- * hold, the hold ends too (review M1; alert `hold-ended`), in the same transaction.
+ * `DELETE /v1/account/recovery-sessions/:id` (a full session of the account): ends that recovery
+ * session. A session whose login waits may do so only when it is older than that backup session
+ * (review round 4 R4-M1, lead decision 2026-10-30: the owner's weak session predating a thief's
+ * backup login can still kill it; a weak session opened after the owner's backup login cannot),
+ * else 403 `weak-session`. When the caller's own login was strong and that backup session started
+ * the account's hold, the hold ends too (review M1; alert `hold-ended`), in the same transaction;
+ * a weak caller's cancel leaves the hold running (fail closed). The caller must still be live under
+ * the account lock (review round 4, `requireLiveSessionInTx`).
  */
 async function cancelRecovery(req: FastifyRequest) {
   const deps = req.server.deps;
@@ -231,19 +238,20 @@ async function cancelRecovery(req: FastifyRequest) {
   if (typeof id !== 'string' || !UUID.test(id)) throw new ApiError(404, 'not-found');
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
-  // Review round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits logs out no other session.
-  if (await weakSession(deps.db, sessionId, now)) throw weakRefusal();
   await withTx(deps.db, async (db) => {
-    await lockAccount(db, accountId);
-    const r = await db.query(
-      `update sessions set revoked_at = $3
-        where id = $1 and account_id = $2 and level = 'recovery' and revoked_at is null`,
-      [id, accountId, now],
+    const caller = await requireLiveSessionInTx(db, { accountId, sessionId }, now);
+    const target = await db.query<{ created_at: Date }>(
+      `select created_at from sessions where id = $1 and account_id = $2 and level = 'recovery' and revoked_at is null`,
+      [id, accountId],
     );
-    if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+    const rec = target.rows[0];
+    if (!rec) throw new ApiError(404, 'not-found');
+    // Review round 3 R3-M2, round 4 R4-M1 (lead decision 2026-10-30): a weak session cancels only a
+    // backup session younger than itself.
+    if (weakOf(caller, now) && caller.created_at.getTime() >= rec.created_at.getTime()) throw weakRefusal();
+    await db.query('update sessions set revoked_at = $2 where id = $1', [id, now]);
     await addAlert(db, accountId, 'recovery-hold-cancelled', { sessionId: id }, now);
-    const own = await db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [sessionId]);
-    if (!waits(own.rows[0]?.strength)) await endHoldOfSession(db, { config: deps.config, events: req.server.events }, accountId, id, now);
+    if (!waits(caller.strength)) await endHoldOfSession(db, { config: deps.config, events: req.server.events }, accountId, id, now);
   });
   req.server.events.closeSession(accountId, id);
   return { ok: true };

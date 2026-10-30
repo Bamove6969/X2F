@@ -9,8 +9,8 @@ import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
-import { gateChange, heldReply, holdUntil, pushHoldStarted, requireNotHeld, weakRefusal, weakSession } from '../auth/hold.js';
-import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
+import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { STAFF_IDLE_HOURS, deadline, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
 
@@ -268,9 +268,14 @@ export function accountRoutes(app: FastifyInstance): void {
       const body = req.body as { version?: unknown } | null | undefined;
       const given = body !== null && typeof body === 'object' ? body.version : undefined;
       if (given !== version) throw new ApiError(400, 'terms-not-accepted', { version });
-      await d.db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
-        req.auth.accountId, version, d.clock(), 'trader',
-      ]);
+      const now = d.clock();
+      await withTx(d.db, async (db) => {
+        // Review round 4: the accepting session must still be live where it writes.
+        await requireLiveSessionInTx(db, req.auth, now);
+        await db.query('update accounts set terms_version = $2, terms_accepted_at = $3 where id = $1 and kind = $4', [
+          req.auth.accountId, version, now, 'trader',
+        ]);
+      });
       return reply.code(204).send();
     },
   );
@@ -393,14 +398,22 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const { rows } = await d.db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
-      if (rows.length === 0) throw new ApiError(404, 'not-found');
-      // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
-      // may log out only itself, never any other session, hold or not (403 `weak-session`): the
-      // owner's weak phone keeps its session, and with it the push subscription that carries the
-      // hold's warning.
-      if (id !== req.auth.sessionId && (await weakSession(d.db, req.auth.sessionId, d.clock()))) throw weakRefusal();
-      await endSession({ ...d, events: req.server.events }, id);
+      const now = d.clock();
+      const ended = await withTx(d.db, async (db) => {
+        // Review round 4: the calling session must still be live where it writes.
+        const caller = await requireLiveSessionInTx(db, req.auth, now);
+        const { rows } = await db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
+        if (rows.length === 0) throw new ApiError(404, 'not-found');
+        // Review round 2 N-I3, round 3 R3-M2 (lead decision 2026-10-30): a session whose login waits
+        // may log out only itself, never any other session, hold or not (403 `weak-session`): the
+        // owner's weak phone keeps its session, and with it the push subscription that carries the
+        // hold's warning.
+        if (id !== req.auth.sessionId && weakOf(caller, now)) throw weakRefusal();
+        const r = await db.query('update sessions set revoked_at = $2 where id = $1 and revoked_at is null', [id, now]);
+        return (r.rowCount ?? 0) > 0;
+      });
+      // Its streams end once the revocation has committed.
+      if (ended) req.server.events.closeSession(req.auth.accountId, id);
       return reply.code(204).send();
     },
   );
@@ -427,18 +440,23 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      // Review round 2 N-M3: a session whose login waits cannot hide the warnings meant for the
-      // owner (the hold's alerts and the login alerts) by marking them seen (403 `weak-session`).
-      const weak = await weakSession(d.db, req.auth.sessionId, d.clock());
-      const r = await d.db.query<{ kind: string }>(
-        `update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and not ($4::boolean and kind = any($5::text[])) returning kind`,
-        [id, req.auth.accountId, d.clock(), weak, OWNER_WARNINGS],
-      );
-      if ((r.rowCount ?? 0) === 0) {
-        const exists = await d.db.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.auth.accountId]);
-        if (exists.rows.length > 0) throw weakRefusal();
-        throw new ApiError(404, 'not-found');
-      }
+      const now = d.clock();
+      await withTx(d.db, async (db) => {
+        // Review round 4: the calling session must still be live where it writes.
+        const caller = await requireLiveSessionInTx(db, req.auth, now);
+        // Review round 2 N-M3: a session whose login waits cannot hide the warnings meant for the
+        // owner (the hold's alerts and the login alerts) by marking them seen (403 `weak-session`).
+        const weak = weakOf(caller, now);
+        const r = await db.query<{ kind: string }>(
+          `update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and not ($4::boolean and kind = any($5::text[])) returning kind`,
+          [id, req.auth.accountId, now, weak, OWNER_WARNINGS],
+        );
+        if ((r.rowCount ?? 0) === 0) {
+          const exists = await db.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.auth.accountId]);
+          if (exists.rows.length > 0) throw weakRefusal();
+          throw new ApiError(404, 'not-found');
+        }
+      });
       return reply.code(204).send();
     },
   );

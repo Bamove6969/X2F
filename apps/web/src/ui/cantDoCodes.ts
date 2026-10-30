@@ -309,10 +309,11 @@ export function holdText(when: string): string {
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
  * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
- * (the login screen does not know them). COPY-UNSIGNED
+ * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
+ * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED
  */
 export function holdLoginText(when: string): string {
-  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open.`;
+  return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
 }
 
 /** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */

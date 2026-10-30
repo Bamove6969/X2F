@@ -25,11 +25,16 @@
  *   never ends it. A waiting login opens no session during the hold (traderLogin: device trust is
  *   a copyable cookie and must not override the hold).
  * - **Weak sessions** (`weakSession`: the login waits, its sign-up window is over) may log out no
- *   session but their own (review round 3 R3-M2, lead decision 2026-10-30), and may not answer a
+ *   session but their own (review round 3 R3-M2, lead decision 2026-10-30) and a backup session
+ *   younger than themselves (round 4 R4-M1, lead decision 2026-10-30), and may not answer a
  *   strong login's approval, drop another session's push subscriptions or mark the hold's own
  *   alerts seen (`WEAK_LIMITED_ROUTES`; 403 `weak-session`).
  * - Every read-modify-write of a hold locks the account row first (`lockAccount`); the approval
  *   paths (login, deciding, collecting an approved login) take the approval lock before it.
+ * - **The calling session is live where it writes** (review round 4, the class of R3-I1 and
+ *   R4-I1): every route in `LIVE_SESSION_ROUTES` re-checks its session inside the transaction that
+ *   writes, under the account lock (`requireLiveSessionInTx`), so a request in flight across the
+ *   owner's proof acts for nobody (401 `not-authenticated`, nothing written).
  * - **Lock order note** (review round 3 R3-M5): `POST /v1/account/login-name` takes `NAMES_LOCK`
  *   (`loginNameTaken`) before the account lock (`gateChange`), while settling that account's held
  *   login name takes the account lock before `NAMES_LOCK` (`applyLoginName`). If both run at once
@@ -266,10 +271,13 @@ export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: st
       returning id`,
     [accountId, now, hold.startedBy],
   );
-  // Logins approved by those sessions and not yet collected go with them.
+  // Logins approved and not yet collected go with those sessions, and (review round 4 R4-I1) so do
+  // logins still waiting for an answer: each was asked for before the owner's proof, possibly by
+  // the thief, and the owner can simply log in again.
   await db.query(
-    `update login_approvals set outcome = 'expired' where account_id = $1 and outcome = 'approved' and used_at is null`,
-    [accountId],
+    `update login_approvals set outcome = 'expired', decided_at = coalesce(decided_at, $2)
+      where account_id = $1 and (outcome is null or (outcome = 'approved' and used_at is null))`,
+    [accountId, now],
   );
   if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'owner-login' }, now);
   // Device trust is a cookie a thief can copy: after the owner's proof every other browser needs an
@@ -333,23 +341,62 @@ export async function holdUntil(
 
 export const holdRefusal = (until: Date): ApiError => new ApiError(403, 'recovery-hold', { holdUntil: until.toISOString() });
 
+/** The calling session as `requireLiveSessionInTx` read it under the account lock. */
+export interface LiveSession {
+  kind: string;
+  level: string;
+  strength: LoginStrength | null;
+  onboarding_until: Date | null;
+  hold_until: Date | null;
+  created_at: Date;
+}
+
 /**
  * True when the session may not act against a stronger login (review round 2 N-I2, N-I3, N-M3): a
  * trader session whose login waits (`waits(strength)`) once its sign-up's first 30 minutes are
- * over, and every backup (recovery) session. Staff and owner sessions never are. An unknown
- * session counts as weak.
+ * over, and every backup (recovery) session. Staff and owner sessions never are.
  */
-export async function weakSession(db: Queryable, sessionId: string, now: Date): Promise<boolean> {
-  const { rows } = await db.query<{ kind: string; level: string; strength: LoginStrength | null; onboarding_until: Date | null }>(
-    'select a.kind, s.level, s.strength, s.onboarding_until from sessions s join accounts a on a.id = s.account_id where s.id = $1',
-    [sessionId],
-  );
-  const r = rows[0];
-  if (!r) return true;
+export function weakOf(r: Pick<LiveSession, 'kind' | 'level' | 'strength' | 'onboarding_until'>, now: Date): boolean {
   if (r.kind !== 'trader') return false;
   if (r.level === 'recovery') return true;
   if (r.onboarding_until !== null && r.onboarding_until.getTime() > now.getTime()) return false;
   return waits(r.strength);
+}
+
+/** `weakOf` for a session by id. An unknown, revoked or expired session counts as weak (review round 4 R4-I1). */
+export async function weakSession(db: Queryable, sessionId: string, now: Date): Promise<boolean> {
+  const { rows } = await db.query<{ kind: string; level: string; strength: LoginStrength | null; onboarding_until: Date | null; live: boolean }>(
+    `select a.kind, s.level, s.strength, s.onboarding_until, (s.revoked_at is null and s.expires_at > $2) as live
+       from sessions s join accounts a on a.id = s.account_id where s.id = $1`,
+    [sessionId, now],
+  );
+  const r = rows[0];
+  if (!r || !r.live) return true;
+  return weakOf(r, now);
+}
+
+/**
+ * The one check of the class of review rounds 3 and 4 (R3-I1, R4-I1: an action by a session the
+ * owner's proof has just revoked). Inside the transaction that performs a route's write and before
+ * it: takes the account lock (`lockAccount`; the owner's proof, `endHoldIfOwner`, revokes under the
+ * same lock, so this check is exact against it) and answers 401 `not-authenticated` unless the
+ * calling session is still live (not revoked, not expired) and of this account. `requireSession`
+ * read the session before the transaction, so a request in flight across a revocation would
+ * otherwise act for a dead session. Returns the session as read under the lock. Every route in
+ * `LIVE_SESSION_ROUTES` calls it (the security changes through `gateChange`); a caller that needs
+ * the approval lock takes it first (lock order: approvals, then account).
+ */
+export async function requireLiveSessionInTx(db: Queryable, auth: { accountId: string; sessionId: string }, now: Date): Promise<LiveSession> {
+  await lockAccount(db, auth.accountId);
+  const { rows } = await db.query<LiveSession>(
+    `select a.kind, s.level, s.strength, s.onboarding_until, s.hold_until, s.created_at
+       from sessions s join accounts a on a.id = s.account_id
+      where s.id = $1 and a.id = $2 and s.revoked_at is null and s.expires_at > $3`,
+    [auth.sessionId, auth.accountId, now],
+  );
+  const row = rows[0];
+  if (!row) throw new ApiError(401, 'not-authenticated');
+  return row;
 }
 
 /** 403 `weak-session`: the calling session's login waits, so it may not do this to a stronger login. */
@@ -370,8 +417,8 @@ export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
 
 /**
  * Inside a security route's transaction, before its write (the routes in `SECURITY_CHANGE_ROUTES`):
- * - the calling session revoked or expired by now (checked under the account lock): 401
- *   `not-authenticated` (review round 3 R3-I1);
+ * - the calling session revoked or expired by now (`requireLiveSessionInTx`, under the account
+ *   lock): 401 `not-authenticated` (review rounds 3 and 4);
  * - staff and owner accounts: null (they always log in with two factors; no hold);
  * - a running hold: 403 `recovery-hold` `{ holdUntil }`, for every session of the account;
  * - a session whose login waits (outside its sign-up's first 30 minutes, and other than a backup
@@ -383,18 +430,8 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   const deps = req.server.deps;
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
-  await lockAccount(db, accountId);
-  // Review round 3 R3-I1: the session must still be live under the lock. `requireSession` read it
-  // before this transaction, so a request in flight across the owner's proof (which revokes it,
-  // `endHoldIfOwner`, under the same lock) would otherwise start a new hold for a revoked session.
-  const { rows } = await db.query<{ kind: string; strength: LoginStrength | null; onboarding_until: Date | null; level: string; hold_until: Date | null }>(
-    `select a.kind, s.strength, s.onboarding_until, s.level, s.hold_until
-       from sessions s join accounts a on a.id = s.account_id
-      where s.id = $1 and a.id = $2 and s.revoked_at is null and s.expires_at > $3`,
-    [sessionId, accountId, now],
-  );
-  const row = rows[0];
-  if (!row) throw new ApiError(401, 'not-authenticated');
+  // Review round 3 R3-I1, round 4: the session must still be live under the account lock.
+  const row = await requireLiveSessionInTx(db, req.auth, now);
   if (row.kind !== 'trader') return null;
   const running = await holdInTx(db, settleOf(req), accountId, now);
   if (running !== null) throw holdRefusal(running.holdUntil);
@@ -461,7 +498,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
  */
 export const WEAK_LIMITED_ROUTES: readonly string[] = [
   'DELETE /v1/account/sessions/:id',
-  // Review round 3 R3-M2: a weak session logs out no other session, a backup one included.
+  // Review round 3 R3-M2, round 4 R4-M1 (lead decision 2026-10-30): a weak full session cancels a
+  // backup session only when the weak session is the older of the two.
   'DELETE /v1/account/recovery-sessions/:id',
   'POST /v1/account/approvals/:id',
   'DELETE /v1/account/push',

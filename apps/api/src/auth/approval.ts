@@ -43,7 +43,9 @@ import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
-import { endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, settleOf, startHold, weakRefusal, weakSession, type ProvenMethod } from './hold.js';
+import {
+  endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, startHold, weakOf, weakRefusal, type ProvenMethod,
+} from './hold.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
@@ -408,8 +410,13 @@ async function poll(req: FastifyRequest, reply: FastifyReply): Promise<PollResul
     await lockAccount(db, row.account_id);
     const hold = await holdInTx(db, settleOf(req), row.account_id, now);
     if (hold !== null && waits(row.strength)) throw holdRefusal(hold.holdUntil);
+    // Review round 4 R4-M2: an approval dies with the session that granted it (logged out, ended by
+    // a password change or by the owner's proof, or expired): `decided_by` must still be live.
     const claimed = await db.query<ApprovalRow>(
-      `update login_approvals set used_at = $2 where id = $1 and outcome = 'approved' and used_at is null and expires_at > $2 returning *`,
+      `update login_approvals l set used_at = $2
+        where l.id = $1 and l.outcome = 'approved' and l.used_at is null and l.expires_at > $2
+          and exists (select 1 from sessions s where s.id = l.decided_by and s.revoked_at is null and s.expires_at > $2)
+        returning l.*`,
       [row.id, now],
     );
     const won = claimed.rows[0];
@@ -509,7 +516,8 @@ function decisionBody(raw: unknown): { block: true } | { choice: number; logOut:
 }
 
 /**
- * `POST /v1/account/approvals/:id { choice, logOut? } | { block: true }` → `{ outcome }`. A decided
+ * `POST /v1/account/approvals/:id { choice, logOut? } | { block: true }` → `{ outcome }` (throttled
+ * per session, `APPROVAL_DECISION_BUCKET`; the caller must still be live under the locks). A decided
  * or expired approval → 409 `approval-ended`; at the device limit without a valid `logOut` → 409
  * `too-many-devices` `{ sessions }` and the approval stays open.
  */
@@ -522,6 +530,9 @@ async function decide(req: FastifyRequest) {
   const now = deps.clock();
   return withTx(deps, async (db) => {
     await lockApprovals(db, accountId);
+    // Review round 4 R4-I1: the deciding session must still be live, checked under the approval and
+    // account locks the owner's proof (`endHoldIfOwner`) also holds (401 `not-authenticated`).
+    const caller = await requireLiveSessionInTx(db, req.auth, now);
     const { rows } = await db.query<ApprovalRow & { one_device: boolean }>(
       `select l.*, a.one_device from login_approvals l join accounts a on a.id = l.account_id
         where l.id = $1 and l.account_id = $2 for update of l`,
@@ -533,7 +544,7 @@ async function decide(req: FastifyRequest) {
       throw new ApiError(409, 'approval-ended', { outcome: row.outcome ?? 'expired' });
     }
     // Review round 2 N-I3: a session whose login waits neither lets in nor blocks a strong login.
-    const weak = await weakSession(db, sessionId, now);
+    const weak = weakOf(caller, now);
     if (weak && row.strength === 'strong') throw weakRefusal();
     if ('block' in body || body.choice !== row.number) {
       await db.query(`update login_approvals set outcome = 'blocked', decided_at = $2, decided_by = $3 where id = $1`, [id, now, sessionId]);
@@ -543,7 +554,6 @@ async function decide(req: FastifyRequest) {
       return { outcome: 'blocked' as const };
     }
     // Task 17: an account on its 24-hour hold approves no new device (blocking stays possible).
-    await lockAccount(db, accountId);
     const hold = await holdInTx(db, settleOf(req), accountId, now);
     if (hold !== null) throw holdRefusal(hold.holdUntil);
     let ends: 'one-device' | 'session' | null = null;
@@ -598,5 +608,7 @@ export function approvalRoutes(app: FastifyInstance): void {
     if (found.length === 0) throw new ApiError(404, 'not-found');
     return found[0];
   });
-  app.post('/v1/account/approvals/:id', { preHandler: trader }, decide);
+  // Review round 4 R4-I1: tries per session, refused ones included (a loop against the hold runs dry).
+  const throttle = async (req: FastifyRequest) => req.server.budgets.approvalDecision.take(req.auth.sessionId);
+  app.post('/v1/account/approvals/:id', { preHandler: [trader, throttle] }, decide);
 }

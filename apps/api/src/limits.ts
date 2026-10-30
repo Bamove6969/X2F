@@ -123,6 +123,8 @@ export interface Budgets {
   suggest: TokenBucket;
   /** Per session: `PUT /v1/account/password` (review round 3 R3-I1). */
   securityChange: KeyedBuckets;
+  /** Per session: `POST /v1/account/approvals/:id` (review round 4 R4-I1). */
+  approvalDecision: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -132,5 +134,6 @@ export function newBudgets(clock: () => Date): Budgets {
     start: new TokenBucket(START_BUCKET.capacity, START_BUCKET.perMinute, clock),
     suggest: new TokenBucket(SUGGEST_BUCKET.capacity, SUGGEST_BUCKET.perMinute, clock),
     securityChange: new KeyedBuckets(SECURITY_CHANGE_BUCKET, clock),
+    approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
   };
 }
