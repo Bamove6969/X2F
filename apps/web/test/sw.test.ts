@@ -7,6 +7,7 @@ const SOURCE = readFileSync(fileURLToPath(new URL('../public/sw.js', import.meta
 const NUDGE = 'Someone nudged you on X2F';
 const TRADE = 'Something changed in a trade on X2F';
 const ALERT = 'Something needs your attention';
+const CANCEL = 'Your input is needed to cancel this trade.';
 
 type Listener = (e: unknown) => void;
 
@@ -61,7 +62,7 @@ beforeEach(() => {
 });
 
 describe('sw.js posts no seen-receipt (lead 2026-10-27: a shown notification is not proof it was read)', () => {
-  it.each([TRADE, NUDGE, ALERT])('shows %s and makes no request', async (text) => {
+  it.each([TRADE, NUDGE, ALERT, CANCEL])('shows %s and makes no request', async (text) => {
     await h.dispatch('push', pushWith(text));
     expect(h.shown).toHaveLength(1);
     expect(h.fetched).toEqual([]);
@@ -86,6 +87,12 @@ describe('sw.js push', () => {
     expect(h.shown).toHaveLength(1);
     expect(h.shown[0]!.options.body).toBe(ALERT);
     expect(h.fetched).toEqual([]);
+  });
+
+  it("shows the owner's cancel text for the seller's Confirm cancel push (Task 39)", async () => {
+    await h.dispatch('push', pushWith(CANCEL));
+    expect(h.shown[0]!.options.body).toBe(CANCEL);
+    expect(h.shown[0]!.options.tag).toBe('x2f-cancel');
   });
 
   it('shows the trade text for the trade payload', async () => {

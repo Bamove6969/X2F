@@ -36,12 +36,14 @@ test.afterAll(async () => {
  * `&phase=<EscrowPhase>` (default ready) and `&escrow=fail` (every action refused). The device
  * accepts the board's 1.25 XMR / $412.50.
  */
-async function open(page: Page, extra = ''): Promise<void> {
+async function open(page: Page, extra = '', o: { warned?: boolean } = {}): Promise<void> {
   const q = new URLSearchParams(extra.replace(/^&/, ''));
-  const seed = { phase: q.get('phase') ?? 'ready', fail: q.get('escrow') === 'fail' };
+  const seed = { phase: q.get('phase') ?? 'ready', fail: q.get('escrow') === 'fail', warned: o.warned !== false, code: CODE };
   await page.addInitScript((f) => {
     window.__x2fFixtureEscrow = { phase: f.phase as 'ready', amountAtomic: '1250000000000', fiatCents: '41250' };
     window.__x2fEscrowFail = f.fail;
+    // Task 38's release warning: by default the seller went past it already (its own test below).
+    if (f.warned) localStorage.setItem(`x2f.warned.release.${f.code}`, '1');
   }, seed);
   await page.goto(`${BASE}/trade/${CODE}`);
 }
@@ -93,6 +95,7 @@ function view(over: View = {}): View {
     setupBy: null,
     fundBy: null,
     fundingSeenAt: '2026-10-25T10:05:00.000Z',
+    fundStartedAt: null,
     securedAt: '2026-10-25T10:25:00.000Z',
     payBy: '2026-10-25T11:55:00.000Z',
     paidAt: '2026-10-25T11:52:00.000Z',
@@ -101,6 +104,8 @@ function view(over: View = {}): View {
     settleBy: null,
     pausedAt: null,
     closedAt: null,
+    cancelConfirmedAt: null,
+    cancelConfirmableAt: null,
     nextDeadline: '2026-10-25T13:52:00.000Z',
     serverNow: NOW,
     ...over,
@@ -225,6 +230,31 @@ test.describe('SellerConfirm', () => {
     // The masked countdown, checked directly: the server's 1 h 52 min, in the board's sentence.
     await expect(page.getByRole('timer')).toHaveText('1 h 52 min');
     await expect(page.getByRole('button', { name: /to confirm$/ })).toHaveText('1 h 52 min to confirm');
+  });
+
+  test('the release warning (Task 38, board Warn-Release) comes first; the hold works only after "It\'s in my account", once per trade', async ({ page }) => {
+    const posts = await stub(page, { trade: view() });
+    await open(page, '', { warned: false });
+    const warn = page.getByRole('alertdialog');
+    await expect(warn).toBeVisible();
+    await expect(warn).toContainText('Before you release');
+    await expect(warn).toContainText('Is the $412.50 really in your account?');
+    await expect(warn).toContainText('Only release once the money is really in your account.');
+    await expect(warn).toContainText('Check your own bank or Zelle app, not a screenshot. Screenshots can be faked.');
+    await expect(warn).toContainText("Once released, the 1.250000 XMR (about $412.50) goes to mira.k and can't be taken back.");
+    await page.getByRole('button', { name: "I'll check again" }).click();
+    await expect(warn).toHaveCount(0);
+    await box(page).check();
+    await expect(warn).toBeVisible();
+    // The warning's own primary button is open over the page: the hold is the screen's.
+    await expect(page.locator('[data-screen="seller-confirm"] button[data-primary]')).toBeDisabled();
+    await page.getByRole('button', { name: "It's in my account" }).click();
+    await expect(warn).toHaveCount(0);
+    await expect(hold(page)).toBeEnabled();
+    expect(posts).toHaveLength(0);
+    await page.reload();
+    await expect(page.locator('[data-screen="seller-confirm"]')).toBeVisible();
+    await expect(warn).toHaveCount(0);
   });
 
   test('release is locked until the box is ticked, and while the escrow is not releasable', async ({ page }) => {

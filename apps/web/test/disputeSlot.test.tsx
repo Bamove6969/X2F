@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Task 27's trade-room slots (Task 22's registerTradeScreen): both traders in `disputed` get
 // DisputeSlot (room or ruling, from GET …/dispute only), the buyer in `refunded` gets RefundedSlot
-// with the 90-day "Open a dispute" (lead 2026-10-28). The slots never fetch the trade itself.
+// with the 48-hour "Open a dispute" (TIMERS.disputeAfterRefundHours, lead 2026-10-29). The slots never fetch the trade itself.
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -145,9 +145,9 @@ describe('DisputeSlot', () => {
 });
 
 describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
-  const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * DAY), ...over }) as TradeView;
+  const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * 60 * MIN), ...over }) as TradeView;
 
-  it('offers "Open a dispute" within 90 days of the refund, linking to the dispute page', () => {
+  it('offers "Open a dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
     const { host } = render(
       <MemoryRouter>
         <RefundedSlot {...props(refunded())} />
@@ -158,10 +158,10 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it('offers nothing after 90 days, and the way to the dispute once one was opened', () => {
+  it('offers nothing after 48 hours, and the way to the dispute once one was opened', () => {
     const late = render(
       <MemoryRouter>
-        <RefundedSlot {...props(refunded({ closedAt: at(-91 * DAY) }))} />
+        <RefundedSlot {...props(refunded({ closedAt: at(-48 * 60 * MIN - 1) }))} />
       </MemoryRouter>,
     );
     expect(late.host.textContent).not.toContain('Open a dispute');
@@ -174,7 +174,8 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   });
   it('says why the XMR went back to the seller, for every kind of refund (owner 2026-10-29)', () => {
     const cases: [Partial<TradeView>, string, string][] = [
-      [{ settling: 'buyer-cancel' }, 'You cancelled this trade', 'You cancelled'],
+      [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'You cancelled this trade', 'You cancelled'],
+      [{ settling: 'buyer-cancel' }, 'Cancelling: returning the XMR to the seller', 'The trade is cancelled once the seller confirms'],
       [{ settling: 'auto-refund' }, 'The payment time ran out', 'Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.'],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
       [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
@@ -190,8 +191,49 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       );
       expect(host.querySelector('h1')?.textContent, JSON.stringify(over)).toBe(title);
       expect(host.textContent).toContain(text);
-      // The 90-day line only while a dispute can still be opened.
-      expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined);
+      // The 48-hour line only while a dispute can still be opened: never after a cancel (owner 2026-10-29, question 4).
+      const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
+      expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
     }
+  });
+
+  it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {
+    for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
+      const { host } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded({ settling, paidAt: at(-11 * 60 * MIN) }))} />
+        </MemoryRouter>,
+      );
+      expect(host.querySelector('h1')?.textContent).toBe('The XMR went back to the seller after you paid');
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(1);
+      expect(host.textContent).not.toContain('Cancelling');
+    }
+  });
+
+  it('the dispute window line names its end (48 hours after the refund)', () => {
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('[data-dispute-window]')?.textContent).toContain('for 48 hours after the refund, until');
+  });
+
+  it("a cancel itself can't be disputed (owner 2026-10-29, question 4): no Open a dispute after a cancel's refund; a no-show refund keeps it", () => {
+    for (const settling of ['buyer-cancel', 'mutual-cancel'] as const) {
+      const { host } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded({ settling, cancelConfirmedAt: at(-9 * DAY) }))} />
+        </MemoryRouter>,
+      );
+      expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(0);
+      expect(host.textContent).not.toContain('Did you pay before you cancelled?');
+    }
+    const noShow = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'auto-refund' }))} />
+      </MemoryRouter>,
+    );
+    expect([...noShow.host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute')).toHaveLength(1);
   });
 });

@@ -55,17 +55,29 @@ export function payTimer(v: Pick<TradeView, 'payBy' | 'extensions' | 'releasable
   return { started: true, totalMin, payBy: v.payBy, leftMin: Number.isFinite(left) ? Math.max(0, Math.ceil(left / 60_000)) : 0 };
 }
 
-/** States in which a mutual cancel can be proposed or accepted (@x2f/trade CANCEL_STATES). */
-const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
+/**
+ * States in which a mutual cancel can be proposed or accepted (@x2f/trade CANCEL_STATES): never
+ * `paid`, no cancel of any kind after "I've paid" (owner, Revision 2026-10-29b).
+ */
+const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 
 /**
- * The buyer's Cancel (spec 2.3): one tap before "I've paid"; after it, the strong warning first.
- * In other states Task 23's screens offer none (refund_requested is Task 25's final alert).
+ * The buyer's Cancel (spec 2.3): one tap before "I've paid", and none at all after it (owner,
+ * Revision 2026-10-29b; the machine refuses `buyer-cancel` in `paid`). In other states Task 23's
+ * screens offer none (refund_requested is Task 25's final alert). It stays a one-tap "Cancel trade"
+ * (owner 2026-10-29: option B, with the seller's Confirm cancel once the XMR is back; Task 39).
  */
-export function buyerCancelMode(v: Pick<TradeView, 'state' | 'paidAt'>): 'one-tap' | 'warn' | 'none' {
-  if (v.state === 'paid') return 'warn';
-  if (v.state === 'securing' || v.state === 'secured') return v.paidAt === null ? 'one-tap' : 'warn';
+export function buyerCancelMode(v: Pick<TradeView, 'state' | 'paidAt'>): 'one-tap' | 'none' {
+  if ((v.state === 'securing' || v.state === 'secured') && v.paidAt === null) return 'one-tap';
   return 'none';
+}
+
+/**
+ * The escrow is still confirming (Revision 2026-10-29b: the pay warning shows when the pay screen
+ * opens then): funding seen but not secured, or secured with coins that are not all unlocked.
+ */
+export function escrowConfirming(v: Pick<TradeView, 'state' | 'releasable'>): boolean {
+  return v.state === 'securing' || (v.state === 'secured' && !v.releasable);
 }
 
 /** The seller never cancels alone after funding (spec 2.3): only propose a mutual cancel, or withdraw one. */

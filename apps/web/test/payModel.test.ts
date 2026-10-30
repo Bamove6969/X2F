@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buyerCancelMode, escrowChip, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
+import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, sellerCancelMode, timelineSteps, counterpartyLine, showProposal } from '../src/screens/trade/payModel.js';
 import type { TradeView } from '../src/screens/trade/payTypes.js';
 
 const T0 = Date.parse('2026-10-25T12:00:00.000Z');
@@ -70,20 +70,28 @@ describe('payTimer (spec 2.2 step 6: the 90 minutes start when the escrow settle
 });
 
 describe('who may cancel (spec 2.3)', () => {
-  it('the buyer: one tap before "I\'ve paid", the warning after', () => {
+  it('the buyer: one tap before "I\'ve paid", no cancel at all after it (Revision 2026-10-29b)', () => {
     expect(buyerCancelMode(view({ state: 'securing' }))).toBe('one-tap');
     expect(buyerCancelMode(view({ state: 'secured' }))).toBe('one-tap');
-    expect(buyerCancelMode(view({ state: 'paid', paidAt: at(-1) }))).toBe('warn');
+    expect(buyerCancelMode(view({ state: 'paid', paidAt: at(-1) }))).toBe('none');
+    expect(buyerCancelMode(view({ state: 'secured', paidAt: at(-1) }))).toBe('none');
     expect(buyerCancelMode(view({ state: 'settling' }))).toBe('none');
   });
 
-  it('the seller never cancels alone: only propose, or withdraw a standing proposal', () => {
-    for (const state of ['funding', 'securing', 'secured', 'paid'] as const) {
+  it('the escrow is confirming while securing, or secured with coins still locked', () => {
+    expect(escrowConfirming(view({ state: 'securing' }))).toBe(true);
+    expect(escrowConfirming(view({ state: 'secured', releasable: false }))).toBe(true);
+    expect(escrowConfirming(view({ state: 'secured', releasable: true }))).toBe(false);
+    expect(escrowConfirming(view({ state: 'paid', releasable: false }))).toBe(false);
+  });
+
+  it('the seller never cancels alone: only propose, or withdraw a standing proposal; nothing after "I\'ve paid"', () => {
+    for (const state of ['funding', 'securing', 'secured'] as const) {
       expect(sellerCancelMode(view({ role: 'seller', state }))).toBe('propose');
       expect(sellerCancelMode(view({ role: 'seller', state, cancelProposedBy: 'seller' }))).toBe('proposed');
       expect(sellerCancelMode(view({ role: 'seller', state, cancelProposedBy: 'buyer' }))).toBe('none');
     }
-    for (const state of ['setup', 'refund_requested', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'] as const) {
+    for (const state of ['setup', 'paid', 'refund_requested', 'settling', 'released', 'refunded', 'lapsed', 'cancelled', 'disputed'] as const) {
       expect(sellerCancelMode(view({ role: 'seller', state }))).toBe('none');
     }
   });

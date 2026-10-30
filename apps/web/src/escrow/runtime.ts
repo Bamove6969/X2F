@@ -205,9 +205,13 @@ const GROW_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
 /** Where a seller still waiting to fix the signed paid amount keeps reading its own size (I2). */
 const SELLER_WAIT_STATES: readonly TradeState[] = ['paid', 'settling', 'refund_requested'];
 const BUYER_RELEASE_STATES: readonly TradeState[] = ['secured', 'paid', 'settling', 'refund_requested'];
-/** Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone before settling. */
-const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid'];
-const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'paid', 'refund_requested'];
+/**
+ * Where a mutual cancel can be proposed (Task 2 CANCEL_STATES) and the buyer may cancel alone
+ * before settling: never `paid`, no cancel of any kind after "I've paid" (owner, Revision
+ * 2026-10-29b; Task 39 review I2), so a cancel tapped earlier no longer holds once paid.
+ */
+const CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured'];
+const BUYER_CANCEL_STATES: readonly TradeState[] = ['funding', 'securing', 'secured', 'refund_requested'];
 
 /**
  * Whether the trade view still supports a choice the user tapped. While the trade is settling,
@@ -677,7 +681,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         role: r.role,
         own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
         balance,
-        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet },
+        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: { payout, refund },
       };
@@ -1136,6 +1140,9 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           const signals = this.signals;
           this.fixAmount(amount);
           r.paidSeen = true;
+          // No cancel after "I've paid" (Task 39 review I2): a cancel tapped earlier and not yet
+          // settled is dropped here, so this device never goes on signing it in `paid`.
+          if (r.intent && !r.intent.done && (r.intent.kind === 'buyer-cancel' || r.intent.kind === 'mutual-cancel')) r.intent = null;
           await this.persist(); // fixed before the signal leaves
           await signals.send('trade.paid', { amountAtomic: amount, fiatCents: a.fiatCents });
           break;

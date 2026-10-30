@@ -101,11 +101,11 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
     expect(disputeEntry(trade({ state: 'disputed' }), new Date(T0)).kind).toBe('opened');
   });
 
-  it('lets the buyer dispute a refund for 90 days, and never the seller', () => {
+  it('lets the buyer dispute a refund for 48 hours (owner 2026-10-29), and never the seller', () => {
     const r = trade({ state: 'refunded', closedAt: iso(0) });
     const day = 24 * 60 * MIN;
-    expect(disputeEntry(r, new Date(T0 + 90 * day)).kind).toBe('open');
-    expect(disputeEntry(r, new Date(T0 + 90 * day + 1)).kind).toBe('none');
+    expect(disputeEntry(r, new Date(T0 + 2 * day)).kind).toBe('open');
+    expect(disputeEntry(r, new Date(T0 + 2 * day + 1)).kind).toBe('none');
     expect(disputeEntry({ ...r, role: 'seller' }, new Date(T0 + day)).kind).toBe('none');
   });
 
