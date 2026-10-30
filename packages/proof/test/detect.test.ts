@@ -277,3 +277,95 @@ describe('detectSensitiveText (review notes, P5-A6)', () => {
     expect(detectSensitiveText('fine\nacct 12345678')).toEqual(['account']);
   });
 });
+
+describe('review round 1 (2026-10-30)', () => {
+  it('I1: masks dotted or dashed phone numbers that start like a date', () => {
+    expect(masked(ocr('Phone 06.12.34.56.78'))).toEqual([['06.12.34.56.78', 'phone']]);
+    expect(masked(ocr('Phone +33 6.12.34.56.78'))).toEqual([
+      ['+33', 'phone'],
+      ['6.12.34.56.78', 'phone'],
+    ]);
+    expect(masked(ocr('Tel 06-12-34-56-78'))).toEqual([['06-12-34-56-78', 'phone']]);
+    expect(masked(ocr('412.50 sent on 16.10.26 to 06.12.34.56.78'))).toEqual([['06.12.34.56.78', 'phone']]);
+    expect(masked(ocr('Tel 415.555.0134'))).toEqual([['415.555.0134', 'phone']]);
+    expect(masked(ocr('Tel 415-555-0134'))).toEqual([['415-555-0134', 'phone']]);
+    expect(detectSensitiveText('call me 06.12.34.56.78')).toEqual(['phone']);
+    expect(detectSensitiveText('call me 415.555.0134')).toEqual(['phone']);
+  });
+
+  it('I1: a date or time inside a longer separator run is not kept', () => {
+    expect(maskedTexts(ocr('Ref 2026-10-16-4471'))).toEqual(['2026-10-16-4471']);
+    expect(maskedTexts(ocr('Ref 12:30.555.0134'))).toEqual(['12:30.555.0134']);
+  });
+
+  it('I1: real dates are still kept', () => {
+    for (const s of ['Sent 16.10.2026', 'Sent 16.10.26', 'Sent 10/16/26', 'Sent 16-10-2026 14:32', 'Sent 2026-10-16', 'At 14:32:05']) {
+      expect(maskedTexts(ocr(s)), s).toEqual([]);
+    }
+    expect(detectSensitiveText('Paid on 16.10.26 at 14:32')).toEqual([]);
+  });
+
+  it('M1: masked tails with dots, an ellipsis, degree signs or "ending in"', () => {
+    expect(masked(ocr('Card ending ...1234'))).toEqual([['...1234', 'account']]);
+    expect(masked(ocr('Card ending …1234'))).toEqual([['…1234', 'account']]);
+    expect(masked(ocr('Card °°°°1234'))).toEqual([['°°°°1234', 'account']]);
+    expect(masked(ocr('Account ending in 1234'))).toEqual([['1234', 'account']]);
+    expect(masked(ocr('Card ending 1234'))).toEqual([['1234', 'account']]);
+  });
+
+  it('M2: one OCR look-alike inside a digit run does not leave its group visible', () => {
+    expect(masked(ocr('Card 4111 1111 1111 l111'))).toEqual(['4111', '1111', '1111', 'l111'].map((t) => [t, 'account']));
+    expect(masked(ocr('Account 1234O678'))).toEqual([['1234O678', 'account']]);
+    expect(maskedTexts(ocr('SOS BOB 12'))).toEqual([]);
+  });
+
+  it('M3: Monero addresses misread, wrapped, or on stagenet and testnet', () => {
+    const addr = '4A' + 'x9Yz'.repeat(23) + 'q';
+    expect(addr).toHaveLength(95);
+    const misread = addr.slice(0, 40) + '0' + addr.slice(41);
+    expect(masked(ocr(`Wallet ${misread}`))).toEqual([[misread, 'account']]);
+    const first = addr.slice(0, 50);
+    const second = addr.slice(50);
+    expect(masked(ocr(first, second))).toEqual([
+      [first, 'account'],
+      [second, 'account'],
+    ]);
+    for (const p of ['5', '7', '9', 'A', 'B']) {
+      const a = p + 'b'.repeat(94);
+      expect(masked(ocr(`Wallet ${a}`)), p).toEqual([[a, 'account']]);
+    }
+    expect(detectSensitiveText(`send to 5${'B'.repeat(40)}`)).toEqual(['account']);
+  });
+
+  it('M4: emails with a non-ASCII domain, and emails split by OCR', () => {
+    expect(masked(ocr('Contact jane@exämple.com'))).toEqual([['jane@exämple.com', 'email']]);
+    expect(detectSensitiveText('mail jane@exämple.com')).toEqual(['email']);
+    expect(masked(ocr('Contact jane.doe @example.com'))).toEqual([
+      ['jane.doe', 'email'],
+      ['@example.com', 'email'],
+    ]);
+    expect(masked(ocr('Venmo @jane-doe'))).toEqual([['@jane-doe', 'handle']]);
+  });
+
+  it('M5: a UK sort code shaped like a date is masked', () => {
+    expect(masked(ocr('Sort code 12-05-26'))).toEqual([['12-05-26', 'account']]);
+    expect(masked(ocr('Sort code 20-32-06'))).toEqual([['20-32-06', 'account']]);
+    expect(maskedTexts(ocr('Sent 12-05-26'))).toEqual([]);
+  });
+
+  it('M6: decimal parts and year or time ranges in notes are not details', () => {
+    for (const s of ['Great trade, got 0.12345678 XMR fast', 'Traded with them 2023 - 2026', 'Traded with them 2023-2026', 'Met at 10.00-12.00', 'Paid 0,123456 BTC']) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+    // The whole number before a decimal point still counts.
+    expect(detectSensitiveText('acct 12345678.5')).toEqual(['account']);
+  });
+
+  it('M8: a detected part inside a word with a kept part is padded by one character toward the kept part', () => {
+    const w = ocr('K7M2-9QXA-4FTR-8WPN/jane@x.io');
+    const rs = detectSensitive(w, KEEP);
+    expect(rs).toHaveLength(1);
+    // The word is 29 characters at 10 px each; the email starts at character 20 (x = 200).
+    expect(rs[0]).toEqual({ x0: 190, y0: 0, x1: 290, y1: 16, kind: 'email' });
+  });
+});

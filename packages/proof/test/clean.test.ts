@@ -241,3 +241,40 @@ describe('assertClean', () => {
     expect(code(() => assertClean(metadataPng().subarray(0, 30)))).toBe('unsupported');
   });
 });
+
+describe('review round 1 (2026-10-30)', () => {
+  const seg = (marker: number, body: Uint8Array): Uint8Array => concat(Uint8Array.of(0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff), body);
+
+  it('M9: refuses a JPEG that splits into too many separate kept pieces', () => {
+    const core = cleanJpeg();
+    const pair = concat(seg(0xdd, Uint8Array.of(0, 0)), seg(0xe0, new Uint8Array(0)));
+    const many = concat(...new Array<Uint8Array>(5000).fill(pair));
+    const jpg = concat(core.subarray(0, 2), many, core.subarray(2));
+    expect(code(() => cleanImage(jpg))).toBe('unsupported');
+    expect(code(() => assertClean(jpg))).toBe('unsupported');
+  });
+
+  it('M9: still cleans many dropped segments and a PNG with many IDAT chunks', () => {
+    const core = cleanJpeg();
+    const apps = concat(...new Array<Uint8Array>(20000).fill(seg(0xe0, new Uint8Array(0))));
+    expect(Buffer.from(cleanImage(concat(core.subarray(0, 2), apps, core.subarray(2)))).equals(Buffer.from(core))).toBe(true);
+    const png = cleanPng();
+    const ihdrEnd = 8 + 25;
+    const idats = concat(...new Array<Uint8Array>(6000).fill(pngChunk('IDAT', new Uint8Array(0))));
+    const x = concat(png.subarray(0, ihdrEnd), idats, png.subarray(ihdrEnd));
+    expect(Buffer.from(cleanImage(x)).equals(Buffer.from(x))).toBe(true);
+    expect(code(() => assertClean(x))).toBeUndefined();
+  });
+
+  it('M10: refuses frames with 2 or 4 components', () => {
+    const jpg = read('clean.jpg');
+    const at = Buffer.from(jpg).indexOf(Buffer.from([0xff, 0xc0]));
+    for (const nf of [2, 4]) {
+      const comps = new Uint8Array(3 * nf);
+      for (let i = 0; i < nf; i++) comps.set([i + 1, 0x11, 0], 3 * i);
+      const sof = seg(0xc0, concat(Uint8Array.of(8, 0, 8, 0, 8, nf), comps));
+      const x = concat(jpg.subarray(0, at), sof, jpg.subarray(at + 13));
+      expect(code(() => cleanImage(x)), String(nf)).toBe('unsupported');
+    }
+  });
+});
