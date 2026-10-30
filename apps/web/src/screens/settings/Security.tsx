@@ -19,6 +19,7 @@ import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
+import { OwnerOnly } from './OwnerOnly.js';
 
 const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly number[]).includes(n);
 
@@ -143,7 +144,16 @@ function HoldBanner() {
   );
 }
 
+/** Plan 2 Task 18: the account owner's screen; a team member gets the owner-only refusal. */
 export function Security() {
+  return (
+    <OwnerOnly screen="security">
+      <SecurityScreen />
+    </OwnerOnly>
+  );
+}
+
+function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
 
   return (

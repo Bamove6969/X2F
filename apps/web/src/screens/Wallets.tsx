@@ -25,6 +25,7 @@ import {
   type WalletView,
 } from './wallets-model.js';
 import './Wallets.css';
+import { OwnerOnly } from './settings/OwnerOnly.js';
 
 // The wallet routes (FU-B: GET /v1/wallets/rule, POST /v1/wallets { wallets }) are called through
 // api(), so the shell's terms-required and no-wallet redirects keep working; the shapes are
@@ -232,7 +233,16 @@ function WalletsFoot({ adding, count, saving, onSave, onAdd }: { adding: boolean
   );
 }
 
+/** Plan 2 Task 18: the account owner's screen; a team member gets the owner-only refusal. */
 export function Wallets() {
+  return (
+    <OwnerOnly screen="wallets">
+      <WalletsScreen />
+    </OwnerOnly>
+  );
+}
+
+function WalletsScreen() {
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const addMode = params.get('add') === '1';

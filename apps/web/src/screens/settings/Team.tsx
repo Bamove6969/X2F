@@ -80,6 +80,9 @@ export function Team() {
   const [link, setLink] = useState<{ name: string; url: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [editing, setEditing] = useState<{ id: string; roles: TeamRole[] } | null>(null);
+  // The activity log's member filter ('' = every member; review e2e area 8).
+  const [logMember, setLogMember] = useState('');
+  const [logWho, setLogWho] = useState<{ id: string; name: string }[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -87,6 +90,12 @@ export function Team() {
       setMembers(t.members);
       setMax(t.max);
       setLog(l);
+      setLogMember('');
+      // Everyone who can be in the log: current members and anyone already in it (a removed member stays).
+      const who = new Map<string, string>();
+      for (const m of t.members) who.set(m.id, m.displayName);
+      for (const e of l) if (!who.has(e.memberId)) who.set(e.memberId, e.memberName);
+      setLogWho([...who].map(([id, name]) => ({ id, name })));
       setState('ready');
     } catch (e) {
       const c = cantDoOf(e);
@@ -156,6 +165,11 @@ export function Team() {
       setSaid(C.removed(m.displayName));
       await load();
     });
+
+  const filterLog = (memberId: string) => {
+    setLogMember(memberId);
+    authApi.teamAudit(memberId === '' ? {} : { member: memberId }).then(setLog, () => setError(C.loadFailed));
+  };
 
   const copy = () => {
     void navigator.clipboard?.writeText(link?.url ?? '').then(
@@ -303,6 +317,21 @@ export function Team() {
             <h2 className="x2f-card__title" id="team-log-h">
               {C.logTitle}
             </h2>
+            {logWho.length > 0 ? (
+              <div className="x2f-field">
+                <label className="x2f-label" htmlFor="team-log-member">
+                  {C.logFilter}
+                </label>
+                <select className="x2f-input" id="team-log-member" value={logMember} onChange={(e) => filterLog(e.target.value)} data-part="log-filter">
+                  <option value="">{C.logEveryone}</option>
+                  {logWho.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ) : null}
             {log.length === 0 ? <p className="x2f-note">{C.logEmpty}</p> : null}
             <ul className="x2f-list" data-part="log-list">
               {log.map((e) => (

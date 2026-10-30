@@ -72,6 +72,8 @@ export const TEAM_COPY = {
   copied: 'Copied',
   logTitle: 'Activity log',
   logEmpty: 'No member activity yet.',
+  logFilter: 'Show activity of',
+  logEveryone: 'Every member',
   logRow: (name: string, action: string) => `${name} ${AUDIT_WORDS[action] ?? action}`,
   logWhen: (iso: string, trade: string | null) => (trade === null ? when(iso) : `${when(iso)}, trade ${trade}`),
   loadFailed: 'Could not load your team. Reload the page to try again.',
@@ -121,3 +123,6 @@ export const MEMBER_TRADE_COPY = {
   ok: 'OK',
   roomWaiting: "Waiting for the account owner's device. It sets up, secures and releases this trade.",
 } as const;
+
+/** Settings → Security → Devices: a team member's session (review e2e area 7). */
+export const TEAM_MEMBER_SESSION = (name: string) => `team member ${name}`;
