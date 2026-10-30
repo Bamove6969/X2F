@@ -40,7 +40,7 @@ describe('migrations', () => {
     try {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
-        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
+        '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '015_team_members.sql',
         '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql',
         '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
       ]);
@@ -63,7 +63,7 @@ describe('migrations', () => {
         [randomBytes(32)],
       );
       expect(await migrate(db)).toEqual([
-        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '015_team_members.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
         '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
       ]);
@@ -130,7 +130,7 @@ describe('migrations', () => {
       );
 
       expect(await migrate(db)).toEqual([
-        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '015_team_members.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
         '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
         '111_trade_identities.sql', '112_take.sql', '115_news.sql', '306_feedback_form.sql',
       ]);
@@ -251,8 +251,11 @@ describe('schema', () => {
         [randomBytes(32)],
       );
       await new Promise((r) => setTimeout(r, 100));
-      await a.query('commit');
-      await expect(second).rejects.toMatchObject({ code: '23505', constraint: 'name_keys_pkey' });
+      // Both observed together: `second` can reject before (or in the same read as) the commit's
+      // reply, and a rejection with no handler yet is an unhandled rejection (a flake seen 2026-10-29).
+      const [commit, raced] = await Promise.allSettled([a.query('commit'), second]);
+      expect(commit.status).toBe('fulfilled');
+      expect(raced).toMatchObject({ status: 'rejected', reason: { code: '23505', constraint: 'name_keys_pkey' } });
       await b.query('rollback');
     } finally {
       a.release();
