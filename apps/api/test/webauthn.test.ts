@@ -424,6 +424,8 @@ describe('login-name tags under key rotation (FU-D)', () => {
 
   it('a security key logs in by a name under the old key; only a successful login re-tags the row', async () => {
     const t = await signUp('security-key');
+    // Nothing else logged in, so the new browser's login needs no approval (Plan 2 Task 16).
+    await t.b.post('/v1/logout', {});
     const saved = deps.config.loginNameKeys;
     try {
       deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
@@ -443,6 +445,8 @@ describe('login-name tags under key rotation (FU-D)', () => {
 
   it('a failing re-tag after the session cookie is set still answers ok with the session (review M1)', async () => {
     const t = await signUp('security-key');
+    // Nothing else logged in, so the new browser's login needs no approval (Plan 2 Task 16).
+    await t.b.post('/v1/logout', {});
     const saved = deps.config.loginNameKeys;
     const real = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
     const query = vi.spyOn(deps.db, 'query').mockImplementation(((...a: unknown[]) =>
@@ -451,14 +455,14 @@ describe('login-name tags under key rotation (FU-D)', () => {
         : real(...a)) as never);
     try {
       deps.config.loginNameKeys = { current: 2, keys: new Map([[2, new Uint8Array(randomBytes(32))], ...saved.keys]) };
-      const { res } = await usernameLogin(t.auth, t.username);
+      const { res, b } = await usernameLogin(t.auth, t.username);
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ status: 'ok' });
       expect(res.cookies.find((c) => c.name === SESSION_COOKIE)).toBeDefined();
       expect((await tagOf(t.accountId)).login_tag_key_id).toBe(1);
       query.mockRestore();
-      // The next login by name retries the re-tag.
-      expect((await usernameLogin(t.auth, t.username)).res.json()).toEqual({ status: 'ok' });
+      // The next login by name retries the re-tag (from the same, logged-in browser: no approval).
+      expect((await usernameLogin(t.auth, t.username, b)).res.json()).toEqual({ status: 'ok' });
       expect((await tagOf(t.accountId)).login_tag_key_id).toBe(2);
     } finally {
       query.mockRestore();
