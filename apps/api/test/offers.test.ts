@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { rateSql } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { seedAccount } from './helpers/accounts.js';
+import { currentLoginTag, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedTrade } from './helpers/trades.js';
@@ -124,11 +124,16 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         minTrades: 0,
       },
     ]);
-    // The private login name is never in a public answer (spec 6.1, FU-A).
-    const { rows } = await deps.db.query<{ login_name: string }>('select login_name from accounts where id = $1', [p.id]);
-    expect(rows[0]!.login_name).not.toBe(p.displayName);
+    // The private login name is never in a public answer (spec 6.1, FU-A). The database holds only
+    // its tag (FU-D), so the test compares with the name the helper signed up with.
+    const { rows } = await deps.db.query<{ login_name: string | null; login_key: string | null; login_tag: Buffer | null }>(
+      'select login_name, login_key, login_tag from accounts where id = $1',
+      [p.id],
+    );
+    expect(rows[0]).toEqual({ login_name: null, login_key: null, login_tag: currentLoginTag(deps, p.loginName) });
+    expect(p.loginName.toLowerCase()).not.toBe(p.displayName.toLowerCase());
     for (const url of ['/v1/offers?side=sell&method=ZELLE&currency=CAD', `/v1/offers/${id}`]) {
-      expect((await anon.get(url)).body).not.toContain(JSON.stringify(rows[0]!.login_name));
+      expect((await anon.get(url)).body.toLowerCase()).not.toContain(p.loginName.toLowerCase());
     }
     // Other sides, methods and currencies do not see it.
     expect(await list('side=buy&method=ZELLE&currency=CAD')).toEqual([]);
