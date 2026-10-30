@@ -1,6 +1,7 @@
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { fiatCents } from '@x2f/trade';
-import { reviewWeight } from '@x2f/reputation';
+import { REVEAL_AFTER_DAYS, reviewWeight } from '@x2f/reputation';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
@@ -272,5 +273,29 @@ describe('the 301 cutoff (review round 1 M4)', () => {
     } finally {
       await deps.db.query('update site_flags set reviews_since = $1::timestamptz', [saved]);
     }
+  });
+
+  it('with no site_flags row the gate fails closed: every reviewable trade counts (round 2, m1)', async () => {
+    const buyer = await person();
+    await released(buyer);
+    const c = await deps.db.connect();
+    try {
+      await c.query('begin');
+      await c.query('update site_flags set reviews_since = $1', [new Date(START.getTime() + DAY)]);
+      expect(await hasPendingReview(c, buyer.id, START)).toBe(false);
+      await c.query('delete from site_flags');
+      expect(await hasPendingReview(c, buyer.id, START)).toBe(true);
+    } finally {
+      await c.query('rollback');
+      c.release();
+    }
+  });
+});
+
+describe('301 trigger and the reveal deadline (round 2, m2)', () => {
+  it("the reviews_final trigger's deadline interval is REVEAL_AFTER_DAYS: change both together, or detach rounds the wrong way and the purge rolls back", () => {
+    const sql = readFileSync(new URL('../migrations/301_reviews.sql', import.meta.url), 'utf8');
+    expect(sql).toContain(`interval '${REVEAL_AFTER_DAYS} days'`);
+    expect(sql.match(/interval '\d+ days'/g)).toEqual([`interval '${REVEAL_AFTER_DAYS} days'`]);
   });
 });

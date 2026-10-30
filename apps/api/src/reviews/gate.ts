@@ -31,7 +31,8 @@ export function setLateReviewMode(m: LateReviewMode): void {
  * after `site_flags.reviews_since`, the time migration 301 was applied (review round 1, M4). Trades
  * that ended before reviews existed stay reviewable (GET/POST) but never block.
  */
-const AFTER_CUTOFF = `s.since >= (select f.reviews_since from site_flags f)`;
+// No site_flags row: '-infinity', so every trade counts and the gate fails closed like the other site_flags readers (round 2, m1).
+const AFTER_CUTOFF = `s.since >= coalesce((select f.reviews_since from site_flags f), '-infinity'::timestamptz)`;
 
 const REVEAL_INTERVAL = `interval '${REVEAL_AFTER_DAYS} days'`;
 
