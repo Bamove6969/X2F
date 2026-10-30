@@ -4,7 +4,7 @@
  * `auditMember` is called inside the transaction of every member action that has an effect, so
  * the row exists exactly when the action committed; for the account owner's own actions it does
  * nothing. Reads never log. The table is append-only (migration 015's triggers). Trade codes in it
- * are cleared by the database itself when the trade is deleted (R36; migration 116's trigger on
+ * are cleared by the database itself when the trade is deleted (R36; migration 199's trigger on
  * `trades`), so no purge can forget it.
  */
 import type { Queryable } from '../db/pool.js';
@@ -80,6 +80,22 @@ export async function auditMember(
   now: Date,
 ): Promise<void> {
   if (actor.memberId === null) return;
+  await assertLiveMember(q, actor, ACTION_ROLE[a.action]);
+  await q.query(
+    'insert into team_audit (account_id, member_id, at, action, trade_code, detail) values ($1, $2, $3, $4, $5, $6)',
+    [actor.accountId, actor.memberId, now, a.action, a.tradeCode ?? null, JSON.stringify(a.detail ?? {})],
+  );
+}
+
+/**
+ * The live check alone (review round 2, n2): for a member, reads the member's row again `for
+ * share` inside the caller's transaction and refuses a removed member (401 `not-authenticated`) or
+ * one who no longer holds `role` (403 `forbidden`), exactly as `auditMember` does, without writing
+ * a log row. For a write a member's request causes that is not itself an audited action (the
+ * `return-confirmed` a member's Confirm cancel records first). Nothing for the account owner.
+ */
+export async function assertLiveMember(q: Queryable, actor: Actor, role: TeamRole): Promise<void> {
+  if (actor.memberId === null) return;
   const { rows } = await q.query<{ roles: TeamRole[] }>(
     `select tm.roles from team_members tm
       where tm.id = $1 and tm.account_id = $2 and tm.removed_at is null and tm.joined_at is not null
@@ -88,11 +104,7 @@ export async function auditMember(
   );
   const live = rows[0];
   if (!live) throw new ApiError(401, 'not-authenticated');
-  if (!live.roles.includes(ACTION_ROLE[a.action])) throw new ApiError(403, 'forbidden');
-  await q.query(
-    'insert into team_audit (account_id, member_id, at, action, trade_code, detail) values ($1, $2, $3, $4, $5, $6)',
-    [actor.accountId, actor.memberId, now, a.action, a.tradeCode ?? null, JSON.stringify(a.detail ?? {})],
-  );
+  if (!live.roles.includes(role)) throw new ApiError(403, 'forbidden');
 }
 
 export interface AuditEntry {

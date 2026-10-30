@@ -10,6 +10,7 @@ import { EventBus, type StreamSink } from '../src/events/bus.js';
 import { tradeEventPublisher } from '../src/events/tradePublisher.js';
 import { ACTION_ROLE, auditMember } from '../src/team/audit.js';
 import { purgeTeamLeftovers } from '../src/team/members.js';
+import { applyEvent, loadTrade } from '../src/trades/store.js';
 import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '../src/team/perms.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
@@ -46,9 +47,11 @@ let trader: Awaited<ReturnType<typeof tradeApp>>['trader'];
 let setNow: (d: Date) => void;
 let n = 0;
 const streams: SseStream[] = [];
+/** What X2F's node answers per refund tx (review round 2, n2); every other hash is unknown. */
+const nodeCounts = new Map<string, number>();
 
 beforeAll(async () => {
-  ({ app, deps, trader, setNow } = await tradeApp({}, { prices, db: await testDb({ max: 8 }) }));
+  ({ app, deps, trader, setNow } = await tradeApp({ txConfirmations: async (h) => nodeCounts.get(h) ?? null }, { prices, db: await testDb({ max: 8 }) }));
   // GET /v1/events needs a real socket (review I1 and M2 tests).
   await app.listen({ host: '127.0.0.1', port: 0 });
 });
@@ -563,6 +566,47 @@ describe('role changes and removal reach a member in flight', () => {
     const res = await racing(m.id, () => m.browser.post('/v1/offers', OFFER), `update team_members set roles = '{trades}' where id = $1`);
     expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
     expect((await deps.db.query('select 1 from offers where account_id = $1', [owner.id])).rowCount).toBe(0);
+  });
+
+  /** A trade of `owner`'s (the seller) cancelled by the buyer and refunded, its refund tx fully confirmed. */
+  async function refundedCancel(owner: Who): Promise<string> {
+    const other = await team();
+    const { trade, code } = await seedTrade(deps, { sellerId: owner.id, buyerId: other.id, poster: 'seller' });
+    await driveTo(deps, trade, 'secured');
+    expect((await other.browser.post(`/v1/trades/${code}/events`, { type: 'buyer-cancel' })).statusCode).toBe(200);
+    const tx = randomBytes(32).toString('hex');
+    await applyEvent(deps, code, { type: 'settled', kind: 'buyer-cancel', txHash: tx }, 'system');
+    nodeCounts.set(tx, 10);
+    return code;
+  }
+
+  it("a removal that commits after the gate leaves a member's Confirm cancel no write at all, not even the 48 h start (review round 2, n2)", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    const code = await refundedCancel(owner);
+    const res = await racing(m.id, () => m.browser.post(`/v1/trades/${code}/events`, { type: 'confirm-cancel' }), 'update team_members set removed_at = now() where id = $1');
+    expect(err(res)).toEqual({ status: 401, error: 'not-authenticated' });
+    const t = (await loadTrade(deps.db, code))!;
+    expect(t.cancelConfirmableAt).toBeNull();
+    expect(t.cancelConfirmedAt).toBeNull();
+    expect(await auditRows(owner.id)).toEqual([]);
+  });
+
+  it("a role drop after the gate: the member's confirmations read records nothing either (review round 2, n2)", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    const code = await refundedCancel(owner);
+    const res = await racing(m.id, () => m.browser.get(`/v1/trades/${code}/confirmations`), `update team_members set roles = '{offers}' where id = $1`);
+    expect(err(res)).toEqual({ status: 403, error: 'forbidden' });
+    expect((await loadTrade(deps.db, code))!.cancelConfirmableAt).toBeNull();
+    // A live member's Confirm cancel still goes through, and records the 48 h start with it.
+    const m2 = await member(owner.id, ['trades']);
+    const ok = await m2.browser.post(`/v1/trades/${code}/events`, { type: 'confirm-cancel' });
+    expect(ok.statusCode, ok.body).toBe(200);
+    const t = (await loadTrade(deps.db, code))!;
+    expect(t.cancelConfirmableAt).toBeInstanceOf(Date);
+    expect(t.cancelConfirmedAt).toBeInstanceOf(Date);
+    expect((await auditRows(owner.id)).map((r) => [r.action, r.member_id])).toEqual([['confirm-cancel', m2.id]]);
   });
 
   it('every trade event a member may send has an audit action and its role (a new client event fails here)', () => {

@@ -15,12 +15,14 @@ export async function recordReturnConfirmed(
   deps: Pick<Deps, 'db' | 'clock'> & { publish?: TradePublisher },
   row: TradeRow,
   confirmations: number | null,
+  within?: Parameters<typeof applyEvent>[4],
 ): Promise<boolean> {
   if (confirmations === null || confirmations < UNLOCK_CONFIRMATIONS) return false;
   const t = rowToTrade(row);
   if (!awaitingCancelConfirm(t) || t.cancelConfirmableAt !== null) return false;
   try {
-    await applyEvent(deps, row.code, { type: 'return-confirmed', confirmations }, 'system');
+    // `within` runs in the record's own transaction before it commits (a team member's live check, Task 18 n2).
+    await applyEvent(deps, row.code, { type: 'return-confirmed', confirmations }, 'system', within);
     return true;
   } catch (err) {
     if (err instanceof TradeRuleError) return false;
