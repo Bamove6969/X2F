@@ -28,15 +28,37 @@ import { PURGE_ROLE } from '../trades/purge.js';
  * OFF unless `X2F_TRADE_PURGE=on` (`setTradePurge`, from config in main.ts): the job is registered
  * but deletes nothing (lead decision 2026-10-30). It goes default-on only once the seams below land.
  *
- * SEAMS still owed before this job may go live in production (Plan 7 "Dependencies"; tripwires in
+ * Skips every pass during site maintenance (review M3).
+ *
+ * The flag is process-global (`setTradePurge`, review M6): only `purgeTradesJob` reads it. A CLI or
+ * tool that calls `purgeTrades` directly bypasses it; nothing does today, and none may be added
+ * before X2F_TRADE_PURGE=on is allowed (docs/dev-setup.md).
+ *
+ * SEAMS: MUST LAND BEFORE X2F_TRADE_PURGE=on in production (Plan 7 "Dependencies"; also in
+ * docs/coordination.md Plan 7 and docs/dev-setup.md; LOCAL-TREE tripwires in
  * apps/api/test/tradePurge-tripwires.test.ts):
  * - Plan 4 Task 32 revenue ledger and Plan 7 Task 14 `collectDailyStats`: both must hold the
  *   trade before it goes (the ledger counts released trades and settled disputes, never cancels).
- * - Plan 5 Task 20 running totals (won/lost disputes and the rest) replace `completed_trades_purged`.
+ *   Tripwire NEEDS_PLAN_4_TASK_32_LEDGER wants a real query on `revenue_ledger` here.
+ * - Plan 5 Task 20 running totals (won/lost disputes and the rest, including the lost-dispute
+ *   record that must survive) replace `completed_trades_purged` (tripwire
+ *   NEEDS_PLAN_5_RUNNING_TOTALS).
  * - Plan 5 reviews: null the trade code on the trade's reviews (reviews are permanent).
  * - Plan 5 Task 14 `trade_proofs`: delete the trade's proofs here.
  * - Plan 4 must move a dispute to `final` or `closed` (or leave `ruled` with a lapsed appeal
  *   window); until then a disputed trade is kept (fail-safe, never early).
+ * - (review I4a) The moderation watch (@x2f/trade watch.ts, WATCH_CLOSED_DAYS 30, counted from
+ *   when moderation SAW the close, never before the API's closed_at) keeps watching a closed
+ *   escrow for late funds after this purge would delete it, and watches a lapsed trade that closed
+ *   empty as open forever. Before on: purge only once the watch has dropped the escrow (the
+ *   moderation service confirms the drop), or keep WATCH_CLOSED_DAYS plus a margin past closed_at;
+ *   and a `late-funds` report for an unknown trade code must fail LOUDLY to staff (never a quiet
+ *   404). Tripwire NEEDS_I4_WATCH_DROP.
+ * - (review I4b) Plan 4 Task 25 liens and trading holds with `dispute_code` name a trade or
+ *   dispute: the purge must keep the trade while a lien or hold names it. Tripwire NEEDS_I4_LIENS.
+ * - (review I5) The x2f_moderation database keeps per-trade rows this purge never reaches:
+ *   `mod_party_state`, `mod_wallet_secrets` and `signed_terms` (payout and refund addresses, amounts
+ *   and currency). Each must be deleted with the trade (Owed). Tripwire NEEDS_I5_MOD_ROWS.
  */
 
 /** Trades read per scan page. */
@@ -76,12 +98,13 @@ const factsSql = (where: string, tail = ''): string => `
    ${tail}`;
 
 function toFacts(r: FactRow): RetentionFacts {
-  const disputed = r.dispute_opened_at !== null;
   return {
     closedAt: r.closed_at,
     disputeOpenedAt: r.dispute_opened_at,
     disputeClosed: r.state !== 'disputed' && !r.dispute_pending,
-    refundDisputeWindowEndsAt: refundDisputeWindowEndsAt(r.state, r.closed_at, disputed),
+    // Every refunded trade, disputed before or not (review I3): the machine still accepts a
+    // buyer's dispute for 48 h after a moderator's refund too.
+    refundDisputeWindowEndsAt: refundDisputeWindowEndsAt(r.state, r.closed_at),
     // Task 38: a buyer's cancel the seller has not confirmed yet is still in their active trades.
     awaitingAction: awaitingCancelConfirm({
       state: r.state as Trade['state'],
@@ -112,6 +135,9 @@ export async function tradeDeleteDate(q: Queryable, code: string, now: Date): Pr
  */
 export async function purgeTrades(db: pg.Pool, now: Date): Promise<number> {
   if (!(now instanceof Date) || !Number.isFinite(now.getTime())) throw new RangeError('bad clock');
+  // Review M3: no pass during site maintenance (every trade timer is frozen and traders cannot act);
+  // the trades are deleted on the first pass after it. A longer keep is never wrong.
+  if (await inMaintenance(db)) return 0;
   let removed = 0;
   let failed: unknown = null;
   let after: { closed: Date; code: string } | null = null;
@@ -143,7 +169,20 @@ export async function purgeTrades(db: pg.Pool, now: Date): Promise<number> {
   return removed;
 }
 
-/** Deletes one trade if it is still due under its lock. Returns whether it was deleted. */
+/** Site maintenance is on (`site_flags.maintenance_since`); no site_flags row counts as on (fails closed). */
+async function inMaintenance(q: Queryable): Promise<boolean> {
+  const { rows } = await q.query<{ maintenance: boolean }>('select maintenance_since is not null as maintenance from site_flags');
+  return rows.length === 0 || rows.some((r) => r.maintenance);
+}
+
+/**
+ * Deletes one trade if it is still due under its lock. Returns whether it was deleted.
+ *
+ * Lock order (review M2): the trade row, then its disputes, then (for a completed trade) the two
+ * `accounts` rows. A path that locks accounts first and then a trade could deadlock with this;
+ * Postgres then aborts one side, this trade rolls back alone and the next pass retries it, so
+ * nothing is lost or deleted early. Keep new paths to trade-before-accounts where possible.
+ */
 async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> {
   const client = await db.connect();
   try {
@@ -160,6 +199,10 @@ async function purgeOne(db: pg.Pool, code: string, now: Date): Promise<boolean> 
         return false;
       }
       await client.query('select 1 from disputes where code = $1 for update', [code]);
+      if (await inMaintenance(client)) {
+        await client.query('rollback');
+        return false;
+      }
       const facts = await retentionFacts(client, code, now);
       if (facts === null || !tradeDeleteDue(facts, now)) {
         await client.query('rollback');

@@ -21,6 +21,7 @@ import { methodListRoutes, type LiveOfferStats } from './methods/routes.js';
 import { offerRoutes } from './offers/routes.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
+import { privacyRoutes } from './retention/privacyRoute.js';
 import { feedbackFormRoutes } from './feedback/form.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
@@ -262,6 +263,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   confirmationsRoute(app, options.txConfirmations, tradePublish);
   // Plan 4, Task 28: the News inbox (reading needs no session).
   newsRoutes(app);
+  privacyRoutes(app);
   // Plan 3 Task 39 (owner 2026-10-29): records when a buyer's cancel refund is fully confirmed, so
   // the seller's Confirm cancel is available and the 48-hour auto-close starts (cancelReturn.ts).
   if (options.txConfirmations) {

@@ -122,6 +122,37 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect((await buyer.browser.get(`/v1/trades/${t.code}`)).statusCode).toBe(404);
   });
 
+  it('the view shows no self-destruct date while X2F_TRADE_PURGE is off, and the date once it is on (review I1)', async () => {
+    const { buyer, seller, t } = await tradeIn('released');
+    const due = new Date(t.closedAt!.getTime() + TRADE_KEEP_DAYS * DAY).toISOString();
+    const deleteAt = async (who: typeof buyer) => ((await who.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: string | null }).deleteAt;
+    const was = deps.config.tradePurge;
+    try {
+      deps.config.tradePurge = false;
+      expect(await deleteAt(buyer)).toBeNull();
+      expect(await deleteAt(seller)).toBeNull();
+      deps.config.tradePurge = true;
+      expect(await deleteAt(buyer)).toBe(due);
+      expect(await deleteAt(seller)).toBe(due);
+    } finally {
+      deps.config.tradePurge = was;
+    }
+  });
+
+  it('GET /v1/privacy says whether the purge is on, with no session (review I2)', async () => {
+    const was = deps.config.tradePurge;
+    try {
+      for (const on of [false, true]) {
+        deps.config.tradePurge = on;
+        const res = await app.inject({ method: 'GET', url: '/v1/privacy' });
+        expect(res.statusCode).toBe(200);
+        expect(res.json()).toEqual({ tradePurge: on });
+      }
+    } finally {
+      deps.config.tradePurge = was;
+    }
+  });
+
   it('never deletes an open trade, however old', async () => {
     const { buyer, t } = await tradeIn('secured');
     expect(await tradeDeleteDate(deps.db, t.code, START)).toBeNull();
@@ -241,6 +272,20 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     expect((await escalating).state).toBe('disputed');
     expect(await purging).toBe(0);
     expect(await exists(t.code)).toBe(true);
+  });
+
+  it('skips every pass during site maintenance and deletes on the first pass after it (review M3)', async () => {
+    const { t } = await tradeIn('released');
+    const due = at(TRADE_KEEP_DAYS + 1);
+    await deps.db.query('update site_flags set maintenance_since = $1', [at(TRADE_KEEP_DAYS)]);
+    try {
+      expect(await purgeTrades(deps.db, due)).toBe(0);
+      expect(await exists(t.code)).toBe(true);
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    expect(await purgeTrades(deps.db, due)).toBeGreaterThanOrEqual(1);
+    expect(await exists(t.code)).toBe(false);
   });
 
   it('a fresh process starts with the purge off: the job touches no row until setTradePurge(true)', async () => {

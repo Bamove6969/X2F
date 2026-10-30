@@ -5,7 +5,7 @@
  * pending).
  *
  * No board yet: Claude Design owns the look, so this line uses the existing `x2f-note` class only
- * and adds no styling (test/selfDestruct-tripwire.test.ts NEEDS_DESIGN_SELFDESTRUCT). Copy is the
+ * and adds no styling (test/privacy-tripwire.test.ts NEEDS_DESIGN_SELFDESTRUCT). Copy is the
  * plan's, // COPY-UNSIGNED until the owner signs it off.
  */
 import { useEffect, useState } from 'react';

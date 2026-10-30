@@ -9,9 +9,9 @@
  *
  * Automatic exceptions, each only ever making the keep LONGER:
  * - a dispute still open (or still appealable) at day 90 is kept until it is closed;
- * - a refunded trade is kept until the buyer's dispute-after-refund window has closed (the state
- *   machine's own window, `refundDisputeWindowEndsAt`), so a trade is never deleted while its
- *   buyer may still dispute it;
+ * - a refunded trade (disputed before or not) is kept until the buyer's dispute-after-refund
+ *   window has closed (the state machine's own window, `refundDisputeWindowEndsAt`), so a trade is
+ *   never deleted while its buyer may still dispute it;
  * - a closed trade that still waits for a party (`awaitingAction`, e.g. Task 38's seller
  *   "Confirm cancel") is never deleted while it waits.
  *
@@ -26,7 +26,8 @@ export const TRADE_KEEP_DAYS = 30;
 export const DISPUTE_KEEP_DAYS = 90;
 /**
  * Backups keep deleted data for at most this many days (Plan 6 D6; the plan recommends 14 and the
- * owner has not confirmed it). Only the Privacy page reads it; nothing here waits for backups.
+ * owner has not confirmed it). Nothing reads it yet: the Privacy page states no backup promise
+ * until Plan 6 D6 is built and confirmed (review I2); nothing here waits for backups.
  */
 export const BACKUP_KEEP_DAYS = 14;
 
@@ -80,11 +81,12 @@ export function tradeDeleteDue(f: RetentionFacts, now: Date): boolean {
 /**
  * The end of the buyer's dispute-after-refund window for a trade in `state` that ended at
  * `closedAt`: the state machine's own window (`TIMERS.disputeAfterRefundHours`, 48 h, owner
- * 2026-10-29). Only a refunded trade with no dispute yet has one (once disputed, the dispute rule
- * applies instead). Kept for every such trade, also a cancel the machine would refuse to dispute:
- * a longer keep is never wrong, and 48 h never reaches past the 30 days anyway.
+ * 2026-10-29). Every refunded trade with a valid `closedAt` has one, ALSO a trade that was disputed
+ * before (review I3: the machine still accepts a buyer's dispute up to closedAt + 48 h after a
+ * moderator's refund, and a dispute pressed on day 0 and refunded on day 95 is already past its
+ * 90 days), and also a cancel the machine would refuse to dispute: a longer keep is never wrong.
  */
-export function refundDisputeWindowEndsAt(state: string, closedAt: Date | null, disputed: boolean): Date | null {
-  if (state !== 'refunded' || disputed || !valid(closedAt)) return null;
+export function refundDisputeWindowEndsAt(state: string, closedAt: Date | null): Date | null {
+  if (state !== 'refunded' || !valid(closedAt)) return null;
   return new Date(closedAt.getTime() + TIMERS.disputeAfterRefundHours * 3_600_000);
 }

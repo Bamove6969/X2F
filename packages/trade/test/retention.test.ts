@@ -54,7 +54,7 @@ describe('the one retention rule (Plan 7 Task 1, R36)', () => {
   });
 
   it('a refunded trade is kept through the buyer\'s dispute-after-refund window (inclusive), never less than 30 days', () => {
-    const w = refundDisputeWindowEndsAt('refunded', t0, false);
+    const w = refundDisputeWindowEndsAt('refunded', t0);
     expect(w).toEqual(new Date(t0.getTime() + TIMERS.disputeAfterRefundHours * 3_600_000));
     const f = { ...released, refundDisputeWindowEndsAt: w };
     const deleteAt = tradeDeleteAt(f)!;
@@ -67,17 +67,17 @@ describe('the one retention rule (Plan 7 Task 1, R36)', () => {
   });
 
   it('only a refunded trade has a refund window', () => {
-    expect(refundDisputeWindowEndsAt('released', t0, false)).toBeNull();
-    expect(refundDisputeWindowEndsAt('released', t0, true)).toBeNull();
-    expect(refundDisputeWindowEndsAt('cancelled', t0, false)).toBeNull();
-    expect(refundDisputeWindowEndsAt('refunded', null, false)).toBeNull();
+    expect(refundDisputeWindowEndsAt('released', t0)).toBeNull();
+    expect(refundDisputeWindowEndsAt('cancelled', t0)).toBeNull();
+    expect(refundDisputeWindowEndsAt('refunded', null)).toBeNull();
+    expect(refundDisputeWindowEndsAt('refunded', new Date('x'))).toBeNull();
     expect(TIMERS.disputeAfterRefundHours).toBe(48);
   });
 
   it('a previously disputed trade refunded later keeps the 48 h after-refund window too (review I3)', () => {
     // The machine still accepts a buyer's dispute up to closedAt + 48 h on a refunded trade that
     // already had a dispute. Dispute on day 0, final ruling refunds on day 95: button + 90 is past.
-    const w = refundDisputeWindowEndsAt('refunded', at(95), true);
+    const w = refundDisputeWindowEndsAt('refunded', at(95));
     expect(w).toEqual(new Date(at(95).getTime() + TIMERS.disputeAfterRefundHours * 3_600_000));
     const f = { ...released, closedAt: at(95), disputeOpenedAt: t0, disputeClosed: true, refundDisputeWindowEndsAt: w };
     expect(tradeDeleteAt(f)).toEqual(new Date(w!.getTime() + 1));

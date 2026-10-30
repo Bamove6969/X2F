@@ -76,7 +76,8 @@ export interface TradeView {
   /**
    * When the trade self-destructs (Plan 7 Task 3; @x2f/trade `tradeDeleteAt`): 30 days after it
    * ends, 90 days from the dispute button for a disputed trade. Null while it is open, a dispute is
-   * pending, or it waits for a party: there is no date yet.
+   * pending, or it waits for a party: there is no date yet. Always null while the purge is off
+   * (`X2F_TRADE_PURGE`, config.tradePurge; review I1): nothing self-destructs then.
    */
   deleteAt: string | null;
   serverNow: string;

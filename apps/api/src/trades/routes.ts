@@ -91,7 +91,9 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,
-      deleteAt: await tradeDeleteDate(deps.db, t.code, now),
+      // Review I1: no self-destruct date while the purge is off (X2F_TRADE_PURGE, config.tradePurge):
+      // nothing is deleted then, so the room must not promise a date.
+      deleteAt: deps.config.tradePurge ? await tradeDeleteDate(deps.db, t.code, now) : null,
     });
   };
 
