@@ -1,5 +1,6 @@
 import { createECDH } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
+import { weakSession } from '../auth/hold.js';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
 import { canonicalEndpoint } from './endpoint.js';
@@ -58,7 +59,12 @@ function parseSubscription(body: unknown): { endpoint: string; p256dh: string; a
 /**
  * Task 19: `GET /v1/account/push` → `{ vapidPublic }` (what the browser subscribes with);
  * `POST /v1/account/push { endpoint, keys }` → 204; `DELETE /v1/account/push` with `{ endpoint }`
- * drops that subscription of the caller's, with no body all of them → 204. Traders and the owner
+ * drops that subscription of the caller's, with no body all of them → 204. A trader's "caller's"
+ * means the calling session's own (Plan 2 Task 17 review round 2 N-I2: pushes are the 24-hour
+ * hold's warning, so one session must not silence the others); an owner's, the account's. At the
+ * cap (`PUSH_SUBSCRIPTION_CAP` per account) the oldest go, but a trader session whose login waits
+ * (`weakSession`) only ever displaces its own: with the cap full of other sessions' subscriptions,
+ * its new one is not kept. Traders and the owner
  * (the owner's price-health push, spec 11.6; staff in a later plan); full sessions only.
  * No answer ever repeats an endpoint or a key, and none is logged (the request body is redacted
  * from every log line by buildApi). A trader's subscription belongs to the session that posted it:
@@ -90,11 +96,21 @@ export function pushRoutes(app: FastifyInstance): void {
                  auth = excluded.auth, created_at = excluded.created_at`,
           [accountId, req.auth.sessionId, sub.endpoint, sub.p256dh, sub.auth, clock()],
         );
-        await client.query(
-          `delete from push_subscriptions where id in (
-             select id from push_subscriptions where account_id = $1 order by created_at desc, id desc offset $2)`,
-          [accountId, PUSH_SUBSCRIPTION_CAP],
-        );
+        if (req.auth.kind === 'trader' && (await weakSession(client, req.auth.sessionId, clock()))) {
+          // Review round 2 N-I2: only this session's own subscriptions make room for it.
+          await client.query(
+            `delete from push_subscriptions where id in (
+               select id from push_subscriptions where account_id = $1 and session_id = $2 order by created_at desc, id desc
+               offset greatest(0, $3 - (select count(*)::int from push_subscriptions where account_id = $1 and session_id is distinct from $2)))`,
+            [accountId, req.auth.sessionId, PUSH_SUBSCRIPTION_CAP],
+          );
+        } else {
+          await client.query(
+            `delete from push_subscriptions where id in (
+               select id from push_subscriptions where account_id = $1 order by created_at desc, id desc offset $2)`,
+            [accountId, PUSH_SUBSCRIPTION_CAP],
+          );
+        }
         await client.query('commit');
       } catch (e) {
         await client.query('rollback');
@@ -108,12 +124,16 @@ export function pushRoutes(app: FastifyInstance): void {
 
   app.delete('/v1/account/push', { preHandler: subscriber }, async (req, reply) => {
     const body: unknown = req.body;
+    // A trader's session drops only its own subscriptions (review round 2 N-I2); the owner's belong to the account.
+    const session = req.auth.kind === 'trader' ? req.auth.sessionId : null;
     if (body === undefined || body === null) {
-      await app.deps.db.query('delete from push_subscriptions where account_id = $1', [req.auth.accountId]);
+      await app.deps.db.query('delete from push_subscriptions where account_id = $1 and ($2::uuid is null or session_id = $2)', [
+        req.auth.accountId, session,
+      ]);
     } else {
       if (!isObject(body) || Object.keys(body).some((k) => k !== 'endpoint') || typeof body.endpoint !== 'string') refuse();
-      await app.deps.db.query('delete from push_subscriptions where account_id = $1 and endpoint = $2', [
-        req.auth.accountId, body.endpoint,
+      await app.deps.db.query('delete from push_subscriptions where account_id = $1 and endpoint = $2 and ($3::uuid is null or session_id = $3)', [
+        req.auth.accountId, body.endpoint, session,
       ]);
     }
     return reply.code(204).send();

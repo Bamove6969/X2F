@@ -85,7 +85,7 @@ const monerod = monerodUrlFromEnv(process.env);
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 // Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
-const stopHolds = startRetention(deps, [settleDueHolds(config, app.events)], 60_000);
+const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);

@@ -1,14 +1,15 @@
 import { checkLoginName, isIdleHours, type AccountKind, type ConfirmAction, type IdleHours, type MethodType } from '@x2f/accounts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { Deps } from '../app.js';
-import { loginNameTaken, loginTags, setLoginName } from '../accounts.js';
+import { lockNames, loginNameTaken, loginTags, setLoginName } from '../accounts.js';
+import type { Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
 import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
-import { gateChange, heldReply, holdUntil, pushHoldStarted, requireNotHeld } from '../auth/hold.js';
+import { gateChange, heldReply, holdUntil, pushHoldStarted, requireNotHeld, weakRefusal, weakSession } from '../auth/hold.js';
 import { STAFF_IDLE_HOURS, deadline, endSession, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -392,8 +393,13 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const { rows } = await d.db.query('select 1 from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
+      const { rows } = await d.db.query<{ strength: string | null }>('select strength from sessions where id = $1 and account_id = $2', [id, req.auth.accountId]);
       if (rows.length === 0) throw new ApiError(404, 'not-found');
+      // Review round 2 N-I3: a session whose login waits may not log out a strong session, nor any
+      // other session during the account's hold (403 `weak-session`); it can always end itself.
+      if (id !== req.auth.sessionId && (await weakSession(d.db, req.auth.sessionId, d.clock()))) {
+        if (rows[0]!.strength === 'strong' || (await holdUntil(d, req.auth.accountId, req.server.events, req.log)) !== null) throw weakRefusal();
+      }
       await endSession({ ...d, events: req.server.events }, id);
       return reply.code(204).send();
     },
@@ -421,21 +427,40 @@ export function accountRoutes(app: FastifyInstance): void {
     async (req: FastifyRequest, reply: FastifyReply) => {
       const d = deps();
       const id = idParam(req);
-      const r = await d.db.query('update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2', [
-        id, req.auth.accountId, d.clock(),
-      ]);
-      if ((r.rowCount ?? 0) === 0) throw new ApiError(404, 'not-found');
+      // Review round 2 N-M3: a session whose login waits cannot hide the warnings meant for the
+      // owner (the hold's alerts and the login alerts) by marking them seen (403 `weak-session`).
+      const weak = await weakSession(d.db, req.auth.sessionId, d.clock());
+      const r = await d.db.query<{ kind: string }>(
+        `update alerts set seen_at = coalesce(seen_at, $3) where id = $1 and account_id = $2 and not ($4::boolean and kind = any($5::text[])) returning kind`,
+        [id, req.auth.accountId, d.clock(), weak, OWNER_WARNINGS],
+      );
+      if ((r.rowCount ?? 0) === 0) {
+        const exists = await d.db.query('select 1 from alerts where id = $1 and account_id = $2', [id, req.auth.accountId]);
+        if (exists.rows.length > 0) throw weakRefusal();
+        throw new ApiError(404, 'not-found');
+      }
       return reply.code(204).send();
     },
   );
 }
 
+/** The alerts a weak session may not mark seen (review round 2 N-M3): the hold's own and the login alerts. */
+export const OWNER_WARNINGS: readonly string[] = [
+  'hold-started', 'hold-ended', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
+];
+
 /**
  * A pre-009 account's login name waiting out the hold, applied when the hold ends by time (FU-D:
- * only its keyed tag was kept). 409 `names-unavailable` when another account took that tag
- * meanwhile, 409 `login-name-set` when the account chose its names already.
+ * only its keyed tag was kept). Under `NAMES_LOCK` (review round 2 N-M1; `namesTaken` also counts
+ * the pending tag, so no other sign-up took it meanwhile). 409 `names-unavailable` when another
+ * account took that tag meanwhile or the tag's key is no longer the ring's current one (a tag
+ * under a rotated key could clash with a name taken under the new key, or match nothing once the
+ * old key is retired), 409 `login-name-set` when the account chose its names already. Either way
+ * the change is dropped (alert `hold-ended` `applied: false`).
  */
-export async function applyLoginName(db: Queryable, accountId: string, tag: Buffer, keyId: number, now: Date): Promise<void> {
+export async function applyLoginName(db: Queryable, config: Config, accountId: string, tag: Buffer, keyId: number, now: Date): Promise<void> {
+  await lockNames(db);
+  if (keyId !== config.loginNameKeys.current) throw new ApiError(409, 'names-unavailable');
   const taken = await db.query('select 1 from accounts where login_tag_key_id = $2 and login_tag = $3 and id <> $1', [accountId, keyId, tag]);
   if (taken.rows.length > 0) throw new ApiError(409, 'names-unavailable');
   const updated = await db.query(

@@ -17,12 +17,19 @@
  *   already open can still be finished.
  * - **Ending it:** by time (`settleHold`: the pending change applies, alert `hold-ended`); or a
  *   strong login whose methods are all in `started_methods` (`endHoldIfOwner`, inside the login's
- *   transaction): the pending change is discarded and alert `hold-ended` names it. Nothing can be
- *   added during the hold (every change waits or is refused), so a thief's method never ends it.
+ *   transaction): the pending change is discarded and alert `hold-ended` names it, and every
+ *   session whose login waits, every backup session and the session that started the hold end with
+ *   it (review round 2 N-C1, N-I1; alert `sessions-ended` `{ count, reason: 'owner-login' }`).
+ *   Nothing can be added during the hold (every change waits or is refused), so a thief's method
+ *   never ends it. A waiting login opens no session during the hold (traderLogin: device trust is
+ *   a copyable cookie and must not override the hold).
+ * - **Weak sessions** (`weakSession`: the login waits, its sign-up window is over) may not end a
+ *   strong session, answer a strong login's approval, drop another session's push subscriptions or
+ *   mark the hold's own alerts seen (`WEAK_LIMITED_ROUTES`; 403 `weak-session`).
  * - Every read-modify-write of a hold locks the account row first (`lockAccount`).
  */
 import type { IdleHours, MethodType } from '@x2f/accounts';
-import type { FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
+import type { FastifyBaseLogger, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
@@ -32,6 +39,8 @@ import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
 import { applyLoginName, applyLogoutTimer, applyOneDevice } from '../routes/account.js';
+import { applyWallets, type PendingWallet } from '../wallets/routes.js';
+import type { ConfirmMethod } from './confirm.js';
 import { applyRemoval } from './methods.js';
 import { applyPassword } from './password.js';
 import { applyPgpKey } from './pgp.js';
@@ -58,7 +67,9 @@ export type PendingChange =
   /** FU-D: the name's keyed tag under `keyId`, never the name. */
   | { kind: 'login-name'; tag: string; keyId: number }
   | { kind: 'one-device'; on: boolean }
-  | { kind: 'logout-timer'; idleHours: IdleHours };
+  | { kind: 'logout-timer'; idleHours: IdleHours }
+  /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
+  | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null };
 
 export interface Hold {
   startedAt: Date;
@@ -121,7 +132,12 @@ const toHold = (r: HoldRow): Hold => ({
 export interface SettleDeps {
   config: Config;
   events?: Pick<EventBus, 'closeAccount'> | undefined;
+  /** Where a pending change that failed with a fault is reported (its error class and code only: buildApi's serializer). */
+  log?: Pick<FastifyBaseLogger, 'error'> | undefined;
 }
+
+/** The settle deps of a request: the config, the live-event bus and the request's logger. */
+export const settleOf = (req: FastifyRequest): SettleDeps => ({ config: req.server.deps.config, events: req.server.events, log: req.log });
 
 /**
  * Inside a transaction with the account locked (`lockAccount`): the running hold, or null. A hold
@@ -140,14 +156,17 @@ export async function holdInTx(db: Queryable, s: SettleDeps, accountId: string, 
   if (change !== null) {
     // A change that can no longer apply (the key went to another account, the last login method,
     // a login name taken meanwhile) is dropped and the alert says so; the rest of the work stands.
+    // A fault inside it (review round 2 N-M2) fails closed the same way: the change is dropped
+    // (nothing of it is written), the fault is logged (its class and code only) and the hold
+    // ends, so one persistent fault cannot turn every later login of the account into a 500.
     await db.query('savepoint pending_change');
     try {
       endedOthers = await applyChange(db, s.config, accountId, change, row.started_by, now);
       await db.query('release savepoint pending_change');
       applied = true;
     } catch (e) {
-      if (!(e instanceof ApiError)) throw e;
       await db.query('rollback to savepoint pending_change');
+      if (!(e instanceof ApiError)) s.log?.error({ err: e, change: change.kind }, 'pending change failed; dropped');
     }
   }
   await addAlert(db, accountId, 'hold-ended', { reason: 'time', change: change?.kind ?? null, applied }, now);
@@ -176,13 +195,16 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
     case 'remove-method':
       return (await applyRemoval(db, config, accountId, c.type, c.id, keep, now)) > 0;
     case 'login-name':
-      await applyLoginName(db, accountId, Buffer.from(c.tag, 'base64'), c.keyId, now);
+      await applyLoginName(db, config, accountId, Buffer.from(c.tag, 'base64'), c.keyId, now);
       return false;
     case 'one-device':
       await applyOneDevice(db, accountId, c.on, now);
       return false;
     case 'logout-timer':
       await applyLogoutTimer(db, accountId, c.idleHours, now);
+      return false;
+    case 'wallets':
+      await applyWallets(db, accountId, c.items, c.method, now);
       return false;
   }
 }
@@ -215,14 +237,33 @@ export async function startHold(
 /**
  * Inside a strong login's transaction (account locked): when a hold runs and every method this
  * login proved was held when it started, the hold ends now, its pending change is discarded and
- * alert `hold-ended` `{ reason: 'owner-login', cancelled }` names it. True when it ended one.
+ * alert `hold-ended` `{ reason: 'owner-login', cancelled }` names it. With it end (review round 2
+ * N-C1, N-I1) every live session whose login waits (`strength` not `strong`, or none recorded),
+ * every backup (recovery) session and the session that started the hold: otherwise a backup
+ * session that waited out its own 24 hours, or a weak session filling the device limit, would
+ * outlive the owner's answer. Alert `sessions-ended` `{ count, reason: 'owner-login' }` when any
+ * did. Returns null when no hold ended, else the ids of the sessions it ended (the caller closes
+ * their streams after commit).
  */
-export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: string, proven: ProvenMethod, now: Date): Promise<boolean> {
+export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: string, proven: ProvenMethod, now: Date): Promise<string[] | null> {
   const hold = await holdInTx(db, s, accountId, now);
-  if (hold === null || !ownerProof(hold, proven)) return false;
+  if (hold === null || !ownerProof(hold, proven)) return null;
   await db.query('delete from account_holds where account_id = $1', [accountId]);
   await addAlert(db, accountId, 'hold-ended', { reason: 'owner-login', cancelled: hold.pendingChange?.kind ?? null }, now);
-  return true;
+  const ended = await db.query<{ id: string }>(
+    `update sessions set revoked_at = $2
+      where account_id = $1 and revoked_at is null
+        and (level = 'recovery' or strength is distinct from 'strong' or id = $3)
+      returning id`,
+    [accountId, now, hold.startedBy],
+  );
+  // Logins approved by those sessions and not yet collected go with them.
+  await db.query(
+    `update login_approvals set outcome = 'expired' where account_id = $1 and outcome = 'approved' and used_at is null`,
+    [accountId],
+  );
+  if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'owner-login' }, now);
+  return ended.rows.map((r) => r.id);
 }
 
 /** True when every method `proven` names was held when the hold started. */
@@ -261,7 +302,12 @@ export async function withTx<T>(pool: pg.Pool, fn: (db: pg.PoolClient) => Promis
 }
 
 /** The end of the account's running hold, or null; a hold whose time is up is settled first. */
-export async function holdUntil(deps: Pick<Deps, 'db' | 'clock' | 'config'>, accountId: string, events?: SettleDeps['events']): Promise<Date | null> {
+export async function holdUntil(
+  deps: Pick<Deps, 'db' | 'clock' | 'config'>,
+  accountId: string,
+  events?: SettleDeps['events'],
+  log?: SettleDeps['log'],
+): Promise<Date | null> {
   const now = deps.clock();
   const { rows } = await deps.db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1', [accountId]);
   const row = rows[0];
@@ -269,15 +315,37 @@ export async function holdUntil(deps: Pick<Deps, 'db' | 'clock' | 'config'>, acc
   if (row.hold_until.getTime() > now.getTime()) return row.hold_until;
   return withTx(deps.db, async (db) => {
     await lockAccount(db, accountId);
-    return (await holdInTx(db, { config: deps.config, events }, accountId, now))?.holdUntil ?? null;
+    return (await holdInTx(db, { config: deps.config, events, log }, accountId, now))?.holdUntil ?? null;
   });
 }
 
 export const holdRefusal = (until: Date): ApiError => new ApiError(403, 'recovery-hold', { holdUntil: until.toISOString() });
 
+/**
+ * True when the session may not act against a stronger login (review round 2 N-I2, N-I3, N-M3): a
+ * trader session whose login waits (`waits(strength)`) once its sign-up's first 30 minutes are
+ * over, and every backup (recovery) session. Staff and owner sessions never are. An unknown
+ * session counts as weak.
+ */
+export async function weakSession(db: Queryable, sessionId: string, now: Date): Promise<boolean> {
+  const { rows } = await db.query<{ kind: string; level: string; strength: LoginStrength | null; onboarding_until: Date | null }>(
+    'select a.kind, s.level, s.strength, s.onboarding_until from sessions s join accounts a on a.id = s.account_id where s.id = $1',
+    [sessionId],
+  );
+  const r = rows[0];
+  if (!r) return true;
+  if (r.kind !== 'trader') return false;
+  if (r.level === 'recovery') return true;
+  if (r.onboarding_until !== null && r.onboarding_until.getTime() > now.getTime()) return false;
+  return waits(r.strength);
+}
+
+/** 403 `weak-session`: the calling session's login waits, so it may not do this to a stronger login. */
+export const weakRefusal = (): ApiError => new ApiError(403, 'weak-session');
+
 /** preHandler after `requireSession`: 403 `recovery-hold` `{ holdUntil }` while the account's hold runs. */
 export const requireNotHeld: preHandlerAsyncHookHandler = async function (req) {
-  const until = await holdUntil(req.server.deps, req.auth.accountId, req.server.events);
+  const until = await holdUntil(req.server.deps, req.auth.accountId, req.server.events, req.log);
   if (until !== null) throw holdRefusal(until);
 };
 
@@ -303,7 +371,7 @@ export async function gateChange(db: Queryable, req: FastifyRequest, change: Pen
   const row = rows[0];
   if (!row) throw new ApiError(401, 'not-authenticated');
   if (row.kind !== 'trader') return null;
-  const running = await holdInTx(db, { config: deps.config, events: req.server.events }, accountId, now);
+  const running = await holdInTx(db, settleOf(req), accountId, now);
   if (running !== null) throw holdRefusal(running.holdUntil);
   const onboarding = row.onboarding_until !== null && row.onboarding_until.getTime() > now.getTime();
   // Task 9's backup session already waited its 24 hours before it could change anything (R42:
@@ -336,6 +404,23 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   'POST /v1/account/login-name',
   'PUT /v1/account/security/one-device',
   'PUT /v1/account/security/logout-timer',
+  // Review round 2 N-I4 (lead decision 2026-10-30): a payout wallet added by a session whose login
+  // waits (PGP alone included) waits out the hold like the rest, whatever the confirm method.
+  'POST /v1/wallets',
+];
+
+/**
+ * Routes a weak session (`weakSession`) may use only on itself (review round 2 N-I2, N-I3, N-M3;
+ * 403 `weak-session`): ending a strong session (any other session during a hold), answering a
+ * strong login's approval, dropping push subscriptions (only its own go), and marking the hold's
+ * and the login alerts seen.
+ */
+export const WEAK_LIMITED_ROUTES: readonly string[] = [
+  'DELETE /v1/account/sessions/:id',
+  'POST /v1/account/approvals/:id',
+  'DELETE /v1/account/push',
+  'POST /v1/account/push',
+  'POST /v1/account/alerts/:id/seen',
 ];
 
 /**
@@ -357,7 +442,7 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
  * removed key) applies on time even when nobody asks about the account. Each hold settles in its
  * own transaction with the account locked.
  */
-export function settleDueHolds(config: Config, events: SettleDeps['events']): RetentionJob {
+export function settleDueHolds(config: Config, events: SettleDeps['events'], log?: SettleDeps['log']): RetentionJob {
   return {
     name: 'settleDueHolds',
     async run(pool, now) {
@@ -365,7 +450,7 @@ export function settleDueHolds(config: Config, events: SettleDeps['events']): Re
       for (const r of rows) {
         await withTx(pool, async (db) => {
           await lockAccount(db, r.account_id);
-          await holdInTx(db, { config, events }, r.account_id, now);
+          await holdInTx(db, { config, events, log }, r.account_id, now);
         });
       }
       return rows.length;

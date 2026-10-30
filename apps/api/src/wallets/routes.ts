@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { requireNotHeld } from '../auth/hold.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -83,7 +83,7 @@ export const purgeRemovedWalletAddresses: RetentionJob = {
 };
 
 /** One wallet of an add request, checked. */
-interface WalletItem {
+export interface WalletItem {
   app: WalletApp;
   label: string;
   /** Trimmed: exactly the address that is confirmed and stored. */
@@ -196,6 +196,58 @@ const walletConfirm: preHandlerAsyncHookHandler = async function (req) {
   throw new ApiError(403, 'confirm-required', { action: walletInput(req).action.kind });
 };
 
+/** Wallets waiting out the account's 24-hour hold (Plan 2 Task 17 review round 2 N-I4), as checked. */
+export type PendingWallet = WalletItem;
+
+/**
+ * Inserts checked wallets with one `usable_from` and their `wallet-added` alerts, and sets
+ * `had_wallet` (inside the caller's transaction, account row locked). 409 `wallet-exists` when an
+ * address is already open on the account.
+ */
+async function insertWallets(
+  db: Queryable,
+  accountId: string,
+  items: readonly WalletItem[],
+  usableFrom: Date,
+  confirmedWith: ConfirmMethod | 'onboarding',
+  now: Date,
+): Promise<Wallet[]> {
+  const wallets: Wallet[] = [];
+  for (const item of items) {
+    let inserted: WalletRow;
+    try {
+      const res = await db.query<WalletRow>(
+        `insert into wallets (account_id, app, label, address, created_at, usable_from)
+         values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
+        [accountId, item.app, item.label, item.address, now, usableFrom],
+      );
+      inserted = res.rows[0]!;
+    } catch (e) {
+      if ((e as { code?: string }).code === '23505') throw new ApiError(409, 'wallet-exists');
+      throw e;
+    }
+    const wallet = toWallet(inserted, now);
+    wallets.push(wallet);
+    await addAlert(
+      db, accountId, 'wallet-added',
+      { app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString(), confirmedWith },
+      now,
+    );
+  }
+  await db.query('update accounts set had_wallet = true where id = $1', [accountId]);
+  return wallets;
+}
+
+/**
+ * Wallets that waited out the account's hold, applied when it ends by time (review round 2 N-I4):
+ * usable at once (they have waited their 24 hours: R42, once, not twice), whatever the confirm.
+ * 409 `wallet-exists` drops the change when one of them was added meanwhile.
+ */
+export async function applyWallets(db: Queryable, accountId: string, items: readonly PendingWallet[], method: ConfirmMethod | null, now: Date): Promise<void> {
+  await db.query('select 1 from accounts where id = $1 for update', [accountId]);
+  await insertWallets(db, accountId, items, now, method ?? 'onboarding', now);
+}
+
 async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const input = walletInput(req);
@@ -204,7 +256,8 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const exempted = raw === undefined;
   const now = deps.clock();
   const client = await deps.db.connect();
-  const wallets: Wallet[] = [];
+  let wallets: Wallet[] = [];
+  let held: { holdUntil: Date } | null = null;
   try {
     await client.query('begin');
     try {
@@ -225,39 +278,23 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
         method = await redeemConfirm({ db: client, clock: deps.clock }, req, input.action, typeof raw === 'string' ? raw : '');
       }
       req.confirmedAction = input.action;
-      // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
-      // usable at once, whenever they are added and however they were confirmed. Later wallets are
-      // usable at once when confirmed with PGP, a passkey or a security key, and wait 24 hours when
-      // confirmed with a password. `method` is what the redeemed token recorded, never anything in
-      // this request. A batch shares one clock: every wallet in it gets the same `usable_from`.
-      const strong = method !== null && STRONG_CONFIRM_METHODS.includes(method);
-      const waits = account.had_wallet && !strong;
-      const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
-      for (const item of input.items) {
-        let inserted: WalletRow;
-        try {
-          const res = await client.query<WalletRow>(
-            `insert into wallets (account_id, app, label, address, created_at, usable_from)
-             values ($1, $2, $3, $4, $5, $6) returning ${WALLET_COLUMNS}`,
-            [req.auth.accountId, item.app, item.label, item.address, now, usableFrom],
-          );
-          inserted = res.rows[0]!;
-        } catch (e) {
-          if ((e as { code?: string }).code === '23505') throw new ApiError(409, 'wallet-exists');
-          throw e;
-        }
-        const wallet = toWallet(inserted, now);
-        wallets.push(wallet);
-        await addAlert(
-          client, req.auth.accountId, 'wallet-added',
-          {
-            app: wallet.app, label: wallet.label, addressEnd: wallet.addressEnd, usableFrom: usableFrom.toISOString(),
-            confirmedWith: method ?? 'onboarding',
-          },
-          now,
-        );
+      // Plan 2 Task 17 review round 2 N-I4 (lead decision 2026-10-30, the owner's 14:12 ruling over
+      // the wallet rule of 10-24): a session whose login waits (PGP alone included) adds no wallet
+      // at once, whatever it confirmed with: the add waits out the account's 24-hour hold like any
+      // security change (`gateChange`; 202 `held`). The sign-up's first 30 minutes are exempt there.
+      held = await gateChange(client, req, { kind: 'wallets', items: input.items, method });
+      if (held === null) {
+        // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
+        // usable at once, whenever they are added and however they were confirmed. Later wallets
+        // are usable at once when confirmed with PGP, a passkey or a security key from a strong
+        // login (STRONG_CONFIRM_METHODS; a waiting login was held above), and wait 24 hours when
+        // confirmed with a password. `method` is what the redeemed token recorded, never anything in
+        // this request. A batch shares one clock: every wallet in it gets the same `usable_from`.
+        const strong = method !== null && STRONG_CONFIRM_METHODS.includes(method);
+        const waits = account.had_wallet && !strong;
+        const usableFrom = waits ? new Date(now.getTime() + PAYOUT_WAIT_MS) : now;
+        wallets = await insertWallets(client, req.auth.accountId, input.items, usableFrom, method ?? 'onboarding', now);
       }
-      await client.query('update accounts set had_wallet = true where id = $1', [req.auth.accountId]);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -265,6 +302,10 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
     }
   } finally {
     client.release();
+  }
+  if (held !== null) {
+    pushHoldStarted(req, req.auth.accountId);
+    return reply.code(202).send(heldReply(held));
   }
   return reply.code(201).send(input.batch ? wallets.map(toJson) : toJson(wallets[0]!));
 }

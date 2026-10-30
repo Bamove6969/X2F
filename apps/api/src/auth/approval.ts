@@ -43,7 +43,7 @@ import { addAlert } from '../alerts.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
-import { endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, startHold, type ProvenMethod } from './hold.js';
+import { endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, settleOf, startHold, weakRefusal, weakSession, type ProvenMethod } from './hold.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
@@ -137,6 +137,36 @@ async function devicesInUse(db: Queryable, accountId: string, now: Date, exceptT
   return rows[0]!.n;
 }
 
+/**
+ * Inside a login's transaction: logs out the fewest sessions so that one more fits within `max`
+ * (review round 2 N-C1, N-I3). Approved logins not yet collected go first (they count as devices),
+ * then full sessions whose login waits, then (only with `strongToo`) strong ones, each least
+ * recently seen first; this browser's own session is left to `openSession`. Alert
+ * `logged-out-by-new-device` lists what ended. Returns the ended session ids.
+ */
+async function makeRoom(db: Queryable, accountId: string, now: Date, exceptTokenHash: Buffer | null, max: number, strongToo: boolean): Promise<string[]> {
+  if ((await devicesInUse(db, accountId, now, exceptTokenHash)) < max) return [];
+  await db.query(
+    `update login_approvals set outcome = 'expired' where account_id = $1 and outcome = 'approved' and used_at is null and expires_at > $2`,
+    [accountId, now],
+  );
+  const excess = (await devicesInUse(db, accountId, now, exceptTokenHash)) - max + 1;
+  if (excess <= 0) return [];
+  const { rows } = await db.query<{ id: string; device_label: string }>(
+    `update sessions set revoked_at = $2 where id in (
+       select id from sessions
+        where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2
+          and token_hash is distinct from $3 and ($5 or strength is distinct from 'strong')
+        order by (strength is not distinct from 'strong'), last_seen_at, id
+        limit $4)
+     returning id, device_label`,
+    [accountId, now, exceptTokenHash, excess, strongToo],
+  );
+  const labels = rows.map((r) => r.device_label);
+  if (labels.length > 0) await addAlert(db, accountId, 'logged-out-by-new-device', { deviceLabels: labels, count: labels.length }, now);
+  return rows.map((r) => r.id);
+}
+
 async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Promise<T>): Promise<T> {
   const client = await deps.db.connect();
   try {
@@ -161,9 +191,15 @@ async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Prom
  *
  * Task 17, all in this one transaction with the account locked (review I2): a hold whose time is
  * up settles first; a strong login whose methods all predate a running hold (the real owner) skips
- * the approval (the approving devices may be the thief's) but not the device limit (409
- * `too-many-devices`, review M6), and ends the hold; a waiting login on a device not trusted for
- * the account with nothing logged in to approve it starts the hold with its session.
+ * the approval (the approving devices may be the thief's) and ends the hold, which ends every
+ * waiting and backup session (`endHoldIfOwner`); it is never refused by the device limit: the
+ * least recently seen sessions, weak ones first, are logged out to make room (review round 2
+ * N-C1: owner proof wins). During a running hold a login that waits opens no session at all, on a
+ * trusted device either (403 `recovery-hold`: device trust is a copyable cookie, round 2 N-C1). A
+ * waiting login on a device not trusted for the account with nothing logged in to approve it starts
+ * the hold with its session. A strong login with no strong session open to answer it goes in, and
+ * at the device limit logs out weak sessions to make room (round 2 N-I3: a weak session may not
+ * answer a strong login).
  */
 export async function traderLogin(
   deps: Deps,
@@ -185,20 +221,31 @@ export async function traderLogin(
   const now = deps.clock();
   const presented = presentedTokenHash(req);
   const secret = randomBytes(32).toString('base64url');
-  const settle = { config: deps.config, events: req.server.events };
+  const settle = settleOf(req);
 
   type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait };
   const out = await withTx(deps, async (db): Promise<Outcome> => {
     await lockApprovals(db, a.accountId);
     await lockAccount(db, a.accountId);
-    const session = async (startsHold: boolean): Promise<Outcome> => {
-      // The real owner's strong login ends a running hold before its session starts.
-      if (strength === 'strong' && a.proven !== undefined) await endHoldIfOwner(db, settle, a.accountId, a.proven, now);
+    /** `room`: log sessions out until this one fits within `max` (`strongToo`: strong sessions may go too, after the weak ones). */
+    const session = async (startsHold: boolean, room?: { max: number; strongToo: boolean }): Promise<Outcome> => {
+      const ended: string[] = [];
+      // The real owner's strong login ends a running hold, and the waiting sessions with it, before its session starts.
+      if (strength === 'strong' && a.proven !== undefined) ended.push(...((await endHoldIfOwner(db, settle, a.accountId, a.proven, now)) ?? []));
+      if (room !== undefined) ended.push(...(await makeRoom(db, a.accountId, now, presented, room.max, room.strongToo)));
       const s = await openSession(db, deps, req, reply, {
         accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
       });
       if (startsHold) await startHold(db, a.accountId, now, { reason: 'weak-new-device', startedBy: s.sessionId });
-      return { kind: 'session', after: s.after };
+      return {
+        kind: 'session',
+        after: () => {
+          s.after();
+          for (const id of ended) req.server.events.closeSession(a.accountId, id);
+          // The hold's own warning reaches the account's devices (review round 2 N-I2).
+          if (startsHold) void req.server.push.send(a.accountId, 'alert', { exceptSession: s.sessionId }).catch(() => undefined);
+        },
+      };
     };
     const acct = await db.query<{ kind: string; one_device: boolean }>('select kind, one_device from accounts where id = $1', [a.accountId]);
     const row = acct.rows[0];
@@ -213,23 +260,32 @@ export async function traderLogin(
       );
       if (own.rows.length > 0) return session(false);
     }
-    const open = await db.query<{ n: number }>(
-      `select count(*)::int as n from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2`,
+    const max = row.one_device ? 1 : await maxDevices(db);
+    // Task 17: the real owner's strong login during a hold goes straight in (no approval) and ends
+    // the hold (`session`). Review round 2 N-C1: never refused by the device limit (the sessions
+    // filling it may be a thief's): the waiting ones end with the hold, then the least recently
+    // seen make room.
+    if (hold !== null && strength === 'strong' && a.proven !== undefined && ownerProof(hold, a.proven)) {
+      return session(false, { max, strongToo: true });
+    }
+    // Review round 2 N-C1: during the hold a login that waits opens no session, not even on a
+    // trusted device (its trust is a cookie that can be copied).
+    if (hold !== null && waits(strength)) throw holdRefusal(hold.holdUntil);
+    const open = await db.query<{ n: number; answering: number }>(
+      `select count(*)::int as n,
+              count(*) filter (where strength = 'strong' or onboarding_until > $2)::int as answering
+         from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2`,
       [a.accountId, now],
     );
     // No logged-in device to approve it: the login goes on; a waiting one on a new device holds
     // the account for 24 hours (Task 17, owner 2026-10-29).
     if (open.rows[0]!.n === 0) return session(waits(strength) && !(await isTrusted(deps, a.accountId, device)));
-    const max = row.one_device ? 1 : await maxDevices(db);
     const inUse = await devicesInUse(db, a.accountId, now, presented);
-    // Task 17: the real owner's strong login during a hold goes straight in (no approval) but
-    // still within the device limit; it ends the hold (`session`).
-    if (hold !== null && strength === 'strong' && a.proven !== undefined && ownerProof(hold, a.proven)) {
-      if (inUse >= max) throw new ApiError(409, 'too-many-devices');
-      return session(false);
-    }
     const trusted = await isTrusted(deps, a.accountId, device);
     if (trusted && inUse < max) return session(false);
+    // Review round 2 N-I3: a strong login that no strong session could answer (a weak session may
+    // not) goes in; at the limit weak sessions are logged out to make room.
+    if (strength === 'strong' && open.rows[0]!.answering === 0) return session(false, { max, strongToo: false });
 
     const hourAgo = new Date(now.getTime() - 3_600_000);
     const recent = await db.query<{ n: number; oldest: Date | null }>(
@@ -469,6 +525,9 @@ async function decide(req: FastifyRequest) {
     if (row.outcome !== null || now.getTime() >= row.expires_at.getTime()) {
       throw new ApiError(409, 'approval-ended', { outcome: row.outcome ?? 'expired' });
     }
+    // Review round 2 N-I3: a session whose login waits neither lets in nor blocks a strong login.
+    const weak = await weakSession(db, sessionId, now);
+    if (weak && row.strength === 'strong') throw weakRefusal();
     if ('block' in body || body.choice !== row.number) {
       await db.query(`update login_approvals set outcome = 'blocked', decided_at = $2, decided_by = $3 where id = $1`, [id, now, sessionId]);
       await addAlert(db, accountId, 'login-blocked', {
@@ -478,11 +537,16 @@ async function decide(req: FastifyRequest) {
     }
     // Task 17: an account on its 24-hour hold approves no new device (blocking stays possible).
     await lockAccount(db, accountId);
-    const hold = await holdInTx(db, { config: deps.config, events: req.server.events }, accountId, now);
+    const hold = await holdInTx(db, settleOf(req), accountId, now);
     if (hold !== null) throw holdRefusal(hold.holdUntil);
     let ends: 'one-device' | 'session' | null = null;
     let endId: string | null = null;
     if (row.one_device) {
+      // Review round 2 N-I3: a weak session may not have a strong one logged out.
+      if (weak && (await db.query(
+        `select 1 from sessions where account_id = $1 and id <> $2 and strength = 'strong' and revoked_at is null and expires_at > $3`,
+        [accountId, sessionId, now],
+      )).rows.length > 0) throw weakRefusal();
       ends = 'one-device';
     } else if ((await devicesInUse(db, accountId, now, null)) >= (await maxDevices(db))) {
       const chosen = body.logOut === null ? [] : (await db.query(
@@ -500,6 +564,7 @@ async function decide(req: FastifyRequest) {
           sessions: list.rows.map((s) => ({ id: s.id, deviceLabel: s.device_label, lastSeenAt: s.last_seen_at.toISOString(), current: s.id === sessionId })),
         });
       }
+      if (weak && (await db.query("select 1 from sessions where id = $1 and strength = 'strong'", [body.logOut])).rows.length > 0) throw weakRefusal();
       ends = 'session';
       endId = body.logOut;
     }
