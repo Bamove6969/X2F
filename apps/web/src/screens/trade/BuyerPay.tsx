@@ -38,7 +38,8 @@ import { PayWarning } from './PayWarning.js';
 import { setWarned, warned } from './warned.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
 import { publicName, type TradeEscrow, type TradeScreenProps, type TradeView } from './payTypes.js';
-import { focusChatPane, registerTradeScreen, useChatPane, type TradeSlot } from './TradeRoom.js';
+import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
+import { focusChatPane, registerTradeScreen, useChatPane, type MemberScreenProps, type TradeSlot } from './TradeRoom.js';
 import { CounterpartyCard, Name, TradeTimeline } from './TradeTimeline.js';
 import './pay.css';
 
@@ -49,7 +50,7 @@ import './pay.css';
  */
 export const TASK23_SLOTS: readonly TradeSlot[] = [
   { owner: 'Task 23', role: 'buyer', states: ['securing', 'secured', 'paid'], screen: BuyerPay },
-  { owner: 'Task 23', role: 'seller', states: ['secured'], screen: SellerWaiting },
+  { owner: 'Task 23', role: 'seller', states: ['secured'], screen: SellerWaiting, forMembers: SellerWaitingMember },
   // After the buyer's cancel or an accepted mutual cancel the BUYER builds the refund (policy.ts
   // ROUTE), and only from a tapped intent: this screen keeps it in view (review I4; the release is
   // Task 24's).
@@ -815,6 +816,70 @@ export function SellerWaiting(p: TradeScreenProps) {
       <footer className="x2f-pay__footer">
         <ChatButton view={view} primary />
         <div className="x2f-pay__footer-row">{cancel}</div>
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * SellerWaiting on a team member's device (Plan 2 Task 18 review round 2, n3): no escrow there, so
+ * no device total, escrow status or chat; the waiting card, the owner's-device notice, and Propose
+ * cancel / Withdraw (a mutual cancel only records a choice; if the buyer accepts, the account
+ * owner's device co-signs the refund). Kit parts only (NEEDS_DESIGN_TEAM).
+ */
+export function SellerWaitingMember({ code, view, refresh, serverClock }: MemberScreenProps) {
+  const method = payMethodOf(view);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = async (type: 'propose-cancel' | 'withdraw-cancel') => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await postPayEvent(code, { type });
+      await refresh();
+    } catch (err) {
+      setError(apiRefusalText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="x2f-pay" data-layout="phone" data-member-screen="">
+      <TradeHeader
+        title={
+          <>
+            Selling to <Name view={view} />
+          </>
+        }
+        code={view.code}
+        method={method}
+        backTo="/trades"
+      />
+      <div className="x2f-pay__main">
+        <section aria-label="Waiting for payment" className="x2f-card x2f-wait">
+          <p className="x2f-wait__title">
+            Waiting for <Name view={view} /> to pay
+          </p>
+          {view.payBy !== null ? (
+            <span className="x2f-wait__left">
+              Time to pay <Countdown deadline={view.payBy} serverClock={serverClock} format="minutes" />
+            </span>
+          ) : null}
+        </section>
+        <p className="x2f-room__hint" data-part="member-waiting">
+          {MEMBER_TRADE_COPY.roomWaiting}
+        </p>
+        {error !== null ? (
+          <p className="x2f-room__error" role="alert">
+            {error}
+          </p>
+        ) : null}
+      </div>
+      <footer className="x2f-pay__footer">
+        <div className="x2f-pay__footer-row">
+          <SellerCancelControls view={view} busy={busy} onPropose={() => void run('propose-cancel')} onWithdraw={() => void run('withdraw-cancel')} />
+        </div>
       </footer>
     </div>
   );

@@ -10,7 +10,9 @@ describe('Task 18 web still waits for its design and the member keys', () => {
   it('NEEDS_DESIGN_TEAM: no Team or Join-team board yet, so the screens carry no styling of their own', () => {
     // The owner's rule (2026-10-29): Claude Design owns all looks. Team.tsx (/settings/team, linked
     // from Security) and auth/MemberInvite.tsx (/team/join) use kit parts and existing classes only;
-    // their words are COPY-UNSIGNED in settings/teamCopy.ts. When a board lands in design/x2f-app/:
+    // their words are COPY-UNSIGNED in settings/teamCopy.ts. A member's trade room (TradeRoom.tsx
+    // MemberRoom, BuyerPay.tsx SellerWaitingMember; review round 2, n3) reuses the trade room's own
+    // parts and classes, so it needs no board of its own. When a board lands in design/x2f-app/:
     // style both to it (the board's copy wins), place the Team entry where the board puts it (the
     // Profile tab or Settings), add expectParity at PHONE_VIEWPORTS in an e2e spec, and delete this.
     const boards = readdirSync(`${ROOT}design/x2f-app`).filter((f) => /team|member/i.test(f));

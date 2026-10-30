@@ -89,6 +89,8 @@ import { getTrade, publicName, TRADE_STATES, type Party, type TradeState, type T
 import { memberOf } from '../../session/member.js';
 import { useSession } from '../../session/useSession.js';
 import { forgetConfirmed, readConfirmed } from '../quote/confirmed.js';
+import { tradeFromView } from '../dispute/api.js';
+import { DisputeEntry } from '../dispute/DisputeEntry.js';
 import { MEMBER_TRADE_COPY } from '../settings/teamCopy.js';
 import { hasPanes, useFoldLayout, type FoldLayout } from '../../ui/fold.js';
 import { Panes } from '../../ui/Panes.js';
@@ -110,12 +112,21 @@ export interface TradeScreenProps {
 
 export type TradeScreen = ComponentType<TradeScreenProps>;
 
+/** What a team member's version of a screen gets: everything but the escrow (a member's device runs none). */
+export type MemberScreenProps = Omit<TradeScreenProps, 'escrow'>;
+
 export interface TradeSlot {
   owner: string;
   role: Party | 'any';
   states: readonly TradeState[];
   when?: (view: TradeView, nowMs: number) => boolean;
   screen: TradeScreen;
+  /**
+   * What a team member's device shows for this slot (Plan 2 Task 18 review round 2, n3): only the
+   * steps a Trades member may take that need no escrow on this device. Left out, a member gets the
+   * plain status card. It can be `screen` itself when that screen never touches the escrow.
+   */
+  forMembers?: ComponentType<MemberScreenProps>;
 }
 
 const slots: TradeSlot[] = [];
@@ -145,12 +156,20 @@ export function registerTradeScreen(slot: TradeSlot): () => void {
   };
 }
 
+/** The slot chosen for this view at `nowMs` (server time), or null. */
+function slotFor(view: TradeView, nowMs: number): TradeSlot | null {
+  const fits = slots.filter((s) => (s.role === 'any' || s.role === view.role) && s.states.includes(view.state));
+  return fits.find((s) => s.when?.(view, nowMs) === true) ?? fits.find((s) => !s.when) ?? null;
+}
+
 /** The registered screen for this view at `nowMs` (server time), or null; integrity failures are handled by the room. */
 export function screenFor(view: TradeView, nowMs: number): TradeScreen | null {
-  const fits = slots.filter((s) => (s.role === 'any' || s.role === view.role) && s.states.includes(view.state));
-  const guarded = fits.find((s) => s.when?.(view, nowMs) === true);
-  if (guarded) return guarded.screen;
-  return fits.find((s) => !s.when)?.screen ?? null;
+  return slotFor(view, nowMs)?.screen ?? null;
+}
+
+/** A team member's screen for this view: the chosen slot's `forMembers`, or null (the plain status card). */
+export function memberScreenFor(view: TradeView, nowMs: number): ComponentType<MemberScreenProps> | null {
+  return slotFor(view, nowMs)?.forMembers ?? null;
 }
 
 /** The screen shown on an integrity failure (SetupStatus's danger state; set by Task 22's SetupStatus). */
@@ -239,7 +258,7 @@ export function TradeRoom() {
   // account owner's device can, until Plan 3 Task 42's member keys): wait for the session first, so
   // the escrow worker never boots on a member's device, then show the member's room.
   if (session.status === 'loading') return <main data-screen="trade" aria-busy="true" />;
-  if (memberOf(session) !== null) return <MemberRoom view={load.view} />;
+  if (memberOf(session) !== null) return <MemberRoom code={own} view={load.view} refresh={refresh} />;
   // The escrow starts only once the API has shown this trade to this account (review of the
   // landing, Minor 1): a visitor, a staff account or a wrong code never boots the escrow worker or
   // leaves a run polling GET /v1/trades/:code.
@@ -248,16 +267,40 @@ export function TradeRoom() {
 
 /**
  * A team member's trade room until Plan 3 Task 42 (NEEDS_PLAN3_TASK42_MEMBER_KEY): no escrow on
- * this device, so no funding, check words or release here; the trade's state and a notice that the
- * account owner's device does those steps. Kit parts only (NEEDS_DESIGN_TEAM).
+ * this device, so no funding, check words or release here. Kit parts only (NEEDS_DESIGN_TEAM).
+ *
+ * What a Trades member may still do on the trades the owner's device set up (owner question 13(d),
+ * team/perms.ts; review round 2, n3), as far as it needs no escrow here:
+ * - the slot's `forMembers` screen, if it has one: the seller's Propose cancel and Withdraw while
+ *   the buyer pays (Task 23's SellerWaiting; a mutual cancel only records a choice, and the signing
+ *   it leads to is the owner's device's), and the seller's Confirm cancel after a buyer's cancel
+ *   (Task 39's SellerCancelConfirm, which never touches the escrow);
+ * - otherwise the trade's state and a notice that the account owner's device does the rest;
+ * - Open dispute (or Go to the dispute) whenever the state machine allows one: the dispute screen
+ *   at /trade/:code/dispute runs no escrow (Task 27's DisputeEntry).
+ * Not offered (open for the owner, see coordination.md): I've paid (the sum to pay must be the
+ * escrow device's own, never the API's), the buyer's cancel and accepting a cancel (the buyer's
+ * device builds the refund at that moment), and the chat (perms.ts places it with Task 42).
  */
-function MemberRoom({ view }: { view: TradeView }) {
+function MemberRoom({ code, view, refresh }: { code: string; view: TradeView; refresh: () => Promise<void> }) {
+  const serverNow = view.serverNow;
+  const clock = useMemo(() => makeServerClock(serverNow), [serverNow]);
+  const Screen = memberScreenFor(view, clock().getTime());
   return (
     <main data-screen="trade" data-trade-state={view.state} data-role={view.role} data-member="">
-      <StatusCard view={view} />
-      <section className="x2f-card x2f-stack" data-part="member-waiting">
-        <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
-      </section>
+      {Screen ? (
+        <Screen code={code} view={view} refresh={refresh} serverClock={clock} wide={false} />
+      ) : (
+        <>
+          <StatusCard view={view} />
+          <section className="x2f-card x2f-stack" data-part="member-waiting">
+            <p role="status">{MEMBER_TRADE_COPY.roomWaiting}</p>
+          </section>
+        </>
+      )}
+      <div className="x2f-stack" data-part="member-dispute">
+        <DisputeEntry trade={tradeFromView(view)} now={clock()} />
+      </div>
     </main>
   );
 }

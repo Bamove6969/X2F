@@ -474,6 +474,39 @@ for (const viewport of PHONE_VIEWPORTS) {
   });
 }
 
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`a Trades member proposes a mutual cancel from the seller's room, and may open a dispute; no escrow (${viewport})`, async ({ page }) => {
+    // Review round 2, n3: the escrow-free steps a member may take (owner question 13(d)).
+    const later = new Date(Date.now() + 25 * 60_000).toISOString();
+    let view = { ...sellerView(), payBy: later, nextDeadline: later, serverNow: new Date().toISOString() };
+    const posted: unknown[] = [];
+    await page.route('**/v1/account/me', json(memberMe(['trades'])));
+    await page.route(`**/v1/trades/${TRADE}`, (r) => json(view)(r));
+    await page.route(`**/v1/trades/${TRADE}/events`, (r) => {
+      posted.push(r.request().postDataJSON());
+      view = { ...view, cancelProposedBy: 'seller' };
+      return json(view)(r);
+    });
+    await page.route('**/v1/events', (r) => r.fulfill({ status: 200, headers: { 'content-type': 'text/event-stream' }, body: 'retry: 600000\n\n' }));
+    const identity: string[] = [];
+    page.on('request', (r) => {
+      if (/\/identity$|\/attestation$/.test(new URL(r.url()).pathname)) identity.push(r.url());
+    });
+    await page.goto(`/trade/${TRADE}`);
+    await setPhone(page, viewport);
+    const room = page.locator('[data-screen="trade"][data-member]');
+    await expect(room.locator('[data-part="member-waiting"]')).toHaveText("Waiting for the account owner's device. It sets up, secures and releases this trade.");
+    await expect(room.getByRole('link', { name: 'Open dispute' })).toHaveAttribute('href', `/trade/${encodeURIComponent(TRADE)}/dispute`);
+    await expect(room.getByRole('button', { name: /I've paid/ })).toHaveCount(0);
+    await expectPhoneLayout(page);
+    await room.getByRole('button', { name: 'Propose cancel' }).click();
+    await expect(room.getByRole('button', { name: 'Withdraw' })).toBeVisible();
+    expect(posted).toEqual([{ type: 'propose-cancel' }]);
+    expect(identity).toEqual([]);
+    await expectPhoneLayout(page);
+  });
+}
+
 // ---- 7. The owner manages the team -------------------------------------------------------------------
 
 test('the owner changes roles and removes a member; the member is then signed out; Devices names member sessions', async ({ page, browser }) => {
