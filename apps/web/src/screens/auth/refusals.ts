@@ -3,7 +3,7 @@
  * person can act on (Task 30 re-review, items 2 and 3). One helper so every screen words a wait, a
  * held backup session, a refused PGP key or an expired step the same way:
  *
- * - 403 `recovery-hold`: a backup login's changes wait until `holdUntil` (Plan 2's 24-hour hold);
+ * - 403 `recovery-hold`: a held backup session or the account's 24-hour hold, until `holdUntil` (Plan 2 Tasks 9 and 17);
  * - 429 `slow-down` / `locked`: how long to wait, from `retryAfterSeconds` (the TOTP backup's daily
  *   cap waits until midnight UTC, so a long wait is given as a clock time);
  * - 400 `key-expired` / `key-revoked`: the key is turned away with the reason (spec 6.2);
@@ -15,6 +15,10 @@
  */
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
+import {
+  HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_CODE, TOO_MANY_DEVICES_LOGIN,
+  holdApproveText, holdText, type CantDoCode,
+} from '../../ui/cantDoCodes.js';
 
 interface Refusal {
   status: number;
@@ -22,7 +26,6 @@ interface Refusal {
   detail?: string;
   retryAfterSeconds?: number;
   holdUntil?: string;
-  coolingUntil?: string;
 }
 
 /** The refusal fields of an error from either client, or null for anything else (a network failure). */
@@ -36,21 +39,46 @@ export function localTime(at: Date): string {
   return at.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
 }
 
-/** The held-backup sentence, for `holdUntil` (an ISO time) or, if the server sent none, a day. */
-export function holdSentence(holdUntil: string | null | undefined): string {
+/** "until Tue 3:05 PM" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */
+function untilWords(holdUntil: string | null | undefined): string {
   const at = holdUntil ? new Date(holdUntil) : null;
-  if (at === null || Number.isNaN(at.getTime())) return 'You logged in with a backup, so changes to your account wait for a day.';
-  return `You logged in with a backup, so changes to your account wait until ${localTime(at)}.`;
+  return at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
 }
 
 /**
- * Plan 2 Task 17: the 24-hour cooling-off after a login with one weak way (owner, 2026-10-29).
- * COPY-UNSIGNED: no board yet (Plan 3 Task 41).
+ * 403 `recovery-hold` (Plan 2 Task 17): one sentence for a held backup session and for the
+ * account's 24-hour hold, from the refusal text map (`holdText`).
  */
-export function coolingSentence(until: string | null | undefined): string {
-  const at = until ? new Date(until) : null;
-  const when = at === null || Number.isNaN(at.getTime()) ? 'for a day' : `until ${localTime(at)}`;
-  return `You logged in with only one way of proving it's you, so new trades, wallet changes and new devices wait ${when}. Trades already open can still be finished. Log in with a passkey, security key or PGP key to end the wait.`;
+export function holdSentence(holdUntil: string | null | undefined): string {
+  return holdText(untilWords(holdUntil));
+}
+
+/** 403 `recovery-hold` when approving a new device: the hold sentence, and that blocking still works. */
+export function holdApproveSentence(holdUntil: string | null | undefined): string {
+  return holdApproveText(untilWords(holdUntil));
+}
+
+/**
+ * A security change that answered 202 `held` (Plan 2 Task 17): nothing changed yet; it is kept and
+ * made when the hold ends. An outcome the person chose, shown as a note. COPY-UNSIGNED
+ */
+export function heldNote(holdUntil: string): string {
+  const at = new Date(holdUntil);
+  const when = Number.isNaN(at.getTime()) ? 'in a day' : `at ${localTime(at)}`;
+  return `Saved. This change takes effect ${when}, because you logged in with only one way of proving it's you. Logging in with a passkey, a security key, or your password and authenticator code from before then cancels it.`;
+}
+
+/**
+ * What a login, or a logged-in device's answer to a new login, shows in CantDoThat (Plan 2 Task 16,
+ * Plan 5 Task 21): the device limit, the hourly cap on approvals, the hold. Null for anything else
+ * (the caller words it inline as before).
+ */
+export function loginCantDo(e: unknown, where: 'login' | 'approve'): { code: CantDoCode; text: string } | null {
+  if (!(e instanceof AuthApiError)) return null;
+  if (e.code === TOO_MANY_DEVICES_CODE) return { code: TOO_MANY_DEVICES_CODE, text: where === 'login' ? TOO_MANY_DEVICES_LOGIN : TOO_MANY_DEVICES_APPROVE };
+  if (e.status === 429 && e.reason === 'approvals') return { code: TOO_MANY_APPROVALS_CODE, text: TOO_MANY_APPROVALS };
+  if (e.code === HOLD_CODE) return { code: HOLD_CODE, text: where === 'login' ? holdSentence(e.holdUntil) : holdApproveSentence(e.holdUntil) };
+  return null;
 }
 
 /** How long to wait after too many tries: minutes up to an hour, else the clock time it ends. */
@@ -84,7 +112,6 @@ export function refusalText(e: unknown, fallback: string, o: { expired?: string;
   if (r === null) return fallback;
   // cant-do-that-todo: shown inline by every security screen through refusalText
   if (r.code === 'recovery-hold') return holdSentence(r.holdUntil);
-  if (r.code === 'cooling-off') return coolingSentence(r.coolingUntil);
   if (r.status === 429) return waitSentence(r.retryAfterSeconds, o.now);
   if (r.code === 'key-expired') return KEY_EXPIRED;
   if (r.code === 'key-revoked') return KEY_REVOKED;

@@ -20,15 +20,6 @@ export const POLL_MS = 2000;
 
 type Stage = 'waiting' | 'in' | 'blocked' | 'expired';
 
-/** The note under the number: room for this device, the limit, or "One device at a time". */
-export function roomNote(d: ApprovalWait['devices']): string {
-  if (d.oneDevice) return 'One device at a time is on. When you approve, your other device will be logged out.';
-  if (d.loggedIn >= d.max) {
-    return `You're already logged in on ${d.max} devices, the most allowed. To let this one in, one of them will need to be logged out. You'll choose which when you approve.`;
-  }
-  return `You can be logged in on up to ${d.max} devices at once. You're on ${d.loggedIn} now, so there's room for this one.`;
-}
-
 export function ApproveOnDevice({
   wait,
   returnTo,
@@ -95,9 +86,7 @@ export function ApproveOnDevice({
         <p className="x2f-sheet__body">Your other device approved this login.</p>
         {loggedOut.length > 0 ? (
           <p className="x2f-note" data-part="approve-logged-out">
-            {wait.devices.oneDevice
-              ? 'Your other device has been logged out, because One device at a time is on.'
-              : `The device you chose has been logged out, so you're still on ${wait.devices.max} of ${wait.devices.max}.`}
+            Logged out to make room: {loggedOut.join(', ')}.
           </p>
         ) : null}
         <Button variant="primary" onClick={onLoggedIn} data-part="approve-continue">
@@ -152,9 +141,6 @@ export function ApproveOnDevice({
           <li className="x2f-list__row">Tap {wait.number}, then Yes, let them in.</li>
         </ol>
       ) : null}
-      <p className="x2f-note" data-part="approve-room">
-        {roomNote(wait.devices)}
-      </p>
       <p className="x2f-label">I don't have my other device</p>
       <p className="x2f-note">
         <Link className="x2f-link" to={backup} data-part="approve-backup">

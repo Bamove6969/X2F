@@ -38,6 +38,12 @@ export const CANT_DO_CODES = [
   // API's own codes are bad-request and not-found; this one is the web's, for the popup's
   // feedback link.
   'cannot-block',
+  // Plan 2 Task 16: the device limit (approving a new device, or the owner's own login during a
+  // hold), and the cap on login approvals an account may start in an hour. The API answers the cap
+  // with 429 `slow-down` `{ reason: 'approvals' }`; this code is the web's, for the popup's
+  // feedback link (a throttle on tries stays a `slow-down` fault).
+  'too-many-devices',
+  'too-many-approvals',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -109,6 +115,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  'approval-ended': 'the login request itself already ended (approved, blocked or timed out): its own state, not a rule',
   // Escrow device codes (apps/web/src/escrow), compared on `.code` too.
   'address-mismatch': 'an escrow safety check on this device',
   'bad-outcome': 'an escrow safety check on this device',
@@ -141,6 +148,8 @@ export const CANT_DO_TITLE = {
   extend: "You can't give more time",
   block: "You can't block this trader",
   myOffers: "Some offers can't be turned on",
+  login: "You can't log in here yet",
+  approve: "This login can't be let in",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -272,3 +281,39 @@ export const MY_OFFERS_HIDDEN = {
   'method-unavailable': "On, hidden: this payment method isn't available right now",
 } as const;
 export type MyOffersHidden = keyof typeof MY_OFFERS_HIDDEN;
+
+// ---------------------------------------------------------------------------------------------
+// Plan 2 Tasks 16-17: new-device approval and the 24-hour hold. COPY-UNSIGNED (Plan 3 Task 41).
+
+/** The device limit's code. */
+export const TOO_MANY_DEVICES_CODE = 'too-many-devices' satisfies CantDoCode;
+/** The hourly cap on login approvals (the web's code for 429 `slow-down` `{ reason: 'approvals' }`). */
+export const TOO_MANY_APPROVALS_CODE = 'too-many-approvals' satisfies CantDoCode;
+/** The 24-hour hold's code (a held backup session, or the account's hold). */
+export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
+
+/**
+ * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
+ * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
+ * `when` is "until Tue 3:05 PM" or "for a day".
+ */
+export function holdText(when: string): string {
+  return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
+}
+
+/** 409 `too-many-devices` on a login (the owner's own login during a hold, at the device limit). */
+export const TOO_MANY_DEVICES_LOGIN =
+  'Your account is logged in on the most devices allowed. Log out a device first, from Settings, Security on one of them, then log in here.';
+
+/** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */
+export const TOO_MANY_DEVICES_APPROVE =
+  'Your account is logged in on the most devices allowed, so log out a device first. Choose one to log out, or block this login.';
+
+/** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
+export const TOO_MANY_APPROVALS =
+  'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
+
+/** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
+export function holdApproveText(when: string): string {
+  return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
+}

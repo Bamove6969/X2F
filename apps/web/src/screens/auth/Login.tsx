@@ -15,7 +15,9 @@ import { Button } from '../../ui/Button.js';
 import { ApproveOnDevice } from './ApproveOnDevice.js';
 import { afterLogin, authApi, deviceLabel, passwordLogin, pgpLoginFinish, pgpLoginStart } from './authApi.js';
 import { loginFailure, shouldSendAway } from './loginRules.js';
-import { isExpired, refusalText } from './refusals.js';
+import { isExpired, loginCantDo, refusalText } from './refusals.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import '../screens.css';
 
 /**
@@ -32,9 +34,16 @@ export function Login() {
   const returnTo = returnToFrom(location.search);
   const [method, setMethod] = useState<Method>('choose');
   const [waiting, setWaiting] = useState<ApprovalWait | null>(null);
+  // Plan 2 Task 16 / Plan 5 Task 21: a login refused by a rule (the device limit, the hourly cap on approvals).
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
 
   const onLoggedIn = useCallback(() => void afterLogin((to) => navigate(to), returnTo), [navigate, returnTo]);
-  const go = { onLoggedIn, onWait: setWaiting };
+  const onCantDo = useCallback((e: unknown) => {
+    const c = loginCantDo(e, 'login');
+    if (c !== null) setCantDo(c);
+    return c !== null;
+  }, []);
+  const go = { onLoggedIn, onWait: setWaiting, onCantDo };
 
   if (waiting !== null) {
     return (
@@ -84,6 +93,8 @@ export function Login() {
       {method === 'security-key' ? <SecurityKeyLogin {...go} /> : null}
       {method === 'password' ? <PasswordLogin {...go} /> : null}
 
+      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.login} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
+
       <p className="x2f-screen__foot">
         <Link className="x2f-link" to={`/login/backup?returnTo=${encodeURIComponent(returnTo)}`} data-part="use-backup">
           Use a backup
@@ -106,6 +117,8 @@ function ErrorLine({ error, part }: { error: string | null; part?: string }) {
 interface Go {
   onLoggedIn: () => void;
   onWait: (w: ApprovalWait) => void;
+  /** Shows a rule's refusal in CantDoThat; false when `e` is not one (the step words it inline). */
+  onCantDo: (e: unknown) => boolean;
 }
 
 /** A two-factor login waiting for its second step: the account's `pendingId` and what it `needs`. */
@@ -121,7 +134,7 @@ const NEEDS_WORDS: Partial<Record<MethodType, string>> = { pgp: 'PGP key', 'secu
  * keys, or PGP plus a passkey). It offers exactly what the server `needs`; the `pendingId` from the
  * first step names the account, so no login name is asked for.
  */
-function SecondStep({ pending, onLoggedIn, onWait }: { pending: Pending } & Go) {
+function SecondStep({ pending, onLoggedIn, onWait, onCantDo }: { pending: Pending } & Go) {
   const offered = pending.needs.filter((m): m is 'pgp' | 'security-key' | 'passkey' => m in NEEDS_WORDS);
   const words = offered.map((m) => NEEDS_WORDS[m]!).join(' or ');
   return (
@@ -131,19 +144,19 @@ function SecondStep({ pending, onLoggedIn, onWait }: { pending: Pending } & Go) 
       ) : (
         <p className="x2f-note">This account also needs its {words}.</p>
       )}
-      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} onWait={onWait} pendingId={pending.pendingId} /> : null}
+      {offered.includes('pgp') ? <PgpLogin onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} pendingId={pending.pendingId} /> : null}
       {/* One orange action: PGP's when it is offered, else the first key's. */}
       {offered.includes('security-key') ? (
-        <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} />
+        <SecondStepKey kind="security-key" primary={!offered.includes('pgp')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />
       ) : null}
       {offered.includes('passkey') ? (
-        <SecondStepKey kind="passkey" primary={!offered.includes('pgp') && !offered.includes('security-key')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} />
+        <SecondStepKey kind="passkey" primary={!offered.includes('pgp') && !offered.includes('security-key')} pendingId={pending.pendingId} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />
       ) : null}
     </div>
   );
 }
 
-function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait }: { kind: 'security-key' | 'passkey'; primary: boolean; pendingId: string } & Go) {
+function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait, onCantDo }: { kind: 'security-key' | 'passkey'; primary: boolean; pendingId: string } & Go) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const name = kind === 'passkey' ? 'passkey' : 'security key';
@@ -160,7 +173,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait }: { kind:
       // not-a-refusal: an account state this screen cannot handle; staff support helps
       else setError('This account needs another step that this screen cannot do. Ask X2F staff support.');
     } catch (e) {
-      setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
+      if (!onCantDo(e)) setError(refusalText(e, `That ${name} did not work. Try again.`, { expired: 'That login step has expired. Choose another way and start again.' }));
     } finally {
       setBusy(false);
     }
@@ -177,7 +190,7 @@ function SecondStepKey({ kind, primary, pendingId, onLoggedIn, onWait }: { kind:
 }
 
 /** PGP login, or (with `pendingId`) the PGP second step of a two-factor login. */
-function PgpLogin({ onLoggedIn, onWait, pendingId: first }: Go & { pendingId?: string }) {
+function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pendingId?: string }) {
   const [publicKey, setPublicKey] = useState('');
   const [challenge, setChallenge] = useState<PgpChallenge | null>(null);
   const [code, setCode] = useState('');
@@ -210,6 +223,7 @@ function PgpLogin({ onLoggedIn, onWait, pendingId: first }: Go & { pendingId?: s
       else if (result.status === 'approve-on-device') onWait(result);
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
+      if (onCantDo(e)) return;
       setError(
         isExpired(e)
           ? 'That message has expired. Send a new message and try again.'
@@ -227,7 +241,7 @@ function PgpLogin({ onLoggedIn, onWait, pendingId: first }: Go & { pendingId?: s
     );
   };
 
-  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} />;
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />;
 
   return (
     <section className="x2f-stack" data-part="pgp">
@@ -282,7 +296,7 @@ function PgpLogin({ onLoggedIn, onWait, pendingId: first }: Go & { pendingId?: s
   );
 }
 
-function PasskeyLogin({ onLoggedIn, onWait }: Go) {
+function PasskeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -295,7 +309,7 @@ function PasskeyLogin({ onLoggedIn, onWait }: Go) {
       else if (result.status === 'approve-on-device') onWait(result);
       else setError('This account needs a staff login. Use PGP or a security key.');
     } catch (e) {
-      setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
+      if (!onCantDo(e)) setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
@@ -312,7 +326,7 @@ function PasskeyLogin({ onLoggedIn, onWait }: Go) {
   );
 }
 
-function SecurityKeyLogin({ onLoggedIn, onWait }: Go) {
+function SecurityKeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [loginName, setLoginName] = useState('');
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
@@ -328,13 +342,13 @@ function SecurityKeyLogin({ onLoggedIn, onWait }: Go) {
       // Staff and the owner: the second step is whatever the server needs (often PGP), never the same key again.
       else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
-      setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
+      if (!onCantDo(e)) setError(refusalText(e, 'That security key did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
   };
 
-  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} />;
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />;
 
   return (
     <section className="x2f-stack" data-part="security-key">
@@ -352,7 +366,7 @@ function SecurityKeyLogin({ onLoggedIn, onWait }: Go) {
   );
 }
 
-function PasswordLogin({ onLoggedIn, onWait }: Go) {
+function PasswordLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [loginName, setLoginName] = useState('');
   const [password, setPassword] = useState('');
   const [pendingId, setPendingId] = useState<string | null>(null);
@@ -381,7 +395,7 @@ function PasswordLogin({ onLoggedIn, onWait }: Go) {
         return;
       }
       // Any mismatch reads the same; an outage or a rate limit is not a miss.
-      setError(loginFailure(e));
+      if (!onCantDo(e)) setError(loginFailure(e));
     } finally {
       setBusy(false);
     }
@@ -395,7 +409,7 @@ function PasswordLogin({ onLoggedIn, onWait }: Go) {
       if (result.status === 'approve-on-device') onWait(result);
       else onLoggedIn();
     } catch (e) {
-      setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
+      if (!onCantDo(e)) setError(refusalText(e, 'That authenticator code did not work.', { expired: 'That login step has expired. Log in with your password again.' }));
     } finally {
       setBusy(false);
     }

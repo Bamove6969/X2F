@@ -4,7 +4,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ApprovalView, ApprovalWait } from '@x2f/auth-client';
-import { ApproveOnDevice, roomNote } from '../src/screens/auth/ApproveOnDevice.js';
+import { ApproveOnDevice } from '../src/screens/auth/ApproveOnDevice.js';
 import { LoginApprove } from '../src/screens/auth/LoginApprove.js';
 import { Devices } from '../src/screens/settings/Devices.js';
 import { fire, render } from './render.js';
@@ -46,7 +46,7 @@ const click = (el: Element | null) => fire(el!, new MouseEvent('click', { bubble
 
 const WAIT: ApprovalWait = {
   status: 'approve-on-device', approvalId: '11111111-1111-4111-8111-111111111111', number: 47,
-  expiresAt: new Date(Date.now() + 120_000).toISOString(), devices: { loggedIn: 1, max: 3, oneDevice: false },
+  expiresAt: new Date(Date.now() + 300_000).toISOString(),
 };
 
 describe('the new device (ApproveOnDevice)', () => {
@@ -66,7 +66,8 @@ describe('the new device (ApproveOnDevice)', () => {
       </MemoryRouter>,
     );
     expect(part(host, 'approve-number')?.textContent).toBe('47');
-    expect(part(host, 'approve-room')?.textContent).toContain("You're on 1 now");
+    // Review M5: nothing about the account's devices before approval.
+    expect(part(host, 'approve-room')).toBeNull();
     await settle();
     await act(async () => {
       await new Promise((r) => setTimeout(r, 30));
@@ -107,9 +108,15 @@ describe('the new device (ApproveOnDevice)', () => {
     expect(onRestart).toHaveBeenCalledOnce();
   });
 
-  it('the room note covers the limit and One device at a time', () => {
-    expect(roomNote({ loggedIn: 3, max: 3, oneDevice: false })).toContain('the most allowed');
-    expect(roomNote({ loggedIn: 1, max: 1, oneDevice: true })).toContain('One device at a time is on');
+  it('after approval it names the devices the login logged out', async () => {
+    handler = (url) => (url.endsWith('/poll') ? json(200, { status: 'ok', loggedOut: ['Safari on iOS'] }) : undefined);
+    const { host } = render(
+      <MemoryRouter>
+        <ApproveOnDevice wait={WAIT} returnTo="/" onLoggedIn={() => undefined} onRestart={() => undefined} pollMs={10} />
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(part(host, 'approve-logged-out')?.textContent).toBe('Logged out to make room: Safari on iOS.');
   });
 });
 
@@ -129,7 +136,7 @@ describe('the logged-in device (LoginApprove)', () => {
     );
     const sheet = document.body;
     expect(sheet.textContent).toContain('Someone is logging in on Chrome on Windows. Is this you?');
-    expect(sheet.textContent).toContain("X2F doesn't log IP addresses");
+    expect(sheet.textContent).toContain("Not shown: X2F doesn't log IP addresses.");
     const choices = [...sheet.querySelectorAll('[data-part="approve-choice"]')].map((b) => b.textContent);
     expect(choices).toEqual(['31', '47', '86']);
     expect((part(sheet, 'approve-yes') as HTMLButtonElement).disabled).toBe(true);
@@ -171,6 +178,11 @@ describe('the logged-in device (LoginApprove)', () => {
     click([...document.body.querySelectorAll('[data-part="approve-choice"]')][1]!);
     click(part(document.body, 'approve-yes'));
     await settle();
+    // The refusal goes through CantDoThat (Plan 5 Task 21); closing it shows the chooser.
+    expect(document.querySelector('[data-part="cant-do-that"]')?.getAttribute('data-from')).toBe('too-many-devices');
+    expect(document.querySelector('[data-part="cant-do-that"]')?.textContent).toContain('log out a device first');
+    click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
+    await settle();
     expect(part(document.body, 'approve-choose')?.textContent).toContain('Safari on iOS');
     click(part(document.body, 'approve-out'));
     click(part(document.body, 'approve-out-yes'));
@@ -180,6 +192,45 @@ describe('the logged-in device (LoginApprove)', () => {
       { choice: 47, logOut: '33333333-3333-4333-8333-333333333333' },
     ]);
     expect(part(document.body, 'approve-done')).not.toBeNull();
+  });
+
+  it('during the 24-hour hold the refusal goes through CantDoThat, and blocking still works', async () => {
+    let n = 0;
+    handler = (_url, init) => {
+      if (init?.method !== 'POST') return undefined;
+      n++;
+      return n === 1 ? json(403, { error: 'recovery-hold', holdUntil: new Date(Date.now() + 3_600_000).toISOString() }) : json(200, { outcome: 'blocked' });
+    };
+    render(
+      <MemoryRouter>
+        <LoginApprove approval={VIEW} onDone={() => undefined} />
+      </MemoryRouter>,
+    );
+    click([...document.body.querySelectorAll('[data-part="approve-choice"]')][1]!);
+    click(part(document.body, 'approve-yes'));
+    await settle();
+    const popup = document.querySelector('[data-part="cant-do-that"]');
+    expect(popup?.getAttribute('data-from')).toBe('recovery-hold');
+    expect(popup?.textContent).toContain('you can still block this login');
+    expect(document.body.textContent).not.toContain('Could not send your answer');
+    click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
+    await settle();
+    click(part(document.body, 'approve-block'));
+    await settle();
+    expect(part(document.body, 'approve-blocked')).not.toBeNull();
+  });
+
+  it('an approval that already ended says so (its own state, not a refusal)', async () => {
+    handler = (_url, init) => (init?.method === 'POST' ? json(409, { error: 'approval-ended', outcome: 'expired' }) : undefined);
+    render(
+      <MemoryRouter>
+        <LoginApprove approval={VIEW} onDone={() => undefined} />
+      </MemoryRouter>,
+    );
+    click(part(document.body, 'approve-block'));
+    await settle();
+    expect(part(document.body, 'approve-ended')).not.toBeNull();
+    expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
   });
 });
 

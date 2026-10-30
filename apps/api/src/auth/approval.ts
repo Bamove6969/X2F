@@ -239,7 +239,7 @@ export async function traderLogin(
     if (recent.rows[0]!.n >= APPROVALS_PER_HOUR) {
       const oldest = recent.rows[0]!.oldest ?? now;
       const retryAfterSeconds = Math.max(1, Math.ceil((oldest.getTime() + 3_600_000 - now.getTime()) / 1000));
-      throw new ApiError(429, 'slow-down', { retryAfterSeconds });
+      throw new ApiError(429, 'slow-down', { retryAfterSeconds, reason: 'approvals' });
     }
     // This browser's earlier open approval is superseded (its approval cookie is replaced below).
     await db.query(

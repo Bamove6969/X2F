@@ -237,10 +237,10 @@ test('a held backup session shows a banner, and a held change says until when', 
   await base(page, { me: { level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' } });
   await page.route('**/v1/account/recovery-codes', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
   await page.goto('/settings/security');
-  await expect(page.locator('[data-part="hold-banner"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await expect(page.locator('[data-part="hold-banner"]')).toContainText('Your account is on a 24-hour hold');
   await page.click('[data-add="recovery-codes"]');
   await page.click('[data-part="recovery-make"]');
-  await expect(page.locator('[data-part="recovery-codes"] [role="alert"], [data-part="recovery-error"]').first()).toContainText('changes to your account wait until');
+  await expect(page.locator('[data-part="recovery-codes"] [role="alert"], [data-part="recovery-error"]').first()).toContainText('login changes wait until');
 });
 
 test('removing the only login method is refused at once, without a confirm or a request', async ({ page }) => {
@@ -309,4 +309,18 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   expect(decision).toEqual({ choice: 47 });
   await sheet.locator('[data-part="approve-ok"]').click();
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
+// Plan 2 Task 17: a change made from a login with one way of proving it's you answers 202 held:
+// the screen says when it takes effect and does not show it as done.
+test('a held logout-timer change says when it takes effect and keeps the old value', async ({ page }) => {
+  await base(page);
+  await page.route('**/v1/account/security/logout-timer', async (r) => {
+    if (r.request().method() === 'PUT') return json({ status: 'held', holdUntil: '2099-01-02T15:00:00.000Z' }, 202)(r);
+    return json({ idleHours: 12, adjustable: true })(r);
+  });
+  await page.goto('/settings/security');
+  await page.selectOption('[data-part="logout-timer-select"]', '2');
+  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
+  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });

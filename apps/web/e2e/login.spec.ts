@@ -377,7 +377,7 @@ test('a TOTP backup login says when changes can be made, then carries on', async
   await page.fill('#backup-login-name', 'nightowl');
   await page.fill('#backup-code', '123456');
   await page.click('[data-part="backup-login"]');
-  await expect(page.locator('[data-part="hold-note"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await expect(page.locator('[data-part="hold-note"]')).toContainText('Your account is on a 24-hour hold');
   await expect(page).toHaveURL(/\/login\/backup/);
   await page.click('[data-part="hold-continue"]');
   await expect(page).toHaveURL(/\/buy$/);
@@ -401,7 +401,7 @@ test('new-device approval: the number shows, the poll lets it in, and Continue g
   const id = '11111111-1111-4111-8111-111111111111';
   await page.route('**/v1/login/password', json({
     status: 'approve-on-device', approvalId: id, number: 47,
-    expiresAt: new Date(Date.now() + 120_000).toISOString(), devices: { loggedIn: 1, max: 3, oneDevice: false },
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
   }));
   let polls = 0;
   await page.route(`**/v1/login/approval/${id}/poll`, (r) => {
@@ -415,7 +415,8 @@ test('new-device approval: the number shows, the poll lets it in, and Continue g
   await page.fill('#login-password', 'Correct-Horse-9!');
   await page.click('[data-part="password-login"]');
   await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
-  await expect(page.locator('[data-part="approve-room"]')).toContainText("there's room for this one");
+  // Review M5: nothing about the account's devices before approval.
+  await expect(page.locator('[data-part="approve-room"]')).toHaveCount(0);
   await expect(page.locator('[data-part="approve-in"]')).toBeVisible();
   await page.click('[data-part="approve-continue"]');
   await expect(page).toHaveURL(/\/buy$/);
@@ -425,7 +426,7 @@ test('new-device approval: a blocked login says so and offers a backup login', a
   const id = '22222222-2222-4222-8222-222222222222';
   await page.route('**/v1/login/password', json({
     status: 'approve-on-device', approvalId: id, number: 12,
-    expiresAt: new Date(Date.now() + 120_000).toISOString(), devices: { loggedIn: 3, max: 3, oneDevice: false },
+    expiresAt: new Date(Date.now() + 300_000).toISOString(),
   }));
   await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'blocked' }));
   await page.goto('/login');
@@ -436,4 +437,19 @@ test('new-device approval: a blocked login says so and offers a backup login', a
   await expect(page.locator('[data-part="approve-blocked"]')).toContainText('This login was blocked');
   await page.click('[data-part="approve-retry"]');
   await expect(page.locator('[data-method="password"]')).toBeVisible();
+});
+
+// Plan 2 Task 16 (review M6): the owner's own login during a hold at the device limit is refused
+// through CantDoThat (Plan 5 Task 21), not inline.
+test('a login at the device limit opens CantDoThat: log out a device first', async ({ page }) => {
+  await page.route('**/v1/login/password', json({ error: 'too-many-devices' }, 409));
+  await page.goto('/login');
+  await page.click('[data-method="password"]');
+  await page.fill('#login-name', 'nightowl');
+  await page.fill('#login-password', 'Correct-Horse-9!');
+  await page.click('[data-part="password-login"]');
+  const popup = page.locator('[role="dialog"] [data-part="cant-do-that"]');
+  await expect(popup).toHaveAttribute('data-from', 'too-many-devices');
+  await expect(popup).toContainText('Log out a device first');
+  await expect(page.locator('[data-part="login-error"]')).toHaveCount(0);
 });

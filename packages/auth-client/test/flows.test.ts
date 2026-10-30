@@ -280,11 +280,14 @@ describe('a flood of bad passwords (Review Focus 2, P2-C1)', () => {
     // and the live session gets a confirm token by passkey and uses it.
     const token = await confirmWithWebAuthn(own.api, { kind: 'new-recovery-codes' }, ceremonyOf(soft));
     expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array) });
-    // So does a confirm by password from the trusted browser, still with no time passing.
+    // Plan 2 Task 17: that session logged in with the password alone, so the change waits out the
+    // 24-hour hold (it is not refused by the flood).
+    await expect(own.api.newRecoveryCodes({ confirmToken: token })).resolves.toMatchObject({ codes: expect.any(Array), status: 'held' });
+    // So does a confirm by password from the trusted browser, still with no time passing; the next
+    // change is refused by the hold, not by the flood.
     const byPassword = await own.api.confirmPassword({ password: GOOD, action: { kind: 'new-recovery-codes' } });
     expect(byPassword.confirmToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
-    await expect(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken })).resolves.toMatchObject({ codes: expect.any(Array) });
+    expect(apiError(await failure(own.api.newRecoveryCodes({ confirmToken: byPassword.confirmToken }))).code).toBe('recovery-hold');
 
     // The flood is still in force for the stranger.
     expect(apiError(await failure(stranger.api.loginPassword({ loginName: username, password: GOOD, deviceLabel: LABEL }))).code).toBe('credentials-invalid');

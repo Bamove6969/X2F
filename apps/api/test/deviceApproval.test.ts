@@ -342,7 +342,7 @@ describe('limits on approvals', () => {
     for (let i = 0; i < APPROVALS_PER_HOUR; i++) await waitFor(new Browser(), name);
     const res = await new Browser().login(name);
     expect(res.statusCode).toBe(429);
-    expect(res.json()).toMatchObject({ error: 'slow-down' });
+    expect(res.json()).toMatchObject({ error: 'slow-down', reason: 'approvals' });
     expect(Number(res.headers['retry-after'])).toBeGreaterThan(0);
   });
 });

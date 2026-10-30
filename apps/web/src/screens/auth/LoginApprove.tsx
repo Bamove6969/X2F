@@ -14,9 +14,12 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { AuthApiError, type ApprovalView } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, TOO_MANY_DEVICES_CODE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { formatRemaining } from '../../ui/Countdown.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
+import { loginCantDo } from './refusals.js';
 import '../screens.css';
 
 type Session = NonNullable<AuthApiError['sessions']>[number];
@@ -40,6 +43,8 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
   const [out, setOut] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // A rule refusing the answer (the device limit, the 24-hour hold): CantDoThat (Plan 5 Task 21).
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
   const [left, setLeft] = useState(() => new Date(approval.expiresAt).getTime() - Date.now());
 
   useEffect(() => {
@@ -59,8 +64,12 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
       const { outcome } = await authApi.decideApproval(approval.id, b);
       setStage(outcome === 'approved' ? { kind: 'approved' } : { kind: 'blocked', wrong: !('block' in b) });
     } catch (e) {
-      if (e instanceof AuthApiError && e.code === 'too-many-devices') setStage({ kind: 'choose', sessions: e.sessions ?? [] });
-      else if (e instanceof AuthApiError && e.code === 'approval-ended') setStage({ kind: 'ended' });
+      const refused = loginCantDo(e, 'approve');
+      if (refused !== null) {
+        setCantDo(refused);
+        // At the device limit the chooser comes next; during the hold blocking stays offered.
+        if (e instanceof AuthApiError && refused.code === TOO_MANY_DEVICES_CODE) setStage({ kind: 'choose', sessions: e.sessions ?? [] });
+      } else if (e instanceof AuthApiError && e.code === 'approval-ended') setStage({ kind: 'ended' });
       else setError('Could not send your answer. Try again.');
     } finally {
       setBusy(false);
@@ -85,7 +94,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
       <div className="x2f-stack" data-part="approve-blocked">
         <p className="x2f-sheet__body">{stage.wrong ? 'That number did not match, so the login was blocked.' : 'The login was blocked.'}</p>
         <p className="x2f-label">Change your login method</p>
-        <p className="x2f-note">If you didn't try to log in, someone else may have your login details. Change how you log in now so they can't try again.</p>
+        <p className="x2f-note">If you didn't try to log in, someone else may have your login details. Change how you log in now to keep them out.</p>
         <Button
           variant="primary"
           onClick={() => {
@@ -114,7 +123,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     body = (
       <div className="x2f-stack" data-part="approve-choose">
         <p className="x2f-label">Choose a device to log out</p>
-        <p className="x2f-sheet__body">You can be logged in on only so many devices at once. To let {label} in, one of these has to be logged out.</p>
+        <p className="x2f-sheet__body">To let {label} in, choose a device to log out.</p>
         <div className="x2f-stack" role="group" aria-label="Device to log out">
           {stage.sessions.map((s) => (
             <Button
@@ -150,7 +159,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
             <span className="x2f-list__label">Time</span> <span data-mask="clock">{when(approval.createdAt)}</span>
           </li>
           <li className="x2f-list__row">
-            <span className="x2f-list__label">Where</span> Not shown. X2F doesn't log IP addresses, so we can't show where.
+            <span className="x2f-list__label">Where</span> Not shown: X2F doesn't log IP addresses.
           </li>
         </ul>
         <p className="x2f-label" id="approve-numbers">
@@ -199,9 +208,12 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
   }
 
   return (
-    <Sheet open title="New login" onClose={onDone}>
-      {body}
-    </Sheet>
+    <>
+      <Sheet open={cantDo === null} title="New login" onClose={onDone}>
+        {body}
+      </Sheet>
+      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.approve} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
+    </>
   );
 }
 

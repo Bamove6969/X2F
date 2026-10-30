@@ -14,9 +14,24 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
 import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
-import type { ApiErrorCode, ApprovalView, ApprovalWait, DeviceRoom, IssuedChallenge, LoginResult } from '@x2f/api';
+import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
 
-export type { ApiErrorCode, ApprovalView, ApprovalWait, DeviceRoom, LoginResult };
+export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
+
+/**
+ * Plan 2 Task 17: a security change made from a login with only one way of proving it's you
+ * (202): nothing changed yet; the change waits until `holdUntil` (the account's 24-hour hold), and
+ * a strong login with a method held before the hold cancels it.
+ */
+export interface Held {
+  status: 'held';
+  holdUntil: string;
+}
+
+/** True for a change that waits out the 24-hour hold (202 `{ status: 'held', holdUntil }`). */
+export function isHeld(x: unknown): x is Held {
+  return x !== null && typeof x === 'object' && (x as { status?: unknown }).status === 'held' && typeof (x as { holdUntil?: unknown }).holdUntil === 'string';
+}
 
 /** A refused call: the HTTP status, the API's error code and the extra fields it sent. */
 export class AuthApiError extends Error {
@@ -38,10 +53,10 @@ export class AuthApiError extends Error {
   readonly misses?: number;
   /** The open full sessions to choose from (409 `too-many-devices`, Task 16). */
   readonly sessions?: Array<{ id: string; deviceLabel: string; lastSeenAt: string; current: boolean }>;
+  /** Why a 429 `slow-down` was sent: `approvals` for the hourly cap on login approvals (Task 16), else absent (a throttle on tries). */
+  readonly reason?: string;
   /** How a decided approval ended (409 `approval-ended`, Task 16). */
   readonly outcome?: 'approved' | 'blocked' | 'expired';
-  /** When the account's cooling-off ends (403 `cooling-off`, Task 17). */
-  readonly coolingUntil?: string;
 
   constructor(status: number, code: ApiErrorCode, extra: Record<string, unknown> = {}) {
     super(code);
@@ -65,7 +80,7 @@ export class AuthApiError extends Error {
           typeof s.lastSeenAt === 'string' && typeof s.current === 'boolean',
       );
     }
-    if (typeof extra.coolingUntil === 'string') this.coolingUntil = extra.coolingUntil;
+    if (typeof extra.reason === 'string' && /^[a-z-]{1,40}$/.test(extra.reason)) this.reason = extra.reason;
     if (extra.outcome === 'approved' || extra.outcome === 'blocked' || extra.outcome === 'expired') this.outcome = extra.outcome;
   }
 }
@@ -167,8 +182,8 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
-  /** Task 17: when the account's 24-hour cooling-off ends, while one runs. Optional: older API builds do not send it. */
-  coolingUntil?: string | null;
+  /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
+  accountHoldUntil?: string | null;
 }
 
 /** Task 11: one signed-in device. */
@@ -284,7 +299,7 @@ export interface AuthApi {
   loginWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON; deviceLabel: string; pendingId?: string }): Promise<LoginResult>;
   logout(): Promise<void>;
   /** `POST /v1/account/login-name` (review I3): a pre-009 account sets its private login name once, with a `set-login-name` confirm token (`withConfirm`); 409 `login-name-set` afterwards, 409 `names-unavailable` for a taken name in either namespace, 400 `names-same` / `login-name-invalid`. */
-  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true }>;
+  setLoginName(b: { loginName: string; confirmToken?: string }): Promise<{ ok: true } | Held>;
 
   // Confirm it's you: each returns a single-use token bound to this session and exactly `action`.
   confirmPassword(b: { password: string; action: ConfirmAction; totp?: string }): Promise<ConfirmTokenResult>;
@@ -294,21 +309,25 @@ export interface AuthApi {
   confirmWebAuthnFinish(b: { challengeId: string; response: AuthenticationResponseJSON }): Promise<ConfirmTokenResult>;
 
   // Login methods of the account
+  /**
+   * Task 17: each change below answers `Held` (202) instead when made from a login with only one
+   * way of proving it's you: nothing changed yet, it waits out the 24-hour hold (`isHeld`).
+   */
   /** `PUT /v1/account/password` (Task 10). */
-  setPassword(b: { password: string } & Token): Promise<void>;
+  setPassword(b: { password: string } & Token): Promise<Held | undefined>;
   addPgpKeyStart(b: { publicKey: string } & Token): Promise<PgpChallenge>;
-  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string }>;
+  addPgpKeyFinish(b: { challengeId: string; code: string }): Promise<{ fingerprint: string } & Partial<Held>>;
   addWebAuthnStart(b: { kind: WebAuthnKind } & Token): Promise<RegistrationChallenge>;
-  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<void>;
+  addWebAuthnFinish(b: { challengeId: string; response: RegistrationResponseJSON; label?: string }): Promise<Held | undefined>;
   /** `secret` (base32) and `otpauthUri` are for the authenticator app only: show them, never keep them. */
   addTotpStart(b: Token): Promise<{ challengeId: string; otpauthUri: string; secret: string }>;
-  addTotpFinish(b: { challengeId: string; code: string }): Promise<void>;
-  newRecoveryCodes(b: Token): Promise<{ codes: string[] }>;
+  addTotpFinish(b: { challengeId: string; code: string }): Promise<Held | undefined>;
+  newRecoveryCodes(b: Token): Promise<{ codes: string[] } & Partial<Held>>;
   cancelRecoverySession(id: string): Promise<void>;
   /** `GET /v1/account/methods` (Task 10). */
   listMethods(): Promise<MethodEntry[]>;
   /** `DELETE /v1/account/methods/:type/:id` (Task 10), the token in a JSON body (R17). */
-  removeMethod(type: MethodType, id: string, b: Token): Promise<void>;
+  removeMethod(type: MethodType, id: string, b: Token): Promise<Held | undefined>;
 
   // Account overview (Task 11)
   me(): Promise<AccountOverview>;
@@ -326,7 +345,7 @@ export interface AuthApi {
   decideApproval(id: string, b: ApprovalDecision): Promise<{ outcome: 'approved' | 'blocked' }>;
   getDeviceSettings(): Promise<DeviceSettings>;
   /** Confirm-it's-you for `{ kind: 'set-one-device', on }` (`withConfirm`). */
-  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings>;
+  setOneDevice(b: { on: boolean } & Token): Promise<DeviceSettings | Held>;
 
   // Wallets (Task 12)
   listWallets(): Promise<Wallet[]>;
@@ -347,7 +366,7 @@ export interface AuthApi {
   // Logout timer (owner, 2026-10-23)
   getLogoutTimer(): Promise<LogoutTimer>;
   /** Full trader sessions only; applies to the current session at once. */
-  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer>;
+  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
 }
 
 type Method = 'GET' | 'POST' | 'PUT' | 'DELETE';
@@ -417,6 +436,11 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
   const done = async (p: Promise<unknown>): Promise<void> => {
     await p;
   };
+  /** Nothing, or the `Held` answer of a change that waits out the hold (Task 17). */
+  const heldOrDone = async (p: Promise<unknown>): Promise<Held | undefined> => {
+    const r = await p;
+    return isHeld(r) ? r : undefined;
+  };
 
   return {
     getTerms: () => get('/v1/terms'),
@@ -444,17 +468,17 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     confirmWebAuthnStart: (b) => post('/v1/confirm/webauthn/start', b),
     confirmWebAuthnFinish: (b) => post('/v1/confirm/webauthn/finish', b),
 
-    setPassword: (b) => done(call('PUT', '/v1/account/password', b)),
+    setPassword: (b) => heldOrDone(call('PUT', '/v1/account/password', b)),
     addPgpKeyStart: (b) => post('/v1/account/pgp/start', b),
     addPgpKeyFinish: (b) => post('/v1/account/pgp/finish', b),
     addWebAuthnStart: (b) => post('/v1/account/webauthn/start', b),
-    addWebAuthnFinish: (b) => done(post('/v1/account/webauthn/finish', b)),
+    addWebAuthnFinish: (b) => heldOrDone(post('/v1/account/webauthn/finish', b)),
     addTotpStart: (b) => post('/v1/account/totp/start', b),
-    addTotpFinish: (b) => done(post('/v1/account/totp/finish', b)),
+    addTotpFinish: (b) => heldOrDone(post('/v1/account/totp/finish', b)),
     newRecoveryCodes: (b) => post('/v1/account/recovery-codes', b),
     cancelRecoverySession: (id) => done(call('DELETE', `/v1/account/recovery-sessions/${seg(id)}`)),
     listMethods: () => get('/v1/account/methods'),
-    removeMethod: (type, id, b) => done(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
+    removeMethod: (type, id, b) => heldOrDone(call('DELETE', `/v1/account/methods/${seg(type)}/${seg(id)}`, b)),
 
     me: () => get('/v1/account/me'),
     acceptTerms: (b) => done(post('/v1/account/terms', b)),

@@ -9,17 +9,19 @@
  * progress (test/devices-tripwire.test.ts NEEDS_DESIGN_DEVICES). The words are the board's.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
+import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { refusalText } from '../auth/refusals.js';
+import { heldNote, refusalText } from '../auth/refusals.js';
 
 export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<string> }) {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
   const [settings, setSettings] = useState<DeviceSettings | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
+  const [held, setHeld] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setSessions(await authApi.listSessions());
@@ -49,13 +51,15 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     const on = !settings.oneDevice;
     setBusy(true);
     setError(null);
+    setHeld(null);
     try {
       const next = await withConfirm(
         { kind: 'set-one-device', on: on ? 'on' : 'off' },
         (t) => authApi.setOneDevice({ on, ...(t !== undefined ? { confirmToken: t } : {}) }),
         prove,
       );
-      setSettings(next);
+      if (isHeld(next)) setHeld(heldNote(next.holdUntil));
+      else setSettings(next);
     } catch (e) {
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
     } finally {
@@ -123,6 +127,11 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
           >
             {settings.oneDevice ? 'On' : 'Off'}
           </Button>
+          {held !== null ? (
+            <p className="x2f-note" role="status" data-part="held-note">
+              {held}
+            </p>
+          ) : null}
           <p className="x2f-label">How a new device gets in</p>
           <p className="x2f-note">
             When you log in somewhere new, every device here asks "Is this you?" and you tap the number the new device shows. If you say no, the login is
