@@ -1,17 +1,18 @@
 import { describe, expect, it } from 'vitest';
 import { detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, type Region } from '../src/index.js';
+import { type DetectOptions, UPI_IDS } from '../src/detect.js';
 import { covered, ocr } from './ocr.js';
 
 const KEEP = { tradeCode: 'K7M2-9QXA-4FTR-8WPN', fiatCents: 41250n, exponent: 2 };
 
 /** Every masked word, with the kind of the region that covers it. */
-function masked(words: OcrWord[], keep = KEEP): Array<[string, HiddenKind]> {
-  const rs: Region[] = detectSensitive(words, keep);
+function masked(words: OcrWord[], keep = KEEP, opts?: DetectOptions): Array<[string, HiddenKind]> {
+  const rs: Region[] = detectSensitive(words, keep, opts);
   return rs.flatMap((r) => covered(words, r).map((t): [string, HiddenKind] => [t, r.kind]));
 }
 
-function maskedTexts(words: OcrWord[], keep = KEEP): string[] {
-  return masked(words, keep).map(([t]) => t);
+function maskedTexts(words: OcrWord[], keep = KEEP, opts?: DetectOptions): string[] {
+  return masked(words, keep, opts).map(([t]) => t);
 }
 
 describe('detectSensitive: card numbers (spec 4.2)', () => {
@@ -444,7 +445,22 @@ const PHONES: Record<string, string[]> = {
   NL: ['06-12345678', '+31 6 12345678', '020 123 4567', '020-1234567'],
   ES: ['612 34 56 78', '+34 612 345 678', '91 123 45 67', '612 345 678'],
   IT: ['347 123 4567', '347.1234567', '+39 06 1234 5678', '02.12345678', '+39 347 1234567'],
-  BE: ['0470/12.34.56', '0470 12 34 56', '+32 470 12 34 56', '0470 01.02.03', '+32 470 01.02.03', '02/123.45.67', '0470.12.34.56'],
+  BE: ['0470/12.34.56', '0470 12 34 56', '+32 470 12 34 56', '0470 01.02.03', '+32 470 01.02.03', '02/123.45.67', '0470.12.34.56', '+32 (0)470 01.02.03', '+32(0)470 01.02.03'],
+  // Round 3 (review 2026-10-30): the reviewer's extra countries.
+  PT: ['912 345 678', '+351 21 123 4567'],
+  PL: ['22 123 45 67', '(22) 123 45 67'],
+  SE: ['070-123 45 67', '08-12 34 56'],
+  CH: ['079 123 45 67', '079/123.45.67', '+41 (0)79 123 45 67'],
+  AT: ['0664/123 45 67', '+43 (0)1 1234567', '0664/12.34.567'],
+  IE: ['(01) 234 5678'],
+  MX: ['+52 1 55 1234 5678', '(55) 1234-5678'],
+  BR: ['(11) 91234-5678', '(11)91234-5678', '+55 (11) 9 1234-5678'],
+  AU: ['(02) 9876 5432', '+61 (0)412 345 678'],
+  IN: ['98765 43210', '+91-98765-43210'],
+  NG: ['+234 (0) 803 123 4567'],
+  // Round 3: Unicode dashes and spaces inside one OCR word, and OCR look-alikes.
+  'Unicode separators': ['415–555–0134', '415—555—0134', '06–12–34–56–78', '415‐555‐0134', '415−555−0134', '06\u202f12\u202f34\u202f56\u202f78', '06\u00a012\u00a034\u00a056\u00a078'],
+  'OCR look-alikes': ['O6 12 34 56 78', '+44 77OO 9OO123', '0612 3456 7B', '(4l5) 555-Ol34', '+49 l7l l234567'],
 };
 
 describe('phone formats per country', () => {
@@ -460,4 +476,105 @@ describe('phone formats per country', () => {
       }
     });
   }
+});
+
+describe('review round 3 (2026-10-30)', () => {
+  it('R3-I3: Unicode dashes in OCR words are separators', () => {
+    expect(masked(ocr('Card 4111–1111–1111–1111'))).toEqual([['4111–1111–1111–1111', 'card']]);
+    expect(masked(ocr('Card 4111—1111—1111—1111'))).toEqual([['4111—1111—1111—1111', 'card']]);
+    expect(masked(ocr('IBAN DE89–3704–0044–0532–0130–00'))).toEqual([['DE89–3704–0044–0532–0130–00', 'iban']]);
+    expect(masked(ocr('Tel 415−555−0134'))).toEqual([['415−555−0134', 'phone']]);
+  });
+
+  it('R3-I3: Unicode dashes, spaces, tabs and digits in notes', () => {
+    expect(detectSensitiveText('card 4111–1111–1111–1111')).toEqual(['card']);
+    expect(detectSensitiveText('iban DE89–3704–0044–0532–0130–00')).toEqual(['iban']);
+    expect(detectSensitiveText('card 4111\u00a01111\u00a01111\u00a01111')).toEqual(['card']);
+    expect(detectSensitiveText('iban DE89\u00a03704\u00a00044\u00a00532\u00a00130\u00a000')).toEqual(['iban']);
+    expect(detectSensitiveText('call 06\u202f12\u202f34\u202f56\u202f78')).toEqual(['phone']);
+    expect(detectSensitiveText('call 06\t12\t34\t56\t78')).toEqual(['phone']);
+    expect(detectSensitiveText('call ０６１２３４５６７８')).toEqual(['account']);
+    expect(detectSensitiveText('call ٠٦١٢٣٤٥٦٧٨')).toEqual(['account']);
+    expect(detectSensitiveText('call ۰۶۱۲۳۴۵۶۷۸')).toEqual(['account']);
+    expect(detectSensitiveText('call ०६१२३४५६७८')).toEqual(['account']);
+    expect(detectSensitiveText('call ٠٦ ١٢ ٣٤ ٥٦ ٧٨')).toEqual(['phone']);
+    expect(detectSensitiveText('mail ｊａｎｅ＠ｅｘａｍｐｌｅ．ｃｏｍ')).toEqual(['email']);
+    // Normalisation does not invent details.
+    expect(detectSensitiveText('took 15 – 20 minutes, paid 15,50\u00a0€')).toEqual([]);
+  });
+
+  it('R3-I3: astral digits (two UTF-16 units each) keep the offsets in line', () => {
+    expect(detectSensitiveText('call 𝟎𝟔 𝟏𝟐 𝟑𝟒 𝟓𝟔 𝟕𝟖')).toEqual(['phone']);
+    const w = ocr('Tel 𝟎𝟔-𝟏𝟐-𝟑𝟒-𝟓𝟔-𝟕𝟖 ok jane@x.io ok');
+    expect(masked(w)).toEqual([
+      ['𝟎𝟔-𝟏𝟐-𝟑𝟒-𝟓𝟔-𝟕𝟖', 'phone'],
+      ['jane@x.io', 'email'],
+    ]);
+    // A kept part in the same word as an astral-digit number: the region still starts after the code.
+    const rs = detectSensitive(ocr('K7M2-9QXA-4FTR-8WPN/𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖'), KEEP);
+    expect(rs).toEqual([{ x0: 190, y0: 0, x1: 360, y1: 16, kind: 'account' }]);
+  });
+
+  it('R3-I1: only real currency or crypto codes make a long decimal an amount', () => {
+    for (const s of ['TEL 347.1234567', 'SMS 347.1234567', 'MOB 347.1234567', 'CEL 347.1234567', '347.1234567 SMS only', 'call 347.1234567 PLS', 'call 612.345678 SMS']) {
+      expect(detectSensitiveText(s), s).toEqual(['phone']);
+    }
+    for (const s of ['got 0.12345678 XMR', 'got 0.12345678 xmr', 'got 0.12345678 Monero', 'Rate 1.0234 EUR/XMR', 'paid 0.0012345 btc', 'USDT 0.123456', '€ 1.2345']) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+  });
+
+  it('R3-I2: the Belgian (0) form', () => {
+    expect(maskedTexts(ocr('Tel +32 (0)470 01.02.03'))).toEqual(['+32', '(0)470', '01.02.03']);
+    expect(maskedTexts(ocr('Tel +32(0)470 01.02.03'))).toEqual(['+32(0)470', '01.02.03']);
+    expect(detectSensitiveText('call +32 (0)470 01.02.03')).toEqual(['phone']);
+    expect(detectSensitiveText('Paid 412.50 16.10.26')).toEqual([]);
+  });
+
+  it('R3-M2: Monero addresses wrapped more than once, split by spaces, or shortened with spaces', () => {
+    const lines = ['44AFFq5kSiGBoZ4NMDwYtN18', 'obc8AemS33DBLWs3H7otXft3', 'XjrpDtQGv7SqSsaBYBb98uNb', 'r2VBBEt7f2wfn3RVGQBEP3A'];
+    expect(masked(ocr(...lines))).toEqual(lines.map((t) => [t, 'account']));
+    const addr = lines.join('');
+    const parts = [addr.slice(0, 30), addr.slice(30, 60), addr.slice(60)];
+    expect(masked(ocr(parts.join(' ')))).toEqual(parts.map((t) => [t, 'account']));
+    expect(masked(ocr('Wallet 44AFFq … QBEP3A')).map(([t]) => t)).toEqual(['44AFFq', '…', 'QBEP3A']);
+    expect(detectSensitiveText(`send to ${lines[0]} ${lines[1]}`)).toEqual(['account']);
+  });
+
+  it('R3-M3: emails split around the TLD dot or misread, and UPI IDs', () => {
+    expect(maskedTexts(ocr('Contact jane@example .com'))).toEqual(['jane@example', '.com']);
+    expect(maskedTexts(ocr('Contact jane@example. com'))).toEqual(['jane@example.', 'com']);
+    expect(maskedTexts(ocr('Contact jane @example .com'))).toEqual(['jane', '@example', '.com']);
+    expect(masked(ocr('Contact jane@example.c0m'))).toEqual([['jane@example.c0m', 'email']]);
+    expect(masked(ocr('UPI jane@okaxis'))).toEqual([['jane@okaxis', 'account']]);
+    expect(masked(ocr('Mail jane.doe@gmail'))).toEqual([['jane.doe@gmail', 'account']]);
+    expect(detectSensitiveText('pay jane@okaxis')).toEqual(['account']);
+    expect(detectSensitiveText('mail jane@example.com')).toEqual(['email']);
+  });
+
+  it('R3-M3: the UPI rule follows its flag (PENDING OWNER, owner item 34)', () => {
+    expect(UPI_IDS).toBe(true);
+    expect(detectSensitiveText('pay jane@okaxis', { upiIds: false })).toEqual([]);
+    expect(detectSensitiveText('pay jane@okaxis', { upiIds: true })).toEqual(['account']);
+    expect(maskedTexts(ocr('UPI jane@okaxis'), KEEP, { upiIds: false })).toEqual([]);
+    expect(maskedTexts(ocr('UPI jane@okaxis'), KEEP, { upiIds: true })).toEqual(['jane@okaxis']);
+  });
+
+  it('R3-M4: a look-alike in a bracketed area code or a short group is masked', () => {
+    expect(masked(ocr('Tel (4l5) 555-Ol34'))).toEqual(['(4l5)', '555-Ol34'].map((t) => [t, 'phone']));
+    expect(masked(ocr('Tel +49 l7l l234567'))).toEqual(['+49', 'l7l', 'l234567'].map((t) => [t, 'phone']));
+  });
+
+  it('R3-M5: spaced dates, date ranges, "ending in" a year, single-x tails', () => {
+    for (const s of ['16. 10. 2026', 'from 16.10.2026-17.10.2026', 'from 16.10.2026 – 17.10.2026', 'contract ending in 2026']) expect(detectSensitiveText(s), s).toEqual([]);
+    expect(maskedTexts(ocr('Sent 16. 10. 2026'))).toEqual([]);
+    expect(detectSensitiveText('card ending in 1234')).toEqual(['account']);
+    expect(maskedTexts(ocr('Card ending in 2026'))).toEqual(['2026']);
+    expect(masked(ocr('Acc x1234'))).toEqual([['x1234', 'account']]);
+  });
+
+  it('other masked forms from the round-3 table', () => {
+    expect(masked(ocr('Tel 08031234567'))).toEqual([['08031234567', 'account']]);
+    expect(detectSensitiveText('call 08031234567')).toEqual(['account']);
+  });
 });
