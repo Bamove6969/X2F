@@ -2,7 +2,7 @@
 // Plan 7 Task 4: Settings → Privacy states the one retention rule from the shared constants.
 import { BACKUP_KEEP_DAYS, DISPUTE_KEEP_DAYS, TRADE_KEEP_DAYS } from '@x2f/trade';
 import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { URL as NodeURL, fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { PRIVACY_COPY, Privacy } from '../src/screens/settings/Privacy.js';
 import { render } from './render.js';
@@ -20,7 +20,7 @@ describe('Privacy', () => {
   });
 
   it('types no number of days itself and never mentions a 6-month copy (Revision 2026-10-29b)', () => {
-    const src = readFileSync(fileURLToPath(new URL('../src/screens/settings/Privacy.tsx', import.meta.url)), 'utf8');
+    const src = readFileSync(fileURLToPath(new NodeURL('../src/screens/settings/Privacy.tsx', import.meta.url)), 'utf8');
     const copy = src.slice(src.indexOf('export const PRIVACY_COPY'));
     expect(copy).not.toMatch(/\b(14|30|90)\b/);
     expect(JSON.stringify(PRIVACY_COPY)).not.toMatch(/month/i);

@@ -100,6 +100,11 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
     const before = { s: await completed(seller.id), b: await completed(buyer.id), cap: await tradeCap(deps.db, buyer.id, at(40)) };
     expect(before.s).toBeGreaterThan(0);
     expect(await tradeDeleteDate(deps.db, t.code, START)).toEqual(new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY));
+    // Both traders' view carries the date (Task 3, TradeView.deleteAt).
+    for (const who of [buyer, seller]) {
+      const v = (await who.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: string | null };
+      expect(v.deleteAt).toBe(new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY).toISOString());
+    }
 
     await purgeTrades(deps.db, new Date(closed.getTime() + TRADE_KEEP_DAYS * DAY - 1));
     expect(await exists(t.code)).toBe(true);
@@ -118,8 +123,9 @@ describe('purgeTrades (Plan 7 Task 2)', () => {
   });
 
   it('never deletes an open trade, however old', async () => {
-    const { t } = await tradeIn('secured');
+    const { buyer, t } = await tradeIn('secured');
     expect(await tradeDeleteDate(deps.db, t.code, START)).toBeNull();
+    expect(((await buyer.browser.get(`/v1/trades/${t.code}`)).json() as { deleteAt: unknown }).deleteAt).toBeNull();
     await purgeTrades(deps.db, at(5_000));
     expect(await exists(t.code)).toBe(true);
   });
