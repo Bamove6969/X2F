@@ -64,11 +64,21 @@ function actorColumns(a: Actor): { kind: Actor['kind']; id: string | null; role:
  * the advisory lock is held until it ends, so appends are serialised and the chain never forks;
  * the trigger refuses any other isolation level and a unique index refuses a second child).
  *
- * The lock serialises every append on the site until the commit (M2). So: append LAST, just
- * before the commit, and never await another connection (or anything slow) while the log lock is
- * held; a caller that holds it and waits on a second pool connection that appends hangs forever,
- * and Postgres cannot see that deadlock. Throws LogDetailError
- * for a detail its action does not allow, and TypeError for an invalid trade code or staff id.
+ * The lock is taken by the first append and held until the transaction ends, and it serialises
+ * every append on the site (M2). The rule (N3):
+ * - From the first append to the commit, run only statements on this same `client`, and keep that
+ *   tail short. Never await another connection, the network, a wallet RPC, a timer or anything slow
+ *   while the lock is held: a caller that waits on a second pool connection that appends hangs
+ *   forever, and Postgres cannot see that deadlock.
+ * - So by default append last, just before the commit.
+ * - The one exception is the appeal path (Task 24, R37): append `appeal.opened` FIRST, then, on the
+ *   same client, read the log with `involvedIn(..., { beforeId: <that entry's id> })` and write the
+ *   dispute row, then commit. Holding the lock, every earlier staff entry has committed and the
+ *   READ COMMITTED read sees it. Reading `involvedIn` before the append is wrong: a staff entry
+ *   committed between that read and the append would be missed.
+ *
+ * Throws LogDetailError for a detail its action does not allow, and TypeError for an invalid trade
+ * code or staff id.
  */
 export async function appendLog(
   client: pg.PoolClient,
