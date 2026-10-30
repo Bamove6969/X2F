@@ -3,11 +3,17 @@
 // and Task 20's ChatPanel (the Desktop board's chat column). A production bundle never contains
 // this file (test/bundle.test.ts).
 import { setPaymentDetailsSource, setTradeChat, type TradeChatProps } from '../screens/trade/paySeams.js';
+import { useKeptText } from '../ui/fold.js';
 import { PAY_CHAT, PAY_DETAILS } from './payBoard.js';
 import './payChat.css';
 
-/** The Desktop board's chat column, standing in for Task 20's ChatPanel. */
-function BoardChat({ name }: TradeChatProps) {
+/**
+ * The Desktop board's chat column, standing in for Task 20's ChatPanel. Its draft is kept above
+ * the layout (useKeptText), as Task 20's panel must keep it: folding moves the chat between its
+ * pane and the Chat sheet (Task 40).
+ */
+function BoardChat({ code, name }: TradeChatProps) {
+  const [draft, setDraft] = useKeptText(`chat:${code}`);
   return (
     <div className="x2f-board-chat">
       <div className="x2f-board-chat__log">
@@ -22,7 +28,7 @@ function BoardChat({ name }: TradeChatProps) {
         <label htmlFor="msg" className="x2f-board-chat__label">
           Message
         </label>
-        <input id="msg" type="text" placeholder={`Message ${name}`} className="x2f-board-chat__input" />
+        <input id="msg" type="text" placeholder={`Message ${name}`} className="x2f-board-chat__input" value={draft} onChange={(e) => setDraft(e.target.value)} />
         <button type="button" aria-label={`Nudge ${name} with a sound`} className="x2f-board-chat__nudge">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
             <path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9" />

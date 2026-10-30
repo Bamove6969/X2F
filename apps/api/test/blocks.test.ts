@@ -102,9 +102,10 @@ describe('GET, POST and DELETE /v1/account/blocks', () => {
     expect(Object.keys(list[0]!).sort()).toEqual(['blockedAt', 'displayName']);
     // Who blocked me is never answered: c blocked a, and a's list only has a's own blocks.
     expect(((await b.browser.get('/v1/account/blocks')).json() as unknown[]).length).toBe(0);
-    // The private login name is never sent.
-    const { rows } = await deps.db.query<{ login_name: string }>('select login_name from accounts where id = $1', [b.id]);
-    expect((await a.browser.get('/v1/account/blocks')).body).not.toContain(JSON.stringify(rows[0]!.login_name));
+    // The private login name is never sent. The database holds only its tag (FU-D), so the test
+    // compares with the name the helper signed up with.
+    expect((await deps.db.query('select login_name, login_key from accounts where id = $1', [b.id])).rows[0]).toEqual({ login_name: null, login_key: null });
+    expect((await a.browser.get('/v1/account/blocks')).body.toLowerCase()).not.toContain(b.loginName.toLowerCase());
 
     await unblock(a, b);
     await unblock(a, b);

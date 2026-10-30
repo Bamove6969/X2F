@@ -5,7 +5,9 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import type { Deps } from '../app.js';
 import type { Config } from '../config.js';
 import { addAlert } from '../alerts.js';
-import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup } from '../accounts.js';
+import {
+  assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, loginNameLookup, loginTagMatch, retagLoginName, type LoginTags,
+} from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { ARGON2_SLOTS } from '../limits.js';
 import { parseConfirmAction } from './actionInput.js';
@@ -98,25 +100,28 @@ function strings<K extends string>(body: unknown, keys: readonly K[]): Record<K,
  * The stored hash to check a password against: the account's own when it exists, has a password
  * and its kind may use one; otherwise `DUMMY_HASH`, so every path runs exactly one Argon2 verify.
  */
-const PASSWORD_BY_NAME =
-  'select a.id, a.kind, p.hash, p.pepper_id from accounts a left join passwords p on p.account_id = a.id where a.login_key = $1';
+const PASSWORD_BY_NAME = `select a.id, a.kind, a.login_tag_key_id, p.hash, p.pepper_id
+  from accounts a left join passwords p on p.account_id = a.id where ${loginTagMatch('a', 1)}`;
 const PASSWORD_BY_ID =
-  'select a.id, a.kind, p.hash, p.pepper_id from accounts a left join passwords p on p.account_id = a.id where a.id = $1';
+  'select a.id, a.kind, a.login_tag_key_id, p.hash, p.pepper_id from accounts a left join passwords p on p.account_id = a.id where a.id = $1';
 
-type Found = { accountId: string | null; stored: StoredPassword; real: boolean };
+type Found = { accountId: string | null; tagKeyId: number | null; stored: StoredPassword; real: boolean };
 
 /** `DUMMY_HASH` checked under the current pepper: the path of every login that has no real hash. */
 const dummyFor = (config: Config): StoredPassword => ({ hash: DUMMY_HASH, pepperId: config.passwordPeppers.current });
 
-async function passwordFor(deps: Pick<Deps, 'db' | 'config'>, where: { loginKey: string } | { accountId: string }): Promise<Found> {
-  const { rows } = await deps.db.query<{ id: string; kind: AccountKind; hash: string | null; pepper_id: number | null }>(
-    'loginKey' in where ? PASSWORD_BY_NAME : PASSWORD_BY_ID,
-    ['loginKey' in where ? where.loginKey : where.accountId],
+async function passwordFor(deps: Pick<Deps, 'db' | 'config'>, where: { login: LoginTags } | { accountId: string }): Promise<Found> {
+  const { rows } = await deps.db.query<{
+    id: string; kind: AccountKind; login_tag_key_id: number | null; hash: string | null; pepper_id: number | null;
+  }>(
+    'login' in where ? PASSWORD_BY_NAME : PASSWORD_BY_ID,
+    'login' in where ? [where.login.ids, where.login.tags] : [where.accountId],
   );
   const row = rows[0];
   const real = row !== undefined && row.hash !== null && passwordAllowed(row.kind);
   return {
     accountId: row?.id ?? null,
+    tagKeyId: row?.login_tag_key_id ?? null,
     stored: real ? { hash: row.hash!, pepperId: row.pepper_id } : dummyFor(deps.config),
     real,
   };
@@ -199,7 +204,7 @@ async function registerHandler(req: FastifyRequest, reply: FastifyReply) {
   try {
     await client.query('begin');
     try {
-      accountId = await createAccount(client, { ...names, kind: 'trader', termsVersion: terms, now });
+      accountId = await createAccount(client, deps.config, { ...names, kind: 'trader', termsVersion: terms, now });
       await client.query('insert into passwords (account_id, hash, pepper_id, updated_at) values ($1, $2, $3, $4)', [
         accountId, hash, pepperId, now,
       ]);
@@ -228,8 +233,8 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   const { loginName, password, deviceLabel } = strings(req.body, ['loginName', 'password', 'deviceLabel'] as const);
   const name = loginNameLookup(deps.config, loginName);
   // A malformed name cannot match an account: it takes the unknown-account path (dummy verify).
-  // Always one lookup: '' matches no login key, so a malformed name costs the same queries.
-  const found = await passwordFor(deps, { loginKey: name.key ?? '' });
+  // Always one lookup under every key of the ring (FU-D), so a malformed name costs the same queries and HMACs.
+  const found = await passwordFor(deps, { login: name.candidates });
   const key = await throttleKey(deps, req, 'password-login', found.accountId !== null ? { id: found.accountId } : { nameTag: name.tag });
   // The try is claimed only once an Argon2 slot is held, so a 503 `busy` never uses one up.
   const outcome = await ARGON2_SLOTS.run(async () => {
@@ -249,6 +254,8 @@ async function loginHandler(req: FastifyRequest, reply: FastifyReply) {
   await storeRehash(deps, accountId, found, outcome.rehash);
   // Only after the password checks out, so a disabled account is not revealed to anyone else.
   await assertNotDisabled(deps.db, accountId);
+  // FU-D: a row tagged under an older key moves to the current one (the password is proved).
+  if (found.tagKeyId !== null) await retagLoginName(deps, { id: accountId, login_tag_key_id: found.tagKeyId }, name.candidates.current);
   // With TOTP enrolled, no session until `POST /v1/login/second-factor` accepts the code.
   if (await hasTotp(deps.db, accountId)) {
     const pendingId = await issueSecondFactor(deps, req, { accountId, deviceLabel });
