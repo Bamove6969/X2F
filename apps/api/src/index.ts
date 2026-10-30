@@ -7,7 +7,7 @@ export { createPool, type Queryable } from './db/pool.js';
 export { migrate, MIGRATIONS_DIR } from './db/migrate.js';
 export { ApiError, type ApiErrorCode } from './errors.js';
 export {
-  ARGON2_SLOTS, REGISTER_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
+  ARGON2_SLOTS, KeyedBuckets, REGISTER_BUCKET, SECURITY_CHANGE_BUCKET, START_BUCKET, SUGGEST_BUCKET, Semaphore, TokenBucket, newBudgets, type BucketSize, type Budgets,
 } from './limits.js';
 export { startRetention, type RetentionJob, type RetentionLog } from './retention.js';
 export { addAlert, type AlertKind } from './alerts.js';
@@ -39,6 +39,10 @@ export {
 } from './auth/pgp.js';
 export { PAIR_TTL_MS, completeLogin, type LoginFactor, type LoginResult } from './auth/login.js';
 export {
+  APPROVAL_COOKIE, APPROVAL_TTL_MS, APPROVALS_PER_HOUR, DEFAULT_MAX_DEVICES, MAX_OPEN_APPROVALS, approvalRoutes, coarseDeviceLabel,
+  traderLogin, type ApprovalMethod, type ApprovalView, type ApprovalWait,
+} from './auth/approval.js';
+export {
   PRIMARY, allowedMethods, assertMethodAllowed, listMethods, methodAllowed, methodRoutes, needsAfter, ownerReady, pairAllowed,
   parseFactor, passwordAllowed, removeMethod, type MethodEntry,
 } from './auth/methods.js';
@@ -46,6 +50,10 @@ export {
   SECOND_FACTOR_TTL_MS, TOTP_ENROL_TTL_MS, TOTP_OPEN_ENROLMENTS, TOTP_SECRET_BYTES, hasTotp, issueSecondFactor, openSecret, rewrapTotpSecrets, sealSecret, totpBox, totpRoutes,
   verifyTotp,
 } from './auth/totp.js';
+export {
+  HOLD_BLOCKED_ROUTES, HOLD_MS, SECURITY_CHANGE_ROUTES, holdUntil, requireNotHeld, settleDueHolds, type Hold, type HoldReason, type PendingChange,
+} from './auth/hold.js';
+export { STRONG_COMBOS, loginStrength, type LoginFactorKind, type LoginStrength } from './auth/strength.js';
 export { RECOVERY_CODE_COUNT, RECOVERY_HOLD_MS, TOTP_BACKUP_DAILY, recoveryCodeHash, recoveryRoutes } from './auth/recovery.js';
 export { keyringBox, type SecretBox } from './auth/keystore.js';
 export { SECURITY_HEADERS, addSecurityHeaders, clientErrorHandler, cspFor, frameworkErrors, serveWeb, webOptionsFromEnv, type WebOptions } from './static/serve.js';

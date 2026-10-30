@@ -5,14 +5,14 @@
  * never kept.
  */
 import { useState } from 'react';
-import { withConfirm, type ConfirmAction } from '@x2f/auth-client';
+import { withConfirm, type ConfirmAction, type Held } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { isConfirmAbort, usePrimaryVariant } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { refusalText } from '../auth/refusals.js';
 import { Qr } from './Qr.js';
 
-export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: () => void; onCancel: () => void }) {
+export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) => Promise<string>; onDone: (held?: Held) => void; onCancel: () => void }) {
   const primary = usePrimaryVariant();
   const [enrol, setEnrol] = useState<{ challengeId: string; otpauthUri: string; secret: string } | null>(null);
   const [code, setCode] = useState('');
@@ -35,8 +35,7 @@ export function Totp({ prove, onDone, onCancel }: { prove: (a: ConfirmAction) =>
     setBusy(true);
     setError(null);
     try {
-      await authApi.addTotpFinish({ challengeId: enrol!.challengeId, code: code.trim() });
-      onDone();
+      onDone(await authApi.addTotpFinish({ challengeId: enrol!.challengeId, code: code.trim() }));
     } catch (e) {
       setError(refusalText(e, 'That code did not work. Check your authenticator app and try again.', { expired: 'That setup has expired. Start again.' }));
     } finally {

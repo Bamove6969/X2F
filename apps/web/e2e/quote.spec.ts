@@ -1,6 +1,6 @@
 // Quotes and the Trade button (Task 18): BuyQuote (board BuyQuote.dc.html) and the seller quote. The
 // API is stubbed with the board's example (src/fixtures/quoteBoard.ts) in the Task 3/4/5 shapes that
-// src/screens/quote/api.ts reads (see test/quote-tripwires.test.ts).
+// src/screens/quote/api.ts reads (all on the line now).
 import { expect, test, type Page } from '@playwright/test';
 import { fiatCents } from '@x2f/trade';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';

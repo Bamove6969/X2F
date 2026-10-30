@@ -1,6 +1,7 @@
 // TRIPWIRES for the parts of the dispute screens (Task 27) that other tasks build. Each fails once
 // the real part lands on the main line: then wire it in where the comment says, check the shapes
-// the dispute screens assume against it, and delete that tripwire.
+// the dispute screens assume against it, and delete that tripwire. (NEEDS_TASK_20 is retired
+// 2026-10-30: DisputeRoom shows Task 20's TradeChatPanel under the system cards.)
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -9,13 +10,6 @@ const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
 const has = (p: string): boolean => existsSync(ROOT + p);
 
 describe('Task 27 seams still stand in for parts other tasks build', () => {
-  it('NEEDS_TASK_20: the dispute room uses FallbackChat until ChatPanel exists', () => {
-    // Replace FallbackChat (screens/dispute/seams.tsx) with Task 20's ChatPanel, passing the system
-    // cards from systemCardsFor; moderator messages render <ModeratorTag from="mod" …> (never
-    // ModeratorBadge directly); drop DisputeRoom's own chat notice if ChatPanel shows it.
-    expect(has('apps/web/src/chat/ChatPanel.tsx'), 'Task 20 ChatPanel landed: wire it into DisputeRoom').toBe(false);
-  });
-
   it('NEEDS_PLAN_4_MOD_COSIGN: moderator-built transactions go through rulingAllowsCosign and cosignPolicy', () => {
     // Task 12's runtime (escrow/runtime.ts) settles only the trader routes today: outcomeFor never
     // builds a mod-built set, so rulingAllowsCosign (screens/dispute/rules.ts) is not reachable yet.

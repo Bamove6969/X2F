@@ -13,6 +13,14 @@ export type AlertKind =
   | 'wallet-added'
   | 'wallet-removed'
   | 'device-key-added'
+  // Task 16: new-device approval and "One device at a time".
+  | 'login-approval'
+  | 'login-blocked'
+  | 'logged-out-by-new-device'
+  | 'one-device-set'
+  // Task 17: the 24-hour hold.
+  | 'hold-started'
+  | 'hold-ended'
   // Owner only: price health (spec 11.6, Plan 3 Task 3).
   | 'price-source-failing'
   | 'price-source-recovered'

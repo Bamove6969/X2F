@@ -49,7 +49,7 @@ function sellerView(over: View = {}): View {
     role: 'seller',
     poster: 'buyer',
     state: 'funding',
-    counterparty: { displayName: B.buyer, completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [] },
+    counterparty: { displayName: B.buyer, completedTrades: 3, online: true, lastSeenAt: null, typicalMinutes: null, positivePct: null, badges: [], stage: 'graduated' },
     methodId: B.method.id,
     profile: { name: B.method.name, whatItIs: B.method.whatItIs },
     amountAtomic: B.amountAtomic.toString(),

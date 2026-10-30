@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { TradeChatPanel } from './chat/ChatPanel.js';
+import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
@@ -16,6 +18,7 @@ import { adSide, currencyFrom, type Side } from './screens/browse/api.js';
 import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
+import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
@@ -30,8 +33,13 @@ import { DesktopHeader } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
 import { TradeRoom } from './screens/trade/TradeRoom.js';
+import { setTradeChat } from './screens/trade/paySeams.js';
 import { liveFanOut, setLiveSource } from './screens/trade/seams.js';
 import './screens/trade/screens.js';
+
+// Task 20's trade chat in Task 23's seam (BuyerPay's Chat sheet, the wide room's aside). A fixtures
+// build replaces it with the board's stand-in (fixtures/payChat.ts, installed after this module loads).
+setTradeChat(TradeChatPanel);
 
 /**
  * The app shell. Phones, foldables' panes and the flip cover screen get the phone frame (the bottom
@@ -87,13 +95,16 @@ function RouterBridge() {
 /**
  * Task 19: while a trader is signed in, listens to live events; an `accepted` event opens the
  * "<name> accepted your offer" sheet over whatever screen is showing, then goes to the trade, and
- * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut).
+ * each `trade` event goes on to the trade room (Task 22, seams.ts liveFanOut) and each `chat`
+ * event to the open chat panels (Task 20, chat/live.ts).
  * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
  * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
 function LiveAccepted() {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
+  // Plan 2 Task 16: a new device asking to log in ("Is this you?"), over whatever screen is showing.
+  const approvals = useLoginApprovals();
   // The trade room listens on this same connection (seams.ts liveFanOut); without a trader
   // session there is no live source and the room only polls.
   useEffect(() => {
@@ -103,7 +114,12 @@ function LiveAccepted() {
   useLiveEvents((e) => {
     if (e.type === 'accepted') setAccepted(e);
     else if (e.type === 'trade') liveFanOut.emit(e);
+    else if (e.type === 'login-approval') approvals.refresh();
+    else if (e.type === 'chat') emitChatLive(e.chat);
   });
+  if (approvals.current !== null) {
+    return <LoginApprove key={approvals.current.id} approval={approvals.current} onDone={approvals.dismiss} />;
+  }
   if (!accepted) return null;
   return (
     <AcceptedSheet

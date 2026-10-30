@@ -10,13 +10,16 @@ export type LiveEvent =
   | { type: 'trade'; code: string; state: string }
   | { type: 'accepted'; code: string; by: string }
   | { type: 'chat'; chat: string }
-  | { type: 'nudge'; from: string; context: string };
+  | { type: 'nudge'; from: string; context: string }
+  /** Plan 2 Task 16: a new device waits for approval; the approval is fetched over the session (no detail here). */
+  | { type: 'login-approval'; id: string };
 
 const FIELDS: Record<LiveEvent['type'], readonly string[]> = {
   trade: ['code', 'state'],
   accepted: ['code', 'by'],
   chat: ['chat'],
   nudge: ['from', 'context'],
+  'login-approval': ['id'],
 };
 
 /** One SSE `data` payload as a known event with only its own string fields, or null. */

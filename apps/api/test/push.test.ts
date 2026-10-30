@@ -178,7 +178,7 @@ describe("the owner's price-health push (review 2026-10-27, Important 3)", () =>
 
   it('the alert payload is exactly the fixed string', () => {
     expect(PUSH_PAYLOADS.alert).toBe(ALERT);
-    expect(Object.keys(PUSH_PAYLOADS).sort()).toEqual(['alert', 'cancel-confirm', 'nudge', 'trade']);
+    expect(Object.keys(PUSH_PAYLOADS).sort()).toEqual(['alert', 'cancel-confirm', 'login', 'new-login', 'nudge', 'trade']);
   });
 });
 
@@ -460,10 +460,14 @@ describe('sendPush', () => {
     expect(calls.map((c) => c.payload)).toEqual(['Something changed in a trade on X2F', 'Something changed in a trade on X2F']);
   });
 
-  it('the three payloads are exactly the fixed strings: no code, amount, name, detail or URL', () => {
+  it('the five payloads are exactly the fixed strings: no code, amount, name, detail or URL', () => {
     expect(PUSH_PAYLOADS).toEqual({
       nudge: 'Someone nudged you on X2F', trade: 'Something changed in a trade on X2F', alert: 'Something needs your attention',
       'cancel-confirm': 'Your input is needed to cancel this trade.',
+      // Plan 2 Task 16: a new device asks to log in.
+      login: 'Someone is logging in. Is this you?',
+      // Plan 2 Task 17: every new login.
+      'new-login': 'New login to your account',
     });
   });
 

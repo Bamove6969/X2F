@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import type { TradeView } from '../src/api/trade.js';
 import { publicName } from '../src/api/trade.js';
-import { registerTradeScreen, screenFor, type TradeScreen } from '../src/screens/trade/TradeRoom.js';
+import { focusComposerWhenReady, registerTradeScreen, screenFor, type TradeScreen } from '../src/screens/trade/TradeRoom.js';
 
 const A: TradeScreen = () => null;
 const B: TradeScreen = () => null;
@@ -62,5 +62,45 @@ describe('trade-room slots', () => {
 describe('publicName', () => {
   it('reads the display name only (FU-A)', () => {
     expect(publicName({ displayName: 'Mira.K_' })).toBe('Mira.K_');
+  });
+});
+
+describe('focusComposerWhenReady (Task 20 round-2 review m3)', () => {
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  afterEach(() => {
+    document.body.replaceChildren();
+  });
+
+  it('focuses the pane composer once the chat renders it, not before', async () => {
+    const pane = document.createElement('div');
+    pane.dataset.pane = 'side';
+    document.body.append(pane);
+    const stop = focusComposerWhenReady("[data-pane='side']");
+    const status = document.createElement('p');
+    pane.append(status);
+    await settle();
+    const box = document.createElement('textarea');
+    pane.append(box);
+    await settle();
+    expect(document.activeElement).toBe(box);
+    stop();
+  });
+
+  it('never takes the focus from something the user moved it to meanwhile, and stops on cleanup', async () => {
+    const pane = document.createElement('div');
+    pane.dataset.pane = 'side';
+    const other = document.createElement('input');
+    document.body.append(pane, other);
+    const stop = focusComposerWhenReady("[data-pane='side']");
+    other.focus();
+    pane.append(document.createElement('textarea'));
+    await settle();
+    expect(document.activeElement).toBe(other);
+    stop();
+    const later = focusComposerWhenReady("[data-pane='nowhere']");
+    later();
+    document.body.append(document.createElement('textarea'));
+    await settle();
+    expect(document.activeElement).toBe(other);
   });
 });

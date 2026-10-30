@@ -14,6 +14,7 @@ import { createMarketPrices } from './price/market.js';
 import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
+import { settleDueHolds } from './auth/hold.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
@@ -72,7 +73,7 @@ const deps: Deps = {
   attestation,
   pgpSigner,
   prices,
-  // Task 26: shared context from real trades (Task 6), delivery over Task 19's SSE and Web Push; chats (Task 20) pending (nudge/wiring.ts).
+  // Task 26: shared context from real trades (Task 6), open chats (Task 20), delivery over Task 19's SSE and Web Push (nudge/wiring.ts).
   nudges: productionNudgeWiring(db),
 };
 
@@ -83,6 +84,8 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 const monerod = monerodUrlFromEnv(process.env);
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
+// Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
+const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);
@@ -103,6 +106,7 @@ if (internal) {
 }
 
 const shutdown = async () => {
+  await stopHolds();
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
   if (internal) await internal.close();

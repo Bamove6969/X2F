@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
-import { AuthApiError, walletsAction, withConfirm } from '@x2f/auth-client';
+import { AuthApiError, isHeld, walletsAction, withConfirm, type Held } from '@x2f/auth-client';
 import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
@@ -8,7 +8,7 @@ import { CANT_DO_TITLE, RECOVERY_SESSION_WALLETS, isCantDoCode, walletsCantDoTex
 import { Icon } from '../ui/icons.js';
 import { Sheet } from '../ui/Sheet.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm, usePrimaryVariant } from './auth/ConfirmSheet.js';
-import { refusalText } from './auth/refusals.js';
+import { heldNote, refusalText } from './auth/refusals.js';
 import {
   APP_LABELS,
   MAX_WALLET_BATCH,
@@ -326,9 +326,9 @@ export function Wallets() {
     setNotice(null);
     const drafts = trimmed === '' ? batch : [...batch, current()];
     // After the first wallet, adding needs confirm-it's-you: one confirm for the whole batch.
-    const post = async (confirmToken?: string): Promise<WalletView[]> => {
+    const post = async (confirmToken?: string): Promise<WalletView[] | Held> => {
       try {
-        return await api<WalletView[]>('/v1/wallets', {
+        return await api<WalletView[] | Held>('/v1/wallets', {
           method: 'POST',
           body: confirmToken === undefined ? { wallets: drafts } : { wallets: drafts, confirmToken },
         });
@@ -340,7 +340,18 @@ export function Wallets() {
     };
     try {
       const action = await walletsAction(drafts.map((d) => d.address));
-      const saved = await withConfirm(action, post, prove);
+      const result: WalletView[] | Held = await withConfirm(action, post, prove);
+      // Plan 2 Task 17 review round 2 N-I4: added from a login with one way of proving it's you
+      // (PGP alone included), the wallets wait out the 24-hour hold (202 held): nothing is listed yet.
+      if (isHeld(result)) {
+        setBatch([]);
+        setLabel('');
+        setAddress('');
+        setAdding(false);
+        setNotice(heldNote(result.holdUntil));
+        return;
+      }
+      const saved = result;
       // Sent here by a 409 no-wallet: go back only when every new wallet can be paid now. A wallet
       // that waits would send the take straight back here (no-wallet again), so the screen stays,
       // shows the wait, and Back returns to returnTo.

@@ -43,7 +43,7 @@ describe('migrations', () => {
       expect(await migrate(db)).toEqual([
         '001_accounts.sql', '002_sessions.sql', '003_confirm.sql', '004_passwords.sql', '005_pgp.sql', '006_webauthn.sql',
         '007_totp_recovery.sql', '008_wallets.sql', '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql',
-        '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql',
+        '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql', '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql',
         '109_owner_settings.sql', '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '302_feedback.sql', '306_feedback_form.sql',
       ]);
       expect(await migrate(db)).toEqual([]);
@@ -65,8 +65,8 @@ describe('migrations', () => {
         [randomBytes(32)],
       );
       expect(await migrate(db)).toEqual([
-        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
-        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
+        '009_login_names.sql', '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql',
         '110_dispute_system_retention.sql', '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '302_feedback.sql', '306_feedback_form.sql',
       ]);
       const { rows } = await db.query('select display_name, display_key, login_name, login_key, legacy_login_name from accounts');
@@ -141,8 +141,8 @@ describe('migrations', () => {
       );
 
       expect(await migrate(db)).toEqual([
-        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
-        '104_trade_retention.sql', '105_push.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
+        '010_wallet_wait_logout_timer.sql', '011_secret_keys.sql', '012_login_tags.sql', '013_device_approval.sql', '014_account_hold.sql', '101_method_suggestions.sql', '102_offers.sql', '103_trades.sql',
+        '104_trade_retention.sql', '105_push.sql', '106_chat.sql', '107_nudge.sql', '108_disputes.sql', '109_owner_settings.sql', '110_dispute_system_retention.sql',
         '111_trade_identities.sql', '112_take.sql', '115_news.sql', '116_fund_started.sql', '302_feedback.sql', '306_feedback_form.sql',
       ]);
 

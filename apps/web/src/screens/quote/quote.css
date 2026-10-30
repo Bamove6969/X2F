@@ -43,8 +43,38 @@
   font-size: 15px;
 }
 
-.x2f-quote__chat:disabled {
+.x2f-quote__chat[aria-disabled='true'] {
   color: var(--x2f-ink-muted);
+}
+
+/* The Chat button's hint (Task 20 review I1): read by screen readers always, shown after a tap. */
+.x2f-quote__chat-hint {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  /* No -1px margin: at the screen's left edge it would sit 1px past the side (e2e/phone.ts). */
+  padding: 0;
+  border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.x2f-quote__chat-hint--shown {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: var(--x2f-space-2) var(--x2f-space-4) 0;
+  overflow: visible;
+  clip: auto;
+  clip-path: none;
+  white-space: normal;
+  color: var(--x2f-ink-muted);
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  text-align: right;
 }
 
 .x2f-quote__main {

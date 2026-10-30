@@ -237,10 +237,10 @@ test('a held backup session shows a banner, and a held change says until when', 
   await base(page, { me: { level: 'recovery', holdUntil: '2099-01-02T15:00:00.000Z' } });
   await page.route('**/v1/account/recovery-codes', json({ error: 'recovery-hold', holdUntil: '2099-01-02T15:00:00.000Z' }, 403));
   await page.goto('/settings/security');
-  await expect(page.locator('[data-part="hold-banner"]')).toContainText('You logged in with a backup, so changes to your account wait until');
+  await expect(page.locator('[data-part="hold-banner"]')).toContainText('Your account is on a 24-hour hold');
   await page.click('[data-add="recovery-codes"]');
   await page.click('[data-part="recovery-make"]');
-  await expect(page.locator('[data-part="recovery-codes"] [role="alert"], [data-part="recovery-error"]').first()).toContainText('changes to your account wait until');
+  await expect(page.locator('[data-part="recovery-codes"] [role="alert"], [data-part="recovery-error"]').first()).toContainText('login changes wait until');
 });
 
 test('removing the only login method is refused at once, without a confirm or a request', async ({ page }) => {
@@ -261,4 +261,66 @@ test('removing the only login method is refused at once, without a confirm or a 
   await expect(page.locator('[role="dialog"] [data-part="cant-do-that"]')).toContainText('only way to log in');
   await expect(page.locator('[role="dialog"]')).toHaveCount(1);
   expect(deletes).toBe(0);
+});
+
+// Plan 2 Task 16: the device limit, "One device at a time" (confirm-it's-you) and the approval
+// sheet a logged-in device shows when a new device asks to log in.
+test('Devices shows the count against the limit; One device at a time needs confirm-it’s-you', async ({ page }) => {
+  await base(page, {
+    sessions: [{ id: 's1', deviceLabel: 'Browser on Linux', level: 'full', createdAt: '2026-10-20T00:00:00.000Z', lastSeenAt: '2026-10-23T00:00:00.000Z', current: true }],
+  });
+  await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
+  await page.route('**/v1/confirm/password', json({ confirmToken: 't1' }));
+  let sent: unknown = null;
+  await page.route('**/v1/account/security/one-device', async (r) => {
+    const body = JSON.parse(r.request().postData() ?? '{}') as { on?: boolean; confirmToken?: string };
+    if (body.confirmToken === undefined) return json({ error: 'confirm-required', action: 'set-one-device' }, 403)(r);
+    sent = body;
+    return json({ oneDevice: true, maxDevices: 3 })(r);
+  });
+
+  await page.goto('/settings/security');
+  await expect(page.locator('[data-part="devices-count"]')).toHaveText('Logged in · 1 of 3');
+  await page.click('[data-part="one-device-toggle"]');
+  await expect(page.locator('[role="dialog"]')).toHaveCount(1);
+  await page.fill('#confirm-password', 'Correct-Horse-9!');
+  await page.click('[data-method="password"] >> text=Confirm');
+  await expect(page.locator('[data-part="one-device-toggle"]')).toHaveText('On');
+  expect(sent).toEqual({ on: true, confirmToken: 't1' });
+});
+
+test('a logged-in device asked "Is this you?" taps the number and lets the new device in', async ({ page }) => {
+  await base(page);
+  const id = '22222222-2222-4222-8222-222222222222';
+  await page.route('**/v1/account/approvals', json([
+    { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: false, oneDevice: false },
+  ]));
+  let decision: unknown = null;
+  await page.route(`**/v1/account/approvals/${id}`, async (r) => {
+    decision = JSON.parse(r.request().postData() ?? '{}');
+    return json({ outcome: 'approved' })(r);
+  });
+  await page.goto('/settings/security');
+  const sheet = page.locator('[role="dialog"]');
+  await expect(sheet).toContainText('Someone is logging in on Chrome on Windows. Is this you?');
+  await sheet.locator('[data-part="approve-choice"]', { hasText: '47' }).click();
+  await sheet.locator('[data-part="approve-yes"]').click();
+  await expect(sheet.locator('[data-part="approve-done"]')).toContainText('Chrome on Windows is logged in');
+  expect(decision).toEqual({ choice: 47 });
+  await sheet.locator('[data-part="approve-ok"]').click();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+});
+
+// Plan 2 Task 17: a change made from a login with one way of proving it's you answers 202 held:
+// the screen says when it takes effect and does not show it as done.
+test('a held logout-timer change says when it takes effect and keeps the old value', async ({ page }) => {
+  await base(page);
+  await page.route('**/v1/account/security/logout-timer', async (r) => {
+    if (r.request().method() === 'PUT') return json({ status: 'held', holdUntil: '2099-01-02T15:00:00.000Z' }, 202)(r);
+    return json({ idleHours: 12, adjustable: true })(r);
+  });
+  await page.goto('/settings/security');
+  await page.selectOption('[data-part="logout-timer-select"]', '2');
+  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
+  await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });
