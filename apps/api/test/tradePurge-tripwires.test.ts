@@ -98,6 +98,7 @@ const WATCHER_KINDS: Record<string, 'not-purge' | 'watch-drop'> = {
   'spend-unshown': 'not-purge',
   'release-claimed': 'not-purge',
   'late-funds': 'not-purge', // the "stays off" gate's late-funds conditions cover it (I4a, R3-m4)
+  release: 'not-purge', // not a report kind: the settle kind the internal route's `settled` event starts from (Task 9 I/O)
 };
 /**
  * Review R3-m1: columns of the moderation watch or of `trades` named for watching or a drop, as of
