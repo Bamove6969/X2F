@@ -82,6 +82,11 @@ export function positivePct(rs: readonly WeightedReview[], opts: { minReviews?: 
   return Number((pos * 100n) / total);
 }
 
+/** Positive and negative reviews that count in stats (Trusted's minimum, review M4). */
+export function ratedReviewCount(rs: readonly WeightedReview[]): number {
+  return rs.filter((r) => r.kind !== 'neutral' && countsInStats(r.dispute ?? null)).length;
+}
+
 // ---- Typical time (P5-A8) ----
 
 export const TYPICAL_WINDOW = 20;

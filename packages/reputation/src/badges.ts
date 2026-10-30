@@ -27,6 +27,11 @@ export const FEATURED_SLOTS = 2;
 // P5-A13 thresholds.
 export const TRUSTED_MIN_TRADES = 100;
 export const TRUSTED_MIN_PCT = 98;
+/**
+ * PROVISIONAL (review M4, lead 2026-10-30): owner to confirm (owner q12). Trusted also needs this many
+ * positive-or-negative reviews, so it can't rest on one 5-star review among Neutrals.
+ */
+export const MIN_REVIEWS_TRUSTED = 5;
 export const FAST_MAX_MINUTES = 10;
 export const FAST_MIN_SAMPLES = 5;
 export const CLEAN_RECORD_MIN_TRADES = 100;
@@ -65,6 +70,8 @@ export interface BadgeFacts {
   completedTrades: number;
   /** From revealed reviews only, leaving out disputed ("Under review") and removed ones. */
   positivePct: number | null;
+  /** Positive and negative reviews behind `positivePct` (`ratedReviewCount`). */
+  ratedReviews: number;
   typicalMinutes: number | null;
   typicalSamples: number;
   /** Every lost dispute ever (Task 20 running total). */
@@ -98,7 +105,7 @@ export function earnedBadges(f: BadgeFacts, now: Date): BadgeId[] {
   if (m !== null) out.push(`trades-${m}`);
   const v = highest(VETERAN_YEARS, fullYearsSince(f.accountCreatedAt, now));
   if (v !== null) out.push(`veteran-${v}`);
-  if (f.completedTrades >= TRUSTED_MIN_TRADES && f.positivePct !== null && f.positivePct >= TRUSTED_MIN_PCT) out.push('trusted');
+  if (f.completedTrades >= TRUSTED_MIN_TRADES && f.positivePct !== null && f.positivePct >= TRUSTED_MIN_PCT && f.ratedReviews >= MIN_REVIEWS_TRUSTED) out.push('trusted');
   if (f.typicalMinutes !== null && f.typicalMinutes <= FAST_MAX_MINUTES && f.typicalSamples >= FAST_MIN_SAMPLES) out.push('fast');
   if (f.completedTrades >= CLEAN_RECORD_MIN_TRADES && f.lostDisputes === 0) out.push('clean-record');
   if (f.hasPgp) out.push('pgp');

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BADGES,
   BadgeError,
+  MIN_REVIEWS_TRUSTED,
   applyChoice,
   earnedBadges,
   levelShown,
@@ -24,6 +25,7 @@ const base: BadgeFacts = {
   stage: 'graduated',
   completedTrades: 0,
   positivePct: null,
+  ratedReviews: 50,
   typicalMinutes: null,
   typicalSamples: 0,
   lostDisputes: 0,
@@ -115,6 +117,11 @@ describe('earnedBadges', () => {
     expect(earnedBadges(facts({ completedTrades: 150, positivePct: null }), NOW)).not.toContain('trusted');
     expect(earnedBadges(facts({ completedTrades: 99, positivePct: 100 }), NOW)).not.toContain('trusted');
     expect(earnedBadges(facts({ completedTrades: 100, positivePct: 98 }), NOW)).toContain('trusted');
+  });
+  it('Trusted needs at least 5 rated reviews (review M4, provisional)', () => {
+    expect(MIN_REVIEWS_TRUSTED).toBe(5);
+    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 100, ratedReviews: 4 }), NOW)).not.toContain('trusted');
+    expect(earnedBadges(facts({ completedTrades: 100, positivePct: 100, ratedReviews: 5 }), NOW)).toContain('trusted');
   });
   it('Clean record needs 100 completed trades and no lost dispute ever', () => {
     expect(earnedBadges(facts({ completedTrades: 150, lostDisputes: 1 }), NOW)).not.toContain('clean-record');

@@ -16,6 +16,7 @@ import {
   isCompletedTrade,
   median,
   positivePct,
+  ratedReviewCount,
   pushActionMinutes,
   reviewWeight,
   shouldAskFeedback,
@@ -99,6 +100,21 @@ describe('positivePct', () => {
     // @ts-expect-error usdCents is not part of WeightedReview any more
     const r: Parameters<typeof positivePct>[0][number] = { kind: 'positive', weight: 1_000n, usdCents: 1_000n };
     expect(r.kind).toBe('positive');
+  });
+});
+
+describe('ratedReviewCount (review M4)', () => {
+  it('counts positive and negative reviews that count in stats', () => {
+    expect(
+      ratedReviewCount([
+        { kind: 'positive', weight: 1n },
+        { kind: 'negative', weight: 1n },
+        { kind: 'neutral', weight: 1n },
+        { kind: 'negative', weight: 1n, dispute: 'open' },
+        { kind: 'positive', weight: 1n, dispute: 'removed' },
+        { kind: 'positive', weight: 1n, dispute: 'stands' },
+      ]),
+    ).toBe(3);
   });
 });
 
