@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 // Task 27's trade-room slots (Task 22's registerTradeScreen): both traders in `disputed` get
 // DisputeSlot (room or ruling, from GET …/dispute only), the buyer in `refunded` gets RefundedSlot
-// with the 90-day "Open a dispute" (lead 2026-10-28). The slots never fetch the trade itself.
+// with the 48-hour "Open a dispute" (TIMERS.disputeAfterRefundHours, lead 2026-10-29). The slots never fetch the trade itself.
 import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';

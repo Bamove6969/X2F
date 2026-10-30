@@ -1,4 +1,4 @@
-import { TradeRuleError, UNLOCK_CONFIRMATIONS, awaitingCancelConfirm } from '@x2f/trade';
+import { TradeRuleError, UNLOCK_CONFIRMATIONS, awaitingCancelConfirm, type Trade } from '@x2f/trade';
 import type { Deps } from '../app.js';
 import type { TxConfirmations } from './chain.js';
 import { applyEvent, rowToTrade, type TradePublisher, type TradeRow } from './store.js';
@@ -44,26 +44,49 @@ const AWAITING = `state = 'refunded' and settling = 'buyer-cancel' and cancel_co
  * within CANCEL_RETURN_MAX_WAIT_H; one still not fully confirmed after that (the node never finds
  * the tx: dropped, reorged) is escalated to a moderator (`escalate`, the trade becomes `disputed`)
  * instead of being polled forever. Returns how many it recorded.
+ *
+ * The escalation (review round 2, N2 and N3) needs this pass's own lookup of that refund to have
+ * succeeded and still come back short (null or under UNLOCK_CONFIRMATIONS): a node that is down,
+ * busy or unreachable escalates nothing. Nothing is escalated during site maintenance
+ * (`site_flags.maintenance_since`) or for a paused trade; a stale refund that turns out fully
+ * confirmed is recorded as usual. Inside the escalation's transaction the locked trade must still
+ * be waiting for the seller with the moment unrecorded and not paused, so a Confirm cancel or a
+ * `return-confirmed` that commits after the SELECT wins (the escalate is then a rule refusal).
  */
 export async function watchCancelReturns(deps: Pick<Deps, 'db' | 'clock'> & { publish?: TradePublisher }, lookup: TxConfirmations): Promise<number> {
   const cutoff = new Date(deps.clock().getTime() - CANCEL_RETURN_MAX_WAIT_H * 3_600_000);
-  const stale = await deps.db.query<{ code: string }>(`select code from trades where ${AWAITING} and closed_at < $1 order by closed_at limit $2`, [
-    cutoff,
-    CANCEL_RETURN_BATCH,
-  ]);
-  for (const { code } of stale.rows) {
-    try {
-      await applyEvent(deps, code, { type: 'escalate' }, 'system');
-    } catch (err) {
-      // A race (another pass, a confirm) is a rule refusal: nothing to do.
-      if (!(err instanceof TradeRuleError)) throw err;
+  let n = 0;
+  const flags = await deps.db.query<{ maintenance: boolean }>('select maintenance_since is not null as maintenance from site_flags');
+  // No site_flags row counts as maintenance, so nothing is escalated (fails closed).
+  const maintenance = flags.rows[0]?.maintenance !== false;
+  if (!maintenance) {
+    const stale = await deps.db.query<TradeRow>(
+      `select * from trades where ${AWAITING} and paused_at is null and closed_at < $1 order by closed_at limit $2`,
+      [cutoff, CANCEL_RETURN_BATCH],
+    );
+    for (const row of stale.rows) {
+      let count: number | null;
+      try {
+        count = await lookup(row.tx_hash!);
+      } catch {
+        continue; // the node could not be asked: no evidence the refund is missing
+      }
+      if (count !== null && count >= UNLOCK_CONFIRMATIONS) {
+        if (await recordReturnConfirmed(deps, row, count)) n++;
+        continue;
+      }
+      try {
+        await applyEvent(deps, row.code, { type: 'escalate' }, 'system', stillWaiting);
+      } catch (err) {
+        // A race (another pass, a Confirm cancel, the moment recorded, a pause) is a rule refusal.
+        if (!(err instanceof TradeRuleError)) throw err;
+      }
     }
   }
   const { rows } = await deps.db.query<TradeRow>(`select * from trades where ${AWAITING} and closed_at >= $1 order by closed_at limit $2`, [
     cutoff,
     CANCEL_RETURN_BATCH,
   ]);
-  let n = 0;
   for (const row of rows) {
     let count: number | null = null;
     try {
@@ -74,6 +97,13 @@ export async function watchCancelReturns(deps: Pick<Deps, 'db' | 'clock'> & { pu
     if (await recordReturnConfirmed(deps, row, count)) n++;
   }
   return n;
+}
+
+/** The escalation's in-transaction guard (review round 2, N2): the locked trade is still waiting. */
+async function stillWaiting(_client: unknown, prev: Trade): Promise<void> {
+  if (!awaitingCancelConfirm(prev) || prev.cancelConfirmableAt !== null || prev.pausedAt !== null) {
+    throw new TradeRuleError('wrong-state');
+  }
 }
 
 /** How often `startCancelReturnWatch` looks (the 48 hours start at most this late). */

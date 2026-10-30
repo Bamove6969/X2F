@@ -132,6 +132,8 @@ registerTradeScreen({
   owner: 'Task 39',
   role: 'seller',
   states: ['settling', 'refunded'],
-  when: (v) => v.settling === 'buyer-cancel',
+  // Not a cancel refund that landed after "I've paid": the buyer keeps the dispute there and the
+  // seller has nothing to confirm (review I1; round 2 N1). The generic refunded slot shows it.
+  when: (v) => v.settling === 'buyer-cancel' && v.paidAt === null,
   screen: SellerCancelConfirm,
 });

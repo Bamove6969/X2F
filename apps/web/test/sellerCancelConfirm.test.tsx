@@ -60,6 +60,11 @@ describe("the seller's Confirm cancel", () => {
     expect(screenFor(view({ settling: 'mutual-cancel' }), now)).toBeNull();
   });
 
+  it('review round 2 N1: not for a cancel refund that landed after "I\'ve paid" (the buyer keeps the dispute)', () => {
+    const now = Date.parse(SERVER_NOW);
+    expect(screenFor(view({ paidAt: SERVER_NOW }), now)).not.toBe(SellerCancelConfirm);
+  });
+
   it('confirmCancelReady: only refunded with all confirmations', () => {
     expect(confirmCancelReady('refunded', 10, 10)).toBe(true);
     expect(confirmCancelReady('refunded', 9, 10)).toBe(false);

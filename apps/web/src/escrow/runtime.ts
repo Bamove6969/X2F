@@ -681,7 +681,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         role: r.role,
         own: r.role === 'buyer' ? { payout: r.ownAddress } : { refund: r.ownAddress },
         balance,
-        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet },
+        trade: { state: v.state, poster: v.poster, amountAtomic: refundOnly ? size : v.amountAtomic, feeWallet: deps.config.feeWallet, paidAt: v.paidAt },
         deal: { poster: r.deal.poster, amountAtomic: size },
         signedTerms: { payout, refund },
       };

@@ -205,4 +205,71 @@ describe('review M3: a refund the node never confirms is not polled forever', ()
     expect(after!.state).toBe('disputed');
     expect(after!.dispute?.by).toBe('system');
   });
+
+  async function staleCancel(hash: string) {
+    const { seller, buyer, t } = await tradeIn('secured');
+    await buyer.browser.post(events(t.code), { type: 'buyer-cancel' });
+    await applyEvent(deps, t.code, { type: 'settled', kind: 'buyer-cancel', txHash: hash }, 'system');
+    const later = new Date(deps.clock().getTime() + (CANCEL_RETURN_MAX_WAIT_H * 60 + 1) * 60_000);
+    return { seller, t, at: { ...deps, clock: () => later } };
+  }
+
+  it('round 2 N2: a Confirm cancel that commits after the SELECT wins over the escalation', async () => {
+    const { t, at } = await staleCancel('e1'.repeat(32));
+    // The node catches up while the pass runs: the route records the full count and the seller
+    // confirms between the watch's SELECT and its escalate; the watch's own lookup still read 3.
+    const racing = async (hash: string) => {
+      if (hash === 'e1'.repeat(32)) {
+        await applyEvent(at, t.code, { type: 'return-confirmed', confirmations: 10 }, 'system');
+        await applyEvent(at, t.code, { type: 'confirm-cancel', returnConfirmations: 10 }, 'seller');
+        return 3;
+      }
+      return 10;
+    };
+    await watchCancelReturns(at, racing);
+    const after = await loadTrade(deps.db, t.code);
+    expect(after!.state).toBe('refunded');
+    expect(after!.dispute).toBeNull();
+    expect(after!.cancelConfirmedAt).toBeInstanceOf(Date);
+    expect(after!.closedAt).toBeInstanceOf(Date);
+  });
+
+  it('round 2 N3: a node that cannot be asked escalates nothing; a confirmed refund is recorded instead', async () => {
+    const hash = 'e2'.repeat(32);
+    const { t, at } = await staleCancel(hash);
+    const down = async (h: string) => {
+      if (h === hash) throw new Error('node down');
+      return 10;
+    };
+    await watchCancelReturns(at, down);
+    await watchCancelReturns(at, down);
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('refunded');
+    // The node is back and the refund confirmed long ago: the moment is recorded, no dispute.
+    await watchCancelReturns(at, async () => 30);
+    const after = await loadTrade(deps.db, t.code);
+    expect(after!.state).toBe('refunded');
+    expect(after!.dispute).toBeNull();
+    expect(after!.cancelConfirmableAt).toBeInstanceOf(Date);
+  });
+
+  it('round 2 N3: nothing is escalated during maintenance longer than 24 h, nor for a paused trade', async () => {
+    const hash = 'e3'.repeat(32);
+    const { t, at } = await staleCancel(hash);
+    const short = async () => null;
+    await deps.db.query('update site_flags set maintenance_since = $1', [deps.clock()]);
+    try {
+      await watchCancelReturns(at, short);
+      expect((await loadTrade(deps.db, t.code))!.state).toBe('refunded');
+    } finally {
+      await deps.db.query('update site_flags set maintenance_since = null');
+    }
+    // A paused trade (the timer loop paused it for the maintenance, not yet resumed) waits too.
+    await applyEvent(deps, t.code, { type: 'pause' }, 'system');
+    await watchCancelReturns(at, short);
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('refunded');
+    // Maintenance over and the trade resumed: the node really can't find the refund, so a moderator.
+    await applyEvent(deps, t.code, { type: 'resume' }, 'system');
+    await watchCancelReturns(at, short);
+    expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
+  });
 });

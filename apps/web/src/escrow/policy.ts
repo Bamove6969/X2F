@@ -33,6 +33,8 @@ export interface PolicyTrade {
   amountAtomic: bigint;
   /** X2F's fee wallet, from the app's build config (VITE_FEE_WALLET), never from the API. */
   feeWallet: string;
+  /** When the buyer marked paid (the API's view), null before: no cancel of any kind after it (review round 2, N4). */
+  paidAt: string | null;
 }
 
 /** The trade as this device holds it: signed by both sides at setup, size worked out on the device. */
@@ -150,7 +152,8 @@ function check(c: PolicyContext, o: Outcome): boolean {
     if (route('release')) return true;
     if (route('lapse-refund')) return state === 'lapsed' && c.balance < sellerFundsAtomic;
     if (route('buyer-cancel')) return BUYER_CANCEL_STATES.includes(state);
-    if (route('mutual-cancel')) return true;
+    // No cancel of any kind after "I've paid" (option B, Task 39 review I2 and round 2 N4).
+    if (route('mutual-cancel')) return state !== 'paid' && c.trade.paidAt === null;
     return state === 'disputed' && is('release', 'mod', 'buyer');
   }
   if (route('release')) return RELEASE_STATES.includes(state);

@@ -404,7 +404,7 @@ describe('a dispute the system escalates (late funds, a lapse nobody refunded)',
 describe('one dispute per trade opening, whatever the dispute rows say', () => {
   it('refuses a second dispute on a refunded trade that had one, even once its rows are gone', async () => {
     // The reviewer's probe: the buyer disputes, the final ruling is refund-to-seller, the trade
-    // settles to refunded and the dispute closes. Inside the 90-day window the buyer may not
+    // settles to refunded and the dispute closes. Inside the 48-hour window (TIMERS.disputeAfterRefundHours) the buyer may not
     // re-open the decided case, before or after any purge of the dispute rows.
     const { buyer, t } = await tradeIn('secured');
     await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
