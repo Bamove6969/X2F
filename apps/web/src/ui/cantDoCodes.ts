@@ -44,6 +44,9 @@ export const CANT_DO_CODES = [
   // feedback link (a throttle on tries stays a `slow-down` fault).
   'too-many-devices',
   'too-many-approvals',
+  // Plan 2 Task 17 review round 2 (N-I3, N-M3): a session whose login waits may not log a stronger
+  // one out, answer a strong login, or hide the hold's warnings.
+  'weak-session',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 5 Task 3's review
   // pending, Plan 4's lien and trade ban): check them when those land.
   'review-pending',
@@ -150,6 +153,7 @@ export const CANT_DO_TITLE = {
   myOffers: "Some offers can't be turned on",
   login: "You can't log in here yet",
   approve: "This login can't be let in",
+  devices: "That device can't be logged out from here",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -312,6 +316,17 @@ export const TOO_MANY_DEVICES_APPROVE =
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
 export const TOO_MANY_APPROVALS =
   'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
+
+/** The code of a session whose login waits (Plan 2 Task 17 review round 2). */
+export const WEAK_SESSION_CODE = 'weak-session' satisfies CantDoCode;
+
+/**
+ * 403 `weak-session`: this device logged in with only one way of proving it's you, so it cannot
+ * log out a device that logged in more strongly (or any device during the 24-hour hold), nor
+ * answer a login made with a passkey or two ways.
+ */
+export const WEAK_SESSION_TEXT =
+  "This device logged in with only one way of proving it's you, so it can't log out devices that logged in more securely, or answer their logins. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
 
 /** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
 export function holdApproveText(when: string): string {

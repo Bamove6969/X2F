@@ -19,7 +19,8 @@
  *   strong login whose methods are all in `started_methods` (`endHoldIfOwner`, inside the login's
  *   transaction): the pending change is discarded and alert `hold-ended` names it, and every
  *   session whose login waits, every backup session and the session that started the hold end with
- *   it (review round 2 N-C1, N-I1; alert `sessions-ended` `{ count, reason: 'owner-login' }`).
+ *   it (review round 2 N-C1, N-I1; alert `sessions-ended` `{ count, reason: 'owner-login' }`), and
+ *   the account's trusted devices are forgotten (a copied device cookie trusts nothing afterwards).
  *   Nothing can be added during the hold (every change waits or is refused), so a thief's method
  *   never ends it. A waiting login opens no session during the hold (traderLogin: device trust is
  *   a copyable cookie and must not override the hold).
@@ -263,6 +264,9 @@ export async function endHoldIfOwner(db: Queryable, s: SettleDeps, accountId: st
     [accountId],
   );
   if (ended.rows.length > 0) await addAlert(db, accountId, 'sessions-ended', { count: ended.rows.length, reason: 'owner-login' }, now);
+  // Device trust is a cookie a thief can copy: after the owner's proof every other browser needs an
+  // approval again (the owner's own is trusted again by the login's `openSession`).
+  await db.query('delete from trusted_devices where account_id = $1', [accountId]);
   return ended.rows.map((r) => r.id);
 }
 

@@ -11,9 +11,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
+import { CantDoThat } from '../../ui/CantDoThat.js';
+import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { heldNote, refusalText } from '../auth/refusals.js';
+import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
 
 export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<string> }) {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
@@ -22,6 +24,8 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [error, setError] = useState<string | null>(null);
   // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
   const [held, setHeld] = useState<string | null>(null);
+  // Plan 2 Task 17 review round 2: a device whose login waits may not log stronger ones out (CantDoThat).
+  const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
 
   const refresh = useCallback(async () => {
     setSessions(await authApi.listSessions());
@@ -39,8 +43,11 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     try {
       for (const id of ids) await authApi.endSession(id);
       await refresh();
-    } catch {
-      setError('Could not log that device out. Try again.');
+    } catch (e) {
+      const refused = weakSessionCantDo(e);
+      if (refused !== null) setCantDo(refused);
+      else setError('Could not log that device out. Try again.');
+      await refresh().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -140,6 +147,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
           <p className="x2f-note">X2F doesn't log IP addresses, so devices are named only by browser and system.</p>
         </div>
       ) : null}
+      {cantDo !== null ? <CantDoThat title={CANT_DO_TITLE.devices} body={cantDo.text} from={cantDo.code} onClose={() => setCantDo(null)} /> : null}
     </section>
   );
 }

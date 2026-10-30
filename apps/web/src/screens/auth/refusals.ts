@@ -17,7 +17,7 @@ import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import {
   HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_CODE, TOO_MANY_DEVICES_LOGIN,
-  holdApproveText, holdText, type CantDoCode,
+  WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdText, type CantDoCode,
 } from '../../ui/cantDoCodes.js';
 
 interface Refusal {
@@ -78,7 +78,13 @@ export function loginCantDo(e: unknown, where: 'login' | 'approve'): { code: Can
   if (e.code === TOO_MANY_DEVICES_CODE) return { code: TOO_MANY_DEVICES_CODE, text: where === 'login' ? TOO_MANY_DEVICES_LOGIN : TOO_MANY_DEVICES_APPROVE };
   if (e.status === 429 && e.reason === 'approvals') return { code: TOO_MANY_APPROVALS_CODE, text: TOO_MANY_APPROVALS };
   if (e.code === HOLD_CODE) return { code: HOLD_CODE, text: where === 'login' ? holdSentence(e.holdUntil) : holdApproveSentence(e.holdUntil) };
+  if (e.code === WEAK_SESSION_CODE) return { code: WEAK_SESSION_CODE, text: WEAK_SESSION_TEXT };
   return null;
+}
+
+/** 403 `weak-session` (Plan 2 Task 17 review round 2) from either client, for CantDoThat; else null. */
+export function weakSessionCantDo(e: unknown): { code: CantDoCode; text: string } | null {
+  return refusalOf(e)?.code === WEAK_SESSION_CODE ? { code: WEAK_SESSION_CODE, text: WEAK_SESSION_TEXT } : null;
 }
 
 /** How long to wait after too many tries: minutes up to an hour, else the clock time it ends. */
