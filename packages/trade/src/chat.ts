@@ -4,6 +4,7 @@
  */
 import { normalizeTradeCode, ROLES, type Role } from '@x2f/core';
 import { ENVELOPE_KEYS, hasExactKeys, isPlainObject, isValidSeq } from '@x2f/protocol';
+import { DISPUTE_KEEP_DAYS } from './retention.js';
 
 /** The `type` inside every chat envelope's ciphertext. */
 export const CHAT_MSG_TYPE = 'chat.msg';
@@ -17,8 +18,15 @@ export const CHAT_BODY_MAX_BYTES = 16 * 1024;
 export const CHAT_TEXT_MAX_BYTES = 2000;
 /** Pre-trade chats are deleted after this many days without a message. */
 export const CHAT_PRETRADE_IDLE_DAYS = 7;
-/** A trade's chat is deleted this many days after the trade closes (never while disputed). */
-export const CHAT_AFTER_CLOSE_DAYS = 90;
+/**
+ * purgeChats' backstop for a trade's chat: this many days after the trade closes (never while
+ * disputed). A trade's chat normally goes WITH its trade, deleted whole by Plan 7's purgeTrades at
+ * `tradeDeleteAt` (30 days after the end, 90 from the dispute button). The backstop is the
+ * dispute keep (90 days), so it can never fire before the trade's own date: the machine sets
+ * `closedAt` at or after every dispute's button press, so closedAt + 90 d >= openedAt + 90 d, and
+ * closedAt + 90 d >= closedAt + 30 d (Plan 7 Task 1: one rule).
+ */
+export const CHAT_AFTER_CLOSE_DAYS = DISPUTE_KEEP_DAYS;
 
 const DAY_MS = 86_400_000;
 const B64 = /^[A-Za-z0-9+/]*={0,2}$/;

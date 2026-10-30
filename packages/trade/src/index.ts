@@ -40,6 +40,16 @@ export { SETTLE_KINDS, payoutsFor, type PayoutFacts, type SettleKind } from './p
 export { moneroUri } from './moneroUri.js';
 export { TIMERS, UNLOCK_CONFIRMATIONS } from './timers.js';
 export {
+  BACKUP_KEEP_DAYS,
+  DISPUTE_KEEP_DAYS,
+  REFUND_DISPUTE_WINDOW_MS,
+  TRADE_KEEP_DAYS,
+  refundDisputeWindowEndsAt,
+  tradeDeleteAt,
+  tradeDeleteDue,
+  type RetentionFacts,
+} from './retention.js';
+export {
   CLIENT_EVENTS,
   SYSTEM_EVENTS,
   TradeRuleError,
