@@ -11,25 +11,25 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
-button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 </style>
 </helmet>
-<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
-  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid #20262f;">
-    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: #eef1f5;">
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
     </a>
     <div style="display: flex; flex-direction: column; flex-grow: 1;">
       <span style="font-size: 16px; font-weight: 600;">Selling to mira.k</span>
-      <span style="font-size: 13px; color: #9aa4b2;">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+      <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
     </div>
-    <a href="#" style="display: flex; height: 44px; align-items: center; padding: 0 8px; font-size: 15px; color: #eef1f5;">Chat</a>
+    <a href="#" style="display: flex; height: 44px; align-items: center; padding: 0 8px; font-size: 15px; color: var(--ink);">Chat</a>
   </header>
 
   <main style="display: flex; flex-direction: column; gap: 16px; padding: 16px; flex-grow: 1;">
     <div>
-      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #20262f; color: #f2c14e; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); color: var(--caution); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
         Payment window ended
       </span>
@@ -37,12 +37,12 @@ button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2p
 
     <section style="display: flex; flex-direction: column; gap: 4px;">
       <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">mira.k didn't mark the payment in time</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">Your 1.25 XMR is still safe in escrow. You can take it back, or give mira.k more time.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your 1.25 XMR is still safe in escrow. You can take it back, or give mira.k more time.</p>
     </section>
 
-    <section aria-label="How the refund works" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: #171b22;">
+    <section aria-label="How the refund works" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
       <h2 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">If you cancel</h2>
-      <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 20px; color: #9aa4b2;">
+      <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
         <li>mira.k gets a final alert and 15 minutes to say they already paid.</li>
         <li>If they stay silent, your 1.25 XMR comes back to your wallet automatically. No moderator needed.</li>
         <li>If they say they paid, a moderator checks both sides before anything moves.</li>
@@ -50,17 +50,17 @@ button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2p
       </ol>
     </section>
 
-    <section style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid #6b7584;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#4cc3d9" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.</p>
+    <section style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color: var(--escrow); flex-shrink: 0; margin-top: 2px;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.</p>
     </section>
   </main>
 
-  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid #20262f;">
-    <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel &amp; get refund</button>
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel &amp; get refund</button>
     <div style="display: flex; gap: 8px;">
-      <button type="button" style="flex-grow: 1; height: 48px; border: 1px solid #6b7584; border-radius: 12px; background: transparent; color: #eef1f5; font-family: inherit; font-size: 16px; cursor: pointer;">Give 30 more min</button>
-      <button type="button" style="flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid #6b7584; border-radius: 12px; background: transparent; color: #f2c14e; font-family: inherit; font-size: 16px; cursor: pointer;">
+      <button type="button" style="flex-grow: 1; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Give 30 more min</button>
+      <button type="button" style="flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--caution); font-family: inherit; font-size: 16px; cursor: pointer;">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
         Nudge mira.k
       </button>
@@ -68,9 +68,17 @@ button:focus-visible,a:focus-visible{outline:2px solid #eef1f5;outline-offset:2p
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return { rootStyle };
+  }
 }
 </script>
 </body>

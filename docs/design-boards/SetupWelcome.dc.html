@@ -11,34 +11,42 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
-a:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 </style>
 </helmet>
-<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
+<div style="{{rootStyle}}">
   <main style="flex-grow: 1; padding: 72px 24px 24px; display: flex; flex-direction: column; gap: 28px;">
-    <span aria-hidden="true" style="display: flex; width: 64px; height: 64px; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid #4cc3d9; color: #4cc3d9;">
+    <span aria-hidden="true" style="display: flex; width: 64px; height: 64px; align-items: center; justify-content: center; border-radius: 999px; border: 2px solid var(--escrow); color: var(--escrow);">
       <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12l4 4 10-10"/></svg>
     </span>
     <section style="display: flex; flex-direction: column; gap: 10px;">
       <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 34px; line-height: 38px; font-weight: 700; letter-spacing: -0.02em;">Welcome to X2F, juniper.oak</h1>
-      <p style="margin: 0; font-size: 17px; line-height: 26px; color: #9aa4b2;">Your account is ready. Trade Monero for cash, bank transfers and payment apps, with every trade protected by escrow.</p>
+      <p style="margin: 0; font-size: 17px; line-height: 26px; color: var(--ink-muted);">Your account is ready. Trade Monero for cash, bank transfers and payment apps, with every trade protected by escrow.</p>
     </section>
     <ul aria-label="Your setup" style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
-      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="color: #9aa4b2;">You log in with</span><span>PGP key</span></li>
-      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="color: #9aa4b2;">Backup login</span><span>Authenticator app</span></li>
-      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #20262f; font-size: 15px;"><span style="color: #9aa4b2;">You get paid to</span><span>Cake Wallet <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: #9aa4b2;">…k3Fz</span></span></li>
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--surface-raised); font-size: 15px;"><span style="color: var(--ink-muted);">You log in with</span><span>PGP key</span></li>
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--surface-raised); font-size: 15px;"><span style="color: var(--ink-muted);">Backup login</span><span>Authenticator app</span></li>
+      <li style="display: flex; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--surface-raised); font-size: 15px;"><span style="color: var(--ink-muted);">You get paid to</span><span>Cake Wallet <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">…k3Fz</span></span></li>
     </ul>
-    <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">You can change any of these later in <a href="#" style="padding: 14px 0;">Settings</a>.</p>
+    <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change any of these later in <a href="#" style="padding: 14px 0;">Settings</a>.</p>
   </main>
   <footer style="padding: 16px;">
-    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">Start trading</a>
+    <a href="Main.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">Start trading</a>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return { rootStyle };
+  }
 }
 </script>
 </body>

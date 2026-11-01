@@ -11,18 +11,18 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
-button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 </style>
 </helmet>
-<div style="width: 1280px; height: 800px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
-  <header style="display: flex; align-items: center; gap: 24px; padding: 16px 32px; border-bottom: 1px solid #20262f;">
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 24px; padding: 16px 32px; border-bottom: 1px solid var(--surface-raised);">
     <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
     <nav aria-label="Main" style="display: flex; gap: 24px; font-size: 15px;">
-      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: #9aa4b2; text-decoration: none;">Buy</a>
-      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: #9aa4b2; text-decoration: none;">Sell</a>
-      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: #eef1f5; text-decoration: none; font-weight: 600;">My trades</a>
-      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: #9aa4b2; text-decoration: none;">Wallets</a>
+      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: var(--ink-muted); text-decoration: none;">Buy</a>
+      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: var(--ink-muted); text-decoration: none;">Sell</a>
+      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: var(--ink); text-decoration: none; font-weight: 600;">My trades</a>
+      <a href="#" style="display: inline-flex; align-items: center; height: 44px; margin: -13px 0; color: var(--ink-muted); text-decoration: none;">Wallets</a>
     </nav>
     <span style="flex-grow: 1;"></span>
   </header>
@@ -31,79 +31,87 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #eef1
     <main style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
       <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 16px;">
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <span style="font-size: 13px; color: #9aa4b2;">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+          <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
           <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Buying 1.250000 XMR from satoshi_ghost</h1>
         </div>
-        <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: #20262f; color: #4cc3d9; font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+        <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); color: var(--escrow); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"></path><path d="M9 12l2 2 4-4"></path></svg>
           Escrow secured
         </span>
       </div>
 
-      <ol aria-label="Trade progress" style="list-style: none; margin: 0; padding: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; border-radius: 12px; background: #171b22;">
-        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: #4cc3d9;"></span><span style="font-size: 13px; color: #4cc3d9; font-weight: 600;">Escrow funded</span></li>
-        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: #f2c14e;"></span><span style="font-size: 13px; color: #f2c14e; font-weight: 600;">You pay · 62 min left</span></li>
-        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: #20262f;"></span><span style="font-size: 13px; color: #9aa4b2;">Seller confirms</span></li>
-        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: #20262f;"></span><span style="font-size: 13px; color: #9aa4b2;">XMR released</span></li>
+      <ol aria-label="Trade progress" style="list-style: none; margin: 0; padding: 16px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--escrow);"></span><span style="font-size: 13px; color: var(--escrow); font-weight: 600;">Escrow funded</span></li>
+        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--caution);"></span><span style="font-size: 13px; color: var(--caution); font-weight: 600;">You pay · 62 min left</span></li>
+        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--surface-raised);"></span><span style="font-size: 13px; color: var(--ink-muted);">Seller confirms</span></li>
+        <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--surface-raised);"></span><span style="font-size: 13px; color: var(--ink-muted);">XMR released</span></li>
       </ol>
 
       <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px;">
-        <section aria-label="Send this payment" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: #171b22;">
+        <section aria-label="Send this payment" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
           <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
-          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50 <span style="font-size: 16px; color: #9aa4b2;">USD</span></span>
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50 <span style="font-size: 16px; color: var(--ink-muted);">USD</span></span>
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px;">
-            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: #9aa4b2;">Zelle to</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">[SELLER ZELLE ID]</span></div>
-            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: #9aa4b2;">Memo</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></div>
-            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: #9aa4b2;">Rate</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00 / XMR</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--ink-muted);">Zelle to</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">[SELLER ZELLE ID]</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--ink-muted);">Memo</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></div>
+            <div style="display: flex; justify-content: space-between; gap: 8px;"><span style="color: var(--ink-muted);">Rate</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00 / XMR</span></div>
           </div>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.</p>
         </section>
         <section aria-label="Payment proof" style="display: flex; flex-direction: column; gap: 12px;">
-          <label for="proof-d" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex-grow: 1; padding: 16px; border-radius: 12px; border: 1px dashed #6b7584; text-align: center; cursor: pointer;">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#eef1f5" stroke-width="1.5" aria-hidden="true"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"></path></svg>
+          <label for="proof-d" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; flex-grow: 1; padding: 16px; border-radius: 12px; border: 1px dashed var(--line); text-align: center; cursor: pointer;">
+            <svg style="color: var(--ink);" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 16V4"></path><path d="M7 9l5-5 5 5"></path><path d="M4 16v3a1 1 0 001 1h14a1 1 0 001-1v-3"></path></svg>
             <span style="font-size: 16px; font-weight: 600;">Drop payment proof here</span>
-            <span style="font-size: 13px; line-height: 18px; color: #9aa4b2; max-width: 300px;">Private details are blurred automatically for you to check next. It's best-effort, so please double-check before sending. Location and device info are removed.</span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted); max-width: 300px;">Private details are blurred automatically for you to check next. It's best-effort, so please double-check before sending. Location and device info are removed.</span>
             <input id="proof-d" type="file" accept="image/*" style="position: absolute; width: 1px; height: 1px; opacity: 0;">
           </label>
         </section>
       </div>
 
       <div style="display: flex; gap: 12px; align-items: center; margin-top: auto;">
-        <button type="button" style="height: 52px; padding: 0 32px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">I've paid</button>
-        <button type="button" style="height: 52px; padding: 0 16px; border: 0; background: transparent; color: #9aa4b2; font-family: inherit; font-size: 15px; cursor: pointer;">Cancel trade</button>
+        <button type="button" style="height: 52px; padding: 0 32px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;">I've paid</button>
+        <button type="button" style="height: 52px; padding: 0 16px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel trade</button>
         <span style="flex-grow: 1;"></span>
-        <button type="button" style="height: 52px; padding: 0 16px; border: 0; background: transparent; color: #ff6b8a; font-family: inherit; font-size: 15px; cursor: pointer;">Open dispute</button>
+        <button type="button" style="height: 52px; padding: 0 16px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; cursor: pointer;">Open dispute</button>
       </div>
     </main>
 
-    <aside aria-label="Chat with satoshi_ghost" style="display: flex; flex-direction: column; border-radius: 12px; background: #171b22; min-height: 0;">
-      <div style="display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid #20262f;">
+    <aside aria-label="Chat with satoshi_ghost" style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface); min-height: 0;">
+      <div style="display: flex; align-items: center; gap: 12px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
         <div style="display: flex; flex-direction: column; flex-grow: 1;">
           <span style="font-size: 16px; font-weight: 600;">satoshi_ghost</span>
-          <span style="font-size: 13px; color: #9aa4b2;">412 trades · 99% positive · releases in ~6 min</span>
+          <span style="font-size: 13px; color: var(--ink-muted);">412 trades · 99% positive · releases in ~6 min</span>
         </div>
-        <span style="display: flex; gap: 6px;"><span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #4cc3d9; border: 1px solid #4cc3d9; border-radius: 999px; padding: 3px 8px;">Trusted</span><span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: #4cc3d9; border: 1px solid #4cc3d9; border-radius: 999px; padding: 3px 8px;">Fast</span></span>
+        <span style="display: flex; gap: 6px;"><span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;">Trusted</span><span style="font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow); border: 1px solid var(--escrow); border-radius: 999px; padding: 3px 8px;">Fast</span></span>
       </div>
       <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px; flex-grow: 1; font-size: 15px; line-height: 22px;">
-        <span style="align-self: center; font-size: 12px; color: #9aa4b2;">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
-        <p style="margin: 0; align-self: flex-start; max-width: 85%; padding: 10px 12px; border-radius: 12px; background: #20262f;">Escrow is funded. Send via Zelle with K7M2-9QXA-4FTR-8WPN in the memo please.</p>
-        <p style="margin: 0; align-self: flex-end; max-width: 85%; padding: 10px 12px; border-radius: 12px; background: #2a1a0e; color: #eef1f5;">On it, sending now.</p>
+        <span style="align-self: center; font-size: 12px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
+        <p style="margin: 0; align-self: flex-start; max-width: 85%; padding: 10px 12px; border-radius: 12px; background: var(--surface-raised);">Escrow is funded. Send via Zelle with K7M2-9QXA-4FTR-8WPN in the memo please.</p>
+        <p style="margin: 0; align-self: flex-end; max-width: 85%; padding: 10px 12px; border-radius: 12px; background: color-mix(in srgb, var(--monero) 14%, var(--surface)); color: var(--ink);">On it, sending now.</p>
       </div>
-      <div style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid #20262f;">
+      <div style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
         <label for="msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
-        <input id="msg" type="text" placeholder="Message satoshi_ghost" style="flex-grow: 1; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px;">
-        <button type="button" aria-label="Nudge satoshi_ghost with a sound" title="Nudge: play a sound on their devices" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid #6b7584; border-radius: 6px; background: transparent; color: #f2c14e; cursor: pointer;">
+        <input id="msg" type="text" placeholder="Message satoshi_ghost" style="flex-grow: 1; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px;">
+        <button type="button" aria-label="Nudge satoshi_ghost with a sound" title="Nudge: play a sound on their devices" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--caution); cursor: pointer;">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 003.4 0"></path><path d="M2 4l2 2"></path><path d="M22 4l-2 2"></path></svg>
         </button>
-        <button type="button" style="height: 44px; padding: 0 16px; border: 1px solid #6b7584; border-radius: 6px; background: transparent; color: #eef1f5; font-family: inherit; font-size: 15px; cursor: pointer;">Send</button>
+        <button type="button" style="height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Send</button>
       </div>
     </aside>
   </div>
 <p style="margin: 0">1 · Seller funds escrow</p><p style="margin: 0">1 · Seller funds escrow</p><p style="margin: 0">1 · Seller funds escrow</p><p style="margin: 0">1 · Seller funds escrow</p></div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":800}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 1280px; height: 800px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    return { rootStyle };
+  }
 }
 </script>
 </body>

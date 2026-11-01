@@ -11,51 +11,57 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
-button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
-input::placeholder,textarea::placeholder{color:#9aa4b2}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
 </style>
 </helmet>
-<div style="width: 390px; height: 844px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;">
-  <header style="display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; border-bottom: 1px solid #20262f;">
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; border-bottom: 1px solid var(--surface-raised);">
     <div style="display: flex; align-items: center; gap: 8px;">
-      <a href="SetupUsername.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; align-items: center; justify-content: center; color: #eef1f5;">
+      <a href="SetupUsername.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; align-items: center; justify-content: center; color: var(--ink);">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"></path></svg>
       </a>
       <span style="flex-grow: 1; font-size: 15px; font-weight: 600;">Set up your account</span>
-      <span style="font-size: 13px; color: #9aa4b2;">Step 2 of 5</span>
+      <span style="font-size: 13px; color: var(--ink-muted);">Step 2 of 5</span>
     </div>
-    <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="2" style="display: flex; gap: 4px;"><span style="flex: 1; height: 4px; border-radius: 999px; background: #eef1f5;"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: #eef1f5;"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: #20262f;"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: #20262f;"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: #20262f;"></span></div>
-    <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">Takes about 2 minutes.</span>
+    <div role="progressbar" aria-label="Setup progress" aria-valuemin="1" aria-valuemax="5" aria-valuenow="2" style="display: flex; gap: 4px;"><span style="flex: 1; height: 4px; border-radius: 999px; background: var(--ink);"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: var(--ink);"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: var(--surface-raised);"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: var(--surface-raised);"></span><span style="flex: 1; height: 4px; border-radius: 999px; background: var(--surface-raised);"></span></div>
+    <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Takes about 2 minutes.</span>
   </header>
   <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 20px;">
     <section style="display: flex; flex-direction: column; gap: 6px;">
       <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">How do you want to log in?</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: #9aa4b2;">Choose one for now. You can add others later in Settings.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Choose one for now. You can add others later in Settings.</p>
     </section>
     <div role="radiogroup" aria-label="Login method" style="display: flex; flex-direction: column; gap: 10px;">
       <sc-for list="{{methods}}" as="m" hint-placeholder-count="4">
         <button type="button" role="radio" aria-checked="{{m.on}}" onClick="{{m.pick}}" style="{{m.style}}">
           <span style="display: flex; align-items: center; gap: 8px;">
             <span style="font-size: 17px; font-weight: 600;">{{m.name}}</span>
-            <sc-if value="{{m.rec}}" hint-placeholder-val="{{false}}"><span style="padding: 2px 10px; border-radius: 999px; background: #20262f; color: #4cc3d9; font-size: 12px; font-weight: 600;">Recommended</span></sc-if>
+            <sc-if value="{{m.rec}}" hint-placeholder-val="{{false}}"><span style="padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); color: var(--escrow); font-size: 12px; font-weight: 600;">Recommended</span></sc-if>
           </span>
-          <span style="font-size: 14px; line-height: 20px; color: #9aa4b2;">{{m.desc}}</span>
-          <sc-if value="{{m.later}}" hint-placeholder-val="{{false}}"><span style="font-size: 14px; line-height: 20px; color: #eef1f5;">{{m.later}}</span></sc-if>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{m.desc}}</span>
+          <sc-if value="{{m.later}}" hint-placeholder-val="{{false}}"><span style="font-size: 14px; line-height: 20px; color: var(--ink);">{{m.later}}</span></sc-if>
         </button>
       </sc-for>
     </div>
     <a href="#" style="display: inline-flex; align-items: center; height: 44px; font-size: 15px;">New to PGP? See the FAQ for recommended PGP apps.</a>
   </main>
-  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border-top: 1px solid #20262f; width: 354px; height: 288px">
-    <a href="{{next}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">{{cta}}</a>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border-top: 1px solid var(--surface-raised); width: 354px; height: 288px">
+    <a href="{{next}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">{{cta}}</a>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: 'pgp' }; }
   renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const defs = [
       { id: 'pgp', name: 'PGP key', rec: true, next: 'SetupPgpKey.dc.html', cta: 'Continue with PGP key',
         desc: 'Log in with a PGP key instead of a password. X2F stores only your public key, so there is no password for a hacker to compromise from us.',
@@ -67,16 +73,16 @@ class Component extends DCLogic {
       { id: 'password', name: 'Password', next: 'SetupPassword.dc.html', cta: 'Continue with a password',
         desc: 'Set a password if you would rather. It needs at least 10 characters, with upper and lower case letters, a number and a symbol.' }
     ];
-    const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 14px 16px; border-radius: 12px; background: #171b22; color: #eef1f5; font-family: inherit; text-align: left; cursor: pointer; ';
+    const base = 'display: flex; flex-direction: column; align-items: flex-start; gap: 6px; width: 100%; padding: 14px 16px; border-radius: 12px; background: var(--surface); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; ';
     const pick = this.state.pick;
     const methods = defs.map((d) => ({
       name: d.name, desc: d.desc, rec: !!d.rec, later: pick === d.id ? (d.later || '') : '',
       on: pick === d.id ? 'true' : 'false',
-      style: base + (pick === d.id ? 'border: 2px solid #eef1f5;' : 'border: 2px solid transparent;'),
+      style: base + (pick === d.id ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 2px solid transparent;'),
       pick: () => this.setState({ pick: d.id })
     }));
     const cur = defs.find((d) => d.id === pick);
-    return { methods, cta: cur.cta, next: cur.next };
+    return { rootStyle, methods, cta: cur.cta, next: cur.next };
   }
 }
 </script>
