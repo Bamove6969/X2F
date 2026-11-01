@@ -24,6 +24,17 @@ export type KeyInspection =
 export const MAX_ARMORED_KEY_BYTES = 32 * 1024;
 export const MAX_SUBKEYS = 8;
 const MIN_RSA_BITS = 4096;
+/** Past reputation (Plan 5 P5-A22): old keys only need to sign, and many are RSA 2048. */
+export const PAST_REP_MIN_RSA_BITS = 2048;
+
+/**
+ * How strict `inspectPublicKey` is. The defaults (RSA 4096, an encryption subkey required) are
+ * login's; Plan 5 Task 10 passes `{ minRsaBits: PAST_REP_MIN_RSA_BITS, requireEncryption: false }`.
+ */
+export interface InspectOptions {
+  minRsaBits?: number;
+  requireEncryption?: boolean;
+}
 
 const { enums } = openpgp;
 
@@ -83,7 +94,7 @@ const BASE_CONFIG: openpgp.Config = Object.freeze({
  * Curve25519, X25519, X448), so a key whose only usable encryption subkey is
  * weak fails closed instead of being used.
  */
-const STRICT_CONFIG: openpgp.Config = Object.freeze({
+export const STRICT_CONFIG: openpgp.Config = Object.freeze({
   ...BASE_CONFIG,
   minRSABits: MIN_RSA_BITS,
   rejectPublicKeyAlgorithms: new Set([
@@ -102,6 +113,18 @@ const STRICT_CONFIG: openpgp.Config = Object.freeze({
     enums.curve.brainpoolP384r1,
     enums.curve.brainpoolP512r1,
   ]),
+});
+
+/**
+ * Verifies past-reputation signatures (Plan 5 Task 10): BASE_CONFIG with RSA down to
+ * PAST_REP_MIN_RSA_BITS and login's rejected algorithms and curves. STRICT_CONFIG would refuse
+ * every 2048-bit key P5-A22 accepts.
+ */
+export const PAST_REP_VERIFY_CONFIG: openpgp.Config = Object.freeze({
+  ...BASE_CONFIG,
+  minRSABits: PAST_REP_MIN_RSA_BITS,
+  rejectPublicKeyAlgorithms: STRICT_CONFIG.rejectPublicKeyAlgorithms,
+  rejectCurves: STRICT_CONFIG.rejectCurves,
 });
 
 /**
@@ -126,37 +149,39 @@ function isRsa(name: string): boolean {
   return name === 'rsaEncryptSign' || name === 'rsaEncrypt' || name === 'rsaSign';
 }
 
-function rsaTooShort(bits: number | undefined): string {
-  return `RSA ${bits ?? 'unknown'}-bit keys are too short; X2F needs ${MIN_RSA_BITS} or more.`;
+function rsaTooShort(bits: number | undefined, min = MIN_RSA_BITS): string {
+  return `RSA ${bits ?? 'unknown'}-bit keys are too short; X2F needs ${min} or more.`;
 }
 
-const UNSUPPORTED = 'This key type is not supported; X2F accepts RSA 4096 or more, Ed25519 and Ed448.';
+const unsupported = (min: number): string => `This key type is not supported; X2F accepts RSA ${min} or more, Ed25519 and Ed448.`;
 
-function checkPrimary(info: openpgp.AlgorithmInfo): PrimaryAlg {
+function checkPrimary(info: openpgp.AlgorithmInfo, minRsaBits: number): PrimaryAlg {
   const { algorithm, bits, curve } = info;
   if (algorithm === 'rsaEncryptSign' || algorithm === 'rsaSign') {
-    if (bits === undefined || bits < MIN_RSA_BITS) return { ok: false, detail: rsaTooShort(bits) };
+    if (bits === undefined || bits < minRsaBits) return { ok: false, detail: rsaTooShort(bits, minRsaBits) };
     return { ok: true, algorithm: 'rsa', bits };
   }
   if (algorithm === 'eddsaLegacy' && curve === 'ed25519Legacy') return { ok: true, algorithm: 'ed25519', bits: null };
   if (algorithm === 'ed25519') return { ok: true, algorithm: 'ed25519', bits: null };
   if (algorithm === 'ed448') return { ok: true, algorithm: 'ed448', bits: null };
-  return { ok: false, detail: UNSUPPORTED };
+  return { ok: false, detail: unsupported(minRsaBits) };
 }
 
-function checkEncryption(info: openpgp.AlgorithmInfo): string | null {
+function checkEncryption(info: openpgp.AlgorithmInfo, minRsaBits: number): string | null {
   const { algorithm, bits, curve } = info;
-  if (isRsa(algorithm)) return bits !== undefined && bits >= MIN_RSA_BITS ? null : rsaTooShort(bits);
+  if (isRsa(algorithm)) return bits !== undefined && bits >= minRsaBits ? null : rsaTooShort(bits, minRsaBits);
   if (algorithm === 'ecdh' && curve === 'curve25519Legacy') return null;
   if (algorithm === 'x25519' || algorithm === 'x448') return null;
-  return 'The encryption part of this key uses a type X2F does not accept; it needs RSA 4096 or more, X25519 or X448.';
+  return `The encryption part of this key uses a type X2F does not accept; it needs RSA ${minRsaBits} or more, X25519 or X448.`;
 }
 
 /**
  * Check a pasted public key. The size limit is checked on UTF-8 bytes before
- * any parsing. `now` is the server clock.
+ * any parsing. `now` is the server clock. `options` default to login's rules (see InspectOptions).
  */
-export async function inspectPublicKey(armored: string, now: Date): Promise<KeyInspection> {
+export async function inspectPublicKey(armored: string, now: Date, options: InspectOptions = {}): Promise<KeyInspection> {
+  const minRsaBits = options.minRsaBits ?? MIN_RSA_BITS;
+  const requireEncryption = options.requireEncryption ?? true;
   if (typeof armored !== 'string') return refuse('key-unreadable', 'This does not look like a PGP public key.');
   if (new TextEncoder().encode(armored).length > MAX_ARMORED_KEY_BYTES) {
     return refuse('key-too-large', 'This key is too large; X2F accepts keys up to 32 KiB.');
@@ -196,7 +221,7 @@ export async function inspectPublicKey(armored: string, now: Date): Promise<KeyI
     );
   }
 
-  const primary = checkPrimary(key.getAlgorithmInfo());
+  const primary = checkPrimary(key.getAlgorithmInfo(), minRsaBits);
   if (!primary.ok) return refuse('key-weak', primary.detail);
 
   try {
@@ -216,13 +241,17 @@ export async function inspectPublicKey(armored: string, now: Date): Promise<KeyI
     return refuse('key-expired', `This key expired on ${isoDate(expiresAt)}.`);
   }
 
+  if (!requireEncryption) {
+    return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt };
+  }
+
   let encryptionKey: openpgp.Key | openpgp.Subkey;
   try {
     encryptionKey = await key.getEncryptionKey(undefined, now, undefined, FIND_CONFIG);
   } catch {
     return refuse('key-no-encryption', 'This key cannot receive encrypted messages; it needs an encryption subkey.');
   }
-  const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo());
+  const encProblem = checkEncryption(encryptionKey.getAlgorithmInfo(), minRsaBits);
   if (encProblem !== null) return refuse('key-weak', encProblem);
 
   return { ok: true, fingerprint: key.getFingerprint(), algorithm: primary.algorithm, bits: primary.bits, expiresAt };

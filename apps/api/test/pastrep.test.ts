@@ -26,10 +26,9 @@ const SRC = fileURLToPath(new URL('../src/', import.meta.url));
 
 type Pair = { publicKey: string; privateKey: string; fingerprint: string };
 
-async function gen(o: Partial<openpgp.KeyOptions> = {}): Promise<Pair> {
-  const k = await openpgp.generateKey({
-    type: 'ecc', curve: 'ed25519Legacy', userIDs: [{ name: 'Old Trader' }], date: KEY_DATE, ...o, format: 'armored',
-  } as openpgp.KeyOptions & { format: 'armored' });
+async function gen(o: Partial<Parameters<typeof openpgp.generateKey>[0]> = {}): Promise<Pair> {
+  const kind = o.type === undefined ? { type: 'ecc' as const, curve: 'ed25519Legacy' as const } : {};
+  const k = await openpgp.generateKey({ ...kind, userIDs: [{ name: 'Old Trader' }], date: KEY_DATE, ...o, format: 'armored' });
   return { publicKey: k.publicKey, privateKey: k.privateKey, fingerprint: (await openpgp.readKey({ armoredKey: k.publicKey })).getFingerprint() };
 }
 
@@ -81,8 +80,8 @@ beforeAll(async () => {
   [ed, other, rsa2048, rsa1024] = await Promise.all([
     gen(),
     gen(),
-    gen({ type: 'rsa', rsaBits: 2048, curve: undefined }),
-    gen({ type: 'rsa', rsaBits: 1024, curve: undefined, config: { minRSABits: 1024 } }),
+    gen({ type: 'rsa', rsaBits: 2048 }),
+    gen({ type: 'rsa', rsaBits: 1024, config: { minRSABits: 1024 } }),
   ]);
 }, 600_000);
 afterAll(async () => app.close());
@@ -172,11 +171,32 @@ describe('start and finish', () => {
     const { b } = await login();
     const c = await start(b, withSub);
     const signed = await clearsign(c.text, withSub);
-    const sig = (await openpgp.readCleartextMessage({ cleartextMessage: signed })).signature;
+    const sig = (await openpgp.readCleartextMessage({ cleartextMessage: signed })) as unknown as { signature: openpgp.Signature };
     const primary = await openpgp.readKey({ armoredKey: withSub.publicKey });
-    expect(sig.getSigningKeyIDs()[0]!.equals(primary.getKeyID())).toBe(false);
+    expect(sig.signature.getSigningKeyIDs()[0]!.equals(primary.getKeyID())).toBe(false);
     const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed });
     expect(res.statusCode, res.body).toBe(201);
+  });
+
+  it("a signature carrying a Signer's User ID (an email) → bad-signature, nothing stored (R16; lead question)", async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const original = openpgp.SignaturePacket.prototype.sign;
+    const spy = vi.spyOn(openpgp.SignaturePacket.prototype, 'sign').mockImplementation(function (this: openpgp.SignaturePacket, ...args) {
+      this.signersUserID = 'Old Trader <old@example.org>';
+      return original.apply(this, args);
+    });
+    let signed: string;
+    try {
+      signed = await clearsign(c.text, ed);
+    } finally {
+      spy.mockRestore();
+    }
+    const parsed = (await openpgp.readCleartextMessage({ cleartextMessage: signed })) as unknown as { signature: openpgp.Signature };
+    expect((parsed.signature.packets[0] as openpgp.SignaturePacket).signersUserID).toBe('Old Trader <old@example.org>');
+    const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed });
+    expect(res.json()).toMatchObject({ error: 'bad-signature' });
+    expect(await rows()).toEqual([]);
   });
 
   it('a garbled paste → bad-signature', async () => {
@@ -341,8 +361,9 @@ describe('cleartext tricks', () => {
   it('CRLF line ends and trailing whitespace in the paste are accepted', async () => {
     const { b } = await login();
     const c = await start(b, ed);
-    const signed = `\n  ${(await clearsign(c.text, ed)).replace(/\n/g, '\r\n')}  \r\n`;
-    expect((await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed })).statusCode).toBe(201);
+    const signed = `\n  ${(await clearsign(c.text, ed)).replace(/\r?\n/g, '\r\n')}  \r\n`;
+    const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed });
+    expect(res.statusCode, res.body).toBe(201);
   });
 
   it('verifyPastRepSignature compares what was verified', async () => {
@@ -358,7 +379,7 @@ describe('cleartext tricks', () => {
 
 describe('storage (R16)', () => {
   it('a v6 signing-only Ed25519 key carrying a user ID is stored with no user ID packet', async () => {
-    const v6 = await gen({ type: 'curve25519', curve: undefined, subkeys: [], config: { v6Keys: true }, userIDs: [{ name: 'V6 User', email: 'v6@example.org' }] });
+    const v6 = await gen({ type: 'curve25519', subkeys: [], config: { v6Keys: true }, userIDs: [{ name: 'V6 User', email: 'v6@example.org' }] });
     expect((await openpgp.readKey({ armoredKey: v6.publicKey })).users).toHaveLength(1);
     const { b } = await login();
     const c = await start(b, v6);

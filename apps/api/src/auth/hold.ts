@@ -533,6 +533,11 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
   'POST /v1/trades/:code/final-alert-seen': 'review round 5 X1, an owner question; unchanged here',
+  // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
+  // caller's own claim rows only (a moderator approves before anything shows).
+  'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
+  'POST /v1/account/past-rep/finish': "the caller's own past-rep claim row (status signed, awaiting a moderator) and its challenge",
+  'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
 };
 
 /**

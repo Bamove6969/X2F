@@ -58,6 +58,10 @@ export const CANT_DO_CODES = [
   'review-pending',
   'lien',
   'trade-ban',
+  // Plan 5 Task 10 (P5-A21, P5-A24): one live past-reputation claim per site, and a PGP key backs
+  // one account. No popup words yet (Task 12's PastRepClaim screen); lead question.
+  'site-claimed',
+  'fingerprint-claimed',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
@@ -124,6 +128,13 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'trade-closed': 'the trade has ended',
   'dispute-exists': 'a dispute is already open on this trade (the trade state)',
   'no-shared-context': 'nudges are only for a shared trade (the button is not offered)',
+  // Plan 5 Task 10: past reputation, checks on what the trader pasted or a step already used.
+  'bad-site': 'an input check on the picked site',
+  'bad-url': 'an input check on the pasted archive link',
+  'bad-signature': 'an input check on the pasted signature',
+  'wrong-text': 'an input check: the pasted signature is not of the issued text',
+  'wrong-key': 'an input check: the pasted signature is not by the claimed key',
+  'challenge-used': 'a step already done (start again)',
   'approval-ended': 'the login request itself already ended (approved, blocked or timed out): its own state, not a rule',
   // Plan 3 Task 20 (encrypted chat): the chat's own protocol and state, never a rule about the user.
   'chat-not-ready': 'the chat is still being secured (wait)',
