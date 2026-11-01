@@ -17,8 +17,8 @@
 // The same database-level residual as the feedback form applies (Postgres keeps insertion order in
 // xmin/ctid; see form.ts and docs/coordination.md). The route does not touch the session.
 //
-// The staff side (perm `feedback.read`, GET /staff/v1/feedback, the staff-web Feedback page) waits
-// for Plan 4: listFeedback and feedbackMoodCounts are ready for it (tripwires in test/feedback.test.ts).
+// The staff side (GET /staff/v1/feedback behind perm `feedback.read`, the staff-web Feedback page)
+// waits for Plan 4: listFeedback and feedbackMoodCounts are ready for it (tripwires in test/feedback.test.ts).
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';

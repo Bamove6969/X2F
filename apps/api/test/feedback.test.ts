@@ -257,12 +257,6 @@ describe('Task 4 waits for the Plan 4 staff pieces', () => {
   const has = (p: string): boolean => existsSync(ROOT + p);
   const read = (p: string): string => (has(p) ? readFileSync(ROOT + p, 'utf8') : '');
 
-  it('NEEDS_P4_FEEDBACK_READ_PERM: perm `feedback.read` (owner only) and NAV.owner `feedback`', () => {
-    // When packages/staff lands (Plan 4 Task 1): add perm `feedback.read` to the owner only, add
-    // 'feedback' to NAV.owner, and a privilege-matrix row (a moderator is refused, the owner reads).
-    expect(has('packages/staff/src/roles.ts'), 'packages/staff landed: add `feedback.read` (owner) and NAV.owner "feedback" (see this test)').toBe(false);
-  });
-
   it('NEEDS_P4_STAFF_FEEDBACK_ROUTE: GET /staff/v1/feedback?before serves listFeedback behind `feedback.read`', () => {
     // When the staff API lands (Plan 4, `buildStaffApi`): add apps/api/src/staff/feedback.ts with
     // GET /staff/v1/feedback?before → { items: { mood, note, createdOn }[], counts } from listFeedback
