@@ -5,12 +5,28 @@ export { type DetectOptions, type HiddenKind, type Keep, type Region, UPI_IDS, d
 export { padAndMerge, redact } from './redact.js';
 export { CleanError, type CleanErrorCode, assertClean, cleanImage } from './clean.js';
 export { parseAmounts } from './amounts.js';
-export { type ProofBinding, type ProofErrorCode, type ProofKind, ProofError, decryptProof, encryptProof, newProofId } from './seal.js';
+export {
+  type ProofBinding,
+  type ProofErrorCode,
+  type ProofKind,
+  PROOF_KINDS,
+  PROOF_MAX_CIPHERTEXT,
+  ProofError,
+  decryptProof,
+  encryptProof,
+  isProofId,
+  newProofId,
+} from './seal.js';
 export {
   type ProofAttachedPayload,
   type ProofEnvelope,
   type ProofMime,
+  type ProofSealArgs,
   type ProofUnblurredPayload,
   PROOF_MAX_SIDE,
+  PROOF_RECIPIENTS,
   parseProofPayload,
+  proofKeyFromBase64,
+  proofKeyToBase64,
+  sealProofEnvelope,
 } from './payloads.js';

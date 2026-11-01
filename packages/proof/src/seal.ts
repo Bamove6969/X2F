@@ -50,6 +50,10 @@ const PROOF_ID_BYTES = 16;
 const ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 /** 16 bytes = 128 bits = 26 base32 characters; the last carries 3 data bits and 2 zero bits. */
 const PROOF_ID = /^[0-9A-HJKMNP-TV-Z]{25}[048CGMRW]$/;
+/** A SHA-256 as carried in payloads and bindings: exactly 64 lower-case hex characters. */
+export const SHA256_HEX = /^[0-9a-f]{64}$/;
+/** P5-A25: the largest proof ciphertext (nonce + image + tag) anyone stores or decrypts. */
+export const PROOF_MAX_CIPHERTEXT = 4 * 1024 * 1024;
 const utf8 = new TextEncoder();
 
 export function isProofId(x: unknown): x is string {
@@ -112,8 +116,10 @@ export async function encryptProof(
 
 /**
  * Decrypt a proof ciphertext. Throws ProofError('bad-ciphertext') when the key, layout, trade
- * code, proof id or kind do not match (AEAD failure), and also when the decrypted image's
- * SHA-256 differs from `a.sha256`. Invalid arguments throw TypeError.
+ * code, proof id or kind do not match (AEAD failure), when the ciphertext is longer than
+ * PROOF_MAX_CIPHERTEXT (checked before any copy or decryption), and also when the decrypted
+ * image's SHA-256 differs from `a.sha256`. Invalid arguments, including a `sha256` that is not
+ * 64 lower-case hex characters, throw TypeError.
  */
 export async function decryptProof(
   ciphertext: Uint8Array,
@@ -124,9 +130,11 @@ export async function decryptProof(
     throw new TypeError('decryptProof: ciphertext and key must be Uint8Array');
   }
   const ad = aad(a, 'decryptProof');
-  if (typeof a.sha256 !== 'string') throw new TypeError('decryptProof: invalid sha256');
+  if (typeof a.sha256 !== 'string' || !SHA256_HEX.test(a.sha256)) throw new TypeError('decryptProof: invalid sha256');
   const fail = (): ProofError => new ProofError('bad-ciphertext', 'Proof does not decrypt');
-  if (key.length !== KEY_BYTES || ciphertext.length < NONCE_BYTES + TAG_BYTES) throw fail();
+  if (key.length !== KEY_BYTES || ciphertext.length < NONCE_BYTES + TAG_BYTES || ciphertext.length > PROOF_MAX_CIPHERTEXT) {
+    throw fail();
+  }
   await sodium.ready;
   let plain: Uint8Array;
   try {

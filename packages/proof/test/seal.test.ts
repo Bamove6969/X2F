@@ -30,7 +30,7 @@ const image = (n = 1000): Uint8Array => {
   return b;
 };
 const hex = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
-const b64 = (b: Uint8Array): string => proofKeyToBase64(b);
+const b64 = (b: Uint8Array): Promise<string> => proofKeyToBase64(b);
 
 async function proofCode(p: Promise<unknown>): Promise<string> {
   try {
@@ -196,24 +196,28 @@ describe('encryptProof / decryptProof', () => {
 describe('proof key base64 (M3)', () => {
   it('round trips a 32-byte key through padded standard base64 and parseProofPayload', async () => {
     const { key, sha256 } = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
-    const s = proofKeyToBase64(key);
+    const s = await proofKeyToBase64(key);
     expect(s).toMatch(/^[A-Za-z0-9+/]{43}=$/);
     const p = parseProofPayload('proof.unblurred', { proofId: newProofId(), key: s, sha256, width: 10, height: 10, mime: 'image/png' });
-    expect(Buffer.from(proofKeyFromBase64(p.payload.key)).equals(Buffer.from(key))).toBe(true);
+    expect(Buffer.from(await proofKeyFromBase64(p.payload.key)).equals(Buffer.from(key))).toBe(true);
     // Bytes that encode to + and / in the standard alphabet.
     const odd = new Uint8Array(32).fill(0xfb);
-    expect(proofKeyToBase64(odd)).toContain('+');
-    expect(Buffer.from(proofKeyFromBase64(proofKeyToBase64(odd))).equals(Buffer.from(odd))).toBe(true);
+    expect(await proofKeyToBase64(odd)).toContain('+');
+    expect(Buffer.from(await proofKeyFromBase64(await proofKeyToBase64(odd))).equals(Buffer.from(odd))).toBe(true);
   });
 
   it('refuses keys that are not 32 bytes and base64 that is not canonical padded standard', async () => {
     await sodium.ready;
-    expect(() => proofKeyToBase64(new Uint8Array(31))).toThrow(TypeError);
+    await expect(proofKeyToBase64(new Uint8Array(31))).rejects.toThrow(TypeError);
     const key = new Uint8Array(32).fill(0xfb);
+    const good = await proofKeyToBase64(key);
     const urlsafe = sodium.to_base64(key); // libsodium's default: URL-safe, no padding
-    for (const s of [urlsafe, proofKeyToBase64(key).slice(0, -1), proofKeyToBase64(new Uint8Array(33)), '', `${proofKeyToBase64(key).slice(0, -2)}9=`]) {
-      expect(payloadCode(() => proofKeyFromBase64(s)), s).toBe('bad-payload');
+    const long = sodium.to_base64(new Uint8Array(33), sodium.base64_variants.ORIGINAL);
+    for (const s of [urlsafe, good.slice(0, -1), long, '', `${good.slice(0, -2)}9=`]) {
+      expect(await proofCode(proofKeyFromBase64(s)), s).toBe('bad-payload');
     }
+    // parseProofPayload refuses the same strings.
+    expect(payloadCode(() => parseProofPayload('proof.unblurred', { proofId: newProofId(), key: urlsafe, sha256: 'a'.repeat(64), width: 1, height: 1, mime: 'image/png' }))).toBe('bad-payload');
   });
 });
 
@@ -249,7 +253,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     const plain = image(4000);
     const proofId = newProofId();
     const enc = await encryptProof(plain, { code: CODE, proofId, kind: 'unblurred' });
-    const payload = { proofId, key: b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/png' };
+    const payload = { proofId, key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/png' };
     expect(parseProofPayload('proof.unblurred', payload).payload).toEqual(payload);
     const env = await seal({
       trade: CHANNEL,
@@ -266,7 +270,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     expect(opened.from).toBe('buyer');
     const parsed = parseProofPayload(opened.type, opened.payload);
     expect(parsed.type).toBe('proof.unblurred');
-    const key = proofKeyFromBase64(parsed.payload.key);
+    const key = await proofKeyFromBase64(parsed.payload.key);
     const out = await decryptProof(enc.ciphertext, key, { code: CODE, proofId: parsed.payload.proofId, kind: 'unblurred', sha256: parsed.payload.sha256 });
     expect(Buffer.from(out).equals(Buffer.from(plain))).toBe(true);
 
@@ -284,7 +288,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     const { ids, parts } = await participants();
     const proofId = newProofId();
     const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'proof' });
-    const payload = { proofId, kind: 'proof', key: b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'] };
+    const payload = { proofId, kind: 'proof', key: await b64(enc.key), sha256: enc.sha256, width: 1170, height: 2532, mime: 'image/jpeg', hidden: ['card', 'email'] };
     const env = await seal({ trade: CHANNEL, from: 'buyer', seq: 1, type: 'proof.attached', payload, to: ['buyer', 'seller', 'mod'], me: ids.buyer, participants: parts });
     const opened = await open(env, { me: ids.seller, myRole: 'seller', participants: parts, trade: CHANNEL, guard: new ReplayGuard(CHANNEL) });
     const parsed = parseProofPayload(opened.type, opened.payload);
@@ -293,7 +297,10 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
 });
 
 describe('parseProofPayload', () => {
-  const KEY = b64(new Uint8Array(32).fill(7));
+  // Padded standard base64 of 32, 31 and 33 bytes of 0x07 (literals: no Buffer, no sodium.ready).
+  const KEY = `${'BwcH'.repeat(10)}Bwc=`;
+  const KEY31 = `${'BwcH'.repeat(10)}Bw==`;
+  const KEY33 = 'BwcH'.repeat(11);
   const SHA = 'a'.repeat(64);
   const attached = (): Record<string, unknown> => ({
     proofId: newProofId(),
@@ -308,7 +315,8 @@ describe('parseProofPayload', () => {
   const unblurred = (): Record<string, unknown> => ({ proofId: newProofId(), key: KEY, sha256: SHA, width: 800, height: 600, mime: 'image/jpeg' });
   const bad = (type: string, p: unknown): string => payloadCode(() => parseProofPayload(type, p));
 
-  it('accepts both shapes', () => {
+  it('accepts both shapes', async () => {
+    expect(Buffer.from(await proofKeyFromBase64(KEY)).equals(Buffer.alloc(32, 7))).toBe(true);
     expect(bad('proof.attached', attached())).toBe('no error');
     expect(bad('proof.unblurred', unblurred())).toBe('no error');
     expect(bad('proof.attached', { ...attached(), hidden: ['name', 'account', 'card', 'iban', 'address', 'phone', 'email', 'handle', 'manual'] })).toBe('no error');
@@ -328,7 +336,7 @@ describe('parseProofPayload', () => {
   });
 
   it('refuses keys that are not exactly 32 bytes of canonical base64', () => {
-    for (const key of [b64(new Uint8Array(31)), b64(new Uint8Array(33)), '', KEY.replace(/=$/, ''), `${KEY.slice(0, -2)}9=`, 7]) {
+    for (const key of [KEY31, KEY33, '', KEY.replace(/=$/, ''), `${KEY.slice(0, -2)}9=`, 7]) {
       expect(bad('proof.attached', { ...attached(), key })).toBe('bad-payload');
       expect(bad('proof.unblurred', { ...unblurred(), key })).toBe('bad-payload');
     }
@@ -381,7 +389,7 @@ describe('sealProofEnvelope (M2)', () => {
     const { ids, parts } = await participants();
     const proofId = newProofId();
     const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'unblurred' });
-    const payload = { proofId, key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 100, height: 200, mime: 'image/png' as const };
+    const payload = { proofId, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 100, height: 200, mime: 'image/png' as const };
     const env = await sealProofEnvelope({ type: 'proof.unblurred', payload }, { trade: CHANNEL, from: 'buyer', seq: 3, me: ids.buyer, participants: parts });
     const opened = await open(env, { me: ids.mod, myRole: 'mod', participants: parts, trade: CHANNEL, guard: guard() });
     expect(parseProofPayload(opened.type, opened.payload)).toEqual({ type: 'proof.unblurred', payload });
@@ -400,7 +408,7 @@ describe('sealProofEnvelope (M2)', () => {
   it('proof.attached opens for buyer (allowSelf), seller and mod', async () => {
     const { ids, parts } = await participants();
     const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
-    const payload = { proofId: newProofId(), kind: 'proof' as const, key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [] };
+    const payload = { proofId: newProofId(), kind: 'proof' as const, key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [] };
     const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: CHANNEL, from: 'buyer', seq: 0, me: ids.buyer, participants: parts });
     for (const role of ['buyer', 'seller', 'mod'] as const) {
       const o = await open(env, { me: ids[role], myRole: role, participants: parts, trade: CHANNEL, guard: guard(), allowSelf: true });
@@ -411,7 +419,7 @@ describe('sealProofEnvelope (M2)', () => {
   it('refuses caller-chosen recipients, type or payload in the seal arguments, and an invalid payload', async () => {
     const { ids, parts } = await participants();
     const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'unblurred' });
-    const payload = { proofId: newProofId(), key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/png' as const };
+    const payload = { proofId: newProofId(), key: await proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/png' as const };
     const base = { trade: CHANNEL, from: 'buyer' as const, seq: 0, me: ids.buyer, participants: parts };
     for (const extra of [{ to: ['buyer', 'seller', 'mod'] }, { to: ['mod'] }, { type: 'proof.attached' }, { payload }]) {
       await expect(sealProofEnvelope({ type: 'proof.unblurred', payload }, { ...base, ...extra } as typeof base)).rejects.toThrow(TypeError);

@@ -6,12 +6,17 @@
  * - `proof.unblurred` is sealed `to: ['mod']` only: the unblurred copy's key, so no trader can
  *   read it.
  *
+ * The recipients are fixed by type in PROOF_RECIPIENTS; senders seal only through
+ * `sealProofEnvelope`, which takes no `to` and refuses one, so an unblurred key can never be
+ * sealed to a trader by a wrong call site.
+ *
  * Neither carries a file name, original type or anything else about the source file.
  * `parseProofPayload` checks an opened envelope's `{type, payload}` exactly.
  */
-import { hasExactKeys, isPlainObject } from '@x2f/protocol';
+import sodium from 'libsodium-wrappers';
+import { hasExactKeys, isPlainObject, seal, type Envelope, type SealArgs } from '@x2f/protocol';
 import type { HiddenKind } from './detect.js';
-import { ProofError, isProofId } from './seal.js';
+import { ProofError, SHA256_HEX, isProofId } from './seal.js';
 
 /** P5-A25: the output image's longest side, in pixels. */
 export const PROOF_MAX_SIDE = 2600;
@@ -56,7 +61,6 @@ const ATTACHED_KEYS = ['proofId', 'kind', 'key', 'sha256', 'width', 'height', 'm
 const UNBLURRED_KEYS = ['proofId', 'key', 'sha256', 'width', 'height', 'mime'] as const;
 /** 32 bytes in padded standard base64: 42 data characters, a last one with 2 zero bits, '='. */
 const KEY_B64 = /^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/;
-const SHA256_HEX = /^[0-9a-f]{64}$/;
 
 const fail = (): ProofError => new ProofError('bad-payload', 'Invalid proof payload');
 
@@ -102,4 +106,67 @@ export function parseProofPayload(type: string, payload: unknown): ProofEnvelope
     return { type, payload: common(payload) };
   }
   throw fail();
+}
+
+/** Who each proof envelope is sealed to. `proof.unblurred` is the moderator only (spec 6.6). */
+export const PROOF_RECIPIENTS = Object.freeze({
+  'proof.attached': Object.freeze(['buyer', 'seller', 'mod'] as const),
+  'proof.unblurred': Object.freeze(['mod'] as const),
+});
+
+/** Plan 1 seal arguments without `type`, `payload` and `to`, which come from the proof envelope. */
+export type ProofSealArgs = Omit<SealArgs, 'type' | 'payload' | 'to'>;
+
+const FIXED_ARGS = ['type', 'payload', 'to'] as const;
+
+/**
+ * Seal a proof envelope with Plan 1 `seal`, to the recipients PROOF_RECIPIENTS fixes for its
+ * type. The payload is checked with parseProofPayload first (ProofError('bad-payload')), and
+ * seal arguments that carry their own `to`, `type` or `payload` are refused with TypeError.
+ */
+export async function sealProofEnvelope(env: ProofEnvelope, a: ProofSealArgs): Promise<Envelope> {
+  if (!isPlainObject(a) || FIXED_ARGS.some((k) => Object.prototype.hasOwnProperty.call(a, k))) {
+    throw new TypeError('sealProofEnvelope: recipients, type and payload come from the proof envelope');
+  }
+  if (!isPlainObject(env)) throw new TypeError('sealProofEnvelope: invalid envelope');
+  const parsed = parseProofPayload(env['type'] as string, env['payload']);
+  return seal({
+    trade: a.trade,
+    from: a.from,
+    seq: a.seq,
+    me: a.me,
+    participants: a.participants,
+    type: parsed.type,
+    payload: parsed.payload,
+    to: PROOF_RECIPIENTS[parsed.type],
+  });
+}
+
+/**
+ * The payload's `key` field: padded standard base64 (libsodium's ORIGINAL variant, not its
+ * URL-safe default). Throws TypeError unless `key` is 32 bytes. The returned string cannot be
+ * zeroed; drop it as soon as it is sealed (a residual for the Plan 5 security review).
+ */
+export async function proofKeyToBase64(key: Uint8Array): Promise<string> {
+  if (!(key instanceof Uint8Array) || key.length !== 32) throw new TypeError('proofKeyToBase64: key must be 32 bytes');
+  await sodium.ready;
+  return sodium.to_base64(key, sodium.base64_variants.ORIGINAL);
+}
+
+/**
+ * Decode a payload `key`: exactly 32 bytes of canonical padded standard base64 (the same check
+ * parseProofPayload makes), else ProofError('bad-payload'). The caller zeroes the result
+ * (`sodium.memzero`) once the proof is decrypted.
+ */
+export async function proofKeyFromBase64(s: string): Promise<Uint8Array> {
+  if (typeof s !== 'string' || !KEY_B64.test(s)) throw fail();
+  await sodium.ready;
+  let key: Uint8Array;
+  try {
+    key = sodium.from_base64(s, sodium.base64_variants.ORIGINAL);
+  } catch {
+    throw fail();
+  }
+  if (key.length !== 32) throw fail();
+  return key;
 }
