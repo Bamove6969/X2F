@@ -1,20 +1,20 @@
 # Plan 5 Task 10 (P5-A20, review 2026-10-24): X2F's servers never fetch a past-reputation evidence
 # link or resolve its host (SSRF, and the trader's and moderator's IP must never reach the archive
 # through X2F). The past-reputation code may not import node:http, node:https, node:net, node:dns
-# or undici, nor call fetch(. Covers apps/api/src/pastrep/** and Task 11's apps/api/src/staff/pastrep.ts.
+# undici or node:child_process (curl and friends), nor call fetch( or reach globalThis.fetch. Covers apps/api/src/pastrep/** and Task 11's apps/api/src/staff/pastrep.ts.
 rules:
   - id: pastrep-no-network-import
     languages: [typescript]
     severity: ERROR
     message: >-
       Past reputation never fetches the evidence link or resolves its host (P5-A20): no
-      node:http, node:https, node:net, node:dns or undici here.
+      node:http, node:https, node:net, node:dns, undici or node:child_process here.
     paths:
       include:
         - "/apps/api/src/pastrep/**"
         - "/apps/api/src/staff/pastrep.ts"
     pattern-either:
-      - pattern-regex: (?:from|import|require\()\s*\(?\s*['"](?:node:)?(?:https?|net|dns|dns/promises|tls|http2|undici)(?:/[^'"]*)?['"]
+      - pattern-regex: (?:from|import|require\()\s*\(?\s*['"](?:node:)?(?:https?|net|dns|dns/promises|tls|http2|undici|child_process)(?:/[^'"]*)?['"]
   - id: pastrep-no-fetch
     languages: [typescript]
     severity: ERROR
@@ -23,4 +23,7 @@ rules:
       include:
         - "/apps/api/src/pastrep/**"
         - "/apps/api/src/staff/pastrep.ts"
-    pattern-regex: \bfetch\s*\(
+    pattern-either:
+      - pattern-regex: \bfetch\s*\(
+      # Review round 1 N6: fetch taken off globalThis without a call, or by name.
+      - pattern-regex: \bglobalThis\s*(?:\.\s*fetch\b|\[)

@@ -9,7 +9,12 @@
  * - Verified with `PAST_REP_VERIFY_CONFIG` (RSA 2048 allowed, login's rejected algorithms kept),
  *   `expectSigned: true`, `date: now`; `verified` awaited on every signature (`bad-signature`).
  * - The signed text equals the issued text after `\r\n`→`\n` and trailing-whitespace trimming,
- *   and the signature was made in `[issuedAt − 5 min, now + 5 min]` (`wrong-text`).
+ *   and the signature was made in `[issuedAt − 5 min, now]` (`wrong-text`). openpgp refuses a
+ *   signature dated after `now` (`date: now`) as `bad-signature`, so there is no allowance ahead of
+ *   the server clock (review round 1 N1; the plan's "+ 5 min" is an open question).
+ * - On success, the one verified signature packet re-armored with no armor headers (review round 1
+ *   M4: a pasted `Comment:` or `Version:` line is free text and is not kept). It verifies as a
+ *   detached signature over the issued text.
  * - A signature carrying a Signer's User ID subpacket (an email, often) is refused
  *   (`bad-signature`): it could not be stored without keeping that user ID (R16). Lead question.
  *
@@ -20,9 +25,9 @@ import * as openpgp from 'openpgp';
 import { issuedAtOf } from './challenge.js';
 
 export type PastRepVerifyRefusal = 'bad-signature' | 'wrong-text' | 'wrong-key';
-export type PastRepVerifyResult = { ok: true } | { ok: false; reason: PastRepVerifyRefusal };
+export type PastRepVerifyResult = { ok: true; signature: string } | { ok: false; reason: PastRepVerifyRefusal };
 
-/** How far the signature time may stray from the challenge window. */
+/** How long before `issuedAt` the signature may be dated (a signer's clock running slow). */
 export const PAST_REP_CLOCK_SKEW_MS = 5 * 60_000;
 
 const config = PAST_REP_VERIFY_CONFIG;
@@ -118,7 +123,13 @@ export async function verifyPastRepSignature(signed: string, text: string, armor
 
   const created = packet.created;
   const inWindow = (d: Date | null): boolean =>
-    d !== null && d.getTime() >= issuedAt.getTime() - PAST_REP_CLOCK_SKEW_MS && d.getTime() <= now.getTime() + PAST_REP_CLOCK_SKEW_MS;
+    d !== null && d.getTime() >= issuedAt.getTime() - PAST_REP_CLOCK_SKEW_MS && d.getTime() <= now.getTime();
+  // Only the one checked packet, re-armored: no armor headers, no cleartext copy (the text is the issued one).
+  const canonical = (): string => {
+    const list = new openpgp.PacketList<openpgp.SignaturePacket>();
+    list.push(packet);
+    return new openpgp.Signature(list).armor(config);
+  };
 
   if (cleartext !== null) {
     let result: Awaited<ReturnType<typeof openpgp.verify>>;
@@ -129,7 +140,7 @@ export async function verifyPastRepSignature(signed: string, text: string, armor
     }
     if (result.signatures.length !== 1 || !(await allVerified(result.signatures))) return refuse('bad-signature');
     if (typeof result.data !== 'string' || normalizeSignedText(result.data) !== normalizeSignedText(text)) return refuse('wrong-text');
-    return inWindow(created) ? { ok: true } : refuse('wrong-text');
+    return inWindow(created) ? { ok: true, signature: canonical() } : refuse('wrong-text');
   }
 
   // Detached: the signer's file may end in a line break or use CRLF; each form of the issued text is
@@ -139,7 +150,7 @@ export async function verifyPastRepSignature(signed: string, text: string, armor
     try {
       const message = await openpgp.createMessage({ text: candidate });
       const result = await openpgp.verify({ message, signature: detached!, verificationKeys: key, expectSigned: true, date: now, config });
-      if (result.signatures.length === 1 && (await allVerified(result.signatures))) return inWindow(created) ? { ok: true } : refuse('wrong-text');
+      if (result.signatures.length === 1 && (await allVerified(result.signatures))) return inWindow(created) ? { ok: true, signature: canonical() } : refuse('wrong-text');
     } catch {
       // try the next form
     }

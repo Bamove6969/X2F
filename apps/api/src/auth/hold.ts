@@ -497,6 +497,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
+  // account lock (as Task 18's ownerWriteGate).
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**
@@ -536,7 +539,6 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
   // caller's own claim rows only (a moderator approves before anything shows).
   'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
-  'POST /v1/account/past-rep/finish': "the caller's own past-rep claim row (status signed, awaiting a moderator) and its challenge",
   'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
 };
 

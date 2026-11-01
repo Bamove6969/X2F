@@ -15,7 +15,9 @@ export type KeyRefusal =
   | 'key-expired'
   | 'key-revoked'
   | 'key-no-encryption'
-  | 'key-not-yet-valid';
+  | 'key-not-yet-valid'
+  // Plan 5 Task 10 review round 1 N3: past reputation, a key with no signing key usable now.
+  | 'key-no-signing';
 
 export type KeyInspection =
   | { ok: true; fingerprint: string; algorithm: 'rsa' | 'ed25519' | 'ed448'; bits: number | null; expiresAt: Date | null }

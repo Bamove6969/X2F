@@ -89,6 +89,7 @@ export const NOT_REFUSAL_CODES: Readonly<Record<string, string>> = {
   'key-revoked': 'the pasted key itself is revoked',
   'key-no-encryption': 'an input check on a pasted key',
   'key-not-yet-valid': 'the pasted key itself is not valid yet',
+  'key-no-signing': 'an input check on a pasted key (past reputation: it cannot sign)',
   'key-in-use': 'an input check on a pasted key',
   'challenge-expired': 'an expired step (start again)',
   'code-invalid': 'a wrong code',

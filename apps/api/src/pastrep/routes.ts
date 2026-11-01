@@ -15,12 +15,17 @@
  * log carries key material or a user ID. The evidence link is never fetched or resolved
  * (tools/semgrep/pastrep-no-fetch.yml). Team members get 403 `owner-only` (the `requireSession`
  * default, Plan 2 Task 18: owner-only until decided). Start and finish are refused during the
- * 24-hour hold (`HOLD_BLOCKED_ROUTES`, owner 1 Nov); start is throttled per account
- * (`PAST_REP_STARTS_PER_HOUR`, 429 `slow-down`). Past reputation never feeds X2F's own counts.
+ * 24-hour hold (`HOLD_BLOCKED_ROUTES`, owner 1 Nov); finish re-checks the hold and the live session
+ * under the account lock in its insert transaction (`LIVE_SESSION_ROUTES`, review round 1 M3). Start
+ * and finish are throttled per account (`PAST_REP_STARTS_PER_HOUR`, `PAST_REP_FINISHES_PER_HOUR`,
+ * 429 `slow-down`). Start refuses a key that cannot sign (400 `key-no-signing`). The stored
+ * signature is the one verified packet re-armored with no headers. Past reputation never feeds
+ * X2F's own counts.
  */
-import { PAST_REP_MIN_RSA_BITS, inspectPublicKey, type InspectOptions } from '@x2f/accounts';
+import { PAST_REP_MIN_RSA_BITS, PAST_REP_VERIFY_CONFIG, inspectPublicKey, type InspectOptions } from '@x2f/accounts';
+import * as openpgp from 'openpgp';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { requireNotHeld, withTx } from '../auth/hold.js';
+import { holdInTx, holdRefusal, requireLiveSessionInTx, requireNotHeld, settleOf, withTx } from '../auth/hold.js';
 import { requestOrigin } from '../auth/origin.js';
 import { PGP_BODY_LIMIT, openKey, sealKey, storableKey } from '../auth/pgp.js';
 import { requireSession } from '../auth/sessions.js';
@@ -71,6 +76,17 @@ function readPayload(p: Record<string, unknown>): ChallengePayload {
 const siteClaimed = async (db: Queryable, accountId: string, site: string): Promise<boolean> =>
   (await db.query('select 1 from past_reputation where account_id = $1 and site = $2 and status = any($3::text[])', [accountId, site, LIVE])).rows.length > 0;
 
+/** True when the key has a signing key (primary or subkey) valid at `now` under PAST_REP_VERIFY_CONFIG. */
+async function canSign(armored: string, now: Date): Promise<boolean> {
+  try {
+    const key = await openpgp.readKey({ armoredKey: armored, config: PAST_REP_VERIFY_CONFIG });
+    await key.getSigningKey(undefined, now, undefined, PAST_REP_VERIFY_CONFIG);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function pastRepRoutes(app: FastifyInstance): void {
   // Owner-only for team members (no `member` option); full trader sessions only (no backup login).
   const requireTrader = requireSession({ kinds: ['trader'] });
@@ -90,6 +106,8 @@ export function pastRepRoutes(app: FastifyInstance): void {
     req.server.budgets.pastRepStart.take(req.auth.accountId);
     const inspection = await inspectPublicKey(b.publicKey, now, PAST_REP_INSPECT);
     if (!inspection.ok) throw new ApiError(400, inspection.reason, { detail: inspection.detail });
+    // Review round 1 N3: a key with no signing key usable now (under the verify config) could never finish.
+    if (!(await canSign(b.publicKey, now))) throw new ApiError(400, 'key-no-signing');
     const accountId = req.auth.accountId;
     if (await siteClaimed(deps.db, accountId, site)) throw new ApiError(409, 'site-claimed');
 
@@ -119,6 +137,8 @@ export function pastRepRoutes(app: FastifyInstance): void {
     if (typeof signed !== 'string') throw new ApiError(400, 'bad-request');
     if (typeof challengeId !== 'string' || !UUID.test(challengeId)) throw new ApiError(400, 'challenge-expired');
     const accountId = req.auth.accountId;
+    // Review round 1 N5: PAST_REP_FINISHES_PER_HOUR per account (each opens the key and verifies).
+    req.server.budgets.pastRepFinish.take(accountId);
 
     const { rows } = await deps.db.query<{ account_id: string | null; payload: Record<string, unknown>; expires_at: Date; used_at: Date | null }>(
       `select account_id, payload, expires_at, used_at from challenges where id = $1 and purpose = 'past-rep'`,
@@ -135,9 +155,15 @@ export function pastRepRoutes(app: FastifyInstance): void {
 
     const verdict = await verifyPastRepSignature(signed, c.text, armored, now);
     if (!verdict.ok) throw new ApiError(400, verdict.reason);
-    const signature = signed.replace(/\r\n?/g, '\n').trim();
+    // Review round 1 M4: only the verified signature packet, re-armored with no headers.
+    const signature = verdict.signature;
 
     const id = await withTx(deps.db, async (db) => {
+      // Review round 1 M3 (Task 18's ownerWriteGate pattern): under the account lock, the calling
+      // session must still be live and the account not on hold; then the challenge row lock.
+      await requireLiveSessionInTx(db, req.auth, now);
+      const hold = await holdInTx(db, settleOf(req), accountId, now);
+      if (hold !== null) throw holdRefusal(hold.holdUntil);
       const locked = await db.query<{ used_at: Date | null }>('select used_at from challenges where id = $1 for update', [challengeId]);
       if (locked.rows.length === 0) throw new ApiError(400, 'challenge-expired');
       if (locked.rows[0]!.used_at !== null) throw new ApiError(409, 'challenge-used');
