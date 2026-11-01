@@ -29,23 +29,45 @@ input::placeholder{color:var(--ink-muted)}
 
   <main style="flex-grow: 1; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
     <sc-if value="{{isShow}}" hint-placeholder-val="{{true}}">
-      <p style="margin: 0; font-size: 16px; line-height: 24px;">This code gets you back in if every other way to log in is lost. It isn&#39;t a way to log in, so you should only ever need it in an emergency.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">{{introText}}</p>
 
       <section aria-labelledby="rc-code-h" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface); border: 1px dashed var(--line);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <h2 id="rc-code-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Recovery code</h2>
+          <h2 id="rc-code-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">{{codeHead}}</h2>
           <button type="button" onClick="{{toggleHide}}" aria-pressed="{{hiddenAria}}" style="min-height: 44px; margin-right: -8px; padding: 0 8px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; text-decoration: underline; cursor: pointer;">{{hideLabel}}</button>
         </div>
-        <ol aria-label="{{codeAria}}" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-          <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
-            <li style="display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised);">
-              <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{g.n}}</span>
-              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: 0.08em;">{{g.text}}</span>
-            </li>
-          </sc-for>
-        </ol>
-        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">No 0, O, 1 or I, so it&#39;s hard to misread.</p>
+        <sc-if value="{{isOne}}" hint-placeholder-val="{{true}}">
+          <ol aria-label="{{codeAria}}" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+            <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+              <li style="display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised);">
+                <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{g.n}}</span>
+                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: 0.08em;">{{g.text}}</span>
+              </li>
+            </sc-for>
+          </ol>
+        </sc-if>
+        <sc-if value="{{isTen}}" hint-placeholder-val="{{false}}">
+          <ol aria-label="{{codeAria}}" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <sc-for list="{{tenCodes}}" as="c" hint-placeholder-count="10">
+              <li style="display: flex; align-items: baseline; gap: 8px; padding: 8px 10px; border-radius: 6px; background: var(--surface-raised);">
+                <span aria-hidden="true" style="width: 18px; flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{c.n}}</span>
+                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 17px; line-height: 24px; font-weight: 500; letter-spacing: 0.04em; white-space: nowrap;">{{c.text}}</span>
+              </li>
+            </sc-for>
+          </ol>
+        </sc-if>
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{misreadText}}</p>
       </section>
+
+      <aside aria-label="Open for the owner: recovery code format" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">What does the user get?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>One 16-character code</li>
+          <li>10 single-use codes (current build)</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Preview with the codeFormat tweak. Showing: {{formatName}}</span>
+      </aside>
 
       <section aria-labelledby="rc-where-h" style="display: flex; flex-direction: column; gap: 12px;">
         <h2 id="rc-where-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Keep it apart from everything else</h2>
@@ -57,34 +79,52 @@ input::placeholder{color:var(--ink-muted)}
         <p style="display: flex; gap: 12px; margin: 0; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--caution); font-size: 14px; line-height: 20px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--caution);"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg><span>Not next to your password, not on the phone you log in with, and not with your PGP key. If one of those is stolen, this shouldn&#39;t go with it.</span></p>
       </section>
 
-      <p style="display: flex; gap: 12px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Using it starts a 24-hour hold on changes to your account while our security team checks it&#39;s really you.</span></p>
+      <p style="display: flex; gap: 12px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>{{holdText}}</span></p>
 
       <label style="{{tickStyle}}">
         <input type="checkbox" checked="{{ticked}}" onChange="{{toggleTick}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink); cursor: pointer;">
-        <span style="font-size: 16px; line-height: 24px; font-weight: 600;">I&#39;ve written it down</span>
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{tickText}}</span>
       </label>
     </sc-if>
 
     <sc-if value="{{isCheck}}" hint-placeholder-val="{{false}}">
-      <p style="margin: 0; font-size: 16px; line-height: 24px;">Type your recovery code from where you wrote it down. Dashes, spaces and capitals don&#39;t matter.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">{{checkIntro}}</p>
       <label for="rc-in" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-        Recovery code
-        <input id="rc-in" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="{{entry}}" onChange="{{onEntry}}" aria-describedby="rc-status" aria-invalid="{{invalidAria}}" style="{{inputStyle}}">
+        {{inputLabel}}
+        <input id="rc-in" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="{{placeholder}}" value="{{entry}}" onChange="{{onEntry}}" aria-describedby="rc-status" aria-invalid="{{invalidAria}}" style="{{inputStyle}}">
       </label>
       <p id="rc-status" role="status" aria-live="polite" style="{{statusStyle}}">
         <sc-if value="{{isMatch}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg></sc-if>
         <sc-if value="{{isMismatch}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if>
         <span>{{statusText}}</span>
       </p>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Lost it already? <button type="button" onClick="{{toShow}}" style="min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;">Show the code again</button></p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{lostText}} <button type="button" onClick="{{toShow}}" style="min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;">{{showAgainLabel}}</button></p>
+      <aside aria-label="Open for the owner: recovery code format" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">What does the user type back?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>One 16-character code: type the whole code back</li>
+          <li>10 single-use codes (current build): type one chosen code back</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Preview with the codeFormat tweak. Showing: {{formatName}}</span>
+      </aside>
     </sc-if>
 
     <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
       <div style="display: flex; flex-direction: column; gap: 12px; padding: 20px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--escrow);">
         <span style="display: flex; color: var(--escrow);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
-        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code is set</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">Keep it hidden and apart from everything else. If it&#39;s ever lost or used, make a new one in Settings.</p>
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{doneTitle}}</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">{{doneText}}</p>
       </div>
+      <aside aria-label="Open for the owner: making new codes in Settings" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">Can users make new codes themselves in Settings?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Yes, in Settings</li>
+          <li>No</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Until this is decided, the screen doesn&#39;t say how to replace a lost or used code.</span>
+      </aside>
     </sc-if>
   </main>
 
@@ -104,15 +144,18 @@ input::placeholder{color:var(--ink-muted)}
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["show","check","done"],"default":"show"},"entry":{"editor":"enum","options":["empty","partial","mismatch","match"],"default":"empty"},"$preview":{"width":390,"height":1120}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["show","check","done"],"default":"show"},"entry":{"editor":"enum","options":["empty","partial","mismatch","match"],"default":"empty"},"codeFormat":{"editor":"enum","options":["one-16","ten-codes"],"default":"one-16"},"$preview":{"width":390,"height":1480}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
-    const ENTRIES = { empty: '', partial: 'K7QM-4XD2', mismatch: 'K7QM-4XD2-VT8B-HP3A', match: 'k7qm 4xd2 vt9b hp3a' };
+    const ten = p.codeFormat === 'ten-codes';
+    const ENTRIES = ten
+      ? { empty: '', partial: 'R2WN', mismatch: 'R2WN-8KTE', match: 'r2wn 8ktv' }
+      : { empty: '', partial: 'K7QM-4XD2', mismatch: 'K7QM-4XD2-VT8B-HP3A', match: 'k7qm 4xd2 vt9b hp3a' };
     return { step: p.step || 'show', ticked: p.step === 'check' || p.step === 'done', hidden: false, entry: ENTRIES[p.entry] || '' };
   }
   componentDidUpdate(prev) {
-    if (prev.step !== this.props.step || prev.entry !== this.props.entry) this.setState(this.preset(this.props));
+    if (prev.step !== this.props.step || prev.entry !== this.props.entry || prev.codeFormat !== this.props.codeFormat) this.setState(this.preset(this.props));
   }
   renderVals() {
     const THEMES = {
@@ -120,37 +163,58 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1120px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1480px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
+    // Code format is OPEN for the owner (codeFormat tweak).
+    const ten = this.props.codeFormat === 'ten-codes';
     const CODE = ['K7QM', '4XD2', 'VT9B', 'HP3A'];
+    const TEN = ['K7QM-4XD2', 'VT9B-HP3A', 'M4ZC-8RWE', 'Q2LN-7GYT', 'B6SX-3KJD', 'W9FH-5NPA', 'R2WN-8KTV', 'D3YE-6QMC', 'T8JG-2XLB', 'H5PC-9VZR'];
+    const PICK = 7;
     const step = s.step;
     const isShow = step === 'show', isCheck = step === 'check', isDone = step === 'done';
 
     const groups = CODE.map((g, i) => ({ n: String(i + 1), text: s.hidden ? '••••' : g }));
+    const tenCodes = TEN.map((c, i) => ({ n: String(i + 1), text: s.hidden ? '••••-••••' : c }));
 
     const norm = (x) => (x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const want = CODE.join('');
+    const want = ten ? norm(TEN[PICK - 1]) : CODE.join('');
     const got = norm(s.entry);
     const full = got.length >= want.length;
     const match = got === want;
     const mismatch = full && !match;
     let statusText = '';
     if (match) statusText = 'That matches.';
-    else if (mismatch) statusText = 'That doesn’t match. Check each group against what you wrote down.';
-    else if (got.length) statusText = got.length + ' of 16 characters';
+    else if (mismatch) statusText = ten ? 'That doesn’t match code ' + PICK + '. Check it against what you wrote down.' : 'That doesn’t match. Check each group against what you wrote down.';
+    else if (got.length) statusText = got.length + ' of ' + want.length + ' characters';
     const statusColor = match ? 'var(--escrow)' : (mismatch ? 'var(--danger)' : 'var(--ink-muted)');
 
     let ready = false, goLabel = 'Continue', whyText = '';
-    if (isShow) { ready = !!s.ticked; whyText = 'Tick the box once it’s written down.'; }
-    if (isCheck) { ready = match; goLabel = 'Confirm'; whyText = 'Type the whole code to confirm.'; if (mismatch) whyText = 'The code has to match.'; }
+    if (isShow) { ready = !!s.ticked; whyText = ten ? 'Tick the box once they’re written down.' : 'Tick the box once it’s written down.'; }
+    if (isCheck) { ready = match; goLabel = 'Confirm'; whyText = ten ? 'Type code ' + PICK + ' to confirm.' : 'Type the whole code to confirm.'; if (mismatch) whyText = 'The code has to match.'; }
     if (isDone) ready = true;
 
     return {
-      rootStyle, groups,
-      title: isShow ? 'Your recovery code' : (isCheck ? 'Type it back' : 'All set'),
+      rootStyle, groups, tenCodes,
+      isOne: !ten, isTen: ten,
+      formatName: ten ? '10 single-use codes' : 'One 16-character code',
+      introText: ten
+        ? 'These codes get you back in if every other way to log in is lost. Each one works once. They aren’t a way to log in, so you should only ever need one in an emergency.'
+        : 'This code gets you back in if every other way to log in is lost. It isn’t a way to log in, so you should only ever need it in an emergency.',
+      codeHead: ten ? 'Recovery codes' : 'Recovery code',
+      misreadText: ten ? 'No 0, O, 1 or I, so they’re hard to misread.' : 'No 0, O, 1 or I, so it’s hard to misread.',
+      holdText: ten ? 'Using one starts a 24-hour hold on changes to your account while our security team checks it’s really you.' : 'Using it starts a 24-hour hold on changes to your account while our security team checks it’s really you.',
+      tickText: ten ? 'I’ve written them down' : 'I’ve written it down',
+      checkIntro: ten ? 'Type code ' + PICK + ' from your list. Dashes, spaces and capitals don’t matter.' : 'Type your recovery code from where you wrote it down. Dashes, spaces and capitals don’t matter.',
+      inputLabel: ten ? 'Code ' + PICK : 'Recovery code',
+      placeholder: ten ? 'XXXX-XXXX' : 'XXXX-XXXX-XXXX-XXXX',
+      lostText: ten ? 'Lost them already?' : 'Lost it already?',
+      showAgainLabel: ten ? 'Show the codes again' : 'Show the code again',
+      doneTitle: ten ? 'Your recovery codes are set' : 'Your recovery code is set',
+      doneText: ten ? 'Keep them hidden and apart from everything else.' : 'Keep it hidden and apart from everything else.',
+      title: isShow ? (ten ? 'Your recovery codes' : 'Your recovery code') : (isCheck ? 'Type it back' : 'All set'),
       isShow, isCheck, isDone, notDone: !isDone,
       hideLabel: s.hidden ? 'Show' : 'Hide', hiddenAria: s.hidden ? 'true' : 'false',
-      codeAria: s.hidden ? 'Recovery code, hidden' : 'Recovery code ' + CODE.join(' '),
+      codeAria: s.hidden ? (ten ? 'Recovery codes, hidden' : 'Recovery code, hidden') : (ten ? 'Recovery codes ' + TEN.join(', ') : 'Recovery code ' + CODE.join(' ')),
       toggleHide: () => this.setState({ hidden: !s.hidden }),
       ticked: !!s.ticked, toggleTick: () => this.setState({ ticked: !s.ticked }),
       tickStyle: 'display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface); cursor: pointer; border: 2px solid ' + (s.ticked ? 'var(--ink);' : 'var(--surface-raised);'),

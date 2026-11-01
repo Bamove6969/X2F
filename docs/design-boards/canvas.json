@@ -820,7 +820,7 @@
       "x": 0,
       "y": 34700,
       "w": 390,
-      "h": 2080,
+      "h": 2600,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -829,7 +829,7 @@
       "x": 510,
       "y": 34700,
       "w": 390,
-      "h": 1120,
+      "h": 1480,
       "page": "all",
       "title": "H2 \u00b7 Recovery code",
       "is_interactive": true
@@ -847,7 +847,7 @@
       "x": 1530,
       "y": 34700,
       "w": 390,
-      "h": 1040,
+      "h": 1360,
       "page": "all",
       "title": "H4 \u00b7 Block a queued change",
       "is_interactive": true
@@ -856,7 +856,7 @@
       "x": 2040,
       "y": 34700,
       "w": 390,
-      "h": 1400,
+      "h": 1680,
       "page": "all",
       "title": "H5 \u00b7 Account compromised",
       "is_interactive": true

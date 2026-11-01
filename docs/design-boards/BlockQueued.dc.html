@@ -60,6 +60,22 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
         </sc-for>
       </ul>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Changes you don&#39;t block take effect when the hold ends.</p>
+      <aside aria-label="Open for the owner: blocking and the hold" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">When a change is blocked, what happens to the hold?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Blocking ends the hold</li>
+          <li>Blocking extends the hold</li>
+        </ul>
+      </aside>
+      <aside aria-label="Open for the owner: hold ending early" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">If the hold ends early, do the waiting changes apply right away?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Yes, they apply as soon as the hold ends</li>
+          <li>No, they still wait until 2 Nov 2026, 13:58 UTC</li>
+        </ul>
+      </aside>
     </section>
 
     <p style="margin: 0; font-size: 15px; line-height: 22px;">None of this was you? <a href="Compromised.dc.html" style="color: var(--monero-ink); padding: 14px 0;">My account has been compromised</a></p>
@@ -79,13 +95,25 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
           <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{askMeta}}</span>
         </div>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
-        <div style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; border: 1px dashed var(--caution);">
+        <sc-if value="{{ruleChoose}}" hint-placeholder-val="{{false}}">
           <label for="bq-out" style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer;">
             <input id="bq-out" type="checkbox" checked="{{logout}}" onChange="{{toggleLogout}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
             <span style="display: flex; flex-direction: column;">Also log that device out<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Firefox, Linux would need your approval to log in again.</span></span>
           </label>
-          <span style="align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--caution);">Undecided: the owner may make this automatic or drop it</span>
-        </div>
+        </sc-if>
+        <sc-if value="{{ruleAlways}}" hint-placeholder-val="{{true}}">
+          <p style="display: flex; gap: 12px; margin: 0; font-size: 16px; line-height: 24px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><path d="M15 4h4a1 1 0 011 1v14a1 1 0 01-1 1h-4"/><path d="M10 8l-4 4 4 4M6 12h10"/></svg><span style="display: flex; flex-direction: column;">That device is logged out too<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Firefox, Linux will need your approval to log in again.</span></span></p>
+        </sc-if>
+        <aside aria-label="Open for the owner: log the device out" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+          <span style="font-weight: 600;">Also log that device out?</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>Always</li>
+            <li>User chooses (checkbox)</li>
+            <li>Never</li>
+          </ul>
+          <span style="color: var(--ink-muted);">Preview with the logoutRule tweak. Showing: {{logoutRuleName}}</span>
+        </aside>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Block change</button>
           <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel</button>
@@ -95,7 +123,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"$preview":{"width":390,"height":1040}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1360}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.fromStep(props.step); }
   fromStep(step) {
@@ -129,13 +157,21 @@ class Component extends DCLogic {
     }));
     const target = ALL.find((c) => c.id === s.ask);
     const last = ALL.find((c) => c.id === s.last);
+    // Logging the device out is OPEN for the owner (logoutRule tweak).
+    const RULES = ['always', 'user-chooses', 'never'];
+    const rule = RULES.indexOf(this.props.logoutRule) >= 0 ? this.props.logoutRule : 'always';
+    const NAMES = { always: 'Always', 'user-chooses': 'User chooses (checkbox)', never: 'Never' };
+    const willOut = rule === 'always' || (rule === 'user-chooses' && s.logout);
+    const wasOut = rule === 'always' ? !!last : (rule === 'never' ? false : s.out);
     return {
       rootStyle, changes,
+      ruleAlways: rule === 'always', ruleChoose: rule === 'user-chooses',
+      logoutRuleName: NAMES[rule],
       listHead: waiting === 1 ? 'Waiting · 1 change' : 'Waiting · ' + waiting + ' changes',
       hasNote: !!last,
       noteTitle: last ? 'Blocked: ' + last.title : '',
       noteText: last ? last.text : '',
-      noteOut: !!last && s.out,
+      noteOut: !!last && wasOut,
       asking: !!target,
       askTitle: target ? target.title : '',
       askDetail: target ? target.detail : '',
@@ -143,7 +179,7 @@ class Component extends DCLogic {
       askText: target ? "It won't take effect. " + target.text : '',
       logout: s.logout,
       toggleLogout: () => this.setState({ logout: !s.logout }),
-      confirm: () => { if (target) this.setState({ blocked: s.blocked.concat([target.id]), ask: null, last: target.id, out: s.out || s.logout }); },
+      confirm: () => { if (target) this.setState({ blocked: s.blocked.concat([target.id]), ask: null, last: target.id, out: s.out || willOut }); },
       cancel: () => this.setState({ ask: null })
     };
   }

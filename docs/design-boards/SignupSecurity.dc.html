@@ -69,7 +69,17 @@ input[type=range]{accent-color:var(--ink)}
           </div>
           <span style="display: flex; gap: 8px; font-size: 14px; line-height: 20px;"><span style="{{strengthStyle}}">{{strengthName}}</span><span style="color: var(--ink-muted);">{{strengthHint}}</span></span>
         </div>
-        <p id="ss-pw-rule" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Use 12 or more characters with letters, numbers and symbols, or a phrase of 16 or more. It has to reach strong.</p>
+        <p id="ss-pw-rule" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{pwRuleText}}</p>
+        <aside aria-label="Open for the owner: password strength rule" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+          <span style="font-weight: 600;">When does a password count as strong?</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>A: 12+ chars with 3 of 4 types, or 16+ with 2 types</li>
+            <li>B: length only, 14+</li>
+            <li>C: zxcvbn-style score ≥ 3</li>
+          </ul>
+          <span style="color: var(--ink-muted);">Preview with the pwRule tweak. Showing: {{pwRuleName}}</span>
+        </aside>
       </section>
     </sc-if>
 
@@ -122,6 +132,15 @@ input[type=range]{accent-color:var(--ink)}
           </div>
         </sc-if>
       </div>
+      <aside aria-label="Open for the owner: Armored vault without a password" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">Can a setup without a password reach Armored vault?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Yes, 2+ strong methods without a password</li>
+          <li>No, Armored vault needs a password</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Preview with the vaultRule tweak (try the passwordless variant). Showing: {{vaultRuleName}}</span>
+      </aside>
     </section>
 
     <section aria-labelledby="ss-idle-h" style="display: flex; flex-direction: column; gap: 10px;">
@@ -133,9 +152,17 @@ input[type=range]{accent-color:var(--ink)}
       <input id="ss-idle" type="range" min="2" max="12" step="1" value="{{idle}}" onChange="{{onIdle}}" aria-valuetext="{{idleText}}" aria-describedby="ss-idle-note" style="width: 100%; height: 44px; margin: 0; cursor: pointer;">
       <div aria-hidden="true" style="display: flex; justify-content: space-between; margin-top: -6px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);"><span>2 h</span><span>12 h</span></div>
       <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">However active you are, every session ends after 24 h at most. Then you log in again.</p>
+      <aside aria-label="Open for the owner: default idle logout" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">What is the default idle logout?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Any whole hour from 2 h to 12 h</li>
+        </ul>
+        <span style="color: var(--ink-muted);">The current build defaults to 12 h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+      </aside>
     </section>
 
-    <p style="display: flex; gap: 10px; margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface); font-size: 14px; line-height: 20px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg><span>Next you&#39;ll get a recovery code. Everyone needs one. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</span></p>
+    <p style="display: flex; gap: 10px; margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface); font-size: 14px; line-height: 20px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg><span>Next you&#39;ll set up recovery. Everyone needs it. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</span></p>
   </main>
 
   <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
@@ -149,7 +176,7 @@ input[type=range]{accent-color:var(--ink)}
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"$preview":{"width":390,"height":2080}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"idleDefault":{"editor":"enum","options":["not-set","2h","3h","4h","5h","6h","7h","8h","9h","10h","11h","12h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":2600}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -160,10 +187,11 @@ class Component extends DCLogic {
     const PWS = { weak: 'lantern', medium: 'Lantern74', strong: 'Orbit-lantern-74' };
     const on = {};
     (SETS[p.variant] || SETS.strong).forEach((k) => { on[k] = true; });
-    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: 4, uname: 'nightowl_44', dname: 'Night Owl' };
+    const idleH = parseInt(p.idleDefault, 10);
+    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: idleH >= 2 && idleH <= 12 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
   }
   componentDidUpdate(prev) {
-    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter) this.setState(this.preset(this.props));
+    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter || prev.idleDefault !== this.props.idleDefault) this.setState(this.preset(this.props));
   }
   renderVals() {
     const THEMES = {
@@ -171,7 +199,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 2080px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 2600px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     const on = s.on;
 
@@ -191,20 +219,39 @@ class Component extends DCLogic {
       toggle: () => this.setState({ on: Object.assign({}, on, { [d.id]: !on[d.id] }) })
     }));
 
-    // Password strength
+    // Password strength (rule is OPEN for the owner: pwRule tweak previews A, B or C)
     const pw = s.pw || '';
+    const rule = String(this.props.pwRule || 'A').charAt(0);
     const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
     let level = 0;
-    if (pw.length >= 12 && kinds >= 3) level = 3;
-    else if (pw.length >= 16 && kinds >= 2) level = 3;
-    else if (pw.length >= 8 && kinds >= 2) level = 2;
-    else if (pw.length > 0) level = 1;
+    if (rule === 'B') {
+      if (pw.length >= 14) level = 3;
+      else if (pw.length >= 10) level = 2;
+      else if (pw.length > 0) level = 1;
+    } else if (rule === 'C') {
+      // Rough stand-in for a zxcvbn-style score (0-4), only for previewing.
+      const pool = (/[a-z]/.test(pw) ? 26 : 0) + (/[A-Z]/.test(pw) ? 26 : 0) + (/[0-9]/.test(pw) ? 10 : 0) + (/[^A-Za-z0-9]/.test(pw) ? 33 : 0);
+      const bits = pw.length * Math.log2(pool || 1);
+      const score = bits < 40 ? 1 : (bits < 60 ? 2 : (bits < 80 ? 3 : 4));
+      if (pw.length > 0) level = score >= 3 ? 3 : (score === 2 ? 2 : 1);
+    } else {
+      if (pw.length >= 12 && kinds >= 3) level = 3;
+      else if (pw.length >= 16 && kinds >= 2) level = 3;
+      else if (pw.length >= 8 && kinds >= 2) level = 2;
+      else if (pw.length > 0) level = 1;
+    }
+    const RULES = {
+      A: { name: 'A', text: 'Use 12 or more characters with 3 of these: small letters, capitals, numbers, symbols. Or use 16 or more with 2 of them. It has to reach strong.', mid: 'Getting there. Add length, numbers or symbols.' },
+      B: { name: 'B', text: 'Use 14 or more characters. Any characters count. It has to reach strong.', mid: 'Getting there. Make it longer.' },
+      C: { name: 'C', text: 'We score how hard it is to guess. It has to reach strong.', mid: 'Getting there. Make it longer or less predictable.' }
+    };
+    const R = RULES[rule] || RULES.A;
     const SCOL = ['var(--surface-raised)', 'var(--danger)', 'var(--caution)', 'var(--escrow)'];
     const SNAME = ['Empty', 'Weak', 'Medium', 'Strong'];
     const SHINT = [
       'Type a password.',
       'Too easy to guess. Make it longer.',
-      'Getting there. Add length, numbers or symbols.',
+      R.mid,
       'Good to go.'
     ];
     const meter = [1, 2, 3].map((i) => ({ style: 'flex: 1; height: 6px; border-radius: 999px; background: ' + (i <= level ? SCOL[level] : 'var(--surface-raised)') + ';' }));
@@ -214,8 +261,11 @@ class Component extends DCLogic {
     const hasPw = !!on.pw;
     const hard = ['passkey', 'key', 'pgp'].filter((k) => on[k]).length;
     const seconds = hard + (on.totp ? 1 : 0);
+    // OPEN for the owner: can passwordless setups reach Armored vault? (vaultRule tweak)
+    const vaultYes = this.props.vaultRule !== 'no-needs-password';
     let tier = 'none';
     if (hasPw) tier = seconds >= 2 ? 'armored' : (seconds === 1 ? 'strong' : 'weak');
+    else if (hard >= 2 && vaultYes) tier = 'armored';
     else if (hard >= 1) tier = 'strong';
     else if (on.totp) tier = 'totp';
     const L = { none: 0, totp: 0, weak: 1, strong: 2, armored: 3 }[tier];
@@ -241,22 +291,27 @@ class Component extends DCLogic {
     };
     const t = T[tier] || T.strong;
     let nextHint = '';
-    if (tier === 'strong') nextHint = hasPw ? 'Add one more way above to reach Armored vault.' : 'Add a password and one more way to reach Armored vault.';
+    if (tier === 'strong') {
+      if (hasPw) nextHint = 'Add one more way above to reach Armored vault.';
+      else nextHint = vaultYes ? 'Add another passkey, security key or PGP key, or a password, to reach Armored vault.' : 'Add a password and one more way to reach Armored vault.';
+    }
     const msgStyle = 'display: flex; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface); border: 1px solid ' + TCOL + ';';
     const extra = seconds;
 
     // Footer
     const uname = (s.uname || '').trim();
     const dname = (s.dname || '').trim();
-    let footNote = 'Next: your recovery code.';
+    let footNote = 'Next: recovery.';
     if (!uname) footNote = 'Choose a username to continue.';
     else if (!dname) footNote = 'Choose a display name to continue.';
     else if (tier === 'none') footNote = 'Pick a way to log in to continue.';
     else if (tier === 'totp') footNote = 'Add a password or another way to log in to continue.';
     else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';
-    const canGo = footNote === 'Next: your recovery code.';
+    const canGo = footNote === 'Next: recovery.';
 
-    const idle = Number(s.idle) || 4;
+    // Idle default is OPEN for the owner: no value is claimed until one is picked.
+    const idleSet = Number(s.idle) >= 2;
+    const idle = idleSet ? Number(s.idle) : 7;
     return {
       rootStyle, methods, meter, bars,
       uname: s.uname, dname: s.dname,
@@ -273,10 +328,13 @@ class Component extends DCLogic {
       tierTitle: t.title, tierLines: t.lines.map((x) => ({ text: x })),
       hasNext: !!nextHint, nextHint,
       msgStyle, msgIconStyle: 'display: flex; flex-shrink: 0; color: ' + TCOL + ';',
-      sealLine: 'Password + ' + extra + ' more',
-      armoredMsg: 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.',
+      sealLine: hasPw ? 'Password + ' + extra + ' more' : hard + ' strong ways · no password',
+      armoredMsg: hasPw ? 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.' : hard + ' strong ways to prove it’s you, without a password. This is the strongest setup we offer.',
       sealFooter: (uname || 'nightowl_44') + ' · sealed 01 Nov 2026, 14:05 UTC',
-      idle, idleText: idle + ' h', onIdle: (e) => this.setState({ idle: Number(e.target.value) }),
+      idle, idleText: idleSet ? idle + ' h' : 'Not set', onIdle: (e) => this.setState({ idle: Number(e.target.value) }),
+      idleDefaultName: idleSet && String(this.props.idleDefault || '').indexOf('h') > 0 ? this.props.idleDefault.replace('h', ' h') : 'none (not set)',
+      pwRuleText: R.text, pwRuleName: R.name,
+      vaultRuleName: vaultYes ? 'Yes' : 'No',
       canGo, cantGo: !canGo, footNote
     };
   }
