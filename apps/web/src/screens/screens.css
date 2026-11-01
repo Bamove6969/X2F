@@ -109,6 +109,27 @@
   color: var(--x2f-ink-muted);
 }
 
+/* An inline link in small text (CantDoThat's "feedback", Login's "Use a backup"): invisible block
+   padding grows its tap box to 24 px (WCAG 2.5.8, e2e/phone.ts) without moving a line. */
+.x2f-note .x2f-link,
+.x2f-screen__foot .x2f-link {
+  padding-block: 4px;
+}
+
+/* A role checkbox on Settings > Team: the whole 44 px label row is the tap target (phone.ts). */
+.x2f-team__role {
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.x2f-team__role input {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--x2f-monero);
+}
+
 .x2f-error {
   margin: 0;
   font-size: 14px;

@@ -492,6 +492,11 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
+  // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
+  // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  'DELETE /v1/team/members/:id',
 ];
 
 /**
@@ -559,6 +564,13 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'POST /v1/wallets',
   'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
+  // Plan 2 Task 18 (owner 2026-10-30): every team change waits out a hold; they also check it
+  // under the account lock (team/members.ts `ownerWriteGate`).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
+  // refused until then (see team/members.ts `ownerWriteGate`).
+  'DELETE /v1/team/members/:id',
 ];
 
 /**

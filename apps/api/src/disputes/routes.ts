@@ -6,6 +6,7 @@ import { requireSession } from '../auth/sessions.js';
 import { FINISH_OPEN_TRADES } from '../trades/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
 import { applyEvent, noPublish, rowToTrade, type TradePublisher, type TradeRow } from '../trades/store.js';
 import { tradeFor } from '../trades/routes.js';
 import { roleOf } from '../trades/view.js';
@@ -188,7 +189,8 @@ export interface DisputeRouteOptions {
 
 export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = {}): void {
   // Plan 2 Task 17: a dispute on an open trade can be opened (and followed) during the hold, from a backup session too.
-  const trader = requireSession(FINISH_OPEN_TRADES);
+  // The account owner, or a team member with Trades (Plan 2 Task 18).
+  const trader = requireSession({ ...FINISH_OPEN_TRADES, member: 'trades' });
   const hook = opts.publish ?? noPublish;
   const publish: TradePublisher = async (t, e, by) => {
     try {
@@ -225,6 +227,8 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
           `insert into disputes (code, seq, opened_by, reason, note, opened_at, after_refund) values ($1, ${NEXT_SEQ}, $2, $3, $4, $5, $6)`,
           [row.code, side, reason, note, now, prev.state === 'refunded'],
         );
+        // Task 18: a team member's dispute is in the account owner's audit log (the reason, never the note).
+        await auditMember(client, req.auth, { action: 'dispute-opened', tradeCode: row.code, detail: { reason } }, now);
       });
     } catch (err) {
       if (err instanceof TradeRuleError) {
@@ -266,6 +270,7 @@ export function disputeRoutes(app: FastifyInstance, opts: DisputeRouteOptions = 
       // Guarded transition: ruled -> appealed only (the row is locked above; the guard keeps it so).
       const moved = await client.query(`update disputes set status = 'appealed' where code = $1 and seq = $2 and status = 'ruled'`, [row.code, d.seq]);
       if (moved.rowCount !== 1) throw new ApiError(409, 'wrong-state');
+      await auditMember(client, req.auth, { action: 'appeal-filed', tradeCode: row.code }, now);
     });
     return loadView(deps.db, row, side, req.auth.accountId, deps.clock());
   });

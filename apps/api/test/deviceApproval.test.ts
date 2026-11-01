@@ -526,6 +526,103 @@ describe('who it applies to', () => {
   });
 });
 
+describe('team members (Plan 2 Task 18, at its landing: was NEEDS_TASKS_16_17_MEMBERS)', () => {
+  /** A joined member of `teamId` (its login account seeded directly; the real sign-up is team.test.ts's). */
+  async function memberOf(teamId: string): Promise<{ id: string; loginId: string }> {
+    const name = unique('mem');
+    const loginId = await seedAccount(deps, { loginName: name, displayName: `m-${name}-placeholder`, kind: 'member' });
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into team_members (account_id, display_name, display_key, roles, invite_expires_at, member_account_id, joined_at, created_at)
+       values ($1, $2, $3, '{offers,trades}', $4, $5, $4, $4) returning id`,
+      [teamId, `M${name}`, `m${name}`.toLowerCase(), now, loginId],
+    );
+    return { id: rows[0]!.id, loginId };
+  }
+  const pgp = (c: string): LoginFactor => ({ method: 'pgp', fingerprint: c.repeat(40), fingerprints: [c.repeat(40)] });
+  /** The member's two-factor login (`completeLogin`, the staff rule) in browser `b`: a PGP key, then `second`. */
+  async function memberLogin(b: Browser, loginId: string, second: LoginFactor = pgp('B')): Promise<unknown> {
+    const first = (await b.post('/t/complete', { accountId: loginId, factor: pgp('A') })).json() as { status: string; pendingId: string };
+    expect(first.status).toBe('second-factor');
+    return (await b.post('/t/complete', { accountId: loginId, pendingId: first.pendingId, factor: second })).json();
+  }
+  const memberSessions = async (memberId: string) =>
+    (await deps.db.query<{ id: string; account_id: string; strength: string }>(
+      'select id, account_id, strength from sessions where member_id = $1 and revoked_at is null order by created_at, id', [memberId],
+    )).rows;
+  const approvals = async (accountId: string) => (await deps.db.query('select 1 from login_approvals where account_id = $1', [accountId])).rowCount;
+
+  it("a member's own login needs no approval: its two factors start a strong session of the team account on a new device", async () => {
+    const { accountId } = await signUp();
+    for (const second of [pgp('B'), { method: 'passkey', credentialId: 'cred', attested: false } as LoginFactor]) {
+      const m = await memberOf(accountId);
+      const b = new Browser();
+      expect(await memberLogin(b, m.loginId, second)).toEqual({ status: 'ok' });
+      expect((await b.me()).statusCode).toBe(200);
+      // Members always log in with two factors (any pair `pairAllowed` lets in, two PGP keys
+      // included), so their logins are strong for Task 17.
+      expect(await memberSessions(m.id)).toEqual([expect.objectContaining({ account_id: accountId, strength: 'strong' })]);
+      expect(await approvals(m.loginId)).toBe(0);
+    }
+    expect(await approvals(accountId)).toBe(0);
+  });
+
+  it("member sessions count toward the account's device limit; the approval may log one out", async () => {
+    const { a, name, accountId } = await signUp();
+    const m1 = await memberOf(accountId);
+    const m2 = await memberOf(accountId);
+    const b1 = new Browser();
+    const b2 = new Browser();
+    expect(await memberLogin(b1, m1.loginId)).toEqual({ status: 'ok' });
+    expect(await memberLogin(b2, m2.loginId)).toEqual({ status: 'ok' });
+    // The owner's one device plus two members' make three: a new device of the owner's is the fourth.
+    const d = new Browser('Chrome on Windows');
+    const w = await waitFor(d, name);
+    expect((await a.get(`/v1/account/approvals/${w.approvalId}`)).json()).toMatchObject({ atLimit: true });
+    const refused = await a.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number });
+    expect(refused.statusCode).toBe(409);
+    const { error, sessions } = refused.json() as { error: string; sessions: Array<{ id: string; deviceLabel: string }> };
+    expect(error).toBe('too-many-devices');
+    const [s1] = await memberSessions(m1.id);
+    const [s2] = await memberSessions(m2.id);
+    expect(sessions).toHaveLength(3);
+    expect(sessions.map((s) => s.id)).toEqual(expect.arrayContaining([s1!.id, s2!.id]));
+    expect(sessions.map((s) => s.deviceLabel).sort()).toEqual(['Desk', 'Desk', 'Firefox on Linux']);
+    const poll = await approveAndCollect(a, d, w, { logOut: s1!.id });
+    expect(poll.json()).toEqual({ status: 'ok', loggedOut: ['Desk'] });
+    expect((await b1.me()).statusCode).toBe(401);
+    expect((await b2.me()).statusCode).toBe(200);
+    expect((await d.me()).statusCode).toBe(200);
+  });
+
+  it("member sessions never approve logins: the approval routes are the account owner's, and a member's browser is no logged-in device of the owner's", async () => {
+    const { a, name, accountId } = await signUp();
+    const m = await memberOf(accountId);
+    const mb = new Browser();
+    expect(await memberLogin(mb, m.loginId)).toEqual({ status: 'ok' });
+    const d = new Browser('Chrome on Windows');
+    const w = await waitFor(d, name);
+    expect((await mb.get('/v1/account/approvals')).json()).toEqual({ error: 'owner-only' });
+    expect((await mb.get(`/v1/account/approvals/${w.approvalId}`)).json()).toEqual({ error: 'owner-only' });
+    const tried = await mb.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number });
+    expect(tried.json()).toEqual({ error: 'owner-only' });
+    expect((await d.post(`/v1/login/approval/${w.approvalId}/poll`)).json()).toMatchObject({ status: 'waiting' });
+    // The owner's credentials typed into the member's browser: that browser's member session does
+    // not make it the owner's logged-in device, so the login waits for the owner's approval.
+    expect((await waitFor(mb, name)).status).toBe('approve-on-device');
+    expect((await a.me()).statusCode).toBe(200);
+  });
+
+  it("with only members logged in, the owner's login waits for no approval (no session could give it)", async () => {
+    const { a, name, accountId } = await signUp();
+    await a.post('/v1/logout');
+    const m = await memberOf(accountId);
+    expect(await memberLogin(new Browser(), m.loginId)).toEqual({ status: 'ok' });
+    const d = new Browser('Chrome on Windows');
+    expect((await d.login(name)).json()).toEqual({ status: 'ok' });
+    expect(await approvals(accountId)).toBe(0);
+  });
+});
+
 describe('one gate', () => {
   // login.ts keeps one: the staff and owner two-factor finish, which Task 16 leaves alone.
   it("every later full login goes through traderLogin: no other source file starts a full session with firstSession false", () => {

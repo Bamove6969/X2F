@@ -16,6 +16,7 @@ import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
 import { isConfirmAbort } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
+import { TEAM_MEMBER_SESSION } from './teamCopy.js';
 
 export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<string> }) {
   const [sessions, setSessions] = useState<SessionEntry[] | null>(null);
@@ -100,10 +101,12 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
       ) : null}
       <ul className="x2f-list" data-part="device-list">
         {list.map((s) => (
-          <li className="x2f-list__row" key={s.id} data-current={s.current ? 'true' : 'false'}>
+          <li className="x2f-list__row" key={s.id} data-current={s.current ? 'true' : 'false'} data-member={s.member ?? undefined}>
             <span className="x2f-list__label">
               {s.deviceLabel}
               {s.current ? ' (this device)' : ''}
+              {/* Plan 2 Task 18: a team member's session names the member (COPY-UNSIGNED, NEEDS_DESIGN_TEAM). */}
+              {typeof s.member === 'string' && s.member !== '' ? ` · ${TEAM_MEMBER_SESSION(s.member)}` : ''}
               {s.level === 'recovery' ? ' · recovery' : ''}
             </span>
             {s.current ? null : (
