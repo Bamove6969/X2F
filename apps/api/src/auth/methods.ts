@@ -21,6 +21,7 @@ import { redeemConfirm } from './confirm.js';
 import type { LoginFactor } from './login.js';
 import { openKey } from './pgp.js';
 import { requireSession } from './sessions.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 
 /** Methods that log in on their own (TOTP and recovery codes never do). */
 export const PRIMARY: MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
@@ -30,7 +31,8 @@ const ALL: readonly MethodType[] = ['pgp', 'passkey', 'security-key', 'password'
 /** The methods an account kind may hold, in display order. */
 export function allowedMethods(kind: AccountKind): MethodType[] {
   if (kind === 'trader') return [...ALL];
-  if (kind === 'staff') return ['pgp', 'security-key', 'passkey'];
+  // A team member logs in by the staff rule (Plan 2 Task 18, lead default): always two factors.
+  if (kind === 'staff' || kind === 'member') return ['pgp', 'security-key', 'passkey'];
   return ['pgp', 'security-key'];
 }
 
@@ -82,7 +84,7 @@ const isPasskey = (f: LoginFactor): boolean => f.method === 'passkey';
 export function pairAllowed(kind: AccountKind, a: LoginFactor, b: LoginFactor): boolean {
   const pgpWith = (other: (f: LoginFactor) => boolean) => (isPgp(a) && other(b)) || (other(a) && isPgp(b));
   if (kind === 'owner') return pgpWith(isAttestedKey);
-  if (kind === 'staff') {
+  if (kind === 'staff' || kind === 'member') {
     if (pgpWith(isAttestedKey) || pgpWith(isPasskey)) return true;
     if (!isPgp(a) || !isPgp(b)) return false;
     const first = pgpSet(a);
@@ -99,7 +101,7 @@ export function needsAfter(kind: AccountKind, first: LoginFactor): MethodType[] 
     if (isAttestedKey(first)) return ['pgp'];
     return [];
   }
-  if (kind === 'staff') {
+  if (kind === 'staff' || kind === 'member') {
     if (isPgp(first)) return ['pgp', 'security-key', 'passkey'];
     if (isAttestedKey(first) || isPasskey(first)) return ['pgp'];
     return [];
@@ -273,7 +275,7 @@ function leavesLogin(kind: AccountKind, c: Counts): boolean {
   const primary = c.pgp + c.keys + c.passkeys + (passwordAllowed(kind) ? c.password : 0);
   if (primary === 0) return false;
   if (kind === 'owner') return c.attestedKeys >= 2 && c.usablePgp >= 1;
-  if (kind === 'staff') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
+  if (kind === 'staff' || kind === 'member') return c.usablePgp >= 1 && (c.usablePgp >= 2 || c.attestedKeys >= 1 || c.passkeys >= 1);
   return true;
 }
 
@@ -330,40 +332,29 @@ async function deleteMethod(db: Queryable, accountId: string, type: MethodType, 
  * Then the method is deleted, alert `login-method-removed` `{ method, label }`, every other session
  * of the account ends, and alert `sessions-ended` `{ count, reason }` when any did.
  */
-export async function removeMethod(deps: Pick<Deps, 'db' | 'config' | 'clock'>, req: FastifyRequest, type: string, id: string): Promise<void> {
+export async function removeMethod(
+  deps: Pick<Deps, 'db' | 'config' | 'clock'>,
+  req: FastifyRequest,
+  type: string,
+  id: string,
+): Promise<{ status: 'held'; holdUntil: string } | null> {
   const accountId = req.auth.accountId;
   const body = req.body;
   const raw = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).confirmToken : undefined;
   const token = raw === undefined ? undefined : typeof raw === 'string' ? raw : '';
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
+  let ended = 0;
   try {
     await client.query('begin');
     try {
-      const acct = await client.query<{ kind: AccountKind }>('select kind from accounts where id = $1 for update', [accountId]);
-      const kind = acct.rows[0]?.kind;
-      if (kind === undefined) throw new ApiError(401, 'not-authenticated');
-      const found = await findMethod(client, accountId, type, id);
-      if (found === null) throw new ApiError(404, 'not-found');
-      // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
-      const usable = kind === 'trader' ? null : await usablePgpIds(client, deps.config, accountId, deps.clock());
-      const counts = await countsOf(client, accountId);
-      const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
-      for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
-      if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
-      if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
+      const found = await removable(client, deps.config, accountId, type, id, deps.clock());
       await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'remove-method', method: found.type, id }, token);
-      const now = deps.clock();
-      await deleteMethod(client, accountId, found.type, id);
-      await addAlert(client, accountId, 'login-method-removed', { method: found.type, label: found.label }, now);
-      const ended = await client.query(
-        'update sessions set revoked_at = $3 where account_id = $1 and id <> $2 and revoked_at is null',
-        [accountId, req.auth.sessionId, now],
-      );
-      const count = ended.rowCount ?? 0;
-      if (count > 0) await addAlert(client, accountId, 'sessions-ended', { count, reason: 'login-method-removed' }, now);
+      // Task 17: a waiting login's removal starts the hold and waits in it; the method stays
+      // until the hold ends by time (a pre-hold method is never removed early).
+      held = await gateChange(client, req, { kind: 'remove-method', type: found.type, id });
+      if (held === null) ended = await applyRemoval(client, deps.config, accountId, found.type, id, req.auth.sessionId, deps.clock());
       await client.query('commit');
-      // The other sessions are revoked: end their live streams now, not at the stream lifetime.
-      req.server.events.closeAccount(accountId, req.auth.sessionId);
     } catch (e) {
       await client.query('rollback');
       throw e;
@@ -371,6 +362,60 @@ export async function removeMethod(deps: Pick<Deps, 'db' | 'config' | 'clock'>, 
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, accountId);
+    return heldReply(held);
+  }
+  // The other sessions are revoked: end their live streams now, not at the stream lifetime.
+  if (ended > 0) req.server.events.closeAccount(accountId, req.auth.sessionId);
+  return null;
+}
+
+/**
+ * With the account row locked: the method, or 404 `not-found` (unknown type or id, another
+ * account's method); 409 `last-login-method` when what is left would not log in (`leavesLogin`).
+ */
+async function removable(db: Queryable, config: Config, accountId: string, type: string, id: string, now: Date) {
+  const acct = await db.query<{ kind: AccountKind }>('select kind from accounts where id = $1 for update', [accountId]);
+  const kind = acct.rows[0]?.kind;
+  if (kind === undefined) throw new ApiError(401, 'not-authenticated');
+  const found = await findMethod(db, accountId, type, id);
+  if (found === null) throw new ApiError(404, 'not-found');
+  // Staff and the owner have no reset (R2): only keys a login challenge can go to count.
+  const usable = kind === 'trader' ? null : await usablePgpIds(db, config, accountId, now);
+  const counts = await countsOf(db, accountId);
+  const after: Counts = { ...counts, usablePgp: usable?.size ?? counts.pgp };
+  for (const [k, n] of Object.entries(found.less) as Array<[keyof Counts, number]>) after[k] -= n;
+  if (found.type === 'pgp' && (usable === null || usable.has(id))) after.usablePgp -= 1;
+  if (!leavesLogin(kind, after)) throw new ApiError(409, 'last-login-method');
+  return found;
+}
+
+/**
+ * The write of a removal (the route's, or a pending one when the hold ends by time; the checks of
+ * `removable` run again): the method deleted, alert `login-method-removed` `{ method, label }`,
+ * every session but `keepSessionId` ended and alert `sessions-ended` `{ count, reason }` when any
+ * did. Returns how many sessions it ended.
+ */
+export async function applyRemoval(
+  db: Queryable,
+  config: Config,
+  accountId: string,
+  type: string,
+  id: string,
+  keepSessionId: string | null,
+  now: Date,
+): Promise<number> {
+  const found = await removable(db, config, accountId, type, id, now);
+  await deleteMethod(db, accountId, found.type, id);
+  await addAlert(db, accountId, 'login-method-removed', { method: found.type, label: found.label }, now);
+  const ended = await db.query(
+    'update sessions set revoked_at = $3 where account_id = $1 and id is distinct from $2 and revoked_at is null',
+    [accountId, keepSessionId, now],
+  );
+  const count = ended.rowCount ?? 0;
+  if (count > 0) await addAlert(db, accountId, 'sessions-ended', { count, reason: 'login-method-removed' }, now);
+  return count;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -388,9 +433,10 @@ export function methodRoutes(app: FastifyInstance): void {
     { preHandler: requireSession({ allowRecovery: true, allowHeld: true, allowStaleTerms: true }) },
     async (req) => listMethods(req.server.deps.db, req.auth.accountId),
   );
-  app.delete('/v1/account/methods/:type/:id', { preHandler: requireSession() }, async (req) => {
+  app.delete('/v1/account/methods/:type/:id', { preHandler: [requireSession(), requireNotHeld] }, async (req, reply) => {
     const { type, id } = req.params as { type: string; id: string };
-    await removeMethod(req.server.deps, req, type, id);
+    const held = await removeMethod(req.server.deps, req, type, id);
+    if (held !== null) return reply.code(202).send(held);
     return { ok: true };
   });
 }

@@ -1,0 +1,319 @@
+import { newTradeCode } from '@x2f/core';
+import { seal, type Envelope, type Identity, type Participants } from '@x2f/protocol';
+import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation } from '@x2f/trade';
+import sodium from 'libsodium-wrappers';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { newChatState, sealChatMessage, type ChatState } from '../src/chat/chatCrypto.js';
+import { ChatSendFailed, createChatEngine, type ApiEnvelope, type ChatApi, type ChatApiView, type ChatEngine } from '../src/chat/engine.js';
+import { memoryChatStore } from '../src/chat/store.js';
+
+/** A chat identity made with libsodium (apps/web makes real identities only in the escrow worker). */
+async function testIdentity(): Promise<Identity> {
+  await sodium.ready;
+  const kp = sodium.crypto_sign_keypair();
+  return {
+    signPublic: sodium.to_hex(kp.publicKey),
+    boxPublic: sodium.to_hex(sodium.crypto_sign_ed25519_pk_to_curve25519(kp.publicKey)),
+    signSecret: kp.privateKey,
+    boxSecret: sodium.crypto_sign_ed25519_sk_to_curve25519(kp.privateKey),
+  };
+}
+const pub = (i: Identity) => ({ signPublic: i.signPublic, boxPublic: i.boxPublic });
+
+let modKey: { publicKey: Uint8Array; privateKey: Uint8Array };
+let modSigningPublic: string;
+
+beforeAll(async () => {
+  await sodium.ready;
+  modKey = sodium.crypto_sign_keypair();
+  modSigningPublic = sodium.to_hex(modKey.publicKey);
+});
+
+/** An in-memory chat API standing in for apps/api's routes (one chat, seen as the buyer). */
+class FakeApi implements ChatApi {
+  view: ChatApiView = { role: 'buyer', counterparty: 'Sam', disputeOpen: false, mySignPublic: null };
+  identities: Partial<Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>> = {};
+  attestation: { attestation: unknown; sig: unknown } | null = null;
+  refused = false;
+  envelopes: ApiEnvelope[] = [];
+  posted: unknown[] = [];
+  nextId = 1;
+  constructor(readonly chat: string) {}
+  async getChat() {
+    return { ...this.view, mySignPublic: this.identities[this.view.role]?.signPublic ?? this.view.mySignPublic };
+  }
+  async registerIdentity(chat: string, body: { signPublic: string; boxPublic: string; proof: string }) {
+    expect(await chatIdentityProofValid(chat, this.view.role, body)).toBe(true);
+    if (this.identities[this.view.role]) return 'exists' as const;
+    this.identities[this.view.role] = body;
+    return 'ok' as const;
+  }
+  async getAttestation() {
+    if (this.refused) throw Object.assign(new Error('refused'), { status: 409, code: 'attestation-refused' });
+    return this.attestation;
+  }
+  async listEnvelopes(_chat: string, after: string) {
+    const list = this.envelopes.filter((e) => BigInt(e.id) > BigInt(after));
+    return { envelopes: list.slice(0, 2), more: list.length > 2 };
+  }
+  async postEnvelope(_chat: string, envelope: unknown) {
+    this.posted.push(envelope);
+    return this.add(this.view.role, envelope);
+  }
+  add(senderRole: string, envelope: unknown): string {
+    const id = String(this.nextId++);
+    this.envelopes.push({ id, senderRole, envelope, at: `2026-10-28T12:00:0${id.length}Z` });
+    return id;
+  }
+}
+
+let chat: string;
+let channel: string;
+let api: FakeApi;
+let seller: Identity;
+let mod: Identity;
+let made: Identity[];
+let store: ReturnType<typeof memoryChatStore>;
+
+function engine(): ChatEngine {
+  return createChatEngine({
+    api,
+    store,
+    newIdentity: async () => {
+      const i = await testIdentity();
+      made.push(i);
+      return i;
+    },
+    modSigningPublic,
+  });
+}
+
+/** Moderation attests the chat once both traders registered (with `key` signing it). */
+function attest(key = modKey.privateKey, extra: Partial<Attestation> = {}): Participants {
+  const buyer = api.identities.buyer!;
+  const participants: Participants = { buyer: { signPublic: buyer.signPublic, boxPublic: buyer.boxPublic }, seller: pub(seller), mod: pub(mod) };
+  const a: Attestation = { v: 1, trade: chat, channels: { chat: channel }, participants, issuedAt: '2026-10-28T12:00:00.000Z', ...extra };
+  api.attestation = { attestation: a, sig: sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(a), key)) };
+  return participants;
+}
+
+let sellerState: ChatState;
+async function fromSeller(text: string, parts: Participants, senderRole = 'seller', seq?: number): Promise<Envelope> {
+  const state = seq === undefined ? sellerState : { ...sellerState, nextSeq: seq };
+  const r = await sealChatMessage({ role: 'seller', me: seller, participants: parts, state, text });
+  sellerState = r.state;
+  api.add(senderRole, r.envelope);
+  return r.envelope;
+}
+
+beforeEach(async () => {
+  chat = newTradeCode();
+  channel = await channelFor(chat, 'chat');
+  api = new FakeApi(chat);
+  seller = await testIdentity();
+  mod = await testIdentity();
+  made = [];
+  store = memoryChatStore();
+  sellerState = newChatState(channel);
+});
+
+describe('chat engine: device binding and the attestation', () => {
+  it("makes, saves and registers this device's identity, then waits for the attestation", async () => {
+    const snap = await engine().sync(chat);
+    expect(snap).toMatchObject({ phase: 'waiting', role: 'buyer', counterparty: 'Sam', lines: [] });
+    expect(made).toHaveLength(1);
+    expect(api.identities.buyer?.signPublic).toBe(made[0]!.signPublic);
+    // Saved before it was registered, with its secrets (only ever inside the worker).
+    const rec = await store.load(chat);
+    expect(rec).toMatchObject({ registered: true, role: 'buyer', identity: { signPublic: made[0]!.signPublic } });
+    // A second sync makes no new identity.
+    await engine().sync(chat);
+    expect(made).toHaveLength(1);
+  });
+
+  it('another device of the account (the API holds another key) is read-only and never seals', async () => {
+    api.view.mySignPublic = (await testIdentity()).signPublic;
+    const e = engine();
+    expect((await e.sync(chat)).phase).toBe('other-device');
+    await expect(e.send(chat, 'hello')).rejects.toMatchObject({ code: 'not-ready' });
+    expect(made).toHaveLength(0);
+    expect(api.posted).toHaveLength(0);
+  });
+
+  it('an attestation not signed by the pinned moderation key fails closed: nothing is sealed', async () => {
+    await engine().sync(chat);
+    attest(sodium.crypto_sign_keypair().privateKey);
+    const e = engine();
+    expect(await e.sync(chat)).toMatchObject({ phase: 'failed', problem: 'security' });
+    await expect(e.send(chat, 'hi')).rejects.toBeInstanceOf(ChatSendFailed);
+    expect(api.posted).toHaveLength(0);
+    expect((await store.load(chat))?.attestation).toBeNull();
+  });
+
+  it('an attestation for another channel (a trade attestation) is refused', async () => {
+    await engine().sync(chat);
+    attest(modKey.privateKey, { channels: { escrow: await channelFor(chat, 'escrow'), signals: await channelFor(chat, 'signals') } });
+    expect(await engine().sync(chat)).toMatchObject({ phase: 'failed', problem: 'security' });
+  });
+
+  it("moderation's refusal is shown as refused", async () => {
+    await engine().sync(chat);
+    api.refused = true;
+    expect(await engine().sync(chat)).toMatchObject({ phase: 'failed', problem: 'refused' });
+  });
+});
+
+describe('chat engine: messages', () => {
+  it('sends a sealed message the seller and the mod identity open; the stored line is mine', async () => {
+    const e = engine();
+    await e.sync(chat);
+    const parts = attest();
+    const snap = await e.send(chat, 'Sending via Zelle now');
+    expect(snap.phase).toBe('ready');
+    expect(snap.lines).toEqual([{ id: '1', from: 'buyer', text: 'Sending via Zelle now', at: expect.any(String), mine: true, gapBefore: false }]);
+    expect(JSON.stringify(api.posted)).not.toContain('Zelle');
+    const { open, ReplayGuard } = await import('@x2f/protocol');
+    for (const [role, me] of [['seller', seller], ['mod', mod]] as const) {
+      const o = await open(api.posted[0] as Envelope, { me, myRole: role, participants: parts, trade: channel, guard: new ReplayGuard(channel) });
+      expect(o.payload).toEqual({ text: 'Sending via Zelle now' });
+    }
+  });
+
+  it("shows the seller's lines across pages, keeps them after a reload, and drops a replay", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const first = await fromSeller('one', parts);
+    await fromSeller('two', parts);
+    await fromSeller('three', parts);
+    const snap = await engine().sync(chat);
+    expect(snap.lines.map((l) => [l.text, l.mine])).toEqual([['one', false], ['two', false], ['three', false]]);
+    // A server that serves the first envelope again under a new id: the persisted guard refuses it.
+    api.add('seller', first);
+    const again = await engine().sync(chat);
+    expect(again.lines.map((l) => l.text)).toEqual(['one', 'two', 'three']);
+  });
+
+  it('a line whose stored sender role differs from its signer is dropped', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('forged role', parts, 'buyer');
+    expect((await engine().sync(chat)).lines).toEqual([]);
+  });
+
+  it('marks a gap when a sender skipped a seq', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('a', parts, 'seller', 0);
+    await fromSeller('c', parts, 'seller', 2);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['a', false], ['c', true]]);
+  });
+
+  it("marks a gap before a sender's first line when it is not seq 0 (review M1: the server dropped their first lines)", async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    await fromSeller('c', parts, 'seller', 2);
+    await fromSeller('d', parts);
+    expect((await engine().sync(chat)).lines.map((l) => [l.text, l.gapBefore])).toEqual([['c', true], ['d', false]]);
+  });
+
+  it('says when a sync stopped with more envelopes to read, and the next sync goes on from there (review M8)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    // The fake serves 2 a page; one sync reads at most 20 pages (40 envelopes).
+    for (let i = 0; i < 45; i++) await fromSeller(`m${i}`, parts);
+    const first = await engine().sync(chat);
+    expect(first.more).toBe(true);
+    expect(first.lines).toHaveLength(40);
+    const second = await engine().sync(chat);
+    expect(second.more).toBe(false);
+    expect(second.lines).toHaveLength(45);
+  });
+
+  it('a rate-limited post is slow-down, not a connection problem (review M7)', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    api.postEnvelope = async () => {
+      throw Object.assign(new Error('api 429'), { status: 429, code: 'slow-down' });
+    };
+    await expect(e.send(chat, 'hi')).rejects.toMatchObject({ code: 'slow-down' });
+  });
+
+  it('a moderator line shows only while a dispute is open, and then appears in order', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    const m = await seal({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'Moderator here' }, to: ['buyer', 'seller', 'mod'], me: mod, participants: parts });
+    api.add('mod', m);
+    await fromSeller('after', parts);
+    const before = await engine().sync(chat);
+    expect(before.lines.map((l) => l.text)).toEqual(['after']);
+    api.view.disputeOpen = true;
+    const during = await engine().sync(chat);
+    expect(during.lines.map((l) => [l.from, l.text])).toEqual([['mod', 'Moderator here'], ['seller', 'after']]);
+    expect(during.disputeOpen).toBe(true);
+  });
+
+  it('a mod-signed envelope the server recorded as a trader is dropped (the badge needs both)', async () => {
+    await engine().sync(chat);
+    const parts = attest();
+    api.view.disputeOpen = true;
+    const m = await seal({ trade: channel, from: 'mod', seq: 0, type: 'chat.msg', payload: { text: 'x' }, to: ['buyer', 'seller', 'mod'], me: mod, participants: parts });
+    api.add('seller', m);
+    expect((await engine().sync(chat)).lines).toEqual([]);
+  });
+
+  it('refuses empty text and keeps the seq for the next message', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await expect(e.send(chat, '   ')).rejects.toMatchObject({ code: 'bad-text' });
+    await e.send(chat, 'ok');
+    expect((api.posted[0] as Envelope).seq).toBe(0);
+  });
+
+  it('after losing the device state, a new send never reuses a seq the server holds', async () => {
+    const e = engine();
+    await e.sync(chat);
+    attest();
+    await e.send(chat, 'first');
+    // The saved state is rolled back to before the send (an older copy): the guard catches up first.
+    const rec = (await store.load(chat))!;
+    await store.save({ ...rec, state: null, cursor: '0', messages: [] });
+    await engine().send(chat, 'second');
+    expect(api.posted.map((p) => (p as Envelope).seq)).toEqual([0, 1]);
+    const lines = (await engine().sync(chat)).lines;
+    expect(lines.map((l) => l.text)).toEqual(['first', 'second']);
+  });
+});
+
+describe('the worker side of the chat protocol (serve.ts)', () => {
+  it('answers sync and send with snapshots, refuses a bad chat code, and never posts a key', async () => {
+    const { serveChat, chatConfig } = await import('../src/chat/serve.js');
+    const out: unknown[] = [];
+    let handler: (e: { data: unknown }) => void = () => undefined;
+    const port = { postMessage: (m: unknown) => out.push(m), addEventListener: (_t: 'message', cb: (e: { data: unknown }) => void) => (handler = cb) };
+    serveChat(port as never, async () => engine());
+    const settle = async () => {
+      for (let i = 0; i < 200 && out.length === 0; i++) await new Promise((r) => setTimeout(r, 5));
+    };
+    handler({ data: { t: 'chat-sync', id: 1, chat: 'not a code' } });
+    await settle();
+    expect(out.shift()).toEqual({ t: 'chat', id: 1, ok: false, error: 'not-found' });
+    handler({ data: { t: 'chat-sync', id: 2, chat } });
+    await settle();
+    expect(out.shift()).toMatchObject({ t: 'chat', id: 2, ok: true, snapshot: { phase: 'waiting' } });
+    attest();
+    handler({ data: { t: 'chat-send', id: 3, chat, text: 'hi' } });
+    await settle();
+    const sent = out.shift() as { ok: boolean; snapshot: unknown };
+    expect(sent.ok).toBe(true);
+    const json = JSON.stringify(sent);
+    expect(json).not.toContain(made[0]!.signPublic);
+    expect(json).not.toContain('Secret');
+    handler({ data: { t: 'escrow-thing', id: 4 } });
+    await new Promise((r) => setTimeout(r, 20));
+    expect(out).toEqual([]);
+    expect(() => chatConfig({})).toThrow();
+    expect(chatConfig({ VITE_MOD_SIGNING_PUBLIC: modSigningPublic })).toEqual({ modSigningPublic });
+  });
+});

@@ -176,13 +176,16 @@ describe('rotation', () => {
   it('password: a name under the old key still logs in, then the row is re-tagged under the current key', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    expect((await login(loginName)).statusCode).toBe(200);
+    // One browser: a password alone on a new device starts the 24-hour hold, during which only a
+    // browser already logged in may log in again (Task 17 review round 2 N-C1).
+    const b = new Browser(app);
+    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
     const row = await tagRow(id);
     expect(row.login_tag_key_id).toBe(2);
     expect(row.login_tag).toEqual(currentLoginTag(deps, loginName, 2));
     // Once moved, the old key can leave the ring.
     deps.config.loginNameKeys = { current: 2, keys: new Map([[2, deps.config.loginNameKeys.keys.get(2)!]]) };
-    expect((await login(loginName)).statusCode).toBe(200);
+    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
     expect((await tagRow(id)).login_tag_key_id).toBe(2);
   });
 
@@ -234,11 +237,13 @@ describe('the re-tag is best-effort (review M1)', () => {
   it('password: a failing re-tag still logs in; the row stays under the old key and the next login moves it', async () => {
     const { id, loginName } = await passwordAccount(1);
     deps.config.loginNameKeys = rotated();
-    const res = await retagFails(() => login(loginName));
+    // One browser (the hold of a password alone on a new device: Task 17 review round 2 N-C1).
+    const b = new Browser(app);
+    const res = await retagFails(() => login(loginName, GOOD, b));
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeDefined();
     expect((await tagRow(id)).login_tag_key_id).toBe(1);
-    expect((await login(loginName)).statusCode).toBe(200);
+    expect((await login(loginName, GOOD, b)).statusCode).toBe(200);
     expect((await tagRow(id)).login_tag_key_id).toBe(2);
   });
 

@@ -7,17 +7,19 @@
  */
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { IDLE_HOURS, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
+import { IDLE_HOURS, isHeld, type IdleHours, type LogoutTimer as Timer } from '@x2f/auth-client';
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
-import { holdSentence } from '../auth/refusals.js';
+import { heldNote, holdSentence } from '../auth/refusals.js';
 import { Alerts } from './Alerts.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
 import { Devices } from './Devices.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
+import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
+import { OwnerOnly } from './OwnerOnly.js';
 
 const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly number[]).includes(n);
 
@@ -28,7 +30,9 @@ const isIdleHours = (n: number): n is IdleHours => (IDLE_HOURS as readonly numbe
  */
 function LogoutTimer() {
   const [timer, setTimer] = useState<Timer | null>(null);
-  const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'error' | 'load-error'>('loading');
+  const [status, setStatus] = useState<'loading' | 'idle' | 'saving' | 'saved' | 'held' | 'error' | 'load-error'>('loading');
+  // Plan 2 Task 17: a change from a login with one way of proving it's you waits out the hold.
+  const [heldUntil, setHeldUntil] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -54,6 +58,12 @@ function LogoutTimer() {
     setStatus('saving');
     authApi.setLogoutTimer({ idleHours: value }).then(
       (t) => {
+        if (isHeld(t)) {
+          setTimer(before);
+          setHeldUntil(t.holdUntil);
+          setStatus('held');
+          return;
+        }
         setTimer(t);
         setStatus('saved');
       },
@@ -105,6 +115,11 @@ function LogoutTimer() {
               Saved.
             </p>
           ) : null}
+          {status === 'held' && heldUntil !== null ? (
+            <p className="x2f-note" role="status" data-part="logout-timer-status">
+              {heldNote(heldUntil)}
+            </p>
+          ) : null}
           {status === 'error' ? (
             <p className="x2f-error" role="alert" data-part="logout-timer-status">
               Could not save that. Try again.
@@ -117,8 +132,8 @@ function LogoutTimer() {
 }
 
 /**
- * A backup login's recovery session is held (Plan 2: a TOTP backup waits a day): every change on
- * this screen is refused until then, so the screen says so up front, from `me()`.
+ * A backup login's recovery session is held, or the account is on its 24-hour hold (Plan 2 Tasks 9
+ * and 17): changes on this screen are refused until then, so the screen says so up front, from `me()`.
  */
 function HoldBanner() {
   const [held, setHeld] = useState<string | null | undefined>(undefined);
@@ -126,7 +141,12 @@ function HoldBanner() {
     let live = true;
     authApi.me().then(
       (me) => {
-        if (live) setHeld(me.level === 'recovery' && me.holdUntil !== null && Date.parse(me.holdUntil) > Date.now() ? me.holdUntil : null);
+        if (!live) return;
+        // A held backup session (Task 9), or the account's 24-hour hold (Task 17): the later end.
+        const ends = [me.level === 'recovery' ? me.holdUntil : null, me.accountHoldUntil ?? null].filter(
+          (t): t is string => typeof t === 'string' && Date.parse(t) > Date.now(),
+        );
+        setHeld(ends.length === 0 ? null : ends.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b)));
       },
       () => undefined,
     );
@@ -142,7 +162,16 @@ function HoldBanner() {
   );
 }
 
+/** Plan 2 Task 18: the account owner's screen; a team member gets the owner-only refusal. */
 export function Security() {
+  return (
+    <OwnerOnly screen="security">
+      <SecurityScreen />
+    </OwnerOnly>
+  );
+}
+
+function SecurityScreen() {
   const { prove, confirmUi, open } = useConfirm();
 
   return (
@@ -152,7 +181,7 @@ export function Security() {
         <HoldBanner />
         <Methods prove={prove} />
         <PayoutWait />
-        <Devices />
+        <Devices prove={prove} />
         <LogoutTimer />
         <Alerts />
         {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}
@@ -161,6 +190,12 @@ export function Security() {
             <li className="x2f-list__row">
               <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
                 {BLOCK_COPY.title}
+              </Link>
+            </li>
+            {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={TEAM_PATH} data-part="team-link">
+                {TEAM_COPY.title}
               </Link>
             </li>
           </ul>

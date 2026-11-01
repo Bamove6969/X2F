@@ -43,10 +43,15 @@ function BoardChat({ code, name }: TradeChatProps) {
   );
 }
 
-export function installPayFixtures(): void {
+/**
+ * `realChat` (window.__x2fRealChat, set by e2e/chat.spec.ts only) leaves Task 20's real
+ * TradeChatPanel in the chat seam (App.tsx installs it), so that spec drives the real chat engine
+ * through the room's chat sheet and panes; every other fixture build gets the board's stand-in.
+ */
+export function installPayFixtures(realChat = false): void {
   setPaymentDetailsSource((_code, on) => {
     on(PAY_DETAILS);
     return () => undefined;
   });
-  setTradeChat(BoardChat);
+  if (!realChat) setTradeChat(BoardChat);
 }

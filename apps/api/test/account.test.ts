@@ -211,7 +211,7 @@ describe('GET /v1/account/me', () => {
     expect(res.body).not.toContain(`"${username}"`);
     expect(await me(b)).toEqual({
       displayName: `D${username}`, needsLoginName: false, kind: 'trader', level: 'full', holdUntil: null, stage: 'starter', methods: ['password'], hasBackup: false,
-      suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true,
+      suggestions: ['add-authenticator', 'add-backup'], logoutTimer: { idleHours: 12, adjustable: true }, termsCurrent: true, accountHoldUntil: null, member: null,
     });
     await addTotp(id);
     const after = await me(b);
@@ -336,14 +336,14 @@ describe('sessions', () => {
     expect(list).toHaveLength(2);
     expect(list).toContainEqual({
       id: a.sessionId, deviceLabel: 'Laptop', level: 'full', createdAt: at(-MIN).toISOString(),
-      lastSeenAt: now.toISOString(), current: true,
+      lastSeenAt: now.toISOString(), current: true, member: null,
     });
     expect(list).toContainEqual({
       id: b.sessionId, deviceLabel: 'Phone', level: 'full', createdAt: now.toISOString(), lastSeenAt: now.toISOString(),
-      current: false,
+      current: false, member: null,
     });
     expect(list.filter((s) => s.current)).toHaveLength(1);
-    for (const s of list) expect(Object.keys(s).sort()).toEqual(['createdAt', 'current', 'deviceLabel', 'id', 'lastSeenAt', 'level']);
+    for (const s of list) expect(Object.keys(s).sort()).toEqual(['createdAt', 'current', 'deviceLabel', 'id', 'lastSeenAt', 'level', 'member']);
 
     const del = await a.delete(`/v1/account/sessions/${b.sessionId}`);
     expect(del.statusCode).toBe(204);

@@ -7,7 +7,8 @@ import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
 import { recoveryRoutes } from './auth/recovery.js';
-import { logoutRoute } from './auth/sessions.js';
+import { approvalRoutes } from './auth/approval.js';
+import { logoutRoute, runsWithSession } from './auth/sessions.js';
 import { totpRoutes } from './auth/totp.js';
 import { webauthnLoginRoutes, webauthnRoutes } from './auth/webauthn.js';
 import type { TxConfirmations } from './trades/chain.js';
@@ -26,14 +27,16 @@ import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { teamRoutes } from './routes/team.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
+import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
 import { addSecurityHeaders, clientErrorHandler, frameworkErrors } from './static/serve.js';
 import { EventBus, type EventBusOptions } from './events/bus.js';
 import { eventRoutes, type EventStreamOptions } from './events/routes.js';
 import { tradeEventPublisher } from './events/tradePublisher.js';
 import { pushRoutes } from './push/routes.js';
-import { sendPush, webPushTransport, type PushKind, type PushTransport } from './push/send.js';
+import { sendPush, webPushTransport, type PushKind, type PushOptions, type PushTransport } from './push/send.js';
 
 // Interface-only stubs, filled in by the task named on each; their shapes follow the plan text.
 /** Task 6: the leaked-password list held on X2F's own server. */
@@ -84,7 +87,13 @@ declare module 'fastify' {
     /** Task 19: live events to each account's own open streams (`publish`, `delivered`). */
     events: EventBus;
     /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
-    push: { send(accountId: string, kind: PushKind): Promise<boolean> };
+    push: { send(accountId: string, kind: PushKind, opts?: PushOptions): Promise<boolean> };
+    /**
+     * Every route other than GET (and HEAD) that runs behind `requireSession`, as `METHOD /path`
+     * (Tasks 16-17 review round 5 M1: the tripwire that each is classified, `LIVE_SESSION_ROUTES` or
+     * `LIVE_SESSION_EXEMPT`, reads it).
+     */
+    sessionWriteRoutes: readonly string[];
   }
 }
 
@@ -177,7 +186,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('events', events);
   const transport = options.pushTransport ?? webPushTransport;
   app.decorate('push', {
-    send: (accountId: string, kind: PushKind) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind),
+    send: (accountId: string, kind: PushKind, opts?: PushOptions) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
   });
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
@@ -226,6 +235,14 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
     return reply.code(500).send({ error: 'internal' });
   });
 
+  // Review round 5 M1: records each route that writes with a session (registered below).
+  const sessionWriteRoutes: string[] = [];
+  app.decorate('sessionWriteRoutes', sessionWriteRoutes);
+  app.addHook('onRoute', (r) => {
+    if (!runsWithSession(r.preHandler)) return;
+    for (const m of [r.method].flat()) if (m !== 'GET' && m !== 'HEAD') sessionWriteRoutes.push(`${m} ${r.url}`);
+  });
+
   app.get('/healthz', async () => ({ ok: true }));
   logoutRoute(app);
   passwordRoutes(app);
@@ -235,9 +252,11 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
+  // Plan 2 Task 16: new-device approval (the new device's poll and the logged-in device's decision).
+  approvalRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   webauthnRoutes(app);
-  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
+  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner', 'member'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
@@ -256,6 +275,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   takeRoutes(app);
   // Plan 3 Task 8: a trade's participant identities and the moderation attestation (traders only).
   tradeIdentityRoutes(app);
+  chatRoutes(app);
   // Plan 3, Task 26: nudges, nudge settings and blocks.
   nudgeRoutes(app);
   // Plan 3, Task 24: the released screen's live confirmations from X2F's own node.
@@ -274,6 +294,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   }
   // Plan 5, Task 21: the feedback form every "can't do that" popup links to.
   feedbackFormRoutes(app);
+  // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
+  teamRoutes(app);
 
   return app;
 }

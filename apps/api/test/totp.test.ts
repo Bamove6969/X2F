@@ -10,6 +10,7 @@ import { insertPgpKey } from '../src/auth/pgp.js';
 import { openSecret, rewrapTotpSecrets, sealSecret, verifyTotp } from '../src/auth/totp.js';
 import { subkey } from '../src/config.js';
 import { confirmTokenMethod, seedAccount } from './helpers/accounts.js';
+import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
@@ -273,7 +274,8 @@ describe('password login with TOTP (second factor)', () => {
 
     const ok = await fresh.post('/v1/login/second-factor', { pendingId: body.pendingId, code: codeAt(secret, now) });
     expect(ok.statusCode).toBe(200);
-    expect(ok.json()).toEqual({ status: 'ok' });
+    // Task 16: the account is logged in elsewhere, so this new browser is approved first.
+    expect(await approvedLogin(deps, ok, (u) => fresh.post(u))).toEqual({ status: 'ok' });
     expect(fresh.cookies[SESSION_COOKIE]).toBeTruthy();
     // The pending login is single-use.
     const again = await fresh.post('/v1/login/second-factor', { pendingId: body.pendingId, code: codeAt(secret, now) });
@@ -320,7 +322,7 @@ describe('password login with TOTP (second factor)', () => {
     setNow(at(3_000));
     const later = await attacker.post('/v1/login/second-factor', { pendingId, code: codeAt(secret, now) });
     expect(later.statusCode).toBe(200);
-    expect(later.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, later, (u) => attacker.post(u))).toEqual({ status: 'ok' });
 
     // PGP is never throttled by the totp key.
     const owner = new Browser(app);
@@ -329,7 +331,7 @@ describe('password login with TOTP (second factor)', () => {
     const code = codeOf(await decrypt(encryptedMessage, key.privateKey));
     const fin = await owner.post('/v1/login/pgp/finish', { challengeId, code, deviceLabel: 'Test browser' });
     expect(fin.statusCode).toBe(200);
-    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, fin, (u) => owner.post(u))).toEqual({ status: 'ok' });
   });
 
   it('a correct passkey login still succeeds while TOTP is throttled', async () => {
@@ -362,14 +364,15 @@ describe('password login with TOTP (second factor)', () => {
     const response = auth.authenticate(options, ORIGIN, { userHandle: rows[0]!.h.toString('base64url') });
     const fin = await owner.post('/v1/login/webauthn/finish', { challengeId, response, deviceLabel: 'Phone' });
     expect(fin.statusCode).toBe(200);
-    expect(fin.json()).toEqual({ status: 'ok' });
+    expect(await approvedLogin(deps, fin, (u) => owner.post(u))).toEqual({ status: 'ok' });
     expect(owner.cookies[SESSION_COOKIE]).toBeDefined();
   });
 
   it('logs in without a second factor when no TOTP is enrolled', async () => {
     const { username } = await trader();
-    const res = await passwordLogin(new Browser(app), username);
-    expect(res.json()).toEqual({ status: 'ok' });
+    const fresh = new Browser(app);
+    const res = await passwordLogin(fresh, username);
+    expect(await approvedLogin(deps, res, (u) => fresh.post(u))).toEqual({ status: 'ok' });
   });
 });
 

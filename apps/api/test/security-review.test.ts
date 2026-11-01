@@ -4,6 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { START_BUCKET } from '../src/limits.js';
 import { seedAccount } from './helpers/accounts.js';
+import { approvedLogin } from './helpers/approval.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
@@ -70,7 +71,8 @@ describe('F1: the request budgets are global (Important; open until the Plan 6 p
     const code = codeOf(await decrypt(start.json().encryptedMessage, k.privateKey));
     const fin = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'b' });
     expect(fin.statusCode).toBe(200);
-    expect(fin.json()).toEqual({ status: 'ok' });
+    // Task 16: the registering browser is still logged in, so this new one is approved first.
+    expect(await approvedLogin(deps, fin, (u) => b.post(u, {}))).toEqual({ status: 'ok' });
   });
 
   it('the exemption is bound to the device that started the login, and is used once per challenge', async () => {

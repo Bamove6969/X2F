@@ -25,8 +25,15 @@ export interface WorkItem {
   terms: AttestedTerms;
 }
 
+/** A chat both traders registered a chat identity for (`GET /internal/v1/chat-work`, Task 20). */
+export interface ChatWorkItem {
+  chat: string;
+  participants: Record<'buyer' | 'seller', { signPublic: string; boxPublic: string; proof: string }>;
+}
+
 export interface Link {
   pullWork(): Promise<WorkItem[]>;
+  pullChatWork(): Promise<ChatWorkItem[]>;
   postReport(report: unknown): Promise<number>;
   registerChannel(channel: string, signPublics: Record<Role, string>): Promise<number>;
 }
@@ -73,6 +80,12 @@ export function createLink(o: {
       if (res.status !== 200) throw new LinkError(res.status, 'pull work');
       const body = (await res.json()) as { work?: unknown };
       return Array.isArray(body.work) ? (body.work as WorkItem[]) : [];
+    },
+    async pullChatWork() {
+      const res = await internal('GET', '/internal/v1/chat-work');
+      if (res.status !== 200) throw new LinkError(res.status, 'pull chat work');
+      const body = (await res.json()) as { work?: unknown };
+      return Array.isArray(body.work) ? (body.work as ChatWorkItem[]) : [];
     },
     async postReport(report) {
       const res = await internal('POST', '/internal/v1/reports', report);

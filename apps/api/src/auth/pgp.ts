@@ -31,6 +31,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
+import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
 import { requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
@@ -203,7 +204,7 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -404,7 +405,8 @@ export async function checkPgpCode(
   if (expected.sessionId !== undefined && row.session_id !== expected.sessionId) throw expired();
   if (expected.purpose === 'confirm' || expected.purpose === 'add-key') {
     const live = await deps.db.query('select 1 from sessions where id = $1 and revoked_at is null and expires_at > $2', [row.session_id, now]);
-    if (live.rows.length === 0) throw expired();
+    // Review round 4: a session that ended meanwhile answers as every other route does.
+    if (live.rows.length === 0) throw new ApiError(401, 'not-authenticated');
   }
   const normalized = normalizeLoginCode(code);
   const given = codeHash(normalized ?? '');
@@ -757,21 +759,25 @@ async function addKeyStart(req: FastifyRequest) {
   });
 }
 
-async function addKeyFinish(req: FastifyRequest) {
+async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   const deps = req.server.deps;
   const b = body(req);
   const row = await checkPgpCode(deps, req, str(b, 'challengeId'), str(b, 'code'), {
     purpose: 'add-key', accountId: req.auth.accountId, sessionId: req.auth.sessionId,
   });
   const pending = readPendingKey(row.payload, 'key');
-  const armored = openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint);
+  // The challenge holds the storable key already sealed under `subkey('pgp-key')`: stored as is.
+  const sealed = Buffer.from(pending.keyEnc, 'base64');
+  openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
   const now = deps.clock();
   const client = await deps.db.connect();
+  let held: { holdUntil: Date } | null = null;
   try {
     await client.query('begin');
     try {
-      await insertPgpKey(client, deps.config, { accountId: req.auth.accountId, fingerprint: pending.fingerprint, armored, now });
-      await addAlert(client, req.auth.accountId, 'login-method-added', { method: 'pgp', fingerprint: pending.fingerprint }, now);
+      // Task 17: a waiting login's new key starts the hold and waits in it.
+      held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc });
+      if (held === null) await applyPgpKey(client, req.auth.accountId, pending.fingerprint, sealed, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -780,7 +786,76 @@ async function addKeyFinish(req: FastifyRequest) {
   } finally {
     client.release();
   }
+  if (held !== null) {
+    pushHoldStarted(req, req.auth.accountId);
+    return reply.code(202).send({ ...heldReply(held), fingerprint: pending.fingerprint });
+  }
   return { fingerprint: pending.fingerprint };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Plan 2 Task 18: a team member's sign-up (apps/api/src/team/members.ts)
+
+/**
+ * Checks a member's pasted key (400 with the key's refusal) and issues a `team-join` challenge to
+ * it, keeping the sealed storable key in the payload for `checkTeamJoinCode`. `accountId` is null
+ * for the first factor (no member account yet) and the member's account for a second PGP key.
+ */
+export async function issueTeamJoinChallenge(
+  deps: Deps,
+  req: FastifyRequest,
+  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown> },
+): Promise<IssuedChallenge & { fingerprint: string }> {
+  const now = deps.clock();
+  const inspection = await inspectOrRefuse(a.publicKey, now);
+  const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
+  const issued = await issuePgpChallenge(deps, req, {
+    accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
+    armoredKeys: [storable], payload: { ...a.payload, key: pending },
+  });
+  return { ...issued, fingerprint: inspection.fingerprint };
+}
+
+/**
+ * Uses up a `team-join` challenge and checks its code (as `checkPgpCode`), from the same device
+ * that started it and for the same `accountId` (null or the member's). Returns its payload and
+ * the proven key.
+ */
+export async function checkTeamJoinCode(
+  deps: Deps,
+  req: FastifyRequest,
+  challengeId: string,
+  code: string,
+  accountId: string | null,
+): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
+  const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'team-join' });
+  const device = deviceHash(req);
+  const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
+  if (row.account_id !== accountId || !sameDevice) throw new ApiError(400, 'challenge-expired');
+  const pending = readPendingKey(row.payload, 'key');
+  return {
+    payload: row.payload,
+    fingerprint: pending.fingerprint,
+    armored: openKey(deps.config, Buffer.from(pending.keyEnc, 'base64'), pending.fingerprint),
+  };
+}
+
+/**
+ * The write of an added key (the route's, or a pending one when the hold ends by time): the sealed
+ * storable key as `pendingKey` made it, alert `login-method-added`. 409 `key-in-use` when the
+ * fingerprint is on any account.
+ */
+export async function applyPgpKey(db: Queryable, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
+  try {
+    await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
+      accountId, fingerprint, sealed, now,
+    ]);
+  } catch (e) {
+    const err = e as { code?: string; constraint?: string };
+    if (err.code === '23505' && err.constraint === 'pgp_keys_fingerprint_key') throw new ApiError(409, 'key-in-use');
+    throw e;
+  }
+  await addAlert(db, accountId, 'login-method-added', { method: 'pgp', fingerprint }, now);
 }
 
 /**
@@ -796,7 +871,7 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
   app.post('/v1/register/pgp/start', { bodyLimit: PGP_BODY_LIMIT }, registerStart);
   app.post('/v1/register/pgp/finish', registerFinish);
 
-  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['trader', 'staff', 'owner'] }), { prefix: '/v1/login/pgp' });
+  await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: ['trader', 'staff', 'owner', 'member'] }), { prefix: '/v1/login/pgp' });
 
   app.post('/v1/confirm/pgp/start', { preHandler: requireSession() }, confirmStart);
   app.post('/v1/confirm/pgp/finish', { preHandler: requireSession() }, confirmFinish);
@@ -808,11 +883,12 @@ export async function pgpRoutes(app: FastifyInstance): Promise<void> {
       preHandler: [
         requireSession({ allowRecovery: true }),
         methodAllowed('pgp'),
+        requireNotHeld,
         inspectNewKey,
         requireConfirm({ kind: 'add-method', method: 'pgp' }, { onboarding: true, recovery: true }),
       ],
     },
     addKeyStart,
   );
-  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp')] }, addKeyFinish);
+  app.post('/v1/account/pgp/finish', { preHandler: [requireSession({ allowRecovery: true }), methodAllowed('pgp'), requireNotHeld] }, addKeyFinish);
 }

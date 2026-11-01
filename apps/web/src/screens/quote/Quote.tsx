@@ -161,6 +161,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   // they confirm must be the one they see (spec 2.2 step 3). With exactly one usable wallet it is
   // picked for them; with more, they pick (OD-11).
   const [back, setBack] = useState(false);
+  const [chatHint, setChatHint] = useState(false);
   useEffect(() => {
     const nonce = params.get('resume');
     if (resumed.current || nonce === null || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
@@ -250,11 +251,18 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency, exponent)}` : ''}
           </span>
         </div>
-        {/* TODO(Task 20): opens the pre-trade chat with the poster. */}
-        <button type="button" className="x2f-quote__chat" disabled>
+        {/*
+          Task 20 review I1 (lead decision (a), 2026-10-29): the pre-trade chat stays off here until
+          the poster has a way to reach it (a chats inbox and a notice, owed: docs/coordination.md).
+          aria-disabled, not disabled, so it stays focusable and reads its hint; a tap shows the hint.
+        */}
+        <button type="button" className="x2f-quote__chat" aria-disabled="true" aria-describedby="quote-chat-hint" onClick={() => setChatHint(true)}>
           Chat
         </button>
       </header>
+      <p id="quote-chat-hint" className={chatHint ? 'x2f-quote__chat-hint x2f-quote__chat-hint--shown' : 'x2f-quote__chat-hint'}>
+        Chat opens once the trade starts.
+      </p>
 
       <main className="x2f-quote__main">
         <section aria-label="Amount" className="x2f-quote__amount">

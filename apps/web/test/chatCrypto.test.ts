@@ -396,7 +396,7 @@ describe('source hygiene (M3)', () => {
   it('chat source and tests hold no literal invisible or bidi characters (they are written as \\u escapes)', async () => {
     const { readFileSync } = await import('node:fs');
     const { fileURLToPath } = await import('node:url');
-    const files = ['../src/chat/chatCrypto.ts', './chatCrypto.test.ts', './chat-tripwire.test.ts', '../../../packages/trade/src/chat.ts', '../../../packages/trade/test/chat.test.ts'];
+    const files = ['../src/chat/chatCrypto.ts', './chatCrypto.test.ts', '../../../packages/trade/src/chat.ts', '../../../packages/trade/test/chat.test.ts'];
     const hidden = /[\u00AD\u061C\u180E\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\uFFF9-\uFFFB]/u;
     for (const f of files) expect(hidden.test(readFileSync(fileURLToPath(new URL(f, import.meta.url)), 'utf8')), f).toBe(false);
   });

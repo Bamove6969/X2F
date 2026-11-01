@@ -1,7 +1,7 @@
 import { generateIdentity, type Identity, type Participants } from '@x2f/protocol';
-import { attestationBytes, channelFor, identityProofValid, isAttestedTerms, type Attestation, type AttestedTerms } from '@x2f/trade';
+import { attestationBytes, channelFor, chatIdentityProofValid, identityProofValid, isAttestedTerms, type Attestation, type AttestedTerms } from '@x2f/trade';
 import sodium from 'libsodium-wrappers';
-import type { WorkItem } from './link.js';
+import type { ChatWorkItem, WorkItem } from './link.js';
 
 /**
  * Attesting one trade: the moderation service checks both traders' proofs of possession itself
@@ -93,5 +93,44 @@ export async function attestTrade(
     mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
   };
   const { attestation, sig } = await signAttestation(w.trade, participants, w.terms, signingSecret, issuedAt);
+  return { attestation, sig, mod, participants };
+}
+
+/** A chat's work item: both chat-identity proofs (the x2f/chat-identity/v1 domain, never the trade one) and two different keys. */
+export async function checkChatWork(w: ChatWorkItem): Promise<void> {
+  if (typeof w?.chat !== 'string' || typeof w.participants !== 'object' || w.participants === null) throw new AttestRefused('bad-work');
+  const { buyer, seller } = w.participants;
+  if (!buyer || !seller || buyer.signPublic === seller.signPublic || buyer.boxPublic === seller.boxPublic) throw new AttestRefused('bad-work');
+  if (!(await chatIdentityProofValid(w.chat, 'buyer', buyer)) || !(await chatIdentityProofValid(w.chat, 'seller', seller))) {
+    throw new AttestRefused('bad-proof');
+  }
+}
+
+/**
+ * Attesting one chat (Task 20): the same rule as a trade, with the chat channel only and no terms.
+ * The moderator's chat identity is minted here, so the API can never choose who reads the chat.
+ */
+export async function attestChat(
+  w: ChatWorkItem,
+  signingSecret: Uint8Array,
+  issuedAt: Date,
+  newIdentity: () => Promise<Identity> = generateIdentity,
+): Promise<Attested> {
+  await checkChatWork(w);
+  await sodium.ready;
+  const mod = await newIdentity();
+  const participants: Participants = {
+    buyer: { signPublic: w.participants.buyer.signPublic, boxPublic: w.participants.buyer.boxPublic },
+    seller: { signPublic: w.participants.seller.signPublic, boxPublic: w.participants.seller.boxPublic },
+    mod: { signPublic: mod.signPublic, boxPublic: mod.boxPublic },
+  };
+  const attestation: Attestation = {
+    v: 1,
+    trade: w.chat,
+    channels: { chat: await channelFor(w.chat, 'chat') },
+    participants,
+    issuedAt: issuedAt.toISOString(),
+  };
+  const sig = sodium.to_hex(sodium.crypto_sign_detached(attestationBytes(attestation), signingSecret));
   return { attestation, sig, mod, participants };
 }
