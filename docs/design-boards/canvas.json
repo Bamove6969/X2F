@@ -815,6 +815,60 @@
       "page": "all",
       "title": "G3 \u00b7 Team members (after launch) (wide)",
       "is_interactive": true
+    },
+    "SignupSecurity.dc.html": {
+      "x": 0,
+      "y": 34700,
+      "w": 390,
+      "h": 2080,
+      "page": "all",
+      "title": "H1 \u00b7 Signup: login strength",
+      "is_interactive": true
+    },
+    "RecoveryCode.dc.html": {
+      "x": 510,
+      "y": 34700,
+      "w": 390,
+      "h": 1120,
+      "page": "all",
+      "title": "H2 \u00b7 Recovery code",
+      "is_interactive": true
+    },
+    "RecoveryHold.dc.html": {
+      "x": 1020,
+      "y": 34700,
+      "w": 390,
+      "h": 1600,
+      "page": "all",
+      "title": "H3 \u00b7 Recovery hold",
+      "is_interactive": true
+    },
+    "BlockQueued.dc.html": {
+      "x": 1530,
+      "y": 34700,
+      "w": 390,
+      "h": 1040,
+      "page": "all",
+      "title": "H4 \u00b7 Block a queued change",
+      "is_interactive": true
+    },
+    "Compromised.dc.html": {
+      "x": 2040,
+      "y": 34700,
+      "w": 390,
+      "h": 1400,
+      "page": "all",
+      "title": "H5 \u00b7 Account compromised",
+      "is_interactive": true
+    },
+    "TeamRefusal.dc.html": {
+      "x": 2550,
+      "y": 34700,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "H6 \u00b7 Team: Strong login needed",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -938,6 +992,14 @@
       "kind": "title1",
       "maxW": 7480,
       "page": "all"
+    },
+    "sec1101": {
+      "x": 0,
+      "y": 34400,
+      "text": "Login strength, recovery and compromised account \u00b7 1 Nov (draft copy)",
+      "kind": "title1",
+      "maxW": 7480,
+      "page": "all"
     }
   },
   "order": [
@@ -1030,7 +1092,13 @@
     "Devices.dc.html",
     "Devices-Wide.dc.html",
     "Team.dc.html",
-    "Team-Wide.dc.html"
+    "Team-Wide.dc.html",
+    "SignupSecurity.dc.html",
+    "RecoveryCode.dc.html",
+    "RecoveryHold.dc.html",
+    "BlockQueued.dc.html",
+    "Compromised.dc.html",
+    "TeamRefusal.dc.html"
   ],
   "pages": [
     {

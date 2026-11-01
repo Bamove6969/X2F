@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Secure your account</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+input[type=range]{accent-color:var(--ink)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="SetupWelcome.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <h1 style="flex-grow: 1; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Secure your account</h1>
+    <span style="align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <main style="flex-grow: 1; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Pick how you&#39;ll prove it&#39;s you. The more ways you add, the harder your account is to break into.</p>
+
+    <section aria-labelledby="ss-names" style="display: flex; flex-direction: column; gap: 16px;">
+      <h2 id="ss-names" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Your names</h2>
+      <label for="ss-user" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Username
+        <input id="ss-user" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" value="{{uname}}" onChange="{{onUser}}" aria-describedby="ss-user-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+        <span id="ss-user-hint" style="font-size: 13px; line-height: 18px;">You type this to log in. Only you see it.</span>
+      </label>
+      <label for="ss-disp" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Display name
+        <input id="ss-disp" type="text" autocomplete="nickname" spellcheck="false" value="{{dname}}" onChange="{{onDisp}}" aria-describedby="ss-disp-hint" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+        <span id="ss-disp-hint" style="font-size: 13px; line-height: 18px;">Other traders see this. It can&#39;t be used to log in.</span>
+      </label>
+    </section>
+
+    <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+      <legend style="padding: 0 0 8px; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Ways to log in</legend>
+      <sc-for list="{{methods}}" as="m" hint-placeholder-count="5">
+        <label style="{{m.style}}">
+          <input type="checkbox" checked="{{m.on}}" onChange="{{m.toggle}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink); cursor: pointer;">
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+            <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 16px; line-height: 24px; font-weight: 600;">{{m.name}}<sc-if value="{{m.hasTag}}" hint-placeholder-val="{{false}}"><span style="{{m.tagStyle}}">{{m.tag}}</span></sc-if></span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{m.desc}}</span>
+          </span>
+        </label>
+      </sc-for>
+    </fieldset>
+
+    <sc-if value="{{showPw}}" hint-placeholder-val="{{true}}">
+      <section aria-labelledby="ss-pw-h" style="display: flex; flex-direction: column; gap: 10px;">
+        <h2 id="ss-pw-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Your password</h2>
+        <label for="ss-pw" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+          Password
+          <span style="position: relative; display: flex;">
+            <input id="ss-pw" type="{{pwType}}" autocomplete="new-password" spellcheck="false" value="{{pw}}" onChange="{{onPw}}" aria-describedby="ss-pw-meter ss-pw-rule" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 52px 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px;">
+            <button type="button" onClick="{{togglePw}}" aria-label="{{pwToggleLabel}}" aria-pressed="{{pwShownAria}}" style="position: absolute; right: 2px; top: 2px; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--ink-muted); cursor: pointer;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg></button>
+          </span>
+        </label>
+        <div id="ss-pw-meter" role="status" aria-live="polite" style="display: flex; flex-direction: column; gap: 6px;">
+          <div aria-hidden="true" style="display: flex; gap: 4px;">
+            <sc-for list="{{meter}}" as="seg" hint-placeholder-count="3"><span style="{{seg.style}}"></span></sc-for>
+          </div>
+          <span style="display: flex; gap: 8px; font-size: 14px; line-height: 20px;"><span style="{{strengthStyle}}">{{strengthName}}</span><span style="color: var(--ink-muted);">{{strengthHint}}</span></span>
+        </div>
+        <p id="ss-pw-rule" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Use 12 or more characters with letters, numbers and symbols, or a phrase of 16 or more. It has to reach strong.</p>
+      </section>
+    </sc-if>
+
+    <section aria-labelledby="ss-tier-h" style="display: flex; flex-direction: column; gap: 12px;">
+      <h2 id="ss-tier-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">How strong your login is</h2>
+      <ol aria-label="Login strength" style="list-style: none; margin: 0; padding: 16px 12px 12px; border-radius: 12px; background: var(--surface); display: flex; align-items: flex-end; gap: 8px;">
+        <sc-for list="{{bars}}" as="b" hint-placeholder-count="4">
+          <li aria-current="{{b.cur}}" style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0;">
+            <span aria-hidden="true" style="{{b.caret}}"><svg width="12" height="8" viewBox="0 0 12 8" style="fill: currentColor;"><path d="M0 0h12L6 8z"/></svg></span>
+            <span aria-hidden="true" style="{{b.bar}}"></span>
+            <span style="{{b.labelStyle}}">{{b.label}}</span>
+          </li>
+        </sc-for>
+      </ol>
+
+      <div role="status" aria-live="polite">
+        <sc-if value="{{isArmored}}" hint-placeholder-val="{{false}}">
+          <div style="display: flex; flex-direction: column; gap: 14px; padding: 20px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--escrow); box-shadow: inset 0 0 0 4px var(--surface), inset 0 0 0 5px var(--line);">
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <svg width="72" height="72" viewBox="0 0 72 72" aria-hidden="true" style="flex-shrink: 0;">
+                <path d="M36.0 3.0 L40.6 6.9 L46.2 4.6 L49.4 9.7 L55.4 9.3 L56.9 15.1 L62.7 16.6 L62.3 22.6 L67.4 25.8 L65.1 31.4 L69.0 36.0 L65.1 40.6 L67.4 46.2 L62.3 49.4 L62.7 55.4 L56.9 56.9 L55.4 62.7 L49.4 62.3 L46.2 67.4 L40.6 65.1 L36.0 69.0 L31.4 65.1 L25.8 67.4 L22.6 62.3 L16.6 62.7 L15.1 56.9 L9.3 55.4 L9.7 49.4 L4.6 46.2 L6.9 40.6 L3.0 36.0 L6.9 31.4 L4.6 25.8 L9.7 22.6 L9.3 16.6 L15.1 15.1 L16.6 9.3 L22.6 9.7 L25.8 4.6 L31.4 6.9Z" style="fill: var(--surface-raised); stroke: var(--escrow); stroke-width: 1.5; stroke-linejoin: round;"/>
+                <circle cx="36" cy="36" r="24" style="fill: none; stroke: var(--ink); stroke-width: 1;"/>
+                <circle cx="36" cy="36" r="21" style="fill: none; stroke: var(--escrow); stroke-width: 1; stroke-dasharray: 2 3;"/>
+                <circle cx="36" cy="36" r="11" style="fill: none; stroke: var(--ink); stroke-width: 1.5;"/>
+                <path d="M36 22v28M23.9 29l24.2 14M23.9 43l24.2-14" style="fill: none; stroke: var(--ink); stroke-width: 1.5; stroke-linecap: round;"/>
+                <circle cx="36" cy="36" r="4" style="fill: var(--escrow); stroke: var(--ink); stroke-width: 1;"/>
+              </svg>
+              <div style="display: flex; flex-direction: column; gap: 4px; min-width: 0;">
+                <span style="font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--escrow);">Armored vault</span>
+                <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; line-height: 28px; font-weight: 700;">Sealed like a vault</span>
+                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{sealLine}}</span>
+              </div>
+            </div>
+            <p style="margin: 0; font-size: 16px; line-height: 24px;">{{armoredMsg}}</p>
+            <p style="margin: 0; padding-top: 12px; border-top: 1px dashed var(--line); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{sealFooter}}</p>
+          </div>
+        </sc-if>
+        <sc-if value="{{notArmored}}" hint-placeholder-val="{{true}}">
+          <div style="{{msgStyle}}">
+            <span style="{{msgIconStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
+            <div style="display: flex; flex-direction: column; gap: 6px; min-width: 0;">
+              <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">{{tierTitle}}</h3>
+              <sc-for list="{{tierLines}}" as="t" hint-placeholder-count="2">
+                <p style="margin: 0; font-size: 14px; line-height: 20px;">{{t.text}}</p>
+              </sc-for>
+              <sc-if value="{{hasNext}}" hint-placeholder-val="{{true}}">
+                <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{nextHint}}</p>
+              </sc-if>
+            </div>
+          </div>
+        </sc-if>
+      </div>
+    </section>
+
+    <section aria-labelledby="ss-idle-h" style="display: flex; flex-direction: column; gap: 10px;">
+      <h2 id="ss-idle-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Session length</h2>
+      <label for="ss-idle" style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 24px;">
+        <span>Log me out when idle for</span>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;">{{idleText}}</span>
+      </label>
+      <input id="ss-idle" type="range" min="2" max="12" step="1" value="{{idle}}" onChange="{{onIdle}}" aria-valuetext="{{idleText}}" aria-describedby="ss-idle-note" style="width: 100%; height: 44px; margin: 0; cursor: pointer;">
+      <div aria-hidden="true" style="display: flex; justify-content: space-between; margin-top: -6px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);"><span>2 h</span><span>12 h</span></div>
+      <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">However active you are, every session ends after 24 h at most. Then you log in again.</p>
+    </section>
+
+    <p style="display: flex; gap: 10px; margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface); font-size: 14px; line-height: 20px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M8 10h8M8 14h5"/></svg><span>Next you&#39;ll get a recovery code. Everyone needs one. It isn&#39;t a way to log in: it&#39;s for when every other way is lost.</span></p>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <sc-if value="{{canGo}}" hint-placeholder-val="{{true}}">
+      <a href="RecoveryCode.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
+    </sc-if>
+    <sc-if value="{{cantGo}}" hint-placeholder-val="{{false}}">
+      <button type="button" disabled="{{true}}" aria-describedby="ss-why" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--surface-raised); border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">Continue</button>
+    </sc-if>
+    <p id="ss-why" style="margin: 0; text-align: center; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{footNote}}</p>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"$preview":{"width":390,"height":2080}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.preset(props); }
+  preset(p) {
+    const SETS = {
+      'not-allowed': [], 'authenticator-only': ['totp'], weak: ['pw'], strong: ['pw', 'passkey'],
+      passwordless: ['passkey', 'pgp'], armored: ['pw', 'passkey', 'totp']
+    };
+    const PWS = { weak: 'lantern', medium: 'Lantern74', strong: 'Orbit-lantern-74' };
+    const on = {};
+    (SETS[p.variant] || SETS.strong).forEach((k) => { on[k] = true; });
+    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: 4, uname: 'nightowl_44', dname: 'Night Owl' };
+  }
+  componentDidUpdate(prev) {
+    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter) this.setState(this.preset(this.props));
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 2080px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+    const on = s.on;
+
+    // Methods
+    const DEFS = [
+      { id: 'pw', name: 'Password', desc: 'Something only you know. It has to be strong.' },
+      { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.' },
+      { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.' },
+      { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', tag: 'Recommended', tagColor: 'var(--escrow)' },
+      { id: 'totp', name: 'Authenticator app', desc: 'A 6-digit code that changes every 30 seconds.', tag: 'Not enough alone', tagColor: 'var(--ink-muted)' }
+    ];
+    const rowStyle = (o) => 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface); cursor: pointer; border: 2px solid ' + (o ? 'var(--ink);' : 'transparent;');
+    const methods = DEFS.map((d) => ({
+      name: d.name, desc: d.desc, on: !!on[d.id], style: rowStyle(!!on[d.id]),
+      hasTag: !!d.tag, tag: d.tag || '',
+      tagStyle: 'display: inline-flex; padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 18px; font-weight: 600; color: ' + (d.tagColor || 'var(--ink-muted)') + ';',
+      toggle: () => this.setState({ on: Object.assign({}, on, { [d.id]: !on[d.id] }) })
+    }));
+
+    // Password strength
+    const pw = s.pw || '';
+    const kinds = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((r) => r.test(pw)).length;
+    let level = 0;
+    if (pw.length >= 12 && kinds >= 3) level = 3;
+    else if (pw.length >= 16 && kinds >= 2) level = 3;
+    else if (pw.length >= 8 && kinds >= 2) level = 2;
+    else if (pw.length > 0) level = 1;
+    const SCOL = ['var(--surface-raised)', 'var(--danger)', 'var(--caution)', 'var(--escrow)'];
+    const SNAME = ['Empty', 'Weak', 'Medium', 'Strong'];
+    const SHINT = [
+      'Type a password.',
+      'Too easy to guess. Make it longer.',
+      'Getting there. Add length, numbers or symbols.',
+      'Good to go.'
+    ];
+    const meter = [1, 2, 3].map((i) => ({ style: 'flex: 1; height: 6px; border-radius: 999px; background: ' + (i <= level ? SCOL[level] : 'var(--surface-raised)') + ';' }));
+    const pwStrong = level === 3;
+
+    // Tier
+    const hasPw = !!on.pw;
+    const hard = ['passkey', 'key', 'pgp'].filter((k) => on[k]).length;
+    const seconds = hard + (on.totp ? 1 : 0);
+    let tier = 'none';
+    if (hasPw) tier = seconds >= 2 ? 'armored' : (seconds === 1 ? 'strong' : 'weak');
+    else if (hard >= 1) tier = 'strong';
+    else if (on.totp) tier = 'totp';
+    const L = { none: 0, totp: 0, weak: 1, strong: 2, armored: 3 }[tier];
+    const TCOL = { none: 'var(--danger)', totp: 'var(--danger)', weak: 'var(--caution)', strong: 'var(--escrow)', armored: 'var(--escrow)' }[tier];
+    const LABELS = ['Not allowed', 'Weak', 'Strong', 'Armored vault'];
+    const HEIGHTS = [16, 28, 40, 52];
+    const bars = LABELS.map((label, i) => {
+      const filled = tier === 'none' || tier === 'totp' ? i === 0 : i <= L;
+      const cur = i === L;
+      const vault = i === 3 && tier === 'armored';
+      return {
+        label, cur: cur ? 'true' : 'false',
+        caret: 'display: flex; height: 8px; color: ' + (cur ? TCOL : 'transparent') + ';',
+        bar: 'width: 100%; height: ' + HEIGHTS[i] + 'px; box-sizing: border-box; border-radius: 6px; background: ' + (filled ? TCOL : 'var(--surface-raised)') + ';' + (vault ? ' box-shadow: inset 0 0 0 2px var(--surface), inset 0 0 0 3px var(--ink);' : ''),
+        labelStyle: 'font-size: 12px; line-height: 16px; text-align: center; ' + (cur ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+      };
+    });
+    const T = {
+      none: { title: 'Not allowed yet', lines: ['A username alone can’t prove it’s you, and your display name can’t be used to log in.', 'Pick at least one way to log in.'] },
+      totp: { title: 'Not allowed', lines: ['An authenticator app alone isn’t enough.', 'Add at least a password, but we recommend the other options.'] },
+      weak: { title: 'Weak', lines: ['If your account is ever broken into, it’s harder and slower to prove it’s you.', 'While we check, a 24-hour cooling-off applies to you too.', 'Harden it with a passkey, security key or PGP key.'] },
+      strong: { title: 'Strong', lines: ['This stops simple guessing, and you can act right away.'] }
+    };
+    const t = T[tier] || T.strong;
+    let nextHint = '';
+    if (tier === 'strong') nextHint = hasPw ? 'Add one more way above to reach Armored vault.' : 'Add a password and one more way to reach Armored vault.';
+    const msgStyle = 'display: flex; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface); border: 1px solid ' + TCOL + ';';
+    const extra = seconds;
+
+    // Footer
+    const uname = (s.uname || '').trim();
+    const dname = (s.dname || '').trim();
+    let footNote = 'Next: your recovery code.';
+    if (!uname) footNote = 'Choose a username to continue.';
+    else if (!dname) footNote = 'Choose a display name to continue.';
+    else if (tier === 'none') footNote = 'Pick a way to log in to continue.';
+    else if (tier === 'totp') footNote = 'Add a password or another way to log in to continue.';
+    else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';
+    const canGo = footNote === 'Next: your recovery code.';
+
+    const idle = Number(s.idle) || 4;
+    return {
+      rootStyle, methods, meter, bars,
+      uname: s.uname, dname: s.dname,
+      onUser: (e) => this.setState({ uname: e.target.value }),
+      onDisp: (e) => this.setState({ dname: e.target.value }),
+      showPw: hasPw, pw, onPw: (e) => this.setState({ pw: e.target.value }),
+      pwType: s.showPw ? 'text' : 'password',
+      pwToggleLabel: s.showPw ? 'Hide password' : 'Show password',
+      pwShownAria: s.showPw ? 'true' : 'false',
+      togglePw: () => this.setState({ showPw: !s.showPw }),
+      strengthName: SNAME[level], strengthHint: SHINT[level],
+      strengthStyle: 'font-weight: 600; color: ' + (level ? SCOL[level] : 'var(--ink-muted)') + ';',
+      isArmored: tier === 'armored', notArmored: tier !== 'armored',
+      tierTitle: t.title, tierLines: t.lines.map((x) => ({ text: x })),
+      hasNext: !!nextHint, nextHint,
+      msgStyle, msgIconStyle: 'display: flex; flex-shrink: 0; color: ' + TCOL + ';',
+      sealLine: 'Password + ' + extra + ' more',
+      armoredMsg: 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.',
+      sealFooter: (uname || 'nightowl_44') + ' · sealed 01 Nov 2026, 14:05 UTC',
+      idle, idleText: idle + ' h', onIdle: (e) => this.setState({ idle: Number(e.target.value) }),
+      canGo, cantGo: !canGo, footNote
+    };
+  }
+}
+</script>
+</body>
+</html>

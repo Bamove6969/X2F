@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Recovery code</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
+    <sc-if value="{{isShow}}" hint-placeholder-val="{{true}}">
+      <a href="SignupSecurity.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    </sc-if>
+    <sc-if value="{{isCheck}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{toShow}}" aria-label="Back to your code" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+    </sc-if>
+    <h1 style="flex-grow: 1; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{title}}</h1>
+    <span style="align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <main style="flex-grow: 1; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <sc-if value="{{isShow}}" hint-placeholder-val="{{true}}">
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">This code gets you back in if every other way to log in is lost. It isn&#39;t a way to log in, so you should only ever need it in an emergency.</p>
+
+      <section aria-labelledby="rc-code-h" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface); border: 1px dashed var(--line);">
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <h2 id="rc-code-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Recovery code</h2>
+          <button type="button" onClick="{{toggleHide}}" aria-pressed="{{hiddenAria}}" style="min-height: 44px; margin-right: -8px; padding: 0 8px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; text-decoration: underline; cursor: pointer;">{{hideLabel}}</button>
+        </div>
+        <ol aria-label="{{codeAria}}" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+            <li style="display: flex; align-items: baseline; gap: 8px; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised);">
+              <span aria-hidden="true" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{g.n}}</span>
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: 0.08em;">{{g.text}}</span>
+            </li>
+          </sc-for>
+        </ol>
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">No 0, O, 1 or I, so it&#39;s hard to misread.</p>
+      </section>
+
+      <section aria-labelledby="rc-where-h" style="display: flex; flex-direction: column; gap: 12px;">
+        <h2 id="rc-where-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Keep it apart from everything else</h2>
+        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;">
+          <li style="display: flex; gap: 12px; font-size: 16px; line-height: 24px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><path d="M3 18c1-5 4-9 9-9s8 4 9 9z"/><path d="M8 13l2-1M14 12l2 1"/></svg><span>On paper, inside a fake rock by the door.</span></li>
+          <li style="display: flex; gap: 12px; font-size: 16px; line-height: 24px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><path d="M12 3v11M8 10l4 4 4-4"/><path d="M3 19h18M6 22h12"/></svg><span>Buried in the back yard. Draw yourself a map.</span></li>
+          <li style="display: flex; gap: 12px; font-size: 16px; line-height: 24px;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--escrow);"><path d="M7 18a4 4 0 010-8 5 5 0 019.6-1.5A3.5 3.5 0 1117.5 18z"/></svg><span>In separate online storage that holds nothing else of yours.</span></li>
+        </ul>
+        <p style="display: flex; gap: 12px; margin: 0; padding: 12px 16px; border-radius: 12px; border: 1px solid var(--caution); font-size: 14px; line-height: 20px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--caution);"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/></svg><span>Not next to your password, not on the phone you log in with, and not with your PGP key. If one of those is stolen, this shouldn&#39;t go with it.</span></p>
+      </section>
+
+      <p style="display: flex; gap: 12px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Using it starts a 24-hour hold on changes to your account while our security team checks it&#39;s really you.</span></p>
+
+      <label style="{{tickStyle}}">
+        <input type="checkbox" checked="{{ticked}}" onChange="{{toggleTick}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink); cursor: pointer;">
+        <span style="font-size: 16px; line-height: 24px; font-weight: 600;">I&#39;ve written it down</span>
+      </label>
+    </sc-if>
+
+    <sc-if value="{{isCheck}}" hint-placeholder-val="{{false}}">
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">Type your recovery code from where you wrote it down. Dashes, spaces and capitals don&#39;t matter.</p>
+      <label for="rc-in" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        Recovery code
+        <input id="rc-in" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" value="{{entry}}" onChange="{{onEntry}}" aria-describedby="rc-status" aria-invalid="{{invalidAria}}" style="{{inputStyle}}">
+      </label>
+      <p id="rc-status" role="status" aria-live="polite" style="{{statusStyle}}">
+        <sc-if value="{{isMatch}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg></sc-if>
+        <sc-if value="{{isMismatch}}" hint-placeholder-val="{{false}}"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M6 6l12 12M18 6L6 18"/></svg></sc-if>
+        <span>{{statusText}}</span>
+      </p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Lost it already? <button type="button" onClick="{{toShow}}" style="min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;">Show the code again</button></p>
+    </sc-if>
+
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 20px 16px; border-radius: 12px; background: var(--surface); border: 1px solid var(--escrow);">
+        <span style="display: flex; color: var(--escrow);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg></span>
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code is set</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Keep it hidden and apart from everything else. If it&#39;s ever lost or used, make a new one in Settings.</p>
+      </div>
+    </sc-if>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <sc-if value="{{primaryOn}}" hint-placeholder-val="{{false}}">
+      <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+        <a href="SetupWallet.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; text-decoration: none; cursor: pointer;">Continue</a>
+      </sc-if>
+      <sc-if value="{{notDone}}" hint-placeholder-val="{{true}}">
+        <button type="button" onClick="{{go}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">{{goLabel}}</button>
+      </sc-if>
+    </sc-if>
+    <sc-if value="{{primaryOff}}" hint-placeholder-val="{{true}}">
+      <button type="button" disabled="{{true}}" aria-describedby="rc-why" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--surface-raised); border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">{{goLabel}}</button>
+      <p id="rc-why" style="margin: 0; text-align: center; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{whyText}}</p>
+    </sc-if>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["show","check","done"],"default":"show"},"entry":{"editor":"enum","options":["empty","partial","mismatch","match"],"default":"empty"},"$preview":{"width":390,"height":1120}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.preset(props); }
+  preset(p) {
+    const ENTRIES = { empty: '', partial: 'K7QM-4XD2', mismatch: 'K7QM-4XD2-VT8B-HP3A', match: 'k7qm 4xd2 vt9b hp3a' };
+    return { step: p.step || 'show', ticked: p.step === 'check' || p.step === 'done', hidden: false, entry: ENTRIES[p.entry] || '' };
+  }
+  componentDidUpdate(prev) {
+    if (prev.step !== this.props.step || prev.entry !== this.props.entry) this.setState(this.preset(this.props));
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1120px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+    const CODE = ['K7QM', '4XD2', 'VT9B', 'HP3A'];
+    const step = s.step;
+    const isShow = step === 'show', isCheck = step === 'check', isDone = step === 'done';
+
+    const groups = CODE.map((g, i) => ({ n: String(i + 1), text: s.hidden ? '••••' : g }));
+
+    const norm = (x) => (x || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    const want = CODE.join('');
+    const got = norm(s.entry);
+    const full = got.length >= want.length;
+    const match = got === want;
+    const mismatch = full && !match;
+    let statusText = '';
+    if (match) statusText = 'That matches.';
+    else if (mismatch) statusText = 'That doesn’t match. Check each group against what you wrote down.';
+    else if (got.length) statusText = got.length + ' of 16 characters';
+    const statusColor = match ? 'var(--escrow)' : (mismatch ? 'var(--danger)' : 'var(--ink-muted)');
+
+    let ready = false, goLabel = 'Continue', whyText = '';
+    if (isShow) { ready = !!s.ticked; whyText = 'Tick the box once it’s written down.'; }
+    if (isCheck) { ready = match; goLabel = 'Confirm'; whyText = 'Type the whole code to confirm.'; if (mismatch) whyText = 'The code has to match.'; }
+    if (isDone) ready = true;
+
+    return {
+      rootStyle, groups,
+      title: isShow ? 'Your recovery code' : (isCheck ? 'Type it back' : 'All set'),
+      isShow, isCheck, isDone, notDone: !isDone,
+      hideLabel: s.hidden ? 'Show' : 'Hide', hiddenAria: s.hidden ? 'true' : 'false',
+      codeAria: s.hidden ? 'Recovery code, hidden' : 'Recovery code ' + CODE.join(' '),
+      toggleHide: () => this.setState({ hidden: !s.hidden }),
+      ticked: !!s.ticked, toggleTick: () => this.setState({ ticked: !s.ticked }),
+      tickStyle: 'display: flex; align-items: center; gap: 14px; min-height: 56px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface); cursor: pointer; border: 2px solid ' + (s.ticked ? 'var(--ink);' : 'var(--surface-raised);'),
+      entry: s.entry, onEntry: (e) => this.setState({ entry: e.target.value }),
+      invalidAria: mismatch ? 'true' : 'false',
+      inputStyle: 'height: 56px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: \'Atkinson Hyperlegible Mono\', monospace; font-size: 20px; letter-spacing: 0.08em; text-transform: uppercase; border: ' + (match ? '2px solid var(--escrow);' : (mismatch ? '2px solid var(--danger);' : '1px solid var(--line);')),
+      isMatch: match, isMismatch: mismatch, statusText,
+      statusStyle: 'display: flex; align-items: flex-start; gap: 8px; min-height: 20px; margin: -12px 0 0; font-size: 14px; line-height: 20px; color: ' + statusColor + ';',
+      primaryOn: ready, primaryOff: !ready, goLabel, whyText,
+      go: () => this.setState({ step: isShow ? 'check' : 'done' }),
+      toShow: () => this.setState({ step: 'show' })
+    };
+  }
+}
+</script>
+</body>
+</html>
