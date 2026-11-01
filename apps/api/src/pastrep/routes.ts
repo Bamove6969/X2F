@@ -14,11 +14,13 @@
  * The key is stored only through `storableKey` + `sealKey` under its own AAD (R16); no response or
  * log carries key material or a user ID. The evidence link is never fetched or resolved
  * (tools/semgrep/pastrep-no-fetch.yml). Team members get 403 `owner-only` (the `requireSession`
- * default, Plan 2 Task 18: owner-only until decided). Past reputation never feeds X2F's own counts.
+ * default, Plan 2 Task 18: owner-only until decided). Start and finish are refused during the
+ * 24-hour hold (`HOLD_BLOCKED_ROUTES`, owner 1 Nov); start is throttled per account
+ * (`PAST_REP_STARTS_PER_HOUR`, 429 `slow-down`). Past reputation never feeds X2F's own counts.
  */
 import { PAST_REP_MIN_RSA_BITS, inspectPublicKey, type InspectOptions } from '@x2f/accounts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import { withTx } from '../auth/hold.js';
+import { requireNotHeld, withTx } from '../auth/hold.js';
 import { requestOrigin } from '../auth/origin.js';
 import { PGP_BODY_LIMIT, openKey, sealKey, storableKey } from '../auth/pgp.js';
 import { requireSession } from '../auth/sessions.js';
@@ -73,7 +75,7 @@ export function pastRepRoutes(app: FastifyInstance): void {
   // Owner-only for team members (no `member` option); full trader sessions only (no backup login).
   const requireTrader = requireSession({ kinds: ['trader'] });
 
-  app.post('/v1/account/past-rep/start', { bodyLimit: PGP_BODY_LIMIT, preHandler: requireTrader }, async (req) => {
+  app.post('/v1/account/past-rep/start', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader, requireNotHeld] }, async (req) => {
     const deps = req.server.deps;
     const now = deps.clock();
     const b = body(req);
@@ -84,6 +86,8 @@ export function pastRepRoutes(app: FastifyInstance): void {
       throw new ApiError(400, 'bad-request');
     }
     if (typeof b.publicKey !== 'string') throw new ApiError(400, 'bad-request');
+    // PAST_REP_STARTS_PER_HOUR per account: taken before the key inspection, after the cheap checks.
+    req.server.budgets.pastRepStart.take(req.auth.accountId);
     const inspection = await inspectPublicKey(b.publicKey, now, PAST_REP_INSPECT);
     if (!inspection.ok) throw new ApiError(400, inspection.reason, { detail: inspection.detail });
     const accountId = req.auth.accountId;
@@ -107,7 +111,7 @@ export function pastRepRoutes(app: FastifyInstance): void {
     return { challengeId: inserted.rows[0]!.id, text, expiresAt: expiresAt.toISOString() };
   });
 
-  app.post('/v1/account/past-rep/finish', { bodyLimit: PGP_BODY_LIMIT, preHandler: requireTrader }, async (req, reply) => {
+  app.post('/v1/account/past-rep/finish', { bodyLimit: PGP_BODY_LIMIT, preHandler: [requireTrader, requireNotHeld] }, async (req, reply) => {
     const deps = req.server.deps;
     const now = deps.clock();
     const b = body(req);

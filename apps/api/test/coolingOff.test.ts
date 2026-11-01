@@ -1467,6 +1467,8 @@ describe('the route lists', () => {
     expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(1);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
+    // Plan 5 Task 10 (owner 1 Nov): past-rep start and finish check the hold; list and delete do not.
+    expect(src('pastrep/routes.ts').split('preHandler: [requireTrader, requireNotHeld] }').length - 1).toBe(2);
     // The trade-finishing routes stay open during the hold, to backup sessions too.
     for (const f of ['trades/routes.ts', 'disputes/routes.ts']) {
       expect(src(f)).not.toContain('requireNotHeld');

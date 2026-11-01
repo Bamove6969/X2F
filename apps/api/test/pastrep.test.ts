@@ -11,7 +11,8 @@ import * as openpgp from 'openpgp';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { openKey } from '../src/auth/pgp.js';
-import { LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES } from '../src/auth/hold.js';
+import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
+import { PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD } from '../src/pastrep/routes.js';
 import { verifyPastRepSignature } from '../src/pastrep/verify.js';
@@ -512,6 +513,51 @@ describe('no lookups (P5-A20, review 2026-10-24)', () => {
     for (const s of ['node:http', 'node:https', 'node:net', 'node:dns', 'undici', 'fetch(', 'apps/api/src/pastrep/', 'apps/api/src/staff/pastrep.ts']) expect(rule).toContain(s);
     const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
     expect(pkg.scripts.semgrep).toContain('--config tools/semgrep');
+  });
+});
+
+describe('hold and throttle (lead follow-up, owner 1 Nov)', () => {
+  it('a held account is refused start and finish with the hold\'s code; list and delete still work', async () => {
+    const { b, id } = await login();
+    const c = await start(b, ed);
+    const signed = await clearsign(c.text, ed);
+    // A claim made before the hold, to list and remove during it.
+    const c2 = await start(b, other, { site: 'Paxful' });
+    const claim = (await b.post('/v1/account/past-rep/finish', { challengeId: c2.challengeId, signed: await clearsign(c2.text, other) })).json().id as string;
+    const until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
+    for (const res of [
+      await b.post('/v1/account/past-rep/start', startBody(ed, { site: 'Bisq' })),
+      await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed }),
+    ]) {
+      expect(res.statusCode).toBe(403);
+      expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until.toISOString() });
+    }
+    expect((await b.get('/v1/account/past-rep')).statusCode).toBe(200);
+    expect((await b.delete(`/v1/account/past-rep/${claim}`)).json()).toEqual({ id: claim, status: 'removed' });
+    expect(await rows()).toMatchObject([{ id: claim, status: 'removed' }]);
+    expect(HOLD_BLOCKED_ROUTES).toEqual(expect.arrayContaining(['POST /v1/account/past-rep/start', 'POST /v1/account/past-rep/finish']));
+    expect(HOLD_BLOCKED_ROUTES).not.toContain('DELETE /v1/account/past-rep/:id');
+  });
+
+  it(`start is throttled: ${PAST_REP_STARTS_PER_HOUR} an hour per account, the next refused 429 slow-down, fine again after the hour`, async () => {
+    expect(PAST_REP_STARTS_PER_HOUR).toBe(10);
+    const t = new Date('2026-11-02T08:00:00Z');
+    setNow(t);
+    const { b } = await login();
+    // A malformed site or link is refused before the throttle and costs nothing.
+    expect((await b.post('/v1/account/past-rep/start', startBody(ed, { url: 'https://evil.example/x' }))).statusCode).toBe(400);
+    for (let i = 0; i < PAST_REP_STARTS_PER_HOUR; i++) {
+      // A refused key counts (each start is a key inspection).
+      const res = await b.post('/v1/account/past-rep/start', i === 0 ? startBody(rsa1024) : startBody(ed));
+      expect(res.statusCode, `start ${i + 1}`).toBe(i === 0 ? 400 : 200);
+    }
+    const over = await b.post('/v1/account/past-rep/start', startBody(ed));
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: expect.any(Number) });
+    // Another account is not affected.
+    expect((await (await login()).b.post('/v1/account/past-rep/start', startBody(ed))).statusCode).toBe(200);
+    setNow(new Date(t.getTime() + 3_600_000));
+    expect((await b.post('/v1/account/past-rep/start', startBody(ed))).statusCode).toBe(200);
   });
 });
 

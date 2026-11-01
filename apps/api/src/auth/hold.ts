@@ -576,6 +576,10 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
   // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Plan 5 Task 10 (owner 1 Nov: during a hold the account is offline to everyone). Listing and
+  // removing one's own claims stay open.
+  'POST /v1/account/past-rep/start',
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**
