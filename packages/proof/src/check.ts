@@ -2,8 +2,8 @@
 // board SellerConfirm). The seller's own app runs it on the OCR of the blurred image it decrypted
 // (Task 16); nothing here trusts a value from the buyer except the `hidden` list it is given.
 import { normalizeTradeCode } from '@x2f/core';
-import { parseAmounts } from './amounts.js';
-import { type HiddenKind, codePattern, detectSensitive, markDates, normalizeText } from './detect.js';
+import { findAmounts, parseAmounts } from './amounts.js';
+import { type HiddenKind, codePattern, markDates, normalizeText } from './detect.js';
 import { type OcrWord, linesOf } from './ocr.js';
 
 /** What the screenshot shows next to what the trade expects (spec 4.2: amount, date, reference, payer name). */
@@ -55,11 +55,14 @@ const HOUR = 60 * 60 * 1000;
 /**
  * Check OCR words from a proof screenshot against the trade. `readable` is false when fewer than 3
  * words have `conf >= 60`; an unreadable screenshot then reports nothing found (its name is still
- * `hidden` when the buyer hid one). The amount matches when any amount in the trade's currency is
- * the trade amount; otherwise `seen` is the first one in reading order. The reference matches the
- * trade code in any grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7
- * keeps it. A date is in range when any reading of it is a day that overlaps `earliest..latest` in
- * some time zone (UTC-12 to UTC+14).
+ * `hidden` when the buyer hid one). Every check reads the text after Task 7's `normalizeText`
+ * (Unicode digits, dashes and spaces as ASCII). The amount matches when any amount in the trade's
+ * currency is the trade amount; otherwise `seen` is the amount closest to it (the first of a tie),
+ * so a fee or `$0.00` is not reported (review N2). The reference matches the trade code in any
+ * grouping or case, with Crockford look-alikes (O for 0, I or L for 1), as Task 7 keeps it, also
+ * with spaces around its dashes and wrapped onto the next line (review N1). A date is in range when
+ * any reading of it is a day that overlaps `earliest..latest` in some time zone (UTC-12 to UTC+14).
+ * The name is `visible` only after a sender label (review N3, see `senderNameShown`).
  */
 export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: HiddenKind[]): ProofCheck {
   const code = normalizeTradeCode(expected.tradeCode);
@@ -74,16 +77,17 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
     return { readable, amount: { status: 'not-found', seen: null }, reference: 'not-found', date: 'not-found', name: nameHidden ? 'hidden' : 'not-found' };
   }
 
-  const amounts = parseAmounts(words, expected.currency, expected.exponent);
+  const normalized = words.map((w) => ({ ...w, text: normalizeText(w.text) }));
+  const amounts = parseAmounts(normalized, expected.currency, expected.exponent);
   const amount: ProofCheck['amount'] = amounts.includes(expected.fiatCents)
     ? { status: 'match', seen: expected.fiatCents }
     : amounts.length > 0
-      ? { status: 'mismatch', seen: amounts[0]! }
+      ? { status: 'mismatch', seen: closest(amounts, expected.fiatCents) }
       : { status: 'not-found', seen: null };
 
-  const texts = linesOf(words).map((l) => normalizeText(l.text));
+  const texts = linesOf(normalized).map((l) => l.text);
   const codeRe = codePattern(code);
-  const reference = texts.some((t) => [...t.matchAll(codeRe)].length > 0) ? 'match' : 'not-found';
+  const reference = codeCandidates(texts).some((t) => hasMatch(t, codeRe)) ? 'match' : 'not-found';
 
   const days = texts.flatMap((t) => datesIn(t, new Date(latest).getUTCFullYear()));
   const date: ProofCheck['date'] =
@@ -91,11 +95,72 @@ export function checkProof(words: OcrWord[], expected: ProofExpected, hidden: Hi
 
   const name: ProofCheck['name'] = nameHidden
     ? 'hidden'
-    : detectSensitive(words, { tradeCode: code, fiatCents: expected.fiatCents, exponent: expected.exponent }).some((r) => r.kind === 'name')
+    : senderNameShown(texts, codeRe, expected.exponent)
       ? 'visible'
       : 'not-found';
 
   return { readable, amount, reference, date, name };
+}
+
+function hasMatch(text: string, re: RegExp): boolean {
+  return [...text.matchAll(re)].length > 0;
+}
+
+/** The amount closest to `want`; the first in reading order wins a tie. */
+function closest(amounts: bigint[], want: bigint): bigint {
+  const dist = (a: bigint): bigint => (a > want ? a - want : want - a);
+  return amounts.reduce((best, a) => (dist(a) < dist(best) ? a : best));
+}
+
+/**
+ * The texts the trade code is looked for in: each line, and each pair of consecutive lines joined
+ * with nothing and with a space (a memo wrapped onto the next line), with spaces around dashes
+ * dropped (`K7M2 - 9QXA - ...`). Review N1.
+ */
+function codeCandidates(texts: string[]): string[] {
+  const out = [...texts];
+  for (let i = 0; i + 1 < texts.length; i++) out.push(texts[i]! + texts[i + 1]!, `${texts[i]!} ${texts[i + 1]!}`);
+  return out.map((t) => t.replace(/\s*-\s*/g, '-'));
+}
+
+// Sender labels only (review N3): a recipient label (`To`, `Paid to`, `Recipient`, ...) names the
+// seller, not the sender. Same shapes as Task 7's name labels: at the start of a line with or without
+// a colon, or later in the line with a colon.
+const SENDER = ['sent\\s+by', 'sender', 'payer', 'from'].join('|');
+const SENDER_START = new RegExp(`^\\s*(?:${SENDER})(?::|(?=\\s)|$)\\s*`, 'i');
+const SENDER_COLON = new RegExp(`(?<![A-Za-z])(?:${SENDER}):\\s*`, 'gi');
+
+/** Text left after blanking the trade code, amounts (with a marker or decimals) and dates. */
+function residue(text: string, codeRe: RegExp, exponent: number): { rest: string; hadKept: boolean } {
+  const keep: boolean[] = new Array<boolean>(text.length).fill(false);
+  markDates(text, keep);
+  for (const m of text.matchAll(codeRe)) keep.fill(true, m.index, m.index + m[0].length);
+  for (const a of findAmounts(text, exponent)) if (a.marker !== null || a.decimals) keep.fill(true, a.start, a.end);
+  return { rest: [...text].map((c, i) => (keep[i] ? ' ' : c)).join(''), hadKept: keep.some(Boolean) };
+}
+
+const LETTER = /\p{L}/u;
+
+/**
+ * Whether the screenshot shows a sender's name: letters after a sender label on its line, or, for a
+ * label alone on its line, a next line with letters and no trade code, amount or date (a lone `From:`
+ * whose name the buyer blurred by hand is followed by the memo or the amount, not a name).
+ */
+function senderNameShown(texts: string[], codeRe: RegExp, exponent: number): boolean {
+  return texts.some((t, i) => {
+    const starts: number[] = [];
+    const m = SENDER_START.exec(t);
+    if (m) starts.push(m[0].length);
+    for (const c of t.matchAll(SENDER_COLON)) starts.push(c.index + c[0].length);
+    return starts.some((at) => {
+      if (at < t.trimEnd().length) return LETTER.test(residue(t.slice(at), codeRe, exponent).rest);
+      if (at !== m?.[0].length) return false;
+      const next = texts[i + 1];
+      if (next === undefined) return false;
+      const r = residue(next, codeRe, exponent);
+      return !r.hadKept && LETTER.test(r.rest);
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -118,14 +183,15 @@ function day(y: number, m: number, d: number): number | null {
 /**
  * Every calendar day (midnight UTC) the dates in a normalised line could mean. A numeric date reads
  * both ways round (day/month and month/day); a 2-digit year is 20yy; a date with no year is this
- * year or last year (`thisYear` from `latest`).
+ * year, last year or next year (`thisYear` from `latest`).
  */
 function datesIn(text: string, thisYear: number): number[] {
   const keep: boolean[] = new Array<boolean>(text.length).fill(false);
   markDates(text, keep);
   const out: number[] = [];
   const push = (y: number | null, m: number, d: number): void => {
-    for (const yy of y === null ? [thisYear, thisYear - 1] : [y]) {
+    // No year: this year, or last or next year around New Year (reviews N4, N5).
+    for (const yy of y === null ? [thisYear, thisYear - 1, thisYear + 1] : [y]) {
       const t = day(yy, m, d);
       if (t !== null) out.push(t);
     }
