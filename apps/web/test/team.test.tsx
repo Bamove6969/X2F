@@ -131,6 +131,20 @@ describe('Team (settings)', () => {
     expect(byPart(host, 'invite-url')).toBeNull();
   });
 
+  it('a weak session inviting opens CantDoThat saying team changes need a stronger login (owner 1 Nov 2026)', async () => {
+    inviteReply = { status: 403, body: { error: 'weak-session' } };
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Cosmo');
+    await settle();
+    fire(byPart(host, 'invite')!, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    const popup = byPart(document, 'cant-do-that');
+    expect(popup?.getAttribute('data-from')).toBe('weak-session');
+    expect(popup?.textContent).toContain("can't invite team members or change their roles");
+    expect(byPart(host, 'invite-url')).toBeNull();
+  });
+
   it('a team member opening the screen gets owner-only through CantDoThat', async () => {
     teamStatus = 403;
     render(<MemoryRouter><Team /></MemoryRouter>);

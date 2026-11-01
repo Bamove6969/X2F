@@ -228,6 +228,10 @@ describe('the member sign-up (two factors, the staff rule)', () => {
       setupId, challengeId: c2.challengeId, code: codeOf(await decrypt(c2.encryptedMessage, k2.privateKey, undefined, deps.clock())), deviceLabel: 'Test',
     });
     expect(f2.statusCode, f2.body).toBe(201);
+    // Landing review M1: the member just proved two factors, so their first session is strong (as
+    // every member login, login.ts), not the single PGP key's `pgp-single`.
+    const first = await deps.db.query<{ strength: string }>('select strength from sessions where id = $1', [await sessionId(b)]);
+    expect(first.rows[0]!.strength).toBe('strong');
     const me = (await b.get('/v1/account/me')).json() as { displayName: string; member: unknown };
     expect(me.displayName).toBe(owner.displayName);
     expect(me.member).toEqual({ name: `Joiner${n}x`, roles: ['trades'] });
@@ -919,6 +923,90 @@ describe('team changes during a 24-hour hold (owner 2026-10-30)', () => {
     expect(until).not.toBeNull();
     expect(res.statusCode, res.body).toBe(403);
     expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until!.toISOString() });
+    expect(await teamOf(owner.id)).toEqual([]);
+  });
+});
+
+describe('team changes need a strong session (owner 1 Nov 2026; landing review I1)', () => {
+  const teamOf = async (accountId: string) =>
+    (await deps.db.query<{ display_name: string; roles: string[]; removed_at: Date | null }>(
+      'select display_name, roles, removed_at from team_members where account_id = $1 order by created_at, id', [accountId],
+    )).rows;
+  const weaken = async (b: Browser, strength: 'weak-single' | 'pgp-single') =>
+    deps.db.query('update sessions set strength = $2 where id = $1', [await sessionId(b), strength]);
+  const unspent = async (token: string) =>
+    (await deps.db.query('select 1 from confirm_tokens where token_hash = sha256(convert_to($1, \'utf8\')) and used_at is null', [token])).rowCount;
+
+  for (const strength of ['weak-single', 'pgp-single'] as const) {
+    it(`a ${strength} session's invite gets weak-session, writes nothing and spends no confirm token`, async () => {
+      const owner = await team();
+      await weaken(owner.browser, strength);
+      const displayName = `Weak${++n}x`;
+      const bare = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'] });
+      expect(err(bare)).toEqual({ status: 403, error: 'weak-session' });
+      const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
+      const res = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+      expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
+      expect(await teamOf(owner.id)).toEqual([]);
+      expect(await unspent(confirmToken)).toBe(1);
+    });
+  }
+
+  it("a weak session's role change gets weak-session (adding or dropping a role) and the roles stay", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers', 'trades']);
+    await weaken(owner.browser, 'weak-single');
+    for (const roles of [['offers'], ['trades'], ['offers', 'trades']]) {
+      const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: roles.join(',') });
+      const res = await owner.browser.patch(`/v1/team/members/${m.id}`, { roles, confirmToken });
+      expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
+    }
+    expect((await teamOf(owner.id))[0]!.roles).toEqual(['offers', 'trades']);
+  });
+
+  it("a weak session may still remove a member outside a hold (it only takes access away)", async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['trades']);
+    await weaken(owner.browser, 'weak-single');
+    const confirmToken = await confirmed(owner, { kind: 'team-remove', memberId: m.id });
+    const res = await app.inject({
+      method: 'DELETE', url: `/v1/team/members/${m.id}`, headers: { origin: 'https://x2f.test' }, cookies: owner.browser.cookies, payload: { confirmToken },
+    });
+    expect(res.statusCode, res.body).toBe(204);
+    expect(err(await m.browser.get('/v1/account/me'))).toEqual({ status: 401, error: 'not-authenticated' });
+  });
+
+  it('a strong session invites and changes roles as before', async () => {
+    const owner = await team();
+    const m = await member(owner.id, ['offers']);
+    expect((await invite(owner, `Strong${++n}x`, ['offers'])).statusCode).toBe(201);
+    const confirmToken = await confirmed(owner, { kind: 'team-roles', memberId: m.id, roles: 'offers,trades' });
+    expect((await owner.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers', 'trades'], confirmToken })).statusCode).toBe(200);
+  });
+
+  it('a session read weak only under the account lock (after the preHandler) is still refused, nothing written (ownerWriteGate)', async () => {
+    const owner = await team();
+    const sid = await sessionId(owner.browser);
+    const displayName = `LateWeak${++n}x`;
+    const confirmToken = await confirmed(owner, { kind: 'team-invite', name: displayName, roles: 'offers' });
+    let weakened = false;
+    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
+      const out = await orig(...args);
+      if (!weakened && typeof args[0] === 'string' && args[0].includes('update confirm_tokens')) {
+        weakened = true;
+        await orig('update sessions set strength = $2 where id = $1', [sid, 'weak-single']);
+      }
+      return out;
+    }) as never);
+    let res;
+    try {
+      res = await owner.browser.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+    } finally {
+      q.mockRestore();
+    }
+    expect(weakened).toBe(true);
+    expect(err(res)).toEqual({ status: 403, error: 'weak-session' });
     expect(await teamOf(owner.id)).toEqual([]);
   });
 });
