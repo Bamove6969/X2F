@@ -11,8 +11,8 @@ rules:
       node:http, node:https, node:net, node:dns or undici here.
     paths:
       include:
-        - "apps/api/src/pastrep/**"
-        - "apps/api/src/staff/pastrep.ts"
+        - "/apps/api/src/pastrep/**"
+        - "/apps/api/src/staff/pastrep.ts"
     pattern-either:
       - pattern-regex: (?:from|import|require\()\s*\(?\s*['"](?:node:)?(?:https?|net|dns|dns/promises|tls|http2|undici)(?:/[^'"]*)?['"]
   - id: pastrep-no-fetch
@@ -21,6 +21,6 @@ rules:
     message: Past reputation never fetches the evidence link (P5-A20); no fetch( here.
     paths:
       include:
-        - "apps/api/src/pastrep/**"
-        - "apps/api/src/staff/pastrep.ts"
+        - "/apps/api/src/pastrep/**"
+        - "/apps/api/src/staff/pastrep.ts"
     pattern-regex: \bfetch\s*\(
