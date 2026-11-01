@@ -148,6 +148,14 @@ describe('encryptProof / decryptProof', () => {
     const a = { code: CODE, proofId, kind: 'proof' as ProofKind };
     const { key, sha256 } = await encryptProof(image(), a);
     expect(await proofCode(decryptProof(new Uint8Array(PROOF_MAX_CIPHERTEXT + 1), key, { ...a, sha256 }))).toBe('bad-ciphertext');
+    // A genuine ciphertext (right key and AAD) one byte over the limit is refused...
+    const over = await encryptProof(image(PROOF_MAX_CIPHERTEXT - NONCE_BYTES - TAG_BYTES + 1), a);
+    expect(over.ciphertext.length).toBe(PROOF_MAX_CIPHERTEXT + 1);
+    expect(await proofCode(decryptProof(over.ciphertext, over.key, { ...a, sha256: over.sha256 }))).toBe('bad-ciphertext');
+    // ...and one exactly at the limit decrypts.
+    const at = await encryptProof(image(PROOF_MAX_CIPHERTEXT - NONCE_BYTES - TAG_BYTES), a);
+    expect(at.ciphertext.length).toBe(PROOF_MAX_CIPHERTEXT);
+    expect((await decryptProof(at.ciphertext, at.key, { ...a, sha256: at.sha256 })).length).toBe(PROOF_MAX_CIPHERTEXT - NONCE_BYTES - TAG_BYTES);
   });
 
   it('decryptProof refuses invalid arguments with a TypeError: sha256 must be 64 lower-case hex (N2, N3)', async () => {
