@@ -390,6 +390,9 @@ export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): stri
       return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
     case 'member-cannot-sign':
       return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    // Owner 1 Nov 2026: inviting a member and changing roles need a strong login (API 403 weak-session).
+    case 'weak-session':
+      return "This device logged in with only one way of proving it's you, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
     default:
       return "This can't be done on the team right now.";
   }

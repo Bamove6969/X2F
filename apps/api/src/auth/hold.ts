@@ -568,6 +568,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // under the account lock (team/members.ts `ownerWriteGate`).
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
+  // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
+  // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
 ];
 

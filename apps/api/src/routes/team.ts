@@ -10,7 +10,9 @@
  * - `DELETE /v1/team/members/:id { confirmToken }` (confirm `team-remove`) → 204; the member's
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
- *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent).
+ *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
+ *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
+ *   (403 `weak-session`, before the confirm token is spent); a removal does not.
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
@@ -33,10 +35,11 @@ import { openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { requireNotHeld, settleOf } from '../auth/hold.js';
+import { requireNotHeld, settleOf, weakRefusal } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
+import { waits, type LoginStrength } from '../auth/strength.js';
 import { verifyWebAuthnRegistrationOnly, webauthnRegistrationOptions, WEBAUTHN_TTL_MS } from '../auth/webauthn.js';
 import { listAudit } from '../team/audit.js';
 import {
@@ -144,6 +147,17 @@ async function useSetup(c: pg.PoolClient, setupId: string, now: Date): Promise<v
 /** The calling session and its settle deps, for the team writes' gate (`ownerWriteGate`). */
 const caller = (req: FastifyRequest): Caller => ({ accountId: req.auth.accountId, sessionId: req.auth.sessionId, settle: settleOf(req) });
 
+/**
+ * preHandler after `requireSession` and before `requireConfirm` (owner 1 Nov 2026, landing review
+ * I1): 403 `weak-session` unless the calling session is strong (strength.ts), so a weak session is
+ * refused before it spends a confirm token. Re-checked under the account lock in the write's
+ * transaction (`ownerWriteGate`).
+ */
+const requireStrongSession: preHandlerAsyncHookHandler = async function (req) {
+  const { rows } = await req.server.deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+  if (waits(rows[0]?.strength)) throw weakRefusal();
+};
+
 export function teamRoutes(app: FastifyInstance): void {
   // The account owner only: a trader's full session with no member (members get `owner-only`).
   const owner = requireSession({ kinds: ['trader'] });
@@ -155,7 +169,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.post(
     '/v1/team/invites',
-    { preHandler: [owner, checkInvite, requireNotHeld, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkInvite, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-invite', name: input(req).name!.name, roles: input(req).roles.join(',') }))] },
     async (req, reply) => {
       const deps = req.server.deps;
       const { name, roles } = input(req);
@@ -166,7 +180,7 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireNotHeld, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    { preHandler: [owner, checkRoles, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
     async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
   );
 
@@ -293,7 +307,9 @@ export function teamRoutes(app: FastifyInstance): void {
       await finishMember(c, setup.memberAccountId, now);
       await cred.store(c);
     });
-    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: kind, firstSession: true });
+    // Landing review M1: two factors were just proven, so the member's first session is strong
+    // (as every member login, login.ts), whatever the second factor's method default.
+    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: kind, firstSession: true, strength: 'strong' });
     return reply.code(201).send({ status: 'ok' });
   });
 
@@ -322,7 +338,8 @@ export function teamRoutes(app: FastifyInstance): void {
       await insertPgpKey(c, deps.config, { accountId: setup.memberAccountId, fingerprint: proved.fingerprint, armored: proved.armored, now });
       await finishMember(c, setup.memberAccountId, now);
     });
-    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true });
+    // Landing review M1: two PGP keys were just proven, so the member's first session is strong.
+    await startSession(deps, req, reply, { accountId: setup.memberAccountId, level: 'full', deviceLabel, method: 'pgp', firstSession: true, strength: 'strong' });
     return reply.code(201).send({ status: 'ok' });
   });
 }
