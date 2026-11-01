@@ -1,13 +1,21 @@
 import { createHash } from 'node:crypto';
+import sodium from 'libsodium-wrappers';
 import { ProtocolError, ReplayGuard, generateIdentity, open, seal, type Identity, type Participants } from '@x2f/protocol';
 import { describe, expect, it } from 'vitest';
 import {
+  PROOF_KINDS,
+  PROOF_MAX_CIPHERTEXT,
   PROOF_MAX_SIDE,
+  PROOF_RECIPIENTS,
   ProofError,
   decryptProof,
   encryptProof,
+  isProofId,
   newProofId,
   parseProofPayload,
+  proofKeyFromBase64,
+  proofKeyToBase64,
+  sealProofEnvelope,
   type ProofKind,
 } from '../src/index.js';
 
@@ -22,7 +30,7 @@ const image = (n = 1000): Uint8Array => {
   return b;
 };
 const hex = (b: Uint8Array): string => createHash('sha256').update(b).digest('hex');
-const b64 = (b: Uint8Array): string => Buffer.from(b).toString('base64');
+const b64 = (b: Uint8Array): string => proofKeyToBase64(b);
 
 async function proofCode(p: Promise<unknown>): Promise<string> {
   try {
@@ -116,15 +124,106 @@ describe('encryptProof / decryptProof', () => {
     expect(one.sha256).toBe(two.sha256);
   });
 
-  it('refuses invalid arguments before touching any bytes', async () => {
+  it('encryptProof refuses invalid arguments with a TypeError', async () => {
     const proofId = newProofId();
     await expect(encryptProof(image(), { code: 'not a code', proofId, kind: 'proof' })).rejects.toThrow(TypeError);
     await expect(encryptProof(image(), { code: CODE, proofId: 'x', kind: 'proof' })).rejects.toThrow(TypeError);
     await expect(encryptProof(image(), { code: CODE, proofId, kind: 'other' as ProofKind })).rejects.toThrow(TypeError);
   });
+
+  it('pins the layout and AAD: raw libsodium opens nonce || AEAD output with the literal AAD (M1)', async () => {
+    await sodium.ready;
+    const proofId = newProofId();
+    const plain = image(777);
+    // A lower-case, space-separated code: the AAD carries the normalized, dashed form.
+    const { ciphertext, key } = await encryptProof(plain, { code: 'k7m2 9qxa 4ftr 8wpn', proofId, kind: 'evidence' });
+    const aad = new TextEncoder().encode(`x2f/proof/v1\0K7M2-9QXA-4FTR-8WPN\0${proofId}\0evidence`);
+    const out = sodium.crypto_aead_xchacha20poly1305_ietf_decrypt(null, ciphertext.subarray(24), aad, ciphertext.subarray(0, 24), key);
+    expect(Buffer.from(out).equals(Buffer.from(plain))).toBe(true);
+  });
+
+  it('refuses a ciphertext over PROOF_MAX_CIPHERTEXT (4 MiB) as bad-ciphertext (N1)', async () => {
+    expect(PROOF_MAX_CIPHERTEXT).toBe(4 * 1024 * 1024);
+    const proofId = newProofId();
+    const a = { code: CODE, proofId, kind: 'proof' as ProofKind };
+    const { key, sha256 } = await encryptProof(image(), a);
+    expect(await proofCode(decryptProof(new Uint8Array(PROOF_MAX_CIPHERTEXT + 1), key, { ...a, sha256 }))).toBe('bad-ciphertext');
+  });
+
+  it('decryptProof refuses invalid arguments with a TypeError: sha256 must be 64 lower-case hex (N2, N3)', async () => {
+    const proofId = newProofId();
+    const a = { code: CODE, proofId, kind: 'proof' as ProofKind };
+    const { ciphertext, key, sha256 } = await encryptProof(image(), a);
+    for (const bad of [sha256.toUpperCase(), sha256.slice(0, 63), `${sha256}0`, '', 7]) {
+      await expect(decryptProof(ciphertext, key, { ...a, sha256: bad as string })).rejects.toThrow(TypeError);
+    }
+    await expect(decryptProof([...ciphertext] as unknown as Uint8Array, key, { ...a, sha256 })).rejects.toThrow(TypeError);
+    await expect(decryptProof(ciphertext, [...key] as unknown as Uint8Array, { ...a, sha256 })).rejects.toThrow(TypeError);
+    await expect(decryptProof(ciphertext, key, null as unknown as typeof a & { sha256: string })).rejects.toThrow(TypeError);
+    await expect(decryptProof(ciphertext, key, { ...a, code: 'nope', sha256 })).rejects.toThrow(TypeError);
+  });
+
+  it('no error message carries the proof id or the trade code (N3)', async () => {
+    const proofId = newProofId();
+    const a = { code: CODE, proofId, kind: 'proof' as ProofKind };
+    const { ciphertext, key, sha256 } = await encryptProof(image(), a);
+    const msgs: string[] = [];
+    const grab = async (p: Promise<unknown>): Promise<void> => {
+      try {
+        await p;
+      } catch (e) {
+        msgs.push((e as Error).message);
+      }
+    };
+    await grab(decryptProof(ciphertext, key, { ...a, code: OTHER_CODE, sha256 }));
+    await grab(decryptProof(ciphertext, key, { ...a, sha256: 'A'.repeat(64) }));
+    await grab(encryptProof(image(), { code: CODE, proofId: `${proofId}X`, kind: 'proof' }));
+    await grab(encryptProof(image(), { code: `${CODE}X`, proofId, kind: 'proof' }));
+    try {
+      parseProofPayload('proof.unblurred', { proofId, key: 'x', sha256, width: 1, height: 1, mime: 'image/png' });
+    } catch (e) {
+      msgs.push((e as Error).message);
+    }
+    expect(msgs).toHaveLength(5);
+    for (const m of msgs) {
+      expect(m).not.toContain(proofId);
+      expect(m).not.toContain(CODE);
+      expect(m.replace(/-/g, '')).not.toContain(CODE.replace(/-/g, ''));
+    }
+  });
+});
+
+describe('proof key base64 (M3)', () => {
+  it('round trips a 32-byte key through padded standard base64 and parseProofPayload', async () => {
+    const { key, sha256 } = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
+    const s = proofKeyToBase64(key);
+    expect(s).toMatch(/^[A-Za-z0-9+/]{43}=$/);
+    const p = parseProofPayload('proof.unblurred', { proofId: newProofId(), key: s, sha256, width: 10, height: 10, mime: 'image/png' });
+    expect(Buffer.from(proofKeyFromBase64(p.payload.key)).equals(Buffer.from(key))).toBe(true);
+    // Bytes that encode to + and / in the standard alphabet.
+    const odd = new Uint8Array(32).fill(0xfb);
+    expect(proofKeyToBase64(odd)).toContain('+');
+    expect(Buffer.from(proofKeyFromBase64(proofKeyToBase64(odd))).equals(Buffer.from(odd))).toBe(true);
+  });
+
+  it('refuses keys that are not 32 bytes and base64 that is not canonical padded standard', async () => {
+    await sodium.ready;
+    expect(() => proofKeyToBase64(new Uint8Array(31))).toThrow(TypeError);
+    const key = new Uint8Array(32).fill(0xfb);
+    const urlsafe = sodium.to_base64(key); // libsodium's default: URL-safe, no padding
+    for (const s of [urlsafe, proofKeyToBase64(key).slice(0, -1), proofKeyToBase64(new Uint8Array(33)), '', `${proofKeyToBase64(key).slice(0, -2)}9=`]) {
+      expect(payloadCode(() => proofKeyFromBase64(s)), s).toBe('bad-payload');
+    }
+  });
 });
 
 describe('newProofId', () => {
+  it('isProofId and PROOF_KINDS are exported (N4)', () => {
+    expect(isProofId(newProofId())).toBe(true);
+    expect(isProofId('abc')).toBe(false);
+    expect(isProofId(7)).toBe(false);
+    expect(PROOF_KINDS).toEqual(['proof', 'evidence', 'unblurred']);
+  });
   it('is 16 random bytes as 26 Crockford base32 characters, different every time', () => {
     const ids = new Set<string>();
     for (let i = 0; i < 200; i++) {
@@ -167,7 +266,7 @@ describe('sealed key payloads (Plan 1 seal/open)', () => {
     expect(opened.from).toBe('buyer');
     const parsed = parseProofPayload(opened.type, opened.payload);
     expect(parsed.type).toBe('proof.unblurred');
-    const key = new Uint8Array(Buffer.from(parsed.payload.key, 'base64'));
+    const key = proofKeyFromBase64(parsed.payload.key);
     const out = await decryptProof(enc.ciphertext, key, { code: CODE, proofId: parsed.payload.proofId, kind: 'unblurred', sha256: parsed.payload.sha256 });
     expect(Buffer.from(out).equals(Buffer.from(plain))).toBe(true);
 
@@ -267,5 +366,62 @@ describe('parseProofPayload', () => {
     expect(bad('proof.attached', null)).toBe('bad-payload');
     expect(bad('proof.attached', [attached()])).toBe('bad-payload');
     expect(bad('proof.attached', Object.assign(Object.create({ evil: 1 }) as object, attached()))).toBe('bad-payload');
+  });
+});
+
+describe('sealProofEnvelope (M2)', () => {
+  const CHANNEL = 'K7M2-9QXA-4FTR-8WPN';
+  const guard = (): ReplayGuard => new ReplayGuard(CHANNEL);
+
+  it('fixes the recipients by type', () => {
+    expect(PROOF_RECIPIENTS).toEqual({ 'proof.attached': ['buyer', 'seller', 'mod'], 'proof.unblurred': ['mod'] });
+  });
+
+  it('proof.unblurred opens for the mod only: not-for-me for the seller and for the buyer who sealed it', async () => {
+    const { ids, parts } = await participants();
+    const proofId = newProofId();
+    const enc = await encryptProof(image(), { code: CODE, proofId, kind: 'unblurred' });
+    const payload = { proofId, key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 100, height: 200, mime: 'image/png' as const };
+    const env = await sealProofEnvelope({ type: 'proof.unblurred', payload }, { trade: CHANNEL, from: 'buyer', seq: 3, me: ids.buyer, participants: parts });
+    const opened = await open(env, { me: ids.mod, myRole: 'mod', participants: parts, trade: CHANNEL, guard: guard() });
+    expect(parseProofPayload(opened.type, opened.payload)).toEqual({ type: 'proof.unblurred', payload });
+    for (const [role, allowSelf] of [['seller', false], ['buyer', false], ['buyer', true]] as const) {
+      let err: unknown;
+      try {
+        await open(env, { me: ids[role], myRole: role, participants: parts, trade: CHANNEL, guard: guard(), allowSelf });
+      } catch (e) {
+        err = e;
+      }
+      expect(err, `${role} allowSelf=${String(allowSelf)}`).toBeInstanceOf(ProtocolError);
+      expect((err as ProtocolError).code).toBe('not-for-me');
+    }
+  });
+
+  it('proof.attached opens for buyer (allowSelf), seller and mod', async () => {
+    const { ids, parts } = await participants();
+    const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'proof' });
+    const payload = { proofId: newProofId(), kind: 'proof' as const, key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/jpeg' as const, hidden: [] };
+    const env = await sealProofEnvelope({ type: 'proof.attached', payload }, { trade: CHANNEL, from: 'buyer', seq: 0, me: ids.buyer, participants: parts });
+    for (const role of ['buyer', 'seller', 'mod'] as const) {
+      const o = await open(env, { me: ids[role], myRole: role, participants: parts, trade: CHANNEL, guard: guard(), allowSelf: true });
+      expect(o.type).toBe('proof.attached');
+    }
+  });
+
+  it('refuses caller-chosen recipients, type or payload in the seal arguments, and an invalid payload', async () => {
+    const { ids, parts } = await participants();
+    const enc = await encryptProof(image(), { code: CODE, proofId: newProofId(), kind: 'unblurred' });
+    const payload = { proofId: newProofId(), key: proofKeyToBase64(enc.key), sha256: enc.sha256, width: 1, height: 1, mime: 'image/png' as const };
+    const base = { trade: CHANNEL, from: 'buyer' as const, seq: 0, me: ids.buyer, participants: parts };
+    for (const extra of [{ to: ['buyer', 'seller', 'mod'] }, { to: ['mod'] }, { type: 'proof.attached' }, { payload }]) {
+      await expect(sealProofEnvelope({ type: 'proof.unblurred', payload }, { ...base, ...extra } as typeof base)).rejects.toThrow(TypeError);
+    }
+    let code = 'no error';
+    try {
+      await sealProofEnvelope({ type: 'proof.unblurred', payload: { ...payload, filename: 'a.png' } as typeof payload }, base);
+    } catch (e) {
+      if (e instanceof ProofError) code = e.code;
+    }
+    expect(code).toBe('bad-payload');
   });
 });
