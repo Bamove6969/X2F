@@ -98,7 +98,7 @@ export function assertCredentialAllowed(accountKind: AccountKind, info: { kind: 
   const ok =
     accountKind === 'trader'
       ? info.kind === 'passkey' || info.kind === 'security-key'
-      : (info.kind === 'security-key' && info.attested) || (accountKind === 'staff' && info.kind === 'passkey');
+      : (info.kind === 'security-key' && info.attested) || ((accountKind === 'staff' || accountKind === 'member') && info.kind === 'passkey');
   if (!ok) throw new ApiError(403, 'method-not-allowed');
 }
 
@@ -397,12 +397,35 @@ export async function verifyWebAuthnRegistration(
   expectedChallenge: string | Uint8Array,
   o: { kind?: CredentialKind; label?: string } = {},
 ): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null }> {
+  const v = await verifyWebAuthnRegistrationOnly(deps, accountId, response, expectedChallenge, o);
+  await v.store(deps.db);
+  return { credentialId: v.credentialId, kind: v.kind, attested: v.attested, aaguid: v.aaguid };
+}
+
+/**
+ * `verifyWebAuthnRegistration` without the write: verifies, and returns `store(q)`, which inserts
+ * the credential through `q` (a transaction), so a caller can store it only once it has won its
+ * own race (Plan 2 Task 18 review M9(e): a team member's sign-up stores the key in the same
+ * transaction that uses up the setup and marks the member joined).
+ */
+export async function verifyWebAuthnRegistrationOnly(
+  deps: Deps,
+  accountId: string,
+  response: unknown,
+  expectedChallenge: string | Uint8Array,
+  o: { kind?: CredentialKind; label?: string } = {},
+): Promise<{ credentialId: string; kind: CredentialKind; attested: boolean; aaguid: string | null; store(q: Queryable): Promise<void> }> {
   const account = await accountById(deps.db, accountId);
   const cred = await verifyRegistration(deps, {
     accountKind: account.kind, kind: o.kind ?? null, response, expectedChallenge: challengeString(expectedChallenge),
   });
-  await insertCredential(deps.db, accountId, cred, cleanLabel(o.label, cred.kind), deps.clock());
-  return { credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid };
+  const label = cleanLabel(o.label, cred.kind);
+  return {
+    credentialId: cred.credentialId, kind: cred.kind, attested: cred.attested, aaguid: cred.aaguid,
+    store: async (q) => {
+      await insertCredential(q, accountId, cred, label, deps.clock());
+    },
+  };
 }
 
 /** Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`). */
@@ -585,7 +608,8 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
       // query count does not reveal a staff login name (second review).
       afterPgp = pendingId !== undefined && (await pendingAfterPgp(deps, req, found?.id ?? NIL_UUID, pendingId));
     }
-    const withPasskeys = afterPgp && found?.kind === 'staff';
+    // A team member logs in by the staff rule (Plan 2 Task 18): PGP + a passkey is a pair for them too.
+    const withPasskeys = afterPgp && (found?.kind === 'staff' || found?.kind === 'member');
     let creds = (await credentialsOf(deps.db, found?.id ?? NIL_UUID)).filter(
       (c) => found !== null && (c.kind === 'security-key' || (withPasskeys && c.kind === 'passkey')) && allowed(found.kind, c),
     );

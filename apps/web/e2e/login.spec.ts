@@ -222,13 +222,24 @@ test('an outage or a wait is not a miss: a neutral retry or the wait, and ten of
 test('passkey login via the virtual authenticator lands on returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
   await page.route('**/v1/login/webauthn/start', json({ challengeId: 'w1', options: AUTH_OPTIONS }));
-  await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
+  let finishes = 0;
+  await page.route('**/v1/login/webauthn/finish', (r) => {
+    finishes += 1;
+    return json({ status: 'ok' })(r);
+  });
+  const other: string[] = [];
+  page.on('request', (r) => {
+    if (/\/v1\/login\/(pgp|password|totp)/.test(r.url())) other.push(r.url());
+  });
 
   await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
   await virtualAuthenticator(page);
   await page.click('[data-method="passkey"]');
   await page.click('[data-part="passkey-login"]');
   await expect(page).toHaveURL(/\/buy$/);
+  // Plan 2 Task 18 review M8: a trader's passkey login is one step, as before (no second step).
+  expect(finishes).toBe(1);
+  expect(other).toEqual([]);
 });
 
 test('security-key login by login name via the virtual authenticator lands on returnTo', async ({ page }) => {

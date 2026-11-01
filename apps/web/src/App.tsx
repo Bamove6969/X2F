@@ -5,6 +5,8 @@ import { useLiveEvents, type LiveEvent } from './api/events.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
+import { Button } from './ui/Button.js';
+import { Sheet } from './ui/Sheet.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
@@ -19,14 +21,18 @@ import type { BrowseCopy } from './screens/browse/SellCopy.js';
 import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
+import { MemberInvite } from './screens/auth/MemberInvite.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
 import { Security } from './screens/settings/Security.js';
+import { Team } from './screens/settings/Team.js';
+import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
+import { memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopHeader } from './ui/DesktopShell.js';
@@ -100,7 +106,7 @@ function RouterBridge() {
  * Nothing here is a seen-receipt: a `refund_requested` event reaching a tab (hidden, minimised, on
  * another device) is not the buyer seeing the final alert. Task 25's `FinalAlert` posts that.
  */
-function LiveAccepted() {
+function LiveAccepted({ member }: { member: boolean }) {
   const navigate = useNavigate();
   const [accepted, setAccepted] = useState<Extract<LiveEvent, { type: 'accepted' }> | null>(null);
   // Plan 2 Task 16: a new device asking to log in ("Is this you?"), over whatever screen is showing.
@@ -121,6 +127,18 @@ function LiveAccepted() {
     return <LoginApprove key={approvals.current.id} approval={approvals.current} onDone={approvals.dismiss} />;
   }
   if (!accepted) return null;
+  // Plan 2 Task 18 (review I1): a team member's device never offers the accept sheet (it would
+  // store a ConfirmedTrade on a device that can never run the escrow); the owner still gets the push.
+  if (member) {
+    return (
+      <Sheet open title={MEMBER_TRADE_COPY.acceptedTitle} onClose={() => setAccepted(null)}>
+        <div className="x2f-stack" data-part="member-accepted">
+          <p>{MEMBER_TRADE_COPY.accepted(accepted.by)}</p>
+          <Button variant="primary" onClick={() => setAccepted(null)}>{MEMBER_TRADE_COPY.ok}</Button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <AcceptedSheet
       key={accepted.code}
@@ -140,7 +158,10 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
   if (session.status !== 'signed-in') return false;
   const me = session.me;
   if (me === null || typeof me !== 'object') return false;
-  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown };
+  const m = me as { kind?: unknown; level?: unknown; termsCurrent?: unknown; member?: { roles?: unknown } | null };
+  // Plan 2 Task 18: a team member without Trades gets no trade stream (the API answers 403 forbidden).
+  const member = m.member;
+  if (member !== undefined && member !== null && !(Array.isArray(member.roles) && member.roles.includes('trades'))) return false;
   return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
 }
 
@@ -149,7 +170,7 @@ export function App() {
   return (
     <>
       <RouterBridge />
-      {isTrader(session) ? <LiveAccepted /> : null}
+      {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
         <Route element={<Layout nav />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
@@ -172,6 +193,8 @@ export function App() {
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/blocked" element={<Blocked />} />
+          <Route path="/settings/team" element={<Team />} />
+          <Route path="/team/join" element={<MemberInvite />} />
           <Route path="/news" element={<News />} />
           <Route path="/feedback" element={<Feedback />} />
         </Route>

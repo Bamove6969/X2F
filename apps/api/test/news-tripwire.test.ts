@@ -17,7 +17,8 @@ describe('Task 28 stand-ins', () => {
     // `site.control` (the privilege-matrix test then shows a moderator is refused), each change
     // appended to the activity log (no message text in the entry, just the id and the action).
     // Keep tools/news.ts only if the lead wants an offline path; otherwise delete it with news/cli.ts.
-    const staffLanded = has('packages/staff/package.json') || /buildStaffApi/.test(read('apps/api/src/app.ts')) || has('apps/api/src/staff');
+    // Fires on Task 4 (the staff API) only: `packages/staff` (Tasks 1-3) has no routes to add News to.
+    const staffLanded = /buildStaffApi/.test(read('apps/api/src/app.ts')) || has('apps/api/src/staff');
     expect(staffLanded, 'Plan 4 staff API landed: add the site.control News routes (see this test)').toBe(false);
   });
 
