@@ -77,6 +77,19 @@ describe('amount', () => {
     expect(check(receipt({ amount: '412,50 €' })).amount).toEqual({ status: 'not-found', seen: null });
   });
 
+  it('on a mismatch, seen is the amount closest to the trade amount, not a fee or $0.00 (review N2)', () => {
+    expect(check(receipt({ amount: 'Fee $0.00 Amount $400.00' })).amount).toEqual({ status: 'mismatch', seen: 40000n });
+    expect(check(ocr('Fee $0.00', 'Amount $400.00', 'Balance $9,000.00', 'a b c')).amount).toEqual({ status: 'mismatch', seen: 40000n });
+    expect(check(ocr('Fee $0.00', 'a b c')).amount).toEqual({ status: 'mismatch', seen: 0n });
+    // A tie goes to the first in reading order.
+    expect(check(ocr('$412.00 $413.00', 'a b c')).amount).toEqual({ status: 'mismatch', seen: 41200n });
+  });
+
+  it('reads amounts written with Unicode digits, as the reference and date checks do (review N6)', () => {
+    expect(check(receipt({ amount: '$４１２.５０' })).amount).toEqual({ status: 'match', seen: 41250n });
+    expect(check(receipt({ amount: '$٤١٢.٥٠' })).amount).toEqual({ status: 'match', seen: 41250n });
+  });
+
   it('formats a mismatch in the trade currency and exponent', () => {
     const eur = check(receipt({ amount: '400,00 €' }), ['name'], { currency: 'EUR' });
     expect(eur.amount).toEqual({ status: 'mismatch', seen: 40000n });
@@ -121,6 +134,26 @@ describe('reference', () => {
     expect(check(receipt({ note: 'K7M29QXA4FTR8WPN7' })).reference).toBe('not-found');
   });
 
+  it('finds a code wrapped onto the next line (review N1)', () => {
+    expect(check(ocr('Memo K7M2-9QXA-', '4FTR-8WPN', 'a b c')).reference).toBe('match');
+    expect(check(ocr('Memo K7M2-9QXA', '4FTR-8WPN', 'a b c')).reference).toBe('match');
+    expect(check(ocr('Memo K7M29QXA', '4FTR8WPN', 'a b c')).reference).toBe('match');
+    // Half a code on each of two lines that are not next to each other is not a match.
+    expect(check(ocr('Memo K7M2-9QXA-', 'x y z', '4FTR-8WPN')).reference).toBe('not-found');
+  });
+
+  it('finds a code with spaces around its dashes (review N1)', () => {
+    for (const note of ['K7M2 - 9QXA - 4FTR - 8WPN', 'K7M2- 9QXA -4FTR  -  8WPN']) {
+      expect(check(receipt({ note })).reference, note).toBe('match');
+    }
+  });
+
+  it('finds a code written with Unicode dashes or digits (normalizeText, review N4)', () => {
+    for (const note of ['K7M2–9QXA–4FTR–8WPN', 'K7M2—9QXA—4FTR—8WPN', 'K７M２-9QXA-4FTR-8WPN']) {
+      expect(check(receipt({ note })).reference, note).toBe('match');
+    }
+  });
+
   it('refuses an expected trade code that is not a trade code', () => {
     expect(() => check(receipt(), ['name'], { tradeCode: 'nope' })).toThrow(RangeError);
   });
@@ -149,10 +182,28 @@ describe('date', () => {
     }
   });
 
-  it('the day before securedAt is in range in every time zone; two days before is not', () => {
+  it('the day before securedAt and two days before are in range in some time zone; three days before is not', () => {
     expect(check(receipt({ date: 'Oct 15, 2026' })).date).toBe('in-range');
     expect(check(receipt({ date: 'Oct 14, 2026' })).date).toBe('in-range');
     expect(check(receipt({ date: 'Oct 13, 2026' })).date).toBe('out-of-range');
+  });
+
+  it('a date with no year can be last year, near New Year (review N4)', () => {
+    const newYear = { earliest: new Date('2026-12-30T20:00:00Z'), latest: new Date('2027-01-01T01:00:00Z') };
+    expect(check(receipt({ date: 'Dec 31' }), ['name'], newYear).date).toBe('in-range');
+    expect(check(receipt({ date: '31 Dec' }), ['name'], newYear).date).toBe('in-range');
+  });
+
+  it('a date with no year can be next year in time zones east of UTC (review N5)', () => {
+    const eve = { earliest: new Date('2026-12-30T20:00:00Z'), latest: new Date('2026-12-31T20:00:00Z') };
+    expect(check(receipt({ date: 'Jan 1' }), ['name'], eve).date).toBe('in-range');
+    expect(check(receipt({ date: 'Jan 3' }), ['name'], eve).date).toBe('out-of-range');
+  });
+
+  it('reads a date written with Unicode digits or dashes (normalizeText, review N4)', () => {
+    for (const date of ['２０２６-10-16', '2026–10–16', '١٦/١٠/٢٠٢٦']) {
+      expect(check(receipt({ date })).date, date).toBe('in-range');
+    }
   });
 
   it('a date that is not a calendar day is not a date', () => {
@@ -182,6 +233,29 @@ describe('name (P5-A28)', () => {
     const c = check(receipt({ from: null }), ['manual']);
     expect(c.name).toBe('not-found');
     expect(proofCardLines(c, TRADE).some((l) => l.text.includes('ender name'))).toBe(false);
+  });
+});
+
+describe('name: sender labels only (review N3)', () => {
+  it("a recipient label ('To:', 'Paid to', 'Recipient') is not a sender name", () => {
+    for (const from of ['To: Bob Seller', 'Paid to Bob Seller', 'Recipient: Bob Seller', 'Sent to: Bob Seller']) {
+      expect(check(receipt({ from }), []).name, from).toBe('not-found');
+    }
+  });
+
+  it('each sender label counts, on its line or with the name on the next line', () => {
+    for (const from of ['From: Jane Doe', 'from Jane Doe', 'Sender: Jane Doe', 'Payer: Jane Doe', 'Sent by Jane Doe', 'Status: done From: Jane Doe']) {
+      expect(check(receipt({ from }), []).name, from).toBe('visible');
+    }
+    expect(check(ocr('Zelle', '$412.50', 'From', 'Jane Doe', `Memo ${CODE}`), []).name).toBe('visible');
+  });
+
+  it('a lone sender label whose next line holds the trade code, an amount or a date is not a name', () => {
+    // The buyer blurred the name by hand: OCR reads only the label, then the memo line.
+    expect(check(receipt(), ['manual']).name).toBe('not-found');
+    expect(check(ocr('Zelle', 'From:', '$412.50', 'a b'), ['manual']).name).toBe('not-found');
+    expect(check(ocr('Zelle $412.50', 'From:', 'Oct 16, 2026', 'a b'), ['manual']).name).toBe('not-found');
+    expect(check(ocr('Zelle $412.50', 'From:'), ['manual']).name).toBe('not-found');
   });
 });
 
