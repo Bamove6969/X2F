@@ -227,7 +227,8 @@ function dayMonth(a: number, b: number): boolean {
   return (a >= 1 && a <= 12 && b >= 1 && b <= 31) || (a >= 1 && a <= 31 && b >= 1 && b <= 12);
 }
 
-function markDates(text: string, keep: boolean[]): void {
+/** Marks every date and time in a normalised line in `keep` (exported for Task 9's date check). */
+export function markDates(text: string, keep: boolean[]): void {
   for (const re of DATE_TEXT) for (const m of text.matchAll(re)) mark(keep, m.index, m.index + m[0].length);
   const sortCode = SORT_CODE.test(text);
   for (const m of text.matchAll(DATE_NUMERIC)) {
@@ -243,8 +244,8 @@ function markDates(text: string, keep: boolean[]): void {
   }
 }
 
-/** A pattern for one trade code as OCR may show it: any case, O for 0, I or L for 1, any grouping. */
-function codePattern(normalized: string): RegExp {
+/** A pattern for one trade code as OCR may show it: any case, O for 0, I or L for 1, any grouping (also Task 9's reference check). */
+export function codePattern(normalized: string): RegExp {
   const chars = [...normalized.replace(/-/g, '')].map((c) => {
     if (c === '0') return '[0Oo]';
     if (c === '1') return '[1IiLl]';
