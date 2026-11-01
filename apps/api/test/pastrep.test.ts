@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import type { Deps } from '../src/app.js';
 import { openKey } from '../src/auth/pgp.js';
 import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
-import { PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
+import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD } from '../src/pastrep/routes.js';
 import { verifyPastRepSignature } from '../src/pastrep/verify.js';
@@ -371,8 +371,8 @@ describe('cleartext tricks', () => {
     const text = pastRepChallenge({
       origin: 'https://x2f.test', displayName: 'A.Trader', site: 'Bisq', url: URL_OK, fingerprint: ed.fingerprint, nonce: '0123456789ABCDEF', issuedAt: T0,
     });
-    expect(await verifyPastRepSignature(await clearsign(text, ed), text, ed.publicKey, T0)).toEqual({ ok: true });
-    expect(await verifyPastRepSignature(await detach(text, ed), text, ed.publicKey, T0)).toEqual({ ok: true });
+    expect(await verifyPastRepSignature(await clearsign(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
+    expect(await verifyPastRepSignature(await detach(text, ed), text, ed.publicKey, T0)).toMatchObject({ ok: true });
     expect(await verifyPastRepSignature(await clearsign(`${text}\nExtra`, ed), text, ed.publicKey, T0)).toEqual({ ok: false, reason: 'wrong-text' });
     expect(await verifyPastRepSignature(await clearsign(text, other), text, ed.publicKey, T0)).toEqual({ ok: false, reason: 'wrong-key' });
   });
@@ -558,6 +558,203 @@ describe('hold and throttle (lead follow-up, owner 1 Nov)', () => {
     expect((await (await login()).b.post('/v1/account/past-rep/start', startBody(ed))).statusCode).toBe(200);
     setNow(new Date(t.getTime() + 3_600_000));
     expect((await b.post('/v1/account/past-rep/start', startBody(ed))).statusCode).toBe(200);
+  });
+});
+
+/** A certify-only Ed25519 primary with only an encryption subkey (made with GnuPG 2: `--quick-gen-key ... ed25519 cert`, `--quick-add-key ... cv25519 encr`): it can never sign. */
+const CERT_ONLY = `-----BEGIN PGP PUBLIC KEY BLOCK-----
+
+mDMEaueLrBYJKwYBBAHaRw8BAQdAzEALj9mR02P+En/7ciX6gQVYysEerTquUgXb
+XGiyQny0CUNlcnQgT25seYiPBBMWCgA4FiEEUnfksTSIcvCleejJIolbGovmEnYF
+Amrni6wCGwEFCwkIBwIGFQoJCAsCBBYCAwECHgECF4AACgkQIolbGovmEnb5dQEA
+sQceV04TWvGVA46HwGaID35RuW4QdJXAXmkOm1co9o4A93Ks8yZpUquOtVPJgXI1
+1Ll9G5V7lL6SSWJDe4VHWw24OARq54usEgorBgEEAZdVAQUBAQdA7RDrN+bpZiZa
+TSNARjAYK9oGY/us/7Nxy8st4TL8UxMDAQgHiHgEGBYKACAWIQRSd+SxNIhy8KV5
+6MkiiVsai+YSdgUCaueLrAIbDAAKCRAiiVsai+YSdvLcAQCbzKT+SSRzKO3pAzEB
+yskrnzaSGWLzwkEG7iwnqMDUkQD9H0hlmy5snC0eKl9D18ah9N3t5LPX8vcSyoQ6
+NX3tKgY=
+=Xr4W
+-----END PGP PUBLIC KEY BLOCK-----`;
+
+const finishOf = (b: Browser, challengeId: string, signed: string) => b.post('/v1/account/past-rep/finish', { challengeId, signed });
+const challengeUsed = async (id: string) => (await deps.db.query<{ used_at: Date | null }>('select used_at from challenges where id = $1', [id])).rows[0]!.used_at !== null;
+
+describe('review round 1', () => {
+  it('M1: detached signatures over the wrong text, by another key, or made too early are refused', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const cases: Array<[string, string]> = [
+      [await detach(c.text.replace(/^Nonce: .*$/m, 'Nonce: 0000000000000000'), ed), 'wrong-text'],
+      [await detach(`${c.text}\nExtra line`, ed), 'wrong-text'],
+      [await detach(c.text, other), 'wrong-key'],
+      [await detach(c.text, ed, new Date(T0.getTime() - 2 * 3_600_000)), 'wrong-text'],
+    ];
+    for (const [signed, error] of cases) expect((await finishOf(b, c.challengeId, signed)).json(), error).toMatchObject({ error });
+    expect(await rows()).toEqual([]);
+    expect(await challengeUsed(c.challengeId)).toBe(false);
+  });
+
+  it('M2: an RSA-1024 signing subkey under an Ed25519 primary → wrong-key (PAST_REP_VERIFY_CONFIG is the one verify uses)', async () => {
+    const weakSub = await gen({ subkeys: [{}, { type: 'rsa', rsaBits: 1024, sign: true }], config: { minRSABits: 1024 } });
+    const { b } = await login();
+    const c = await start(b, weakSub);
+    const signed = await openpgp.sign({
+      message: await openpgp.createCleartextMessage({ text: c.text }), signingKeys: await priv(weakSub), date: T0, config: { minRSABits: 1024 },
+    });
+    const sig = (await openpgp.readCleartextMessage({ cleartextMessage: signed })) as unknown as { signature: openpgp.Signature };
+    const pub = await openpgp.readKey({ armoredKey: weakSub.publicKey });
+    expect(sig.signature.getSigningKeyIDs()[0]!.equals(pub.getKeyID())).toBe(false);
+    expect((await finishOf(b, c.challengeId, signed)).json()).toMatchObject({ error: 'wrong-key' });
+  });
+
+  it('M2: a signing subkey revoked, or expired, after the signature but before now → wrong-key (judged at now)', async () => {
+    const signedAt = new Date(T0.getTime() - 2 * 60_000);
+    const goneAt = new Date(T0.getTime() - 60_000);
+    // Revoked: the public key pasted at start carries the subkey's revocation, dated after the signature.
+    const withSub = await gen({ subkeys: [{}, { sign: true }] });
+    const p = await priv(withSub);
+    const subIndex = p.subkeys.findIndex((k) => k.bindingSignatures.some((s) => (s.keyFlags?.[0] ?? 0) & openpgp.enums.keyFlags.signData));
+    expect(subIndex).toBeGreaterThan(-1);
+    p.subkeys[subIndex] = await p.subkeys[subIndex]!.revoke(p.keyPacket as openpgp.SecretKeyPacket, undefined, goneAt);
+    const revokedPub: Pair = { ...withSub, publicKey: p.toPublic().armor() };
+    // Expired: the signing subkey's binding ends a minute before now.
+    const expiring = await gen({ subkeys: [{}, { sign: true, keyExpirationTime: Math.floor((goneAt.getTime() - KEY_DATE.getTime()) / 1000) }] });
+    for (const key of [revokedPub, expiring]) {
+      const { b } = await login();
+      const c = await start(b, key);
+      const res = await finishOf(b, c.challengeId, await clearsign(c.text, key, signedAt));
+      expect(res.json()).toMatchObject({ error: 'wrong-key' });
+    }
+    expect(await rows()).toEqual([]);
+  });
+
+  it('M3: a hold that starts after the preHandler refuses finish under the account lock: no row, challenge unused', async () => {
+    const { b, id } = await login();
+    const c = await start(b, ed);
+    const signed = await clearsign(c.text, ed);
+    let until: Date | null = null;
+    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
+      if (until === null && typeof args[0] === 'string' && args[0].includes('from challenges where id = $1 and purpose')) {
+        until = new Date(0);
+        until = await startHold(deps.db, id, T0, { reason: 'weak-new-device', startedBy: null });
+      }
+      return orig(...args);
+    }) as never);
+    let res;
+    try {
+      res = await finishOf(b, c.challengeId, signed);
+    } finally {
+      q.mockRestore();
+    }
+    expect(until).not.toBeNull();
+    expect(res.statusCode, res.body).toBe(403);
+    expect(res.json()).toEqual({ error: 'recovery-hold', holdUntil: until!.toISOString() });
+    expect(await rows()).toEqual([]);
+    expect(await challengeUsed(c.challengeId)).toBe(false);
+  });
+
+  it('M3: a session revoked after the preHandler gets 401 from finish: no row, challenge unused', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const signed = await clearsign(c.text, ed);
+    const sessionId = (await deps.db.query<{ session_id: string }>('select session_id from challenges where id = $1', [c.challengeId])).rows[0]!.session_id;
+    let fired = false;
+    const orig = deps.db.query.bind(deps.db) as (...a: unknown[]) => Promise<unknown>;
+    const q = vi.spyOn(deps.db, 'query').mockImplementation((async (...args: unknown[]) => {
+      if (!fired && typeof args[0] === 'string' && args[0].includes('from challenges where id = $1 and purpose')) {
+        fired = true;
+        await orig('update sessions set revoked_at = $2 where id = $1', [sessionId, T0]);
+      }
+      return orig(...args);
+    }) as never);
+    let res;
+    try {
+      res = await finishOf(b, c.challengeId, signed);
+    } finally {
+      q.mockRestore();
+    }
+    expect(fired).toBe(true);
+    expect(res.statusCode, res.body).toBe(401);
+    expect(await rows()).toEqual([]);
+    expect(await challengeUsed(c.challengeId)).toBe(false);
+  });
+
+  it('M3: finish is in LIVE_SESSION_ROUTES, no longer exempt', () => {
+    expect(LIVE_SESSION_ROUTES).toContain('POST /v1/account/past-rep/finish');
+    expect('POST /v1/account/past-rep/finish' in LIVE_SESSION_EXEMPT).toBe(false);
+  });
+
+  it('M4: the stored signature is re-armored with no armor headers and still verifies over challenge_text', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const signed = (await clearsign(c.text, ed)).replace('-----BEGIN PGP SIGNATURE-----\n', '-----BEGIN PGP SIGNATURE-----\nComment: a@b.c\nVersion: Leaky 1.0\n');
+    expect(signed).toContain('Comment: a@b.c');
+    expect((await finishOf(b, c.challengeId, signed)).statusCode).toBe(201);
+    const [row] = await rows();
+    const stored = row!.signature as string;
+    expect(stored).not.toContain('a@b.c');
+    expect(stored).not.toContain('Leaky');
+    expect(stored).not.toContain('BEGIN PGP SIGNED MESSAGE');
+    expect(stored.startsWith('-----BEGIN PGP SIGNATURE-----\n\n')).toBe(true);
+    expect(stored.split('\n').filter((l) => /^[A-Za-z-]+: /.test(l))).toEqual([]);
+    expect(await verifyPastRepSignature(stored, row!.challenge_text as string, ed.publicKey, T0)).toMatchObject({ ok: true });
+  });
+
+  it('N1: the window is [issuedAt − 5 min, now]: a signer with a fast clock is refused, one just before now passes', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    expect((await finishOf(b, c.challengeId, await clearsign(c.text, ed, new Date(T0.getTime() + 3 * 60_000)))).statusCode).toBe(400);
+    expect((await finishOf(b, c.challengeId, await clearsign(c.text, ed, new Date(T0.getTime() - 4 * 60_000)))).statusCode).toBe(201);
+  });
+
+  it('N3: start refuses a key with no usable signing key (key-no-signing)', async () => {
+    setNow(new Date('2026-11-05T00:00:00Z'));
+    const { b } = await login();
+    const res = await b.post('/v1/account/past-rep/start', startBody({ publicKey: CERT_ONLY, privateKey: '', fingerprint: '' }));
+    expect(res.statusCode, res.body).toBe(400);
+    expect(res.json()).toMatchObject({ error: 'key-no-signing' });
+  });
+
+  it('N4: two finishes of one challenge at once → exactly one row, the other challenge-used', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const signed = await clearsign(c.text, ed);
+    const res = await Promise.all([finishOf(b, c.challengeId, signed), finishOf(b, c.challengeId, signed)]);
+    expect(res.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    expect(res.find((r) => r.statusCode === 409)!.json()).toMatchObject({ error: 'challenge-used' });
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it('N4: two challenges for one site finished at once → one row, the other site-claimed', async () => {
+    const { b } = await login();
+    const c1 = await start(b, ed);
+    const c2 = await start(b, other);
+    const res = await Promise.all([finishOf(b, c1.challengeId, await clearsign(c1.text, ed)), finishOf(b, c2.challengeId, await clearsign(c2.text, other))]);
+    expect(res.map((r) => r.statusCode).sort()).toEqual([201, 409]);
+    expect(res.find((r) => r.statusCode === 409)!.json()).toMatchObject({ error: 'site-claimed' });
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it(`N5: finish is throttled per account (${PAST_REP_FINISHES_PER_HOUR} an hour), the next 429 slow-down`, async () => {
+    const t = new Date('2026-11-03T08:00:00Z');
+    setNow(t);
+    const { b } = await login();
+    const c = await start(b, ed);
+    for (let i = 0; i < PAST_REP_FINISHES_PER_HOUR; i++) {
+      expect((await finishOf(b, c.challengeId, 'not a signature')).json(), `finish ${i + 1}`).toMatchObject({ error: 'bad-signature' });
+    }
+    const over = await finishOf(b, c.challengeId, await clearsign(c.text, ed, t));
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ error: 'slow-down', retryAfterSeconds: expect.any(Number) });
+    expect(await rows()).toEqual([]);
+  });
+
+  it('N6: the semgrep rule also covers child_process and globalThis.fetch', () => {
+    const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
+    const rule = readFileSync(join(ROOT, 'tools/semgrep/pastrep-no-fetch.yml'), 'utf8');
+    expect(rule).toContain('child_process');
+    expect(rule).toContain('globalThis');
   });
 });
 
