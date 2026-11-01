@@ -1,0 +1,114 @@
+import { normalizeTradeCode } from '@x2f/core';
+import { canonicalJson } from './canonical.js';
+import type { StaffRole } from './roles.js';
+import { sha256, toHex, utf8 } from './sha256.js';
+
+/** How an escrow dispute can end: the escrow pays the whole balance to one side. */
+export type EscrowOutcome = 'release-to-buyer' | 'refund-to-seller';
+/**
+ * How a dispute after a refund can end (A6). `seller-sends-xmr` and `seller-returns-fiat` order
+ * restitution the escrow cannot pay, so they put a lien on the seller at publish (Task 25).
+ */
+export type AfterRefundOutcome = 'seller-sends-xmr' | 'seller-returns-fiat' | 'no-action';
+export type RulingOutcome = EscrowOutcome | AfterRefundOutcome;
+
+export const ESCROW_OUTCOMES = ['release-to-buyer', 'refund-to-seller'] as const satisfies readonly EscrowOutcome[];
+export const AFTER_REFUND_OUTCOMES = [
+  'seller-sends-xmr',
+  'seller-returns-fiat',
+  'no-action',
+] as const satisfies readonly AfterRefundOutcome[];
+
+/**
+ * The general reason a ban shows (Revision 2026-10-29b, lead default, owner may change; the
+ * wording is `COPY-UNSIGNED` and lives with the screens): "Breaking the Terms of Service",
+ * "Problems in trades", "Abuse of other traders", "Account security".
+ */
+export const BAN_REASON_CODES = ['terms', 'trade-problems', 'abuse', 'account-security'] as const;
+export type BanReasonCode = (typeof BAN_REASON_CODES)[number];
+
+/**
+ * The account action a ruling carries. Revisions: the `hold` action is gone (2026-10-29c: replaced
+ * by the lien of Task 25, which follows from the outcome and is not chosen); the single `ban` is
+ * replaced by the owner's ban stages (Task 27): a trade ban or a site ban, each until an exact
+ * ISO time or, with `until: null`, permanent. Any ban or freeze needs a second approver (Task 2),
+ * who is a senior moderator or the owner, so a moderator alone can never ban.
+ */
+export type AccountAction =
+  | { kind: 'none' }
+  | { kind: 'freeze' }
+  | { kind: 'trade-ban' | 'site-ban'; until: string | null; reasonCode: BanReasonCode };
+
+type Invitable = Exclude<StaffRole, 'owner'>;
+
+/** What a security-key tap authorises (Task 5 binds each tap to exactly one of these). */
+export type KeyTapIntent =
+  | { kind: 'emergency-stop' }
+  | { kind: 'resume-trading' }
+  | { kind: 'create-invite'; inviteId: string; role: Invitable; tokenHash: string; expiresAt: string }
+  | { kind: 'switch-on'; accountId: string; role: Invitable }
+  | { kind: 'set-role'; accountId: string; role: Invitable }
+  | { kind: 'add-owner-key'; credentialId: string; publicKeySha256: string }
+  | { kind: 'settings'; largeTradeLimitUsd: number; firstResponseH: number; appealWindowH: number }
+  | {
+      kind: 'ruling';
+      step: 'propose' | 'approve';
+      rulingId: string;
+      code: string;
+      round: 1 | 2;
+      outcome: RulingOutcome;
+      accountAction: AccountAction;
+      amountAtomic: string;
+      reasonSha256: string;
+    };
+
+export const KEY_TAP_KINDS = [
+  'emergency-stop',
+  'resume-trading',
+  'create-invite',
+  'switch-on',
+  'set-role',
+  'add-owner-key',
+  'settings',
+  'ruling',
+] as const satisfies readonly KeyTapIntent['kind'][];
+
+/** Shortest nonce accepted (bytes). The server issues 32. */
+const MIN_NONCE = 16;
+
+/**
+ * The WebAuthn challenge for a tap: SHA-256 of `"x2f-keytap-v1\n" + canonicalJson(intent) + "\n" +
+ * hex(nonce)`. A ruling's trade code is normalised first, so a code typed with or without dashes
+ * binds the same ruling; an invalid code, an unknown kind or a short nonce throws TypeError.
+ */
+export function tapChallenge(i: KeyTapIntent, nonce: Uint8Array): Uint8Array {
+  if (!(KEY_TAP_KINDS as readonly string[]).includes(i.kind)) throw new TypeError('tapChallenge: unknown intent kind');
+  if (!(nonce instanceof Uint8Array) || nonce.length < MIN_NONCE) throw new TypeError('tapChallenge: nonce too short');
+  let intent: KeyTapIntent = i;
+  if (i.kind === 'ruling') {
+    const code = normalizeTradeCode(i.code);
+    if (code === null) throw new TypeError('tapChallenge: invalid trade code');
+    intent = { ...i, code };
+  }
+  return sha256(utf8(`x2f-keytap-v1\n${canonicalJson(intent)}\n${toHex(nonce)}`));
+}
+
+const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+/**
+ * A key's check code, shown on the locked setup page and by `pin-owner`: the first 80 bits of
+ * SHA-256 of the public key in Crockford base32, grouped `XXXX-XXXX-XXXX-XXXX` like a trade code.
+ */
+export function keyCheckCode(publicKey: Uint8Array): string {
+  const d = sha256(publicKey);
+  let bits = 0n;
+  for (let i = 0; i < 10; i++) bits = (bits << 8n) | BigInt(d[i]!);
+  let raw = '';
+  for (let i = 15; i >= 0; i--) raw += CROCKFORD[Number((bits >> BigInt(i * 5)) & 31n)];
+  return `${raw.slice(0, 4)}-${raw.slice(4, 8)}-${raw.slice(8, 12)}-${raw.slice(12, 16)}`;
+}
+
+/** The registration challenge for an invited staff member's key: SHA-256 of `"x2f-invite-v1\n" + tokenHash`. */
+export function inviteRegistrationChallenge(tokenHash: string): Uint8Array {
+  return sha256(utf8(`x2f-invite-v1\n${tokenHash}`));
+}
