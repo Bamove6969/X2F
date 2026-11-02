@@ -1,0 +1,16 @@
+/* Plan 4 Task 8: the site banner (SiteBanner.tsx) over the kit's Notice. Warning uses the Notice's
+   own caution look; info is the same box in teal (the escrow token). */
+.x2f-site-banner {
+  padding: var(--x2f-space-2) var(--x2f-space-4) 0;
+}
+
+.x2f-site-banner[data-kind='info'] .x2f-outcome {
+  padding: var(--x2f-space-3) 14px;
+  border-color: color-mix(in srgb, var(--x2f-escrow) 30%, transparent);
+  background: color-mix(in srgb, var(--x2f-escrow) 10%, var(--x2f-surface));
+  color: var(--x2f-ink);
+}
+
+.x2f-site-banner[data-kind='info'] .x2f-outcome__icon {
+  color: var(--x2f-escrow);
+}

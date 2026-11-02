@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router';
 import { setNavigator } from './api/client.js';
 import { useLiveEvents, type LiveEvent } from './api/events.js';
+import { useSite, type SiteBannerInfo } from './api/site.js';
 import { TradeChatPanel } from './chat/ChatPanel.js';
 import { emitChatLive } from './chat/live.js';
 import { AcceptedSheet, acceptedNavigation } from './screens/AcceptedSheet.js';
 import { Button } from './ui/Button.js';
 import { Sheet } from './ui/Sheet.js';
+import { Maintenance } from './screens/Maintenance.js';
 import { MyOffers } from './screens/MyOffers.js';
 import { News } from './screens/News.js';
 import { Feedback } from './screens/Feedback.js';
@@ -36,6 +38,7 @@ import { Terms } from './screens/setup/Terms.js';
 import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
+import { SiteBanner } from './ui/SiteBanner.js';
 import { DesktopHeader } from './ui/DesktopShell.js';
 import { useFoldAttribute, useFoldLayout } from './ui/fold.js';
 import './styles/fold.css';
@@ -54,7 +57,7 @@ setTradeChat(TradeChatPanel);
  * desktop header (Task 40, src/ui/fold.ts). The frame keeps one tree in every layout, so folding or
  * unfolding never remounts the screen: its route, scroll position and typed text stay.
  */
-function Layout({ nav }: { nav: boolean }) {
+function Layout({ nav, banner }: { nav: boolean; banner: SiteBannerInfo | null }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
@@ -63,6 +66,8 @@ function Layout({ nav }: { nav: boolean }) {
     <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
       {wide ? <DesktopHeader /> : null}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
+        {/* Plan 4 Task 8: the owner's banner at the top of every trader screen. */}
+        <SiteBanner banner={banner} />
         <Outlet />
       </div>
       {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
@@ -169,17 +174,20 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
 
 export function App() {
   const session = useSession();
+  // Plan 4 Task 8: the banner, and maintenance, which replaces the whole app with the owner's message.
+  const { site, refresh } = useSite();
+  if (site.maintenance !== null) return <Maintenance maintenance={site.maintenance} onRetry={refresh} />;
   return (
     <>
       <RouterBridge />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
-        <Route element={<Layout nav />}>
+        <Route element={<Layout nav banner={site.banner} />}>
           <Route path="/sell" element={<MethodList side="sell" copy={SELL_COPY} />} />
           <Route path="/buy" element={<MethodList side="buy" copy={BUY_COPY} />} />
           <Route path="/profile/offers" element={<MyOffers />} />
         </Route>
-        <Route element={<Layout nav={false} />}>
+        <Route element={<Layout nav={false} banner={site.banner} />}>
           <Route path="/post" element={<PostOffer />} />
           <Route path="/sell/:methodId" element={<BrowseOffers side="sell" copy={SELL_COPY} />} />
           <Route path="/buy/:methodId" element={<BrowseOffers side="buy" copy={BUY_COPY} />} />

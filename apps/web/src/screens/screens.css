@@ -240,3 +240,8 @@
 .x2f-qr__cell {
   fill: #000000;
 }
+
+/* Plan 4 Task 8: the owner's maintenance message keeps its line breaks. */
+[data-part='maintenance-message'] .x2f-outcome__body {
+  white-space: pre-line;
+}
