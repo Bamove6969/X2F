@@ -204,7 +204,7 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join' | 'owner-setup';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -803,17 +803,19 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
  * Checks a member's pasted key (400 with the key's refusal) and issues a `team-join` challenge to
  * it, keeping the sealed storable key in the payload for `checkTeamJoinCode`. `accountId` is null
  * for the first factor (no member account yet) and the member's account for a second PGP key.
+ * Plan 4 Task 6's owner setup uses the same flow with `purpose: 'owner-setup'` (the pending owner).
  */
 export async function issueTeamJoinChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown> },
+  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown>; purpose?: 'team-join' | 'owner-setup' },
 ): Promise<IssuedChallenge & { fingerprint: string }> {
+  const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
-    accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
+    accountId: a.accountId, sessionId: null, purpose, purposeText: PGP_PURPOSE[purpose],
     armoredKeys: [storable], payload: { ...a.payload, key: pending },
   });
   return { ...issued, fingerprint: inspection.fingerprint };
@@ -830,8 +832,9 @@ export async function checkTeamJoinCode(
   challengeId: string,
   code: string,
   accountId: string | null,
+  purpose: 'team-join' | 'owner-setup' = 'team-join',
 ): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
-  const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'team-join' });
+  const row = await checkPgpCode(deps, req, challengeId, code, { purpose });
   const device = deviceHash(req);
   const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
   if (row.account_id !== accountId || !sameDevice) throw new ApiError(400, 'challenge-expired');

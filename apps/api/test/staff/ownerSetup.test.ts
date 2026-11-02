@@ -156,19 +156,19 @@ describe('the setup code', () => {
 describe('the pending owner account', () => {
   it('is created disabled, cannot log in, and a second account call replaces it (only ever one owner)', async () => {
     const { app, deps } = await fresh();
-    const b = await begin(app, deps, 'first.owner', 'first-login');
+    const b = await begin(app, deps, 'first.lumen', 'first-login');
     const { rows } = await deps.db.query<{ id: string; disabled_at: Date | null }>("select id, disabled_at from accounts where kind = 'owner'");
     expect(rows).toHaveLength(1);
     expect(rows[0]!.disabled_at).toEqual(T0);
     const { token } = await insertSession(deps, rows[0]!.id, 'staff');
     expect(errorOf(await new StaffBrowser(app).withSession(token).get('/staff/v1/me'))).toBe('account-disabled');
 
-    const again = await b.post('/staff/v1/setup/account', { username: 'second.owner', loginName: 'second-login' });
+    const again = await b.post('/staff/v1/setup/account', { username: 'second.lumen', loginName: 'second-login' });
     expect(again.statusCode, again.body).toBe(201);
     const after = await deps.db.query<{ display_name: string }>("select display_name from accounts where kind = 'owner'");
-    expect(after.rows.map((r) => r.display_name)).toEqual(['second.owner']);
+    expect(after.rows.map((r) => r.display_name)).toEqual(['second.lumen']);
     // The same names can be picked again (the replaced account is gone).
-    expect((await b.post('/staff/v1/setup/account', { username: 'first.owner', loginName: 'first-login' })).statusCode).toBe(201);
+    expect((await b.post('/staff/v1/setup/account', { username: 'first.lumen', loginName: 'first-login' })).statusCode).toBe(201);
   });
 
   it('refuses names that break the account name rules', async () => {
@@ -241,10 +241,10 @@ describe('keys and finish', () => {
       }
     }
     // A second owner cannot be created by any route, and a restart prints nothing.
-    expect(errorOf(await b.post('/staff/v1/setup/account', { username: 'other.owner', loginName: 'other-login' }))).toBe('setup-locked');
+    expect(errorOf(await b.post('/staff/v1/setup/account', { username: 'other.lumen', loginName: 'other-login' }))).toBe('setup-locked');
     expect(await ensureSetupCode(deps)).toBeNull();
     const lines: string[] = [];
-    const s = await startStaffApi(deps, { origin: STAFF_ORIGIN, host: '127.0.0.1', port: 0 }, { stderr: (l) => void lines.push(l) });
+    const s = await startStaffApi(deps, { origin: STAFF_ORIGIN, host: '127.0.0.1', port: 0 }, { stderr: (l) => void lines.push(l), logStream: captureLogs().stream });
     await s.close();
     expect(lines).toEqual([]);
     await expect(
