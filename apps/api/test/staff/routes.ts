@@ -29,6 +29,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   // Plan 4 Task 5: security-key taps (the body is the intent; a sample tap id finishes nothing).
   { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', body: { kind: 'emergency-stop' }, allowedAnswer: { status: 403, error: 'method-not-allowed' } },
   { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', body: { response: {} }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
+  { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write' },
+  { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', body: { firstResponseH: 5 } },
+  { method: 'GET', url: '/staff/v1/site', perm: 'site.control' },
+  { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', body: { text: 'Matrix is down for an hour.', kind: 'info' } },
+  { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control' },
+  { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', body: { on: false } },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
