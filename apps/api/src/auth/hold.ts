@@ -533,6 +533,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/review/skip': "a participant's Skip review of their own finished trade (a review_skips row only); no account, session, approval or security state, no new obligation",
   // C12b (owner 2026-11-01/02): the opt-in "traded to date" profile line.
   'PUT /v1/account/profile/traded-total': "the caller's own profile display preference (one accounts column); no session, approval or security state, no obligation",
+  // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
+  'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",

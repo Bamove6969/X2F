@@ -25,6 +25,7 @@ import { tradedTotalRoutes } from './traders/tradedTotal.js';
 import { nudgeRoutes, type NudgeWiring } from './nudge/routes.js';
 import { newsRoutes } from './news/routes.js';
 import { feedbackFormRoutes } from './feedback/form.js';
+import { feedbackRoutes } from './feedback/mood.js';
 import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
@@ -302,6 +303,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   tradedTotalRoutes(app);
   // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
   teamRoutes(app);
+  // Plan 5, Task 4: platform feedback, the one-tap "How's X2F doing?" prompt.
+  feedbackRoutes(app);
 
   return app;
 }
