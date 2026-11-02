@@ -64,9 +64,13 @@ function posterLine(offer: Offer, now: Date): string {
   return parts.join(' · ');
 }
 
-/** C12b (owner 2026-11-01/02): the trader's opt-in volume line. COPY-UNSIGNED */
+/**
+ * C12b: the trader's opt-in volume line. X is a step the trader has REACHED (owner 2026-11-02:
+ * at least $X), so the "+" form stays true at exactly $X. Owner: "along the lines of
+ * 'Over $90,000+'"; the exact words are Design's. COPY-UNSIGNED
+ */
 function tradedLine(usd: number): string {
-  return `Completed over $${usd.toLocaleString('en-US')} in trades to date`;
+  return `$${usd.toLocaleString('en-US')}+ in trades to date`;
 }
 
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
