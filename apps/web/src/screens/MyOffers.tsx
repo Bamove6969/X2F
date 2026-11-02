@@ -18,8 +18,8 @@ import { Link } from 'react-router';
 import { ApiCallError } from '../api/client.js';
 import { ActionBar } from '../ui/ActionBar.js';
 import { Button } from '../ui/Button.js';
-import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
-import { CANT_DO_TITLE, TRADING_HOLD_CODE, myOffersCantDoText } from '../ui/cantDoCodes.js';
+import { CantDoThat } from '../ui/CantDoThat.js';
+import { CANT_DO_TITLE, MY_OFFERS_HOLD, TRADING_HOLD_CODE, myOffersCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Checkbox } from '../ui/Checkbox.js';
 import { EmptyState } from '../ui/EmptyState.js';
 import { Icon } from '../ui/icons.js';
@@ -34,7 +34,6 @@ import {
   allHint,
   applyResults,
   batches,
-  cantDoFor,
   countLine,
   idsFor,
   isHeld,
@@ -45,6 +44,7 @@ import {
   refusalLine,
   statusLine,
   summaryLine,
+  turnOnPopup,
 } from './myoffers/model.js';
 import './screens.css';
 
@@ -56,10 +56,12 @@ export function MyOffers() {
   // Each offer a Turn on kept off, by the refusal code (its row line is refusalLine(code)).
   const [refusals, setRefusals] = useState<ReadonlyMap<string, string>>(new Map());
   const [refusedHold, setRefusedHold] = useState(false);
-  const [summary, setSummary] = useState<{ text: string; tone: NoticeTone } | null>(null);
+  const [summary, setSummary] = useState<{ text: string; tone: NoticeTone; hold?: true } | null>(null);
   const [busy, setBusy] = useState(false);
-  // A "can't do that" refusal on Turn on (a hold, the cap) opens CantDoThat (Plan 5 Task 21).
-  const [cantDo, setCantDo] = useState<{ code: CantDoCode; count: number } | null>(null);
+  // A "can't do that" refusal on Turn on (a hold, the cap) opens CantDoThat (Plan 5 Task 21): the
+  // hold's own popup when it kept every offer off, else "Some offers can't be turned on" with a
+  // line per offer kept off (design session 2 Nov 2026).
+  const [cantDo, setCantDo] = useState<{ title: string; body: string; from: CantDoCode; items?: string[] | undefined } | null>(null);
   const ids = useId();
 
   const reload = useCallback(async (signal?: AbortSignal) => {
@@ -119,7 +121,21 @@ export function MyOffers() {
     });
     // Each Turn on says afresh whether a hold refused it (review M1): one that works ends the hold state.
     if (status === 'live') setRefusedHold(results.some((r) => r.refused === TRADING_HOLD_CODE));
-    if (status === 'live') setCantDo(cantDoFor(results));
+    if (status === 'live') {
+      const pop = turnOnPopup(results, before);
+      const line = (id: string) => {
+        const o = before.find((x) => x.id === id);
+        const r = results.find((x) => x.id === id);
+        return o && r?.refused ? `${offerTitle(o)}, ${offerMethods(o)}: ${refusalLine(r.refused)}` : null;
+      };
+      setCantDo(
+        pop === null
+          ? null
+          : pop.kind === 'hold'
+            ? { title: CANT_DO_TITLE.myOffersHold, body: MY_OFFERS_HOLD.popup, from: TRADING_HOLD_CODE }
+            : { title: CANT_DO_TITLE.myOffers, body: myOffersCantDoText(pop.code, pop.count), from: pop.code, items: pop.ids.map(line).filter((t): t is string => t !== null) },
+      );
+    }
     const said = summaryLine(status, results, before);
     if (failed !== null) {
       // COPY-UNSIGNED
@@ -188,15 +204,21 @@ export function MyOffers() {
         </EmptyState>
       ) : null}
 
-      {summary ? (
+      {/* During a trading hold: one caution notice at the top (design session 2 Nov 2026); a summary
+          that only says the hold again is not shown beside it. */}
+      {listed && held ? (
+        <Notice tone="caution" title={MY_OFFERS_HOLD.title} data-part="hold-notice">
+          {MY_OFFERS_HOLD.body}
+        </Notice>
+      ) : null}
+
+      {summary && !(held && summary.hold) ? (
         <Notice tone={summary.tone} data-part="summary">
           {summary.text}
         </Notice>
       ) : null}
 
-      {cantDo ? (
-        <CantDoThat title={CANT_DO_TITLE.myOffers} body={myOffersCantDoText(cantDo.code, cantDo.count)} from={cantDo.code} onClose={() => setCantDo(null)} />
-      ) : null}
+      {cantDo ? <CantDoThat title={cantDo.title} body={cantDo.body} from={cantDo.from} items={cantDo.items} onClose={() => setCantDo(null)} /> : null}
 
       {listed ? (
         <>
@@ -237,7 +259,8 @@ export function MyOffers() {
                       id={`${p}-switch`}
                       aria-labelledby={parts}
                       aria-describedby={why ? `${p}-status ${p}-why` : `${p}-status`}
-                      disabled={busy}
+                      // Paused during a trading hold (design session 2 Nov 2026).
+                      disabled={busy || held}
                       onClick={() => void run([o.id], on ? 'paused' : 'live', false)}
                       data-part="switch"
                     />
@@ -258,7 +281,7 @@ export function MyOffers() {
                   <span className="x2f-select-card__line" id={`${p}-limits`}>
                     <span className="x2f-select-card__mono">{offerLimitsRange(o)}</span> per trade
                   </span>
-                  <span className="x2f-select-card__status" id={`${p}-status`} data-tone={status.tone} data-part="status">
+                  <span className="x2f-select-card__status" id={`${p}-status`} data-tone={status.tone} data-chip={held ? 'true' : undefined} data-part="status">
                     {status.text}
                   </span>
                   {why ? (

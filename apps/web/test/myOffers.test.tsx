@@ -12,7 +12,7 @@ import { parseMyOffers, parseSwitch, type MyOffer } from '../src/screens/myoffer
 import {
   allHint, applyResults, batches, cantDoFor, countLine, idsFor, isHeld, offerLimits, offerMethods, offerPrice, offerPriceParts, offerTitle, refusalLine, statusLine, summaryLine,
 } from '../src/screens/myoffers/model.js';
-import { CANT_DO_TITLE, myOffersCantDoText } from '../src/ui/cantDoCodes.js';
+import { CANT_DO_TITLE, MY_OFFERS_HOLD, myOffersCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -149,10 +149,11 @@ describe('the model', () => {
     expect(statusLine({ ...a, hidden: 'trading-paused' })).toEqual({ text: 'On, hidden while trading is paused', tone: 'caution' });
     expect(statusLine({ ...b, hidden: 'trading-hold' })).toEqual({ text: 'Off · hidden from everyone', tone: 'off' });
     // During a trading hold every row and the header say so, in caution (design review shot 34).
-    expect(statusLine(a, true)).toEqual({ text: 'Hidden · trading hold', tone: 'caution' });
-    expect(statusLine(b, true)).toEqual({ text: 'Hidden · trading hold', tone: 'caution' });
+    // Design session 2 Nov 2026: one caution chip, on or off.
+    expect(statusLine(a, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
+    expect(statusLine(b, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
     expect(countLine([a, b, c])).toBe('1 of 3 offers on');
-    expect(countLine([a, b, c], true)).toBe('Trading hold · all offers hidden');
+    expect(countLine([a, b, c], true)).toBe('Trading hold · all offers paused');
     expect(isHeld([a, b], false)).toBe(false);
     expect(isHeld([{ ...a, hidden: 'trading-hold' }, b], false)).toBe(true);
     expect(isHeld([{ ...a, hidden: 'trading-paused' }, b], false)).toBe(false);
@@ -173,7 +174,7 @@ describe('the model', () => {
     expect(summaryLine('live', [{ id: B, status: 'live' }, { id: C, status: 'paused', refused: 'no-wallet' }], [a, b, c]).text).toBe('1 offer turned on. 1 offer stayed as it was; each one says why below.');
     // A hold: the one already on and the refused ones never read as "turned on"; it says the hold, in caution.
     const hold = summaryLine('live', [{ id: A, status: 'live' }, { id: B, status: 'paused', refused: 'trading-hold' }], [a, b]);
-    expect(hold).toEqual({ text: 'Trading hold: no offers were turned on. They stay hidden until the dispute is resolved.', tone: 'caution' });
+    expect(hold).toEqual({ text: 'Trading hold: no offers were turned on. They stay paused until the hold ends.', tone: 'caution', hold: true });
     expect(idsFor([a, b, c], new Set([A, B, C]))).toEqual([A, B, C]);
     expect(idsFor([a, b, c], new Set([B, 'not-listed']))).toEqual([B]);
     const many = Array.from({ length: 250 }, (_, i) => `id${i}`);
@@ -284,38 +285,61 @@ describe('the My offers screen', () => {
     // overlapping act() calls), which is why the full run showed six failures.
   }, 30_000);
 
-  it('turning on while held: every offer stays off, and the header, rows and summary all say the hold, in caution (N3, shots 33-34)', async () => {
+  it('turning on while held: the hold popup, one caution notice at the top, a Paused chip on every offer and every switch disabled (design session 2 Nov 2026)', async () => {
     onSwitch = (body) => ({
       status: 200,
       json: { status: body.status, results: body.ids.map((id) => ({ id, status: list.find((o) => o.id === id)!.status, refused: 'trading-hold' })) },
     });
     const host = await mount();
+    expect(q(host, '[data-part="hold-notice"]')).toBeNull();
     await click(tick(host, B));
     await click(tick(host, C));
     await click(q(host, '[data-part="turn-on"]'));
-    expect(q(host, '[data-part="summary"]').textContent).toBe('Trading hold: no offers were turned on. They stay hidden until the dispute is resolved.');
-    expect(q(host, '[data-part="summary"]').getAttribute('role')).toBe('alert');
-    expect(q(host, '[data-part="summary"]').getAttribute('data-tone')).toBe('caution');
-    expect(isOn(host, B)).toBe(false);
-    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers hidden');
-    for (const id of [A, B, C]) {
-      const status = row(host, id).querySelector('[data-part="status"]')!;
-      expect([status.textContent, status.getAttribute('data-tone')]).toEqual(['Hidden · trading hold', 'caution']);
-      // No second "Stayed off" line repeats the hold; the switch is described by the status.
-      expect(row(host, id).querySelector('[data-part="refused"]')).toBeNull();
-      expect(sw(host, id).getAttribute('aria-describedby')).toBe(status.id);
-    }
-    // The hold is a "can't do that" refusal: CantDoThat opens, with the feedback link (Plan 5 Task 21).
+    // None could be turned on: the hold's own popup, with the feedback link (Plan 5 Task 21).
     const pop = document.querySelector('[data-part="cant-do-that"]')!;
     expect(pop.getAttribute('data-from')).toBe('trading-hold');
-    expect(pop.querySelector('[role="alert"]')!.textContent).toBe(myOffersCantDoText('trading-hold', 2));
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain("You can't turn offers on during a trading hold");
+    expect(CANT_DO_TITLE.myOffersHold).toBe("You can't turn offers on during a trading hold");
+    expect(pop.querySelector('[role="alert"]')!.textContent).toBe('They stay paused until the hold ends. Trades already started carry on.');
+    expect(pop.querySelector('[data-part="cant-do-items"]')).toBeNull();
     expect(pop.querySelector('a')!.getAttribute('href')).toBe('/feedback?from=trading-hold');
-    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(CANT_DO_TITLE.myOffers);
     await click([...pop.querySelectorAll('button')].find((b) => b.textContent === 'OK')!);
     expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
-    onSwitch = allSwitch;
-    await click(sw(host, B));
-    expect(row(host, B).querySelector('[data-part="refused"]')).toBeNull();
+    // One caution notice at the top; no second summary line repeats it.
+    const notice = q(host, '[data-part="hold-notice"]');
+    expect(notice.getAttribute('data-tone')).toBe('caution');
+    expect(notice.querySelector('.x2f-outcome__title')!.textContent).toBe('Your offers are paused during a trading hold');
+    expect(notice.textContent).toBe(MY_OFFERS_HOLD.title + MY_OFFERS_HOLD.body);
+    expect(MY_OFFERS_HOLD.body).toBe('Nobody can see or take them until the hold ends. Trades already started carry on.');
+    expect(host.querySelectorAll('.x2f-outcome')).toHaveLength(1);
+    expect(q(host, '[data-part="summary"]')).toBeNull();
+    expect(isOn(host, B)).toBe(false);
+    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers paused');
+    for (const id of [A, B, C]) {
+      const status = row(host, id).querySelector('[data-part="status"]')!;
+      expect([status.textContent, status.getAttribute('data-tone'), status.getAttribute('data-chip')]).toEqual(['Paused · trading hold', 'caution', 'true']);
+      expect(row(host, id).querySelector('[data-part="refused"]')).toBeNull();
+      expect(sw(host, id).getAttribute('aria-describedby')).toBe(status.id);
+      expect(sw(host, id).disabled).toBe(true);
+    }
+  });
+
+  it('a Turn on that some offers pass and some cannot: "Some offers can\'t be turned on", listing which and why', async () => {
+    onSwitch = (body) => {
+      const results = body.ids.map((id) => (id === B ? { id, status: 'paused', refused: 'too-many-offers' } : { id, status: 'live' }));
+      list = list.map((o) => (o.id === C ? { ...o, status: 'live' } : o));
+      return { status: 200, json: { status: body.status, results } };
+    };
+    const host = await mount();
+    await click(tick(host, B));
+    await click(tick(host, C));
+    await click(q(host, '[data-part="turn-on"]'));
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(CANT_DO_TITLE.myOffers);
+    expect(CANT_DO_TITLE.myOffers).toBe("Some offers can't be turned on");
+    const items = [...document.querySelectorAll('[data-part="cant-do-items"] li')].map((li) => li.textContent);
+    expect(items).toEqual([`Buying XMR · EUR, Revolut: ${refusalLine('too-many-offers')}`]);
+    expect(isOn(host, C)).toBe(true);
+    expect(q(host, '[data-part="hold-notice"]')).toBeNull();
   });
 
   it('the hold state follows each Turn on: a later Turn on that works brings the count back (review M1)', async () => {
@@ -325,11 +349,14 @@ describe('the My offers screen', () => {
     });
     const host = await mount();
     await click(sw(host, B));
-    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers hidden');
+    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers paused');
     await click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
+    // The switches are disabled during the hold; the bar's Turn on still asks the server.
     onSwitch = allSwitch;
-    await click(sw(host, B));
+    await click(tick(host, B));
+    await click(q(host, '[data-part="turn-on"]'));
     expect(q(host, '[data-part="count"]').textContent).toBe('2 of 3 offers on');
+    expect(sw(host, B).disabled).toBe(false);
     expect(row(host, C).querySelector('[data-part="status"]')!.textContent).toBe('Off · hidden from everyone');
   });
 
@@ -368,8 +395,10 @@ describe('the My offers screen', () => {
     list[0] = { ...list[0]!, hidden: 'trading-hold' };
     const host = await mount();
     expect(isOn(host, A)).toBe(true);
-    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers hidden');
-    expect(row(host, B).querySelector('[data-part="status"]')!.textContent).toBe('Hidden · trading hold');
+    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers paused');
+    expect(row(host, B).querySelector('[data-part="status"]')!.textContent).toBe('Paused · trading hold');
+    expect(q(host, '[data-part="hold-notice"]')).not.toBeNull();
+    expect(sw(host, A).disabled).toBe(true);
   });
 
   it('an offer removed elsewhere drops off the list (not-found re-reads it)', async () => {

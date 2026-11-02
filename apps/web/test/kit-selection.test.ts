@@ -20,6 +20,8 @@ describe('ui.css', () => {
     expect(rule("[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main")).toContain('100dvh - var(--x2f-tab-bar-height)');
     expect(rule("[data-shell='phone']:has(> .x2f-bottom-nav) .x2f-action-bar")).toContain('bottom: var(--x2f-tab-bar-height)');
     expect(rule(".x2f-outcome[data-tone='caution']")).toContain('--x2f-caution');
+    // Design session 2 Nov 2026: the current tab is ink on the raised surface with a 2 px ink inset line.
+    expect(rule(".x2f-bottom-nav__tab[aria-current='page']")).toContain('background: var(--x2f-surface-raised)');
     // Review N4: the tab bar's offset is derived from the tab height and includes the safe area.
     expect(rule(':root')).toMatch(/--x2f-tab-bar-height: calc\(var\(--x2f-tab-height\) \+ 1px \+ env\(safe-area-inset-bottom/);
     expect(rule('.x2f-bottom-nav__tab')).toContain('height: var(--x2f-tab-height)');

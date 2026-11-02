@@ -434,8 +434,10 @@
   font-size: 12px;
 }
 
-/* The current tab is ink with a 2 px ink bar on top: selection is never orange (conventions 2 Nov 2026). */
+/* The current tab: ink text on the raised surface with a 2 px ink inset line on top; selection is
+   never orange (conventions 2 Nov 2026, design session 2 Nov 2026). */
 .x2f-bottom-nav__tab[aria-current='page'] {
+  background: var(--x2f-surface-raised);
   color: var(--x2f-ink);
   font-weight: 600;
   box-shadow: inset 0 2px 0 var(--x2f-ink);
@@ -668,6 +670,15 @@
   line-height: 20px;
 }
 
+.x2f-outcome__title,
+.x2f-outcome__body {
+  margin: 0;
+}
+
+.x2f-outcome__title {
+  font-weight: 600;
+}
+
 .x2f-outcome[data-tone='caution'] {
   border-color: var(--x2f-caution);
 }
@@ -796,4 +807,12 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
+}
+
+/* A status line drawn as a chip (My offers during a trading hold: "Paused · trading hold"). */
+.x2f-select-card__status[data-chip='true'] {
+  align-self: flex-start;
+  padding: 2px var(--x2f-space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--x2f-radius-pill);
 }

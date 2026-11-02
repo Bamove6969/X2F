@@ -41,6 +41,22 @@ export function cantDoFor(results: readonly SwitchResult[]): { code: CantDoCode;
   return best;
 }
 
+/**
+ * The CantDoThat popup for a Turn on (design session 2 Nov 2026): `hold` when a trading hold kept
+ * every offer off and none was turned on; otherwise, when a "can't do that" refusal kept some off,
+ * `some` with the refusal that kept the most off (`cantDoFor`) and the ids of every offer kept off,
+ * so the popup can list which and why; null when nothing was refused that way.
+ */
+export function turnOnPopup(results: readonly SwitchResult[], before: readonly MyOffer[]): { kind: 'hold' } | { kind: 'some'; code: CantDoCode; count: number; ids: string[] } | null {
+  const top = cantDoFor(results);
+  if (top === null) return null;
+  const was = new Map(before.map((o) => [o.id, o.status]));
+  const changed = results.some((r) => r.refused === undefined && was.get(r.id) !== 'live');
+  const refused = results.filter((r) => r.refused !== undefined && r.refused !== 'not-found');
+  if (!changed && refused.every((r) => r.refused === TRADING_HOLD_CODE)) return { kind: 'hold' };
+  return { kind: 'some', ...top, ids: refused.map((r) => r.id) };
+}
+
 /** The board's title line: "Selling XMR · USD". */
 export function offerTitle(o: MyOffer): string {
   return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currency}`;
@@ -90,16 +106,16 @@ export type StatusTone = 'on' | 'off' | 'caution';
  * reads "Hidden · trading hold" (design review 1 Nov 2026, shot 34), so no row contradicts the hold.
  */
 export function statusLine(o: MyOffer, held = false): { text: string; tone: StatusTone } {
-  // COPY-UNSIGNED (design review 1 Nov 2026, shot 34)
-  if (held) return { text: 'Hidden · trading hold', tone: 'caution' };
+  // COPY-UNSIGNED (design session 2 Nov 2026: one caution chip on every offer, on or off)
+  if (held) return { text: 'Paused · trading hold', tone: 'caution' };
   if (o.status === 'paused') return { text: 'Off · hidden from everyone', tone: 'off' };
   return o.hidden !== undefined ? { text: MY_OFFERS_HIDDEN[o.hidden], tone: 'caution' } : { text: 'On · people can see and take it', tone: 'on' };
 }
 
 /** The header line: "3 of 5 offers on", or during a hold "Trading hold · all offers hidden". */
 export function countLine(offers: readonly MyOffer[], held = false): string {
-  // COPY-UNSIGNED (design review 1 Nov 2026, shot 34)
-  if (held) return 'Trading hold · all offers hidden';
+  // COPY-UNSIGNED (design session 2 Nov 2026)
+  if (held) return 'Trading hold · all offers paused';
   const on = offers.filter((o) => o.status === 'live').length;
   return `${on} of ${offers.length} ${offers.length === 1 ? 'offer' : 'offers'} on`;
 }
@@ -137,7 +153,7 @@ export function applyResults(offers: readonly MyOffer[], results: readonly Switc
  * on that a trading hold refused says so in the hold's words. Caution when some stayed as they were.
  */
 // COPY-UNSIGNED
-export function summaryLine(status: OfferState, results: readonly SwitchResult[], before: readonly MyOffer[] = []): { text: string; tone: 'plain' | 'caution' } {
+export function summaryLine(status: OfferState, results: readonly SwitchResult[], before: readonly MyOffer[] = []): { text: string; tone: 'plain' | 'caution'; hold?: true } {
   const was = new Map(before.map((o) => [o.id, o.status]));
   const ok = results.filter((r) => r.refused === undefined);
   const changed = ok.filter((r) => was.get(r.id) !== status).length;
@@ -146,8 +162,8 @@ export function summaryLine(status: OfferState, results: readonly SwitchResult[]
   const verb = status === 'live' ? 'on' : 'off';
   const offers = (n: number) => `${n} ${n === 1 ? 'offer' : 'offers'}`;
   if (status === 'live' && changed === 0 && results.some((r) => r.refused === TRADING_HOLD_CODE)) {
-    // COPY-UNSIGNED (design review 1 Nov 2026, shot 33)
-    return { text: 'Trading hold: no offers were turned on. They stay hidden until the dispute is resolved.', tone: 'caution' };
+    // COPY-UNSIGNED. The screen shows the hold's own notice instead (`hold`), so this is a fallback.
+    return { text: 'Trading hold: no offers were turned on. They stay paused until the hold ends.', tone: 'caution', hold: true };
   }
   const parts = [changed > 0 ? `${offers(changed)} turned ${verb}.` : `No offers turned ${verb}.`];
   if (already > 0) parts.push(`${offers(already)} ${already === 1 ? 'was' : 'were'} already ${verb}.`);

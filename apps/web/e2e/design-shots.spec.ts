@@ -471,7 +471,7 @@ test('33-34 My offers under a trading hold: the refusal, then the lines under ea
   await expect(pop).toContainText('trading hold');
   await shot(page, '33-myoffers-hold-refused');
   await pop.getByRole('button', { name: 'OK' }).click();
-  await expect(page.locator('[data-part="summary"]')).toBeVisible();
+  await expect(page.locator('[data-part="hold-notice"]')).toBeVisible();
   await shot(page, '34-myoffers-hold-summary');
 });
 

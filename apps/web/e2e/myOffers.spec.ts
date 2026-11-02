@@ -161,7 +161,7 @@ test('Select all only ticks; the bar turns the ticked offers on or off; a reload
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'true');
 });
 
-test('turning on while held: the paused offers stay off; the header, every row and the summary say the hold, in caution', async ({ page }) => {
+test('during a trading hold: one caution notice, a Paused chip on every offer, the switches disabled, and the hold popup on Turn on', async ({ page }) => {
   const s = fresh();
   s.refuseOn = 'trading-hold';
   // As routes.ts: during a hold every live offer is hidden: 'trading-hold'.
@@ -169,24 +169,16 @@ test('turning on while held: the paused offers stay off; the header, every row a
   s.offers[2]!.hidden = 'trading-hold';
   await stub(page, s);
   await page.goto('/profile/offers');
-  // Design review shot 34: during a hold the header and every row say so.
-  await expect(page.getByText('Trading hold · all offers hidden')).toBeVisible();
-  for (const id of [A, B, C]) await expect(row(page, id).locator('[data-part="status"]')).toHaveText('Hidden · trading hold');
-  await sw(page, C).click(); // turning off works under a hold
-  await expect(sw(page, C)).toHaveAttribute('aria-checked', 'false');
-  await page.getByRole('checkbox', { name: 'Select all' }).click();
-  await page.getByRole('button', { name: 'Turn on' }).click();
-  // The hold opens the shared CantDoThat popup with its feedback link (Plan 5 Task 21).
-  const pop = page.getByRole('dialog');
-  await expect(pop).toContainText("Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.");
-  await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
-  await pop.getByRole('button', { name: 'OK' }).click();
-  await expect(pop).toHaveCount(0);
-  // Shot 33: the summary agrees with the popup (the one already on is not "turned on"), in caution, not danger.
-  const summary = page.locator('[data-part="summary"]');
-  await expect(summary).toHaveText('Trading hold: no offers were turned on. They stay hidden until the dispute is resolved.');
-  await expect(summary).toHaveAttribute('data-tone', 'caution');
-  const [border, caution] = await summary.evaluate((el) => {
+  // Design session 2 Nov 2026: one caution notice at the top, a chip on every offer, on or off.
+  const notice = page.locator('[data-part="hold-notice"]');
+  await expect(notice).toHaveText('Your offers are paused during a trading holdNobody can see or take them until the hold ends. Trades already started carry on.');
+  await expect(page.getByText('Trading hold · all offers paused')).toBeVisible();
+  for (const id of [A, B, C]) {
+    await expect(row(page, id).locator('[data-part="status"]')).toHaveText('Paused · trading hold');
+    await expect(sw(page, id)).toBeDisabled();
+    await expect(sw(page, id)).toHaveAccessibleDescription('Paused · trading hold');
+  }
+  const [border, caution] = await notice.evaluate((el) => {
     const probe = document.createElement('span');
     probe.style.color = 'var(--x2f-caution)';
     el.append(probe);
@@ -195,12 +187,20 @@ test('turning on while held: the paused offers stay off; the header, every row a
     return [getComputedStyle(el).borderTopColor, c];
   });
   expect(border).toBe(caution);
+  await page.getByRole('checkbox', { name: 'Select all' }).click();
+  await page.getByRole('button', { name: 'Turn on' }).click();
+  // None can be turned on: the hold's own popup, with its feedback link (Plan 5 Task 21).
+  const pop = page.getByRole('dialog');
+  await expect(pop).toContainText("You can't turn offers on during a trading hold");
+  await expect(pop).toContainText('They stay paused until the hold ends. Trades already started carry on.');
+  await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
+  await pop.getByRole('button', { name: 'OK' }).click();
+  await expect(pop).toHaveCount(0);
+  // Still one notice: no second line repeats the hold, and nothing reads "turned on".
+  await expect(page.locator('.x2f-outcome')).toHaveCount(1);
+  await expect(page.locator('[data-part="summary"]')).toHaveCount(0);
   await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
-  for (const id of [B, C]) {
-    await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
-    await expect(row(page, id).locator('[data-part="refused"]')).toHaveCount(0);
-    await expect(sw(page, id)).toHaveAccessibleDescription('Hidden · trading hold');
-  }
+  await expect(sw(page, B)).toHaveAttribute('aria-checked', 'false');
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
     await expectPhoneLayout(page);
