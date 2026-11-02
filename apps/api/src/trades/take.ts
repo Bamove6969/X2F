@@ -7,6 +7,8 @@ import { requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import { linkChatToTrade } from '../chat/routes.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
+import { ownerDeviceOnly } from '../team/perms.js';
 import { acceptedEvent } from '../events/publicName.js';
 import { getProfile, isAvailable } from '../methods/profiles.js';
 import type { MarketPrices } from '../price/market.js';
@@ -217,10 +219,12 @@ function raceRefusal(e: unknown): ApiError | null {
   return null;
 }
 
-const requireTrader = requireSession({ kinds: ['trader'] });
+// The account owner; a team member with Trades passes the gate but `ownerDeviceOnly` then refuses
+// them (403 member-cannot-sign) until Plan 3 Task 42 (Plan 2 Task 18 review I2).
+const requireTrader = [requireSession({ kinds: ['trader'], member: 'trades' }), ownerDeviceOnly];
 
 export function takeRoutes(app: FastifyInstance): void {
-  app.post('/v1/offers/:id/take', { preHandler: [requireTrader, requireNotHeld] }, async (req) => {
+  app.post('/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }, async (req) => {
     const deps = req.server.deps;
     const id = (req.params as { id: string }).id;
     if (!UUID.test(id)) throw notFound();
@@ -308,6 +312,9 @@ export function takeRoutes(app: FastifyInstance): void {
       }
       // "A take reuses the chat" (Task 20): the pair's open pre-trade chat on this offer becomes the trade's.
       await linkChatToTrade(c, { offerId: id, buyerAccountId: t.buyerId, sellerAccountId: t.sellerId, tradeCode: t.code });
+      // Task 18: a team member's take is in the account owner's audit log, in this transaction
+      // (unreachable until Task 42 lifts `ownerDeviceOnly`; kept so the log is complete then).
+      await auditMember(c, req.auth, { action: 'trade-taken', tradeCode: t.code, detail: { offerId: id } }, now);
       return t;
     });
 
@@ -365,6 +372,7 @@ export function takeRoutes(app: FastifyInstance): void {
               [code, me, w.address],
             );
       if ((r.rowCount ?? 0) === 0) throw new ApiError(409, 'wrong-state');
+      await auditMember(c, req.auth, { action: 'trade-wallet-set', tradeCode: code, detail: { walletId } }, now);
     });
     return reply.code(204).send();
   });

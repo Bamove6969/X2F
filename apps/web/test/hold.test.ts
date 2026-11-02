@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
 import { heldNote, holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
-import { TOO_MANY_APPROVALS, TOO_MANY_DEVICES_APPROVE, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
+import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
 
@@ -24,9 +24,10 @@ describe('the 24-hour hold', () => {
 });
 
 describe('loginCantDo', () => {
-  it('the device limit when approving; a login is never refused by it (round 3 R3-M4: no login text)', () => {
+  it('the device limit is never a CantDoThat: approving opens the chooser, a login is never refused by it (round 3 R3-M4)', () => {
     const e = new AuthApiError(409, 'too-many-devices');
-    expect(loginCantDo(e, 'approve')).toEqual({ code: 'too-many-devices', text: TOO_MANY_DEVICES_APPROVE });
+    // The chooser handles the device limit (C2-D1 review N2): no CantDoThat for it.
+    expect(loginCantDo(e, 'approve')).toBeNull();
     expect(loginCantDo(e, 'login')).toBeNull();
   });
 
