@@ -15,6 +15,7 @@ import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHol
 import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, pastRepChallenge } from '../src/pastrep/challenge.js';
 import { PAST_REP_KEY_AAD, PAST_REP_SIG_AAD } from '../src/pastrep/routes.js';
+import { PAST_REP_SIGNING_HELP } from '../src/pastrep/help.js';
 import { verifyPastRepSignature } from '../src/pastrep/verify.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -858,6 +859,59 @@ describe('review round 1', () => {
     const rule = readFileSync(join(ROOT, 'tools/semgrep/pastrep-no-fetch.yml'), 'utf8');
     expect(rule).toContain('child_process');
     expect(rule).toContain('globalThis');
+  });
+});
+
+describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
+  it("is the owner's four points, in his order, in one constant marked COPY-UNSIGNED", () => {
+    expect(PAST_REP_SIGNING_HELP).toHaveLength(4);
+    const [format, clock, sign, software] = PAST_REP_SIGNING_HELP;
+    expect(format).toMatch(/dashes/);
+    expect(format).toMatch(/top and bottom lines/);
+    expect(clock).toMatch(/date and time/);
+    expect(sign).toMatch(/sign/i);
+    expect(sign).toMatch(/encrypt/);
+    expect(software).toMatch(/up-to-date/);
+    for (const line of PAST_REP_SIGNING_HELP) expect(line).not.toMatch(/!/);
+    expect(readFileSync(join(SRC, 'pastrep/help.ts'), 'utf8')).toMatch(/COPY-UNSIGNED/);
+    // The one place: no other server file holds the words.
+    const holders = sources(SRC).filter((f) => readFileSync(f, 'utf8').includes('top and bottom lines'));
+    expect(holders.map((f) => f.slice(SRC.length))).toEqual(['pastrep/help.ts']);
+  });
+
+  it('finish answers bad-signature, wrong-text and wrong-key with the help', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const cases: [string, string][] = [
+      ['bad-signature', 'not a signature'],
+      ['wrong-text', await clearsign(c.text.replace(/^Nonce: .*$/m, 'Nonce: 0000000000000000'), ed)],
+      ['wrong-key', await clearsign(c.text, other)],
+    ];
+    for (const [code, signed] of cases) {
+      const res = await finishOf(b, c.challengeId, signed);
+      expect(res.statusCode, code).toBe(400);
+      expect(res.json(), code).toMatchObject({ error: code, help: [...PAST_REP_SIGNING_HELP] });
+    }
+  });
+
+  it('start answers its key refusals with the help (and the key detail as before); other refusals carry none', async () => {
+    const { b } = await login();
+    const weak = await b.post('/v1/account/past-rep/start', startBody(rsa1024));
+    expect(weak.json()).toMatchObject({ error: 'key-weak', detail: expect.any(String), help: [...PAST_REP_SIGNING_HELP] });
+    const garbled = await b.post('/v1/account/past-rep/start', startBody({ publicKey: 'not a key', privateKey: '', fingerprint: '' }));
+    expect(garbled.json()).toMatchObject({ error: 'key-unreadable', help: [...PAST_REP_SIGNING_HELP] });
+    const noSign = await (async () => {
+      setNow(new Date('2026-11-05T00:00:00Z'));
+      try {
+        return await b.post('/v1/account/past-rep/start', startBody({ publicKey: CERT_ONLY, privateKey: '', fingerprint: '' }));
+      } finally {
+        setNow(T0);
+      }
+    })();
+    expect(noSign.json()).toMatchObject({ error: 'key-no-signing', help: [...PAST_REP_SIGNING_HELP] });
+    const badUrl = await b.post('/v1/account/past-rep/start', startBody(ed, { url: 'https://example.com/x' }));
+    expect(badUrl.json()).toMatchObject({ error: 'bad-url' });
+    expect(badUrl.json()).not.toHaveProperty('help');
   });
 });
 

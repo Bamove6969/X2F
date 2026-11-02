@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { TODO_PRAGMA, countPragmas, lintSource } from '../../../tools/copy-lint.js';
-import { CANT_DO_CODES, NOT_REFUSAL_CODES, PAST_REP_SIGNING_HELP, PAST_REP_SIGNING_HELP_CODES } from '../src/ui/cantDoCodes.js';
+import { CANT_DO_CODES, NOT_REFUSAL_CODES } from '../src/ui/cantDoCodes.js';
 import { FEEDBACK_THANKS } from '../src/screens/Feedback.js';
 
 const ROOT = fileURLToPath(new URL('../../../', import.meta.url));
@@ -201,28 +201,5 @@ describe('the sheet grab handle takes the touch gesture', () => {
     const rule = /\.x2f-sheet__handle \{([^}]*)\}/.exec(css)?.[1] ?? '';
     expect(rule).toMatch(/touch-action:\s*none;/);
     expect(rule).toMatch(/height:\s*44px;/);
-  });
-});
-
-describe('past reputation: the signing help (owner item 75, COPY-UNSIGNED)', () => {
-  it('is the owner\'s four points, in his order, kept in the one text map', () => {
-    expect(PAST_REP_SIGNING_HELP).toHaveLength(4);
-    const [format, clock, sign, software] = PAST_REP_SIGNING_HELP;
-    expect(format).toMatch(/dashes/);
-    expect(format).toMatch(/top and bottom lines/);
-    expect(clock).toMatch(/date and time/);
-    expect(sign).toMatch(/sign/i);
-    expect(sign).toMatch(/encrypt/);
-    expect(software).toMatch(/up-to-date/);
-    for (const line of PAST_REP_SIGNING_HELP) expect(lintSource(`export const a = ${JSON.stringify(line)};\n`, 'a.ts')).toEqual([]);
-    const map = readFileSync(join(SRC, 'ui/cantDoCodes.ts'), 'utf8');
-    expect(map).toMatch(/COPY-UNSIGNED[^\n]*\n(?:[^\n]*\n){0,6}export const PAST_REP_SIGNING_HELP\b/);
-  });
-
-  it('goes with the past-rep signature and key refusals, each a classified input check', () => {
-    for (const code of ['bad-signature', 'wrong-text', 'wrong-key', 'key-no-signing', 'key-unreadable', 'key-weak']) {
-      expect(PAST_REP_SIGNING_HELP_CODES).toContain(code);
-    }
-    for (const code of PAST_REP_SIGNING_HELP_CODES) expect(Object.keys(NOT_REFUSAL_CODES)).toContain(code);
   });
 });
