@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { posterRole, type Price } from '@x2f/trade';
 import { useSession } from '../../session/useSession.js';
+import { useKeptText } from '../../ui/fold.js';
 import { addressEnd } from '../../ui/addressEnd.js';
 import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
@@ -89,19 +90,50 @@ function useMarket(currency: string): { market: Load<MarketNow | null>; refresh:
   return { market: last, refresh };
 }
 
+/** A kept amount (`useKeptText`), or null. */
+function parseKept(raw: string): { text: string; unit: Unit } | null {
+  if (raw === '') return null;
+  try {
+    const v = JSON.parse(raw) as { text?: unknown; unit?: unknown };
+    return typeof v.text === 'string' && (v.unit === 'xmr' || v.unit === 'fiat') ? { text: v.text, unit: v.unit } : null;
+  } catch {
+    return null;
+  }
+}
+
 const perXmr = (minor: bigint, currency: string, exponent: number) => `${formatMinor(minor, currency, exponent)} / XMR`;
 
 function rateOf(q: Quote): Price | null {
   return 'rate' in q ? q.rate : null;
 }
 
-export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
-  const { methodId = '', offerId = '' } = useParams();
+/**
+ * `pane`: the quote in the pane beside the offers (two panes, Fold-Offers). The offer comes from
+ * the props, not the route (the route may be the list's), the back link is left out (the list is
+ * beside it) and the screen draws no `<main>` landmark of its own (it is in the panes' aside).
+ */
+export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string } }) {
+  const route = useParams();
+  const methodId = pane?.methodId ?? route.methodId ?? '';
+  const offerId = pane?.offerId ?? route.offerId ?? '';
+  const Main = pane ? 'div' : 'main';
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const currency = params.get('currency') ?? 'USD';
-  const [text, setText] = useState(params.get('amount') ?? '');
-  const [unit, setUnit] = useState<Unit>(params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : copy.defaultUnit);
+  // The amount and its unit also live above the layout switch (useKeptText, src/ui/fold.ts): a fold
+  // or unfold moves the quote between the screen and the pane beside the offers, and the URL may
+  // not have caught up with the last keystroke yet. Keyed by the offers list, not the offer, so the
+  // amount stays when another offer is picked beside it (Fold-Offers).
+  const [kept, keep] = useKeptText(`quote:${copy.adSide}:${methodId}:${currency}`);
+  const keptAmount = parseKept(kept);
+  const [text, setTextState] = useState(params.get('amount') ?? keptAmount?.text ?? '');
+  const [unit, setUnitState] = useState<Unit>(
+    params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : (keptAmount?.unit ?? copy.defaultUnit),
+  );
+  const setText = (t: string) => {
+    setTextState(t);
+    keep(t === '' ? '' : JSON.stringify({ text: t, unit }));
+  };
   const [picked, setPicked] = useState<string | null>(params.get('wallet'));
 
   const { market, refresh: refreshMarket } = useMarket(currency);
@@ -175,10 +207,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     if (usable.length === 1) setPicked(usable[0]!.id);
   });
 
-  if (offer.kind === 'loading') return <main className="x2f-quote" data-screen="quote" aria-busy="true" />;
+  if (offer.kind === 'loading') return <Main className="x2f-quote" data-screen="quote" aria-busy="true" />;
   if (o === null) {
     return (
-      <main className="x2f-quote" data-screen="quote">
+      <Main className="x2f-quote" data-screen="quote">
         <p className="x2f-quote__note">
           {/* not-a-refusal: the offer is gone */}
           {offer.kind === 'failed' ? 'The offer could not be loaded right now. Try again in a moment.' : 'This offer is no longer listed.'}
@@ -186,7 +218,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         <Link to={backHref} className="x2f-quote__add">
           Back to the offers
         </Link>
-      </main>
+      </Main>
     );
   }
 
@@ -210,8 +242,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   const switchUnit = () => {
     const to: Unit = unit === 'fiat' ? 'xmr' : 'fiat';
     // The exact amount travels across the switch: nothing is re-rounded behind the person's back.
-    setText(ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '');
-    setUnit(to);
+    const next = ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '';
+    setTextState(next);
+    setUnitState(to);
+    keep(next === '' ? '' : JSON.stringify({ text: next, unit: to }));
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
@@ -241,9 +275,11 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   return (
     <div className="x2f-quote" data-screen="quote">
       <header className="x2f-quote__header">
-        <Link to={backHref} aria-label={copy.back(methodName)} className="x2f-icon-button">
-          <Icon name="chevron-left" size={24} />
-        </Link>
+        {pane ? null : (
+          <Link to={backHref} aria-label={copy.back(methodName)} className="x2f-icon-button">
+            <Icon name="chevron-left" size={24} />
+          </Link>
+        )}
         <div className="x2f-quote__head-text">
           <span className="x2f-quote__title">{copy.title(posterName)}</span>
           <span className="x2f-quote__muted-sm">
@@ -264,7 +300,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         Chat opens once the trade starts.
       </p>
 
-      <main className="x2f-quote__main">
+      <Main className="x2f-quote__main">
         <section aria-label="Amount" className="x2f-quote__amount">
           <div className="x2f-quote__amount-head">
             <label htmlFor="quote-amount" className="x2f-quote__label">
@@ -349,7 +385,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => setBlockedPoster(true)} />
         ) : null}
-      </main>
+      </Main>
 
       <footer className="x2f-quote__footer">
         {back && refusal === null ? (

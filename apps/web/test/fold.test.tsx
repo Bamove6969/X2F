@@ -7,7 +7,9 @@ import { act, useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { FOLD_QUERIES, foldLayoutOf, forgetKeptText, hasPanes, paneOf, useKeptText, type FoldLayout } from '../src/ui/fold.js';
 import { Panes } from '../src/ui/Panes.js';
-import { glanceWarning } from '../src/screens/trade/TradeGlance.js';
+import { glancePill, glanceStep, glanceTimer, glanceWarning, TradeGlance, utcDateTime } from '../src/screens/trade/TradeGlance.js';
+import type { TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
+import { PAY_NOW, PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { Sheet } from '../src/ui/Sheet.js';
 import { fire, render } from './render.js';
 
@@ -192,23 +194,90 @@ describe('TradeGlance warning (round-2 review m1, m2)', () => {
     expect(glanceWarning(seller, { ...ok, phase: 'error', error: 'escrow-failed' as const })).not.toMatch(/send any money/);
   });
 
-  it('is no live region: the screen\'s own notice is the one announcement', () => {
+  it("is no live region: the screen's own notice is the one announcement", () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../src/screens/trade/TradeGlance.tsx'), 'utf8');
-    expect(src).not.toMatch(/role=["{]/);
     expect(src).not.toMatch(/aria-live/);
+    // The one role is the cover's answer to its own button (Fold-Cover), never a warning.
+    expect(src.match(/role=["{]/g)).toEqual(['role="']);
+    expect(src).toContain('<span role="status">{asked ?');
   });
 });
 
-// TRIPWIRE (round-2 review m5): the glance departs from the Fold boards, and Claude Design owns the
-// looks. Fold-Tabletop.dc.html:25-27 has a status pill ("Waiting for your payment", "Paid ·
-// waiting for …"); round 1 filled it with the API's escrow chip (review I1), so it is gone, and
-// Fold-Cover.dc.html:43's "Open your phone to keep going." is wrong now that the room stays under
-// the card. The design is asked (docs/coordination.md, Plan 3 Task 40 follow-ups) for a pill from
-// `view.state` and the role, never the escrow chip, and for the cover's wording. The Fold boards are
-// drafted on origin/wip/design-brief (docs/design-boards/Fold-*.dc.html) and not in the app canvas
-// yet. This reads the local tree only and fails once a Fold board lands in design/x2f-app/: then
-// build TradeGlance to it (pill and cover line, copy from the board wins), add parity, and delete
-// this check.
+describe('TradeGlance from the Fold-Tabletop and Fold-Cover boards', () => {
+  const clock = () => new Date(PAY_NOW);
+  const escrow = (o: Partial<TradeScreenProps['escrow']> = {}) =>
+    ({ phase: 'ready', error: null, retryable: false, refusal: null, amountAtomic: BigInt(PAY_SECURED.amountAtomic), fiatCents: BigInt(PAY_SECURED.fiatCents), deal: null, ...o }) as unknown as TradeScreenProps['escrow'];
+  const controls = (host: HTMLElement) => host.querySelectorAll('a, button, input, select, textarea').length;
+
+  it('knows the steps the boards draw, from the state and the role only', () => {
+    expect(glanceStep({ role: 'buyer', state: 'secured', paidAt: null })).toBe('pay');
+    expect(glanceStep({ role: 'buyer', state: 'paid', paidAt: PAY_NOW })).toBe('paid');
+    expect(glanceStep({ role: 'seller', state: 'disputed', paidAt: null })).toBe('dispute');
+    expect(glanceStep({ role: 'seller', state: 'secured', paidAt: null })).toBeNull();
+    expect(glanceStep({ role: 'buyer', state: 'securing', paidAt: null })).toBeNull();
+  });
+
+  it("pills in the boards' words, none for other steps and none beside a warning", () => {
+    expect(glancePill('pay', 'tabletop', 'mira.k', null)?.label).toBe('Waiting for your payment');
+    expect(glancePill('pay', 'cover', 'mira.k', null)?.label).toBe('Pay now');
+    expect(glancePill('paid', 'tabletop', 'mira.k', null)?.label).toBe('Paid · waiting for mira.k');
+    expect(glancePill('paid', 'cover', 'mira.k', null)?.label).toBe('You paid');
+    expect(glancePill('dispute', 'cover', 'mira.k', null)).toMatchObject({ tone: 'danger', label: 'Dispute open' });
+    expect(glancePill('dispute', 'tabletop', 'mira.k', null)).toBeNull();
+    expect(glancePill(null, 'cover', 'mira.k', null)).toBeNull();
+    expect(glancePill('pay', 'cover', 'mira.k', "Don't send any money.")).toBeNull();
+  });
+
+  it('times the payment as the boards do, and stops while the trade is paused', () => {
+    const now = Date.parse(PAY_NOW);
+    expect(glanceTimer(PAY_SECURED, 'pay', 'tabletop', 'Zelle', null, now)).toEqual({ label: 'Time to pay', deadline: PAY_SECURED.payBy, note: `of 90 min · ends ${utcDateTime(PAY_SECURED.payBy!)}`, left: false });
+    expect(glanceTimer(PAY_SECURED, 'pay', 'cover', 'Zelle', null, now)?.note).toBe("Send by Zelle, then tap I've paid");
+    expect(glanceTimer(PAY_SECURED, 'pay', 'cover', 'Zelle', 'warning', now)?.note).toBeNull();
+    expect(glanceTimer({ ...PAY_SECURED, pausedAt: PAY_NOW }, 'pay', 'tabletop', 'Zelle', null, now)).toBeNull();
+    expect(utcDateTime('2026-10-31T14:05:00.000Z')).toBe('31 Oct 2026, 14:05 UTC');
+    expect(utcDateTime('not a date')).toBeNull();
+  });
+
+  it('tabletop: the pill, the timer, "Send exactly" and the memo, and no control at all', () => {
+    const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="tabletop" />);
+    expect(host.textContent).toContain('Waiting for your payment');
+    expect(host.querySelector('[data-glance-timer]')?.textContent).toContain('Time to pay');
+    expect(host.querySelector('[data-glance-pay]')?.textContent).toContain('Send exactly');
+    expect(host.querySelector('[data-glance-memo]')?.textContent).toContain(PAY_SECURED.code);
+    expect(controls(host)).toBe(0);
+  });
+
+  it('a warning replaces the pill and the payment details: nothing tells the buyer to pay', () => {
+    for (const layout of ['tabletop', 'cover'] as const) {
+      const { host, unmount } = render(<TradeGlance view={PAY_SECURED} escrow={escrow({ phase: 'error', error: 'escrow-failed' } as never)} serverClock={clock} layout={layout} />);
+      expect(host.querySelector('[data-glance-warning]')?.getAttribute('role')).toBeNull();
+      expect(host.querySelector('.x2f-chip')).toBeNull();
+      expect(host.querySelector('[data-glance-pay]')).toBeNull();
+      expect(host.textContent).not.toContain("then tap I've paid");
+      unmount();
+    }
+  });
+
+  it('cover: "X2F", the pill, the amount and one button, which answers in a status', () => {
+    const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="cover" />);
+    expect(host.textContent).toContain('X2F');
+    expect(host.textContent).toContain('Pay now');
+    expect(host.querySelector('[data-glance-amount]')?.textContent).toContain('XMR');
+    expect(controls(host)).toBe(1);
+    const status = host.querySelector('[role="status"]')!;
+    expect(status.textContent).toBe('');
+    fire(host.querySelector('button')!, new MouseEvent('click', { bubbles: true }));
+    expect(status.textContent).toBe('Open your phone to keep going.');
+  });
+});
+
+// TRIPWIRE (round-2 review m5): Claude Design owns the glance's looks. The pill (from `view.state`
+// and the role, never the escrow chip), the tabletop's "Send exactly" and memo, and the cover's
+// "X2F" line and "Open on main screen" are now built from the Fold boards drafted on
+// origin/wip/design-brief (docs/design-boards/Fold-*.dc.html, lead design fix 2 Nov 2026); the
+// cover's "+2 more trades" waits for the API. The boards are not in the app canvas yet, so there is
+// no parity. This reads the local tree only and fails once a Fold board lands in design/x2f-app/:
+// then match TradeGlance to it (copy from the board wins), add parity, and delete this check.
 describe('Task 40 still waits for its design', () => {
   it('NEEDS_DESIGN_FOLD_GLANCE: no Fold board in the app canvas yet', () => {
     const boards = join(dirname(fileURLToPath(import.meta.url)), '../../../design/x2f-app/');

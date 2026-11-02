@@ -324,3 +324,36 @@ describe('the My offers screen', () => {
     expect(q<HTMLAnchorElement>(host, 'a.x2f-link').getAttribute('href')).toBe('/login?returnTo=%2Fprofile%2Foffers');
   });
 });
+
+describe('My offers on a fold: two panes (Fold-MyOffers)', () => {
+  const twoPanes = (q: string) => ({ matches: q === '(min-width: 600px)', addEventListener() {}, removeEventListener() {} });
+  beforeEach(() => vi.stubGlobal('matchMedia', twoPanes));
+
+  it('the list in the first pane, the shown offer in the next; a row picks the offer, its switch works there too', async () => {
+    const host = await mount();
+    const side = q(host, '[data-pane="side"]');
+    expect(q(host, '[data-pane="main"] [data-screen="my-offers"]')).not.toBeNull();
+    expect(side.getAttribute('aria-label')).toBe('Details: Selling XMR · USD');
+    expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(A);
+    const picks = [...host.querySelectorAll('[data-pane="main"] button[aria-pressed]')];
+    expect(picks.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+    await click(picks[1]!);
+    expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(B);
+    expect(side.textContent).toContain('Who can trade');
+    expect(side.textContent).toContain('5+ completed trades');
+    expect(side.textContent).toContain('A fixed price doesn’t follow the market.');
+    const detailSwitch = q<HTMLButtonElement>(side, '[data-part="detail-switch"]');
+    expect(detailSwitch.getAttribute('aria-checked')).toBe('false');
+    await click(detailSwitch);
+    expect(posts().map((c) => c.body)).toEqual([{ ids: [B], status: 'live' }]);
+    expect(isOn(host, B)).toBe(true);
+    expect(q(side, '[data-part="detail-switch"]').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('on a phone there are no panes and no pick rows', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    const host = await mount();
+    expect(host.querySelector('[data-pane="side"]')).toBeNull();
+    expect(host.querySelector('button[aria-pressed]')).toBeNull();
+  });
+});

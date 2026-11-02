@@ -482,3 +482,33 @@
   min-height: 0;
   padding: var(--x2f-space-6) 32px;
 }
+
+/* PickButton (src/ui/PickButton.tsx): a list row that picks what the next pane shows (Fold-Offers,
+   Fold-MyOffers). Selected: a 2 px ink border on surface-raised (CONVENTIONS "Selection is never
+   orange"). */
+.x2f-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  padding: 14px var(--x2f-space-4);
+  border: 2px solid transparent;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  color: var(--x2f-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-pick[aria-pressed='true'] {
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
+}
+
+.x2f-pick:focus-visible {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}

@@ -13,13 +13,22 @@
 // A "can't do that" refusal (trading hold, the offer cap) opens the shared CantDoThat popup with its
 // feedback link (Plan 5 Task 21) and leaves a short line on each offer it kept off; the rest
 // (maintenance, no wallet, a method off the catalog) are not refusals and stay inline.
-import { useCallback, useEffect, useId, useState } from 'react';
+//
+// Two panes (a fold open, 600-999 px; Fold-MyOffers board): the list in the first pane, each
+// offer's text a "show details" row (kit PickButton), and the shown offer's details with its own
+// switch in the next pane (myoffers/MyOfferDetail.tsx). The first offer is shown until another is
+// picked. The screen stays mounted when the layout changes (src/ui/Panes.tsx).
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat, type CantDoCode } from '../ui/CantDoThat.js';
 import { CANT_DO_TITLE, myOffersCantDoText } from '../ui/cantDoCodes.js';
 import { Icon } from '../ui/icons.js';
+import { hasPanes, useFoldLayout } from '../ui/fold.js';
+import { Panes } from '../ui/Panes.js';
+import { PickButton } from '../ui/PickButton.js';
+import { MyOfferDetail } from './myoffers/MyOfferDetail.js';
 import { fetchMyOffers, switchOffers, type MyOffer, type OfferState, type SwitchResult } from './myoffers/api.js';
 import {
   FOOTNOTE,
@@ -51,6 +60,9 @@ export function MyOffers() {
   // A "can't do that" refusal on Turn on (a hold, the cap) opens CantDoThat (Plan 5 Task 21).
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; count: number } | null>(null);
   const ids = useId();
+  const layout = useFoldLayout();
+  const panes = hasPanes(layout);
+  const [shownId, setShownId] = useState<string | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -73,6 +85,7 @@ export function MyOffers() {
   const offers = load.kind === 'ready' ? load.offers : [];
   const nSelected = offers.filter((o) => selected.has(o.id)).length;
   const allSelected = offers.length > 0 && nSelected === offers.length;
+  const shown = offers.find((o) => o.id === shownId) ?? offers[0] ?? null;
 
   /** Switches `target` (explicit ids, in batches of SWITCH_BATCH) and shows what happened. */
   async function run(target: string[], status: OfferState, clearSelection: boolean): Promise<void> {
@@ -127,7 +140,7 @@ export function MyOffers() {
 
   const hintId = `${ids}-all-hint`;
 
-  return (
+  const list = (
     <main className="x2f-screen" data-screen="my-offers">
       <header className="x2f-row">
         <Link to="/sell" aria-label="Back" className="x2f-icon-button">
@@ -224,7 +237,7 @@ export function MyOffers() {
                     </span>
                     {ticked ? <Icon name="check" size={20} /> : null}
                   </Button>
-                  <div className="x2f-list__label x2f-stack">
+                  <RowText pick={panes ? { pressed: shown?.id === o.id, onPick: () => setShownId(o.id) } : null}>
                     <span id={`${p}-title`}>{offerTitle(o)}</span>
                     <span className="x2f-note" id={`${p}-methods`}>
                       {offerMethods(o)}
@@ -243,7 +256,7 @@ export function MyOffers() {
                         {why}
                       </span>
                     ) : null}
-                  </div>
+                  </RowText>
                   {/* The switch's visible On/Off is the first part of its name (review M3). */}
                   <Button
                     variant="secondary"
@@ -292,5 +305,33 @@ export function MyOffers() {
         </Link>
       ) : null}
     </main>
+  );
+
+  return (
+    <Panes
+      layout={layout}
+      main={list}
+      side={
+        panes && shown ? (
+          <MyOfferDetail
+            offer={shown}
+            busy={busy}
+            why={refusals.get(shown.id)}
+            onSwitch={() => void run([shown.id], shown.status === 'live' ? 'paused' : 'live', false)}
+          />
+        ) : null
+      }
+      {...(shown ? { sideLabel: `Details: ${offerTitle(shown)}` } : {})}
+    />
+  );
+}
+
+/** An offer's text: plain on a phone; in two panes, the row that shows the offer's details beside the list. */
+function RowText({ pick, children }: { pick: { pressed: boolean; onPick: () => void } | null; children: ReactNode }) {
+  if (pick === null) return <div className="x2f-list__label x2f-stack">{children}</div>;
+  return (
+    <PickButton pressed={pick.pressed} onPick={pick.onPick} className="x2f-list__label">
+      {children}
+    </PickButton>
   );
 }

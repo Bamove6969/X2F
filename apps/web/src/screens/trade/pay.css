@@ -26,6 +26,14 @@
   gap: var(--x2f-space-2);
   padding: var(--x2f-space-4);
   border-top: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-ground);
+}
+
+/* Tabletop: the bottom half scrolls the screen, and its actions ("I've paid") stay in view at the
+   bottom of it (Fold-Tabletop; src/styles/fold.css). */
+:root[data-fold='tabletop'] [data-pane='main'] .x2f-pay__footer {
+  position: sticky;
+  bottom: 0;
 }
 
 .x2f-pay__footer-row .x2f-button--quiet,
@@ -546,6 +554,13 @@ main[data-screen='trade']:has(> .x2f-panes > [data-pane='main'] > .x2f-room) {
   flex-direction: column;
   flex-grow: 1;
   min-height: 0;
+}
+
+/* The chat fills the column: the messages scroll, the composer stays at the bottom with the 16 px
+   gutter around it, never against the screen's edge (Fold-Trade, Desktop board). */
+.x2f-room__chat-panel > .x2f-chat {
+  flex-grow: 1;
+  padding: var(--x2f-space-4);
 }
 
 /* The Desktop board's progress steps. */

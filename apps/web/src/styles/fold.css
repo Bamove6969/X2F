@@ -45,16 +45,25 @@
   display: contents;
 }
 
-/* A screen that has no panes yet stays in the first pane when the hinge is real (follow-ups). */
+/* A screen that has no panes yet stays in the first pane when the hinge is real (follow-ups).
+   Screens with panes (src/ui/Panes.tsx at their root: the offers and their quote, My offers) lay
+   out their own. */
 @media (horizontal-viewport-segments: 2) {
-  :root[data-fold='two'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade']),
+  :root[data-fold='two'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade'], .x2f-panes),
   :root[data-fold='two'] [data-shell='phone'] > nav {
     max-width: var(--x2f-fold-a);
   }
 }
 
-:root[data-fold='three'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade']),
+:root[data-fold='three'] [data-shell='phone'] > [data-shell-body] > :not(main[data-screen='trade'], .x2f-panes),
 :root[data-fold='three'] [data-shell='phone'] > nav {
+  max-width: var(--x2f-fold-a);
+}
+
+/* A screen with a second pane (My offers) keeps its bottom nav in the first pane even without a
+   reported hinge: the tabs would otherwise straddle the gutter in the middle (design review 54). */
+:root[data-fold='two'] [data-shell='phone']:has(> [data-shell-body] > .x2f-panes[data-side]) > nav,
+:root[data-fold='three'] [data-shell='phone']:has(> [data-shell-body] > .x2f-panes[data-side]) > nav {
   max-width: var(--x2f-fold-a);
 }
 
@@ -95,7 +104,8 @@
   }
 }
 
-/* The second pane stays in view while the window scrolls the first. */
+/* The second pane stays in view, a whole screen tall, while the window scrolls the first; what is
+   taller than the screen (a quote, an offer's details) scrolls inside it. */
 :root[data-fold='two'] .x2f-panes > [data-pane='side'],
 :root[data-fold='three'] .x2f-panes > [data-pane='side'] {
   grid-column: 3;
@@ -106,6 +116,14 @@
   height: 100dvh;
   min-width: 0;
   min-height: 0;
+  overflow-y: auto;
+}
+
+/* What is in the second pane fills its height (the trade chat's aside: the messages scroll and the
+   composer stays at the bottom, Fold-Trade; the quote; an offer's details). The side pane only
+   exists in the pane layouts. */
+.x2f-panes > [data-pane='side'] > * {
+  flex-grow: 1;
 }
 
 /* Tabletop: look up, touch down. */
@@ -148,6 +166,15 @@
   min-height: 0;
 }
 
+/* What the glance already shows in the top half is left out of the bottom half (Fold-Tabletop: no
+   duplication): the screen's header always, its timer and "Send exactly" cards while the glance
+   shows them (`data-fold-glance`, src/screens/trade/TradeGlance.tsx). */
+:root[data-fold='tabletop'] .x2f-panes > [data-pane='main'] [data-fold-glance='header'],
+:root[data-fold='tabletop'] .x2f-panes:has(> [data-pane='glance'] [data-glance-timer]) > [data-pane='main'] [data-fold-glance='timer'],
+:root[data-fold='tabletop'] .x2f-panes:has(> [data-pane='glance'] [data-glance-pay]) > [data-pane='main'] [data-fold-glance='pay'] {
+  display: none;
+}
+
 /* A screen sized for a whole phone screen fills its segment instead, and the segment scrolls it. */
 :root[data-fold='tabletop'] .x2f-panes > [data-pane='main'] > * {
   height: auto;
@@ -155,10 +182,18 @@
   max-height: none;
 }
 
-/* The flip cover screen: the glance card first; the room stays under it, never hidden. */
+/* The flip cover screen: the glance card fills the screen, so nothing of the room shows under it;
+   the room stays under the card, a scroll away, never hidden (review I2). */
 :root[data-fold='cover'] .x2f-panes {
   display: flex;
   flex-direction: column;
+}
+
+:root[data-fold='cover'] .x2f-panes > [data-pane='glance'] {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-height: 100dvh;
 }
 
 /* The chat is beside the room: its Chat link would only open it a second time. */
@@ -209,11 +244,53 @@
   min-width: 0;
 }
 
+.x2f-fold-glance[data-cover] {
+  flex-grow: 1;
+  align-items: stretch;
+}
+
+.x2f-fold-glance__top,
+.x2f-fold-glance__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2) var(--x2f-space-4);
+  align-self: stretch;
+  min-width: 0;
+}
+
+/* Fold-Tabletop's row of facts: the timer, "Send exactly", the memo; one column on the cover. */
+.x2f-fold-glance__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--x2f-space-4);
+  align-self: stretch;
+  min-width: 0;
+}
+
+.x2f-fold-glance[data-cover] .x2f-fold-glance__facts {
+  flex-direction: column;
+}
+
 .x2f-fold-glance__fact {
   display: flex;
+  flex: 1 1 12rem;
   flex-direction: column;
   gap: var(--x2f-space-1);
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.x2f-fold-glance[data-cover] .x2f-fold-glance__fact {
+  flex: none;
+}
+
+/* Fold-Cover's button sits at the bottom of the card. */
+.x2f-fold-glance__open {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin-top: auto;
 }

@@ -56,9 +56,24 @@ export function offerPrice(o: MyOffer): string {
   return o.pricing.mode === 'market' ? `${marginText(o.pricing.marginBps)} · follows the market` : `${formatPrice(o.pricing.centsPerXmr, o.currency)} · Fixed price`;
 }
 
+/** The range alone: "$50 – $2,000" (Fold-MyOffers' "Per trade" row). */
+export function offerRange(o: MyOffer): string {
+  return `${formatAmount(o.minFiatCents, o.currency)} – ${formatAmount(o.maxFiatCents, o.currency)}`;
+}
+
 /** The limits line: "$50 – $2,000 per trade". */
 export function offerLimits(o: MyOffer): string {
-  return `${formatAmount(o.minFiatCents, o.currency)} – ${formatAmount(o.maxFiatCents, o.currency)} per trade`;
+  return `${offerRange(o)} per trade`;
+}
+
+/** Fold-MyOffers' "Who can trade": "Anyone", or "10+ completed trades". */
+export function whoCanTrade(o: MyOffer): string {
+  return o.minTrades > 0 ? `${o.minTrades}+ completed trades` : 'Anyone';
+}
+
+/** Fold-MyOffers' line under the price. */
+export function marketLine(o: MyOffer): string {
+  return o.pricing.mode === 'market' ? 'Percent of the market price, updated as the market moves.' : 'A fixed price doesn’t follow the market. Check it often.';
 }
 
 /**
