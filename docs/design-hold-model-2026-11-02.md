@@ -74,3 +74,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - The lead can log out one member's session, or all of them with "Log out all team members". "Log out all other devices" covers only the lead's own devices (owner, 2 Nov).
 - Switching a team member on or off needs a Strong login. A session with just a username and password gets the 24 h hold pop-up instead (owner, 2 Nov). The weakest possible login is username + password; username and display name are always separate and both required.
 - Hold warning pop-ups also say: the only way around the hold is to message a moderator on Matrix or Telegram and ask to be verified over a secure Jabber channel (owner, 2 Nov).
+- Trade chat: the trade partner sees only "replied by a team member", never which member. The lead always sees the member's name, in the chat and in the audit log (owner, 2 Nov).
