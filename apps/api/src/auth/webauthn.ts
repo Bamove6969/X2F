@@ -555,10 +555,13 @@ function pendingTag(deps: Pick<Deps, 'config'>, pendingId: string): string {
 interface LoginRouteOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
+  routeConfig?: Record<string, unknown>;
 }
 
 function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discoverable: boolean }): void {
-  app.post('/start', async (req: FastifyRequest, reply: FastifyReply) => {
+  const config = opts.routeConfig ?? {};
+  app.post('/start', { config }, async (req: FastifyRequest, reply: FastifyReply) => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     req.server.budgets.start.take();
@@ -640,7 +643,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     return { challengeId, options };
   });
 
-  app.post('/finish', async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
+  app.post('/finish', { config }, async (req: FastifyRequest, reply: FastifyReply): Promise<LoginResult> => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     const body = record(req.body);
@@ -693,7 +696,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
  * runs in `completeLogin` after the credential check passes. Plan 4 mounts it on the staff app.
  */
 export async function securityKeyLoginRoutes(app: FastifyInstance, opts: LoginRouteOptions): Promise<void> {
-  loginRoutes(app, { kinds: opts.kinds, ...(opts.afterAuthenticate ? { afterAuthenticate: opts.afterAuthenticate } : {}), discoverable: false });
+  loginRoutes(app, { ...opts, discoverable: false });
 }
 
 /** `buildApi`'s mount at `/v1/login/webauthn`: the login-name-based routes plus discoverable passkey login (`start {}`). */

@@ -95,7 +95,9 @@ export type ApiErrorCode =
   | 'owner-only'
   | 'forbidden'
   | 'too-many-members'
-  | 'member-cannot-sign';
+  | 'member-cannot-sign'
+  // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
+  | 'outside-login-hours';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
