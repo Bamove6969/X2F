@@ -78,19 +78,19 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </div>
 
       <div style="display: flex; flex-direction: column; gap: 8px;">
-          <label for="oa-cur" style="position: relative; display: flex; align-items: center; height: 48px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
-            <span style="flex-shrink: 0; width: 96px; padding-left: 14px; box-sizing: border-box; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currency</span>
-            <select id="oa-cur" onChange="{{onCur}}" style="flex-grow: 1; min-width: 0; height: 46px; padding: 0 40px 0 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; cursor: pointer;">
+          <label for="oa-cur" style="position: relative; display: flex; align-items: flex-end; height: 60px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
+            <span style="position: absolute; left: 14px; top: 9px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); pointer-events: none;">Currency</span>
+            <select id="oa-cur" onChange="{{onCur}}" style="flex-grow: 1; min-width: 0; height: 58px; padding: 22px 40px 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; cursor: pointer;">
               <sc-for list="{{curOptions}}" as="o" hint-placeholder-count="4"><option value="{{o.code}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
             </select>
-            <svg style="position: absolute; right: 12px; top: 13px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+            <svg style="position: absolute; right: 12px; top: 19px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
           </label>
-        <label for="oa-method" style="position: relative; display: flex; align-items: center; height: 48px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
-          <span style="flex-shrink: 0; width: 96px; padding-left: 14px; box-sizing: border-box; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{ad.methodLabel}}</span>
-          <select id="oa-method" onChange="{{onMethod}}" style="flex-grow: 1; min-width: 0; height: 46px; padding: 0 40px 0 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; text-overflow: ellipsis; cursor: pointer;">
+        <label for="oa-method" style="position: relative; display: flex; align-items: flex-end; height: 60px; box-sizing: border-box; border-radius: 6px; background: var(--surface-raised); border: 1px solid var(--line); cursor: pointer;">
+          <span style="position: absolute; left: 14px; top: 9px; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted); pointer-events: none;">{{ad.methodLabel}}</span>
+          <select id="oa-method" onChange="{{onMethod}}" style="flex-grow: 1; min-width: 0; height: 58px; padding: 22px 40px 0 14px; border: 0; border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; appearance: none; -webkit-appearance: none; text-overflow: ellipsis; cursor: pointer;">
             <sc-for list="{{methodOptions}}" as="o" hint-placeholder-count="6"><option value="{{o.id}}" selected="{{o.sel}}">{{o.label}}</option></sc-for>
           </select>
-          <svg style="position: absolute; right: 12px; top: 13px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
+          <svg style="position: absolute; right: 12px; top: 19px; pointer-events: none; color: var(--ink);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
         </label>
         <sc-if value="{{fromSearch}}" hint-placeholder-val="{{true}}">
           <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M20 20l-4.3-4.3"/></svg>Opened on your search: {{searchText}}</span>
@@ -227,7 +227,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"$preview":{"width":390,"height":2400}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["selling","buying"],"default":"selling"},"$preview":{"width":390,"height":3501}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -242,11 +242,9 @@ class Component extends DCLogic {
     const side = this.props.side === 'buying' ? 'buying' : 'selling';
     const sell = side === 'selling';
     // Measured heights: screen block per side (tallest currency), notes per side.
-    const SCREEN_H = { selling: 2234, buying: 2222 };
-    const NOTES_H = { selling: 1243, buying: 1243 };
-    const H = SCREEN_H[side] + NOTES_H[side];
-    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    const screenStyle = 'position: relative; flex-shrink: 0; height: ' + SCREEN_H[side] + 'px; display: flex; flex-direction: column;';
+    // Measured with offerad-tools/measure.js: screen block per side and currency (method count differs), notes block.
+    const SCREEN_H = { selling: { USD: 2258, CAD: 2154, EUR: 2186, GBP: 2112 }, buying: { USD: 2246, EUR: 2190, GBP: 2116 } };
+    const NOTES_H = 1243;
 
     const RR = 'M5 6h14a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z';
     const RING = 'M3 12a9 9 0 1018 0a9 9 0 10-18 0';
@@ -336,6 +334,9 @@ class Component extends DCLogic {
 
     const cur = ad.currencies.find((c) => c.code === s.cur) || ad.currencies.find((c) => c.code === ad.searched.cur) || ad.currencies[0];
     cur.label = cur.code + ' · ' + cur.name;
+    const screenH = SCREEN_H[side][cur.code] || 2258;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (screenH + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const screenStyle = 'position: relative; flex-shrink: 0; height: ' + screenH + 'px; display: flex; flex-direction: column;';
     const method = cur.methods.find((m) => m.id === s.method) || cur.methods.find((m) => m.id === ad.searched.method) || cur.methods[0];
 
     const money = (n, sym) => sym + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });

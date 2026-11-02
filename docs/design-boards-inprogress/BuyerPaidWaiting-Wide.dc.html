@@ -61,7 +61,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
             <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px;">
               <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time left to confirm</span>
               <sc-if value="{{inWindow}}" hint-placeholder-val="{{true}}">
-                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">1</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">58</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+                <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerH}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">{{timerM}}</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
               </sc-if>
               <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
                 <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">0</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
@@ -87,13 +87,19 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
               <p role="status" style="margin: 0; display: flex; align-items: center; gap: 8px; min-height: 48px; font-size: 15px; line-height: 22px; color: var(--ink-muted);"><svg style="flex-shrink: 0; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg><span>Nudge sent. You can send another in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">10</span> min.</span></p>
             </sc-if>
             <span style="flex-grow: 1;"></span>
-            <sc-if value="{{inWindow}}" hint-placeholder-val="{{true}}">
+            <sc-if value="{{disputeLocked}}" hint-placeholder-val="{{true}}">
+              <button type="button" disabled aria-describedby="bpw-dispute-when" style="height: 48px; padding: 0 24px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Open a dispute</button>
+            </sc-if>
+            <sc-if value="{{disputeSoft}}" hint-placeholder-val="{{false}}">
               <a href="DisputeOpen.dc.html" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--danger); font-size: 15px; font-weight: 600; text-decoration: none;">Open a dispute<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
             </sc-if>
             <sc-if value="{{ended}}" hint-placeholder-val="{{false}}">
               <a href="DisputeOpen.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; box-sizing: border-box; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, transparent); color: var(--danger); font-size: 16px; font-weight: 600; text-decoration: none;">Open a dispute</a>
             </sc-if>
           </div>
+          <sc-if value="{{disputeLocked}}" hint-placeholder-val="{{true}}">
+            <span id="bpw-dispute-when" style="font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: right;">Available from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">14:35 UTC</span> · in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">28</span> min</span>
+          </sc-if>
           <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">You can't cancel after marking as paid. Tapped it by mistake? Explain in chat or open a dispute.</p>
         </div>
 
@@ -102,7 +108,7 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
           <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 22px;">
             <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">1</span><span>satoshi_ghost checks their Zelle for <strong style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</strong> with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span></li>
             <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>When they release, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR reaches your wallet within seconds. Your app co-signs by itself.</span></li>
-            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If something goes wrong, you can open a dispute at any time. A moderator checks the chat and proof, then decides.</span></li>
+            <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If something goes wrong, you can open a dispute from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">14:35 UTC</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> minutes after you marked it as paid. A moderator checks the chat and proof, then decides.</span></li>
           </ol>
           <a href="#bpw-chat" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; margin: -4px 0 -10px -8px; padding: 0 8px; align-self: flex-start; border-radius: 12px; color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>Message satoshi_ghost in chat</a>
         </section>
@@ -139,13 +145,13 @@ button,a,summary{transition:background-color 150ms ease-out,border-color 150ms e
       <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
       <aside aria-label="Decided by the owner: when the buyer can open a dispute" style="display: flex; flex-direction: column; gap: 6px; max-width: 560px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
       <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-      <span style="font-weight: 600;">Open a dispute is available as soon as the buyer taps I've paid. No wait, and no lock until the seller's confirm window ends.</span>
+      <span style="font-weight: 600;">Dispute opens 30 minutes after I've paid (payments like Interac can take up to 30 min to arrive). Preview before and after with the window tweak.</span>
     </aside>
     </section>
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"window":{"editor":"enum","options":["in-window","ended"],"default":"in-window"},"$preview":{"width":1280,"height":1186}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"window":{"editor":"enum","options":["in-window","after-30-min","ended"],"default":"in-window"},"$preview":{"width":1280,"height":1234}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { nudged: false }; }
   renderVals() {
@@ -155,7 +161,9 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const ended = this.props.window === 'ended';
-    const H = ended ? 1178 : 1186;
+    // Owner, 2 Nov: the buyer can open a dispute 30 min after I've paid (paid 14:05 UTC, so from 14:35 UTC).
+    const after30 = this.props.window === 'after-30-min';
+    const H = ended ? 1200 : (this.props.window === 'after-30-min' ? 1208 : 1234);
     const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     // Stepper (buyer labels): "Seller checks" is current; its bar fills as the 2-hour window runs.
     const STEP_LABELS = ['Escrow', 'You pay', 'Seller checks', 'Released'];
@@ -163,11 +171,11 @@ class Component extends DCLogic {
     const steps = STEP_LABELS.map((label, i) => ({
       label,
       current: i === current ? 'step' : 'false',
-      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (ended ? 100 : 6) + '%; background: var(--caution);' : 'width: 0;'),
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: ' + (ended ? 100 : (after30 ? 27 : 2)) + '%; background: var(--caution);' : 'width: 0;'),
       labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
     }));
     const C = 2 * Math.PI * 27;
-    const left = ended ? 0 : 118 / 120;
+    const left = ended ? 0 : (after30 ? 88 : 118) / 120;
     return {
       rootStyle, steps,
       inWindow: !ended,
@@ -179,7 +187,10 @@ class Component extends DCLogic {
         : 'You marked this trade as paid at 14:05 UTC. satoshi_ghost has been told and has up to 2 hours to check Zelle and release.',
       ringDash: (C * left).toFixed(1) + ' ' + C.toFixed(1),
       ringArcStyle: 'color: var(--caution);' + (ended ? ' opacity: 0;' : ''),
-      ringLabel: ended ? 'No time left to confirm' : '118 of 120 minutes left to confirm',
+      ringLabel: ended ? 'No time left to confirm' : (after30 ? '88' : '118') + ' of 120 minutes left to confirm',
+      timerH: '1', timerM: after30 ? '28' : '58',
+      disputeLocked: !ended && !after30,
+      disputeSoft: after30,
       canNudge: !this.state.nudged,
       nudged: this.state.nudged,
       nudge: () => this.setState({ nudged: true })

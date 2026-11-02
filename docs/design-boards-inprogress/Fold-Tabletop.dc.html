@@ -35,7 +35,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         </div>
         <div style="display: flex; flex-direction: column; justify-content: center; gap: 4px; flex-grow: 1;">
           <span style="{{timerLabelStyle}}">{{timerLabel}}</span>
-          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 88px; line-height: 92px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;">{{timer}}</span>
+          <span style="display: inline-flex; align-items: baseline; gap: 10px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 88px; line-height: 92px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums;">{{timer}}</span><span style="font-size: 24px; line-height: 30px; font-weight: 600; color: var(--ink-muted);">{{timerUnit}}</span></span>
           <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{timerNote}}</span>
         </div>
       </div>
@@ -166,13 +166,14 @@ class Component extends DCLogic {
     return {
       rootStyle,
       statusLabel: s.paid ? 'Paid · waiting for nightowl_44' : 'Waiting for your payment',
-      statusStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;',
+      statusStyle: 'display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + '; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;',
       heroStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 24px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, ' + tone + ' 14%, var(--surface)) 0%, var(--surface) 160px); border: 1px solid color-mix(in srgb, ' + tone + ' 35%, transparent);',
       markStyle: 'flex-shrink: 0; color: ' + tone + ';',
       timerLabelStyle: 'font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: ' + tone + ';',
       tickBoxStyle: 'display: flex; align-items: flex-start; gap: 12px; padding: ' + (s.ticked ? '13px' : '14px') + '; border-radius: 12px; background: var(--surface-raised); border: ' + (s.ticked ? '2px solid var(--ink)' : '1px solid transparent') + '; font-size: 16px; line-height: 24px; cursor: pointer;',
       timerLabel: s.paid ? 'Seller confirms within' : 'Time to pay',
-      timer: s.paid ? '2 h' : '61:48',
+      timer: s.paid ? '2' : '61:48',
+      timerUnit: s.paid ? 'h' : '',
       timerNote: s.paid ? 'nightowl_44 checks their bank, then releases your XMR. Zelle trades get 2 hours.' : 'of 90 min · ends 31 Oct 2026, 14:05 UTC',
       canPay: !s.paid,
       messages,
