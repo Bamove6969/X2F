@@ -913,9 +913,12 @@ describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
     const garbled = await b.post('/v1/account/past-rep/start', startBody({ publicKey: 'not a key', privateKey: '', fingerprint: '' }));
     expect(garbled.json()).toMatchObject({ error: 'key-unreadable', help: [...PAST_REP_SIGNING_HELP] });
     const noSign = await (async () => {
+      // The certify-only key has no signing key usable at this date; a session from T0 would be
+      // over by then, so this one logs in at that date (like N3).
       setNow(new Date('2026-11-05T00:00:00Z'));
       try {
-        return await b.post('/v1/account/past-rep/start', startBody({ publicKey: CERT_ONLY, privateKey: '', fingerprint: '' }));
+        const later = await login();
+        return await later.b.post('/v1/account/past-rep/start', startBody({ publicKey: CERT_ONLY, privateKey: '', fingerprint: '' }));
       } finally {
         setNow(T0);
       }
