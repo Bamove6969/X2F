@@ -47,6 +47,7 @@ import {
   endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, weakOf, weakRefusal, type ProvenMethod,
 } from './hold.js';
 import { discardChangesIfOwner } from './holdChanges.js';
+import { syncHeldTrades } from '../trades/held.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
@@ -231,6 +232,8 @@ export async function traderLogin(
 
   type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait };
   let discarded = false;
+  /** The owner's proof ended an account hold: its held trades resume after the commit. */
+  let heldEnded = false;
   const out = await withTx(deps, async (db): Promise<Outcome> => {
     await lockApprovals(db, a.accountId);
     await lockAccount(db, a.accountId);
@@ -238,7 +241,13 @@ export async function traderLogin(
     const session = async (room?: { max: number; strongToo: boolean }): Promise<Outcome> => {
       const ended: string[] = [];
       // The real owner's passkey, security key or PGP key ends a running hold, and the waiting sessions with it, before its session starts.
-      if (a.proven !== undefined) ended.push(...((await endHoldIfOwner(db, settle, a.accountId, a.proven, now)) ?? []));
+      if (a.proven !== undefined) {
+        const gone = await endHoldIfOwner(db, settle, a.accountId, a.proven, now);
+        if (gone !== null) {
+          heldEnded = true;
+          ended.push(...gone);
+        }
+      }
       if (room !== undefined) ended.push(...(await makeRoom(db, a.accountId, now, presented, room.max, room.strongToo)));
       const s = await openSession(db, deps, req, reply, {
         accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
@@ -342,6 +351,7 @@ export async function traderLogin(
 
   // The owner hears that the waiting changes were discarded on every device.
   if (discarded) void req.server.push.send(a.accountId, 'alert').catch(() => undefined);
+  if (heldEnded) await syncHeldTrades({ db: deps.db, clock: deps.clock, publish: req.server.tradePublish }, a.accountId);
   if (out.kind === 'session') {
     out.after();
     return { status: 'ok' };

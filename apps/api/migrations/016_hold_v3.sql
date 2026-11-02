@@ -18,6 +18,8 @@ alter table account_holds add constraint account_holds_reason_check
 -- session of the account owner cancels them.
 create table hold_changes (
   id uuid primary key default gen_random_uuid(),
+  -- The order the changes were made in (applied, listed and alerted in it).
+  seq bigint generated always as identity,
   account_id uuid not null references accounts (id) on delete cascade,
   -- The session that staged it. A draft dies with it (the trigger below, and a purged session's
   -- cascade); a submitted change outlives it (null after a purge) and waits for its date.
@@ -30,7 +32,7 @@ create table hold_changes (
   check ((submitted_at is null) = (due_at is null) and (submitted_at is null) = (methods_before is null)),
   check (submitted_at is not null or session_id is not null)
 );
-create index hold_changes_account on hold_changes (account_id, created_at, id);
+create index hold_changes_account on hold_changes (account_id, seq);
 create index hold_changes_drafts on hold_changes (session_id) where submitted_at is null;
 create index hold_changes_due on hold_changes (due_at) where due_at is not null;
 

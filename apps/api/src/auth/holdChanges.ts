@@ -84,6 +84,7 @@ export async function stageChange(db: Queryable, accountId: string, sessionId: s
 
 interface ChangeRow {
   id: string;
+  seq: string;
   session_id: string | null;
   change: PendingChange;
   created_at: Date;
@@ -100,7 +101,7 @@ interface ChangeRow {
  */
 export async function settleChangesInTx(db: Queryable, s: SettleDeps, accountId: string, now: Date): Promise<number> {
   const { rows } = await db.query<ChangeRow>(
-    'select * from hold_changes where account_id = $1 and due_at <= $2 order by created_at, id',
+    'select * from hold_changes where account_id = $1 and due_at <= $2 order by seq',
     [accountId, now],
   );
   if (rows.length === 0) return 0;
@@ -149,13 +150,13 @@ export async function pendingSummary(db: Queryable, accountId: string): Promise<
 export async function submitChanges(db: Queryable, accountId: string, sessionId: string, ids: string[], now: Date): Promise<{ count: number; takesEffectAt: string }> {
   const { rows } = await db.query<ChangeRow>(
     `select * from hold_changes where account_id = $1 and session_id = $2 and submitted_at is null and id = any($3::uuid[])
-      order by created_at, id`,
+      order by seq`,
     [accountId, sessionId, ids],
   );
   if (rows.length !== new Set(ids).size) throw new ApiError(409, 'changes-changed');
   const due = new Date(now.getTime() + HOLD_MS);
   const methods = await methodIds(db, accountId);
-  await db.query('update hold_changes set submitted_at = $2, methods_before = $3 where id = any($1::uuid[])', [ids, now, methods]);
+  await db.query('update hold_changes set submitted_at = $2, methods_before = $3, due_at = $4 where id = any($1::uuid[])', [ids, now, methods, due]);
   await db.query('update hold_changes set due_at = $2 where account_id = $1 and submitted_at is not null', [accountId, due]);
   const total = (await pendingSummary(db, accountId))!;
   await addAlert(db, accountId, 'hold-changes-submitted', { count: total.count, changes: rows.map((r) => describeChange(r.change)), takesEffectAt: total.takesEffectAt }, now);
@@ -175,7 +176,7 @@ export async function cancelChanges(db: Queryable, accountId: string, sessionId:
       returning *`,
     [accountId, sessionId, id],
   );
-  const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+  const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => Number(a.seq) - Number(b.seq));
   if (waiting.length > 0) await addAlert(db, accountId, 'hold-changes-cancelled', { count: waiting.length, changes: waiting.map((r) => describeChange(r.change)) }, now);
   return rows.length;
 }
@@ -195,7 +196,7 @@ export async function discardChangesIfOwner(db: Queryable, accountId: string, pr
     [accountId, ids],
   );
   if (rows.length === 0) return false;
-  rows.sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+  rows.sort((a, b) => Number(a.seq) - Number(b.seq));
   await addAlert(db, accountId, 'hold-changes-discarded', { count: rows.length, changes: rows.map((r) => describeChange(r.change)), reason: 'owner-login' }, now);
   return true;
 }
@@ -203,7 +204,7 @@ export async function discardChangesIfOwner(db: Queryable, accountId: string, pr
 /** Inside a recovery-code login's transaction (account locked): every change of the account goes (alert `hold-changes-discarded` `{ reason: 'recovery-code' }` when any was waiting). */
 export async function discardAllChanges(db: Queryable, accountId: string, now: Date): Promise<void> {
   const { rows } = await db.query<ChangeRow>('delete from hold_changes where account_id = $1 returning *', [accountId]);
-  const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => a.created_at.getTime() - b.created_at.getTime());
+  const waiting = rows.filter((r) => r.submitted_at !== null).sort((a, b) => Number(a.seq) - Number(b.seq));
   if (waiting.length > 0) {
     await addAlert(db, accountId, 'hold-changes-discarded', { count: waiting.length, changes: waiting.map((r) => describeChange(r.change)), reason: 'recovery-code' }, now);
   }
@@ -217,7 +218,7 @@ export async function listChanges(db: Queryable, accountId: string, sessionId: s
   const { rows } = await db.query<ChangeRow & { device_label: string | null }>(
     `select h.*, s.device_label from hold_changes h left join sessions s on s.id = h.session_id
       where h.account_id = $1 and (h.submitted_at is not null or h.session_id = $2)
-      order by h.created_at, h.id`,
+      order by h.seq`,
     [accountId, sessionId],
   );
   const waiting = rows.filter((r) => r.submitted_at !== null);
