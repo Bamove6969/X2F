@@ -80,3 +80,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - Team member replies in trade chat use the team blue (--team) bubble in both views, so a member replying is obvious (owner, 2 Nov).
 - **Team member permissions are per member** (owner, 2 Nov). They replace the two roles: the lead switches each action on or off, starting from a preset if they like. The only things never available to members are the owner-only items: wallets, team, login and security, sessions, account type, and deleting the account.
 - **No auto-accept:** every trade must be accepted by the account that posted the ad. "Accept a new trade" can be granted to members (owner, 2 Nov).
+- Release XMR can be granted to a member. Every sensitive permission shows a warning when switched on, saying what it allows. Adding a member or changing permissions always needs a passkey, security key or PGP key (owner, 2 Nov).
