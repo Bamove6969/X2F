@@ -22,6 +22,9 @@ import { BackupLogin } from './screens/auth/BackupLogin.js';
 import { Login } from './screens/auth/Login.js';
 import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js';
 import { MemberInvite } from './screens/auth/MemberInvite.js';
+import { SESSION_LENGTH_PATH, SessionLengthScreen } from './screens/auth/SessionLength.js';
+import { SessionPrompt } from './screens/auth/SessionPrompt.js';
+import { publishSessionWatch } from './session/sessionWatch.js';
 import { BuyQuote } from './screens/quote/BuyQuote.js';
 import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
@@ -167,11 +170,25 @@ function isTrader(session: ReturnType<typeof useSession>): boolean {
   return m.kind === 'trader' && m.level === 'full' && m.termsCurrent !== false;
 }
 
+/**
+ * Session length (owner, 2 Nov 2026): on page load the signed-in session's length and end are
+ * handed to "Stay logged in?" (`SessionPrompt`). After a login, the length question does it.
+ */
+function useWatchSession(session: ReturnType<typeof useSession>): void {
+  useEffect(() => {
+    if (session.status !== 'signed-in') return;
+    const me = session.me;
+    if (me.session != null) publishSessionWatch({ info: me.session, methods: me.methods });
+  }, [session]);
+}
+
 export function App() {
   const session = useSession();
+  useWatchSession(session);
   return (
     <>
       <RouterBridge />
+      <SessionPrompt />
       {isTrader(session) ? <LiveAccepted member={memberOf(session) !== null} /> : null}
       <Routes>
         <Route element={<Layout nav />}>
@@ -192,6 +209,7 @@ export function App() {
           <Route path="/setup/*" element={<SetupFlow />} />
           <Route path="/terms" element={<Terms />} />
           <Route path="/login" element={<Login />} />
+          <Route path={SESSION_LENGTH_PATH} element={<SessionLengthScreen />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
           <Route path="/settings/devices" element={<DevicesRoute />} />

@@ -22,6 +22,7 @@ import { publishSessionInfo, publishSessionWatch, useSessionWatch } from '../../
 import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import { Sheet } from '../../ui/Sheet.js';
+import { browserPushEnv, logOut } from '../../push/usePush.js';
 import { ConfirmMethods } from './ConfirmSheet.js';
 import { authApi } from './authApi.js';
 import { SESSION_COPY as C } from './sessionCopy.js';
@@ -41,16 +42,17 @@ export function SessionPrompt() {
     // A session watched again after a logout is a new login: the old "You're logged out" goes.
     setPhase((p) => (p === 'out' ? 'wait' : p));
     let gone = false;
-    const logOut = () => {
+    const timeUp = () => {
       if (gone) return;
       gone = true;
       setPhase('out');
       publishSessionWatch(null);
-      void authApi.logout().catch(() => undefined);
+      // Every UI log-out goes through logOut(env) (L2 tripwire): push off, local session forgotten.
+      void logOut(browserPushEnv()).catch(() => undefined);
     };
     const tick = () => {
       const now = clock().getTime();
-      if (now >= end) logOut();
+      if (now >= end) timeUp();
       else if (info.canExtend && now >= end - SESSION_PROMPT_MS) setPhase((p) => (p === 'wait' || p === 'extended' ? 'ask' : p));
     };
     tick();
@@ -114,7 +116,7 @@ export function SessionPrompt() {
           onClick={() => {
             setPhase('out');
             publishSessionWatch(null);
-            void authApi.logout().catch(() => undefined);
+            void logOut(browserPushEnv()).catch(() => undefined);
           }}
           data-part="session-log-out"
         >

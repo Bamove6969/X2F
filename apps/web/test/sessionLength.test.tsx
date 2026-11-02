@@ -111,7 +111,7 @@ describe('SessionLength board: the question after every login', () => {
     };
     const { host } = mount();
     await settle();
-    expect(host.textContent).toContain('You're logged in as mira.k.');
+    expect(host.textContent).toContain("You're logged in as mira.k.");
     const select = part(host, 'session-length-select') as HTMLSelectElement;
     expect(select.value).toBe('');
     expect([...select.options].map((o) => o.textContent)).toEqual(['Choose a time', '2 hours', '4 hours', '6 hours', '12 hours']);
@@ -157,7 +157,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(document.body.textContent).not.toContain('Stay logged in?');
     tick(3_000);
     expect(document.body.textContent).toContain('Stay logged in?');
-    expect(document.body.textContent).toContain('Your 4-hour session is up. Confirm it's you to stay logged in for another 4 hours.');
+    expect(document.body.textContent).toContain("Your 4-hour session is up. Confirm it's you to stay logged in for another 4 hours.");
     expect(document.querySelector('[data-part="session-countdown"]')?.textContent).toContain('Logging out in 1:59');
     type(document.querySelector('#confirm-password'), 'Correct-Horse-9');
     click(document.querySelector('[data-part="confirm-password"]'));
@@ -166,7 +166,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
       ['POST', '/v1/confirm/password', { password: 'Correct-Horse-9', action: { kind: 'extend-session' } }],
       ['POST', '/v1/account/session/extend', { confirmToken: 'tok' }],
     ]);
-    expect(document.body.textContent).toContain('You're logged in for another 4 h.');
+    expect(document.body.textContent).toContain("You're logged in for another 4 h.");
     // The new end is watched: no prompt until 2 minutes before it.
     tick(3 * 3_600_000);
     expect(document.body.textContent).not.toContain('Stay logged in?');
@@ -182,7 +182,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     tick(61_000);
     await settle();
     expect(calls.map((c) => [c.method, c.url])).toEqual([['POST', '/v1/logout']]);
-    expect(document.body.textContent).toContain('You're logged out');
+    expect(document.body.textContent).toContain("You're logged out");
     expect(document.body.textContent).toContain('Your session time ran out. Log in again to keep trading.');
   });
 
@@ -204,7 +204,7 @@ describe('SessionExtend board: "Stay logged in?"', () => {
     expect(document.body.textContent).not.toContain('Stay logged in?');
     tick(61_000);
     await settle();
-    expect(document.body.textContent).toContain('You're logged out');
+    expect(document.body.textContent).toContain("You're logged out");
   });
 });
 
@@ -221,7 +221,7 @@ describe('Devices board: "Stay logged in for"', () => {
     await settle();
     const select = part(host, 'session-length-select') as HTMLSelectElement;
     expect(select.value).toBe('6');
-    expect(host.textContent).toContain('Longer sessions so you don't miss a trade while you sleep.');
+    expect(host.textContent).toContain("Longer sessions so you don't miss a trade while you sleep.");
     choose(select, '2');
     await settle();
     expect(calls.filter((c) => c.method === 'PUT')).toEqual([{ url: '/v1/account/session/length', method: 'PUT', body: { hours: 2 } }]);

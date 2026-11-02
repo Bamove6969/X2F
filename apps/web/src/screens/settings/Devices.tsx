@@ -3,7 +3,7 @@
  * Plan 2 Task 18 for team members' sessions): its own screen at /settings/devices, linked from
  * Settings → Security. The count against the limit with a meter, your devices with remote log-out
  * (asked first), "Log out all other devices" (your own devices only), team members' sessions in
- * their own card with "Log out all team members" (asked first; owner, via the Devices board), the "One device at a time" switch (confirm-it's-you) and how a new device gets
+ * their own card with "Log out all team members" (asked first; owner, via the Devices board), the "One device at a time" switch (confirm-it's-you), this session's length ("Stay logged in for", owner 2 Nov 2026) and how a new device gets
  * in. The current device is marked and cannot log itself out here (that is the Log out button
  * elsewhere).
  *
@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router';
-import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry } from '@x2f/auth-client';
+import { isHeld, withConfirm, type ConfirmAction, type DeviceSettings, type SessionEntry, type SessionInfo } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, type CantDoCode } from '../../ui/cantDoCodes.js';
@@ -26,6 +26,9 @@ import { Sheet } from '../../ui/Sheet.js';
 import { Switch } from '../../ui/Switch.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
+import { SessionLengthField } from '../auth/SessionLength.js';
+import { SESSION_COPY } from '../auth/sessionCopy.js';
+import { publishSessionInfo } from '../../session/sessionWatch.js';
 import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
 import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
@@ -120,6 +123,9 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   const [held, setHeld] = useState<string | null>(null);
   // Plan 2 Task 17 review round 2: a device whose login waits may not log stronger ones out (CantDoThat).
   const [cantDo, setCantDo] = useState<{ code: CantDoCode; text: string } | null>(null);
+  // Session length (owner, 2 Nov 2026): this session's own length, as after the login.
+  const [length, setLength] = useState<SessionInfo | null>(null);
+  const [lengthNote, setLengthNote] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setSessions(await authApi.listSessions());
@@ -129,6 +135,8 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     void refresh().catch(() => setError('Could not load your devices.'));
     // Staff and owner accounts have no device setting (403): the screen then shows the list only.
     authApi.getDeviceSettings().then(setSettings, () => undefined);
+    // Staff, owner and backup sessions have no length (null): the field is then left out.
+    authApi.me().then((m) => setLength(m.session ?? null), () => undefined);
   }, [refresh]);
 
   const end = async (ids: string[], done: string) => {
@@ -180,6 +188,25 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
       }
     } catch (e) {
       if (!isConfirmAbort(e)) setError(refusalText(e, 'Could not change that setting. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const changeLength = async (hours: number) => {
+    if (length === null) return;
+    const longer = length.lengthHours !== null && hours > length.lengthHours;
+    setBusy(true);
+    setLengthNote(null);
+    setError(null);
+    try {
+      const next = await authApi.setSessionLength({ hours });
+      setLength(next);
+      publishSessionInfo(next);
+      // A longer time never adds time without a login method (the safe default, an owner question).
+      setLengthNote(longer ? SESSION_COPY.longerLater : SESSION_COPY.saved);
+    } catch {
+      setError(SESSION_COPY.saveFailed);
     } finally {
       setBusy(false);
     }
@@ -376,6 +403,17 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                   <p className="x2f-icon-line" role="status" data-part="one-device-note">
                     <Icon name="check" size={18} />
                     <span>{optNote}</span>
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+            {length !== null ? (
+              <div className="x2f-panel" data-part="session-length-panel">
+                <SessionLengthField choices={length.choices} value={length.lengthHours} onChange={(h) => void changeLength(h)} disabled={busy} />
+                {lengthNote !== null ? (
+                  <p className="x2f-icon-line" role="status" data-part="session-length-note">
+                    <Icon name="check" size={18} />
+                    <span>{lengthNote}</span>
                   </p>
                 ) : null}
               </div>

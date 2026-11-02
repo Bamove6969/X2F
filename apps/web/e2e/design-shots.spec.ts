@@ -235,13 +235,10 @@ test('12 a held backup session: the hold banner on Security', async ({ page }) =
 
 test('13 a change from a one-proof login is held: "takes effect at"', async ({ page }) => {
   await securityApi(page);
-  await page.route('**/v1/account/security/logout-timer', async (r) =>
-    r.request().method() === 'PUT' ? json({ status: 'held', holdUntil: HOLD_UNTIL }, 202)(r) : json({ idleHours: 12, adjustable: true })(r),
-  );
+  // TODO(lead-sessions): the logout timer was this shot's held change; it is retired (session
+  // length, owner 2 Nov 2026). Re-shoot with another held change (One device at a time on Devices).
+  test.skip(true, 'logout timer retired; shot 13 needs another held change');
   await page.goto('/settings/security');
-  await page.selectOption('[data-part="logout-timer-select"]', '2');
-  await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
-  await shot(page, '13-security-held-change', { scrollTo: page.locator('[data-part="logout-timer-status"]') });
 });
 
 // ---- 14-28 Team members (Plan 2 Task 18) ----------------------------------------------------------
