@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 33100,
       "w": 390,
-      "h": 2200,
+      "h": 2540,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -793,7 +793,7 @@
       "x": 2420,
       "y": 33100,
       "w": 1280,
-      "h": 1320,
+      "h": 1640,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
@@ -820,7 +820,7 @@
       "x": 0,
       "y": 35700,
       "w": 390,
-      "h": 2740,
+      "h": 3060,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -937,7 +937,7 @@
       "x": 0,
       "y": 42360,
       "w": 1280,
-      "h": 1460,
+      "h": 1720,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength (wide)",
       "is_interactive": true
@@ -1027,7 +1027,7 @@
       "x": 5800,
       "y": 33100,
       "w": 390,
-      "h": 1240,
+      "h": 1000,
       "page": "all",
       "title": "G4 \u00b7 After login: session length",
       "is_interactive": true
@@ -1039,6 +1039,24 @@
       "h": 800,
       "page": "all",
       "title": "G4 \u00b7 After login: session length (wide)",
+      "is_interactive": true
+    },
+    "BecomeVendor.dc.html": {
+      "x": 7770,
+      "y": 33100,
+      "w": 390,
+      "h": 2200,
+      "page": "all",
+      "title": "G5 \u00b7 Account type: become a vendor",
+      "is_interactive": true
+    },
+    "BecomeVendor-Wide.dc.html": {
+      "x": 8310,
+      "y": 33100,
+      "w": 1280,
+      "h": 1300,
+      "page": "all",
+      "title": "G5 \u00b7 Account type: become a vendor (wide)",
       "is_interactive": true
     }
   },
@@ -1312,7 +1330,9 @@
     "BuyerPaidWaiting-Wide.dc.html",
     "InviteInvalid-Wide.dc.html",
     "SessionLength.dc.html",
-    "SessionLength-Wide.dc.html"
+    "SessionLength-Wide.dc.html",
+    "BecomeVendor.dc.html",
+    "BecomeVendor-Wide.dc.html"
   ],
   "pages": [
     {

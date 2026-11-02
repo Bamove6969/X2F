@@ -169,7 +169,7 @@ input::placeholder{color:var(--ink-muted)}
 
           <section aria-labelledby="ss-idle-h" style="display: flex; flex-direction: column; gap: 10px;">
             <h2 id="ss-idle-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Session length</h2>
-            <div role="group" aria-labelledby="ss-idle-l" aria-describedby="ss-idle-note" style="display: flex; flex-direction: column; gap: 10px;">
+            <div role="group" aria-labelledby="ss-idle-l" aria-describedby="ss-idle-v ss-idle-note" style="display: flex; flex-direction: column; gap: 10px;">
               <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 24px;">
                 <span id="ss-idle-l">Log me out when idle for</span>
                 <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;">{{idleText}}</span>
@@ -180,22 +180,36 @@ input::placeholder{color:var(--ink-muted)}
                 </sc-for>
               </div>
             </div>
+            <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+              <p id="ss-idle-v" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
+            </sc-if>
             <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">However active you are, every session ends after 24 h at most. Then you log in again.</p>
             <div style="display: flex; flex-direction: column; gap: 12px;">
               <aside aria-label="Open for the owner: default idle logout" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
                 <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-                <span style="font-weight: 600;">Which of the four is the default?</span>
+                <span style="font-weight: 600;">Which time is the default, for each account type?</span>
                 <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-                  <li>2 h, 4 h, 6 h or 12 h (decided: these are the only choices for non-vendors)</li>
+                  <li>Non-vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+                  <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
                   <li>Until chosen, nothing is pre-selected: Not set</li>
                 </ul>
-                <span style="color: var(--ink-muted);">Current build: 12 h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+                <span style="color: var(--ink-muted);">Default not decided for either account type. Current build: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
               </aside>
-              <aside aria-label="Open for the owner: idle logout for vendors" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-                <span style="font-weight: 600;">Vendors: rule not decided yet</span>
-                <span style="color: var(--ink-muted);">The four choices above are for non-vendors. This board doesn&#39;t show a vendor version.</span>
+              <aside aria-label="Decided by the owner: idle logout by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+                <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+                <span style="font-weight: 600;">Idle logout choices depend on the account type</span>
+                <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+                  <li>Non-vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+                  <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
+                  <li>Everyone: a session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h at most</li>
+                </ul>
+                <span style="color: var(--ink-muted);">Preview with the accountType tweak. Showing: {{accountTypeName}}</span>
               </aside>
+              <aside aria-label="Decided: who counts as a vendor" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+        <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
+        <span style="color: var(--ink-muted);">Switching needs a Strong login: a passkey, security key or PGP key. See BecomeVendor.</span>
+      </aside>
             </div>
           </section>
         </div>
@@ -204,7 +218,7 @@ input::placeholder{color:var(--ink-muted)}
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":1460}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":1280,"height":1720}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -216,10 +230,10 @@ class Component extends DCLogic {
     const on = {};
     (SETS[p.variant] || SETS.strong).forEach((k) => { on[k] = true; });
     const idleH = parseInt(p.idleDefault, 10);
-    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: [2, 4, 6, 12].indexOf(idleH) >= 0 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
+    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: (p.accountType === 'vendor' ? [2, 6, 12, 24] : [2, 4, 6, 12]).indexOf(idleH) >= 0 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
   }
   componentDidUpdate(prev) {
-    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter || prev.idleDefault !== this.props.idleDefault) this.setState(this.preset(this.props));
+    if (prev.variant !== this.props.variant || prev.meter !== this.props.meter || prev.idleDefault !== this.props.idleDefault || prev.accountType !== this.props.accountType) this.setState(this.preset(this.props));
   }
   renderVals() {
     const THEMES = {
@@ -337,8 +351,10 @@ class Component extends DCLogic {
     else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';
     const canGo = footNote === 'Next: recovery.';
 
-    // Idle choices (owner): 2, 4, 6 or 12 h for non-vendors. The default is OPEN: nothing is pre-selected.
-    const IDLE = [2, 4, 6, 12];
+    // Idle choices (owner, 2 Nov): 2, 4, 6 or 12 h for non-vendors; 2, 6, 12 or 24 h for vendors. 24 h max for everyone.
+    // The default is OPEN: nothing is pre-selected.
+    const vendor = this.props.accountType === 'vendor';
+    const IDLE = vendor ? [2, 6, 12, 24] : [2, 4, 6, 12];
     const idleSet = IDLE.indexOf(Number(s.idle)) >= 0;
     const idle = idleSet ? Number(s.idle) : 0;
     const idleOpts = IDLE.map((h) => ({
@@ -366,7 +382,8 @@ class Component extends DCLogic {
       armoredMsg: hasPw ? 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.' : hard + ' strong ways to prove it’s you, without a password. This is the strongest setup we offer.',
       sealFooter: (uname || 'nightowl_44') + ' · sealed 01 Nov 2026, 14:05 UTC',
       idleOpts, idleText: idleSet ? idle + ' h' : 'Not set',
-      idleDefaultName: IDLE.indexOf(parseInt(this.props.idleDefault, 10)) >= 0 ? parseInt(this.props.idleDefault, 10) + ' h' : 'none (not set)',
+      idleDefaultName: IDLE.indexOf(parseInt(this.props.idleDefault, 10)) >= 0 ? parseInt(this.props.idleDefault, 10) + ' h' : (parseInt(this.props.idleDefault, 10) ? 'none (' + parseInt(this.props.idleDefault, 10) + ' h isn’t a choice for this account type)' : 'none (not set)'),
+      isVendor: vendor, accountTypeName: vendor ? 'vendor' : 'non-vendor',
       pwRuleText: R.text, pwRuleName: R.name,
       vaultRuleName: vaultYes ? 'Yes' : 'No',
       canGo, cantGo: !canGo, footNote
