@@ -100,3 +100,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - With a dispute, it is deleted when the ruling's 48 h appeal window closes.
   - Blur templates are kept as a database: proof-screen layouts with the private areas blanked. No real proofs are stored.
   - Open: whether traders are told the copy is kept (design recommends yes).
+- Traders are told that the unblurred copy is kept: "We keep an encrypted unblurred copy that only a moderator can open, and only if there's a dispute. It's deleted automatically when the trade is over." This is also to go in the privacy text and Terms (owner, 2 Nov).
