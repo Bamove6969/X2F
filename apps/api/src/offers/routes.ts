@@ -15,7 +15,7 @@ import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
-import { accountTypeOf } from '../routes/accountType.js';
+import { accountTypeOf, assertVendor } from '../routes/accountType.js';
 
 /**
  * Plan 3 Task 4: offers (ads).
@@ -306,8 +306,10 @@ async function assertMayPost(
 ): Promise<void> {
   const accountId = auth.accountId;
   await lockAccountLive(client, auth, now);
+  // Owner 2 Nov 2026: only a vendor posts or turns on offers (403 `not-vendor`), before the other guards.
+  await assertVendor(client, accountId);
   const refused = await accountRefusal(client, accountId, now);
-  if (refused !== null) throw new ApiError(refused === 'not-vendor' ? 403 : 409, refused);
+  if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
   const { rows } = await client.query<{ same: number; total: number }>(
     `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total

@@ -233,6 +233,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
 
   it('no usable wallet → 409 no-wallet, also with one waiting (24-hour) wallet only', async () => {
     const t = await trader();
+    await makeVendor(deps, t.id);
     const none = await t.browser.post('/v1/offers', BODY);
     expect(none.statusCode).toBe(409);
     expect(none.json()).toEqual({ error: 'no-wallet' });
