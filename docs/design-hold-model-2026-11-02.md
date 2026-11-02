@@ -71,3 +71,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - **Ban list:** usernames, PGP key fingerprints (including subkeys) and secure Jabber accounts. A banned one can never be used again.
 - **Not tracked:** Monero addresses, payment details, IP addresses and device fingerprints.
 - Team members' sessions do not count toward the lead's 3 devices (owner, 2 Nov).
+- The lead can log out one member's session, or all of them with "Log out all team members". "Log out all other devices" covers only the lead's own devices (owner, 2 Nov).

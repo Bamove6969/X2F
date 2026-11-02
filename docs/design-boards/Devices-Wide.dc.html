@@ -79,7 +79,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
             <sc-if value="{{hasTeam}}" hint-placeholder-val="{{true}}">
               <ul aria-labelledby="dv-team-h" style="margin: 0; padding: 0; list-style: none;">
-                <sc-for list="{{team}}" as="t" hint-placeholder-count="1">
+                <sc-for list="{{team}}" as="t" hint-placeholder-count="2">
                   <li style="{{t.rowStyle}}">
                     <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">{{t.initials}}</span>
                     <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
@@ -96,18 +96,14 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
               </ul>
             </sc-if>
             <sc-if value="{{noTeam}}" hint-placeholder-val="{{false}}">
-              <p style="margin: 0; padding: 12px 0 16px; font-size: 15px; line-height: 22px; color: var(--ink-muted);">No team members are logged in.</p>
+              <p style="margin: 0; padding: 12px 0 4px; font-size: 15px; line-height: 22px; color: var(--ink-muted);">No team members are logged in.</p>
             </sc-if>
+            <button type="button" disabled="{{noTeamOut}}" onClick="{{askTeamAll}}" style="{{teamAllStyle}}">Log out all team members</button>
           </div>
 
-          <aside aria-label="Open for the owner: logging out team members" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-            <span style="font-weight: 600;">Can you log out a member&#39;s session here, and does &quot;Log out all other devices&quot; include members?</span>
-            <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-              <li>Log out a member here: yes or no</li>
-              <li>&quot;Log out all other devices&quot; includes members: yes or no</li>
-            </ul>
-            <span style="color: var(--ink-muted);">Shown: yes, and no.</span>
+          <aside aria-label="Decided by the owner: logging out team members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+            <span>&quot;Log out all other devices&quot; covers only your own devices. Use &quot;Log out all team members&quot; for your team.</span>
           </aside>
         </section>
       </div>
@@ -220,7 +216,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <h2 id="dv-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{askTitle}}</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
         <div style="display: flex; justify-content: flex-end; gap: 12px;">
-          <button type="button" onClick="{{cancel}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Cancel</button>
+          <button type="button" onClick="{{cancel}}" style="height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">{{cancelLabel}}</button>
           <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">{{confirmLabel}}</button>
         </div>
       </section>
@@ -245,7 +241,8 @@ class Component extends DCLogic {
     const ALL = [
       { id: 'linux', name: 'Firefox on Linux', self: true, phone: false, ago: null },
       { id: 'android', name: 'Chrome on Android', self: false, phone: true, ago: ['2', ' h ago'] },
-      { id: 'ana', name: 'Safari on macOS', self: false, phone: false, member: 'desk_ana', initials: 'DA', ago:['25', ' min ago'] }
+      { id: 'ana', name: 'Safari on macOS', self: false, phone: false, member: 'desk_ana', initials: 'DA', ago: ['25', ' min ago'] },
+      { id: 'sam', name: 'Chrome on Windows', self: false, phone: false, member: 'desk_sam', initials: 'DS', ago: ['1', ' h ago'] }
     ];
     const live = ALL.filter((d) => s.gone.indexOf(d.id) < 0);
     const mine = live.filter((d) => !d.member);
@@ -299,7 +296,7 @@ class Component extends DCLogic {
       style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
     }));
 
-    let askTitle = '', askText = '', confirmLabel = 'Log out', confirm = () => {};
+    let askTitle = '', askText = '', confirmLabel = 'Log out', cancelLabel = 'Cancel', confirm = () => {};
     const target = ALL.find((d) => d.id === s.ask);
     if (target && target.member) {
       askTitle = 'Log out ' + target.member + '?';
@@ -314,6 +311,13 @@ class Component extends DCLogic {
       askText = names(others) + (others.length === 1 ? ' is' : ' are') + ' logged out right away. Only this device stays logged in.';
       confirmLabel = 'Log out all other devices';
       confirm = () => this.setState({ gone: ownGone(), ask: null, devNote: 'All other devices were logged out.' });
+    } else if (s.ask === 'team') {
+      // Owner, 2 Nov: separate bulk logout for team members; "Log out all other devices" covers only the lead's own devices.
+      askTitle = 'Log out all team members?';
+      askText = 'Every team member is logged out right away. They can log in again unless you switch them off in Team.';
+      confirmLabel = 'Log out all team members';
+      cancelLabel = 'Keep them logged in';
+      confirm = () => this.setState({ gone: s.gone.concat(teamLive.map((d) => d.id)), ask: null, devNote: 'All team members were logged out.' });
     }
 
     return {
@@ -322,6 +326,9 @@ class Component extends DCLogic {
       noOthers: others.length === 0,
       allStyle: 'display: flex; align-items: center; justify-content: center; width: fit-content; height: 48px; margin: 4px 0 16px; padding: 0 24px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (others.length ? 'border: 1px solid var(--line); color: var(--ink); cursor: pointer;' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
       askAll: () => { if (others.length) this.setState({ ask: 'all' }); },
+      noTeamOut: team.length === 0,
+      teamAllStyle: 'display: flex; align-items: center; justify-content: center; width: fit-content; padding: 0 24px; height: 48px; margin: 4px 0 16px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (team.length ? 'border: 1px solid var(--team); color: var(--team); cursor: pointer;' : 'border: 1px solid color-mix(in srgb, var(--team) 25%, transparent); color: var(--ink-muted); cursor: not-allowed;'),
+      askTeamAll: () => { if (team.length) this.setState({ ask: 'team' }); },
       confirmingOne: s.confirmOne && !s.single,
       oneWarn: 'Turning this on logs out your other ' + others.length + (others.length === 1 ? ' device' : ' devices') + ' now.',
       oneConfirm: () => this.setState({ single: true, confirmOne: false, gone: ownGone(), optNote: 'One device at a time is on. Your other devices were logged out.' }),
@@ -331,7 +338,7 @@ class Component extends DCLogic {
       idleDefaultName: IDLE.indexOf(propIdle) >= 0 ? propIdle + ' h' : (propIdle ? 'none (' + propIdle + ' h isn’t a choice for this account type)' : 'none (not set)'),
       isVendor: vendor, accountTypeName: vendor ? 'vendor' : 'non-vendor',
       hasOptNote: s.optNote !== '', optNote: s.optNote,
-      asking: s.ask !== null, askTitle, askText, confirmLabel, confirm,
+      asking: s.ask !== null, askTitle, askText, confirmLabel, cancelLabel, confirm,
       cancel: () => this.setState({ ask: null })
     };
   }
