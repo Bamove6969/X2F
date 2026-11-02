@@ -348,10 +348,6 @@ export function holdLoginText(when: string): string {
   return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
 }
 
-/** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */
-export const TOO_MANY_DEVICES_APPROVE =
-  'Your account is logged in on the most devices allowed, so log out a device first. Choose one to log out, or block this login.';
-
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
 export const TOO_MANY_APPROVALS =
   'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
