@@ -802,7 +802,7 @@
       "x": 3900,
       "y": 33500,
       "w": 390,
-      "h": 1986,
+      "h": 2499,
       "page": "all",
       "title": "G3 \u00b7 Team members",
       "is_interactive": true
@@ -811,7 +811,7 @@
       "x": 4370,
       "y": 33500,
       "w": 1280,
-      "h": 1073,
+      "h": 1430,
       "page": "all",
       "title": "G3 \u00b7 Team members (wide)",
       "is_interactive": true
@@ -865,7 +865,7 @@
       "x": 2550,
       "y": 36900,
       "w": 390,
-      "h": 844,
+      "h": 878,
       "page": "all",
       "title": "H6 \u00b7 Team: Strong login needed",
       "is_interactive": true
@@ -1081,7 +1081,7 @@
       "x": 11710,
       "y": 33500,
       "w": 390,
-      "h": 3745,
+      "h": 4263,
       "page": "all",
       "title": "G7 \u00b7 What a team member can do",
       "is_interactive": true
@@ -1090,7 +1090,7 @@
       "x": 12250,
       "y": 33500,
       "w": 1280,
-      "h": 1823,
+      "h": 2472,
       "page": "all",
       "title": "G7 \u00b7 What a team member can do (wide)",
       "is_interactive": true

@@ -11,83 +11,96 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <div style="display: flex; justify-content: flex-end; padding: 6px 16px 0;">
-    <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
-  </div>
-  <header style="display: flex; align-items: center; gap: 8px; padding: 8px 16px 12px; border-bottom: 1px solid var(--surface-raised);">
-    <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-    <h1 style="margin: 0; flex-grow: 1; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Team</h1>
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="align-self: flex-start; padding: 6px 10px 0 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Team</h1>
   </header>
-  <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
-    <section id="tr-banner" aria-labelledby="tr-banner-t" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--caution);">
-      <span id="tr-banner-t" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16v.5"/></svg>This device's login is Weak</span>
+  <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <section id="tr-banner" aria-labelledby="tr-banner-t" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+      <span id="tr-banner-t" style="display: inline-flex; align-items: center; align-self: flex-start; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4"/><path d="M12 16h.01"/></svg>This device's login is Weak</span>
       <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in here with just your username and password. Team changes need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
-      <button type="button" onClick="{{goAdd}}" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Add another way to log in<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
+      <button type="button" onClick="{{goAdd}}" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 44px; margin: -6px 0 -10px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Add another way to log in<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
     </section>
 
-    <section aria-labelledby="tr-list" style="display: flex; flex-direction: column; gap: 8px;">
-      <h2 id="tr-list" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Team members · 2 of 3</h2>
-      <ul style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
+    <section aria-labelledby="tr-list" style="display: flex; flex-direction: column; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
+      <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 20px 20px 4px;">
+        <h2 id="tr-list" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team members<span style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0);"> · 2 of 3</span></h2>
+        <span aria-hidden="true" style="font-size: 13px; line-height: 16px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">2</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span></span>
+      </div>
+      <ul style="margin: 0; padding: 0 20px 8px; list-style: none;">
         <sc-for list="{{members}}" as="m" hint-placeholder-count="2">
           <li style="{{m.rowStyle}}">
-            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">{{m.initials}}</span>
-            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
-              <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;"><span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{m.name}}</span><span style="padding: 1px 8px; border-radius: 999px; border: 1px solid var(--team); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--team);">Team member</span></span>
-              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed · {{m.preset}}</span>
-            </span>
-            <button type="button" aria-label="{{m.actLabel}}" onClick="{{m.act}}" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; flex-shrink: 0; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Edit what they can do</button>
+            <div style="display: flex; align-items: center; gap: 14px;">
+              <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">{{m.initials}}</span>
+              <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+                <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span><span style="display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--team) 16%, transparent); color: var(--team); font-size: 12px; line-height: 16px; font-weight: 600;">Team member</span></span>
+                <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed · {{m.preset}}</span>
+              </span>
+            </div>
+            <button type="button" aria-label="{{m.actLabel}}" onClick="{{m.act}}" style="display: flex; align-items: center; gap: 12px; width: 100%; min-height: 48px; box-sizing: border-box; padding: 0 14px; border: 0; border-radius: 12px; background: var(--surface); color: var(--ink-muted); font-family: inherit; font-size: 15px; line-height: 20px; font-weight: 600; text-align: left; cursor: pointer;"><span style="flex-grow: 1;">Edit what they can do</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></button>
           </li>
         </sc-for>
       </ul>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can still see your team here. Adding members and changing what they can do are locked on this device.</p>
     </section>
+    <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+      <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">You can still see your team here. Adding members and changing what they can do are locked on this device.</p>
+    </div>
   </main>
-  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
-    <button type="button" onClick="{{openInvite}}" aria-describedby="tr-banner-t" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; box-sizing: border-box; border: 2px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Add a member</button>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <button type="button" onClick="{{openInvite}}" aria-describedby="tr-banner-t" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Add a member</button>
   </footer>
 
   <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{true}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
-      <section role="dialog" aria-modal="true" aria-labelledby="tr-sheet-t" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
-        <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Passkey, security key or PGP key needed</span>
-        <h2 id="tr-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{sheetTitle}}</h2>
+      <section role="dialog" aria-modal="true" aria-labelledby="tr-sheet-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; min-height: 28px; box-sizing: border-box; padding: 4px 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Passkey, security key or PGP key needed</span>
+        <h2 id="tr-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{sheetTitle}}</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">This device's login is Weak: you proved it's you with just your username and password. Adding team members and changing what they can do need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
 
-        <ol aria-label="Login strength" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 6px;">
-          <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 2px solid var(--caution);">
+        <ol aria-label="Login strength" style="margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px;">
+          <li style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface-raised)); border: 2px solid var(--caution);">
             <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Weak</span>
             <span style="font-size: 12px; line-height: 16px; color: var(--caution);">This device</span>
           </li>
-          <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 2px solid var(--escrow);">
+          <li style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface-raised)); border: 2px solid var(--escrow);">
             <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Strong</span>
             <span style="font-size: 12px; line-height: 16px; color: var(--escrow);">Passkey, security key or PGP key needed</span>
           </li>
-          <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 1px solid var(--line);">
+          <li style="display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 12px; background: var(--surface-raised); border: 2px solid transparent;">
             <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Armored vault</span>
             <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Also works</span>
           </li>
         </ol>
 
         <p style="margin: 0; font-size: 16px; line-height: 24px;">Add a passkey, security key or PGP key. Then use it to log in on this device.</p>
-        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">A passkey, security key or PGP key also stops simple guessing and lets you act right away.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">A passkey, security key or PGP key also stops simple guessing and lets you act right away.</p>
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <button type="button" onClick="{{goAdd}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add another way to log in</button>
-          <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Not now</button>
+          <button type="button" onClick="{{goAdd}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add another way to log in</button>
+          <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Not now</button>
         </div>
       </section>
     </div>
   </sc-if>
 
   <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
-    <p role="status" style="position: absolute; left: 16px; right: 16px; bottom: 96px; margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface-raised); font-size: 15px; line-height: 22px;">{{note}}</p>
+    <p role="status" style="position: absolute; left: 16px; right: 16px; bottom: 100px; display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg><span>{{note}}</span></p>
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["invite","edit-permissions","page"],"default":"invite"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["invite","edit-permissions","page"],"default":"invite"},"$preview":{"width":390,"height":878}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -104,7 +117,7 @@ class Component extends DCLogic {
     const s = this.state;
     const sheet = s.base === variant ? s.sheet : (variant === 'page' ? 'none' : variant);
     const open = (kind, who) => this.setState({ base: variant, sheet: kind, who: who || s.who, note: '' });
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 878px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const LIST = [
       { name: 'desk_sam', initials: 'DS', allowed: '12', preset: 'Custom' },
       { name: 'desk_ana', initials: 'DA', allowed: '9', preset: 'Trade handler' }
@@ -114,7 +127,7 @@ class Component extends DCLogic {
       initials: m.initials, allowed: m.allowed, preset: m.preset,
       actLabel: 'Edit what ' + m.name + ' can do',
       act: () => open('edit-permissions', m.name),
-      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 0;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : '')
+      rowStyle: 'display: flex; flex-direction: column; gap: 12px; padding: 16px 0 12px;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : '')
     }));
     return {
       rootStyle,
