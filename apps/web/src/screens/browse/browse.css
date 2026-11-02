@@ -62,6 +62,7 @@
   margin: -4px 0;
   padding: 0 18px;
   border: 0;
+  border-radius: var(--x2f-radius-pill);
   background: transparent;
   color: var(--x2f-ink-muted);
   font-family: inherit;
@@ -133,6 +134,8 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--x2f-space-2);
+  /* A wrapped row starts 12 px below the 32 px pills above, so the 44 px targets never overlap. */
+  row-gap: var(--x2f-space-3);
   align-items: center;
 }
 
@@ -151,6 +154,8 @@
   margin: -6px 0;
   padding: 0 12px;
   border: 0;
+  /* The button keeps the pill's shape, so the focus ring follows the pill. */
+  border-radius: var(--x2f-radius-pill);
   background: transparent;
   color: var(--x2f-ink);
   font-family: inherit;
@@ -195,13 +200,10 @@
   flex-direction: column;
 }
 
-/* Section heading (Main board): the heading style, 18/24 600, in ink. */
-.x2f-browse__section-title {
+/* Section heading (Main board): the kit's section title (18/24 600); this only places it. */
+.x2f-browse__section .x2f-browse__section-title {
   margin: 0 0 var(--x2f-space-3);
   padding-top: var(--x2f-space-1);
-  font-size: var(--x2f-heading-size);
-  line-height: var(--x2f-heading-line);
-  font-weight: var(--x2f-heading-weight);
 }
 
 /* The method rows of a section form one 16 px surface card, a 1 px rule between rows. */
@@ -303,7 +305,6 @@ a.x2f-method:last-of-type {
 .x2f-browse__back-row > .x2f-icon-button {
   margin: 0 -10px;
   align-self: flex-start;
-  border-radius: var(--x2f-radius-md);
 }
 
 .x2f-browse__head-text {
@@ -553,10 +554,10 @@ a.x2f-method:last-of-type {
 }
 
 .x2f-offer__rate {
-  font-family: var(--x2f-font-mono);
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 500;
+  font-family: var(--x2f-amount-family);
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+  font-weight: var(--x2f-amount-weight);
   letter-spacing: -0.01em;
 }
 

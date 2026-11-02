@@ -237,7 +237,7 @@ export function PostOffer() {
   return (
     <div className="post" data-screen="post">
       <header className="post-header">
-        <Link to={closePath(location.state)} aria-label="Close" className="post-close">
+        <Link to={closePath(location.state)} aria-label="Close" className="x2f-icon-button post-close">
           <Icon name="close" size={22} />
         </Link>
         <h1 className="x2f-screen-title">Post an offer</h1>
@@ -255,7 +255,7 @@ export function PostOffer() {
           <section className="post-method-row">
             {methods.kind === 'failed' ? (
               <div className="post-field">
-                <span>Payment method</span>
+                <span className="post-caption">Payment method</span>
                 <span className="post-error post-load-failed">{METHODS_FAILED}</span>
                 <Button variant="secondary" onClick={retryMethods}>
                   Retry
@@ -314,7 +314,7 @@ export function PostOffer() {
         </div>
 
         <section className="post-section post-card">
-          <span className="post-label post-card-title" id={`${ids}-price`}>
+          <span className="x2f-section-title" id={`${ids}-price`}>
             Your price
           </span>
           <RadioChips
@@ -405,7 +405,7 @@ export function PostOffer() {
         </div>
 
         <section className="post-section post-card">
-          <span className="post-label post-card-title">Who can trade with you</span>
+          <span className="x2f-section-title">Who can trade with you</span>
           <div className="post-inline">
             <label htmlFor="mintrades">Minimum completed trades</label>
             <select id="mintrades" value={form.minTrades} onChange={(e) => set('minTrades', Number(e.target.value) as MinTrades)}>

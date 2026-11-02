@@ -990,23 +990,49 @@ test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
   await shot(page, '69-buyoffers');
 });
 
-test('70-71 the buyer quote and the seller quote, a wallet picked', async ({ page }) => {
+/**
+ * The seller quote's example (no SellQuote board): a buy ad by mira.k at the BuyQuote board's price,
+ * listed under side=buy, as quote.spec.ts's MIRA_BUYS. The buyer quote uses the BuyQuote board's
+ * sell ad (BOARD_BUY_QUOTE) as it is.
+ */
+const SELL_QUOTE_OFFER = { ...B.offer, id: 'offer-mira', poster: { ...B.offer.poster, displayName: 'mira.k' } };
+
+/** Every /v1 call PostOffer and the shell make, stubbed (a call nobody named answers 404). */
+async function postApi(page: Page): Promise<void> {
+  await page.route('**/v1/**', json({ error: 'not-found' }, 404));
+  await noEvents(page);
+  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
+  await page.route('**/v1/offers?*', json([]));
+  await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
+  await page.route('**/v1/wallets', json([...B.wallets]));
+  await page.route('**/v1/wallets/rule', json({ firstWallet: false, strongMethods: [], password: 'immediate', waitHours: 24 }));
+}
+
+test('70 the buyer quote, a wallet picked', async ({ page }) => {
   await blockApi(page);
   await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
   await page.getByRole('radio', { name: /Cake Wallet/ }).check();
   await expect(page.locator('section[aria-label="What you get"]')).toContainText('1.250000 XMR');
   await shot(page, '70-buyquote', { fullPage: true });
-  await page.goto(`/sell/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
+});
+
+test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) => {
+  await blockApi(page);
+  // Registered last, so it answers before blockApi's offers route.
+  await page.route('**/v1/offers?*', (r) => {
+    const side = new URL(r.request().url()).searchParams.get('side');
+    return json(side === 'buy' ? [SELL_QUOTE_OFFER] : [])(r);
+  });
+  await page.goto(`/sell/${B.method.id}/${SELL_QUOTE_OFFER.id}?currency=${B.currency}&amount=${B.amount}`);
   await page.getByRole('radio', { name: /Cake Wallet/ }).check();
   await expect(page.locator('section[aria-label="What you get"]')).toBeVisible();
+  await expect(page.locator('.x2f-quote__title')).toContainText('mira.k');
   await shot(page, '71-sellquote', { fullPage: true });
 });
 
 test('72 PostOffer', async ({ page }) => {
-  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
-  await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
-  await page.route('**/v1/offers?*', json([]));
-  await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
+  await postApi(page);
   await page.goto('/post?method=ZELLE');
   await page.getByLabel('Smallest trade').fill('$50');
   await page.getByLabel('Largest trade').fill('$2,000');

@@ -225,7 +225,7 @@
   color: var(--x2f-ink);
 }
 
-/* 44 px icon buttons (back and close on the boards). */
+/* 44 px icon buttons (back and close on the boards); the 12 px radius shapes the focus ring (v2). */
 .x2f-icon-button {
   display: flex;
   flex-shrink: 0;
@@ -235,6 +235,7 @@
   justify-content: center;
   padding: 0;
   border: 0;
+  border-radius: var(--x2f-radius-md);
   background: transparent;
   color: var(--x2f-ink);
   cursor: pointer;
@@ -883,6 +884,19 @@
 .x2f-outcome[data-tone='danger'] {
   border-color: var(--x2f-danger);
   color: var(--x2f-danger);
+}
+
+/* The info tone (BuyQuote board, design v2 batch 3): a note on what happens next, on surface-raised
+   with a 30% ink-muted border and an ink-muted info icon. */
+.x2f-outcome[data-tone='info'] {
+  padding: var(--x2f-space-3) 14px;
+  border-color: color-mix(in srgb, var(--x2f-ink-muted) 30%, transparent);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-outcome[data-tone='info'] .x2f-outcome__icon {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-outcome__icon {

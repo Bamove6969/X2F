@@ -36,15 +36,10 @@
   margin: var(--x2f-space-2) 0 0;
 }
 
+/* The close is the kit icon button; this only places it. */
 .post-close {
-  display: flex;
-  width: 44px;
   height: 44px;
   margin: 0 -10px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--x2f-radius-md);
-  color: var(--x2f-ink);
 }
 
 .post-main {
@@ -71,15 +66,6 @@
   gap: var(--x2f-space-4);
 }
 
-/* A card's heading ("Your price", "Who can trade with you"): 18/24 600 ink, not a small label. */
-.post-label.post-card-title {
-  font-size: var(--x2f-heading-size);
-  line-height: var(--x2f-heading-line);
-  font-weight: var(--x2f-heading-weight);
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--x2f-ink);
-}
 
 .post-section {
   display: flex;
@@ -88,10 +74,10 @@
 }
 
 .post-label {
-  font-size: 13px;
-  line-height: 16px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
   color: var(--x2f-ink-muted);
 }
@@ -115,6 +101,7 @@
   height: 48px;
   margin: 0;
   padding: 0;
+  border-radius: var(--x2f-radius-md);
   color: var(--x2f-ink-muted);
   font-size: 16px;
   font-weight: 600;
@@ -142,10 +129,13 @@
   color: var(--x2f-ink-muted);
 }
 
-/* Field labels read as the board's small uppercase labels (13/16 600, .04em). */
-.post-field > label {
-  font-weight: 600;
-  letter-spacing: 0.04em;
+/* Field labels (and the methods-failed caption) read as the board's small uppercase labels. */
+.post-field > label,
+.post-field > .post-caption {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
   text-transform: uppercase;
 }
 
@@ -308,9 +298,9 @@
 }
 
 .post-preview .post-big {
-  font-size: 28px;
-  line-height: 32px;
-  font-weight: 500;
+  font-size: var(--x2f-amount-size);
+  line-height: var(--x2f-amount-line);
+  font-weight: var(--x2f-amount-weight);
   letter-spacing: -0.01em;
 }
 

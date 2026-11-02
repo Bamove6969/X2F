@@ -311,7 +311,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
 
         <section aria-label="What you get" className="x2f-quote__card">
           <div className="x2f-quote__figure">
-            <span className="x2f-quote__label">{copy.headline}</span>
+            <span className="x2f-section-title">{copy.headline}</span>
             <span className="x2f-quote__xmr">
               {xmrText(ok ? copy.headlineXmr(ok) : 0n)} <span className="x2f-quote__xmr-unit">XMR</span>
             </span>
@@ -347,7 +347,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             ) : null}
           </div>
         </section>
-        <Notice tone="plain" icon="info" live="off">
+        <Notice tone="info">
           {copy.footnote(poster)}
         </Notice>
         {signedIn === true && myName !== null && myName !== poster ? (

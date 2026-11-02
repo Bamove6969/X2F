@@ -144,7 +144,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         ) : null}
         {sections.map((sec) => (
           <section key={sec.title} className="x2f-browse__section">
-            <h2 className="x2f-browse__section-title">{sec.title}</h2>
+            <h2 className="x2f-browse__section-title x2f-section-title">{sec.title}</h2>
             {sec.rows.map((m) => (
               <Link key={m.id} to={withCurrency(`/${side}/${encodeURIComponent(m.id)}`)} className="x2f-method">
                 <span className="x2f-method__text">
