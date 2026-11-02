@@ -37,19 +37,24 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           <button type="button" role="radio" aria-checked="{{buyOn}}" onClick="{{pickBuy}}" style="{{buyStyle}}">Buy XMR</button>
         </div>
       </div>
-      <div style="display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 8px;">
-        <label for="method" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Payment method
+      <label for="method" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Payment method
           <select id="method" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
             <option>Zelle</option><option>Cash App</option><option>Cash by mail</option><option>Bank transfer (ACH)</option><option>Custom method</option>
           </select>
         </label>
-        <label for="currency" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currency
-          <select id="currency" style="height: 48px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
-            <option>USD</option><option>EUR</option><option>GBP</option>
-          </select>
-        </label>
-      </div>
-    </section>
+        <fieldset style="margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 8px;">
+          <legend style="padding: 0; margin-bottom: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Currencies</legend>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+            <button type="button" role="checkbox" aria-checked="true" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: var(--surface-raised); box-shadow: inset 0 0 0 2px var(--ink); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">USD</button>
+            <button type="button" role="checkbox" aria-checked="true" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: var(--surface-raised); box-shadow: inset 0 0 0 2px var(--ink); color: var(--ink); font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">EUR</button>
+            <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">GBP</button>
+            <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">CAD</button>
+            <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">AUD</button>
+            <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">More ▾</button>
+          </div>
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">One ad covers every currency you tick. Your limits below are in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD</span>; other currencies convert at the market rate.</p>
+        </fieldset>
+          </section>
 
     <section aria-labelledby="price-h" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
       <h2 id="price-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your price</h2>
@@ -135,7 +140,7 @@ class Component extends DCLogic {
       marginWord: m === 0 ? 'at market' : (m > 0 ? 'above market' : 'below market'),
       priceNow: '$' + price.toFixed(2) + ' / XMR',
       priceNum: '$' + price.toFixed(2),
-      previewLine: (side === 'sell' ? 'Selling XMR' : 'Buying XMR') + ' via Zelle · USD · you',
+      previewLine: (side === 'sell' ? 'Selling XMR' : 'Buying XMR') + ' via Zelle · USD, EUR · you',
       up: step(0.1),
       down: step(-0.1)
     };

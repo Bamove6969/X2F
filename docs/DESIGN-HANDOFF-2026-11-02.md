@@ -86,7 +86,7 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
 - **Latest small changes:** Refunded's hero row reads "X2F fee: None" so it no longer collides with "Did you send the money anyway?". BuyerPaidWaiting keeps its "Payment proof" row; empty it reads "Add payment proof · optional" and opens ProofBlur (design note on the board). ModCase's trader cards tag the cancel rate "mod only".
 - `docs/design-boards-inprogress/` is now only a historical snapshot; `docs/design-boards/` is newer everywhere.
 - **Not done yet:**
-  - PostOffer and FlexOffer-Post still have a **single currency select**. Since one ad now covers several currencies, it needs to become a multi-select. Design follow-up.
+  - ~~PostOffer and FlexOffer-Post single currency select~~ Done: PostOffer, FlexOffer-Post and FlexOffer-Post-Wide now have a **Currencies** chip multi-select (USD, EUR, GBP, CAD, AUD, More ▾; selected = 2px ink ring). Helper: "One ad covers every currency you tick. Your limits below are in USD; other currencies convert at the market rate."
   - BlockQueued is superseded (kept for reference). Artboard-5odu is a stray.
 
 ---
