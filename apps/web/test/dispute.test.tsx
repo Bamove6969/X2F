@@ -133,13 +133,13 @@ describe('copy helpers', () => {
     expect(inTime(40 * MIN)).toBe('in 40 min');
   });
 
-  it('names the destination only for the side the ruling pays, with the board line while the window is open', () => {
+  it('names the destination only for the side the ruling pays; the coins move at the ruling (A1 dropped), so there is no wait for the window', () => {
     const d = ruled();
     const mine = rulingCopy(d, 'buyer', 'satoshi_ghost', '1250000000000', new Date(T0 + 500 * MIN));
     expect(mine).toEqual({
       label: 'Ruling: release to the buyer',
       title: '1.25 XMR goes to you',
-      destination: { app: 'Cake Wallet', end: 'k3Fz', tail: ', once the appeal window closes.' },
+      destination: { app: 'Cake Wallet', end: 'k3Fz' },
       footer: "This ruling and its evidence are kept with the trade. It appears on satoshi_ghost's profile as a lost dispute.",
     });
     const theirs = rulingCopy(d, 'seller', 'mira.k', '1250000000000', new Date(T0 + 500 * MIN));
@@ -354,6 +354,34 @@ describe('DisputeRuling appeal form', () => {
       send().click();
     });
     expect(onAppeal).toHaveBeenCalledWith('1234567890');
+  });
+
+  // Design review fix 2 (shot 59; board DisputeRuling on wip/design-brief; spec Revision 2026-10-29c
+  // "Liens", Plan 4 "A1 dropped"): the coins move at the ruling, never held for the appeal window,
+  // and an overturned ruling puts a lien on whoever received the coins.
+  it('says the XMR was sent at the ruling, and that an overturned ruling puts a lien on whoever received it', () => {
+    const t = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const { host } = render(inRouter(<DisputeRuling trade={t} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
+    const text = host.textContent ?? '';
+    expect(text).toContain('Sent to Cake Wallet, address ending …k3Fz.');
+    expect(text).toContain('(48 h). An appeal goes to a senior moderator or the owner who hasn\'t seen this case. If an appeal overturns the ruling, you get a lien. You can\'t trade until you pay the XMR back.');
+    expect(text).not.toMatch(/window closes/);
+    // The losing side reads that the lien would fall on the other trader.
+    const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const r2 = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={ruled()} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(r2.host.textContent).toContain('If an appeal overturns the ruling, mira.k gets a lien until they pay the XMR back.');
+    expect(r2.host.textContent).not.toMatch(/window closes|address ending/);
+  });
+
+  it('after an appeal: the XMR has already moved, nothing stays locked', () => {
+    const seller = trade({ role: 'seller', counterparty: 'mira.k', state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const appealed = ruled({}, { status: 'appealed', appeal: { by: 'seller', at: iso(450) } });
+    const { host } = render(inRouter(<DisputeRuling trade={seller} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(host.textContent).toContain('Appeal sent. A second moderator will look at it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.');
+    expect(host.textContent).not.toContain('stays locked');
+    const buyer = trade({ state: 'disputed', dispute: { by: 'buyer', at: iso(130) } });
+    const r2 = render(inRouter(<DisputeRuling trade={buyer} methodName="Zelle" dispute={appealed} serverClock={at(500)} onAppeal={async () => undefined} />));
+    expect(r2.host.textContent).toContain('satoshi_ghost appealed. A second moderator will look at it. The XMR has already moved; if they overturn the ruling, you get a lien until you pay it back.');
   });
 
   it('shows the ruling card with the moderator badge, and no appeal button once final', () => {

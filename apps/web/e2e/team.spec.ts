@@ -149,6 +149,24 @@ test('a 4th member is refused through CantDoThat (too-many-members), from the se
   await expectPhoneLayout(page);
 });
 
+// Design review shot 19 (Team board, full state): a full list never reaches the popup.
+test('a full team: the invite control is disabled with the board note, and tapping it opens nothing', async ({ page }) => {
+  let invites = 0;
+  await ownerApi(page, {
+    members: [member('m1', 'Aurora', ['trades']), member('m2', 'Basil', ['offers']), member('m3', 'Cedric', ['offers', 'trades'], 'invited')],
+    inviteAnswer: () => (invites++, { status: 409, body: { error: 'too-many-members', max: 3 } }),
+  });
+  await page.goto('/settings/team');
+  await expect(page.locator('[data-part="team-full"]')).toHaveText('You have 3 members, the most allowed. Remove one to add another.');
+  const invite = page.locator('[data-part="invite"]');
+  await expect(invite).toHaveAttribute('aria-disabled', 'true');
+  await page.getByLabel('Their name in trade chats').fill('Dora');
+  await invite.click();
+  await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+  expect(invites).toBe(0);
+  await expectPhoneLayout(page);
+});
+
 // ---- 2 and 3. Joining in a fresh browser ---------------------------------------------------------
 
 /** The member's side of the API for a fresh browser; `finish` answers join/finish (a race test makes one lose). */
@@ -380,6 +398,19 @@ test('an Offers member posts an offer for the account', async ({ page }) => {
   await postOffer(page);
   await expect(page).not.toHaveURL(/\/post/);
   expect(posts).toHaveLength(1);
+});
+
+// Design review shot 26: the tab bar offers Post offer only to sessions that may post.
+test('a Trades-only member has no Post offer tab; an Offers member has it', async ({ page }) => {
+  await postApi(page, ['trades'], { status: 403, body: { error: 'forbidden' } });
+  await page.goto('/sell');
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Trade' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Post offer' })).toHaveCount(0);
+  await page.unroute('**/v1/account/me');
+  await page.route('**/v1/account/me', json(memberMe(['offers'])));
+  await page.reload();
+  await expect(nav.getByRole('link', { name: 'Post offer' })).toBeVisible();
 });
 
 for (const viewport of PHONE_VIEWPORTS) {

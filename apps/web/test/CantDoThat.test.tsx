@@ -36,10 +36,16 @@ describe('CantDoThat', () => {
     const link = line.querySelector('a')!;
     expect(link.textContent).toBe('feedback');
     expect(link.getAttribute('href')).toBe('/feedback?from=starter-limit');
-    // No primary button: the screen under the popup keeps its one data-primary.
-    expect(dialog.querySelector('[data-primary]')).toBeNull();
+    // Design review X2 (board CantDoThat.dc.html): no X close, and OK is the popup's one filled primary.
+    expect(dialog.querySelector('button[aria-label="Close"]')).toBeNull();
+    expect([...dialog.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['OK']);
+    expect([...dialog.querySelectorAll('[data-primary]')].map((b) => b.textContent)).toEqual(['OK']);
+    expect(dialog.querySelector('button')!.className).toContain('x2f-button--primary');
     fire([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'OK')!, new MouseEvent('click', { bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
+    // A tap on the scrim closes it too.
+    fire(document.querySelector('[data-part="backdrop"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(2);
     fire(link, new MouseEvent('click', { bubbles: true, button: 0 }));
     expect(document.querySelector('[data-testid="where"]')?.textContent).toBe('/feedback?from=starter-limit');
   });

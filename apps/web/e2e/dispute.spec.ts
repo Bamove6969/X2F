@@ -225,7 +225,11 @@ test('DisputeRuling: the ruling card, the destination ending, evidence and the a
   await expect(send).toBeDisabled();
   await page.getByLabel('Why should it be looked at again?').fill('My bank shows no payment.');
   await send.click();
-  await expect(page.getByText('Appeal sent. The XMR stays locked until a second moderator decides.')).toBeVisible();
+  // Review fix 2 (board DisputeRuling): the XMR moved at the ruling; an overturn means a lien on its receiver.
+  await expect(
+    page.getByText('Appeal sent. A second moderator will look at it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.'),
+  ).toBeVisible();
+  await expect(page.getByText('stays locked', { exact: false })).toHaveCount(0);
   expect(posts[0]!.postDataJSON()).toEqual({ why: 'My bank shows no payment.' });
   await expect(page.getByText("It appears on your profile as a lost dispute.", { exact: false })).toBeVisible();
 });
@@ -236,7 +240,7 @@ test('DisputeRuling: the winner sees where the XMR goes; past the window there i
     dispute: disputeView({ status: 'ruled', ruling: RULING, serverNow: T('14:31', 17) }),
   });
   await open(page);
-  await expect(page.getByText('To Cake Wallet, address ending …k3Fz.')).toBeVisible();
+  await expect(page.getByText('Sent to Cake Wallet, address ending …k3Fz.')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Appeal this ruling' })).toHaveCount(0);
   await expect(page.getByText('The appeal window closed on Sat 17 Oct, 14:30.')).toBeVisible();
 });

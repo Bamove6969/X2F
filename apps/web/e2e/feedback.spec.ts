@@ -47,7 +47,10 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
   await expect(popup).toBeVisible();
   await expect(popup.getByRole('alert')).toHaveText(/trading hold/);
   await expect(popup.locator('[data-part="feedback-line"]')).toHaveText('If you feel this feature can be improved please leave feedback');
-  await expect(page.locator('[data-primary]')).toHaveCount(1);
+  // Review X2 (board CantDoThat): no X close; OK is the popup's one filled primary.
+  await expect(popup.getByRole('button', { name: 'Close' })).toHaveCount(0);
+  await expect(popup.locator('[data-primary]')).toHaveCount(1);
+  await expect(popup.locator('[data-primary]')).toHaveText('OK');
   await noSideScroll(page);
 
   // OK closes it and the reason stays on the screen as a line.
