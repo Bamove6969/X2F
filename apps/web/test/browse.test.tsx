@@ -181,3 +181,16 @@ describe('badges on the card', () => {
     expect(host.querySelector('button[aria-label^="Show all"]')).toBeNull();
   });
 });
+
+describe('the opt-in traded line (C12b, owner 2026-11-01/02)', () => {
+  it('reads tradedOverUsd (missing or null: nothing) and shows the bucket only when the API sends one', () => {
+    const mira = byName('mira.k');
+    expect(mira.poster.tradedOverUsd).toBeNull();
+    const [withLine] = parseOffers([{ ...raw()[0], poster: { ...(raw()[0] as { poster: object }).poster, tradedOverUsd: 90_000 } }]);
+    expect(withLine!.poster.tradedOverUsd).toBe(90_000);
+    expect(() => parseOffers([{ ...raw()[0], poster: { ...(raw()[0] as { poster: object }).poster, tradedOverUsd: '90000' } }])).toThrow(ApiShapeError);
+    expect(card(mira).host.textContent).not.toContain('in trades to date');
+    const on = card({ ...mira, poster: { ...mira.poster, tradedOverUsd: 150_000 } }).host.textContent;
+    expect(on).toContain('Completed over $150,000 in trades to date');
+  });
+});
