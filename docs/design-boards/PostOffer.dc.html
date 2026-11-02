@@ -52,7 +52,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <button type="button" role="checkbox" aria-checked="false" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">AUD</button>
             <button type="button" style="display: inline-flex; align-items: center; height: 40px; padding: 0 14px; border-radius: 999px; background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--ink); font-size: 15px; font-weight: 400; cursor: pointer; font-family: inherit; border: 0; letter-spacing: 0; text-transform: none;">More ▾</button>
           </div>
-          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">One ad covers every currency you tick. Your limits below are in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">USD</span>; other currencies convert at the market rate.</p>
+          <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Pick up to <span style="font-family: \'Atkinson Hyperlegible Mono\', monospace;">5</span>. You set the smallest and largest trade for each one.</p>
         </fieldset>
           </section>
 
@@ -70,14 +70,29 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     </section>
 
     <section style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
-      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
-        <label for="min" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Smallest trade
-          <input id="min" type="text" inputmode="decimal" value="$50" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
-        </label>
-        <label for="max" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Largest trade
-          <input id="max" type="text" inputmode="decimal" value="$2,000" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
-        </label>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Trade size in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">USD</span></span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+          <label for="min-usd" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Smallest
+            <input id="min-usd" type="text" inputmode="decimal" value="$50" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          </label>
+          <label for="max-usd" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Largest
+            <input id="max-usd" type="text" inputmode="decimal" value="$2,000" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          </label>
+        </div>
       </div>
+      <div style="display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--surface-raised);">
+        <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Trade size in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">EUR</span></span>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;">
+          <label for="min-eur" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Smallest
+            <input id="min-eur" type="text" inputmode="decimal" value="€50" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          </label>
+          <label for="max-eur" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Largest
+            <input id="max-eur" type="text" inputmode="decimal" value="€1,800" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; font-weight: 400; letter-spacing: 0; text-transform: none;">
+          </label>
+        </div>
+      </div>
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Whole units only. Each currency has its own range; nothing is converted.</span>
       <label for="terms" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Your terms (optional)
         <textarea id="terms" rows="3" placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo." style="box-sizing: border-box; min-height: 96px; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; line-height: 24px; font-weight: 400; letter-spacing: 0; text-transform: none; resize: none;"></textarea>
       </label>
@@ -97,7 +112,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{previewLine}}</span>
       <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;">
         <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">{{priceNum}}</span><span style="font-size: 14px; color: var(--ink-muted);">/ XMR</span></span>
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);">$50 – $2,000</span>
+        <span style="display: flex; flex-direction: column; align-items: flex-end; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span>$50 – $2,000</span><span>€50 – €1,800</span></span>
       </div>
     </section>
   </main>
@@ -107,7 +122,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1225}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1620}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -119,7 +134,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1225px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1620px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { side, margin } = this.state;
     const market = 329.90;
     const price = market * (1 + margin / 100);

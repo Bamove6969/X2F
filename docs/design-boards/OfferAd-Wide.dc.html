@@ -91,9 +91,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
               <dd style="margin: 0;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 24px; line-height: 32px; font-weight: 500;">{{method.win}}</span> <span style="font-size: 16px; font-weight: 600; color: var(--ink-muted);">{{method.unit}}</span></dd>
             </div>
           </dl>
-          <sc-if value="{{converted}}" hint-placeholder-val="{{false}}">
-            <span style="margin-top: -12px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">≈ Converted from USD at the market rate.</span>
-          </sc-if>
         </section>
 
         <section aria-labelledby="oa-all" style="display: flex; flex-direction: column; gap: 16px; padding: 24px; border-radius: 16px; background: var(--surface);">
@@ -226,7 +223,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
               <li><strong>One ad covers every currency the vendor supports.</strong> The trader picks currency and payment method from the drop-downs; both are locked in for that trade. Payment-method rules (time to pay, name match…) come with the method.</li>
               <li><strong>Ad limit:</strong> <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> buy + <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> sell ads per vendor.</li>
-              <li><strong>Price tiers and limits are set in one currency and converted at the market rate</strong>, shown in the chosen currency with "≈" and the line "Converted from USD at the market rate". Example: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">$200 – $2,000</span> shows as <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">≈ C$277 – C$2,765</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">≈ €185 – €1,851</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">≈ £158 – £1,580</span>. XMR limits (buying side) need no conversion; only their fiat equivalent moves.</li>
+              <li><strong>Each currency has its own bands set by the vendor; nothing is converted.</strong> Up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">5</span> currencies per ad. Limits and tier prices shown are the chosen currency's own figures. A currency the vendor ticked but that has no market price is hidden from the Currency drop-down for that currency only.</li>
               <li><strong>Volume line is opt-in.</strong> A vendor can show "Completed over <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span> in trades to date" on the header, rounded down in the steps above. Never shown unless the vendor turns it on.</li>
             </ul>
           </aside>
@@ -272,11 +269,11 @@ class Component extends DCLogic {
     const ADS = {
       selling: {
         vendor: 'satoshi_ghost', initials: 'SG', adId: 'OF-4QK7', trades: '1,284', positive: '99.4%', rating: '4.9', starCount: 5, reviews: '612', reply: '4',
-        margin: 2, base: { code: 'USD', market: 167.88, min: 200, max: 2000 }, chip: 'Selling XMR', methodLabel: 'Pay with', cta: 'Request to buy XMR', ctaShort: 'Buy XMR',
+        margin: 2, chip: 'Selling XMR', methodLabel: 'Pay with', cta: 'Request to buy XMR', ctaShort: 'Buy XMR',
         searched: { cur: 'USD', method: 'zelle' },
         terms: 'Pay only from an account in your own name. No third-party payments. Memo: the trade code.',
         currencies: [
-          { code: 'USD', name: 'US dollar', sym: '$', market: 167.88, def: 300, methods: [
+          { code: 'USD', name: 'US dollar', sym: '$', market: 167.88, def: 300, min: 200, max: 2000, methods: [
             M('zelle', 'Zelle', 'zelle', 0, '90', 'min', 'Send to the Zelle ID in the trade room. Trade code in the memo, nothing else.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
             M('cashapp', 'Cash App', 'phone', 0.5, '60', 'min', 'Send to the $cashtag in the trade room. Trade code in the note.'),
@@ -284,20 +281,20 @@ class Component extends DCLogic {
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
             M('mail', 'Cash by mail', 'mail', 3, '3', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
           ] },
-          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 232.10, def: 400, methods: [
+          { code: 'CAD', name: 'Canadian dollar', sym: 'C$', market: 232.10, def: 400, min: 250, max: 2500, methods: [
             M('interac', 'Interac e-Transfer', 'send', 0, '90', 'min', 'Send to the contact in the trade room. Trade code in the message.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A CAD transfer from your own Wise account. Reference: the trade code.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 }),
             M('mail', 'Cash by mail', 'mail', 3, '4', 'days', 'Tracked post only. I share the address in chat after I accept.', { floor: 500 })
           ] },
-          { code: 'EUR', name: 'Euro', sym: '€', market: 155.40, def: 280, methods: [
+          { code: 'EUR', name: 'Euro', sym: '€', market: 155.40, def: 280, min: 180, max: 1800, methods: [
             M('sepainst', 'SEPA Instant', 'bank', 0, '90', 'min', 'From a bank account in your own name. Reference: the trade code.'),
             M('sepa', 'SEPA transfer', 'bank', 0, '2', 'days', 'From a bank account in your own name. Reference: the trade code.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A EUR transfer from your own Wise account.'),
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
             M('paypal', 'PayPal', 'wallet', 1.5, '60', 'min', 'Friends and family only, from a PayPal in your own name.', { cap: 500 })
           ] },
-          { code: 'GBP', name: 'British pound', sym: '£', market: 132.60, def: 240, methods: [
+          { code: 'GBP', name: 'British pound', sym: '£', market: 132.60, def: 240, min: 150, max: 1500, methods: [
             M('fps', 'Faster Payments', 'bolt', 0, '90', 'min', 'From a UK account in your own name. Reference: the trade code.'),
             M('wise', 'Wise', 'globe', 0, '2', 'h', 'A GBP transfer from your own Wise account.'),
             M('revolut', 'Revolut', 'card', 0, '90', 'min', 'Send to the Revolut username in the trade room.'),
@@ -358,15 +355,13 @@ class Component extends DCLogic {
     const x6 = (n) => n.toFixed(6);
     const pct = (n) => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n).toFixed(1).replace(/\.0$/, '') + '%';
     const priceOf = (c, m) => Math.round(c.market * (1 + (ad.margin + m.adj) / 100) * 100) / 100;
-    // Selling limits are set in the base currency (USD) and converted at the market rate.
-    const fxOf = (c) => sell ? c.market / ad.base.market : 1;
-    const approx = (c) => (sell && c.code !== ad.base.code) ? '≈ ' : '';
+    // Selling limits are typed by the vendor per currency. Nothing is converted.
     const range = (c, m) => sell
-      ? { lo: Math.max(ad.base.min, m.floor || 0) * fxOf(c), hi: Math.min(ad.base.max, m.cap || Infinity) * fxOf(c) }
+      ? { lo: Math.max(c.min, m.floor || 0), hi: Math.min(c.max, m.cap || Infinity) }
       : { lo: ad.xmin, hi: Math.min(ad.xmax, m.xcap || Infinity) };
     const limitBits = (c, m) => {
-      if (m.cap) return { pre: 'up to', val: approx(c) + whole(m.cap * fxOf(c), c.sym), unit: '' };
-      if (m.floor) return { pre: 'from', val: approx(c) + whole(m.floor * fxOf(c), c.sym), unit: '' };
+      if (m.cap) return { pre: 'up to', val: whole(m.cap, c.sym), unit: '' };
+      if (m.floor) return { pre: 'from', val: whole(m.floor, c.sym), unit: '' };
       if (m.xcap) return { pre: 'up to', val: x6(m.xcap), unit: ' XMR' };
       return null;
     };
@@ -387,7 +382,7 @@ class Component extends DCLogic {
     const xmr = num ? (inputIsFiat ? val / price : val) : 0;
     const subject = sell ? fiat : xmr;
     const valid = num && subject >= r.lo - 1e-9 && subject <= r.hi + 1e-9;
-    const rangeText = sell ? approx(cur) + whole(r.lo, cur.sym) + ' – ' + whole(r.hi, cur.sym) : x6(r.lo) + ' – ' + x6(r.hi) + ' XMR';
+    const rangeText = sell ? whole(r.lo, cur.sym) + ' – ' + whole(r.hi, cur.sym) : x6(r.lo) + ' – ' + x6(r.hi) + ' XMR';
     const errText = !num ? 'Enter an amount.' : 'This offer takes ' + rangeText + ' per trade' + (narrowed ? ' with ' + method.name : '') + '.';
     let convPre, convVal, convUnit;
     if (inputIsFiat) { convPre = sell ? 'You receive' : 'You send'; convVal = x6(xmr); convUnit = 'XMR'; }
@@ -432,7 +427,6 @@ class Component extends DCLogic {
       rootStyle, ad, cur, method, stars,
       windowShort: sell ? 'Time to pay' : 'Pays you within',
       isBuying: !sell,
-      converted: sell && cur.code !== ad.base.code,
       chipIconA: sell ? 'M7 17L17 7' : 'M17 7L7 17',
       chipIconB: sell ? 'M8 7h9v9' : 'M16 17H7V8',
       youLine: sell ? 'You buy, pay in ' + cur.code : 'You sell, paid in ' + cur.code,
@@ -448,7 +442,7 @@ class Component extends DCLogic {
       fromSearch, notFromSearch: !fromSearch,
       searchText: ad.searched.cur + ' · ' + searchedMethod,
       limitLabel: 'Per trade' + (narrowed ? ' with ' + method.name : ''),
-      limitText: sell ? approx(cur) + whole(r.lo, cur.sym) + ' – ' + whole(r.hi, cur.sym) : x6(r.lo) + ' – ' + x6(r.hi),
+      limitText: sell ? whole(r.lo, cur.sym) + ' – ' + whole(r.hi, cur.sym) : x6(r.lo) + ' – ' + x6(r.hi),
       limitFiat: sell ? '' : money(r.lo * price, cur.sym) + ' – ' + money(r.hi * price, cur.sym),
       windowLabel: (sell ? 'Time to pay · ' : 'Pays you within · ') + method.name,
       methodCount: cur.methods.length,
