@@ -39,4 +39,4 @@ export {
   addressesHash,
   describeAction,
 } from './confirmAction.js';
-export { DEFAULT_IDLE_HOURS, IDLE_HOURS, type IdleHours, isIdleHours } from './logoutTimer.js';
+export { SESSION_PROMPT_MS, type SessionAccountType, UNCHOSEN_SESSION_HOURS, isSessionHours, sessionHoursFor } from './sessionLength.js';

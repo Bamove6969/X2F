@@ -128,16 +128,20 @@ describe('createAuthApi requests', () => {
     expect(headersOf(sent[0]!).get('content-type')).toBe('application/json');
   });
 
-  it('uses PUT for setting the password and the logout timer', async () => {
-    const { sent, fetch } = recorder(() => Response.json({ idleHours: 6, adjustable: true }));
+  it('uses PUT for setting the password and the session length, POST for staying logged in', async () => {
+    const info = { lengthHours: 6, choices: [2, 4, 6, 12], expiresAt: '2026-11-02T18:00:00.000Z', canExtend: true, serverNow: '2026-11-02T12:00:00.000Z' };
+    const { sent, fetch } = recorder(() => Response.json(info));
     const api = createAuthApi({ fetch });
     await api.setPassword({ password: 'x' });
-    await expect(api.setLogoutTimer({ idleHours: 6 })).resolves.toEqual({ idleHours: 6, adjustable: true });
+    await expect(api.setSessionLength({ hours: 6 })).resolves.toEqual(info);
+    await expect(api.extendSession({ confirmToken: 't' })).resolves.toEqual(info);
     expect(sent.map((s) => [s.init.method, s.url])).toEqual([
       ['PUT', '/v1/account/password'],
-      ['PUT', '/v1/account/security/logout-timer'],
+      ['PUT', '/v1/account/session/length'],
+      ['POST', '/v1/account/session/extend'],
     ]);
-    expect(bodyOf(sent[1]!)).toEqual({ idleHours: 6 });
+    expect(bodyOf(sent[1]!)).toEqual({ hours: 6 });
+    expect(bodyOf(sent[2]!)).toEqual({ confirmToken: 't' });
   });
 
   it('returns the parsed JSON body of a 2xx and undefined for a 204', async () => {

@@ -13,7 +13,7 @@ import type {
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from '@simplewebauthn/browser';
-import type { AccountKind, ConfirmAction, IdleHours, MethodType } from '@x2f/accounts';
+import type { AccountKind, ConfirmAction, MethodType } from '@x2f/accounts';
 import type { ApiErrorCode, ApprovalView, ApprovalWait, IssuedChallenge, LoginResult } from '@x2f/api';
 
 export type { ApiErrorCode, ApprovalView, ApprovalWait, LoginResult };
@@ -183,7 +183,6 @@ export interface AccountOverview {
   methods: MethodType[];
   hasBackup: boolean;
   suggestions: Suggestion[];
-  logoutTimer: LogoutTimer;
   termsCurrent: boolean;
   /** Task 17: when the account's 24-hour hold ends, while one runs (any session of the account). Optional: older API builds do not send it. */
   accountHoldUntil?: string | null;
@@ -192,6 +191,11 @@ export interface AccountOverview {
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
   member?: { name: string; roles: TeamRole[] } | null;
+  /**
+   * The calling session's length (owner, 2 Nov 2026): set for a full trader session, null for staff,
+   * owner and backup sessions. Optional: older API builds do not send it.
+   */
+  session?: SessionInfo | null;
 }
 
 /** Plan 2 Task 18: a team member's roles (spec 6.7). */
@@ -285,12 +289,17 @@ export interface WalletRule {
 }
 
 /**
- * The logout timer (owner, 2026-10-23): idle hours before a session ends. Traders choose one of
- * `IDLE_HOURS` (2-12, default 12; `adjustable`); staff and owner are fixed at 2.
+ * A session's length (owner, 2 Nov 2026): chosen after every login (`lengthHours` null until then,
+ * from `choices`); it ends at `expiresAt` unless "Stay logged in" extends it (`extendSession`).
  */
-export interface LogoutTimer {
-  idleHours: number;
-  adjustable: boolean;
+export interface SessionInfo {
+  lengthHours: number | null;
+  choices: number[];
+  expiresAt: string;
+  /** False for a team member's session (it cannot extend; open owner question). */
+  canExtend: boolean;
+  /** The server's time as it answered (for `serverClock`). */
+  serverNow: string;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -408,10 +417,11 @@ export interface AuthApi {
   getWalletRule(): Promise<WalletRule>;
   /** Needs no confirm; the server always records a `wallet-removed` alert. */
   removeWallet(id: string): Promise<void>;
-  // Logout timer (owner, 2026-10-23)
-  getLogoutTimer(): Promise<LogoutTimer>;
-  /** Full trader sessions only; applies to the current session at once. */
-  setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
+  // Session length (owner, 2 Nov 2026). Full trader sessions only.
+  /** This session's length: before it is chosen, from the login; after, shorter applies now, longer from the next extend. */
+  setSessionLength(b: { hours: number }): Promise<SessionInfo>;
+  /** "Stay logged in": confirm `{ kind: 'extend-session' }` with any login method first. */
+  extendSession(b: Token): Promise<SessionInfo>;
 
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
@@ -564,8 +574,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     addWallets: (b) => post('/v1/wallets', b),
     getWalletRule: () => get('/v1/wallets/rule'),
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
-    getLogoutTimer: () => get('/v1/account/security/logout-timer'),
-    setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
+    setSessionLength: (b) => call('PUT', '/v1/account/session/length', b),
+    extendSession: (b) => post('/v1/account/session/extend', b),
 
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),

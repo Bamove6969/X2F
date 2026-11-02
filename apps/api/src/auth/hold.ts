@@ -42,7 +42,7 @@
  *   `names-unavailable` and the settle's savepoint drops the change. Left as it is on purpose; new
  *   code should take the account lock last.
  */
-import type { IdleHours, MethodType } from '@x2f/accounts';
+import type { MethodType } from '@x2f/accounts';
 import type { FastifyBaseLogger, FastifyRequest, preHandlerAsyncHookHandler } from 'fastify';
 import type pg from 'pg';
 import type { Deps } from '../app.js';
@@ -52,7 +52,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { EventBus } from '../events/bus.js';
 import type { RetentionJob } from '../retention.js';
-import { applyLoginName, applyLogoutTimer, applyOneDevice } from '../routes/account.js';
+import { applyLoginName, applyOneDevice } from '../routes/account.js';
 import { applyWallets, type PendingWallet } from '../wallets/routes.js';
 import type { ConfirmMethod } from './confirm.js';
 import { applyRemoval } from './methods.js';
@@ -81,7 +81,11 @@ export type PendingChange =
   /** FU-D: the name's keyed tag under `keyId`, never the name. */
   | { kind: 'login-name'; tag: string; keyId: number }
   | { kind: 'one-device'; on: boolean }
-  | { kind: 'logout-timer'; idleHours: IdleHours }
+  /**
+   * Retired with the logout timer (session length, owner 2 Nov 2026; migration 307): a change of
+   * this kind stored before then is dropped when its hold settles. Nothing creates one now.
+   */
+  | { kind: 'logout-timer'; idleHours: number }
   /** Review round 2 N-I4 (lead decision 2026-10-30): payout wallets added by a session whose login waits; `method` is the confirm's. */
   | { kind: 'wallets'; items: PendingWallet[]; method: ConfirmMethod | null };
 
@@ -215,7 +219,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyOneDevice(db, accountId, c.on, now);
       return false;
     case 'logout-timer':
-      await applyLogoutTimer(db, accountId, c.idleHours, now);
+      // Retired (migration 307): nothing to apply.
       return false;
     case 'wallets':
       await applyWallets(db, accountId, c.items, c.method, now);
@@ -453,7 +457,6 @@ export const SECURITY_CHANGE_ROUTES: readonly string[] = [
   'DELETE /v1/account/methods/:type/:id',
   'POST /v1/account/login-name',
   'PUT /v1/account/security/one-device',
-  'PUT /v1/account/security/logout-timer',
   // Review round 2 N-I4 (lead decision 2026-10-30): a payout wallet added by a session whose login
   // waits (PGP alone included) waits out the hold like the rest, whatever the confirm method.
   'POST /v1/wallets',
@@ -492,6 +495,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
+  // Session length (owner, 2 Nov 2026): the calling session's own length and "Stay logged in".
+  'PUT /v1/account/session/length',
+  'POST /v1/account/session/extend',
   // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
   // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
   'POST /v1/team/invites',

@@ -136,6 +136,14 @@ async function tokenFor(d: Deps, b: Browser, accountId: string, action: Paramete
   return issueConfirmToken(d, { sessionId: await sessionOf(b), accountId, action, method: 'password' });
 }
 
+/**
+ * A security change that a weak session's request turns into a hold (202): "One device at a time"
+ * on, with its confirm token. (The logout timer played this part until it was retired, 2 Nov 2026.)
+ */
+async function heldChange(b: Browser, accountId: string) {
+  return b.put('/v1/account/security/one-device', { on: true, confirmToken: await tokenFor(deps, b, accountId, { kind: 'set-one-device', on: 'on' }) });
+}
+
 /** Signs up a passkey trader in `b`; returns its authenticator. */
 async function passkeyTrader(b = new Browser(app)): Promise<{ b: Browser; id: string; name: string; auth: SoftAuthenticator }> {
   const auth = createSoftAuthenticator({ backedUp: true, userVerified: true });
@@ -374,16 +382,6 @@ describe('one weak way', () => {
     const rows = [{ id: (await accountIdByLoginName(deps, name))! }];
     expect(await holdOf(deps, rows[0]!.id)).toBeNull();
   });
-
-  it('the logout timer is a security change (review M2)', async () => {
-    const { b, name, id } = await passwordTrader();
-    await weakAgain(b, name, id);
-    const res = await b.put('/v1/account/security/logout-timer', { idleHours: 2 });
-    expect(res.statusCode).toBe(202);
-    expect(await holdOf(deps, id)).toMatchObject({ pending: 'logout-timer' });
-    const { rows } = await deps.db.query<{ idle_hours: number }>('select idle_hours from accounts where id = $1', [id]);
-    expect(rows[0]!.idle_hours).toBe(12);
-  });
 });
 
 describe('C1: a weak session cannot add a method and use it to skip the approval or end the hold (real clock)', () => {
@@ -472,7 +470,7 @@ describe('C2: during the hold a weak session cannot change the password or the l
     expect(errorOf(await removeMethod(app, deps, b, id, 'password', pwId))).toBe('recovery-hold');
     expect(errorOf(await changePassword(deps, b, id))).toBe('recovery-hold');
     expect(errorOf(await addPasskey(deps, b, id, createSoftAuthenticator({ backedUp: true, userVerified: true })))).toBe('recovery-hold');
-    expect(errorOf(await b.put('/v1/account/security/logout-timer', { idleHours: 2 }))).toBe('recovery-hold');
+    expect(errorOf(await heldChange(b, id))).toBe('recovery-hold');
     // Accepting the Terms is not a security change: allowed during the hold (lead decision 2026-10-30).
     expect((await b.post('/v1/account/terms', { version: TERMS })).statusCode).toBe(204);
     expect((await methodsOf(b)).map((m) => m.type).sort()).toEqual(['passkey', 'password']);
@@ -755,7 +753,7 @@ describe('review round 2', () => {
       await deps.db.query('update accounts set one_device = true where id = $1', [o.id]);
       // A weak session approved by the owner changes something: the hold starts (two sessions, one strong).
       const thief = await approvedThief(o.b, o.name);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
       expect((await o.b.get('/v1/account/me')).statusCode).toBe(401);
@@ -835,7 +833,7 @@ describe('review round 2', () => {
       const w = (await passwordLogin(thief, o.name)).json() as { approvalId: string; number: number };
       expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
       expect((await thief.post(`/v1/login/approval/${w.approvalId}/poll`)).json()).toMatchObject({ status: 'ok' });
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       expect((await thief.delete(`/v1/account/sessions/${await sessionOf(o.b)}`)).json()).toEqual({ error: 'weak-session' });
       expect((await o.b.get('/v1/account/me')).statusCode).toBe(200);
     });
@@ -981,14 +979,14 @@ describe('review round 2', () => {
     /** The gate as a security route calls it, for a session whose request passed its preHandlers earlier. */
     const gateAs = (accountId: string, sessionId: string) =>
       withTx(deps.db, (db) =>
-        gateChange(db, { server: app, auth: { accountId, sessionId, level: 'full' }, log: app.log } as unknown as FastifyRequest, { kind: 'logout-timer', idleHours: 2 }),
+        gateChange(db, { server: app, auth: { accountId, sessionId, level: 'full' }, log: app.log } as unknown as FastifyRequest, { kind: 'one-device', on: true }),
       );
 
     it("R3-I1: a thief's change in flight across the owner's proof starts no new hold: the gate refuses a revoked session (401)", async () => {
       const o = await passkeyWithPassword();
       const thief = await approvedThief(o.b, o.name);
       const w = await sessionOf(thief);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       expect(await holdOf(deps, o.id)).toBeNull();
       expect((await thief.get('/v1/account/me')).statusCode).toBe(401);
@@ -1006,7 +1004,7 @@ describe('review round 2', () => {
     it('R3-I1: PUT /v1/account/password is throttled per session (a refused loop runs dry: 429 slow-down)', async () => {
       const o = await passkeyWithPassword();
       const thief = await approvedThief(o.b, o.name);
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       const confirmToken = await tokenFor(deps, thief, o.id, { kind: 'set-password' });
       for (let i = 0; i < SECURITY_CHANGE_BUCKET.capacity; i++) {
         expect(errorOf(await thief.put('/v1/account/password', { password: NEW_PASSWORD, confirmToken }))).toBe('recovery-hold');
@@ -1031,7 +1029,7 @@ describe('review round 2', () => {
       const t2 = new Browser(app);
       const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
       expect((await o.b.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
-      expect((await o.b.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(o.b, o.id)).statusCode).toBe(202);
       const before = await live(o.id);
       const res = await t2.post(`/v1/login/approval/${w.approvalId}/poll`);
       expect(res.statusCode).toBe(403);
@@ -1046,7 +1044,7 @@ describe('review round 2', () => {
       const t2 = new Browser(app);
       const w = (await passwordLogin(t2, o.name)).json() as { approvalId: string; number: number };
       expect((await thief.post(`/v1/account/approvals/${w.approvalId}`, { choice: w.number })).json()).toEqual({ outcome: 'approved' });
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       // The owner's proof, statement by statement as `endHoldIfOwner` runs them, with the poll in between.
       const owner = await deps.db.connect();
       let polled: Promise<LightMyRequestResponse> | undefined;
@@ -1117,7 +1115,7 @@ describe('review round 2', () => {
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
       expect(typeof a.approvalId).toBe('string');
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       const proven = await ownerPasskey(o.id);
       // The owner's login transaction holds the approval and account locks while the thief's
       // decision (past its preHandler) waits on them; then `endHoldIfOwner` runs and commits.
@@ -1148,7 +1146,7 @@ describe('review round 2', () => {
       const thief = await approvedThief(o.b, o.name);
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       expect((await passkeyLogin(new Browser(app), o.auth)).json()).toEqual({ status: 'ok' });
       const { rows } = await deps.db.query<{ outcome: string | null }>('select outcome from login_approvals where id = $1', [a.approvalId]);
       expect(rows).toEqual([{ outcome: 'expired' }]);
@@ -1161,7 +1159,7 @@ describe('review round 2', () => {
       const thief = await approvedThief(o.b, o.name);
       const b2 = new Browser(app);
       const a = (await passwordLogin(b2, o.name)).json() as { approvalId: string; number: number };
-      expect((await thief.put('/v1/account/security/logout-timer', { idleHours: 2 })).statusCode).toBe(202);
+      expect((await heldChange(thief, o.id)).statusCode).toBe(202);
       for (let i = 0; i < APPROVAL_DECISION_BUCKET.capacity; i++) {
         expect(errorOf(await thief.post(`/v1/account/approvals/${a.approvalId}`, { choice: a.number }))).toBe('recovery-hold');
       }
@@ -1332,9 +1330,14 @@ describe('review round 2', () => {
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'set-one-device', on: 'on' });
           return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/security/one-device', { on: true, confirmToken }) };
         },
-        'PUT /v1/account/security/logout-timer': async () => {
+        'PUT /v1/account/session/length': async () => {
           const o = await passkeyWithPassword();
-          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/security/logout-timer', { idleHours: 2 }) };
+          return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/session/length', { hours: 4 }) };
+        },
+        'POST /v1/account/session/extend': async () => {
+          const o = await passkeyWithPassword();
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'extend-session' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/session/extend', { confirmToken }) };
         },
         'POST /v1/wallets': async () => {
           const o = await passkeyWithPassword();

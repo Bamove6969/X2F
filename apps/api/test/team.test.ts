@@ -320,7 +320,7 @@ describe('owner-only', () => {
       await m.browser.patch(`/v1/team/members/${m.id}`, { roles: ['offers'] }),
       await m.browser.delete(`/v1/team/members/${m.id}`),
       await m.browser.get('/v1/team/audit'),
-      await m.browser.put('/v1/account/security/logout-timer', { idleHours: 12 }),
+      await m.browser.post('/v1/account/session/extend', {}),
       await m.browser.get('/v1/account/sessions'),
       await m.browser.post('/v1/account/login-name', { loginName: 'whatever1' }),
     ];

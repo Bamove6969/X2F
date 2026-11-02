@@ -104,10 +104,13 @@ describe('onboarding', () => {
     const me = await own.api.me();
     expect(me.methods).toEqual(['password']);
     expect(me.suggestions).toEqual(['add-authenticator', 'add-backup']);
-    expect(me.logoutTimer).toEqual({ idleHours: 12, adjustable: true });
-    await expect(own.api.setLogoutTimer({ idleHours: 4 })).resolves.toEqual({ idleHours: 4, adjustable: true });
-    await expect(own.api.getLogoutTimer()).resolves.toEqual({ idleHours: 4, adjustable: true });
-    expect((await own.api.me()).logoutTimer).toEqual({ idleHours: 4, adjustable: true });
+    // Session length (owner, 2 Nov 2026): nothing chosen after the login, then the chosen length;
+    // staying logged in re-proves the password through the confirm route.
+    expect(me.session).toMatchObject({ lengthHours: null, choices: [2, 4, 6, 12], canExtend: true });
+    await expect(own.api.setSessionLength({ hours: 4 })).resolves.toMatchObject({ lengthHours: 4 });
+    expect((await own.api.me()).session).toMatchObject({ lengthHours: 4 });
+    const { confirmToken } = await own.api.confirmPassword({ password: GOOD, action: { kind: 'extend-session' } });
+    await expect(own.api.extendSession({ confirmToken })).resolves.toMatchObject({ lengthHours: 4 });
   });
 
   it('a PGP account that adds a password still has no backup (R11)', async () => {
@@ -265,7 +268,7 @@ describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () =>
     const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
     await expect(browser.me()).resolves.toMatchObject({
-      displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
+      displayName: `D${username}`, needsLoginName: false, kind: 'staff', session: null,
     });
   });
 });
