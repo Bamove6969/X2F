@@ -111,3 +111,7 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - Up to 3 buy and 3 sell ads per vendor. One ad covers every currency the vendor supports.
   - Tier amounts are converted at the market rate and shown in the chosen currency.
   - The buyer can open a dispute 30 minutes after tapping "I've paid" (minimum; some payments take up to 30 min to arrive). Correction from the owner, 2 Nov.
+- **Cancel, reviews and trade volume** (owner, via the lead, 2 Nov ~01:20):
+  - **Cancel:** the buyer can cancel a trade on their own ("Cancel trade", spec option B). This replaces the 29 Oct "Ask to cancel" / mutual-cancel design. The trade stays open with a status like "Returning XMR to the seller" until all confirmations of the XMR coming back are in.
+  - **Reviews:** a review shows as soon as the trade is marked complete. There is no blind-reveal wait. "Skip review" shows nothing to anyone.
+  - **Trade volume line, opt-in:** "Completed over $X in trades to date" on Profile and ads. Buying and selling are added, rounded down in $10,000 steps up to $90,000+, then $100,000+, then $50,000 steps ($150,000+, $200,000+ …). A settings toggle turns it on.
