@@ -159,12 +159,12 @@ describe('the opt-in line (off by default)', () => {
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
   });
 
-  it('opted in at exactly $10,000: nothing shows ("over $10,000" would not be true; review M1)', async () => {
+  it('opted in at exactly $10,000: the $10,000 line shows (owner 2026-11-02: "at least $10,000")', async () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, dollars(10_000));
-    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
   });
 
   it('refuses a body that is not { show: boolean }, and a request with no session', async () => {
@@ -218,8 +218,8 @@ describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
 });
 
 // Owner 2026-11-02 (lead 01:48 and 07:48): the line INCLUDES volume proven on other sites, ONLY
-// through the dollar figure a moderator verified on a live past-reputation claim (migration 310);
-// an unverified (null) or dead claim adds nothing. The figure, like the own total, never leaves the
+// through the dollar figure a moderator verified on an APPROVED past-reputation claim (migration 310);
+// an unverified (null), not-yet-approved or dead claim adds nothing. The figure, like the own total, never leaves the
 // server: only the rounded-down bucket does.
 describe('moderator-verified imported volume (past reputation)', () => {
   let staffN = 0;
@@ -227,8 +227,8 @@ describe('moderator-verified imported volume (past reputation)', () => {
   const staff = async () =>
     (staffId ??= await seedAccount(deps, { loginName: `ttstaff${++staffN}${randomBytes(3).toString('hex')}`, kind: 'staff' }));
   let site = 0;
-  /** A live claim as finish stores it (key and signature bytes do not matter here). */
-  async function claim(accountId: string, status = 'signed'): Promise<string> {
+  /** A claim (approved unless said; key and signature bytes do not matter here). */
+  async function claim(accountId: string, status = 'approved'): Promise<string> {
     site += 1;
     const { rows } = await deps.db.query<{ id: string }>(
       `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
@@ -238,7 +238,7 @@ describe('moderator-verified imported volume (past reputation)', () => {
     return rows[0]!.id;
   }
   const verify = async (claimId: string, usdCents: bigint | null) =>
-    expect(await setVerifiedPastRepUsd(deps.db, claimId, usdCents === null ? null : Number(usdCents), await staff(), START)).toEqual({ ok: true });
+    expect(await setVerifiedPastRepUsd(deps.db, claimId, usdCents === null ? null : Number(usdCents), { accountId: await staff(), role: 'senior' }, START)).toEqual({ ok: true });
 
   it('a verified figure lifts a trader over a step, and never appears in an answer', async () => {
     const seller = await trader();
@@ -261,7 +261,7 @@ describe('moderator-verified imported volume (past reputation)', () => {
     const buyer = await trader();
     const code = await trade(seller, buyer, dollars(1_000));
     await verify(await claim(seller.id), dollars(30_000));
-    await verify(await claim(seller.id, 'approved'), dollars(20_000));
+    await verify(await claim(seller.id), dollars(20_000));
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
     expect((await setting(seller)).json()).toEqual({ show: false, tradedOverUsd: 50_000 });
   });
@@ -271,7 +271,7 @@ describe('moderator-verified imported volume (past reputation)', () => {
     const buyer = await trader();
     const code = await trade(seller, buyer, dollars(9_000));
     await claim(seller.id);
-    await claim(seller.id, 'approved');
+    await claim(seller.id, 'signed');
     expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
     // A figure the moderator cleared adds nothing either.
@@ -280,6 +280,29 @@ describe('moderator-verified imported volume (past reputation)', () => {
     expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
     await verify(cleared, null);
     expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
+  });
+
+  it('a verified figure that brings the total to exactly a step earns it (owner: "at least")', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(9_000));
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    await verify(await claim(seller.id), dollars(1_000)); // exactly $10,000.00
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
+  });
+
+  it('owner 2026-11-02: a signed (not yet approved) claim with a figure counts nothing; once approved it counts', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(9_000));
+    const id = await claim(seller.id, 'signed');
+    await verify(id, dollars(5_000)); // a moderator may enter the figure before approving
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [id]);
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
   });
 
   it('a revoked, removed or rejected claim adds nothing, at once', async () => {
