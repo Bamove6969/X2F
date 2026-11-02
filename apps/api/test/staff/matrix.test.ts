@@ -79,7 +79,10 @@ describe('privilege matrix', () => {
         const res = await (await browserFor(c)).send(r.method, urlOf(r), r.body);
         const want = expected(c, r);
         const error = (res.json() as { error?: string }).error;
-        if (want === 'allowed') {
+        if (want === 'allowed' && r.allowedAnswer) {
+          // Past the guard, the route's own check answers (e.g. no valid tap): exactly that, never a guard refusal.
+          expect({ status: res.statusCode, error }, `${c}: ${res.body}`).toEqual(r.allowedAnswer);
+        } else if (want === 'allowed') {
           expect(res.statusCode, `${c}: ${res.body}`).toBeLessThan(500);
           expect([401, 403], `${c}: ${res.body}`).not.toContain(res.statusCode);
           expect(REFUSALS, `${c}`).not.toContain(error);
