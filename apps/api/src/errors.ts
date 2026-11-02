@@ -109,7 +109,12 @@ export type ApiErrorCode =
   | 'note-personal-details'
   | 'neutral-with-details'
   | 'late-review-neutral-only'
-  | 'late-review-closed';
+  | 'late-review-closed'
+  // Plan 2, Task 18: team members.
+  | 'owner-only'
+  | 'forbidden'
+  | 'too-many-members'
+  | 'member-cannot-sign';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

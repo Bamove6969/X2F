@@ -11,8 +11,11 @@
  * `lookAlikeKey`). Two traders' names that only look alike are both allowed.
  */
 
-/** Account kinds. Separate from `@x2f/core`'s trade `Role`. */
-export type AccountKind = 'trader' | 'staff' | 'owner';
+/**
+ * Account kinds. Separate from `@x2f/core`'s trade `Role`. A `member` account is only a team
+ * member's own login (Plan 2 Task 18): it acts for its team's trader account and owns nothing.
+ */
+export type AccountKind = 'trader' | 'staff' | 'owner' | 'member';
 
 export type NameRefusal = 'length' | 'characters' | 'reserved';
 

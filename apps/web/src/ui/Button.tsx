@@ -7,7 +7,8 @@ import './ui.css';
 // - secondary: the outlined button (SellOffers "Message nightowl_44").
 // - quiet: the muted text button (BuyerPay "Cancel trade").
 // - danger: the rose text button (BuyerPay "Open dispute").
-export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger';
+// - danger-outline: the outlined rose button (LoginApprove "No, block it").
+export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'danger-outline';
 
 type Common = { variant: ButtonVariant; children: ReactNode; className?: string };
 type AsButton = Common & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'> & { href?: undefined };

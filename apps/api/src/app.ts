@@ -28,6 +28,7 @@ import type { MarketPrices } from './price/market.js';
 import { priceRoutes } from './price/routes.js';
 import { ApiError } from './errors.js';
 import { accountRoutes } from './routes/account.js';
+import { teamRoutes } from './routes/team.js';
 import { tradeIdentityRoutes } from './trades/identity.js';
 import { chatRoutes } from './chat/routes.js';
 import { newBudgets, type Budgets } from './limits.js';
@@ -256,7 +257,7 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   approvalRoutes(app);
   // Task 8: WebAuthn sign-up, confirm, add-key, and the login mount (by login name + discoverable).
   webauthnRoutes(app);
-  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner'] });
+  await app.register(webauthnLoginRoutes, { prefix: '/v1/login/webauthn', kinds: ['trader', 'staff', 'owner', 'member'] });
   // Task 12: payout wallets and the 24-hour wait (traders only).
   walletRoutes(app);
   // Plan 3 Task 3: method lists, suggestions and the price (browsing needs no session); the owner's price health.
@@ -296,6 +297,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   feedbackFormRoutes(app);
   // Plan 5, Task 3: reviews with blind reveal (the gate is wired into the take and wallet routes).
   reviewRoutes(app);
+  // Plan 2, Task 18: team members (invites, the member's sign-up, roles, the owner's audit log).
+  teamRoutes(app);
 
   return app;
 }

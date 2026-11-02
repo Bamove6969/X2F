@@ -6,6 +6,7 @@ import { holdRefusal, holdUntil, requireLiveSessionInTx, requireNotHeld } from '
 import type { AuthContext } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { auditMember } from '../team/audit.js';
 import { getMethod, isAvailable } from '../methods/profiles.js';
 import type { LiveOfferStats } from '../methods/routes.js';
 import { currencyExponent } from '../price/currencies.js';
@@ -369,22 +370,24 @@ async function inTransaction<T>(db: Deps['db'], fn: (client: Queryable) => Promi
   }
 }
 
-const requireTrader = requireSession({ kinds: ['trader'] });
+// Posting, pausing, relisting and removing: the account owner, or a team member with Offers (Task 18).
+const requireTrader = requireSession({ kinds: ['trader'], member: 'offers' });
 /**
  * Turning offers off, and reading my own offers, work on a stale Terms version too (lead decision
  * 2026-10-29 on R10: shutting things off never waits for new Terms). Anything that puts an offer
  * live still needs the current Terms (`assertTermsCurrent`); removing one is shutting off too
- * (round-2 review m1, lead decision 2026-10-29).
+ * (round-2 review m1, lead decision 2026-10-29). A team member with Offers may do these too (Task 18).
  */
-const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true });
+const requireTraderStaleOk = requireSession({ kinds: ['trader'], allowStaleTerms: true, member: 'offers' });
 
 /** 403 `terms-required` `{ version }`, as requireSession answers, for a trader on a stale Terms version. */
 async function assertTermsCurrent(deps: Deps, accountId: string): Promise<void> {
   const { rows } = await deps.db.query<{ terms_version: string | null }>('select terms_version from accounts where id = $1', [accountId]);
   if (rows[0]?.terms_version !== deps.config.termsVersion) throw new ApiError(403, 'terms-required', { version: deps.config.termsVersion });
 }
-// Browsing: a signed-in trader's session, read only (no touch), when there is one.
-const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true });
+// Browsing: a signed-in trader's session, read only (no touch), when there is one; a team member
+// browses as the account it works for.
+const viewerCheck = requireSession({ kinds: ['trader'], touch: false, allowStaleTerms: true, member: 'any' });
 
 /**
  * The signed-in trader browsing, or null for anyone else (logged out, staff, an expired session, a
@@ -470,6 +473,8 @@ export function offerRoutes(app: FastifyInstance): void {
         o.minTrades, o.terms, o.country, now,
       ],
       );
+      // Task 18: a team member's post is in the account owner's audit log, in this transaction.
+      await auditMember(client, req.auth, { action: 'offer-posted', detail: { offerId: rows[0]!.id } }, now);
       return rows[0]!.id;
     });
     return reply.code(201).send({ id });
@@ -513,12 +518,14 @@ export function offerRoutes(app: FastifyInstance): void {
         if (!m) throw new ApiError(404, 'not-found');
         await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
+        await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
       });
     } else {
       // Pausing or removing: no guard but a live session (review round 5 M2), under the account lock.
       await inTransaction(deps.db, async (client) => {
         await lockAccountLive(client, req.auth!, now);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
+        await auditMember(client, req.auth, { action: status === 'paused' ? 'offer-paused' : 'offer-removed', detail: { offerId: id } }, now);
       });
     }
     return { id, status };
@@ -718,6 +725,10 @@ export function offerRoutes(app: FastifyInstance): void {
         await client.query(`update offers set status = $2, updated_at = $3 where account_id = $1 and id = any($4::uuid[]) and status <> 'removed'`, [
           accountId, status, now, switched,
         ]);
+        // Task 18: one audit row per offer a team member switched, in this transaction.
+        for (const id of switched) {
+          await auditMember(client, req.auth!, { action: status === 'paused' ? 'offer-paused' : 'offer-relisted', detail: { offerId: id } }, now);
+        }
       }
       return out;
     });

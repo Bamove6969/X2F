@@ -1257,12 +1257,21 @@ describe('review round 2', () => {
       /** Everything of the account a route could write, but the calling session's own row (its touch) and one-shot tokens. */
       async function stateOf(accountId: string, caller: string): Promise<unknown> {
         const agg = (from: string) => `select coalesce(jsonb_agg(to_jsonb(t) order by to_jsonb(t)::text), '[]'::jsonb) as j from ${from}`;
-        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices'];
+        const tables = ['alerts', 'login_approvals', 'account_holds', 'push_subscriptions', 'wallets', 'passwords', 'totp', 'pgp_keys', 'webauthn_credentials', 'recovery_codes', 'trusted_devices', 'team_members', 'team_audit'];
         const out: Record<string, unknown> = {};
         for (const t of tables) out[t] = (await deps.db.query<{ j: unknown }>(`${agg(`${t} t`)} where account_id = $1`, [accountId])).rows[0]!.j;
         out.sessions = (await deps.db.query<{ j: unknown }>(`${agg('sessions t')} where account_id = $1 and id <> $2`, [accountId, caller])).rows[0]!.j;
         out.account = (await deps.db.query<{ j: unknown }>(`${agg('accounts t')} where id = $1`, [accountId])).rows[0]!.j;
         return out;
+      }
+
+      /** An open team invite of `o` (Offers role); returns the member id. */
+      async function teamInvite(o: { b: Browser; id: string }): Promise<string> {
+        const displayName = unique('Mate');
+        const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
+        const r = await o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
+        expect(r.statusCode, r.body).toBe(201);
+        return (r.json() as { id: string }).id;
       }
 
       type Prepared = { b: Browser; accountId: string; fire: () => Promise<LightMyRequestResponse> };
@@ -1381,6 +1390,25 @@ describe('review round 2', () => {
           await deps.db.query('update accounts set terms_accepted_at = null where id = $1', [o.id]);
           return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/account/terms', { version: TERMS }) };
         },
+        // Plan 2 Task 18 (team members), at its landing.
+        'POST /v1/team/invites': async () => {
+          const o = await passkeyWithPassword();
+          const displayName = unique('Mate');
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken }) };
+        },
+        'PATCH /v1/team/members/:id': async () => {
+          const o = await passkeyWithPassword();
+          const mid = await teamInvite(o);
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-roles', memberId: mid, roles: 'offers,trades' });
+          return { b: o.b, accountId: o.id, fire: () => o.b.patch(`/v1/team/members/${mid}`, { roles: ['offers', 'trades'], confirmToken }) };
+        },
+        'DELETE /v1/team/members/:id': async () => {
+          const o = await passkeyWithPassword();
+          const mid = await teamInvite(o);
+          const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
+          return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
+        },
       };
 
       it('the table covers exactly LIVE_SESSION_ROUTES (the trading ones in take.test.ts)', () => {
@@ -1429,9 +1457,16 @@ describe('the route lists', () => {
     const gated = ['auth/password.ts', 'auth/pgp.ts', 'auth/webauthn.ts', 'auth/totp.ts', 'auth/recovery.ts', 'auth/methods.ts', 'routes/account.ts', 'wallets/routes.ts'];
     const calls = gated.map((f) => src(f).split('await gateChange(').length - 1).reduce((a, n) => a + n, 0);
     expect(calls).toBe(SECURITY_CHANGE_ROUTES.length);
-    expect(src('trades/take.ts')).toContain("'/v1/offers/:id/take', { preHandler: [requireTrader, requireNotHeld] }");
+    expect(src('trades/take.ts')).toContain("'/v1/offers/:id/take', { preHandler: [...requireTrader, requireNotHeld] }");
     expect(src('offers/routes.ts')).toContain("'/v1/offers', { preHandler: [requireTrader, requireNotHeld] }");
     expect(src('wallets/routes.ts')).toContain("'/v1/wallets/:id', { preHandler: [session, requireNotHeld] }");
+    // Plan 2 Task 18 (owner 2026-10-30): the three team writes check the hold before spending the confirm token.
+    // Owner 2026-11-01 (landing review I1): invites and role changes also need a strong session,
+    // checked after the hold and before the confirm token is spent; removal does not.
+    expect(src('routes/team.ts').split(', requireNotHeld, requireStrongSession, requireConfirm(').length - 1).toBe(2);
+    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(1);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
+    expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
     // The trade-finishing routes stay open during the hold, to backup sessions too.
     for (const f of ['trades/routes.ts', 'disputes/routes.ts']) {
       expect(src(f)).not.toContain('requireNotHeld');

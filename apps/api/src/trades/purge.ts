@@ -22,6 +22,7 @@ export async function purgeTradeAddresses(db: pg.Pool, now: Date): Promise<numbe
   try {
     await client.query('begin');
     try {
+      // PURGE_ROLE must stay a compile-time constant: it is an SQL identifier, interpolated here, not a bound parameter.
       await client.query(`set local role ${PURGE_ROLE}`);
       const { rowCount } = await client.query(
         `update trades set buyer_payout = null, seller_refund = null

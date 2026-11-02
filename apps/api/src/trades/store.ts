@@ -5,6 +5,7 @@ import type { Deps } from '../app.js';
 import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
+import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -310,7 +311,7 @@ function unchanged(prev: Trade, next: Trade): boolean {
  * unchanged (callers map it); on any throw nothing is written.
  *
  * `within` runs inside the same transaction, after the trade and its event are written and before
- * the commit, with the locked row's trade before and after (Task 27 writes the dispute row there, so
+ * the activity-log entry and the commit, with the locked row's trade before and after (Task 27 writes the dispute row there, so
  * a trade is never disputed without one). It does not run for a no-op event. If it throws, nothing
  * is written.
  *
@@ -353,13 +354,19 @@ export async function applyEvent(
         `update trades set ${cols.map(([c], i) => `${c} = $${i + 2}`).join(', ')} where code = $1`,
         [code, ...cols.map(([, v]) => v)],
       );
+      const record = eventRecord(e);
       await client.query('insert into trade_events (code, at, by, event) values ($1, $2, $3, $4)', [
-        code, now, by, JSON.stringify(eventRecord(e)),
+        code, now, by, JSON.stringify(record),
       ]);
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
       if (within) await within(client, prev, next, now);
+      // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
+      // last statement before the commit (M2): the log lock serialises every append on the site,
+      // so it is held only for the commit, never while `within` or anything else is awaited.
+      const action = `trade.${e.type}` as const;
+      await appendLog(client, { at: now, actor: actorOfBy(by), tradeCode: code, action, detail: tradeLogDetail(record, action) });
       await client.query('commit');
     } catch (err) {
       await client.query('rollback');

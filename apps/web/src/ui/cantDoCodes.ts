@@ -47,6 +47,12 @@ export const CANT_DO_CODES = [
   // Plan 2 Task 17 review round 2 (N-I3, N-M3): a session whose login waits may not log a stronger
   // one out, answer a strong login, or hide the hold's warnings.
   'weak-session',
+  // Plan 2 Task 18: team members (owner-only actions, a role a member lacks, the member limit,
+  // and escrow signing, which stays on the account owner's device until Plan 3 Task 42).
+  'owner-only',
+  'forbidden',
+  'too-many-members',
+  'member-cannot-sign',
   // Plan 5 Task 3: rate your last trade first (the rate-first gate, spec 5.1), and P5-A31's late
   // review rules (owner OPEN; only the default 'any' is in force today).
   'review-pending',
@@ -183,6 +189,7 @@ export const CANT_DO_TITLE = {
   approve: "This login can't be let in",
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
+  team: "This can't be done on the team",
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -204,6 +211,11 @@ export function takeCantDoText(code: CantDoCode, o: { stageName: string | null; 
     case 'offer-busy':
       // The poster's own open-trade limit; nothing says whose limit or how many (Task 5 review M6).
       return "This offer can't take more trades right now. Try again later or pick another offer.";
+    // Plan 2 Task 18: a team member's take (review I2: refused until Plan 3 Task 42).
+    case 'member-cannot-sign':
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return 'Your account cannot start this trade right now.';
   }
@@ -221,6 +233,10 @@ export function postCantDoText(code: CantDoCode): string {
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
       return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+    // Plan 2 Task 18: a team member without the Offers role.
+    case 'forbidden':
+    case 'owner-only':
+      return teamCantDoText(code);
     default:
       return "Your account can't post this offer right now.";
   }
@@ -351,10 +367,6 @@ export function holdLoginText(when: string): string {
   return `This login can't get in ${when}. Your account is on a 24-hour hold after a login with only one way of proving it's you, and a login like this one waits until the hold ends. If you had a passkey, a security key, or an authenticator code set up before the hold, log in with it now: that ends the hold. If not, wait and log in again when the hold ends. With a recovery code you can use a backup login in the meantime to finish trades already open. A backup login uses up that recovery code and makes the hold last 24 hours from then.`;
 }
 
-/** 409 `too-many-devices` when approving: the chooser below asks which device to log out. */
-export const TOO_MANY_DEVICES_APPROVE =
-  'Your account is logged in on the most devices allowed, so log out a device first. Choose one to log out, or block this login.';
-
 /** 429 `slow-down` `{ reason: 'approvals' }`: too many login approvals asked for in an hour. */
 export const TOO_MANY_APPROVALS =
   'Your account has asked for too many login approvals in the last hour. Wait a while, then log in again, or use a backup.';
@@ -373,4 +385,30 @@ export const WEAK_SESSION_TEXT =
 /** 403 `recovery-hold` when approving a new device during the hold; blocking it still works. */
 export function holdApproveText(when: string): string {
   return `${holdText(when)} New devices can't be let in until then, but you can still block this login.`;
+}
+
+/** The member limit's code (Plan 2 Task 18). */
+export const TOO_MANY_MEMBERS_CODE = 'too-many-members' satisfies CantDoCode;
+
+/**
+ * Team members (Plan 2 Task 18): what a team refusal says, on the Team screen and on any screen a
+ * member was refused on. `max` is the member limit the API sent with `too-many-members`.
+ * COPY-UNSIGNED
+ */
+export function teamCantDoText(code: CantDoCode, o: { max?: number } = {}): string {
+  switch (code) {
+    case 'owner-only':
+      return 'Only the account owner can do this. Team members work on offers or trades, as their roles allow.';
+    case 'forbidden':
+      return "Your team role doesn't include this. The account owner can change your roles.";
+    case 'too-many-members':
+      return `A team can have at most ${o.max ?? 3} members. Remove one before inviting someone new.`;
+    case 'member-cannot-sign':
+      return "Starting or accepting a trade, and securing or releasing coins, stay on the account owner's device for now. Ask the account owner to do this step.";
+    // Owner 1 Nov 2026: inviting a member and changing roles need a strong login (API 403 weak-session).
+    case 'weak-session':
+      return "This device logged in with only one way of proving it's you, so it can't invite team members or change their roles. Do this from a device where you logged in with a passkey, a security key, or your password and authenticator code.";
+    default:
+      return "This can't be done on the team right now.";
+  }
 }

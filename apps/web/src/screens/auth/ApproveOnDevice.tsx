@@ -1,24 +1,37 @@
 /**
- * The new device's side of new-device approval (Plan 2 Task 16, LoginApprove board, new-device
- * view): the login waits until a device that is already logged in taps the same 2-digit number.
- * It polls `POST /v1/login/approval/:id/poll` every 2 seconds (only this browser, with its approval
- * cookie, can); `ok` means the session has started.
+ * The new device's side of new-device approval (Plan 2 Task 16): the login waits until a device
+ * that is already logged in taps the same 2-digit number. It polls `POST /v1/login/approval/:id/poll`
+ * every 2 seconds (only this browser, with its approval cookie, can); `ok` means the session has
+ * started.
  *
- * Built from existing UI-kit classes and components only, with no styling of its own: the
- * LoginApprove board is still in progress (test/devices-tripwire.test.ts NEEDS_DESIGN_DEVICES).
- * The words are the board's.
+ * Laid out to the LoginApprove board, side=new (C2-D1; docs/design-boards/LoginApprove.dc.html and
+ * -Wide on wip/design-brief): a full screen with the back control and "Log in", the number in a
+ * card, the countdown, "Where do I approve it?", the no-other-device card, and the actions in the
+ * footer. All look comes from the UI kit (ui/FlowScreen, ui/Disclosure, ui.css). The board's
+ * new-device side is marked Draft copy: its new sentences here are COPY-UNSIGNED. Not built (new
+ * behaviour, see the C2-D1 report): the room note about the account's devices (review M5 keeps
+ * the account's devices off this screen), and the passkey / security key / PGP way in without an
+ * approval; the card keeps the existing link to the backup login.
  */
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
 import type { ApprovalPoll, ApprovalWait } from '@x2f/auth-client';
 import { Button } from '../../ui/Button.js';
 import { formatRemaining } from '../../ui/Countdown.js';
+import { Disclosure } from '../../ui/Disclosure.js';
+import { FlowScreen } from '../../ui/FlowScreen.js';
+import { Icon, StatusIcon } from '../../ui/icons.js';
 import { authApi } from './authApi.js';
 import '../screens.css';
 
 export const POLL_MS = 2000;
 
 type Stage = 'waiting' | 'in' | 'blocked' | 'expired';
+
+/** The board's countdown form: "04:59" (mm:ss, mono). */
+export function mmss(ms: number): string {
+  return formatRemaining(ms, 'clock').padStart(5, '0');
+}
 
 export function ApproveOnDevice({
   wait,
@@ -36,8 +49,18 @@ export function ApproveOnDevice({
   const [stage, setStage] = useState<Stage>('waiting');
   const [loggedOut, setLoggedOut] = useState<string[]>([]);
   const [left, setLeft] = useState(() => new Date(wait.expiresAt).getTime() - Date.now());
-  const [steps, setSteps] = useState(false);
   const busy = useRef(false);
+  // Review M2: on a stage change focus moves to the new stage's h2 (tabIndex -1), so the change is
+  // read out and a keyboard user is not left on a button that now does something else. Not on mount.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    heading.current?.focus();
+  }, [stage]);
 
   useEffect(() => {
     if (stage !== 'waiting') return;
@@ -76,80 +99,124 @@ export function ApproveOnDevice({
   };
 
   const backup = `/login/backup?returnTo=${encodeURIComponent(returnTo)}`;
+  // While waiting the back control cancels the wait, as Cancel does; once let in it goes on like
+  // Continue (this device is logged in now, review M1); blocked or expired, it starts again.
+  const back = { label: 'Back to log in', onClick: stage === 'waiting' ? cancel : stage === 'in' ? onLoggedIn : onRestart };
 
   if (stage === 'in') {
     return (
-      <section className="x2f-card" data-part="approve-in" aria-labelledby="approve-in-h">
-        <h2 className="x2f-card__title" id="approve-in-h">
-          You're in
-        </h2>
-        <p className="x2f-sheet__body">Your other device approved this login.</p>
-        {loggedOut.length > 0 ? (
-          <p className="x2f-note" data-part="approve-logged-out">
-            Logged out to make room: {loggedOut.join(', ')}.
-          </p>
-        ) : null}
-        <Button variant="primary" onClick={onLoggedIn} data-part="approve-continue">
-          Continue
-        </Button>
-      </section>
+      // key per stage (review M2): the footer button is a new node, so a press meant for Cancel can't become Continue.
+      <FlowScreen
+        key={stage}
+        screen="login"
+        title="Log in"
+        back={back}
+        footer={
+          <Button variant="primary" onClick={onLoggedIn} data-part="approve-continue">
+            Continue
+          </Button>
+        }
+      >
+        <section className="x2f-stack" data-part="approve-in" aria-labelledby="approve-in-h">
+          <StatusIcon name="check-circle" tone="escrow" />
+          <h2 className="x2f-h2" id="approve-in-h" tabIndex={-1} ref={heading}>
+            You're in
+          </h2>
+          <p className="x2f-body">Your other device approved this login.</p>
+          {loggedOut.length > 0 ? (
+            <p className="x2f-fine" data-part="approve-logged-out">
+              Logged out to make room: {loggedOut.join(', ')}.
+            </p>
+          ) : null}
+        </section>
+      </FlowScreen>
     );
   }
 
   if (stage === 'blocked' || stage === 'expired') {
+    const blocked = stage === 'blocked';
     return (
-      <section className="x2f-card" data-part={`approve-${stage}`} aria-labelledby="approve-end-h">
-        <h2 className="x2f-card__title" id="approve-end-h">
-          {stage === 'blocked' ? 'This login was blocked' : 'This request has ended'}
-        </h2>
-        <p className="x2f-sheet__body">
-          {stage === 'blocked' ? 'Your other device said no, or a different number was tapped.' : 'Nobody approved it in time.'}
-        </p>
-        <p className="x2f-note">If it was you, try again. You'll get a new number.</p>
-        <Button variant="primary" onClick={onRestart} data-part="approve-retry">
-          Try again
-        </Button>
-        <Link className="x2f-link" to={backup} data-part="approve-backup">
-          Log in with a backup
-        </Link>
-      </section>
+      <FlowScreen
+        key={stage}
+        screen="login"
+        title="Log in"
+        back={back}
+        footer={
+          <>
+            <Button variant="primary" onClick={onRestart} data-part="approve-retry">
+              Try again
+            </Button>
+            <Link className="x2f-button x2f-button--quiet" to={backup} data-part="approve-backup">
+              Log in with a backup
+            </Link>
+          </>
+        }
+      >
+        <section className="x2f-stack" data-part={`approve-${stage}`} aria-labelledby="approve-end-h">
+          {blocked ? <StatusIcon name="shield-x" tone="danger" /> : null}
+          <h2 className="x2f-h2" id="approve-end-h" tabIndex={-1} ref={heading}>
+            {blocked ? 'This login was blocked' : 'This request has ended'}
+          </h2>
+          <p className="x2f-body">{blocked ? 'Your other device said no, or a different number was tapped.' : 'Nobody approved it in time.'}</p>
+          {blocked ? (
+            // COPY-UNSIGNED (LoginApprove board, side=new, Draft copy). not-a-refusal: says what the block means
+            <p className="x2f-body">This device can't log in until it's approved. Nobody else on your account is affected.</p>
+          ) : null}
+          <p className="x2f-fine">If it was you, try again. You'll get a new number.</p>
+        </section>
+      </FlowScreen>
     );
   }
 
   return (
-    <section className="x2f-card" data-part="approve-wait" aria-labelledby="approve-wait-h">
-      <h2 className="x2f-card__title" id="approve-wait-h">
+    <FlowScreen
+      key={stage}
+      screen="login"
+      title="Log in"
+      back={back}
+      footer={
+        <Button variant="secondary" onClick={cancel} data-part="approve-cancel">
+          Cancel
+        </Button>
+      }
+    >
+      <h2 className="x2f-h2" data-part="approve-wait" tabIndex={-1} ref={heading}>
         Approve this login on a device you're already using
       </h2>
-      <p className="x2f-label">Your number</p>
-      <p className="x2f-screen__title" data-part="approve-number" aria-live="polite">
-        {wait.number}
+      <div className="x2f-number-card">
+        {/* Read in order: "Your number", then the number (review N3: no aria-labelledby on a span). */}
+        <span className="x2f-kicker">Your number</span>
+        <span className="x2f-big-number" data-part="approve-number">
+          {wait.number}
+        </span>
+        <span className="x2f-fine">
+          On your other device, tap {wait.number}, then Yes, let them in.
+        </span>
+      </div>
+      <p className="x2f-icon-line" data-part="approve-countdown" data-mask="clock">
+        <Icon name="clock" size={20} />
+        <span>
+          Waiting for approval. This ends in <span className="x2f-num">{mmss(left)}</span>.
+        </span>
       </p>
-      <p className="x2f-sheet__body">
-        On your other device, tap {wait.number}, then Yes, let them in.
-      </p>
-      <p className="x2f-note" data-part="approve-countdown" data-mask="clock">
-        Waiting for approval. This ends in {formatRemaining(left, 'clock')}.
-      </p>
-      <Button variant="quiet" onClick={() => setSteps((s) => !s)} aria-expanded={steps} data-part="approve-where">
-        Where do I approve it?
-      </Button>
-      {steps ? (
-        <ol className="x2f-list" data-part="approve-steps">
-          <li className="x2f-list__row">Open X2F on a phone or computer where you're already logged in.</li>
-          <li className="x2f-list__row">A login request pops up. Check it names this device.</li>
-          <li className="x2f-list__row">Tap {wait.number}, then Yes, let them in.</li>
-        </ol>
-      ) : null}
-      <p className="x2f-label">I don't have my other device</p>
-      <p className="x2f-note">
-        <Link className="x2f-link" to={backup} data-part="approve-backup">
+      <Disclosure summary="Where do I approve it?" part="approve-where">
+        {(id) => (
+          <ol id={id} data-part="approve-steps">
+            <li>Open X2F on a phone or computer where you're already logged in.</li>
+            <li>A login request pops up. Check it names this device.</li>
+            <li>Tap {wait.number}, then Yes, let them in.</li>
+          </ol>
+        )}
+      </Disclosure>
+      <section className="x2f-panel" data-part="approve-no-device" aria-labelledby="approve-no-device-h">
+        {/* COPY-UNSIGNED (LoginApprove board, side=new, Draft copy): the card's heading. */}
+        <h3 className="x2f-h3" id="approve-no-device-h">
+          No other device with you?
+        </h3>
+        <Link className="x2f-button x2f-button--secondary" to={backup} data-part="approve-backup">
           Log in with a backup instead.
         </Link>
-      </p>
-      <Button variant="secondary" onClick={cancel} data-part="approve-cancel">
-        Cancel
-      </Button>
-    </section>
+      </section>
+    </FlowScreen>
   );
 }

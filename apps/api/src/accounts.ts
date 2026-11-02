@@ -30,7 +30,7 @@ export async function assertNewNames(db: Queryable, displayName: unknown, loginN
     throw new ApiError(400, r.reason === 'same' ? 'names-same' : 'login-name-invalid');
   }
   const folded = lookAlikeKey(r.display.key);
-  const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind <> 'trader'");
+  const { rows } = await db.query<{ display_key: string }>("select display_key from accounts where kind in ('staff', 'owner')");
   if (rows.some((s) => lookAlikeKey(s.display_key) === folded)) throw new ApiError(400, 'display-name-reserved');
   return { displayName: r.display.name, displayKey: r.display.key, loginKey: r.login.key };
 }
