@@ -81,24 +81,10 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
   - OK is the one orange button, with no X. Tapping the scrim, the back gesture or swiping down also closes it.
   - The title is a parameter; the default is "You can't do that yet".
 
-### Rollout status at the time of writing
-- **Done, published and pushed:**
-  - Exemplars.
-  - Login group: Login, LoginApprove, Login-Backup, RecoveryCode, RecoveryHold (+Wide each).
-  - Help group: CantDoThat, Feedback, News, Maintenance, Alerts, Support, SelfDestruct (+Wide each).
-  - Offers group: Main, BuyMain, BuyOffers, SellOffers, BuyQuote, PostOffer, FlexOffer-Post/Quote (+Wide), MyOffers (+Wide).
-  - Setup/account group: Setup*, Profile, Wallet, DeleteAccount, BecomeVendor, Devices (+Wide where they exist).
-  - Also done: TradeTechIssue (+Wide), ProofBlur (+Wide).
-- **Still running when this was written:**
-  - **Trade flow:** TradeFund, BuyerPaidWaiting (+Wide), SellerConfirm, SellerRefund, CancelRequest (+Wide), Warn-IvePaid (+Wide), Warn-Release (+Wide), Review, TeamChat (+Wide), Desktop.
-    - Includes this owner correction: BuyerPaidWaiting's dispute button is **disabled for 30 min after "I've paid"** and shows "Available from <time> · in <n> min".
-  - **Sessions/holds:** HoldChange, SessionLength, SessionExtend, Compromised, SignupSecurity (+Wide each).
-    - Includes this owner change: a password-only change **no longer logs anyone out**. HoldChange's submitted step shows a banner, "N changes take effect on <date>", with "Review changes" and "Cancel these changes".
-  - **Team:** Team, TeamRefusal, MemberApproval, MemberPermissions, InviteInvalid (+Wide).
-  - **Disputes/notices:** DisputeOpen, DisputeRoom, DisputeRuling, Appeal-Notice, Lien-Notice, Ban-Notice, Block, Reviews (+Wide).
-  - **Staff + foldables:** Staff*, ModCase, ModQueue, OwnerSetup, BadgeSettings, Fold-*.
-  - **OfferAd (+Wide), new:** the public ad page, both sides. Two drop-downs: **Currency ▾** and **Pay with ▾** (or **Receive by ▾**), pre-selected from the search. One ad covers every currency. Limits are converted at the market rate and shown with "≈". Cap: 3 buy + 3 sell ads per vendor.
-- **If those agents are gone:** take each unfinished board from `docs/design-boards-inprogress/` (or `docs/design-boards/` if that's newer), apply the rollout brief, render night and day, then publish and push. Check that each board still has its OPEN and Decided notes and tweaks.
+### Rollout status (updated 2 Nov, after the limit reset)
+- **Every board is now on v2, published to the canvas (v108) and pushed to `docs/design-boards/` on `wip/design-brief`.** That includes the trade flow, sessions/holds, team, disputes/notices, staff, foldables, OfferAd (+Wide) and ProfileVisibility. The option-B cancel model (buyer cancels alone; "Returning XMR to the seller") is applied across BuyerPay, TradeFund, Refunded, CancelRequest, Fold-Trade and Fold-Tabletop.
+- **Latest small changes:** Refunded's hero row reads "X2F fee: None" so it no longer collides with "Did you send the money anyway?". BuyerPaidWaiting keeps its "Payment proof" row; empty it reads "Add payment proof · optional" and opens ProofBlur (design note on the board). ModCase's trader cards tag the cancel rate "mod only".
+- `docs/design-boards-inprogress/` is now only a historical snapshot; `docs/design-boards/` is newer everywhere.
 - **Not done yet:**
   - PostOffer and FlexOffer-Post still have a **single currency select**. Since one ad now covers several currencies, it needs to become a multi-select. Design follow-up.
   - BlockQueued is superseded (kept for reference). Artboard-5odu is a stray.
