@@ -185,14 +185,4 @@ describe('stand-ins', () => {
     const usesSeam = staffFiles.some((f) => readFileSync(f, 'utf8').includes('setVerifiedPastRepUsd'));
     expect(staffLanded && !usesSeam, 'Plan 4 staff API landed without a verified-USD route on setVerifiedPastRepUsd (see this test)').toBe(false);
   });
-
-  it('NEEDS_C12_PASTREP_IN_TRADED_TOTAL: the traded total adds verifiedPastRepUsdCents', () => {
-    // wip/third-p5-reviews-api (C12) builds account_traded_totals / tradedTotal.ts. Once both are on
-    // one branch, the "Completed over $X" bucket adds verifiedPastRepUsdCents (and nothing else from
-    // past reputation); then delete this test.
-    const total = join(ROOT, 'apps/api/src/traders/tradedTotal.ts');
-    const landed = existsSync(total);
-    const wired = landed && readFileSync(total, 'utf8').includes('verifiedPastRepUsdCents');
-    expect(landed && !wired, 'tradedTotal.ts is here: add verifiedPastRepUsdCents to the traded total (see this test)').toBe(false);
-  });
 });

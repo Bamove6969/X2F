@@ -8,8 +8,10 @@
  *   `approved`), checked inside the one UPDATE, so a claim revoked meanwhile is never given a figure.
  *   `null` clears the figure. The table's trigger refuses a figure from anyone else as well.
  * - `verifiedPastRepUsdCents` is what the traded total ("Completed over $X") may add: the sum of the
- *   account's live claims with a figure. An unverified (null) or dead claim adds nothing. The traded
- *   total itself is C12's (`traders/tradedTotal.ts`, NEEDS_C12_PASTREP_IN_TRADED_TOTAL).
+ *   account's live claims with a figure. An unverified (null) or dead claim adds nothing.
+ *   `verifiedPastRepUsdSql` is the same sum as an SQL fragment, so the traded total
+ *   (`traders/tradedTotal.ts` `tradedTotalSql`) adds it for many accounts in one query; the column
+ *   name stays in this file only.
  */
 import type { Queryable } from '../db/pool.js';
 
@@ -40,12 +42,17 @@ export async function setVerifiedPastRepUsd(
   return { ok: false, reason: claim.rows.length === 0 ? 'not-found' : 'not-live' };
 }
 
+/**
+ * SQL (bigint): the sum, in US cents, of the live past-reputation claims of the account `account` (an
+ * SQL expression, never input) that carry a verified figure; 0 when none. Read live, so a claim
+ * revoked, removed or rejected stops counting at once.
+ */
+export const verifiedPastRepUsdSql = (account: string): string =>
+  `coalesce((select sum(pr.verified_usd_cents) from past_reputation pr
+     where pr.account_id = ${account} and pr.status in (${LIVE.map((s) => `'${s}'`).join(', ')}) and pr.verified_usd_cents is not null), 0)::bigint`;
+
 /** The sum, in US cents, of the account's live past-reputation claims with a verified figure (0 when none). */
 export async function verifiedPastRepUsdCents(q: Queryable, accountId: string): Promise<number> {
-  const { rows } = await q.query<{ total: string }>(
-    `select coalesce(sum(verified_usd_cents), 0)::text as total
-       from past_reputation where account_id = $1 and status = any($2::text[]) and verified_usd_cents is not null`,
-    [accountId, LIVE],
-  );
+  const { rows } = await q.query<{ total: string }>(`select ${verifiedPastRepUsdSql('$1::uuid')}::text as total`, [accountId]);
   return Number(rows[0]!.total);
 }

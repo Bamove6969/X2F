@@ -2,8 +2,11 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
+import { setVerifiedPastRepUsd } from '../src/pastrep/store.js';
+import { traderSummaries } from '../src/traders/summary.js';
 import { countTradeTotals } from '../src/traders/tradedTotal.js';
 import { applyEvent } from '../src/trades/store.js';
+import { seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { driveTo, seedReviews, seedTrade } from './helpers/trades.js';
@@ -211,5 +214,98 @@ describe('buyer cancels (moderators only, a Plan 4 seam)', () => {
     const mutual = await trade(seller, buyer, dollars(1), 'secured');
     await applyEvent(deps, mutual, { type: 'settled', kind: 'mutual-cancel', txHash: tx() }, 'system');
     expect((await totals(buyer.id))!.buyer_cancels).toBe(1);
+  });
+});
+
+// Owner 2026-11-02 (lead 01:48 and 07:48): the line INCLUDES volume proven on other sites, ONLY
+// through the dollar figure a moderator verified on a live past-reputation claim (migration 310);
+// an unverified (null) or dead claim adds nothing. The figure, like the own total, never leaves the
+// server: only the rounded-down bucket does.
+describe('moderator-verified imported volume (past reputation)', () => {
+  let staffN = 0;
+  let staffId: string | undefined;
+  const staff = async () =>
+    (staffId ??= await seedAccount(deps, { loginName: `ttstaff${++staffN}${randomBytes(3).toString('hex')}`, kind: 'staff' }));
+  let site = 0;
+  /** A live claim as finish stores it (key and signature bytes do not matter here). */
+  async function claim(accountId: string, status = 'signed'): Promise<string> {
+    site += 1;
+    const { rows } = await deps.db.query<{ id: string }>(
+      `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
+       values ($1, $2, 'https://web.archive.org/web/2023/x', 10, $3, $4, 'text', $4, $5, $6) returning id`,
+      [accountId, `Site${site}`, randomBytes(20).toString('hex'), randomBytes(40), status, START],
+    );
+    return rows[0]!.id;
+  }
+  const verify = async (claimId: string, usdCents: bigint | null) =>
+    expect(await setVerifiedPastRepUsd(deps.db, claimId, usdCents === null ? null : Number(usdCents), await staff(), START)).toEqual({ ok: true });
+
+  it('a verified figure lifts a trader over a step, and never appears in an answer', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(9_000));
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    await verify(await claim(seller.id), 234_567n); // $2,345.67: own $9,000 + $2,345.67 = $11,345.67
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    const viewed = await summaryOf(buyer, code);
+    expect(viewed.summary.tradedOverUsd).toBe(10_000);
+    // The buyer's own total is not lifted by the seller's claim.
+    expect((await setting(buyer)).json()).toEqual({ show: false, tradedOverUsd: null });
+    const bodies = [viewed.body, (await setting(seller)).body, (await seller.browser.get(`/v1/trades/${code}`)).body, (await seller.browser.get('/v1/account/me')).body];
+    for (const b of bodies) expect(b).not.toMatch(/234567|2345\.67|2,345|1134567|11,345|verified_?usd|usd_?cents/i);
+  });
+
+  it('two verified claims add together; off by default even with a verified figure', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(1_000));
+    await verify(await claim(seller.id), dollars(30_000));
+    await verify(await claim(seller.id, 'approved'), dollars(20_000));
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    expect((await setting(seller)).json()).toEqual({ show: false, tradedOverUsd: 50_000 });
+  });
+
+  it('an unverified claim (null figure) adds nothing', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(9_000));
+    await claim(seller.id);
+    await claim(seller.id, 'approved');
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    // A figure the moderator cleared adds nothing either.
+    const cleared = await claim(seller.id);
+    await verify(cleared, dollars(5_000));
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    await verify(cleared, null);
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
+  });
+
+  it('a revoked, removed or rejected claim adds nothing, at once', async () => {
+    for (const dead of ['revoked', 'removed', 'rejected']) {
+      const seller = await trader();
+      const buyer = await trader();
+      const code = await trade(seller, buyer, dollars(9_000));
+      const id = await claim(seller.id);
+      await verify(id, dollars(5_000));
+      expect((await optIn(seller, true)).json(), dead).toEqual({ show: true, tradedOverUsd: 10_000 });
+      await deps.db.query('update past_reputation set status = $2 where id = $1', [id, dead]);
+      expect((await setting(seller)).json(), dead).toEqual({ show: true, tradedOverUsd: null });
+      expect((await summaryOf(buyer, code)).summary.tradedOverUsd, dead).toBeNull();
+    }
+  });
+
+  // OWNER-Q: verified imported volume with no X2F trades of its own. Built: it counts (the owner said
+  // the line includes proven imported volume; nothing says it needs an X2F trade first).
+  it('verified imported volume alone, with no trades here, counts (OWNER-Q)', async () => {
+    const solo = await trader();
+    const viewer = await trader();
+    await verify(await claim(solo.id), dollars(25_000));
+    expect(await totals(solo.id)).toBeNull();
+    expect((await setting(solo)).json()).toEqual({ show: false, tradedOverUsd: 20_000 });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)!.tradedOverUsd).toBeNull();
+    expect((await optIn(solo, true)).json()).toEqual({ show: true, tradedOverUsd: 20_000 });
+    expect((await traderSummaries(deps.db, [solo.id], START, viewer.id)).get(solo.id)).toMatchObject({ completedTrades: 0, tradedOverUsd: 20_000 });
   });
 });

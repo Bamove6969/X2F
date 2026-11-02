@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
+import { verifiedPastRepUsdSql } from '../pastrep/store.js';
 
 /**
  * C12b (owner 2026-11-01/02, via the lead): the per-account running totals of 308_traded_totals.sql.
@@ -15,9 +16,12 @@ import { ApiError } from '../errors.js';
  * review or a Skip review changes neither. The totals have no link to trades, so they survive the
  * 30-day purge. SEAM for Plan 5 Task 20's `account_totals`.
  *
- * The public bucket is `tradedBucketUsd(own_usd_cents + imported_verified_usd_cents)`; the imported
- * part is 0 until Plan 5 Task 10/11 give moderator-verified claims a USD figure
- * (NEEDS_P5_T10_VERIFIED_VOLUME).
+ * The public bucket is `tradedBucketUsd(own_usd_cents + verifiedPastRepUsdCents)`: the account's own
+ * counted total plus the volume proven on other sites, ONLY through the dollar figure a moderator
+ * verified on a live past-reputation claim (owner 2026-11-02, lead 07:48; migration 310,
+ * `pastrep/store.ts`). An unverified (null) or dead (rejected, removed, revoked) claim adds nothing,
+ * and is read live, so a revoked claim stops counting at once. With no trades of its own, verified
+ * imported volume alone counts (OWNER-Q: the owner said the line includes it; plan default).
  */
 export async function countTradeTotals(q: Queryable, code: string): Promise<void> {
   // Completed: add the value to both sides, once.
@@ -50,9 +54,12 @@ export async function countTradeTotals(q: Queryable, code: string): Promise<void
   );
 }
 
-/** SQL (bigint): the account `account`'s total for the public bucket (own + verified imported), 0 with no row. */
+/**
+ * SQL (bigint): the account `account`'s total for the public bucket: its own counted total (0 with no
+ * row) plus `verifiedPastRepUsdCents` (as `verifiedPastRepUsdSql`, the same sum in one query).
+ */
 export const tradedTotalSql = (account: string): string =>
-  `coalesce((select tt.own_usd_cents + tt.imported_verified_usd_cents from account_traded_totals tt where tt.account_id = ${account}), 0)`;
+  `(coalesce((select tt.own_usd_cents from account_traded_totals tt where tt.account_id = ${account}), 0) + ${verifiedPastRepUsdSql(account)})`;
 
 /** The public bucket in whole dollars, or null: opted out, or below $10,000. Never the exact total. */
 export function tradedOverUsd(show: boolean, totalUsdCents: string | bigint): number | null {

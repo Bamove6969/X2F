@@ -8,15 +8,14 @@
 --      COMPLETED_TRADES_SQL), both sides. Kept here so it survives the 30-day trade purge (no
 --      foreign key to trades). Never returned: the API shows only @x2f/reputation's rounded-down
 --      bucket, and only when the trader opted in.
---    - imported_verified_usd_cents: volume proven on other sites, moderator-verified claims only
---      (owner 2026-11-02). 0 until Plan 5 Task 10/11 provide a verified USD figure
---      (NEEDS_P5_T10_VERIFIED_VOLUME, apps/api/test/tradedTotal-tripwire.test.ts).
+--    - Volume proven on other sites (owner 2026-11-02) is NOT stored here: the bucket adds the live,
+--      moderator-verified past-reputation figures (310_pastrep_verified_usd.sql) at read time, so a
+--      revoked claim stops counting at once (apps/api/src/traders/tradedTotal.ts tradedTotalSql).
 --    - buyer_cancels: trades this account cancelled as the buyer (settled `buyer-cancel`), for ONE
 --      moderator-only cancel figure (owner 2026-11-02; a Plan 4 seam). Never in a trader-facing answer.
 create table account_traded_totals (
   account_id uuid primary key references accounts (id),
   own_usd_cents bigint not null default 0 check (own_usd_cents >= 0),
-  imported_verified_usd_cents bigint not null default 0 check (imported_verified_usd_cents >= 0),
   buyer_cancels integer not null default 0 check (buyer_cancels >= 0)
 );
 
