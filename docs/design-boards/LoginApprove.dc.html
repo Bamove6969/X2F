@@ -33,7 +33,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
           <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
             <div style="display: flex; flex-direction: column; gap: 8px;">
-              <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">New login</span>
+              <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">New login · team lead account</span>
               <h2 id="la-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Someone is logging in on Chrome, Windows. Is this you?</h2>
             </div>
             <dl style="margin: 0; padding: 16px; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; gap: 12px;">
@@ -134,7 +134,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   <sc-if value="{{isNew}}" hint-placeholder-val="{{false}}">
     <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
       <a href="Login.dc.html" aria-label="Back to log in" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Log in</h1>
+      <h1 style="margin: 0; flex-grow: 1; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Log in</h1>
+      <span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </header>
     <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 20px;">
       <sc-if value="{{isWaiting}}" hint-placeholder-val="{{true}}">
@@ -164,9 +165,13 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <sc-if value="{{isSingle}}" hint-placeholder-val="{{false}}">
           <p style="display: flex; gap: 8px; margin: 0; padding: 12px; border-radius: 12px; border: 1px solid var(--caution); font-size: 14px; line-height: 20px;"><span style="color: var(--caution);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5M12 16v.5"/></svg></span><span>One device at a time is on. When you approve, your other device will be logged out.</span></p>
         </sc-if>
-        <div style="display: flex; flex-direction: column; gap: 4px;">
-          <a href="Login-Backup.dc.html" style="display: inline-flex; align-items: center; align-self: flex-start; min-height: 44px; font-size: 16px; font-weight: 600; color: var(--monero-ink);">I don&#39;t have my other device</a>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Log in with a backup instead. A security key, a recovery code, or your PGP key plus a passkey gets you in with no wait. An authenticator code starts a 24-hour wait.</p>
+        <div style="display: flex; flex-direction: column; gap: 12px;">
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Only team leads approve new devices. Until this one is approved, it can&#39;t log in. Nothing else changes: your other devices and your team carry on as usual.</p>
+          <aside aria-label="Open for the owner: no other device to approve from" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+            <span style="font-weight: 600;">What can the team lead do if they have no app or logged-in device to approve from?</span>
+            <span style="color: var(--ink-muted);">The hold model doesn&#39;t say. Settled: an unapproved device never starts a hold. The old &quot;I don&#39;t have my other device&quot; link to the recovery-code login is removed until this is decided.</span>
+          </aside>
         </div>
       </sc-if>
 
@@ -186,6 +191,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <span style="color: var(--danger);"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9.5 9.5l5 5M14.5 9.5l-5 5"/></svg></span>
         <h2 role="status" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">This login was blocked</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">Your other device said no, or a different number was tapped.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device can&#39;t log in until it&#39;s approved. Nobody else on your account is affected.</p>
         <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">If it was you, try again. You&#39;ll get a new number.</p>
       </sc-if>
     </main>
@@ -198,13 +204,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       </sc-if>
       <sc-if value="{{isNewBlocked}}" hint-placeholder-val="{{false}}">
         <button type="button" onClick="{{tryAgain}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Try again</button>
-        <a href="Login-Backup.dc.html" style="display: flex; align-items: center; justify-content: center; min-height: 44px; color: var(--ink-muted); font-size: 15px; text-decoration: none;">Log in with a backup</a>
       </sc-if>
     </footer>
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["existing","new"],"default":"existing"},"devices":{"editor":"enum","options":["2 in use","3 in use","one at a time"],"default":"2 in use"},"newView":{"editor":"enum","options":["waiting","approved","blocked"],"default":"waiting"},"$preview":{"width":390,"height":960}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"side":{"editor":"enum","options":["existing","new"],"default":"existing"},"devices":{"editor":"enum","options":["2 in use","3 in use","one at a time"],"default":"2 in use"},"newView":{"editor":"enum","options":["waiting","approved","blocked"],"default":"waiting"},"$preview":{"width":390,"height":1100}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { stage: 'ask', pick: null, out: 'firefox', open: true, steps: false, newStage: null, num: 47 }; }
   componentDidUpdate(prev) {
@@ -218,7 +223,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 960px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1100px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     const side = this.props.side === 'new' ? 'new' : 'existing';
     const dev = this.props.devices || '2 in use';
@@ -257,7 +262,7 @@ class Component extends DCLogic {
       confirmOut: () => this.setState({ stage: 'approved' }),
       hasOutNote: outNote !== '', outNote, selfOut, stayIn: !selfOut,
       blockTitle: wrong ? 'Wrong number, so we blocked it' : 'Login blocked',
-      blockText: wrong ? "The number you tapped didn't match the one on the new device, so that login was blocked to be safe. If it was you, start again on the new device." : 'Chrome, Windows was not let in.',
+      blockText: wrong ? "The number you tapped didn't match the one on the new device, so that login was blocked to be safe. If it was you, start again on the new device. Nobody else is affected." : 'Chrome, Windows was not let in. It can\'t log in, and nothing else changes: you and your team stay logged in.',
       close: () => this.setState({ open: false }),
       reopen: () => this.setState({ open: true, stage: 'ask', pick: null, out: 'firefox' }),
       isWaiting: newStage === 'waiting', isNewApproved: newStage === 'approved', isNewBlocked: newStage === 'blocked',

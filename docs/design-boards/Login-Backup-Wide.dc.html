@@ -17,57 +17,44 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
 </helmet>
 <div style="{{rootStyle}}">
   <header style="display: flex; align-items: center; padding: 16px 32px; border-bottom: 1px solid var(--surface-raised);">
-    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; flex-grow: 1;">X2F</span>
+    <span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
   <main style="flex-grow: 1; display: flex; justify-content: center; align-items: flex-start; padding: 48px 32px;">
     <div style="width: 520px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); border: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 20px;">
     <a href="Login-Wide.dc.html" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; margin: -12px 0 -12px -6px; font-size: 14px; color: var(--ink-muted); text-decoration: none;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>Back to log in</a>
     <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Log in with a backup</h1>
     <sc-if value="{{isEnter}}" hint-placeholder-val="{{true}}">
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Use this if you can&#39;t use your normal login. Once you&#39;re in, you&#39;ll add a new way to log in.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your recovery code is your only backup. Use it only if every other way to log in is lost.</p>
       <label for="bk-name" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
         Username
         <input id="bk-name" type="text" autocomplete="username" autocapitalize="off" spellcheck="false" value="{{uname}}" onChange="{{onName}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
       </label>
-      <div role="radiogroup" aria-label="Backup to use" style="display: flex; flex-direction: column; gap: 8px;">
-        <sc-for list="{{kinds}}" as="o" hint-placeholder-count="2">
-            <button type="button" role="radio" aria-checked="{{o.on}}" onClick="{{o.pick}}" style="{{o.style}}">
-              <span aria-hidden="true" style="{{o.dot}}"></span>
-              <span style="display: flex; flex-direction: column; gap: 2px; text-align: left;">
-                <span style="display: flex; align-items: center; gap: 8px; font-size: 16px; line-height: 24px; font-weight: 600;">{{o.name}}<sc-if value="{{o.rec}}" hint-placeholder-val="{{false}}"><span style="display: inline-flex; align-items: center; align-self: flex-start; padding: 2px 10px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 18px; font-weight: 600; color: var(--escrow);">Recommended</span></sc-if></span>
-                <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{o.desc}}</span>
-              </span>
-            </button>
-        </sc-for>
-      </div>
       <label for="bk-code" style="display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-        {{codeLabel}}
-        <input id="bk-code" type="text" inputmode="{{codeMode}}" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="{{codePh}}" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px; letter-spacing: 0.08em;">
+        Recovery code
+        <input id="bk-code" type="text" inputmode="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="XXXX-XXXX-XXXX-XXXX" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 18px; letter-spacing: 0.08em;">
       </label>
-      <sc-if value="{{isTotp}}" hint-placeholder-val="{{true}}">
+      <p style="margin: -12px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">A recovery code you wrote down when you set up your account.</p>
+        <div role="note" style="display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 6px; border: 1px dashed var(--caution);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span><span style="font-size: 14px; line-height: 20px;">How many recovery codes does each account get?</span><ul style="margin: 0; padding-left: 18px; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><li>One code (1 Nov brief)</li><li>10 single-use codes (current build)</li></ul></div>
         <div style="display: flex; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--caution);">
           <span style="color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
           <div style="display: flex; flex-direction: column; gap: 6px;">
-            <h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">There&#39;s a 24-hour wait</h2>
-            <p style="margin: 0; font-size: 14px; line-height: 20px;">After you log in with an authenticator code, you wait 24 hours before you can add a new way to log in. If someone else got hold of your authenticator, that gives you a day to stop them: log in on any device where you&#39;re still logged in and cancel it.</p>
-            <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You get 5 tries a day. There&#39;s no wait with a recovery code, a security key, or your PGP key plus a passkey.</p>
+            <h2 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">Using your recovery code starts a 24-hour hold</h2>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">Everyone on your account is logged out, you and your team members. Nobody can log in until the hold ends.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You&#39;ll see how the hold ends, and how to ask us to remove it sooner.</p>
           </div>
         </div>
-      </sc-if>
-      <sc-if value="{{isRecovery}}" hint-placeholder-val="{{false}}">
-        <p style="margin: 0; padding: 12px 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">A recovery code lets you straight in, with no wait. Each code works once, so cross it off after you use it.</p>
-      </sc-if>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Is your backup a security key, passkey or second PGP key? <a href="Login-Wide.dc.html" style="color: var(--monero-ink); padding: 14px 0;">Use the normal login</a> with it.</p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Have a security key, passkey or PGP key? Logging in with one, with or without a password, is Strong and has no wait. It isn&#39;t a backup, it&#39;s a normal login. <a href="Login-Wide.dc.html" style="color: var(--monero-ink); padding: 14px 0;">Use the normal login</a></p>
     </sc-if>
     <sc-if value="{{isHeld}}" hint-placeholder-val="{{false}}">
-      <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--caution); background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--caution); background: var(--surface-raised);">
         <span style="color: var(--caution);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">You&#39;re in, but there&#39;s a 24-hour wait</h2>
-        <span role="timer" aria-label="Time left" style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">23 h 59 min</span>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">You can add a new way to log in from <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30 Oct 2026, 14:05 UTC</span>.</p>
+        <h2 role="status" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your account is now on a 24-hour hold</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Everyone on your account has been logged out, including you. Nobody can log in until the hold ends.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">The hold ends <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">3 Nov 2026, 14:05 UTC</span> at the latest.</p>
       </div>
-      <p style="margin: 0; font-size: 16px; line-height: 24px;">Until then you can&#39;t start new trades, add a login or change wallets. Trades you already started can still be finished. The wait is there so that if someone else got hold of your authenticator, you have a day to stop them.</p>
-      <p style="display: flex; gap: 8px; margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><span>We&#39;ve sent a login alert to this account. If this wasn&#39;t you, log in on any device where you&#39;re still logged in and cancel it there.</span></p>
+      <p style="margin: 0; font-size: 15px; line-height: 22px;">Trades not yet paid into escrow are cancelled. Trades already paid into escrow are put on hold, and a moderator decides how to go on.</p>
+      <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Next: how the hold ends, and how to ask us to remove it sooner.</p>
     </sc-if>
     <sc-if value="{{isReady}}" hint-placeholder-val="{{false}}">
       <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0;"><path d="M5 12l4 4 10-10"/></svg><span>{{readyNote}}</span></p>
@@ -87,17 +74,17 @@ input::placeholder,textarea::placeholder{color:var(--ink-muted)}
     </sc-if>
     <sc-if value="{{isEnter}}" hint-placeholder-val="{{true}}"><button type="button" onClick="{{go}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none; height: 48px; font-size: 16px;">Continue</button></sc-if>
     <sc-if value="{{isHeld}}" hint-placeholder-val="{{false}}">
-      <button type="button" disabled="{{true}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 48px; border: 2px solid var(--surface-raised); border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Add a new way to log in</button>
-      <a href="Login-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer; text-decoration: none;">Log out</a>
+      <a href="RecoveryHold.dc.html" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 48px; font-size: 16px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-weight: 600; text-decoration: none;">What happens now</a>
+      <a href="Login-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; min-height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; text-decoration: none;">Back to log in</a>
     </sc-if>
     <sc-if value="{{isReady}}" hint-placeholder-val="{{false}}"><a href="{{next}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none; height: 48px; font-size: 16px;">Continue with {{pickName}}</a></sc-if>
     </div>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["enter", "held", "ready"], "default": "enter"}, "$preview": {"width": 1280, "height": 1140}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "view": {"editor": "enum", "options": ["enter", "held", "ready"], "default": "enter"}, "$preview": {"width": 1280, "height": 1340}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { stage: null, kind: 'totp', uname: 'nightowl_44', pick: 'pgp' }; }
+  constructor(props) { super(props); this.state = { stage: null, uname: 'nightowl_44', pick: 'pgp' }; }
   componentDidUpdate(prev) { if (prev.view !== this.props.view) this.setState({ stage: null }); }
   renderVals() {
     const THEMES = {
@@ -105,16 +92,12 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 1140px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 1340px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: \'Atkinson Hyperlegible Next\', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     const stage = s.stage || this.props.view || 'enter';
     const dot = (on) => 'width: 20px; height: 20px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (on ? 'border: 6px solid var(--ink);' : 'border: 2px solid var(--line);');
     const card = (on) => 'display: flex; align-items: center; gap: 12px; width: 100%; min-height: 64px; padding: 12px 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer; border: 2px solid ' + (on ? 'var(--ink);' : 'transparent;');
     const opt = (d, cur, key) => ({ name: d.name, desc: d.desc, rec: !!d.rec, on: cur === d.id ? 'true' : 'false', dot: dot(cur === d.id), style: card(cur === d.id), pick: () => this.setState({ [key]: d.id }) });
-    const kinds = [
-      { id: 'totp', name: 'Authenticator code', desc: 'The 6-digit code from your authenticator app.' },
-      { id: 'recovery', name: 'Recovery code', desc: 'One of the 10 codes you printed or wrote down.' }
-    ].map((d) => opt(d, s.kind, 'kind'));
     const mdefs = [
       { id: 'pgp', name: 'PGP key', rec: true, desc: 'Decrypt a short message in your PGP app.', next: 'SetupPgpKey.dc.html' },
       { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.', next: '#' },
@@ -122,18 +105,13 @@ class Component extends DCLogic {
       { id: 'password', name: 'Password', desc: 'At least 10 characters.', next: 'SetupPassword.dc.html' }
     ];
     const cur = mdefs.find((d) => d.id === s.pick);
-    const totp = s.kind === 'totp';
     return {
-      rootStyle, kinds,
+      rootStyle,
       methods: mdefs.map((d) => opt(d, s.pick, 'pick')),
       isEnter: stage === 'enter', isHeld: stage === 'held', isReady: stage === 'ready',
-      isTotp: totp, isRecovery: !totp,
       uname: s.uname, onName: (e) => this.setState({ uname: e.target.value }),
-      codeLabel: totp ? 'Authenticator code' : 'Recovery code',
-      codePh: totp ? '000000' : 'XXXX-XXXX-XXXX-XXXX',
-      codeMode: totp ? 'numeric' : 'text',
-      readyNote: totp ? 'The 24-hour wait is over.' : 'Recovery code accepted. You have 9 left. Make a new set in Settings once you are back in.',
-      go: () => this.setState({ stage: totp ? 'held' : 'ready' }),
+      readyNote: 'The 24-hour hold is over. The recovery code you used no longer works. Replace it in Settings once you are back in.',
+      go: () => this.setState({ stage: 'held' }),
       next: cur.next, pickName: cur.id === 'pgp' ? 'PGP key' : cur.name.toLowerCase()
     };
   }

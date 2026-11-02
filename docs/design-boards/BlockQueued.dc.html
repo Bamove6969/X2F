@@ -22,6 +22,10 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   </header>
 
   <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+    <aside aria-label="Superseded board" style="display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; border-radius: 6px; border: 2px dashed var(--line); font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase;">Superseded</span>
+      <span style="font-weight: 600;">Superseded by the owner&#39;s hold model (2 Nov): everyone is logged out during a hold, so there is nothing to block. Kept for reference only.</span>
+    </aside>
     <section aria-labelledby="bq-alert" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--danger); background: var(--surface);">
       <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--danger);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>Security alert</span>
       <h2 id="bq-alert" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Your recovery code was used to log in</h2>
@@ -123,7 +127,7 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1360}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["alert","confirm","blocked"],"default":"alert"},"logoutRule":{"editor":"enum","options":["always","user-chooses","never"],"default":"always"},"$preview":{"width":390,"height":1540}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.fromStep(props.step); }
   fromStep(step) {

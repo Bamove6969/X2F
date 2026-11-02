@@ -550,7 +550,7 @@
       "x": 0,
       "y": 29400,
       "w": 390,
-      "h": 1040,
+      "h": 1200,
       "page": "all",
       "title": "B \u00b7 Log in with a backup",
       "is_interactive": true
@@ -559,7 +559,7 @@
       "x": 470,
       "y": 29400,
       "w": 1280,
-      "h": 1140,
+      "h": 1340,
       "page": "all",
       "title": "B \u00b7 Log in with a backup (wide)",
       "is_interactive": true
@@ -766,7 +766,7 @@
       "x": 0,
       "y": 33100,
       "w": 390,
-      "h": 960,
+      "h": 1100,
       "page": "all",
       "title": "G1 \u00b7 New-login approval",
       "is_interactive": true
@@ -775,7 +775,7 @@
       "x": 470,
       "y": 33100,
       "w": 1280,
-      "h": 900,
+      "h": 1000,
       "page": "all",
       "title": "G1 \u00b7 New-login approval (wide)",
       "is_interactive": true
@@ -838,7 +838,7 @@
       "x": 1020,
       "y": 34700,
       "w": 390,
-      "h": 1600,
+      "h": 1700,
       "page": "all",
       "title": "H3 \u00b7 Recovery hold",
       "is_interactive": true
@@ -847,7 +847,7 @@
       "x": 1530,
       "y": 34700,
       "w": 390,
-      "h": 1360,
+      "h": 1540,
       "page": "all",
       "title": "H4 \u00b7 Block a queued change",
       "is_interactive": true
@@ -904,6 +904,33 @@
       "h": 1000,
       "page": "all",
       "title": "I4 \u00b7 My offers, unfolded",
+      "is_interactive": true
+    },
+    "HoldChange.dc.html": {
+      "x": 0,
+      "y": 39640,
+      "w": 390,
+      "h": 1220,
+      "page": "all",
+      "title": "J1 \u00b7 Password-only change \u2192 review \u2192 hold",
+      "is_interactive": true
+    },
+    "TradeTechIssue.dc.html": {
+      "x": 510,
+      "y": 39640,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "J2 \u00b7 Partner: technical issue (cancelled / on hold)",
+      "is_interactive": true
+    },
+    "MemberApproval.dc.html": {
+      "x": 1020,
+      "y": 39640,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "J3 \u00b7 Lead approves a new member",
       "is_interactive": true
     }
   },
@@ -1044,6 +1071,14 @@
       "kind": "title1",
       "maxW": 7480,
       "page": "all"
+    },
+    "hold1102": {
+      "x": 0,
+      "y": 39340,
+      "text": "Owner's hold model \u00b7 2 Nov (draft copy)",
+      "kind": "title1",
+      "maxW": 7480,
+      "page": "all"
     }
   },
   "order": [
@@ -1146,7 +1181,10 @@
     "CancelRequest.dc.html",
     "BuyerPaidWaiting.dc.html",
     "InviteInvalid.dc.html",
-    "Fold-MyOffers.dc.html"
+    "Fold-MyOffers.dc.html",
+    "HoldChange.dc.html",
+    "TradeTechIssue.dc.html",
+    "MemberApproval.dc.html"
   ],
   "pages": [
     {
