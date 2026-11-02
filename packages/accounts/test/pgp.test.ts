@@ -267,6 +267,7 @@ describe('challengeText', () => {
       register: 'create your account',
       login: 'log in',
       'add-key': 'add this PGP key to your account',
+      'team-join': 'join a team as a member',
     });
   });
 });

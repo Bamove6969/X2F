@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, type Region } from '../src/index.js';
+import { amountBoxes, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, padAndMerge, type Region } from '../src/index.js';
 import { type DetectOptions, UPI_IDS } from '../src/detect.js';
 import { covered, ocr } from './ocr.js';
 
@@ -470,6 +470,9 @@ const PHONES: Record<string, string[]> = {
   'Cyrillic and Greek look-alikes': ['06 12 3Ο 56 78', '06 12 3О 56 78', '06 12 З4 56 78'],
 };
 
+/** Phones from the table above that are also a thousands-grouped number of 9 digits (owner item 29). */
+const GROUPED_PHONES_PASS_IN_NOTES = ['612 345 678', '912 345 678'];
+
 describe('phone formats per country', () => {
   for (const [country, phones] of Object.entries(PHONES)) {
     it(`${country}: masked in OCR words, refused in notes, dates and amounts nearby kept`, () => {
@@ -478,11 +481,20 @@ describe('phone formats per country', () => {
         expect(masked(ocr(`Tel ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
         expect(masked(ocr(`412.50 on 16.10.26 to ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
         expect(masked(ocr(`Oct 16, 2026 14:32 ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
-        expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
-        expect(detectSensitiveText(`Paid on 16.10.26 at 14:32, call me ${p}`), p).toEqual(['phone']);
+        // Owner item 29 (2026-11-02): notes allow a number in 3-digit thousands groups of up to 9
+        // digits, so a bare 9-digit phone written that way passes in notes (still masked in images).
+        // OWNER-Q (open, via the lead): accept that, given item 36 (notes refuse all personal details)?
+        const expected = GROUPED_PHONES_PASS_IN_NOTES.includes(p) ? [] : ['phone'];
+        expect(detectSensitiveText(`call me ${p}`), p).toEqual(expected);
+        expect(detectSensitiveText(`Paid on 16.10.26 at 14:32, call me ${p}`), p).toEqual(expected);
       }
     });
   }
+
+  it('item 29: only the bare 9-digit 3-digit-grouped phones pass in notes; any prefix still refuses', () => {
+    expect(GROUPED_PHONES_PASS_IN_NOTES.filter((p) => !Object.values(PHONES).flat().includes(p))).toEqual([]);
+    for (const p of ['+34 612 345 678', '+351 912 345 678', '(612) 345 678', '0612 345 678']) expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
+  });
 });
 
 describe('review round 3 (2026-10-30)', () => {
@@ -709,5 +721,211 @@ describe('review round 5 (2026-10-30)', () => {
     }
     // Still words otherwise.
     for (const s of ['paid 0.12345678 Sol', 'paid 0.12345678 ada', 'call me 347.1234567 TRY']) expect(detectSensitiveText(s), s).toEqual(['phone']);
+  });
+});
+
+describe('owner answers (2026-11-02)', () => {
+  it('item 34/36: UPI IDs are masked in proofs and refused in notes (one flag, on)', () => {
+    expect(UPI_IDS).toBe(true);
+    expect(masked(ocr('UPI jane@okaxis'))).toEqual([['jane@okaxis', 'account']]);
+    expect(detectSensitiveText('jane@okaxis')).toEqual(['account']);
+    expect(detectSensitiveText('pay me on jane@okaxis next time')).toEqual(['account']);
+  });
+
+  it('item 37: 15- and 16-digit numbers separated by dashes are caught', () => {
+    for (const n of ['4111-1111-1111-1111', '3782-822463-10005', '1234-5678-9012-3456', '12345-67890-12345', '4111–1111–1111–1111', '4111 - 1111 - 1111 - 1111']) {
+      expect(maskedTexts(ocr(`Card ${n}`)), n).toEqual(n.split(' '));
+      expect(detectSensitiveText(`my card ${n}`), n).not.toEqual([]);
+    }
+    expect(masked(ocr('Card 4111-1111-1111-1111'))).toEqual([['4111-1111-1111-1111', 'card']]);
+    expect(masked(ocr('Card 3782-822463-10005'))).toEqual([['3782-822463-10005', 'card']]);
+    expect(detectSensitiveText('card 4111-1111-1111-1111')).toEqual(['card']);
+    expect(detectSensitiveText('card 1234-5678-9012-3456')).toEqual(['account']);
+  });
+
+  it("item 37: '+'-led numbers (phones) are caught", () => {
+    for (const p of ['+447700900123', '+14155550134', '+1-415-555-0134', '+44 7700 900123', '+33 6 12 34 56 78', '+34 612 345 678', '+91-98765-43210', '+49.30.1234567']) {
+      expect(maskedTexts(ocr(`Tel ${p}`)), p).toEqual(p.split(' '));
+      expect(masked(ocr(`Tel ${p}`))[0]?.[1], p).toBe('phone');
+      expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
+    }
+    // The thousands-separator allowance of item 29 never covers a '+'-led number.
+    expect(detectSensitiveText('call +34 612 345 678')).toEqual(['phone']);
+    expect(detectSensitiveText('call +34.612.345.678')).toEqual(['phone']);
+    expect(detectSensitiveText('call +61 (0)412 345 678')).toEqual(['phone']);
+  });
+
+  it('item 29: notes allow numbers with thousands separators up to 9 digits', () => {
+    for (const s of [
+      'Paid 250,000 COP, smooth',
+      'sent 1,250,000 IDR',
+      'about 123,456,789 VND',
+      '250.000 COP',
+      '1.250.000 IDR',
+      '1 250 000 IDR',
+      '250 000',
+      '1,250,000.50 COP',
+      '1.250.000,50 COP',
+      'bought 1,000,000 sats worth',
+    ]) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+  });
+
+  it('item 29: longer grouped numbers, card-length numbers and plain long runs are still refused', () => {
+    // Commas are not refused today in any length (item 37: other separators stay best effort), so
+    // these use '.' and spaces, which are.
+    for (const s of ['1.234.567.890', '1 234 567 890', '4.111.111.111.111.111', '411 111 111 111 111', '4111 1111 1111 1111', '250000 COP', '1250000', 'acct 12345678']) {
+      expect(detectSensitiveText(s), s).not.toEqual([]);
+    }
+    // Not a thousands grouping: groups that are not 3 digits, a leading zero, mixed separators.
+    for (const s of ['012 345 678', '1.2345.678', '12.34.567', '1 250.000 000']) {
+      expect(detectSensitiveText(s), s).not.toEqual([]);
+    }
+  });
+
+  it('item 29: proof images are unchanged (a grouped number is still masked)', () => {
+    expect(maskedTexts(ocr('Ref 1 250 000'))).toEqual(['1', '250', '000']);
+    expect(maskedTexts(ocr('Ref 1.250.000'))).toEqual(['1.250.000']);
+  });
+
+  it('item 30: name labels in the other languages mask the name after them', () => {
+    const lines: Array<[string, string]> = [
+      ['es', 'Beneficiario: María García'],
+      ['es', 'Titular de la cuenta: María García'],
+      ['es', 'Destinatario María García'],
+      ['de', 'Empfänger: Max Mustermann'],
+      ['de', 'Kontoinhaber: Max Mustermann'],
+      ['de', 'Zahlungsempfänger Max Mustermann'],
+      ['fr', 'Bénéficiaire: Jean Dupont'],
+      ['fr', 'Titulaire du compte: Jean Dupont'],
+      ['fr', 'Destinataire Jean Dupont'],
+      ['nl', 'Begunstigde: Jan Jansen'],
+      ['nl', 'Rekeninghouder: Jan Jansen'],
+      ['nl', 'Ontvanger Jan Jansen'],
+      ['it', 'Intestatario: Mario Rossi'],
+      ['it', 'Beneficiario: Mario Rossi'],
+      ['it', 'Ordinante Mario Rossi'],
+      ['pt', 'Favorecido: João Silva'],
+      ['pt', 'Beneficiário: João Silva'],
+      ['pt', 'Destinatário João Silva'],
+    ];
+    for (const [lang, line] of lines) {
+      const name = line.split(' ').slice(-2);
+      expect(masked(ocr(line)), `${lang}: ${line}`).toEqual(name.map((t) => [t, 'name']));
+    }
+  });
+
+  it('item 30: OCR that drops the accents still finds the label', () => {
+    expect(maskedTexts(ocr('Beneficiaire: Jean Dupont'))).toEqual(['Jean', 'Dupont']);
+    expect(maskedTexts(ocr('Empfanger: Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+  });
+
+  it('item 30: a foreign label alone on its line masks the next line, and a later label needs its colon', () => {
+    expect(maskedTexts(ocr('Empfänger', 'Max Mustermann', 'SEPA'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Estado: OK Beneficiario: Ana Costa'))).toEqual(['Ana', 'Costa']);
+    expect(maskedTexts(ocr('Statut: OK Nom : Jean Dupont'))).toEqual(['Jean', 'Dupont']);
+  });
+
+  it('item 30: short foreign prepositions count only with a colon', () => {
+    expect(maskedTexts(ocr('De: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
+    expect(maskedTexts(ocr('Von: Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Aan: Jan Jansen'))).toEqual(['Jan', 'Jansen']);
+    expect(maskedTexts(ocr('De nada, gracias'))).toEqual([]);
+    expect(maskedTexts(ocr('Van harte bedankt'))).toEqual([]);
+    expect(maskedTexts(ocr('A tiempo y sin problemas'))).toEqual([]);
+  });
+
+  it('item 30: a label inside a longer word is not a label', () => {
+    expect(maskedTexts(ocr('Nombres de prueba'))).toEqual([]);
+    expect(maskedTexts(ocr('Titularidad verificada'))).toEqual([]);
+  });
+});
+
+describe('owner (2026-11-02): the automatic blur never hides the amount', () => {
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  const hits = (a: Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  /** The amount's box: the words named, or chars [from, to) of one word (10 px a character). */
+  function amountBox(words: OcrWord[], text: string, from = 0, to = text.length): Box {
+    const w = words.find((x) => x.text === text)!;
+    return { x0: w.x0 + from * 10, y0: w.y0, x1: w.x0 + to * 10, y1: w.y1 };
+  }
+
+  // [lines, amount word(s), fiatCents, exponent]
+  const cases: Array<[string[], string[], bigint, number]> = [
+    [['Amount: $412.50'], ['$412.50'], 41250n, 2],
+    [['Amount: -$412.50'], ['-$412.50'], 41250n, 2],
+    [['412.50USD'], ['412.50USD'], 41250n, 2],
+    [['Total $1,234.56'], ['$1,234.56'], 123456n, 2],
+    [['Total: 1.234,56 €'], ['1.234,56', '€'], 123456n, 2],
+    [['Montant 1 234,56 €'], ['1', '234,56', '€'], 123456n, 2],
+    [['Total USD 12,345,678.90'], ['USD', '12,345,678.90'], 1234567890n, 2],
+    [['Amount: ₹1,23,456.00'], ['₹1,23,456.00'], 12345600n, 2],
+    [['Total ¥5,000'], ['¥5,000'], 5000n, 0],
+    [['Sent 5,000 JPY'], ['5,000', 'JPY'], 5000n, 0],
+    [['₫123,456,789,012,345'], ['₫123,456,789,012,345'], 123456789012345n, 0],
+    [['Amount 123456789012345 VND'], ['123456789012345'], 123456789012345n, 0],
+    [['Total 3 412.50'], ['412.50'], 41250n, 2],
+    // A whole amount with no currency marker, after an amount label.
+    [['Amount: 12345678'], ['12345678'], 1234567800n, 2],
+    [['Total 250000'], ['250000'], 25000000n, 2],
+    [['Montant: 250000'], ['250000'], 25000000n, 2],
+    [['You sent 1250000'], ['1250000'], 125000000n, 2],
+    // 16 digits: longer than the amount reader takes, still the trade's amount after a label.
+    [['Amount 1234567890123456 VND'], ['1234567890123456'], 1234567890123456n, 0],
+    // Next to details that are masked.
+    [['Paid to Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
+    [['To: Mira Kowalski 412.50'], ['412.50'], 41250n, 2],
+    [['Name:', 'Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
+    [['Mira $412.50 Kowalski'], ['$412.50'], 41250n, 2],
+    [['Acct 12345678 $412.50'], ['$412.50'], 41250n, 2],
+    [['Mira Kowalski', '$412.50', '555-201-3344'], ['$412.50'], 41250n, 2],
+    [['To Mira Kowalski', 'jane@example.com $412.50'], ['$412.50'], 41250n, 2],
+  ];
+
+  it('no automatic region touches the amount, in the formats receipts use', () => {
+    for (const [lines, amount, fiatCents, exponent] of cases) {
+      const w = ocr(...lines);
+      const keep = { ...KEEP, fiatCents, exponent };
+      const boxes = amount.map((t) => amountBox(w, t));
+      for (const r of detectSensitive(w, keep)) for (const b of boxes) expect(hits(r, b), `${lines.join(' / ')}: ${r.kind}`).toBe(false);
+    }
+  });
+
+  it('nor after padding and merging with the amount boxes the detector reports', () => {
+    for (const [lines, amount, fiatCents, exponent] of cases) {
+      const w = ocr(...lines);
+      const keep = { ...KEEP, fiatCents, exponent };
+      const merged = padAndMerge(detectSensitive(w, keep), 1000, 1000, 4, amountBoxes(w, keep));
+      for (const t of amount) for (const r of merged) expect(hits(r, amountBox(w, t)), `${lines.join(' / ')}: ${t}`).toBe(false);
+    }
+  });
+
+  it('an amount glued to a detail in one OCR word: the detail is masked, the amount is not', () => {
+    const w = ocr('Acct 12345678$412.50');
+    const rs = detectSensitive(w, KEEP);
+    expect(rs.map((r) => r.kind)).toEqual(['account']);
+    const word = amountBox(w, '12345678$412.50');
+    // The detail's 8 characters are covered; none of `$412.50`.
+    expect(rs[0]!.x0).toBe(word.x0);
+    expect(rs[0]!.x1).toBeGreaterThanOrEqual(word.x0 + 80);
+    expect(hits(rs[0]!, amountBox(w, '12345678$412.50', 8))).toBe(false);
+    expect(amountBoxes(w, KEEP)).toEqual([amountBox(w, '12345678$412.50', 8)]);
+  });
+
+  it('amountBoxes: the trade amount only, not dates, codes or other amounts', () => {
+    const w = ocr('Oct 16, 2026 K7M2-9QXA-4FTR-8WPN', 'Fee $1.50', 'Amount $412.50');
+    expect(amountBoxes(w, KEEP)).toEqual([amountBox(w, '$412.50')]);
+    expect(amountBoxes(ocr('Amount 1 234,56 €'), { ...KEEP, fiatCents: 123456n })).toHaveLength(3);
+  });
+
+  it('a whole number is kept only when it is the trade amount right after an amount label', () => {
+    // Not the trade amount: still masked.
+    expect(maskedTexts(ocr('Amount: 12345678'))).toEqual(['12345678']);
+    // The trade amount without a label: a bare number could be a reference, still masked.
+    expect(maskedTexts(ocr('Ref 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
+    expect(maskedTexts(ocr('Amount 1234567890123456'))).toEqual(['1234567890123456']);
+    // The label must be right before the number.
+    expect(maskedTexts(ocr('Amount sent to acct 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
   });
 });

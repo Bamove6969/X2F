@@ -7,6 +7,7 @@ const SHIELD = 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z';
 const SHAPES = {
   'chevron-left': <path d="M15 18l-6-6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
+  'chevron-down': <path d="M6 9l6 6 6-6" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   clock: (
     <>
@@ -23,6 +24,41 @@ const SHAPES = {
   ),
   check: <path d="M5 12l4 4 10-10" />,
   shield: <path d={SHIELD} />,
+  // LoginApprove board: a blocked login.
+  'shield-x': (
+    <>
+      <path d={SHIELD} />
+      <path d="M9.5 9.5l5 5M14.5 9.5l-5 5" />
+    </>
+  ),
+  // LoginApprove board: a login let in.
+  'check-circle': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12l3 3 5-6" />
+    </>
+  ),
+  // Devices board: a phone and a computer in the device list, the team members card.
+  phone: (
+    <>
+      <rect x="7" y="3" width="10" height="18" rx="2" />
+      <path d="M11 18h2" />
+    </>
+  ),
+  computer: (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="1.5" />
+      <path d="M2 19h20" />
+    </>
+  ),
+  team: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M17 14c2.8 0 4.5 1.9 4.5 4.5" />
+    </>
+  ),
   'shield-check': (
     <>
       <path d={SHIELD} />
@@ -129,5 +165,20 @@ export function Icon({ name, size = 24, stroke = 1.5 }: { name: IconName; size?:
     >
       {SHAPES[name]}
     </svg>
+  );
+}
+
+export type IconTone = 'escrow' | 'danger' | 'caution' | 'muted';
+
+/**
+ * A state icon above a heading (LoginApprove board: the escrow check for a login let in, the danger
+ * shield for a blocked one): visual system v2, a 28 px icon at stroke 1.75 in a 56 px tinted tile
+ * (ui.css). Decorative: the heading says what happened.
+ */
+export function StatusIcon({ name, tone, size = 28 }: { name: IconName; tone: IconTone; size?: number }) {
+  return (
+    <span className="x2f-status-icon" data-icon-tone={tone}>
+      <Icon name={name} size={size} stroke={1.75} />
+    </span>
   );
 }

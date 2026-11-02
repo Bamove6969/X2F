@@ -143,3 +143,74 @@ describe('padAndMerge', () => {
     expect(() => padAndMerge([], 100, 100, -1)).toThrow(RangeError);
   });
 });
+
+describe('padAndMerge: the amount stays clear and automatic blur is only ever added to (owner 2026-11-02)', () => {
+  const hits = (a: Region | Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  /** Every pixel of `r` outside `keep` lies in some output region. */
+  function stillCovered(out: Region[], r: Region, keep: Box[] = []): boolean {
+    for (let y = Math.floor(r.y0); y < Math.ceil(r.y1); y++) {
+      for (let x = Math.floor(r.x0); x < Math.ceil(r.x1); x++) {
+        const p = { x0: x, y0: y, x1: x + 1, y1: y + 1 };
+        if (keep.some((k) => hits(p, k))) continue;
+        if (!out.some((o) => hits(o, p))) return false;
+      }
+    }
+    return true;
+  }
+
+  it('padding never reaches into the amount', () => {
+    const amount = { x0: 82, y0: 0, x1: 152, y1: 16 };
+    const auto: Region = { x0: 0, y0: 0, x1: 80, y1: 16, kind: 'account' };
+    const out = padAndMerge([auto], 400, 100, 4, [amount]);
+    for (const o of out) expect(hits(o, amount)).toBe(false);
+    expect(stillCovered(out, auto)).toBe(true);
+  });
+
+  it('two automatic regions are not merged into a box that covers the amount', () => {
+    // A long name on one line, an email on the next starting further right, the amount under the name.
+    const amount = { x0: 0, y0: 20, x1: 70, y1: 36 };
+    const name: Region = { x0: 0, y0: 0, x1: 200, y1: 16, kind: 'name' };
+    const email: Region = { x0: 150, y0: 20, x1: 300, y1: 36, kind: 'email' };
+    // Without the amount box the union swallows it (why the box is passed).
+    expect(padAndMerge([name, email], 400, 100).some((o) => hits(o, amount))).toBe(true);
+    const out = padAndMerge([name, email], 400, 100, 4, [amount]);
+    for (const o of out) expect(hits(o, amount)).toBe(false);
+    expect(stillCovered(out, name)).toBe(true);
+    expect(stillCovered(out, email)).toBe(true);
+  });
+
+  it("the uploader's own blur may cover the amount (Task 15 warns, posting is allowed)", () => {
+    const amount = { x0: 82, y0: 0, x1: 152, y1: 16 };
+    const manual: Region = { x0: 60, y0: 0, x1: 160, y1: 16, kind: 'manual' };
+    const auto: Region = { x0: 0, y0: 0, x1: 80, y1: 16, kind: 'account' };
+    const out = padAndMerge([auto, manual], 400, 100, 4, [amount]);
+    expect(stillCovered(out, manual)).toBe(true);
+    expect(stillCovered(out, auto)).toBe(true);
+  });
+
+  it('adding manual regions never removes automatic blur: every automatic pixel stays covered', () => {
+    const amount = { x0: 100, y0: 40, x1: 170, y1: 56 };
+    const auto: Region[] = [
+      { x0: 0, y0: 0, x1: 120, y1: 16, kind: 'name' },
+      { x0: 10, y0: 40, x1: 90, y1: 56, kind: 'account' },
+      { x0: 180, y0: 40, x1: 260, y1: 56, kind: 'phone' },
+    ];
+    const manuals: Region[][] = [
+      [],
+      [{ x0: 0, y0: 0, x1: 5, y1: 5, kind: 'manual' }],
+      [{ x0: 50, y0: 10, x1: 200, y1: 45, kind: 'manual' }],
+      [{ x0: 0, y0: 0, x1: 300, y1: 100, kind: 'manual' }],
+    ];
+    for (const m of manuals) {
+      const out = padAndMerge([...auto, ...m], 300, 100, 4, [amount]);
+      for (const a of auto) expect(stillCovered(out, a, [amount])).toBe(true);
+      for (const r of m) expect(stillCovered(out, r)).toBe(true);
+    }
+  });
+
+  it('there is no way to take an automatic region back out: the package exports no remover', async () => {
+    const api = Object.keys(await import('../src/index.js'));
+    expect(api.filter((k) => /remove|unmask|unblur|unredact|drop|clear|subtract|exclude/i.test(k))).toEqual([]);
+  });
+});

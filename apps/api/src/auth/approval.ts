@@ -254,10 +254,12 @@ export async function traderLogin(
     if (!row || row.kind !== 'trader') return session(false);
     // A hold whose time is up is settled here (its pending change applies) before anything is counted.
     const hold = await holdInTx(db, settle, a.accountId, now);
-    // This browser already holds a live full session of the account: it is a logged-in device.
+    // This browser already holds a live full session of the account: it is a logged-in device (a
+    // team member's session is not: Task 18, it never approves the owner's logins, its own included).
     if (presented !== null) {
       const own = await db.query(
-        `select 1 from sessions where account_id = $1 and token_hash = $2 and level = 'full' and revoked_at is null and expires_at > $3`,
+        `select 1 from sessions where account_id = $1 and token_hash = $2 and level = 'full' and revoked_at is null and expires_at > $3
+            and member_id is null`,
         [a.accountId, presented, now],
       );
       if (own.rows.length > 0) return session(false);
@@ -273,10 +275,13 @@ export async function traderLogin(
     // Review round 2 N-C1: during the hold a login that waits opens no session, not even on a
     // trusted device (its trust is a cookie that can be copied).
     if (hold !== null && waits(strength)) throw holdRefusal(hold.holdUntil);
+    // Plan 2 Task 18: a team member's session is no logged-in device here: it never answers an
+    // approval (the approval routes are the account owner's), so the owner's login never waits for
+    // one. Member sessions still count toward the device limit (`devicesInUse`).
     const open = await db.query<{ n: number; answering: number }>(
       `select count(*)::int as n,
               count(*) filter (where strength = 'strong' or onboarding_until > $2)::int as answering
-         from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2`,
+         from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2 and member_id is null`,
       [a.accountId, now],
     );
     // No logged-in device to approve it: the login goes on; a waiting one on a new device holds

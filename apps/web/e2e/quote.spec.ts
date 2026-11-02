@@ -262,7 +262,8 @@ test.describe('BuyQuote', () => {
     await page.goto(`${BUY}&amount=${B.amount}`);
     await page.getByRole('radio', { name: /Cake Wallet/ }).check();
     await trade(page).click();
-    await expect(page.getByRole('alert')).toHaveText('Your account is on Starter limits up to $200 per trade. Try a smaller amount.');
+    // CantDoThat: the message is the dialog's description (C11 review N1, not also an alert).
+    await expect(page.getByRole('dialog')).toHaveAccessibleDescription('Your account is on Starter limits up to $200 per trade. Try a smaller amount.');
     await expect(page.locator('body')).not.toContainText(/Building|Graduated/);
   });
 });
