@@ -42,12 +42,11 @@ const ACCENT = /var\(--x2f-monero(-ink|-ink-hover)?\)/;
 
 /**
  * Selected states that stay orange for now because the screen is owned by another branch
- * (C2-D2 brief: My offers and the tab bar are the lead's, the dispute screens are claude3's).
+ * (C2-D2 brief: the dispute screens are claude3's; the tab bar went ink on main with My offers.)
  */
 const OWNED_ELSEWHERE = [
   'screens/dispute/dispute.css .dispute-reason[data-on=\'true\']',
   'screens/dispute/dispute.css .dispute-reason input:checked',
-  'ui/ui.css .x2f-bottom-nav__tab[aria-current=\'page\']',
 ];
 
 /** Every orange use that is not a selected state: one primary action, links, the XMR unit, the hold. */
