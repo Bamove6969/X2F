@@ -4,7 +4,8 @@ import { GRANTABLE_PERMS, NAV, PERMS, STAFF_ROLES, can, type Perm, type StaffRol
 // Every role × perm pair, written out so a grant change shows up in review (Plan 4 Task 1).
 // Revisions: `stats.read` (owner only, Revision 2026-10-28), `reputation.review` (mods and senior
 // moderators, lead default of Revision 2026-10-29b), `accounts.ban` (senior moderator and owner,
-// Task 27), `tickets.handle` (granted per person by the owner, Task 30: by role only the owner).
+// Task 27), `tickets.handle` (granted per person by the owner, Task 30: by role only the owner),
+// `feedback.read` (owner only, Plan 5 Task 4).
 const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'staff.manage': { owner: true, senior: false, mod: false, helper: false },
   'settings.write': { owner: true, senior: false, mod: false, helper: false },
@@ -20,6 +21,7 @@ const GRANTS: Record<Perm, Record<StaffRole, boolean>> = {
   'accounts.ban': { owner: true, senior: true, mod: false, helper: false },
   'reputation.review': { owner: true, senior: true, mod: true, helper: false },
   'tickets.handle': { owner: true, senior: false, mod: false, helper: false },
+  'feedback.read': { owner: true, senior: false, mod: false, helper: false },
   'training.read': { owner: true, senior: true, mod: true, helper: false },
   'training.write': { owner: true, senior: false, mod: false, helper: false },
   self: { owner: true, senior: true, mod: true, helper: true },
@@ -67,8 +69,8 @@ describe('can', () => {
 });
 
 describe('NAV', () => {
-  test('owner sees all seven in the boards\' order', () => {
-    expect(NAV.owner).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings']);
+  test('owner sees the boards\' seven, plus feedback (Plan 5 Task 4)', () => {
+    expect(NAV.owner).toEqual(['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'settings']);
   });
   test('senior and mod', () => {
     expect(NAV.mod).toEqual(['disputes', 'training', 'log']);

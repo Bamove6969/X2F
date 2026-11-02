@@ -7,7 +7,8 @@
  * Laid out to the LoginApprove board, side=new (C2-D1; docs/design-boards/LoginApprove.dc.html and
  * -Wide on wip/design-brief): a full screen with the back control and "Log in", the number in a
  * card, the countdown, "Where do I approve it?", the no-other-device card, and the actions in the
- * footer. All look comes from the UI kit (ui/FlowScreen, ui/Disclosure, ui.css). The board's
+ * footer. Design v2 batch 1 (4b355a56): the compact header, the 28/32 screen title, the number as
+ * the caution hero with a chip, the caution clock, the outline card, 56 px state tiles. All look comes from the UI kit (ui/FlowScreen, ui/Disclosure, ui.css). The board's
  * new-device side is marked Draft copy: its new sentences here are COPY-UNSIGNED. Not built (new
  * behaviour, see the C2-D1 report): the room note about the account's devices (review M5 keeps
  * the account's devices off this screen), and the passkey / security key / PGP way in without an
@@ -110,6 +111,7 @@ export function ApproveOnDevice({
         key={stage}
         screen="login"
         title="Log in"
+        header="compact"
         back={back}
         footer={
           <Button variant="primary" onClick={onLoggedIn} data-part="approve-continue">
@@ -140,6 +142,7 @@ export function ApproveOnDevice({
         key={stage}
         screen="login"
         title="Log in"
+        header="compact"
         back={back}
         footer={
           <>
@@ -173,6 +176,7 @@ export function ApproveOnDevice({
       key={stage}
       screen="login"
       title="Log in"
+      header="compact"
       back={back}
       footer={
         <Button variant="secondary" onClick={cancel} data-part="approve-cancel">
@@ -180,12 +184,14 @@ export function ApproveOnDevice({
         </Button>
       }
     >
-      <h2 className="x2f-h2" data-part="approve-wait" tabIndex={-1} ref={heading}>
+      <h2 className="x2f-screen-title" data-part="approve-wait" tabIndex={-1} ref={heading}>
         Approve this login on a device you're already using
       </h2>
       <div className="x2f-number-card">
         {/* Read in order: "Your number", then the number (review N3: no aria-labelledby on a span). */}
-        <span className="x2f-kicker">Your number</span>
+        <span className="x2f-chip" data-tone="caution" data-look="tint">
+          Your number
+        </span>
         <span className="x2f-big-number" data-part="approve-number">
           {wait.number}
         </span>
@@ -193,7 +199,7 @@ export function ApproveOnDevice({
           On your other device, tap {wait.number}, then Yes, let them in.
         </span>
       </div>
-      <p className="x2f-icon-line" data-part="approve-countdown" data-mask="clock">
+      <p className="x2f-icon-line" data-tone="caution" data-part="approve-countdown" data-mask="clock">
         <Icon name="clock" size={20} />
         <span>
           Waiting for approval. This ends in <span className="x2f-num">{mmss(left)}</span>.
@@ -208,7 +214,7 @@ export function ApproveOnDevice({
           </ol>
         )}
       </Disclosure>
-      <section className="x2f-panel" data-part="approve-no-device" aria-labelledby="approve-no-device-h">
+      <section className="x2f-panel" data-tone="outline" data-part="approve-no-device" aria-labelledby="approve-no-device-h">
         {/* COPY-UNSIGNED (LoginApprove board, side=new, Draft copy): the card's heading. */}
         <h3 className="x2f-h3" id="approve-no-device-h">
           No other device with you?

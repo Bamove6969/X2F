@@ -54,13 +54,43 @@
   color: var(--x2f-danger);
 }
 
-/* Disabled controls drop to ink-muted text and keep their outline (design-system README). */
+/* Disabled controls (visual system v2, section 10): a surface-raised fill with ink-muted text and
+   no outline. Before v2 they kept a line outline on transparent (design-system README). */
 .x2f-button:disabled,
 .x2f-button[aria-disabled='true'] {
-  border: 1px solid var(--x2f-line);
-  background: transparent;
+  border-color: transparent;
+  background: var(--x2f-surface-raised);
   color: var(--x2f-ink-muted);
   cursor: not-allowed;
+}
+
+/* Tertiary (visual system v2, section 10): 44 px, no fill, ink-muted 15/600 ("Not now"). */
+.x2f-button--tertiary {
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink-muted);
+  font-size: 15px;
+}
+
+/* Visual system v2, section 19: colour, background and border changes ease over 150 ms. */
+.x2f-button,
+.x2f-icon-button,
+.x2f-link,
+.x2f-choice,
+.x2f-disclosure__button {
+  transition: background-color 150ms ease-out, border-color 150ms ease-out, color 150ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .x2f-button,
+  .x2f-icon-button,
+  .x2f-link,
+  .x2f-choice,
+  .x2f-disclosure__button {
+    transition: none;
+  }
 }
 
 /* Status chips (TradeFund, Desktop boards). */
@@ -183,6 +213,18 @@
   color: var(--x2f-monero-ink-hover);
 }
 
+/* A link that is the sentence's action (LoginApprove v2 board, "Devices"): 600, no underline,
+   ink on hover, with a 44 px tall hit area. */
+.x2f-link--strong {
+  padding: 14px 0;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.x2f-link--strong:hover {
+  color: var(--x2f-ink);
+}
+
 /* 44 px icon buttons (back and close on the boards). */
 .x2f-icon-button {
   display: flex;
@@ -268,7 +310,8 @@
   max-height: 90vh;
   overflow-y: auto;
   padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-6);
-  border-radius: var(--x2f-radius-md) var(--x2f-radius-md) 0 0;
+  border-top: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-lg) var(--x2f-radius-lg) 0 0;
   background: var(--x2f-surface);
   color: var(--x2f-ink);
 }
@@ -290,12 +333,14 @@
   gap: var(--x2f-space-2);
 }
 
+/* Sheet title (visual system v2, section 4): Familjen 24/30 700, -0.01em. */
 .x2f-sheet__title {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-sheet-title-family);
+  font-size: var(--x2f-sheet-title-size);
+  line-height: var(--x2f-sheet-title-line);
+  font-weight: var(--x2f-sheet-title-weight);
+  letter-spacing: var(--x2f-sheet-title-tracking);
 }
 
 .x2f-sheet__body {
@@ -513,12 +558,13 @@
  * visual system. Selected is ink, never orange (design conventions, 2 Nov).
  */
 
+/* Danger confirm (visual system v2, section 10): a 14% danger wash with a 1px danger border. */
 .x2f-button--danger-outline {
   height: 56px;
   padding: 0 var(--x2f-space-4);
-  border: 2px solid var(--x2f-danger);
+  border: 1px solid var(--x2f-danger);
   border-radius: var(--x2f-radius-md);
-  background: transparent;
+  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
   color: var(--x2f-danger);
   font-size: 18px;
 }
@@ -529,30 +575,53 @@
   outline-offset: 2px;
 }
 
-/* A state icon above a heading (32 px escrow check, danger shield). */
+/* A state icon above a heading (visual system v2): a 56 px tile, radius 16, with a 14% wash of
+   the tone and a 28 px icon at stroke 1.75 with round caps (escrow check, danger shield). */
 .x2f-status-icon {
   display: flex;
+  align-self: flex-start;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-lg);
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .x2f-status-icon[data-icon-tone='escrow'] {
+  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
   color: var(--x2f-escrow);
 }
 
 .x2f-status-icon[data-icon-tone='danger'] {
+  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
   color: var(--x2f-danger);
 }
 
 .x2f-status-icon[data-icon-tone='caution'] {
+  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
   color: var(--x2f-caution);
 }
 
 .x2f-status-icon[data-icon-tone='muted'] {
+  background: color-mix(in srgb, var(--x2f-ink-muted) 16%, transparent);
   color: var(--x2f-ink-muted);
 }
 
-/* The sheet's small muted label above its title ("New login"). */
+/* The sheet's label above its title ("New login"): a caution status chip (visual system v2,
+   section 7): 28 px pill, 0 10 padding, a 14% caution wash, caution text. */
 .x2f-sheet__kicker {
-  color: var(--x2f-ink-muted);
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--x2f-radius-pill);
+  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
+  color: var(--x2f-caution);
   font-size: var(--x2f-label-size);
   line-height: var(--x2f-label-line);
   font-weight: var(--x2f-label-weight);
@@ -628,8 +697,9 @@
   .x2f-sheet-layer[data-wide='dialog']:not([data-pane-of]) .x2f-sheet {
     width: 520px;
     box-sizing: border-box;
-    padding: 32px;
-    border-radius: var(--x2f-radius-md);
+    padding: 28px;
+    border: 1px solid var(--x2f-surface-raised);
+    border-radius: var(--x2f-radius-lg);
   }
 }
 
@@ -659,7 +729,8 @@
 .x2f-choice[data-look='tile'] {
   justify-content: center;
   height: 72px;
-  background: var(--x2f-ground);
+  border-color: transparent;
+  background: var(--x2f-surface-raised);
   font-family: var(--x2f-font-mono);
   font-size: 28px;
   line-height: 32px;
@@ -788,10 +859,12 @@
 }
 
 /* Notice: a bordered box with an optional icon and title. Caution for a rule that holds something
-   back or warns, danger for a fault, plain for a done change. */
+   back or warns, danger for a fault, plain for a done change. The caution tone is the v2 callout
+   (visual system v2, section 12): a 10% caution wash, a 30% caution border, the 18 px triangle. */
 .x2f-outcome {
   display: flex;
-  gap: var(--x2f-space-2);
+  gap: 10px;
+  align-items: flex-start;
   margin: 0;
   padding: 12px;
   border: 1px solid var(--x2f-surface-raised);
@@ -801,7 +874,10 @@
 }
 
 .x2f-outcome[data-tone='caution'] {
-  border-color: var(--x2f-caution);
+  padding: var(--x2f-space-3) 14px;
+  border-color: color-mix(in srgb, var(--x2f-caution) 30%, transparent);
+  background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface));
+  color: var(--x2f-ink);
 }
 
 .x2f-outcome[data-tone='danger'] {
@@ -812,7 +888,10 @@
 .x2f-outcome__icon {
   display: flex;
   flex-shrink: 0;
+  margin-top: 1px;
   color: var(--x2f-caution);
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .x2f-outcome[data-tone='danger'] .x2f-outcome__icon {
@@ -856,8 +935,8 @@
 
 /* 56 px open/close row (Disclosure). */
 .x2f-disclosure {
-  padding: 0 var(--x2f-space-4);
-  border-radius: var(--x2f-radius-md);
+  padding: 0 var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
   background: var(--x2f-surface);
 }
 
@@ -939,12 +1018,42 @@
   padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-6);
 }
 
+/* The compact header (visual system v2, section 5; FlowScreen header="compact"): a 44 px row with
+   no bottom border, the back control and a 15/20 600 muted title; the screen's own h2 carries the
+   big words. Cards sit 16 apart. */
+.x2f-flow[data-header='compact'] .x2f-flow__header {
+  height: 44px;
+  padding: var(--x2f-space-2) var(--x2f-space-4) 0;
+  border-bottom: 0;
+}
+
+.x2f-flow[data-header='compact'] .x2f-flow__title {
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 600;
+  letter-spacing: normal;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-flow[data-header='compact'] .x2f-flow__back {
+  border-radius: var(--x2f-radius-md);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.x2f-flow[data-header='compact'] .x2f-flow__main {
+  gap: var(--x2f-space-4);
+}
+
+/* The phone footer (visual system v2, section 10): 16/16/8 padding on ground. */
 .x2f-flow__footer {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-1);
-  padding: var(--x2f-space-4);
+  padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-2);
   border-top: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-ground);
 }
 
 .x2f-flow__footer > .x2f-button {
@@ -962,9 +1071,21 @@
   width: 560px;
   max-width: 100%;
   margin: 24px auto;
-  border: 1px solid var(--x2f-surface-raised);
-  border-radius: var(--x2f-radius-md);
+  border-radius: var(--x2f-radius-lg);
   background: var(--x2f-surface);
+}
+
+/* Visual system v2: the wide card has 28 px padding (LoginApprove-Wide). */
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-flow__header,
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-flow__main,
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-flow__footer {
+  padding-left: 28px;
+  padding-right: 28px;
+  background: transparent;
+}
+
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-flow__main {
+  gap: 20px;
 }
 
 [data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-flow__footer {
@@ -994,22 +1115,47 @@
   padding: var(--x2f-space-6) 0;
 }
 
-/* The big number on the new device ("Your number", mono 72). */
+/* The big number on the new device ("Your number", mono 72): the screen's hero (visual system v2,
+   section 6) in the waiting tone, caution: a wash from the top, a 35% caution border, radius 16. */
 .x2f-number-card {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--x2f-space-1);
-  padding: var(--x2f-space-6) var(--x2f-space-4);
-  border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface);
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-6) var(--x2f-space-5) var(--x2f-space-5);
+  border: 1px solid color-mix(in srgb, var(--x2f-caution) 35%, transparent);
+  border-radius: var(--x2f-radius-lg);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-caution) 14%, var(--x2f-surface)) 0%, var(--x2f-surface) 140px);
   text-align: center;
 }
 
-[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-number-card,
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-number-card {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--x2f-caution) 14%, var(--x2f-surface-raised)) 0%, var(--x2f-surface-raised) 140px);
+}
+
 [data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-disclosure,
-[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-panel {
+[data-shell='desktop'] .x2f-flow[data-look='card'] .x2f-panel:not([data-tone]) {
   background: var(--x2f-surface-raised);
+}
+
+/* A status chip with a tinted wash (visual system v2, section 7): 28 px pill, 14% of the tone. */
+.x2f-chip[data-look='tint'] {
+  gap: 6px;
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 10px;
+}
+
+.x2f-chip[data-look='tint'][data-tone='caution'] {
+  background: color-mix(in srgb, var(--x2f-caution) 14%, transparent);
+}
+
+.x2f-chip[data-look='tint'][data-tone='escrow'] {
+  background: color-mix(in srgb, var(--x2f-escrow) 14%, transparent);
+}
+
+.x2f-chip[data-look='tint'][data-tone='danger'] {
+  background: color-mix(in srgb, var(--x2f-danger) 14%, transparent);
 }
 
 .x2f-big-number {
@@ -1017,27 +1163,29 @@
   font-size: 72px;
   line-height: 80px;
   font-weight: 500;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
 
-/* Small uppercase muted label ("YOUR NUMBER", "NEW LOGIN"). */
-.x2f-kicker {
-  color: var(--x2f-ink-muted);
-  font-size: var(--x2f-label-size);
-  line-height: var(--x2f-label-line);
-  font-weight: var(--x2f-label-weight);
-  letter-spacing: var(--x2f-label-tracking);
-  text-transform: uppercase;
-}
-
 /* Text levels used by these boards. */
+/* A stage headline on a flow screen ("You're in"): the v2 sheet title, 24/30 700. */
 .x2f-h2 {
   margin: 0;
-  font-family: var(--x2f-title-family);
-  font-size: var(--x2f-title-size);
-  line-height: var(--x2f-title-line);
-  font-weight: var(--x2f-title-weight);
+  font-family: var(--x2f-sheet-title-family);
+  font-size: var(--x2f-sheet-title-size);
+  line-height: var(--x2f-sheet-title-line);
+  font-weight: var(--x2f-sheet-title-weight);
+  letter-spacing: var(--x2f-sheet-title-tracking);
+}
+
+/* The title of a key screen (visual system v2, section 4): Familjen 28/32 700, -0.01em. */
+.x2f-screen-title {
+  margin: 0;
+  font-family: var(--x2f-screen-title-family);
+  font-size: var(--x2f-screen-title-size);
+  line-height: var(--x2f-screen-title-line);
+  font-weight: var(--x2f-screen-title-weight);
+  letter-spacing: var(--x2f-screen-title-tracking);
 }
 
 .x2f-section-title {
@@ -1092,6 +1240,11 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The icon takes the line's tone (LoginApprove v2: the waiting clock in caution). */
+.x2f-icon-line[data-tone='caution'] > svg {
+  color: var(--x2f-caution);
+}
+
 /* A grey panel of related things (the approval facts, "No other device with you?", a card on Devices). */
 .x2f-panel {
   display: flex;
@@ -1106,9 +1259,31 @@
   background: var(--x2f-surface-raised);
 }
 
+/* A titled caution callout (visual system v2, section 12): 10% wash, 30% border, 15/20 title. */
 .x2f-panel[data-tone='caution'] {
-  border: 1px solid var(--x2f-caution);
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-3) 14px;
+  border: 1px solid color-mix(in srgb, var(--x2f-caution) 30%, transparent);
+  background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface));
+}
+
+.x2f-panel[data-tone='caution'] .x2f-h3 {
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* An outline card (visual system v2, section 8): an optional way, transparent with a 1px line,
+   radius 16, padding 20, an 18/24 heading. */
+.x2f-panel[data-tone='outline'] {
+  padding: var(--x2f-space-5);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-lg);
   background: transparent;
+}
+
+.x2f-panel[data-tone='outline'] .x2f-h3 {
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
 }
 
 .x2f-panel[data-tone='team'] {
@@ -1117,12 +1292,12 @@
 }
 
 /* Facts as a definition list (the approval's Device, Time, Where). */
+/* Visual system v2 inner block: rows 12 px top and bottom, inset 14, with surface dividers. */
 .x2f-facts {
   display: flex;
   flex-direction: column;
-  gap: 12px;
   margin: 0;
-  padding: var(--x2f-space-4);
+  padding: 0 14px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface-raised);
 }
@@ -1131,6 +1306,15 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: var(--x2f-space-3) 0;
+}
+
+.x2f-facts > div + div {
+  border-top: 1px solid var(--x2f-surface);
+}
+
+.x2f-facts dd.x2f-num {
+  font-weight: 500;
 }
 
 .x2f-facts dt {
