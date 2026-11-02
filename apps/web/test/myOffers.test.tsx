@@ -341,6 +341,9 @@ describe('My offers on a fold: two panes (Fold-MyOffers)', () => {
     expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(A);
     const picks = [...host.querySelectorAll('[data-pane="main"] button[aria-pressed]')];
     expect(picks.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+    // Review N5: named by its title and methods, described by its status (not the whole row).
+    expect(picks[0]!.getAttribute('aria-labelledby')).toMatch(/-title \S+-methods$/);
+    expect(picks[0]!.getAttribute('aria-describedby')).toMatch(/-status$/);
     await click(picks[1]!);
     expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(B);
     expect(side.textContent).toContain('Who can trade');

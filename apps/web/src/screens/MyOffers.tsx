@@ -237,7 +237,19 @@ export function MyOffers() {
                     </span>
                     {ticked ? <Icon name="check" size={20} /> : null}
                   </Button>
-                  <RowText pick={panes ? { pressed: shown?.id === o.id, onPick: () => setShownId(o.id) } : null}>
+                  <RowText
+                    pick={
+                      panes
+                        ? {
+                            pressed: shown?.id === o.id,
+                            onPick: () => setShownId(o.id),
+                            // Named by the title and methods; the status and refusal describe it (review N5).
+                            labelledBy: `${p}-title ${p}-methods`,
+                            describedBy: why ? `${p}-status ${p}-why` : `${p}-status`,
+                          }
+                        : null
+                    }
+                  >
                     <span id={`${p}-title`}>{offerTitle(o)}</span>
                     <span className="x2f-note" id={`${p}-methods`}>
                       {offerMethods(o)}
@@ -327,10 +339,16 @@ export function MyOffers() {
 }
 
 /** An offer's text: plain on a phone; in two panes, the row that shows the offer's details beside the list. */
-function RowText({ pick, children }: { pick: { pressed: boolean; onPick: () => void } | null; children: ReactNode }) {
+function RowText({
+  pick,
+  children,
+}: {
+  pick: { pressed: boolean; onPick: () => void; labelledBy: string; describedBy: string } | null;
+  children: ReactNode;
+}) {
   if (pick === null) return <div className="x2f-list__label x2f-stack">{children}</div>;
   return (
-    <PickButton pressed={pick.pressed} onPick={pick.onPick} className="x2f-list__label">
+    <PickButton pressed={pick.pressed} onPick={pick.onPick} labelledBy={pick.labelledBy} describedBy={pick.describedBy} className="x2f-list__label">
       {children}
     </PickButton>
   );
