@@ -6,8 +6,10 @@
 // only the day. Nothing about a submission is logged, its text least of all.
 //
 // Limits: FEEDBACK_FORM_DAILY sends per account per UTC day, counted in memory only (never stored,
-// so it links no row to anyone; a restart forgets it), and one shared token bucket for everyone.
-// Over the daily count: 429 `slow-down` with `retryAfterSeconds` to the next UTC midnight.
+// so it links no row to anyone; a restart forgets it), and at most one send per
+// FEEDBACK_FORM_MIN_GAP_S seconds per account (owner 2026-11-02; no shared budget for everyone).
+// Over the daily count: 429 `slow-down` with `retryAfterSeconds` to the next UTC midnight; too soon
+// after the last send: 429 `slow-down` with the seconds left.
 //
 // Residual, at the database level (review M1, recorded in docs/coordination.md): Postgres keeps
 // insertion order in system columns (xmin, ctid), so someone with database access can still line
@@ -17,8 +19,7 @@ import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError } from '../errors.js';
-import type { BucketSize } from '../limits.js';
-import { TokenBucket } from '../limits.js';
+import { KeyedBuckets } from '../limits.js';
 import type { RetentionJob } from '../retention.js';
 
 export const FEEDBACK_KINDS = ['complaint', 'feedback', 'recommendation'] as const;
@@ -27,8 +28,8 @@ export type FeedbackKind = (typeof FEEDBACK_KINDS)[number];
 export const FEEDBACK_TEXT_MAX = 2000;
 /** Sends per account per UTC day (in memory only). */
 export const FEEDBACK_FORM_DAILY = 5;
-/** One budget for every sender: anonymous rows carry no account, so nothing finer is possible after the daily count. */
-export const FEEDBACK_FORM_BUCKET: BucketSize = { capacity: 30, perMinute: 10 };
+/** Owner 2026-11-02: at most one send per this many seconds per account (in memory only); no shared cap. */
+export const FEEDBACK_FORM_MIN_GAP_S = 30;
 /** As P5-A19 (Task 4's platform feedback): rows are deleted after a year. */
 export const FEEDBACK_FORM_RETENTION_DAYS = 365;
 /** A refusal code from the popup (`/feedback?from=<code>`), e.g. `starter-limit`. */
@@ -105,7 +106,8 @@ function parseBody(body: unknown): FormBody {
 }
 
 export function feedbackFormRoutes(app: FastifyInstance): void {
-  const bucket = new TokenBucket(FEEDBACK_FORM_BUCKET.capacity, FEEDBACK_FORM_BUCKET.perMinute, app.deps.clock);
+  // One token per account, refilled after FEEDBACK_FORM_MIN_GAP_S (429 slow-down with the seconds left).
+  const gap = new KeyedBuckets({ capacity: 1, perMinute: 60 / FEEDBACK_FORM_MIN_GAP_S }, app.deps.clock);
   // Per account per UTC day; cleared when the day changes. Never written anywhere.
   let day = '';
   const sent = new Map<string, number>();
@@ -129,7 +131,7 @@ export function feedbackFormRoutes(app: FastifyInstance): void {
       const midnight = Date.parse(`${today}T00:00:00Z`) + DAY_MS;
       throw new ApiError(429, 'slow-down', { retryAfterSeconds: Math.max(1, Math.ceil((midnight - now.getTime()) / 1000)) });
     }
-    bucket.take();
+    gap.take(accountId);
     // Held while the insert runs (so a parallel burst cannot pass the count) and given back if the
     // insert fails: a database error never uses up one of the account's sends.
     sent.set(accountId, count + 1);

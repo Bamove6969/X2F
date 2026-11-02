@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { requireSession } from '../src/auth/sessions.js';
-import { FEEDBACK_FORM_BUCKET, FEEDBACK_FORM_DAILY, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
+import { FEEDBACK_FORM_DAILY, FEEDBACK_FORM_MIN_GAP_S, listFeedbackForm, purgeFeedbackForm } from '../src/feedback/form.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 import { Browser, ORIGIN, addTestLogin } from './helpers/totp.js';
@@ -184,13 +184,15 @@ describe('POST /v1/feedback/form', () => {
   });
 
   it(`takes ${FEEDBACK_FORM_DAILY} a day per account, named or not, then 429 until midnight UTC; the count is not stored`, async () => {
-    // A later day of its own: the shared bucket has refilled whatever earlier tests took.
     setNow(new Date('2026-12-01T15:30:00Z'));
     const { b } = await login('chatty1');
     const { b: other } = await login('chatty2');
     for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+      // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+      setNow(new Date(Date.parse('2026-12-01T15:30:00Z') + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
       expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `n${i}`, anonymous: i % 2 === 0 })).statusCode).toBe(202);
     }
+    setNow(new Date('2026-12-01T15:30:00Z'));
     const over = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'one more', anonymous: true });
     expect(over.statusCode).toBe(429);
     // 15:30 UTC → midnight is 8.5 hours away.
@@ -202,17 +204,23 @@ describe('POST /v1/feedback/form', () => {
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'next day', anonymous: true })).statusCode).toBe(202);
   });
 
-  // Last in this block: it empties the app's shared bucket.
-  it('one shared budget for everyone on top of the daily count (503 busy when spent)', async () => {
-    // A month on: the bucket has refilled whatever earlier tests took.
+  it(`one send per ${FEEDBACK_FORM_MIN_GAP_S} s per person (owner 2026-11-02; no shared budget): 429 slow-down in between, others unaffected`, async () => {
     setNow(new Date('2027-01-05T12:00:00Z'));
-    const senders = await Promise.all(Array.from({ length: Math.ceil((FEEDBACK_FORM_BUCKET.capacity + 5) / FEEDBACK_FORM_DAILY) }, (_, i) => login(`flood${i}`)));
-    const codes: number[] = [];
-    for (const { b } of senders) {
-      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) codes.push((await b.post('/v1/feedback/form', { kind: 'feedback', text: `f${i}`, anonymous: true })).statusCode);
-    }
-    expect(codes.filter((c) => c === 202)).toHaveLength(FEEDBACK_FORM_BUCKET.capacity);
-    expect(codes.filter((c) => c !== 202 && c !== 503)).toEqual([]);
+    const { b } = await login('gap1');
+    const { b: other } = await login('gap2');
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'first', anonymous: true })).statusCode).toBe(202);
+    setNow(new Date(Date.parse('2027-01-05T12:00:00Z') + (FEEDBACK_FORM_MIN_GAP_S - 1) * 1000));
+    const soon = await b.post('/v1/feedback/form', { kind: 'feedback', text: 'too soon', anonymous: true });
+    expect(soon.statusCode).toBe(429);
+    expect(soon.json()).toMatchObject({ error: 'slow-down' });
+    expect((soon.json() as { retryAfterSeconds: number }).retryAfterSeconds).toBeGreaterThanOrEqual(1);
+    expect((await other.post('/v1/feedback/form', { kind: 'feedback', text: 'someone else', anonymous: true })).statusCode).toBe(202);
+    setNow(new Date(Date.parse('2027-01-05T12:00:00Z') + FEEDBACK_FORM_MIN_GAP_S * 1000));
+    expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'later', anonymous: true })).statusCode).toBe(202);
+    // Many people at once are never refused for each other (no shared cap).
+    const crowd = await Promise.all(Array.from({ length: 40 }, (_, i) => login(`crowd${i}`)));
+    const codes = await Promise.all(crowd.map(({ b: c }, i) => c.post('/v1/feedback/form', { kind: 'feedback', text: `c${i}`, anonymous: true }).then((r) => r.statusCode)));
+    expect(codes.every((c) => c === 202)).toBe(true);
   });
 });
 
