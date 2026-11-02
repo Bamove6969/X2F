@@ -131,6 +131,11 @@ function LogoutTimer() {
   );
 }
 
+/** The latest of these hold end times (the first on a tie), or null for none. */
+export function latestHoldEnd(ends: readonly string[]): string | null {
+  return ends.reduce<string | null>((a, b) => (a !== null && Date.parse(a) >= Date.parse(b) ? a : b), null);
+}
+
 /**
  * A backup login's recovery session is held, or the account is on its 24-hour hold (Plan 2 Tasks 9
  * and 17): changes on this screen are refused until then, so the screen says so up front, from `me()`.
@@ -146,7 +151,7 @@ function HoldBanner() {
         const ends = [me.level === 'recovery' ? me.holdUntil : null, me.accountHoldUntil ?? null].filter(
           (t): t is string => typeof t === 'string' && Date.parse(t) > Date.now(),
         );
-        setHeld(ends.length === 0 ? null : ends.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b)));
+        setHeld(latestHoldEnd(ends));
       },
       () => undefined,
     );
