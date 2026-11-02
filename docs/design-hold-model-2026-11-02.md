@@ -47,3 +47,8 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 ## Decided (owner, directly to design, 2 Nov)
 - When a password-only change starts a hold, the account owner is notified immediately on every channel they set up (push, secure Jabber and others). The notification lists each change.
 - Still open: whether password-only changes to payout wallets or login methods should apply automatically after 24 h, or need a moderator or the owner's recovery code to confirm first.
+
+## Decided (owner, directly to design, 2 Nov): no other device to approve from
+- If the team lead has no logged-in device to approve a new login (for example the phone was lost or broken, the battery is dead, or every session timed out), they can log in with a strong method instead: PGP, a security key or a passkey. No approval is needed.
+- Only those three count for this. A password, or a password plus an authenticator, does not.
+- A password-only account in that situation has only the recovery code left, which starts the 24 h hold. This follows from the existing rules.

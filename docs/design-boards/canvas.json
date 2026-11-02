@@ -766,7 +766,7 @@
       "x": 0,
       "y": 33100,
       "w": 390,
-      "h": 1100,
+      "h": 1180,
       "page": "all",
       "title": "G1 \u00b7 New-login approval",
       "is_interactive": true
@@ -775,7 +775,7 @@
       "x": 470,
       "y": 33100,
       "w": 1280,
-      "h": 1000,
+      "h": 1080,
       "page": "all",
       "title": "G1 \u00b7 New-login approval (wide)",
       "is_interactive": true
