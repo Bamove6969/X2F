@@ -380,9 +380,11 @@ describe('BottomNav', () => {
     expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers', 'trades'] }))).toBe(true);
     expect(mayPostOffers(me({ name: 'Aurora', roles: ['trades'] }))).toBe(false);
     expect(mayPostOffers(me({ name: 'Aurora', roles: [] }))).toBe(false);
-    // Signed out or still loading: the tab stays (PostOffer sends a signed-out poster to setup).
-    expect(mayPostOffers({ status: 'loading' })).toBe(true);
+    // Signed out: the tab stays (PostOffer sends a signed-out poster to setup).
     expect(mayPostOffers({ status: 'signed-out' })).toBe(true);
+    // Review N2: while the session loads the role is not known, so the tab waits (a Trades-only
+    // member never sees it appear and vanish on a cold load).
+    expect(mayPostOffers({ status: 'loading' })).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {

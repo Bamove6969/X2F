@@ -20,10 +20,12 @@ export function memberOf(session: Session): TeamMemberSession | null {
 
 /**
  * Whether this session may post offers (design review 2026-11-01, shot 26): the account owner and
- * a member with the Offers role (spec 6.7). A session not signed in yet keeps the Post offer tab
- * (PostOffer itself sends a signed-out poster to setup).
+ * a member with the Offers role (spec 6.7). A signed-out session keeps the Post offer tab (PostOffer
+ * itself sends a signed-out poster to setup). While the session loads the role is not known yet, so
+ * the tab waits (C11 review N2: a Trades-only member saw it appear and vanish on each cold load).
  */
 export function mayPostOffers(session: Session): boolean {
+  if (session.status === 'loading') return false;
   const m = memberOf(session);
   return m === null || m.roles.includes('offers');
 }

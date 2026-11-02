@@ -110,3 +110,58 @@ test('signed out: told before typing, and the draft is kept through the log-in r
   await expect(page.getByLabel('Your comment')).toHaveValue('Hold rules are unclear.');
   await expect(page.locator('[data-part="feedback-login-first"]')).toHaveCount(0);
 });
+
+// C11 review M1/M2: a real touch drag (CDP touch events, so the browser decides pan vs pointer) down
+// from the grab handle closes the sheet; a short one does not. On the wide dialog the handle is
+// hidden and a mouse drag over the message (selecting it) never closes it.
+test.describe('CantDoThat: swipe down from the handle on a touch screen', () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  async function openPopup(page: Page) {
+    await stub(page);
+    await page.goto('/post?method=ZELLE');
+    await page.getByLabel('Smallest trade').fill('$50');
+    await page.getByLabel('Largest trade').fill('$2,000');
+    await page.getByRole('button', { name: 'Post offer' }).click();
+    const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
+    await expect(popup).toBeVisible();
+    return popup;
+  }
+
+  async function touchDrag(page: Page, x: number, y: number, dy: number) {
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
+    for (let i = 1; i <= 6; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y + (dy * i) / 6 }] });
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await cdp.detach();
+  }
+
+  test('a 150 px swipe closes it; a 20 px one does not', async ({ page }) => {
+    const popup = await openPopup(page);
+    const handle = popup.locator('[data-part="sheet-handle"]');
+    const box = (await handle.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    await touchDrag(page, box.x + box.width / 2, box.y + box.height / 2, 20);
+    await expect(popup).toBeVisible();
+    await touchDrag(page, box.x + box.width / 2, box.y + box.height / 2, 150);
+    await expect(popup).toHaveCount(0);
+  });
+});
+
+test('CantDoThat on the wide dialog: no handle, and a mouse drag over the message does not close it', async ({ page }) => {
+  await stub(page);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/post?method=ZELLE');
+  await page.getByLabel('Smallest trade').fill('$50');
+  await page.getByLabel('Largest trade').fill('$2,000');
+  await page.getByRole('button', { name: 'Post offer' }).click();
+  const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
+  await expect(popup).toBeVisible();
+  await expect(popup.locator('[data-part="sheet-handle"]')).toBeHidden();
+  const msg = (await popup.locator('[data-part="cant-do-message"]').boundingBox())!;
+  await page.mouse.move(msg.x + 4, msg.y + 2);
+  await page.mouse.down();
+  await page.mouse.move(msg.x + 40, msg.y + 160, { steps: 8 });
+  await page.mouse.up();
+  await expect(popup).toBeVisible();
+});
