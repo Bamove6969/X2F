@@ -423,6 +423,7 @@
   position: sticky;
   bottom: 0;
   display: grid;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: 1px solid var(--x2f-surface-raised);
   background: var(--x2f-ground);
@@ -434,14 +435,30 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  height: 60px;
+  height: var(--x2f-tab-height);
   color: var(--x2f-ink-muted);
   font-size: 12px;
 }
 
+/* The current tab: ink text on the raised surface with a 2 px ink inset line on top; selection is
+   never orange (conventions 2 Nov 2026, design session 2 Nov 2026). */
 .x2f-bottom-nav__tab[aria-current='page'] {
-  color: var(--x2f-monero-ink);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
   font-weight: 600;
+  box-shadow: inset 0 2px 0 var(--x2f-ink);
+}
+
+/* The tab bar is pinned to the bottom: a screen above it fills the rest of the viewport, so a short
+   screen does not leave the bar floating mid-screen. The bar's height is the tab height, its 1 px
+   top line and the phone's bottom safe area (review N4), so the action bar above it never overlaps. */
+:root {
+  --x2f-tab-height: 60px;
+  --x2f-tab-bar-height: calc(var(--x2f-tab-height) + 1px + env(safe-area-inset-bottom, 0px));
+}
+
+[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main {
+  min-height: calc(100dvh - var(--x2f-tab-bar-height));
 }
 
 /* Desktop frame (Desktop board). */
@@ -677,6 +694,11 @@
   cursor: not-allowed;
 }
 
+/* A disabled switch keeps its position with a muted track (My offers during a trading hold). */
+.x2f-switch:disabled .x2f-switch__track {
+  opacity: 0.5;
+}
+
 .x2f-switch__track {
   display: flex;
   align-items: center;
@@ -707,22 +729,52 @@
   background: var(--x2f-ground);
 }
 
-/* Caution note in a box (Notice). */
-.x2f-caution-note {
+/* Notice: a bordered box with an optional icon and title. Caution for a rule that holds something
+   back or warns, danger for a fault, plain for a done change. */
+.x2f-outcome {
   display: flex;
   gap: var(--x2f-space-2);
   margin: 0;
   padding: 12px;
-  border: 1px solid var(--x2f-caution);
+  border: 1px solid var(--x2f-surface-raised);
   border-radius: var(--x2f-radius-md);
   font-size: 14px;
   line-height: 20px;
 }
 
-.x2f-caution-note__icon {
+.x2f-outcome[data-tone='caution'] {
+  border-color: var(--x2f-caution);
+}
+
+.x2f-outcome[data-tone='danger'] {
+  border-color: var(--x2f-danger);
+  color: var(--x2f-danger);
+}
+
+.x2f-outcome__icon {
   display: flex;
   flex-shrink: 0;
   color: var(--x2f-caution);
+}
+
+.x2f-outcome[data-tone='danger'] .x2f-outcome__icon {
+  color: var(--x2f-danger);
+}
+
+.x2f-outcome__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.x2f-outcome__title,
+.x2f-outcome__body {
+  margin: 0;
+}
+
+.x2f-outcome__title {
+  font-weight: 600;
 }
 
 /* Pills meter (Meter). */
@@ -1212,4 +1264,244 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   align-items: start;
+}
+
+/* Tick box: a 24 px native checkbox in ink inside a 44×44 label (the tap target). */
+.x2f-tickbox {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  cursor: pointer;
+}
+
+.x2f-tickbox input {
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+  cursor: inherit;
+}
+
+.x2f-tickbox:has(input:disabled) {
+  cursor: not-allowed;
+}
+
+/* Select card (MyOffers board): tick box 44 | content | control 60 on one grid. */
+.x2f-select-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 60px;
+  column-gap: var(--x2f-space-1);
+  align-items: start;
+  padding: var(--x2f-space-1);
+  border: 1px solid transparent;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-select-card[data-on='false'] {
+  border: 1px dashed var(--x2f-line);
+  background: transparent;
+}
+
+.x2f-select-card[data-selected='true'] {
+  background: var(--x2f-surface-raised);
+  box-shadow: inset 0 0 0 2px var(--x2f-ink);
+}
+
+.x2f-select-card__select,
+.x2f-select-card__control {
+  display: flex;
+  justify-content: center;
+}
+
+.x2f-select-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  min-width: 0;
+  padding-top: 12px;
+  padding-bottom: var(--x2f-space-1);
+  word-break: break-word;
+}
+
+/* Action bar: the list screen's footer, kept in view above the tab bar. */
+.x2f-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  margin-top: auto;
+  /* Edge to edge across the screen's 16 px gutters, and down over its 24 px bottom padding. */
+  margin-inline: calc(-1 * var(--x2f-space-4));
+  margin-bottom: calc(-1 * var(--x2f-space-6));
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-ground);
+}
+
+[data-shell='phone']:has(> .x2f-bottom-nav) .x2f-action-bar {
+  bottom: var(--x2f-tab-bar-height);
+}
+
+/* A selection bar inside the action bar: "2 selected · Clear · Turn on · Turn off". */
+.x2f-action-bar[data-selection='true'] {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  min-height: 56px;
+  padding-block: 6px;
+  background: var(--x2f-surface);
+}
+
+.x2f-action-bar[data-selection='true'] > :first-child {
+  flex-grow: 1;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.x2f-action-bar[data-selection='true'] .x2f-button--quiet {
+  min-width: 44px;
+  padding: 0 var(--x2f-space-2);
+  color: var(--x2f-ink);
+  text-decoration: underline;
+}
+
+.x2f-action-bar[data-selection='true'] .x2f-button--secondary {
+  height: 44px;
+  padding: 0 14px;
+  border-color: var(--x2f-ink);
+  font-size: 15px;
+}
+
+/* Select card content: the board's eyebrow, title and lines, and the status line with its tone. */
+.x2f-select-card__eyebrow {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-select-card__title {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-select-card__line {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-select-card__mono {
+  font-family: var(--x2f-font-mono);
+}
+
+.x2f-select-card[data-on='false'] .x2f-select-card__title {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-select-card__status {
+  margin-top: var(--x2f-space-1);
+  font-size: 13px;
+  line-height: 18px;
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
+
+.x2f-select-card__status[data-tone='off'] {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-select-card__status[data-tone='caution'],
+.x2f-select-card__why {
+  color: var(--x2f-caution);
+}
+
+.x2f-select-card__why {
+  font-size: 13px;
+  line-height: 18px;
+}
+
+/* Empty list. */
+.x2f-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: 48px var(--x2f-space-4);
+  text-align: center;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-empty__title {
+  margin: 0;
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+  color: var(--x2f-ink);
+}
+
+.x2f-empty__text {
+  margin: 0;
+  max-width: 320px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+/* Select all over select cards: its tick box sits on the cards' 44 px tick-box column. */
+.x2f-select-all {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-1) var(--x2f-space-4) var(--x2f-space-1) var(--x2f-space-1);
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+}
+
+.x2f-select-all__label {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  justify-content: center;
+  min-width: 0;
+  min-height: 44px;
+  cursor: pointer;
+}
+
+.x2f-select-all__name {
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.x2f-select-all__hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+/* Read by assistive tech, not drawn (a live region whose words the screen shows elsewhere). */
+.x2f-offscreen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* A status line drawn as a chip (My offers during a trading hold: "Paused · trading hold"). */
+.x2f-select-card__status[data-chip='true'] {
+  align-self: flex-start;
+  padding: 2px var(--x2f-space-2);
+  border: 1px solid currentColor;
+  border-radius: var(--x2f-radius-pill);
 }
