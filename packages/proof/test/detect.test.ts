@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, type Region } from '../src/index.js';
+import { amountBoxes, detectSensitive, detectSensitiveText, type HiddenKind, type OcrWord, padAndMerge, type Region } from '../src/index.js';
 import { type DetectOptions, UPI_IDS } from '../src/detect.js';
 import { covered, ocr } from './ocr.js';
 
@@ -839,5 +839,93 @@ describe('owner answers (2026-11-02)', () => {
   it('item 30: a label inside a longer word is not a label', () => {
     expect(maskedTexts(ocr('Nombres de prueba'))).toEqual([]);
     expect(maskedTexts(ocr('Titularidad verificada'))).toEqual([]);
+  });
+});
+
+describe('owner (2026-11-02): the automatic blur never hides the amount', () => {
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  const hits = (a: Box, b: Box): boolean => a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+  /** The amount's box: the words named, or chars [from, to) of one word (10 px a character). */
+  function amountBox(words: OcrWord[], text: string, from = 0, to = text.length): Box {
+    const w = words.find((x) => x.text === text)!;
+    return { x0: w.x0 + from * 10, y0: w.y0, x1: w.x0 + to * 10, y1: w.y1 };
+  }
+
+  // [lines, amount word(s), fiatCents, exponent]
+  const cases: Array<[string[], string[], bigint, number]> = [
+    [['Amount: $412.50'], ['$412.50'], 41250n, 2],
+    [['Amount: -$412.50'], ['-$412.50'], 41250n, 2],
+    [['412.50USD'], ['412.50USD'], 41250n, 2],
+    [['Total $1,234.56'], ['$1,234.56'], 123456n, 2],
+    [['Total: 1.234,56 €'], ['1.234,56', '€'], 123456n, 2],
+    [['Montant 1 234,56 €'], ['1', '234,56', '€'], 123456n, 2],
+    [['Total USD 12,345,678.90'], ['USD', '12,345,678.90'], 1234567890n, 2],
+    [['Amount: ₹1,23,456.00'], ['₹1,23,456.00'], 12345600n, 2],
+    [['Total ¥5,000'], ['¥5,000'], 5000n, 0],
+    [['Sent 5,000 JPY'], ['5,000', 'JPY'], 5000n, 0],
+    [['₫123,456,789,012,345'], ['₫123,456,789,012,345'], 123456789012345n, 0],
+    [['Amount 123456789012345 VND'], ['123456789012345'], 123456789012345n, 0],
+    [['Total 3 412.50'], ['412.50'], 41250n, 2],
+    // A whole amount with no currency marker, after an amount label.
+    [['Amount: 12345678'], ['12345678'], 1234567800n, 2],
+    [['Total 250000'], ['250000'], 25000000n, 2],
+    [['Montant: 250000'], ['250000'], 25000000n, 2],
+    [['You sent 1250000'], ['1250000'], 125000000n, 2],
+    // 16 digits: longer than the amount reader takes, still the trade's amount after a label.
+    [['Amount 1234567890123456 VND'], ['1234567890123456'], 1234567890123456n, 0],
+    // Next to details that are masked.
+    [['Paid to Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
+    [['To: Mira Kowalski 412.50'], ['412.50'], 41250n, 2],
+    [['Name:', 'Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
+    [['Mira $412.50 Kowalski'], ['$412.50'], 41250n, 2],
+    [['Acct 12345678 $412.50'], ['$412.50'], 41250n, 2],
+    [['Mira Kowalski', '$412.50', '555-201-3344'], ['$412.50'], 41250n, 2],
+    [['To Mira Kowalski', 'jane@example.com $412.50'], ['$412.50'], 41250n, 2],
+  ];
+
+  it('no automatic region touches the amount, in the formats receipts use', () => {
+    for (const [lines, amount, fiatCents, exponent] of cases) {
+      const w = ocr(...lines);
+      const keep = { ...KEEP, fiatCents, exponent };
+      const boxes = amount.map((t) => amountBox(w, t));
+      for (const r of detectSensitive(w, keep)) for (const b of boxes) expect(hits(r, b), `${lines.join(' / ')}: ${r.kind}`).toBe(false);
+    }
+  });
+
+  it('nor after padding and merging with the amount boxes the detector reports', () => {
+    for (const [lines, amount, fiatCents, exponent] of cases) {
+      const w = ocr(...lines);
+      const keep = { ...KEEP, fiatCents, exponent };
+      const merged = padAndMerge(detectSensitive(w, keep), 1000, 1000, 4, amountBoxes(w, keep));
+      for (const t of amount) for (const r of merged) expect(hits(r, amountBox(w, t)), `${lines.join(' / ')}: ${t}`).toBe(false);
+    }
+  });
+
+  it('an amount glued to a detail in one OCR word: the detail is masked, the amount is not', () => {
+    const w = ocr('Acct 12345678$412.50');
+    const rs = detectSensitive(w, KEEP);
+    expect(rs.map((r) => r.kind)).toEqual(['account']);
+    const word = amountBox(w, '12345678$412.50');
+    // The detail's 8 characters are covered; none of `$412.50`.
+    expect(rs[0]!.x0).toBe(word.x0);
+    expect(rs[0]!.x1).toBeGreaterThanOrEqual(word.x0 + 80);
+    expect(hits(rs[0]!, amountBox(w, '12345678$412.50', 8))).toBe(false);
+    expect(amountBoxes(w, KEEP)).toEqual([amountBox(w, '12345678$412.50', 8)]);
+  });
+
+  it('amountBoxes: the trade amount only, not dates, codes or other amounts', () => {
+    const w = ocr('Oct 16, 2026 K7M2-9QXA-4FTR-8WPN', 'Fee $1.50', 'Amount $412.50');
+    expect(amountBoxes(w, KEEP)).toEqual([amountBox(w, '$412.50')]);
+    expect(amountBoxes(ocr('Amount 1 234,56 €'), { ...KEEP, fiatCents: 123456n })).toHaveLength(3);
+  });
+
+  it('a whole number is kept only when it is the trade amount right after an amount label', () => {
+    // Not the trade amount: still masked.
+    expect(maskedTexts(ocr('Amount: 12345678'))).toEqual(['12345678']);
+    // The trade amount without a label: a bare number could be a reference, still masked.
+    expect(maskedTexts(ocr('Ref 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
+    expect(maskedTexts(ocr('Amount 1234567890123456'))).toEqual(['1234567890123456']);
+    // The label must be right before the number.
+    expect(maskedTexts(ocr('Amount sent to acct 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
   });
 });

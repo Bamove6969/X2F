@@ -7,6 +7,10 @@
 // A SAFETY NET (owner item 35, 2026-11-02): the detector is not the only guard. The sender always
 // sees the blurred picture before it is sent and can blur more by hand (Plan 5 Task 15), so the
 // detector aims to catch what it can (best effort), not to be the last word on what is hidden.
+//
+// THE AMOUNT (owner 2026-11-02): the automatic blur never hides the trade amount. No region covers
+// a character of it, and `amountBoxes` gives its boxes so `padAndMerge` keeps padding and merging
+// off it too. The uploader can only add blur (a `manual` region), never take an automatic one away.
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts } from './amounts.js';
 import { NAME_LABELS } from './nameLabels.js';
@@ -14,12 +18,16 @@ import { type OcrWord, linesOf } from './ocr.js';
 
 export type HiddenKind = 'name' | 'account' | 'card' | 'iban' | 'address' | 'phone' | 'email' | 'handle' | 'manual';
 
-/** A box in image pixels (x1, y1 exclusive) and why it is hidden. */
-export interface Region {
+/** A box in image pixels (x1, y1 exclusive). */
+export interface Box {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
+}
+
+/** A box in image pixels (x1, y1 exclusive) and why it is hidden. */
+export interface Region extends Box {
   kind: HiddenKind;
 }
 
@@ -586,6 +594,74 @@ function visible(text: string, best: Array<Span | null>): Array<Span | null> {
   return best.map((s, i) => (s && /\s/.test(text[i] ?? '') ? null : s));
 }
 
+// ---------------------------------------------------------------------------------------------
+// The trade amount (owner 2026-11-02: the automatic blur never hides the amount).
+
+/**
+ * Amount labels: a whole number right after one, equal to the trade amount, is the amount even with
+ * no currency marker or decimals (`Amount: 12345678`, `Total 250,000`). Without a label a bare whole
+ * number may be a reference or an account, so it is not kept.
+ */
+const AMOUNT_LABEL = new RegExp(
+  `(?<![\\p{L}])(?:${[
+    'amount', 'total', 'sum', 'sent', 'paid', 'received', 'transferred',
+    'montant', 'somme', 'betrag', 'summe', 'importe', 'monto', 'valor', 'quantia', 'bedrag',
+    'kwota', 'importo', 'tutar', 'jumlah', 'nominal', 'сумма', 'сума', '金额', '金額', '합계', '금액',
+  ].join('|')})\\s*[:：]?\\s*$`,
+  'iu',
+);
+/** A run of 16 or more digits, which the amount reader does not take. */
+const LONG_DIGITS = /(?<![\p{L}\p{N}])\d{16,}(?![\p{N}])/gu;
+
+/** Per character of a normalised line: whether it is part of the trade amount. */
+function amountKept(text: string, keep: Keep): boolean[] {
+  const k: boolean[] = new Array<boolean>(text.length).fill(false);
+  for (const a of findAmounts(text, keep.exponent)) {
+    if (a.value !== keep.fiatCents) continue;
+    if (a.marker !== null || a.decimals || AMOUNT_LABEL.test(text.slice(0, a.start))) mark(k, a.start, a.end);
+  }
+  const unit = 10n ** BigInt(keep.exponent);
+  if (keep.fiatCents % unit === 0n) {
+    const whole = (keep.fiatCents / unit).toString();
+    for (const m of text.matchAll(LONG_DIGITS)) {
+      if (m[0].replace(/^0+(?=\d)/, '') === whole && AMOUNT_LABEL.test(text.slice(0, m.index))) mark(k, m.index, m.index + m[0].length);
+    }
+  }
+  return k;
+}
+
+/**
+ * The boxes of the trade amount in OCR words: a whole word, or the part of a word that holds it (by
+ * character position, as `detectSensitive` cuts words). Pass them to `padAndMerge` so padding and
+ * merging never cover the amount either (owner 2026-11-02).
+ */
+export function amountBoxes(words: OcrWord[], keep: Keep): Box[] {
+  const out: Box[] = [];
+  for (const l of linesOf(words)) {
+    const n = normalize(l.text);
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep)).keep;
+    for (const { word, start, end } of l.words) {
+      const charW = (word.x1 - word.x0) / (end - start);
+      for (let c = start; c < end; ) {
+        if (!k[c]) {
+          c++;
+          continue;
+        }
+        let d = c;
+        while (d < end && k[d]) d++;
+        out.push({
+          x0: c === start ? word.x0 : Math.floor(word.x0 + charW * (c - start)),
+          y0: word.y0,
+          x1: d === end ? word.x1 : Math.ceil(word.x0 + charW * (d - start)),
+          y1: word.y1,
+        });
+        c = d;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Regions over OCR words that look like private details (spec 4.2), one per run of words of the same
  * kind on a line, in reading order. Never covers the trade code (in any grouping or case, after
@@ -601,12 +677,9 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
   const norms = lines.map((l) => normalize(l.text));
   const texts = norms.map((n) => n.text);
   const kept = texts.map((text) => {
-    const k: boolean[] = new Array<boolean>(text.length).fill(false);
+    const k = amountKept(text, keep);
     markDates(text, k);
     for (const m of text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
-    for (const a of findAmounts(text, keep.exponent)) {
-      if ((a.marker !== null || a.decimals) && a.value === keep.fiatCents) mark(k, a.start, a.end);
-    }
     return k;
   });
   const spans: Span[][] = lines.map(() => []);
@@ -684,9 +757,10 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
         let d = c;
         while (d < end && best[d] && best[d]!.kind === kind) d++;
         out.push({
-          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start ? 1 : 0)))),
+          // Never reaching into a kept character: the amount wins over the extra width (owner 2026-11-02).
+          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start && !k[c - 1] ? 1 : 0)))),
           y0: word.y0,
-          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end ? 1 : 0)))),
+          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end && !k[d] ? 1 : 0)))),
           y1: word.y1,
           kind,
         });

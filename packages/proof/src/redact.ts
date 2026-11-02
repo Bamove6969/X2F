@@ -3,7 +3,7 @@
 // A redacted region becomes its mean colour plus a fixed texture that depends only on (x, y), so
 // its output pixels carry nothing of the original glyphs but one average colour. No blur, no
 // pixelation: both can be undone.
-import type { HiddenKind, Region } from './detect.js';
+import type { Box, HiddenKind, Region } from './detect.js';
 
 /** Which kind a merged region keeps, first wins (a hidden sender name matters to the proof card). */
 const MERGE_ORDER: HiddenKind[] = ['name', 'card', 'iban', 'account', 'address', 'phone', 'email', 'handle', 'manual'];
@@ -25,25 +25,57 @@ function clampRegion(r: Region, w: number, h: number): Region | null {
   return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1, kind: r.kind } : null;
 }
 
+function overlaps(a: Box, b: Box): boolean {
+  return a.x0 < b.x1 && b.x0 < a.x1 && a.y0 < b.y1 && b.y0 < a.y1;
+}
+
+/** `r` minus `k`: up to four boxes (above, below, left, right of `k`), each with `r`'s kind. */
+function cut(r: Region, k: Box): Region[] {
+  if (!overlaps(r, k)) return [r];
+  const out: Region[] = [];
+  if (r.y0 < k.y0) out.push({ ...r, y1: k.y0 });
+  if (k.y1 < r.y1) out.push({ ...r, y0: k.y1 });
+  const y0 = Math.max(r.y0, k.y0);
+  const y1 = Math.min(r.y1, k.y1);
+  if (r.x0 < k.x0) out.push({ ...r, y0, y1, x1: k.x0 });
+  if (k.x1 < r.x1) out.push({ ...r, y0, y1, x0: k.x1 });
+  return out;
+}
+
 /**
  * Pad each region by `padPx` (covering anti-aliased glyph edges), clamp to the image, drop empty ones
  * and merge every group of overlapping regions into one box. A merged box keeps the first kind of
  * `name, card, iban, account, address, phone, email, handle, manual`. Sorted top to bottom, left to right.
+ *
+ * `keepClear` (the trade amount's boxes, from `amountBoxes`): no automatic region reaches into them,
+ * by padding or by merging (owner 2026-11-02: the automatic blur never hides the amount). A padded
+ * automatic region is cut around them, and two regions are not merged when their joint box would
+ * cover one that neither covered. Only a `manual` region (the uploader's own) may cover them. Nothing
+ * is ever taken away from the regions given: every pixel of each still lies in an output region
+ * (outside `keepClear`, for automatic ones).
  */
-export function padAndMerge(rs: Region[], w: number, h: number, padPx = 4): Region[] {
+export function padAndMerge(rs: Region[], w: number, h: number, padPx = 4, keepClear: readonly Box[] = []): Region[] {
   checkSize(w, h);
   if (!Number.isFinite(padPx) || padPx < 0) throw new RangeError('padPx must be a finite number >= 0');
+  for (const k of keepClear) if (![k.x0, k.y0, k.x1, k.y1].every(Number.isFinite)) throw new RangeError('keepClear box must be finite');
   let boxes: Region[] = [];
   for (const r of rs) {
     checkRegion(r);
     const c = clampRegion({ x0: r.x0 - padPx, y0: r.y0 - padPx, x1: r.x1 + padPx, y1: r.y1 + padPx, kind: r.kind }, w, h);
-    if (c) boxes.push(c);
+    if (!c) continue;
+    let parts = [c];
+    if (r.kind !== 'manual') for (const k of keepClear) parts = parts.flatMap((p) => cut(p, k));
+    boxes.push(...parts);
   }
   for (let merged = true; merged; ) {
     merged = false;
     const next: Region[] = [];
     for (const b of boxes) {
-      const o = next.find((n) => n.x0 < b.x1 && b.x0 < n.x1 && n.y0 < b.y1 && b.y0 < n.y1);
+      const o = next.find((n) => {
+        if (!overlaps(n, b)) return false;
+        const joint = { x0: Math.min(n.x0, b.x0), y0: Math.min(n.y0, b.y0), x1: Math.max(n.x1, b.x1), y1: Math.max(n.y1, b.y1) };
+        return keepClear.every((k) => !overlaps(joint, k) || overlaps(n, k) || overlaps(b, k));
+      });
       if (!o) {
         next.push({ ...b });
         continue;
