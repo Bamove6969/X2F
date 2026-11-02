@@ -5,7 +5,8 @@ export type StaffRole = (typeof STAFF_ROLES)[number];
 /**
  * Every permission a staff route can declare (Plan 4 Task 4: one per route). Added by later
  * revisions of Plan 4: `stats.read` (Revision 2026-10-28), `accounts.ban` (Task 27),
- * `reputation.review` (Revision 2026-10-29b, Plan 5 Task 19) and `tickets.handle` (Task 30).
+ * `reputation.review` (Revision 2026-10-29b, Plan 5 Task 19), `tickets.handle` (Task 30) and
+ * `feedback.read` (owner only, Plan 5 Task 4).
  */
 export const PERMS = [
   'staff.manage',
@@ -22,6 +23,7 @@ export const PERMS = [
   'accounts.ban',
   'reputation.review',
   'tickets.handle',
+  'feedback.read',
   'training.read',
   'training.write',
   'self',
@@ -57,11 +59,12 @@ export function can(role: StaffRole, perm: Perm, grants: readonly Perm[] = []): 
   return (GRANTABLE_PERMS as readonly Perm[]).includes(perm) && grants.includes(perm);
 }
 
-export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'training' | 'log' | 'settings';
+export type NavItem = 'overview' | 'disputes' | 'staff' | 'performance' | 'training' | 'log' | 'feedback' | 'settings';
 
 /** The staff app's side menu per role, in the boards' order (StaffOverview). */
 export const NAV: Readonly<Record<StaffRole, readonly NavItem[]>> = {
-  owner: ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'settings'],
+  // 'feedback' (Plan 5 Task 4): no board places it yet; before settings is a landing default.
+  owner: ['overview', 'disputes', 'staff', 'performance', 'training', 'log', 'feedback', 'settings'],
   senior: ['disputes', 'training', 'log'],
   mod: ['disputes', 'training', 'log'],
   helper: [],
