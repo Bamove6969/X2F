@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 33100,
       "w": 390,
-      "h": 3140,
+      "h": 3096,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -793,7 +793,7 @@
       "x": 2420,
       "y": 33100,
       "w": 1280,
-      "h": 1840,
+      "h": 1674,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
@@ -820,7 +820,7 @@
       "x": 0,
       "y": 36500,
       "w": 390,
-      "h": 3060,
+      "h": 3080,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -1027,7 +1027,7 @@
       "x": 5800,
       "y": 33100,
       "w": 390,
-      "h": 1000,
+      "h": 1020,
       "page": "all",
       "title": "G4 \u00b7 After login: session length",
       "is_interactive": true
@@ -1045,7 +1045,7 @@
       "x": 7770,
       "y": 33100,
       "w": 390,
-      "h": 2200,
+      "h": 2240,
       "page": "all",
       "title": "G5 \u00b7 Account type: become a vendor",
       "is_interactive": true
@@ -1054,7 +1054,7 @@
       "x": 8310,
       "y": 33100,
       "w": 1280,
-      "h": 1300,
+      "h": 1340,
       "page": "all",
       "title": "G5 \u00b7 Account type: become a vendor (wide)",
       "is_interactive": true

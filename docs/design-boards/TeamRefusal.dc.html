@@ -25,7 +25,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
     <section id="tr-banner" aria-labelledby="tr-banner-t" style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; border: 1px solid var(--caution);">
       <span id="tr-banner-t" style="display: inline-flex; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16v.5"/></svg>This device's login is Weak</span>
-      <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in here with just your username and password. Team changes need a Strong login.</p>
+      <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in here with just your username and password. Team changes need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
       <button type="button" onClick="{{goAdd}}" style="display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; min-height: 44px; padding: 0; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Add another way to log in<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></button>
     </section>
 
@@ -53,9 +53,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{true}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
       <section role="dialog" aria-modal="true" aria-labelledby="tr-sheet-t" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
-        <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Needs a Strong login</span>
+        <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Passkey, security key or PGP key needed</span>
         <h2 id="tr-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{sheetTitle}}</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device's login is Weak: you proved it's you with just your username and password. Inviting team members and changing their roles need a Strong login.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device's login is Weak: you proved it's you with just your username and password. Inviting team members and changing their roles need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
 
         <ol aria-label="Login strength" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 6px;">
           <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 2px solid var(--caution);">
@@ -64,7 +64,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           </li>
           <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 2px solid var(--escrow);">
             <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Strong</span>
-            <span style="font-size: 12px; line-height: 16px; color: var(--escrow);">Needed</span>
+            <span style="font-size: 12px; line-height: 16px; color: var(--escrow);">Passkey, security key or PGP key needed</span>
           </li>
           <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 1px solid var(--line);">
             <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Armored vault</span>
@@ -72,8 +72,8 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           </li>
         </ol>
 
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">Add a passkey, security key, PGP key or authenticator app. Then use it to log in on this device.</p>
-        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">A Strong login also stops simple guessing and lets you act right away.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">Add a passkey, security key or PGP key. Then use it to log in on this device.</p>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">A passkey, security key or PGP key also stops simple guessing and lets you act right away.</p>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <button type="button" onClick="{{goAdd}}" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Add another way to log in</button>
           <button type="button" onClick="{{closeSheet}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Not now</button>
@@ -124,7 +124,7 @@ class Component extends DCLogic {
       sheetTitle: sheet === 'change-role' ? "You can't change " + s.who + "'s roles from this device" : "You can't invite members from this device",
       openInvite: () => open('invite'),
       closeSheet: () => this.setState({ base: variant, sheet: 'none' }),
-      goAdd: () => this.setState({ base: variant, sheet: 'none', note: 'Next: Login methods, where you add a passkey, security key, PGP key or authenticator app.' }),
+      goAdd: () => this.setState({ base: variant, sheet: 'none', note: 'Next: Login methods, where you add a passkey, security key or PGP key.' }),
       hasNote: s.base === variant && s.note !== '',
       note: s.note
     };

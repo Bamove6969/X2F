@@ -126,7 +126,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
             <span style="font-weight: 600;">Any other requirements, e.g. a number of completed trades?</span>
             <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-              <li>No: a Strong login is enough</li>
+              <li>No: a two-factor method (passkey, security key or PGP key) is enough</li>
               <li>Yes: also a number of completed trades (example shown: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">10</span>)</li>
               <li>Something else (owner to name)</li>
             </ul>
@@ -138,7 +138,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             <span style="font-weight: 600;">Does using a recovery code, or logging in with just a username and password, remove vendor status?</span>
             <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
               <li>No: vendor status stays</li>
-              <li>Paused: offers are hidden until the next Strong login</li>
+              <li>Paused: offers are hidden until the next login with a passkey, security key or PGP key</li>
               <li>Yes: the account goes back to trader</li>
             </ul>
           </aside>
@@ -224,7 +224,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":1280,"height":1300}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":1280,"height":1340}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { mode: null, ask: null, note: '' }; }
   renderVals() {
@@ -233,12 +233,12 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 1300;
+    const H = 1340;
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const s = this.state;
 
     // Owner, 2 Nov: Trader (default) and Vendor accounts. Becoming a vendor = a switch in settings.
-    // Confirmed requirement: a Strong login (passkey, security key or PGP key) on the account holder (team lead).
+    // Confirmed requirement: a two-factor method already set up (passkey, security key or PGP key) on the account holder (team lead).
     const STATES = ['not-met', 'met', 'switched'];
     const mode = s.mode || (STATES.indexOf(this.props.state) >= 0 ? this.props.state : 'not-met');
     const vendor = mode === 'switched';
@@ -247,7 +247,7 @@ class Component extends DCLogic {
     const tradesDone = mode === 'not-met' ? 4 : 12;
 
     const reqs = [{
-      title: 'Strong login for the account holder', met: strong, hasAction: !strong,
+      title: 'Two-factor method set up (passkey, security key or PGP key)', met: strong, hasAction: !strong,
       pre: strong ? 'A passkey is set up for the account holder (team lead).' : 'The account holder (team lead) needs a passkey, security key or PGP key. A username and password alone isn’t enough.',
       n1: '', mid: '', n2: '', post: ''
     }];
@@ -277,7 +277,7 @@ class Component extends DCLogic {
     let footNote = '';
     if (vendor) footNote = 'Your offers are listed under My offers.';
     else if (allMet) footNote = 'All requirements are met.';
-    else footNote = strong ? 'Meet every requirement to switch.' : 'Add a Strong login first.';
+    else footNote = strong ? 'Meet every requirement to switch.' : 'Passkey, security key or PGP key needed.';
 
     return {
       rootStyle,
@@ -286,7 +286,7 @@ class Component extends DCLogic {
       hasNote: s.note !== '' || (vendor && s.mode === null), note: s.note !== '' ? s.note : 'You’re a vendor. You can post offers.',
       thTrader: head(!vendor), thVendor: head(vendor), tdTrader: cell(!vendor), tdVendor: cell(vendor),
       reqs: reqRows,
-      extraName: extra ? 'Strong login and 10 completed trades (example)' : 'Strong login only',
+      extraName: extra ? 'Two-factor method and 10 completed trades (example)' : 'Two-factor method only',
       backText: vendor ? 'You can go back to a trader account. You’ll stop posting offers.' : 'After you switch, you can go back to a trader account here.',
       switchBackName: SB[sb],
       canSwitch: !vendor && allMet, cantSwitch: !vendor && !allMet, footNote,

@@ -25,7 +25,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">See where you&#39;re logged in, log devices out, and choose how long a session lasts.</p>
 
     <section aria-labelledby="dv-dev-h" style="display: flex; flex-direction: column; gap: 12px;">
-      <h2 id="dv-dev-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Devices</h2>
+      <h2 id="dv-dev-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink);">Devices</h2>
 
       <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--surface);">
         <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{used}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">3</span> devices logged in</p>
@@ -44,7 +44,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <ul aria-labelledby="dv-mine-h" style="margin: 0; padding: 0; list-style: none;">
         <sc-for list="{{devices}}" as="d" hint-placeholder-count="2">
           <li style="{{d.rowStyle}}">
-            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);">
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink);">
               <sc-if value="{{d.isPhone}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></sc-if>
               <sc-if value="{{d.isComputer}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></sc-if>
             </span>
@@ -65,20 +65,22 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       <div style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 0; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
         <h3 id="dv-team-h" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.8 0 4.5 1.9 4.5 4.5"/></svg>Team members logged in</h3>
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">These are your team members&#39; logins, not yours.</p>
-        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
-        <p style="display: flex; gap: 8px; margin: 4px 0 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Switching a member off or on needs a Strong login.</span></p>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
+        <p style="display: flex; gap: 8px; margin: 4px 0 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg><span>Switching a member off or on needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</span></p>
         <sc-if value="{{hasTeam}}" hint-placeholder-val="{{true}}">
           <ul aria-labelledby="dv-team-h" style="margin: 0; padding: 0; list-style: none;">
             <sc-for list="{{team}}" as="t" hint-placeholder-count="2">
               <li style="{{t.rowStyle}}">
                 <div style="display: flex; align-items: center; gap: 12px;">
                   <span aria-hidden="true" style="{{t.avatar}}">{{t.initials}}</span>
-                  <span style="min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
-                    <span style="{{t.nameStyle}}">{{t.member}}</span>
-                    <span style="{{t.pillStyle}}">{{t.pill}}</span>
+                  <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                    <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
+                      <span style="{{t.nameStyle}}">{{t.member}}</span>
+                      <span style="{{t.pillStyle}}">{{t.pill}}</span>
+                    </span>
+                    <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="color: var(--ink);">{{t.dev}}</span>{{t.linePre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.agoNum}}</span>{{t.agoPost}}</span>
                   </span>
                 </div>
-                <p style="margin: 0; padding-left: 52px; font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="color: var(--ink);">{{t.dev}}</span>{{t.linePre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.agoNum}}</span>{{t.agoPost}}</p>
                 <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; padding-left: 52px;">
                   <button type="button" role="switch" aria-checked="{{t.sw.on}}" aria-label="{{t.swLabel}}" onClick="{{t.sw.toggle}}" style="display: flex; align-items: center; gap: 10px; min-height: 44px; margin-left: -4px; padding: 0 4px; border: 0; border-radius: 999px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; line-height: 20px; font-weight: 600; cursor: pointer;"><span aria-hidden="true" style="{{t.sw.track}}"><span style="{{t.sw.knob}}"></span></span><span>Can log in</span></button>
                   <sc-if value="{{t.canOut}}" hint-placeholder-val="{{true}}">
@@ -97,11 +99,11 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         </sc-if>
         <button type="button" disabled="{{noTeamOut}}" onClick="{{askTeamAll}}" style="{{teamAllStyle}}">Log out all team members</button>
       </div>
-      <a href="Team.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin: -8px 0; font-size: 14px; color: var(--ink);">Manage roles and invites in Team</a>
+      <a href="Team.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; min-height: 44px; margin: -8px 0; font-size: 15px; line-height: 20px; font-weight: 600; color: var(--ink); text-decoration: none;"><span>Manage roles and invites in Team</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
 
-      <aside aria-label="Decided by the owner: Strong login for switching members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <aside aria-label="Decided by the owner: two-factor method for switching members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-        <span>Switching members on or off needs a Strong login. With just a username and password it starts a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold.</span>
+        <span>Switching members on or off needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. With just a username and password it starts a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold.</span>
         <span style="color: var(--ink-muted);">Preview with the session tweak. Showing: {{sessionName}}</span>
       </aside>
 
@@ -112,7 +114,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     </section>
 
     <section aria-labelledby="dv-opt-h" style="display: flex; flex-direction: column; gap: 12px;">
-      <h2 id="dv-opt-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Options</h2>
+      <h2 id="dv-opt-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink);">Options</h2>
 
       <div style="padding: 0 16px; border-radius: 12px; background: var(--surface);">
         <div style="display: flex; align-items: center; gap: 12px; padding: 16px 0;">
@@ -176,35 +178,45 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       <aside aria-label="Decided: who counts as a vendor" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
         <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
-        <span style="color: var(--ink-muted);">Switching needs a Strong login: a passkey, security key or PGP key. See BecomeVendor.</span>
+        <span style="color: var(--ink-muted);">Switching needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. See BecomeVendor.</span>
       </aside>
     </section>
 
-    <section aria-labelledby="dv-how-h" style="display: flex; flex-direction: column; gap: 12px;">
-      <h2 id="dv-how-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">How a new device gets in</h2>
-      <ol style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
-        <li style="display: flex; gap: 12px; padding: 16px 0;">
-          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; font-weight: 500; color: var(--ink);">47</span>
-          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Approve it on a logged-in device</span>
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your devices ask &quot;Is this you?&quot;. Tap the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>-digit number the new device shows. If you say no, the login is blocked.</span>
-          </span>
+    <section aria-labelledby="dv-how-h" style="display: flex; flex-direction: column; gap: 16px;">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 id="dv-how-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink);">How a new device gets in</h2>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Three ways in, from the usual one to the last resort.</p>
+      </div>
+      <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px;">
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500; color: var(--ink);">47</span>
+            <span style="padding: 4px 8px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Usual way</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">Approve it on a logged-in device</h3>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Your other devices ask &quot;Is this you?&quot;. Tap the <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>-digit</span> number the new device shows. Say no and the login is blocked.</p>
+          </div>
+          <a href="LoginApprove.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>See the approval prompt</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
         </li>
-        <li style="display: flex; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
-          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span>
-          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">No other device with you?</span>
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Log in with a passkey, security key or PGP key.</span>
-            <a href="Login-Backup.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-bottom: -12px; font-size: 14px; color: var(--ink);">Log in another way</a>
-          </span>
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">No other device with you?</h3>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Log in with a passkey, security key or PGP key.</p>
+          </div>
+          <a href="Login-Backup.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>Log in another way</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
         </li>
-        <li style="display: flex; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
-          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span>
-          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
-            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Only have your username and password?</span>
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Use your recovery code. That starts a hold of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours before you get in.</span>
-            <a href="RecoveryHold.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-bottom: -12px; font-size: 14px; color: var(--ink);">How the hold works</a>
-          </span>
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--caution) 40%, transparent); box-sizing: border-box; background: color-mix(in srgb, var(--caution) 14%, var(--surface)); color: var(--caution);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3h10M7 21h10M8 3c0 4 8 5 8 9s-8 5-8 9M16 3c0 4-8 5-8 9s8 5 8 9"/></svg></span>
+            <span style="padding: 4px 8px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Last resort</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">Only have your username and password?</h3>
+            <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Use your recovery code. It starts a <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour</span> hold, and everyone on your account is logged out until it ends.</p>
+          </div>
+          <a href="RecoveryHold.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>How the hold works</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
         </li>
       </ol>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">X2F doesn&#39;t log IP addresses, so devices are named only by browser and system.</p>
@@ -256,7 +268,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":390,"height":3140}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":390,"height":3096}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
   renderVals() {
@@ -265,8 +277,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 3080;
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootCss = (H) => THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
 
     // Owner: up to 3 devices. Decided 2 Nov: team members' sessions don't count toward the 3.
@@ -294,7 +305,7 @@ class Component extends DCLogic {
     // Owner, 2 Nov: members can be switched on and off here too (same as Team). "Can log in" is on by default.
     // Switching off asks first, logs the member out, and keeps the row in this card, dimmed. Switching on needs no confirm.
     // kept = members logged out by switching off; they stay listed. teamLive = members still logged in.
-    // Owner decided 2 Nov: switching members on or off needs a Strong login. With just a username and password it starts a 24-hour hold.
+    // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. With just a username and password it starts a 24-hour hold.
     // session tweak: strong = flipping asks "Confirm it's you" first; password-only = flipping opens the hold pop-up.
     const strongSession = this.props.session !== 'password-only';
     const teamRows = live.filter((d) => d.member);
@@ -354,7 +365,7 @@ class Component extends DCLogic {
       style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
     }));
 
-    // Strong login methods the account has (sample: passkey + security key; "Use my PGP key" shows only if the account has one).
+    // Two-factor methods the account has (passkey, security key, PGP key) (sample: passkey + security key; "Use my PGP key" shows only if the account has one).
     const vTarget = ALL.find((d) => d.id === s.verify);
     const vOff = vTarget ? s.off.indexOf(vTarget.id) >= 0 : false;
     const methods = [
@@ -400,8 +411,21 @@ class Component extends DCLogic {
       confirm = () => this.setState({ gone: s.gone.concat(teamLive.map((d) => d.id)), ask: null, devNote: 'All team members were logged out.', teamNote: '' });
     }
 
+    // Board height = measured content height (night, fonts loaded): 3096 for the default state,
+    // plus/minus what each state adds or removes, so nothing is clipped and no empty band is left.
+    const teamN = team.length;
+    const H = Math.max(844, 3096
+      - 77 * (2 - mine.length)
+      - (teamN === 0 ? 215 : (teamN === 1 ? 127 : 0))
+      + (vendor ? 54 : 0)
+      + (s.single ? 20 : 0)
+      + (s.devNote ? 34 : 0)
+      + (s.teamNote ? 30 : 0)
+      + (s.optNote ? (s.optNote.length > 44 ? 56 : 34) : 0)
+      + (s.confirmOne && !s.single ? 140 : 0));
+
     return {
-      rootStyle, devices, team, hasTeam: team.length > 0, noTeam: team.length === 0, meter, meterNote, used: String(used), one,
+      rootStyle: rootCss(H), devices, team, hasTeam: team.length > 0, noTeam: team.length === 0, meter, meterNote, used: String(used), one,
       hasDevNote: s.devNote !== '', devNote: s.devNote,
       noOthers: others.length === 0,
       allStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: 4px 0 16px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (others.length ? 'border: 1px solid var(--line); color: var(--ink); cursor: pointer;' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
@@ -410,9 +434,9 @@ class Component extends DCLogic {
       teamAllStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: 4px 0 16px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (teamLive.length ? 'border: 1px solid var(--team); color: var(--team); cursor: pointer;' : 'border: 1px solid color-mix(in srgb, var(--team) 25%, transparent); color: var(--ink-muted); cursor: not-allowed;'),
       askTeamAll: () => { if (teamLive.length) this.setState({ ask: 'team' }); },
       hasTeamNote: s.teamNote !== '', teamNote: s.teamNote,
-      sessionName: strongSession ? 'Strong login' : 'username and password only',
+      sessionName: strongSession ? 'passkey, security key or PGP key' : 'username and password only',
       verifying: !!vTarget, methods,
-      verifyText: vTarget ? (vOff ? 'Switching ' + vTarget.member + ' back on needs a Strong login.' : 'Switching ' + vTarget.member + ' off needs a Strong login.') : '',
+      verifyText: vTarget ? (vOff ? 'Switching ' + vTarget.member + ' back on needs a two-factor method you’ve already set up: a passkey, security key or PGP key.' : 'Switching ' + vTarget.member + ' off needs a two-factor method you’ve already set up: a passkey, security key or PGP key.') : '',
       verifyCancel: () => this.setState({ verify: null }),
       holding: s.hold !== null,
       holdCancel: () => this.setState({ hold: null }),
