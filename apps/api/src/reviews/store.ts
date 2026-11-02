@@ -183,7 +183,7 @@ export async function detachReviews(q: Queryable, code: string): Promise<number>
  *   deleted here, or waits and then finds the trade not reviewable (409 `not-reviewable`). The lock
  *   is taken under the caller's role (FOR UPDATE needs update rights x2f_purge does not have).
  * - The deletes run as x2f_purge (`set local role`), the one role 301's reviews_final trigger lets
- *   delete a review (308 grants it review_skips); the caller's role is put back afterwards for the
+ *   delete a review (309 grants it review_skips); the caller's role is put back afterwards for the
  *   rest of its transaction. No trigger is changed.
  * - Only an overturned trade is touched: for any other trade (a normal finish after a dispute keeps
  *   its reviews) it deletes nothing. Idempotent: a second call deletes nothing.

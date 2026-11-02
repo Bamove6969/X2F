@@ -5,7 +5,7 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
 /**
- * C12b (owner 2026-11-01/02, via the lead): the per-account running totals of 307_traded_totals.sql.
+ * C12b (owner 2026-11-01/02, via the lead): the per-account running totals of 308_traded_totals.sql.
  *
  * `countTradeTotals` runs in the transaction that stores a trade event (trades/store.ts
  * `applyEvent`) and is idempotent per trade: a COMPLETED trade (released, or refunded to settle a
