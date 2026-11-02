@@ -11,94 +11,102 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-a{color:#ff7a1a}a:hover{color:#ffa060}
-button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #eef1f5;outline-offset:2px}
-input::placeholder{color:#9aa4b2}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
 </style>
 </helmet>
-<div style="min-height: 1460px; box-sizing: border-box; background: #0e1116; color: #eef1f5; font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;">
-  <nav aria-label="Staff tools" style="flex: 0 0 240px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid #20262f; display: flex; flex-direction: column; gap: 4px;">
-    <span style="display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700;">X2F <span style="font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 13px; font-weight: 600; color: #b69cff;">Staff</span></span>
-      <a href="StaffOverview.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Overview</a>
-      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Disputes</a>
-      <a href="StaffList.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Staff</a>
-      <a href="StaffPerformance.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Performance</a>
-      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Training library</a>
-      <a href="StaffLog.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: #9aa4b2;">Activity log</a>
-      <a href="StaffSettings.dc.html" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; background: #20262f; color: #eef1f5; font-weight: 600;">Settings</a>
-    <span style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 14px;"><span style="color: #b69cff;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>lumen.k <span style="color: #9aa4b2;">· Owner</span></span>
+<div style="{{rootStyle}}">
+  <nav aria-label="Staff tools" style="flex: 0 0 240px; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="display: flex; align-items: center; gap: 8px; padding: 0 12px 20px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700;">X2F <span style="font-family: 'Atkinson Hyperlegible Next', sans-serif; font-size: 13px; font-weight: 600; color: var(--mod);">Staff</span></span>
+      <a href="StaffOverview.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Overview</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Disputes</a>
+      <a href="StaffList.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Staff</a>
+      <a href="StaffPerformance.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Performance</a>
+      <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Training library</a>
+      <a href="StaffLog.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; color: var(--ink-muted);">Activity log</a>
+      <a href="StaffSettings.dc.html" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 8px; text-decoration: none; font-size: 15px; background: var(--surface-raised); color: var(--ink); font-weight: 600; box-shadow: inset 2px 0 0 var(--ink);">Settings</a>
+    <span style="margin-top: auto; display: flex; align-items: center; gap: 8px; padding: 12px; font-size: 14px;"><span style="color: var(--mod);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>lumen.k <span style="color: var(--ink-muted);">· Owner</span></span>
   </nav>
   <main style="flex: 1 1 0; min-width: 0; padding: 32px; display: flex; flex-direction: column;">
     <div style="max-width: 760px; width: 100%; display: flex; flex-direction: column; gap: 24px;">
       <section style="display: flex; flex-direction: column; gap: 6px;">
         <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 38px; font-weight: 700;">Settings</h1>
-        <p style="margin: 0; font-size: 15px; color: #9aa4b2;">Only the owner can change these. Every change is recorded in the activity log.</p>
+        <p style="margin: 0; font-size: 15px; color: var(--ink-muted);">Only the owner can change these. Every change is recorded in the activity log.</p>
       </section>
-      <section aria-label="Rulings" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; border-radius: 12px; background: #171b22;">
+      <section aria-label="Rulings" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; border-radius: 12px; background: var(--surface);">
         <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Rulings</h2>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label for="limit" style="font-size: 15px; font-weight: 600;">Large-trade limit</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="limit" type="text" value="1,000" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">USD equivalent</span></span>
-          <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">A moderator can rule alone on trades below this. At or above it, a senior moderator or you must approve too.</span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="limit" type="text" value="1,000" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">USD equivalent</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A moderator can rule alone on trades below this. At or above it, a senior moderator or you must approve too.</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label for="reply" style="font-size: 15px; font-weight: 600;">First response deadline</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="reply" type="text" value="4" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">hours</span></span>
-          <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">How soon a moderator must reply after a dispute opens. Traders see this deadline and their place in the queue.</span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="reply" type="text" value="4" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">hours</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">How soon a moderator must reply after a dispute opens. Traders see this deadline and their place in the queue.</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label for="appeal" style="font-size: 15px; font-weight: 600;">Appeal window</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="appeal" type="text" value="48" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">hours</span></span>
-          <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">How long either trader has to appeal a ruling. Appeals go to a senior moderator or you, never the moderator who ruled.</span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="appeal" type="text" value="48" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">hours</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">How long either trader has to appeal a ruling. Appeals go to a senior moderator or you, never the moderator who ruled.</span>
         </div>
       </section>
-      <section aria-label="Staff pay" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; border-radius: 12px; background: #171b22;">
+      <section aria-label="Staff pay" style="display: flex; flex-direction: column; gap: 20px; padding: 24px; border-radius: 12px; background: var(--surface);">
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <h2 style="margin: 0; font-size: 20px; font-weight: 600;">Staff pay</h2>
-          <span style="font-size: 14px; line-height: 20px; color: #9aa4b2;">Paid in XMR at the end of each shift, when the staff member logs out. Amounts to be decided; check with the lawyer before the first payment.</span>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Paid in XMR at the end of each shift, when the staff member logs out. Amounts to be decided; check with the lawyer before the first payment.</span>
         </div>
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start;">
           <div style="display: flex; flex-direction: column; gap: 6px;">
             <label for="pay-senior" style="font-size: 15px; font-weight: 600;">Senior moderator, per case</label>
-            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-senior" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">USD in XMR</span></span>
-            <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">Includes co-approving large rulings.</span>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-senior" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">USD in XMR</span></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Includes co-approving large rulings.</span>
           </div>
-          <div style="display: flex; flex-direction: column; gap: 6px; padding-left: 24px; border-left: 1px solid #20262f;">
+          <div style="display: flex; flex-direction: column; gap: 6px; padding-left: 24px; border-left: 1px solid var(--surface-raised);">
             <label for="pay-large" style="font-size: 15px; font-weight: 600;">Large-trade bonus</label>
-            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-large" type="text" value="0.5" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace; width: 96px;"><span style="font-size: 15px; color: #9aa4b2;">% of the trade total</span></span>
-            <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">Paid on top of the per-case rate for trades at or above the large-trade limit (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,000</span>). Example: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.5%</span> of a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$4,000</span> trade is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$20</span>.</span>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-large" type="text" value="0.5" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace; width: 96px;"><span style="font-size: 15px; color: var(--ink-muted);">% of the trade total</span></span>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Paid on top of the per-case rate for trades at or above the large-trade limit (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$1,000</span>). Example: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">0.5%</span> of a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$4,000</span> trade is <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$20</span>.</span>
             <label for="pay-cap" style="font-size: 14px; font-weight: 600; margin-top: 6px;">Most per case (optional)</label>
-            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-cap" type="text" placeholder="No limit" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace; width: 96px;"><span style="font-size: 15px; color: #9aa4b2;">USD in XMR</span></span>
+            <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-cap" type="text" placeholder="No limit" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace; width: 96px;"><span style="font-size: 15px; color: var(--ink-muted);">USD in XMR</span></span>
           </div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label for="pay-mod" style="font-size: 15px; font-weight: 600;">Moderator, per case</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-mod" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">USD in XMR</span></span>
-          <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">A ruling overturned on appeal earns nothing.</span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-mod" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">A ruling overturned on appeal earns nothing.</span>
         </div>
         <div style="display: flex; flex-direction: column; gap: 6px;">
           <label for="pay-helper" style="font-size: 15px; font-weight: 600;">Helper, per month</label>
-          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-helper" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid #6b7584; background: #20262f; color: #eef1f5; font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: #9aa4b2;">USD in XMR</span></span>
-          <span style="font-size: 13px; line-height: 18px; color: #9aa4b2;">Flat rate, since questions don't come in cases.</span>
+          <span style="display: flex; align-items: center; gap: 10px;"><input id="pay-helper" type="text" value="[RATE]" style="width: 160px; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-family: 'Atkinson Hyperlegible Mono', monospace;"><span style="font-size: 15px; color: var(--ink-muted);">USD in XMR</span></span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Flat rate, since questions don't come in cases.</span>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid #20262f;">
+        <div style="display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--surface-raised);">
           <h3 style="margin: 0; font-size: 16px; font-weight: 600;">Payout and clawback</h3>
           <p style="margin: 0; font-size: 14px; line-height: 20px;">When a staff member logs out, X2F adds up the shift and sends it to their payout wallet. They see the total before they confirm logging out.</p>
-          <p style="margin: 0; font-size: 14px; line-height: 20px; color: #9aa4b2;">If an appeal later overturns one of their rulings, the pay for that case is taken back from their next payout.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">If an appeal later overturns one of their rulings, the pay for that case is taken back from their next payout.</p>
           <label for="hold-large" style="display: flex; align-items: flex-start; gap: 10px; min-height: 44px; font-size: 14px; line-height: 20px; cursor: pointer;">
-            <input id="hold-large" type="checkbox" checked style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: #eef1f5;">
-            <span>Hold the large-trade bonus until the appeal window closes (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48 h</span>). <span style="color: #9aa4b2;">Recommended: these amounts are bigger, and XMR sent can't be pulled back if someone leaves.</span></span>
+            <input id="hold-large" type="checkbox" checked style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink);">
+            <span>Hold the large-trade bonus until the appeal window closes (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48 h</span>). <span style="color: var(--ink-muted);">Recommended: these amounts are bigger, and XMR sent can't be pulled back if someone leaves.</span></span>
           </label>
         </div>
       </section>
-      <div><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: #ff7a1a; color: #1a0e05; font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Save settings</button></div>
+      <div><button type="button" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; padding: 0 22px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer; text-decoration: none;">Save settings</button></div>
     </div>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":1460}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":1280,"height":1460}}'>
 class Component extends DCLogic {
-  renderVals() { return {}; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "min-height: 1460px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-wrap: wrap;";
+    return { rootStyle };
+  }
 }
 </script>
 </body>
