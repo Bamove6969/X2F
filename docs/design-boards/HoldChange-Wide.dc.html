@@ -178,6 +178,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <h2 id="hc-warn-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Changes here will start a 24-hour hold</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password. That&#39;s low security, so changing your login methods or payout wallets starts a 24-hour hold.</p>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">We strongly recommend adding a passkey, security key or PGP key now, so this doesn&#39;t happen again.</p>
+        <p style="margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink);">The only way around the hold is to message a moderator on Matrix or Telegram <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">[address to come]</span> and ask to be verified over a secure Jabber channel.</p>
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Adding one is a change too, so it&#39;s part of this hold. Next time, log in with it and your changes won&#39;t start a hold.</p>
         <div style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
           <button type="button" onClick="{{continueAnyway}}" style="display: flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 16px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Continue anyway</button>
@@ -188,7 +189,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","submitted"],"default":"warn"},"$preview":{"width":1280,"height":800}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","submitted"],"default":"warn"},"$preview":{"width":1280,"height":860}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props.step); }
   preset(step) {

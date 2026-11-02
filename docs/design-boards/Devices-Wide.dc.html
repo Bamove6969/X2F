@@ -261,6 +261,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <span aria-hidden="true" style="display: flex; color: var(--caution);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg></span>
         <h2 id="dv-hold-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">This change starts a 24-hour hold</h2>
         <p id="dv-hold-d" style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password. Switching team members on or off is a major change, so it starts a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold: everyone on your account is logged out, and the change takes effect when the hold ends. Add a passkey, security key or PGP key to avoid this next time.</p>
+        <p style="margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink);">The only way around the hold is to message a moderator on Matrix or Telegram <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">[address to come]</span> and ask to be verified over a secure Jabber channel.</p>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <a href="SetupBackup.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Add stronger security</a>
           <a href="HoldChange-Wide.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Continue and start the hold</a>
@@ -271,7 +272,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":1280,"height":1780}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":1280,"height":1840}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
   renderVals() {

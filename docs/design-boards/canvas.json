@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 33100,
       "w": 390,
-      "h": 3080,
+      "h": 3140,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -793,7 +793,7 @@
       "x": 2420,
       "y": 33100,
       "w": 1280,
-      "h": 1780,
+      "h": 1840,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
@@ -910,7 +910,7 @@
       "x": 0,
       "y": 41440,
       "w": 390,
-      "h": 1220,
+      "h": 1280,
       "page": "all",
       "title": "J1 \u00b7 Password-only change \u2192 review \u2192 hold",
       "is_interactive": true
@@ -964,7 +964,7 @@
       "x": 4290,
       "y": 43160,
       "w": 1280,
-      "h": 800,
+      "h": 860,
       "page": "all",
       "title": "J1 \u00b7 Password-only change \u2192 review \u2192 hold (wide)",
       "is_interactive": true
