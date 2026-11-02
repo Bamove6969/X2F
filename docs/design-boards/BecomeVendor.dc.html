@@ -75,7 +75,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             <td style="{{tdVendor}}">Yes</td>
           </tr>
           <tr>
-            <th scope="row" style="padding: 12px 8px 12px 16px; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Log out after no activity</th>
+            <th scope="row" style="padding: 12px 8px 12px 16px; border-top: 1px solid var(--surface-raised); text-align: left; vertical-align: top; font-weight: 600;">Session length</th>
             <td style="{{tdTrader}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</td>
             <td style="{{tdVendor}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</td>
           </tr>
@@ -86,7 +86,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           </tr>
         </tbody>
       </table>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">For both: every session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h at most.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">For both: when this time is up, we ask you to confirm it&#39;s you to stay logged in.</p>
     </section>
 
     <section aria-labelledby="bv-req-h" style="display: flex; flex-direction: column; gap: 12px;">
@@ -172,7 +172,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; line-height: 24px;">
           <li>You can post offers and add team members.</li>
           <li>You pay the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1%</span> fee on completed trades.</li>
-          <li>Log out after no activity: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</li>
+          <li>Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h.</li>
         </ul>
         <div style="display: flex; flex-direction: column; gap: 4px;">
           <button type="button" onClick="{{confirmSwitch}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--ink); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Switch to vendor</button>
@@ -193,7 +193,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           <ul style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 16px; line-height: 24px;">
             <li>Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> live offers {{offerFate}}</li>
             <li>You can&#39;t post offers until you switch again.</li>
-            <li>Log out after no activity: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h.</li>
+            <li>Session length: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h.</li>
           </ul>
         </sc-if>
         <div style="display: flex; flex-direction: column; gap: 4px;">
@@ -210,7 +210,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":390,"height":2240}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"state":{"editor":"enum","options":["not-met","met","switched"],"default":"not-met"},"extraReq":{"editor":"enum","options":["strong-login-only","plus-completed-trades"],"default":"strong-login-only"},"switchBack":{"editor":"enum","options":["blocked-while-live","pause-offers","remove-offers"],"default":"blocked-while-live"},"$preview":{"width":390,"height":2260}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { mode: null, ask: null, note: '' }; }
   renderVals() {
@@ -219,7 +219,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 2240;
+    const H = 2260;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
 
