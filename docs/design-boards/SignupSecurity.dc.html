@@ -13,7 +13,6 @@
 body{margin:0}
 button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder{color:var(--ink-muted)}
-input[type=range]{accent-color:var(--ink)}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
@@ -145,20 +144,31 @@ input[type=range]{accent-color:var(--ink)}
 
     <section aria-labelledby="ss-idle-h" style="display: flex; flex-direction: column; gap: 10px;">
       <h2 id="ss-idle-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ink-muted);">Session length</h2>
-      <label for="ss-idle" style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 24px;">
-        <span>Log me out when idle for</span>
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;">{{idleText}}</span>
-      </label>
-      <input id="ss-idle" type="range" min="2" max="12" step="1" value="{{idle}}" onChange="{{onIdle}}" aria-valuetext="{{idleText}}" aria-describedby="ss-idle-note" style="width: 100%; height: 44px; margin: 0; cursor: pointer;">
-      <div aria-hidden="true" style="display: flex; justify-content: space-between; margin-top: -6px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);"><span>2 h</span><span>12 h</span></div>
+      <div role="group" aria-labelledby="ss-idle-l" aria-describedby="ss-idle-note" style="display: flex; flex-direction: column; gap: 10px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 16px; line-height: 24px;">
+          <span id="ss-idle-l">Log me out when idle for</span>
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 24px; font-weight: 500;">{{idleText}}</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+          <sc-for list="{{idleOpts}}" as="o" hint-placeholder-count="4">
+            <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" style="{{o.style}}">{{o.label}}</button>
+          </sc-for>
+        </div>
+      </div>
       <p id="ss-idle-note" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">However active you are, every session ends after 24 h at most. Then you log in again.</p>
       <aside aria-label="Open for the owner: default idle logout" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-        <span style="font-weight: 600;">What is the default idle logout?</span>
+        <span style="font-weight: 600;">Which of the four is the default?</span>
         <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-          <li>Any whole hour from 2 h to 12 h</li>
+          <li>2 h, 4 h, 6 h or 12 h (decided: these are the only choices for non-vendors)</li>
+          <li>Until chosen, nothing is pre-selected: Not set</li>
         </ul>
-        <span style="color: var(--ink-muted);">The current build defaults to 12 h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+        <span style="color: var(--ink-muted);">Current build: 12 h. Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+      </aside>
+      <aside aria-label="Open for the owner: idle logout for vendors" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">Vendors: rule not decided yet</span>
+        <span style="color: var(--ink-muted);">The four choices above are for non-vendors. This board doesn&#39;t show a vendor version.</span>
       </aside>
     </section>
 
@@ -176,7 +186,7 @@ input[type=range]{accent-color:var(--ink)}
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"idleDefault":{"editor":"enum","options":["not-set","2h","3h","4h","5h","6h","7h","8h","9h","10h","11h","12h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":2600}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["not-allowed","authenticator-only","weak","strong","passwordless","armored"],"default":"strong"},"meter":{"editor":"enum","options":["weak","medium","strong"],"default":"strong"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h"],"default":"not-set"},"pwRule":{"editor":"enum","options":["A-12-mixed","B-length-14","C-score-3"],"default":"A-12-mixed"},"vaultRule":{"editor":"enum","options":["yes-passwordless","no-needs-password"],"default":"yes-passwordless"},"$preview":{"width":390,"height":2740}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = this.preset(props); }
   preset(p) {
@@ -188,7 +198,7 @@ class Component extends DCLogic {
     const on = {};
     (SETS[p.variant] || SETS.strong).forEach((k) => { on[k] = true; });
     const idleH = parseInt(p.idleDefault, 10);
-    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: idleH >= 2 && idleH <= 12 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
+    return { on, pw: PWS[p.meter] || PWS.strong, showPw: false, idle: [2, 4, 6, 12].indexOf(idleH) >= 0 ? idleH : null, uname: 'nightowl_44', dname: 'Night Owl' };
   }
   componentDidUpdate(prev) {
     if (prev.variant !== this.props.variant || prev.meter !== this.props.meter || prev.idleDefault !== this.props.idleDefault) this.setState(this.preset(this.props));
@@ -199,7 +209,7 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 2600px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 2740px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
     const on = s.on;
 
@@ -309,9 +319,15 @@ class Component extends DCLogic {
     else if (hasPw && !pwStrong) footNote = 'Make your password strong to continue.';
     const canGo = footNote === 'Next: recovery.';
 
-    // Idle default is OPEN for the owner: no value is claimed until one is picked.
-    const idleSet = Number(s.idle) >= 2;
-    const idle = idleSet ? Number(s.idle) : 7;
+    // Idle choices (owner): 2, 4, 6 or 12 h for non-vendors. The default is OPEN: nothing is pre-selected.
+    const IDLE = [2, 4, 6, 12];
+    const idleSet = IDLE.indexOf(Number(s.idle)) >= 0;
+    const idle = idleSet ? Number(s.idle) : 0;
+    const idleOpts = IDLE.map((h) => ({
+      label: h + ' h', pressed: idle === h ? 'true' : 'false',
+      pick: () => this.setState({ idle: h }),
+      style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: \'Atkinson Hyperlegible Mono\', monospace; font-size: 16px; font-weight: 500; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
+    }));
     return {
       rootStyle, methods, meter, bars,
       uname: s.uname, dname: s.dname,
@@ -331,8 +347,8 @@ class Component extends DCLogic {
       sealLine: hasPw ? 'Password + ' + extra + ' more' : hard + ' strong ways · no password',
       armoredMsg: hasPw ? 'Your password plus ' + extra + ' more ways to prove it’s you. This is the strongest setup we offer.' : hard + ' strong ways to prove it’s you, without a password. This is the strongest setup we offer.',
       sealFooter: (uname || 'nightowl_44') + ' · sealed 01 Nov 2026, 14:05 UTC',
-      idle, idleText: idleSet ? idle + ' h' : 'Not set', onIdle: (e) => this.setState({ idle: Number(e.target.value) }),
-      idleDefaultName: idleSet && String(this.props.idleDefault || '').indexOf('h') > 0 ? this.props.idleDefault.replace('h', ' h') : 'none (not set)',
+      idleOpts, idleText: idleSet ? idle + ' h' : 'Not set',
+      idleDefaultName: IDLE.indexOf(parseInt(this.props.idleDefault, 10)) >= 0 ? parseInt(this.props.idleDefault, 10) + ' h' : 'none (not set)',
       pwRuleText: R.text, pwRuleName: R.name,
       vaultRuleName: vaultYes ? 'Yes' : 'No',
       canGo, cantGo: !canGo, footNote

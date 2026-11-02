@@ -820,7 +820,7 @@
       "x": 0,
       "y": 34700,
       "w": 390,
-      "h": 2600,
+      "h": 2740,
       "page": "all",
       "title": "H1 \u00b7 Signup: login strength",
       "is_interactive": true
@@ -829,7 +829,7 @@
       "x": 510,
       "y": 34700,
       "w": 390,
-      "h": 1480,
+      "h": 1360,
       "page": "all",
       "title": "H2 \u00b7 Recovery code",
       "is_interactive": true
@@ -868,6 +868,42 @@
       "h": 844,
       "page": "all",
       "title": "H6 \u00b7 Team: Strong login needed",
+      "is_interactive": true
+    },
+    "CancelRequest.dc.html": {
+      "x": 0,
+      "y": 37800,
+      "w": 390,
+      "h": 1000,
+      "page": "all",
+      "title": "I1 \u00b7 Ask to cancel (both must agree)",
+      "is_interactive": true
+    },
+    "BuyerPaidWaiting.dc.html": {
+      "x": 510,
+      "y": 37800,
+      "w": 390,
+      "h": 1340,
+      "page": "all",
+      "title": "I2 \u00b7 Buyer after I've paid",
+      "is_interactive": true
+    },
+    "InviteInvalid.dc.html": {
+      "x": 1020,
+      "y": 37800,
+      "w": 390,
+      "h": 844,
+      "page": "all",
+      "title": "I3 \u00b7 Invite link doesn't work",
+      "is_interactive": true
+    },
+    "Fold-MyOffers.dc.html": {
+      "x": 1530,
+      "y": 37800,
+      "w": 840,
+      "h": 1000,
+      "page": "all",
+      "title": "I4 \u00b7 My offers, unfolded",
       "is_interactive": true
     }
   },
@@ -1000,6 +1036,14 @@
       "kind": "title1",
       "maxW": 7480,
       "page": "all"
+    },
+    "gaps1101": {
+      "x": 0,
+      "y": 37500,
+      "text": "Gaps from the 1 Nov screenshot review",
+      "kind": "title1",
+      "maxW": 7480,
+      "page": "all"
     }
   },
   "order": [
@@ -1098,7 +1142,11 @@
     "RecoveryHold.dc.html",
     "BlockQueued.dc.html",
     "Compromised.dc.html",
-    "TeamRefusal.dc.html"
+    "TeamRefusal.dc.html",
+    "CancelRequest.dc.html",
+    "BuyerPaidWaiting.dc.html",
+    "InviteInvalid.dc.html",
+    "Fold-MyOffers.dc.html"
   ],
   "pages": [
     {

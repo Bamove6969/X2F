@@ -45,14 +45,17 @@ textarea::placeholder{color:var(--ink-muted)}
       <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Memo</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></div>
     </section>
       <sc-if value="{{paid}}" hint-placeholder-val="{{false}}">
-      <p role="status" style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg>Marked as paid. satoshi_ghost has been told.</p>
+      <p role="status" style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg>Marked as paid. satoshi_ghost has been told. You can't cancel now; if something goes wrong, open a dispute.</p>
+      <a href="BuyerPaidWaiting.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 4px; color: var(--ink); font-size: 15px;">See what happens next</a>
       <button type="button" onClick="{{reset}}" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Show the warning again</button>
     </sc-if>
       <div style="display: flex; align-items: center; gap: 16px;">
         <sc-if value="{{showPayBtn}}" hint-placeholder-val="{{true}}">
           <button type="button" onClick="{{openWarn}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I've paid</button>
         </sc-if>
-        <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Cancel trade</button>
+        <sc-if value="{{showPayBtn}}" hint-placeholder-val="{{true}}">
+          <a href="CancelRequest.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Ask to cancel</a>
+        </sc-if>
         <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer; margin-left: auto;">Open dispute</button>
       </div>
     </div>
@@ -71,8 +74,29 @@ textarea::placeholder{color:var(--ink-muted)}
         </div>
         </div>
         <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
-          <button type="button" onClick="{{markPaid}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I've already paid</button>
+          <button type="button" onClick="{{alreadyPaid}}" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I've already paid</button>
           <button type="button" onClick="{{wait}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">I'll wait</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
+  <sc-if value="{{confirmOpen}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+      <section role="dialog" aria-modal="true" aria-labelledby="wipw-paid-title" style="width: 560px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <h2 id="wipw-paid-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Mark this trade as paid?</h2>
+        <label for="wipw-paid-check" style="display: flex; align-items: flex-start; gap: 12px; min-height: 44px; font-size: 16px; line-height: 24px; cursor: pointer;">
+          <input id="wipw-paid-check" type="checkbox" checked="{{ticked}}" onChange="{{toggleTick}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+          <span>I sent exactly <strong>$412.50</strong> by Zelle with the memo <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span>.</span>
+        </label>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">After this you can't cancel the trade. If something goes wrong, open a dispute.</p>
+        <div style="display: flex; justify-content: flex-end; gap: 12px; margin-top: 8px;">
+          <button type="button" onClick="{{closeConfirm}}" style="height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Not yet</button>
+          <sc-if value="{{ticked}}" hint-placeholder-val="{{false}}">
+            <button type="button" onClick="{{markPaid}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 200px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Yes, mark as paid</button>
+          </sc-if>
+          <sc-if value="{{notTicked}}" hint-placeholder-val="{{true}}">
+            <button type="button" disabled style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 200px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 16px; font-weight: 600; cursor: not-allowed;">Yes, mark as paid</button>
+          </sc-if>
         </div>
       </section>
     </div>
@@ -81,7 +105,7 @@ textarea::placeholder{color:var(--ink-muted)}
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 1280, "height": 800}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { open: true, paid: false }; }
+  constructor(props) { super(props); this.state = { sheet: 'warn', paid: false, ticked: false }; }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
@@ -89,17 +113,25 @@ class Component extends DCLogic {
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
-    const { open, paid } = this.state;
+    const { sheet, paid, ticked } = this.state;
+    const open = sheet === 'warn';
+    const confirmOpen = sheet === 'confirm';
     return {
       rootStyle,
       open,
-      bgHidden: open ? 'true' : 'false',
+      confirmOpen,
+      ticked,
+      notTicked: !ticked,
+      bgHidden: (open || confirmOpen) ? 'true' : 'false',
       showPayBtn: !paid,
       paid,
-      openWarn: () => this.setState({ open: true }),
-      wait: () => this.setState({ open: false }),
-      markPaid: () => this.setState({ open: false, paid: true }),
-      reset: () => this.setState({ open: true, paid: false })
+      openWarn: () => this.setState({ sheet: 'warn' }),
+      wait: () => this.setState({ sheet: null }),
+      alreadyPaid: () => this.setState({ sheet: 'confirm', ticked: false }),
+      toggleTick: () => this.setState({ ticked: !this.state.ticked }),
+      closeConfirm: () => this.setState({ sheet: null, ticked: false }),
+      markPaid: () => { if (this.state.ticked) this.setState({ sheet: null, paid: true, ticked: false }); },
+      reset: () => this.setState({ sheet: 'warn', paid: false, ticked: false })
     };
   }
 }
