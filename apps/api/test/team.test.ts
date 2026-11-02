@@ -713,6 +713,7 @@ describe('the audit log covers every member action (review M3)', () => {
     const EXEMPT: Record<string, string> = {
       'POST /v1/feedback/form': 'anonymous by design (Plan 5 Task 21): not an account action, and a row would tie the member to the text',
       'POST /v1/trades/:code/identity': 'refused to every member (ownerDeviceOnly, member-cannot-sign) until Plan 3 Task 42',
+      'PUT /v1/account/session/length': "the member's own session length after their own login (owner, 2 Nov 2026): not an account action",
     };
     const found: string[] = [];
     const audited = new Set<string>();

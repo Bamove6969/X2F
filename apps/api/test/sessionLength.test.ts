@@ -9,6 +9,7 @@ import { issueConfirmToken } from '../src/auth/confirm.js';
 import { SESSION_COOKIE } from '../src/auth/sessions.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
+import { fixtureLeakedList } from './helpers/leaked.js';
 import { Browser, addTestLogin } from './helpers/totp.js';
 
 const T0 = new Date('2026-11-02T12:00:00Z');
@@ -22,14 +23,18 @@ let app: FastifyInstance;
 let deps: Deps;
 let setNow: (d: Date) => void;
 let n = 0;
+let cleanup: () => Promise<void>;
 
 beforeAll(async () => {
-  ({ app, deps, setNow } = await testApp());
+  const fixture = await fixtureLeakedList();
+  cleanup = fixture.cleanup;
+  ({ app, deps, setNow } = await testApp({ leaked: fixture.list }));
   addTestLogin(app, deps);
 });
 
 afterAll(async () => {
   await app.close();
+  await cleanup();
 });
 
 beforeEach(() => {
@@ -165,7 +170,7 @@ describe('"Stay logged in?": extending the session', () => {
     const b = new Browser(app);
     const name = `pw${String(++n).padStart(4, '0')}x`;
     const reg = await b.post('/v1/register/password', { displayName: `P${name}`, loginName: name, password: GOOD, deviceLabel: 'Laptop', acceptedTerms: TERMS });
-    expect(reg.statusCode, reg.body).toBe(200);
+    expect(reg.statusCode, reg.body).toBe(201);
     expect((await setLength(b, 2)).statusCode).toBe(200);
     at(2 * HOUR - MIN);
     const miss = await b.post('/v1/confirm/password', { password: 'Wrong-Horse-9', action: { kind: 'extend-session' } });

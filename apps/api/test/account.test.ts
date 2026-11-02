@@ -392,6 +392,8 @@ describe('alerts', () => {
     await addPgp(id);
     for (let i = 0; i < 52; i++) await addAlert(deps.db, id, 'new-login', { method: 'pgp', deviceLabel: `D${i}` }, at(i * MIN));
     const b = await loggedIn(id);
+    // The session outlives the hours this test moves through (session length, owner 2 Nov 2026).
+    expect((await b.put('/v1/account/session/length', { hours: 12 })).statusCode).toBe(200);
     const res = await b.get('/v1/account/alerts');
     expect(res.statusCode).toBe(200);
     const list = res.json() as Array<{ id: string; kind: string; detail: { deviceLabel: string }; createdAt: string; seenAt: string | null }>;
