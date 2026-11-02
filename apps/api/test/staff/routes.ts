@@ -20,6 +20,14 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self' },
+  // Plan 4 Task 6: owner first-run setup (public; 404 setup-locked once locked, and here: an owner exists).
+  { method: 'POST', url: '/staff/v1/setup/code', perm: 'public-setup', body: { code: 'AAAA-AAAA-AAAA' } },
+  { method: 'POST', url: '/staff/v1/setup/account', perm: 'public-setup', body: { username: 'matrix.owner', loginName: 'matrix-login' } },
+  { method: 'POST', url: '/staff/v1/setup/key/start', perm: 'public-setup', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/key/finish', perm: 'public-setup', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/pgp/finish', perm: 'public-setup', body: {} },
+  { method: 'POST', url: '/staff/v1/setup/finish', perm: 'public-setup', body: {} },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
