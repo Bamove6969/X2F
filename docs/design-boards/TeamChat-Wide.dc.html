@@ -13,50 +13,60 @@
 body{margin:0}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 8px;">
-    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 16px;">X2F</span>
-    <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Settings</a>
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 01-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 01-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 01-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 010-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 012.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 014 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 012.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 010 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>Settings</a>
   </nav>
 
-  <div style="flex-grow: 1; min-width: 0; padding: 32px 48px; display: flex; flex-direction: column; gap: 24px;">
-    <div style="display: flex; align-items: flex-start; gap: 16px;">
-      <div style="flex-grow: 1; display: flex; flex-direction: column; gap: 4px;">
-        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle</span>
-        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{title}}</h1>
+  <div style="flex-grow: 1; min-width: 0; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 8px; width: 956px; margin-left: -12px;">
+      <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <div style="display: flex; flex-direction: column; flex-grow: 1;">
+        <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{title}}</h1>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle</span>
       </div>
       <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </div>
 
-    <div style="display: grid; grid-template-columns: minmax(0, 1fr) 400px; gap: 24px; flex-grow: 1; align-items: stretch;">
-      <main style="display: flex; flex-direction: column; gap: 16px; min-width: 0;">
-        <section aria-labelledby="tcw-sum" style="display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: 12px; background: var(--surface);">
+    <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; width: 944px; margin: -8px 0 0; padding: 0; list-style: none;">
+      <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+        <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+          <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+          <span style="{{s.labelStyle}}">{{s.label}}</span>
+        </li>
+      </sc-for>
+    </ol>
+
+    <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: stretch;">
+      <main style="display: flex; flex-direction: column; gap: 24px; min-width: 0;">
+        <section aria-labelledby="tcw-sum" style="display: flex; flex-direction: column; gap: 20px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+            <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>{{chip}}</span>
+            <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          </div>
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <h2 id="tcw-sum" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{sumLabel}}</h2>
-            <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">0.500000 XMR <span style="font-size: 16px; color: var(--ink-muted);">$165.00</span></span>
+            <span style="display: inline-flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">0.500000</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--monero-ink);">XMR</span></span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; color: var(--ink-muted);">$165.00</span></span>
           </div>
-          <dl style="margin: 0; display: grid; grid-template-columns: max-content max-content; justify-content: space-between; gap: 8px 16px; font-size: 14px; line-height: 20px;">
-            <div style="display: flex; justify-content: space-between; gap: 12px;"><dt style="color: var(--ink-muted);">Payment</dt><dd style="margin: 0; white-space: nowrap;">Zelle</dd></div>
-            <div style="display: flex; justify-content: space-between; gap: 12px;"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace;">$330.00 / XMR</dd></div>
-            <div style="display: flex; justify-content: space-between; gap: 12px;"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</dd></div>
-            <div style="display: flex; justify-content: space-between; gap: 12px;"><dt style="color: var(--ink-muted);">Funded</dt><dd style="margin: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace;">2 Nov 2026, 14:02 UTC</dd></div>
+          <dl style="display: grid; grid-template-columns: 1fr 1fr; margin: 0; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px;"><dt style="color: var(--ink-muted);">Payment</dt><dd style="margin: 0; font-size: 15px; font-weight: 600;">Zelle</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Rate</dt><dd style="margin: 0; font-size: 15px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$330.00</span> / XMR</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Memo</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
+            <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 16px; border-top: 1px solid var(--surface); border-left: 1px solid var(--surface);"><dt style="color: var(--ink-muted);">Funded</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">2 Nov 2026, 14:02 UTC</dd></div>
           </dl>
-          <ol aria-label="Trade progress" style="list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px;">
-            <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--escrow);"></span><span style="font-size: 13px; line-height: 18px; color: var(--escrow); font-weight: 600;">Escrow funded</span></li>
-            <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--escrow);"></span><span style="font-size: 13px; line-height: 18px; color: var(--escrow); font-weight: 600;">{{step2}}</span></li>
-            <li aria-current="step" style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--caution);"></span><span style="font-size: 13px; line-height: 18px; color: var(--caution); font-weight: 600;">{{step3}}</span></li>
-            <li style="display: flex; flex-direction: column; gap: 6px;"><span style="height: 4px; border-radius: 999px; background: var(--surface-raised);"></span><span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">XMR released</span></li>
-          </ol>
         </section>
 
         <sc-if value="{{lead}}" hint-placeholder-val="{{false}}">
-          <section aria-labelledby="tcw-team" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: color-mix(in srgb, var(--team) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 45%, transparent);">
+          <section aria-labelledby="tcw-team" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--team) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 45%, transparent);">
             <h2 id="tcw-team" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Team replies in this chat</h2>
             <div style="display: flex; align-items: center; gap: 12px;">
               <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">DA</span>
@@ -70,18 +80,18 @@ input::placeholder{color:var(--ink-muted)}
         </sc-if>
       </main>
 
-      <aside aria-labelledby="tcw-chat" style="display: flex; flex-direction: column; border-radius: 12px; background: var(--surface); min-height: 0;">
-        <div style="display: flex; flex-direction: column; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
-          <h2 id="tcw-chat" style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">{{chatTitle}}</h2>
+      <aside aria-labelledby="tcw-chat" style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); min-height: 0;">
+        <div style="display: flex; flex-direction: column; gap: 2px; padding: 16px 20px; border-bottom: 1px solid var(--surface-raised);">
+          <h2 id="tcw-chat" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{chatTitle}}</h2>
           <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Encrypted. If a dispute is opened, a moderator can read this conversation.</span>
         </div>
-        <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; flex-grow: 1;">
+        <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; flex-grow: 1;">
           <sc-for list="{{msgs}}" as="m" hint-placeholder-count="8">
             <sc-if value="{{m.isSys}}" hint-placeholder-val="{{false}}">
-              <p style="align-self: center; max-width: 92%; margin: 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span> · {{m.text}}</p>
+              <p style="align-self: center; max-width: 92%; margin: 0; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span> · {{m.text}}</p>
             </sc-if>
             <sc-if value="{{m.isNotice}}" hint-placeholder-val="{{false}}">
-              <div style="align-self: center; max-width: 92%; display: flex; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--team) 50%, transparent); font-size: 13px; line-height: 18px;">
+              <div style="align-self: center; max-width: 92%; display: flex; gap: 8px; padding: 8px 12px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 50%, transparent); font-size: 13px; line-height: 18px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M15.5 4.8a3.5 3.5 0 010 6.4"/><path d="M18 14.6c2.1.8 3.5 2.8 3.5 5.4"/></svg>
                 <span style="display: flex; flex-direction: column; gap: 2px;">
                   <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</span>
@@ -103,17 +113,17 @@ input::placeholder{color:var(--ink-muted)}
             </sc-if>
           </sc-for>
         </div>
-        <div style="display: flex; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+        <div style="display: flex; gap: 8px; padding: 16px 20px; border-top: 1px solid var(--surface-raised);">
           <label for="tcw-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
-          <input id="tcw-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px;">
-          <button type="button" onClick="{{send}}" style="height: 44px; padding: 0 16px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Send</button>
+          <input id="tcw-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+          <button type="button" onClick="{{send}}" style="height: 48px; padding: 0 20px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send</button>
         </div>
       </aside>
     </div>
   </div>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":998}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":1280,"height":1046}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
@@ -123,12 +133,14 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; min-height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const s = this.state;
+    const lead = this.props.viewer === 'lead';
+    // Measured height: the chat column is the tallest thing on this screen.
+    const H = (lead ? 1060 : 1046) + s.sent.length * 74;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
     // The trade partner only ever sees "Team member"; the lead (account owner) sees the member's name here and in the audit log.
-    const lead = this.props.viewer === 'lead';
     const me = lead ? 'vendor' : 'partner';
     const MSG = [
       { k: 'sys', t: '14:02', text: 'Escrow funded. 0.500000 XMR is locked for this trade.' },
@@ -176,13 +188,22 @@ class Component extends DCLogic {
       });
     });
 
+    // Stepper: buyer labels for the partner (mira.k), seller labels for the lead (satoshi_ghost). The checking step is current.
+    const LABELS = lead ? ['Escrow', 'Buyer pays', 'You check', 'Released'] : ['Escrow', 'You pay', 'Seller checks', 'Released'];
+    const current = 2;
+    const steps = LABELS.map((label, i) => ({
+      label,
+      current: i === current ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 4%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 13px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
+
     return {
-      rootStyle,
+      rootStyle, steps,
       lead,
       title: lead ? 'Selling 0.500000 XMR to mira.k' : 'Buying 0.500000 XMR from satoshi_ghost',
+      chip: lead ? 'mira.k: Payment sent' : 'Paid',
       sumLabel: lead ? 'You’re selling' : 'You’re buying',
-      step2: lead ? 'mira.k paid' : 'You paid',
-      step3: lead ? 'You confirm' : 'Seller confirms',
       chatTitle: lead ? 'Chat with mira.k' : 'Chat with satoshi_ghost',
       placeholder: lead ? 'Message mira.k' : 'Message satoshi_ghost',
       msgs,

@@ -12,87 +12,118 @@
 <style>
 body{margin:0}
 a{color:var(--monero-ink)}a:hover{color:var(--ink)}
-button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button:focus-visible,a:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
-    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
-    </a>
-    <div style="display: flex; flex-direction: column; flex-grow: 1;">
-      <span style="font-size: 16px; font-weight: 600;">Selling to mira.k</span>
-      <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+        Chat
+      </a>
     </div>
-    <a href="#" style="display: flex; height: 44px; align-items: center; padding: 0 8px; font-size: 15px; color: var(--ink);">Chat</a>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Selling to mira.k</h1>
   </header>
 
-  <main style="display: flex; flex-direction: column; gap: 16px; padding: 16px; flex-grow: 1;">
-    <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;">
-      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); color: var(--caution); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
-        mira.k: Payment sent
-      </span>
-      <button type="button" aria-describedby="tip-confirm" onMouseEnter="{{show}}" onMouseLeave="{{hide}}" onClick="{{toggle}}" style="display: inline-flex; align-items: center; gap: 6px; height: 44px; margin: -6px 0; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 14px; cursor: help;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1 h 52 min</span> to confirm</span>
-      </button>
-      <sc-if value="{{open}}" hint-placeholder-val="{{false}}">
-        <span id="tip-confirm" role="tooltip" style="position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 10; padding: 12px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); font-size: 14px; line-height: 20px;">Time you have to check your bank account and release, or report that the money didn't arrive. Instant apps like Zelle get 2 hours; bank wires get up to 24. If time runs out, mira.k can ask a moderator to step in. Nothing is released without you or a moderator.</span>
-      </sc-if>
-    </div>
+  <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 16px; list-style: none;">
+    <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+      <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+        <span style="{{s.labelStyle}}">{{s.label}}</span>
+      </li>
+    </sc-for>
+  </ol>
 
-    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Check your bank account for $412.50 sent via Zelle</h1>
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px; flex-grow: 1;">
+    <section aria-labelledby="sc-title" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
+          mira.k: Payment sent
+        </span>
+        <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
 
-    <section aria-label="Payment proof" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
-      <div style="display: flex; gap: 12px;">
-        <div role="img" aria-label="Proof screenshot, partly blurred by the buyer" style="width: 96px; height: 128px; flex-shrink: 0; border-radius: 6px; background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box;">
+      <h2 id="sc-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Check your bank account for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">$412.50</span> sent via Zelle</h2>
+
+      <div style="height: 1px; background: color-mix(in srgb, var(--caution) 25%, transparent);"></div>
+
+      <div style="position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+        <button type="button" aria-describedby="tip-confirm" onMouseEnter="{{show}}" onMouseLeave="{{hide}}" onClick="{{toggle}}" style="display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 0; border: 0; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: help;">
+          <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">1</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">h</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">52</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">to confirm
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+          </span>
+        </button>
+        <sc-if value="{{open}}" hint-placeholder-val="{{false}}">
+          <span id="tip-confirm" role="tooltip" style="position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 10; padding: 12px; border-radius: 12px; background: var(--surface-raised); border: 1px solid var(--line); color: var(--ink); font-size: 14px; line-height: 20px;">Time you have to check your bank account and release, or report that the money didn't arrive. Instant apps like Zelle get 2 hours; bank wires get up to 24. If time runs out, mira.k can ask a moderator to step in. Nothing is released without you or a moderator.</span>
+        </sc-if>
+        <svg style="flex-shrink: 0;" width="64" height="64" viewBox="0 0 64 64" role="img" aria-label="1 hour 52 minutes of 2 hours left to confirm">
+          <circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-opacity="0.2" stroke-width="5"/>
+          <circle style="color: var(--caution);" cx="32" cy="32" r="27" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-dasharray="158.3 169.6" transform="rotate(-90 32 32)"/>
+        </svg>
+      </div>
+    </section>
+
+    <section aria-labelledby="sc-proof" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="sc-proof" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">We checked mira.k's screenshot</h2>
+      <div style="display: flex; gap: 14px;">
+        <div role="img" aria-label="Proof screenshot, partly blurred by the buyer" style="width: 88px; height: 120px; flex-shrink: 0; border-radius: 12px; background: var(--surface-raised); display: flex; flex-direction: column; gap: 8px; padding: 10px; box-sizing: border-box;">
           <span style="height: 8px; width: 60%; border-radius: 999px; background: var(--line);"></span>
           <span style="height: 14px; width: 80%; border-radius: 4px; background: var(--ink);"></span>
           <span style="height: 8px; width: 100%; border-radius: 999px; background: var(--line); filter: blur(3px);"></span>
           <span style="height: 8px; width: 70%; border-radius: 999px; background: var(--line); filter: blur(3px);"></span>
           <span style="height: 8px; width: 50%; border-radius: 999px; background: var(--line);"></span>
         </div>
-        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 14px; min-width: 0;">
-          <span style="font-size: 14px; font-weight: 600; color: var(--ink);">We checked mira.k's screenshot</span>
-          <span style="display: flex; gap: 6px; align-items: flex-start; color: var(--escrow); line-height: 18px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><path d="M5 12l4 4 10-10"/></svg>Shows $412.50, the right amount</span>
-          <span style="display: flex; gap: 6px; align-items: flex-start; color: var(--escrow); line-height: 18px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><path d="M5 12l4 4 10-10"/></svg>Note says K7M2-9QXA-4FTR-8WPN, this trade's code</span>
-          <span style="display: flex; gap: 6px; align-items: flex-start; color: var(--caution); line-height: 18px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>Sender name hidden by mira.k</span>
-        </div>
+        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; font-size: 14px; line-height: 20px; min-width: 0;">
+          <li style="display: flex; gap: 8px; align-items: flex-start;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Shows <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span>, the right amount</span></li>
+          <li style="display: flex; gap: 8px; align-items: flex-start;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Note says <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; word-break: break-all;">K7M2-9QXA-4FTR-8WPN</span>, this trade's code</span></li>
+          <li style="display: flex; gap: 8px; align-items: flex-start;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--caution);"><circle cx="12" cy="12" r="9"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg><span>Sender name hidden by mira.k</span></li>
+        </ul>
       </div>
-      <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Look for a $412.50 payment with the note K7M2-9QXA-4FTR-8WPN in your bank. Screenshot checks catch mistakes, but only your bank proves the money arrived.</p>
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+        <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Look for a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> payment with the note <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> in your bank. Screenshot checks catch mistakes, but only your bank proves the money arrived.</p>
+      </div>
     </section>
 
-    <section aria-label="Before you release" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--danger);">
-      <h2 style="margin: 0; display: flex; gap: 8px; align-items: center; font-size: 16px; font-weight: 600; color: var(--danger);">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+    <section aria-labelledby="sc-faked" style="display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 16px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);">
+      <h2 id="sc-faked" style="margin: 0; display: flex; gap: 10px; align-items: center; font-size: 16px; line-height: 22px; font-weight: 600; color: var(--danger);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
         Screenshots can be faked
       </h2>
-      <label for="checked" style="display: flex; gap: 12px; align-items: flex-start; min-height: 44px; font-size: 15px; line-height: 22px; cursor: pointer;">
-        <input id="checked" type="checkbox" checked="{{checked}}" onChange="{{toggleCheck}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
-        I checked my bank account myself and the $412.50 from Zelle is there.
+      <label for="checked" style="{{tickBoxStyle}}">
+        <input id="checked" type="checkbox" checked="{{checked}}" onChange="{{toggleCheck}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+        <span>I checked my bank account myself and the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$412.50</span> from Zelle is there.</span>
       </label>
     </section>
   </main>
 
-  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <button type="button" disabled="{{locked}}" aria-label="{{btnLabel}}" onMouseEnter="{{hoverOn}}" onMouseLeave="{{hoverOff}}" onMouseDown="{{holdStart}}" onMouseUp="{{holdStop}}" onTouchStart="{{holdStart}}" onTouchEnd="{{holdStop}}" onTouchCancel="{{holdStop}}" onKeyDown="{{keyStart}}" onKeyUp="{{holdStop}}" style="{{btnStyle}}">
       <span aria-hidden="true" style="{{fillStyle}}"></span>
       <span style="position: relative; font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase;">{{topLine}}</span>
       <span style="position: relative; font-size: 18px; line-height: 24px; font-weight: 600;">{{mainLine}}</span>
     </button>
-    <span style="font-size: 13px; color: var(--ink-muted); text-align: center;">{{hint}}</span>
+    <span style="padding: 4px 8px 0; font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;">{{hint}}</span>
     <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
-      <a href="Review.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; font-size: 15px; color: var(--monero-ink);">See the buyer's view and review</a>
+      <a href="Review.dc.html" style="display: flex; align-items: center; justify-content: center; height: 44px; font-size: 15px; font-weight: 600; color: var(--monero-ink);">See the buyer's view and review</a>
     </sc-if>
     <div style="display: flex; justify-content: space-between;">
-      <button type="button" style="height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Payment not received</button>
-      <button type="button" style="height: 44px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; cursor: pointer;">Open dispute</button>
+      <button type="button" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Payment not received</button>
+      <button type="button" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Open dispute</button>
     </div>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1124}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -120,26 +151,37 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { checked, hover, progress, done } = this.state;
+    const H = done ? 1172 : (checked ? 1142 : 1124);
+    const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Stepper (seller labels): "You check" is current; once released, every step is done.
+    const STEP_LABELS = ['Escrow', 'Buyer pays', 'You check', 'Released'];
+    const current = done ? 3 : 2;
+    const steps = STEP_LABELS.map((label, i) => ({
+      label,
+      current: i === current ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current || done ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 10%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 12px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
+    const tickBoxStyle = 'display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 14px; border-radius: 12px; font-size: 15px; line-height: 22px; cursor: pointer; background: var(--surface-raised); border: 2px solid ' + (checked ? 'var(--ink);' : 'transparent;');
     const holding = progress > 0 && !done;
-    const base = 'position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 64px; border-radius: 12px; font-family: inherit; user-select: none; -webkit-user-select: none; touch-action: none; transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease; ';
+    const base = 'position: relative; overflow: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 64px; border-radius: 12px; font-family: inherit; user-select: none; -webkit-user-select: none; touch-action: none; transition: background-color 150ms ease-out, color 150ms ease-out; ';
     let btnStyle;
     if (done) {
       btnStyle = base + 'border: 0; background: var(--escrow); color: var(--ground); cursor: default;';
     } else if (!checked) {
-      btnStyle = base + 'border: 1px solid var(--line); background: transparent; color: var(--ink-muted); cursor: not-allowed;';
+      btnStyle = base + 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;';
     } else if (hover || holding) {
-      btnStyle = base + 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer; transform: translateY(-1px); box-shadow: 0 0 0 4px color-mix(in srgb, var(--monero) 35%, transparent), 0 0 32px color-mix(in srgb, var(--monero) 55%, transparent);';
+      btnStyle = base + 'border: 0; background: color-mix(in srgb, var(--on-monero) 12%, var(--monero)); color: var(--on-monero); cursor: pointer;';
     } else {
-      btnStyle = base + 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer; box-shadow: 0 0 0 2px color-mix(in srgb, var(--monero) 25%, transparent);';
+      btnStyle = base + 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;';
     }
-    const fillStyle = 'position: absolute; left: 0; top: 0; bottom: 0; width: ' + (done ? 0 : progress) + '%; background: color-mix(in srgb, var(--monero) 55%, white); pointer-events: none;';
-    return { rootStyle,
+    const fillStyle = 'position: absolute; left: 0; top: 0; bottom: 0; width: ' + (done ? 0 : progress) + '%; background: color-mix(in srgb, var(--on-monero) 28%, var(--monero)); pointer-events: none;';
+    return { rootStyle, steps, tickBoxStyle,
       done,
       checked,
       locked: !checked || done,

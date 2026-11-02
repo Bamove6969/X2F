@@ -12,11 +12,13 @@
 <style>
 body{margin:0}
 button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
   <div style="position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;">
-    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <header style="display: flex; align-items: center; gap: 8px; padding: 8px 16px;">
       <span aria-label="X2F" style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
       <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
         <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600; color: var(--ink-muted);">Trade</span>
@@ -25,33 +27,41 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(
     </header>
 
     <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
-      <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 32px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
-        <p style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>You’re logged in as mira.k.</span></p>
-
-        <span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-top: 16px; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
-
-        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">How long should this session stay logged in?</h1>
-
-        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
-          <label for="sl-time" style="font-size: 16px; line-height: 24px; font-weight: 600;">Stay logged in for</label>
-          <select id="sl-time" value="{{selValue}}" onChange="{{onPick}}" aria-describedby="sl-vendor sl-rule" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">
-            <option value="" disabled="{{true}}">Choose a time</option>
-            <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
-              <option value="{{o.val}}">{{o.label}}</option>
-            </sc-for>
-          </select>
+      <main style="flex-grow: 1; min-height: 0; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">You’re logged in as mira.k.</p>
         </div>
 
-        <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
-          <p id="sl-vendor" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
-        </sc-if>
+        <span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 56px; height: 56px; margin-top: 16px; border-radius: 16px; background: var(--surface-raised); color: var(--ink);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
 
-        <p id="sl-rule" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">When this time is up, we&#39;ll ask you to confirm it&#39;s you to stay logged in. If you don&#39;t, you&#39;re logged out.</p>
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How long should this session stay logged in?</h1>
 
-        <p style="margin: 8px 0 0; padding-top: 16px; border-top: 1px solid var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
+        <section style="display: flex; flex-direction: column; gap: 16px; margin-top: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <label for="sl-time" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Stay logged in for</label>
+            <select id="sl-time" value="{{selValue}}" onChange="{{onPick}}" aria-describedby="sl-vendor sl-rule" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">
+              <option value="" disabled="{{yes}}">Choose a time</option>
+              <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+                <option value="{{o.val}}">{{o.label}}</option>
+              </sc-for>
+            </select>
+          </div>
+
+          <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+            <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+              <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+              <p id="sl-vendor" style="margin: 0; font-size: 14px; line-height: 20px;">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
+            </div>
+          </sc-if>
+
+          <p id="sl-rule" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">When this time is up, we&#39;ll ask you to confirm it&#39;s you to stay logged in. If you don&#39;t, you&#39;re logged out.</p>
+        </section>
+
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
       </main>
 
-      <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 24px; border-top: 1px solid var(--surface-raised);">
+      <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
         <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
           <p id="sl-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">Pick a time to continue.</p>
         </sc-if>
@@ -61,16 +71,16 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(
 
     <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
       <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;" aria-hidden="true">
-        <span style="height: 48px; border-radius: 12px; background: var(--surface);"></span>
-        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 48px; border-radius: 16px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 16px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 16px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 16px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 16px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 16px; background: var(--surface);"></span>
       </main>
       <div style="position: absolute; left: 16px; right: 16px; bottom: 24px; display: flex; flex-direction: column; gap: 12px;">
-        <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 16px; line-height: 24px; color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Staying logged in for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{doneHours}}</span> h</span></p>
-        <button type="button" onClick="{{back}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Show the question again</button>
+        <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 14px 16px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent); background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); font-size: 16px; line-height: 24px; color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Staying logged in for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{doneHours}}</span> h</span></p>
+        <button type="button" onClick="{{back}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show the question again</button>
       </div>
     </sc-if>
   </div>
@@ -100,13 +110,13 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1473}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1453}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '' }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const s = this.state;
@@ -123,17 +133,18 @@ class Component extends DCLogic {
     const pick = (s.pick && s.pickFor === acct && TIMES.indexOf(s.pick) >= 0) ? s.pick : null;
 
     // Board = 844 px phone screen + the design-notes block under it (measured).
-    const NOTES_H = 629;
+    const NOTES_H = 609;
     const H = 844 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const opts = TIMES.map((h) => ({ val: String(h), label: h + ' hours' }));
 
     const noPick = !pick;
-    const goStyle = 'height: 56px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (noPick ? 'border: 2px solid var(--surface-raised); background: transparent; color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;');
+    const goStyle = 'height: 56px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + 'border: 0; ' + (noPick ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;');
 
     return {
       rootStyle,
+      yes: true,
       isAsk: step === 'ask',
       isDone: step === 'done',
       isVendor: vendor,

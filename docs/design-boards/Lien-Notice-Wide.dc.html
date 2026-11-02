@@ -13,76 +13,96 @@
 body{margin:0}
 button:focus-visible,a:focus-visible,textarea:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 8px;">
-    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 16px;">X2F</span>
-    <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
-    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 4px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em; padding: 0 12px 20px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3"/><path d="M20 16H7l3 3"/></svg>Trade</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="#" style="display: flex; align-items: center; gap: 12px; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
   </nav>
-  <main aria-labelledby="lnw-title" style="flex-grow: 1; padding: 48px; display: flex; flex-direction: column; gap: 16px;">
-    <div style="width: 720px; display: flex; flex-direction: column; gap: 16px;">
-      <section style="display: flex; flex-direction: column; gap: 12px;">
-        <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--caution);"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6"/><path d="M14 9v6"/></svg></span>
-      <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Trading paused</span>
-      <h1 id="lnw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Your trading is paused until you repay <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 22px; white-space: nowrap;">1.250000 XMR</span> to mira.k (appeal decision)</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">That's about $412.50 at the trade's agreed rate. The Monero network fee comes from your wallet.</p>
-      </section>
-      <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start;">
-        <section aria-labelledby="lnw-what" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
-      <h2 id="lnw-what" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What this means</h2>
-      <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 22px;">
-        <li style="display: flex; gap: 10px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6"/><path d="M14 9v6"/></svg></span>This is a lien. You can't post offers or start new trades until you pay it back.</li>
-        <li style="display: flex; gap: 10px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span>Trades already running carry on as normal.</li>
-        <li style="display: flex; gap: 10px;"><span style="display: flex; flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>Your coins are never touched. They stay in your own wallet.</li>
-      </ul>
-    </section>
-    <section aria-labelledby="lnw-why" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
-      <h2 id="lnw-why" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">The appeal decision</h2>
-      <dl style="margin: 0; display: flex; flex-direction: column; gap: 8px;">
-        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Trade</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</dd></div>
-        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Decided by</dt><dd style="margin: 0;">elena.t, independent reviewer</dd></div>
-        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Decided</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">31 Oct 2026, 09:12 UTC</dd></div>
-      </dl>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">mira.k's $412.50 Zelle payment did reach your account, so the trade stands as agreed.</p>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The first ruling sent the XMR back to you as soon as it was made. mira.k appealed within the 48-hour window, and the appeal overturned it. That's why you now owe the XMR.</p>
-      <a href="Appeal-Notice-Wide.dc.html" style="display: inline-flex; align-items: center; height: 44px; align-self: flex-start; color: var(--monero-ink); font-size: 15px;">Read the decision</a>
-    </section>
-    <p style="grid-column: 1 / -1; margin: 0; display: flex; gap: 8px; font-size: 14px; line-height: 20px; color: var(--danger);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px;"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>If you don't repay, your account will be suspended and may be banned for life.</p>
-      </div>
-      <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
-      <section role="status" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--line); border-color: var(--escrow);">
-        <span style="display: flex; gap: 8px; align-items: center; font-size: 16px; font-weight: 600; color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg>Repayment trade started</span>
-        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Send 1.250000 XMR to mira.k from your wallet in the repayment trade. The app records a payment proof the reviewer can check. Trading comes back as soon as it's confirmed.</p>
-      </section>
-    </sc-if>
-      <div style="display: flex; align-items: center; gap: 16px; margin-top: 8px;">
-        <sc-if value="{{notStarted}}" hint-placeholder-val="{{true}}">
-          <button type="button" onClick="{{repay}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Repay 1.250000 XMR</button>
-        </sc-if>
+  <main aria-labelledby="lnw-title" style="flex-grow: 1; padding: 32px 48px 48px; display: flex; flex-direction: column; gap: 24px;">
+    <div style="display: flex; align-items: center; gap: 8px; margin-left: -12px;">
+      <a href="#" aria-label="Close" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a>
+      <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Account notice</span>
+    </div>
+    <div style="display: grid; grid-template-columns: 560px 360px; gap: 24px; align-items: start;">
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <section style="display: flex; flex-direction: column; gap: 24px; padding: 28px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 180px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <span style="align-self: flex-start; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6"/><path d="M14 9v6"/></svg>Trading paused</span>
+          <div style="display: flex; flex-direction: column; gap: 12px;">
+            <h1 id="lnw-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 40px; line-height: 44px; font-weight: 700; letter-spacing: -0.02em;">Your trading is paused until you repay <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; letter-spacing: -0.03em;">1.250000</span> XMR</span> to mira.k (appeal decision)</h1>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">That's about $412.50 at the trade's agreed rate. The Monero network fee comes from your wallet.</p>
+          </div>
+        </section>
+        <p style="margin: 0; display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent); font-size: 14px; line-height: 20px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--danger);"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg><span>If you don't repay, your account will be suspended and may be banned for life.</span></p>
         <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
-          <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Go to the repayment trade</a>
+          <section role="status" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg>
+            <span style="display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Repayment trade started</span>
+              <span style="font-size: 14px; line-height: 20px;">Send <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000</span> XMR to mira.k from your wallet in the repayment trade. The app records a payment proof the reviewer can check. Trading comes back as soon as it's confirmed.</span>
+            </span>
+          </section>
         </sc-if>
-        <a href="Support-Wide.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; text-decoration: none; cursor: pointer;">Questions? Ask the moderators</a>
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <sc-if value="{{notStarted}}" hint-placeholder-val="{{true}}">
+            <button type="button" onClick="{{repay}}" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Repay&#160;<span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1.250000</span>&#160;XMR</button>
+          </sc-if>
+          <sc-if value="{{started}}" hint-placeholder-val="{{false}}">
+            <a href="#" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 16px; font-weight: 600; text-decoration: none; cursor: pointer;">Go to the repayment trade</a>
+          </sc-if>
+          <a href="Support-Wide.dc.html" style="display: flex; align-items: center; height: 44px; padding: 0 8px; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; text-decoration: none; cursor: pointer;">Questions? Ask the moderators</a>
+        </div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 24px;">
+        <section aria-labelledby="lnw-what" style="display: flex; flex-direction: column; gap: 12px; padding: 24px; border-radius: 16px; background: var(--surface);">
+          <h2 id="lnw-what" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What this means</h2>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 15px; line-height: 22px;">
+            <li style="display: flex; align-items: center; gap: 14px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M10 9v6"/><path d="M14 9v6"/></svg></span><span>This is a lien. You can't post offers or start new trades until you pay it back.</span></li>
+            <li style="display: flex; align-items: center; gap: 14px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l4 4 10-10"/></svg></span><span>Trades already running carry on as normal.</span></li>
+            <li style="display: flex; align-items: center; gap: 14px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span><span>Your coins are never touched. They stay in your own wallet.</span></li>
+          </ul>
+        </section>
+
+        <section aria-labelledby="lnw-why" style="display: flex; flex-direction: column; gap: 14px; padding: 24px; border-radius: 16px; background: color-mix(in srgb, var(--mod) 8%, var(--surface)); border: 1px solid color-mix(in srgb, var(--mod) 40%, transparent);">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--mod) 16%, transparent); color: var(--mod);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+            <h2 id="lnw-why" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">The appeal decision</h2>
+          </div>
+          <dl style="margin: 0; display: flex; flex-direction: column; border-radius: 12px; background: var(--surface-raised);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px;"><dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Trade</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; font-weight: 500;">K7M2-9QXA-4FTR-8WPN</dd></div>
+            <div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 6px 14px; box-sizing: border-box;"><dt style="flex-shrink: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); white-space: nowrap;">Decided by</dt><dd style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600; text-align: right;"><span style="color: var(--mod);">elena.t</span>, independent reviewer</dd></div>
+            <div aria-hidden="true" style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px;"><dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Decided</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; font-weight: 500;">31 Oct 2026, 09:12 UTC</dd></div>
+          </dl>
+          <p style="margin: 0; font-size: 15px; line-height: 22px;">mira.k's $412.50 Zelle payment did reach your account, so the trade stands as agreed.</p>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">The first ruling sent the XMR back to you as soon as it was made. mira.k appealed within the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span>-hour window, and the appeal overturned it. That's why you now owe the XMR.</p>
+          <a href="Appeal-Notice-Wide.dc.html" style="display: inline-flex; align-items: center; gap: 4px; height: 44px; margin: -6px 0 -10px; align-self: flex-start; color: var(--monero-ink); font-size: 15px; font-weight: 600;">Read the decision<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+        </section>
       </div>
     </div>
   </main>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 1280, "height": 900}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "$preview": {"width": 1280, "height": 860}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { started: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 900px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     const started = this.state.started;
+    const H = 860;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 1280px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
     return {
       rootStyle,
       notStarted: !started,

@@ -13,19 +13,21 @@
 body{margin:0}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
-    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0; padding-top: 1px;">
-      <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{title}}</h1>
-      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span> · Zelle</span>
+  <header style="display: flex; align-items: center; gap: 6px; padding: 8px 16px 8px 6px;">
+    <a href="#" aria-label="Back to trades" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0;">
+      <h1 style="margin: 0; font-size: 15px; line-height: 20px; font-weight: 600;">{{title}}</h1>
+      <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span> · Zelle</span>
     </div>
     <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
 
-  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 16px;">
+  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 12px; padding: 8px 16px 16px;">
     <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;">Encrypted. If a dispute is opened, a moderator can read this conversation.</p>
 
     <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px;">
@@ -58,16 +60,16 @@ input::placeholder{color:var(--ink-muted)}
     </div>
   </main>
 
-  <footer style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--surface-raised);">
+  <footer style="display: flex; align-items: center; gap: 8px; padding: 12px 16px 16px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <label for="tc-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
-    <input id="tc-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
-    <button type="button" aria-label="Send message" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
+    <input id="tc-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+    <button type="button" aria-label="Send message" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; width: 48px; height: 48px; flex-shrink: 0; box-sizing: border-box; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
     </button>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":892}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":864}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
   componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
@@ -77,8 +79,10 @@ class Component extends DCLogic {
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
+    // Measured heights: the lead's view has an extra line under the team notice.
+    const H = (this.props.viewer === 'lead' ? 858 : 864) + s.sent.length * 74;
+    const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
     // The trade partner only ever sees "Team member"; the lead (account owner) sees the member's name here and in the audit log.

@@ -13,71 +13,97 @@
 body{margin:0}
 a{color:var(--monero-ink)}a:hover{color:var(--ink)}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
-    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);">
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
-    </a>
-    <div style="display: flex; flex-direction: column; flex-grow: 1;">
-      <span style="font-size: 16px; font-weight: 600;">Selling to mira.k</span>
-      <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
+      </a>
+      <a href="#" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border-radius: 999px; background: var(--surface); color: var(--ink); font-size: 15px; font-weight: 600; text-decoration: none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16v11H9l-5 4z"/></svg>
+        Chat
+      </a>
     </div>
-    <a href="#" style="display: flex; height: 44px; align-items: center; padding: 0 8px; font-size: 15px; color: var(--ink);">Chat</a>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Selling to mira.k</h1>
   </header>
 
-  <main style="display: flex; flex-direction: column; gap: 16px; padding: 16px; flex-grow: 1;">
-    <div>
-      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); color: var(--caution); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-        Payment window ended
-      </span>
-    </div>
+  <ol aria-label="Trade progress" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0; padding: 0 16px 16px; list-style: none;">
+    <sc-for list="{{steps}}" as="s" hint-placeholder-count="4">
+      <li aria-current="{{s.current}}" style="display: flex; flex-direction: column; gap: 6px;">
+        <span style="display: block; height: 4px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="{{s.barStyle}}"></span></span>
+        <span style="{{s.labelStyle}}">{{s.label}}</span>
+      </li>
+    </sc-for>
+  </ol>
 
-    <section style="display: flex; flex-direction: column; gap: 4px;">
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">mira.k didn't mark the payment in time</h1>
-      <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your 1.25 XMR is still safe in escrow. You can take it back, or give mira.k more time.</p>
+  <main style="display: flex; flex-direction: column; gap: 16px; padding: 0 16px 24px; flex-grow: 1;">
+    <section aria-labelledby="sr-title" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Payment window ended
+        </span>
+        <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <h2 id="sr-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">mira.k didn't mark the payment in time</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.25</span> XMR is still safe in escrow. You can take it back, or give mira.k more time.</p>
+      </div>
     </section>
 
-    <section aria-label="How the refund works" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
-      <h2 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">If you cancel</h2>
-      <ol style="margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
-        <li>mira.k gets a final alert and 15 minutes to say they already paid.</li>
-        <li>If they stay silent, your 1.25 XMR comes back to your wallet automatically. No moderator needed.</li>
-        <li>If they say they paid, a moderator checks both sides before anything moves.</li>
-        <li>Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the 1.25 XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.</li>
+    <section aria-labelledby="sr-how" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <h2 id="sr-how" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">If you cancel</h2>
+      <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">
+        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">1</span><span>mira.k gets a final alert and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">15</span> minutes to say they already paid.</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">2</span><span>If they stay silent, your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.25</span> XMR comes back to your wallet automatically. No moderator needed.</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">3</span><span>If they say they paid, a moderator checks both sides before anything moves.</span></li>
+        <li style="display: flex; gap: 12px; align-items: flex-start;"><span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 24px; height: 24px; margin-top: -2px; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; font-weight: 500;">4</span><span>Even after your refund, mira.k can still open a dispute if they sent the money anyway. A moderator can pause your account from trading until it's resolved, then reviews it fairly. If their payment reached you, you'll be asked to send mira.k the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.25</span> XMR as agreed. Refusing leads to an account suspension and a possible lifetime ban.</span></li>
       </ol>
     </section>
 
-    <section style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color: var(--escrow); flex-shrink: 0; margin-top: 2px;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.</p>
-    </section>
+    <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+      <svg style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Check your bank account first. If mira.k's Zelle payment did arrive, release instead of cancelling.</p>
+    </div>
   </main>
 
-  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel &amp; get refund</button>
-    <div style="display: flex; gap: 8px;">
-      <button type="button" style="flex-grow: 1; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Give 30 more min</button>
-      <button type="button" style="flex-grow: 1; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--caution); font-family: inherit; font-size: 16px; cursor: pointer;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
+    <div style="display: flex; gap: 8px; padding-bottom: 8px;">
+      <button type="button" style="flex: 1 1 0; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Give <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">30</span> more min</button>
+      <button type="button" style="flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">
+        <svg style="color: var(--caution);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/><path d="M2 4l2 2"/><path d="M22 4l-2 2"/></svg>
         Nudge mira.k
       </button>
     </div>
   </footer>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1075}}'>
 class Component extends DCLogic {
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    return { rootStyle };
+    const H = 1075;
+    const rootStyle = THEMES[theme] + 'position: relative; overflow: hidden; width: 390px; height: ' + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    // Stepper (seller labels): "Buyer pays" is current and its time has run out (bar full, caution).
+    const STEP_LABELS = ['Escrow', 'Buyer pays', 'You check', 'Released'];
+    const current = 1;
+    const steps = STEP_LABELS.map((label, i) => ({
+      label,
+      current: i === current ? 'step' : 'false',
+      barStyle: 'display: block; height: 100%; border-radius: 999px; ' + (i < current ? 'width: 100%; background: var(--escrow);' : i === current ? 'width: 100%; background: var(--caution);' : 'width: 0;'),
+      labelStyle: 'font-size: 12px; line-height: 16px; ' + (i === current ? 'font-weight: 600; color: var(--ink);' : 'color: var(--ink-muted);')
+    }));
+    return { rootStyle, steps };
   }
 }
 </script>

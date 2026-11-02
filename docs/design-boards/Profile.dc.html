@@ -21,6 +21,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   <header style="display: flex; align-items: center; gap: 4px; padding: 8px 16px 0; margin-left: -10px;">
     <a href="SellOffers.dc.html" aria-label="Back" style="display: flex; flex-shrink: 0; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
     <span style="font-size: 15px; line-height: 20px; font-weight: 600;">Trader profile</span>
+    <span style="margin-left: auto; padding: 0 10px; flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
 
   <main style="flex-grow: 1; min-height: 0; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
@@ -38,6 +39,12 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <div style="display: flex; flex-direction: column-reverse; gap: 2px; padding: 14px; background: var(--surface-raised);"><dt style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">typical payment time</dt><dd style="margin: 0; display: flex; align-items: baseline; gap: 4px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">~6</span><span style="font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">min</span></dd></div>
         <div style="display: flex; flex-direction: column-reverse; gap: 2px; padding: 14px; background: var(--surface-raised);"><dt style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">trades cancelled</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500; letter-spacing: -0.01em;">2%</dd></div>
       </dl>
+      <sc-if value="{{showVolume}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; align-items: center; gap: 10px; margin-top: -8px; padding: 10px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+          <svg style="flex-shrink: 0; color: var(--escrow);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 20h16"/><path d="M7 16v-5"/><path d="M12 16V7"/><path d="M17 16v-9"/></svg>
+          <span style="font-size: 14px; line-height: 20px; color: var(--ink);">Completed over <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; white-space: nowrap;">{{volumeShown}}</span> in trades to date</span>
+        </div>
+      </sc-if>
     </section>
 
     <section aria-labelledby="pf-badges" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: var(--surface);">
@@ -81,19 +88,43 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <button type="button" style="height: 56px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Message</button>
     <button type="button" aria-label="More: block or report" style="display: flex; align-items: center; justify-content: center; height: 56px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.75"/><circle cx="12" cy="12" r="1.75"/><circle cx="19" cy="12" r="1.75"/></svg></button>
   </footer>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
+    <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;">
+      <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <p style="margin: 0; font-size: 14px; line-height: 20px;"><strong>Trade volume line.</strong> An opt-in row under the stats, escrow tone with a bar-chart glyph (no trophy): "Completed over <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span> in trades to date". The same line goes on the trader's ads. The trader turns it on in Settings › Profile visibility (ProfileVisibility board). The <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">volumeLine</span> tweak previews it on or off; it is on here.</p>
+    <aside aria-label="Decided by the owner" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov 2026</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px;">
+        <li><strong>Opt-in.</strong> Off until the trader switches it on. Never shown without their choice.</li>
+        <li><strong>X adds buying and selling</strong>, then rounds <strong>down</strong>: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$10,000</span> steps up to <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$90,000</span>, then <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$100,000</span>, then <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span> steps (<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$150,000</span>, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$200,000</span> …). Example here: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$56,340</span> shows as <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$50,000</span>.</li>
+      </ul>
+    </aside>
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Names, stats and reviews are examples.</p>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1088}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"volumeLine":{"editor":"enum","options":["on","off"],"default":"on"},"$preview":{"width":390,"height":1577}}'>
 class Component extends DCLogic {
+  volumeShown(total) {
+    // Owner rule (2 Nov 2026): buying + selling, rounded down. $10k steps to $90k, then $100k, then $50k steps.
+    if (total < 10000) return null;
+    const step = total < 100000 ? 10000 : 50000;
+    const x = Math.floor(total / step) * step;
+    return '$' + String(x).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
       day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 1088;
-    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
-    return { rootStyle };
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; min-height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const volumeShown = this.volumeShown(56340);
+    const showVolume = this.props.volumeLine !== 'off' && volumeShown !== null;
+    return { rootStyle, showVolume, volumeShown };
   }
 }
 </script>
