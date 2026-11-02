@@ -820,7 +820,8 @@ describe('a view carrying another trade\'s code (round-3 Important 1)', () => {
     );
     await flush();
     expect(roomEscrow.release).not.toHaveBeenCalled();
-    expect(seen).toEqual([`/v1/trades/${X}`]);
+    // Plan 2 Task 18: the room also reads who is signed in (a team member's device never starts an escrow).
+    expect(seen.filter((u) => u !== '/v1/account/me')).toEqual([`/v1/trades/${X}`]);
     expect(r.host.querySelector('[data-screen=seller-confirm]')).toBeNull();
     expect(r.host.querySelector('[role=alert]')!.textContent).toContain('X2F answered with a different trade');
     expect(started).toEqual([]);

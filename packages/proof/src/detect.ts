@@ -3,18 +3,31 @@
 // Fail-safe (review 2026-10-24): the Luhn and mod-97 checks only choose a region's label, never
 // whether it is masked; one misread digit must not leave a real card or IBAN visible. The only
 // things ever kept are the trade code, the trade amount and dates (the smart card needs them).
+//
+// A SAFETY NET (owner item 35, 2026-11-02): the detector is not the only guard. The sender always
+// sees the blurred picture before it is sent and can blur more by hand (Plan 5 Task 15), so the
+// detector aims to catch what it can (best effort), not to be the last word on what is hidden.
+//
+// THE AMOUNT (owner 2026-11-02): the automatic blur never hides the trade amount. No region covers
+// a character of it, and `amountBoxes` gives its boxes so `padAndMerge` keeps padding and merging
+// off it too. The uploader can only add blur (a `manual` region), never take an automatic one away.
 import { normalizeTradeCode } from '@x2f/core';
 import { findAmounts } from './amounts.js';
+import { NAME_LABELS } from './nameLabels.js';
 import { type OcrWord, linesOf } from './ocr.js';
 
 export type HiddenKind = 'name' | 'account' | 'card' | 'iban' | 'address' | 'phone' | 'email' | 'handle' | 'manual';
 
-/** A box in image pixels (x1, y1 exclusive) and why it is hidden. */
-export interface Region {
+/** A box in image pixels (x1, y1 exclusive). */
+export interface Box {
   x0: number;
   y0: number;
   x1: number;
   y1: number;
+}
+
+/** A box in image pixels (x1, y1 exclusive) and why it is hidden. */
+export interface Region extends Box {
   kind: HiddenKind;
 }
 
@@ -42,12 +55,13 @@ const BLANK = '\u0000';
 
 /**
  * UPI IDs (`name@bank`, the payment address on Indian UPI screenshots) are masked as `account` in
- * images and refused in notes (review R3-M3).
+ * images and refused in notes (review R3-M3). Owner, 2026-11-02: item 34, blurred in proofs; item 36,
+ * review notes refuse all personal details, UPI IDs included. One flag for both. Chat is not checked
+ * here (UPI IDs stay in chat as dispute evidence).
  */
-// PENDING OWNER (owner item 34): whether UPI IDs are in scope at all; on until the owner decides.
 export const UPI_IDS = true;
 
-/** Detection options. Only for tests and the pending owner flag; callers pass nothing. */
+/** Detection options. Only for tests; callers pass nothing. */
 export interface DetectOptions {
   /** Mask UPI IDs (`name@bank`); defaults to `UPI_IDS`. */
   upiIds?: boolean;
@@ -469,18 +483,41 @@ function moneroChains(texts: string[]): Span[][] {
   return out;
 }
 
-// Names: the rest of the line after a label, or the next line when the label stands alone.
-// English labels only, as built: whether to add labels for other languages is open owner question 30
-// (review M7), unchanged here.
-const LABELS = ['account holder', 'beneficiary', 'recipient', 'paid to', 'sent to', 'sender', 'payee', 'payer', 'name', 'from', 'to'];
-const LABEL = LABELS.map((l) => l.replace(' ', '\\s+')).join('|');
-/** A label at the start of the line, with or without a colon. */
-const LABEL_START = new RegExp(`^\\s*(?:${LABEL})(?::|(?=\\s)|$)\\s*`, 'i');
-/** A label later in the line, only with a colon (`Status: done  From: Jane Doe`). */
-const LABEL_COLON = new RegExp(`(?<![A-Za-z])(?:${LABEL}):\\s*`, 'gi');
+// Names: the rest of the line after a label, or the next line when the label stands alone. The
+// labels, English and the other languages, are data in `nameLabels.ts` (owner item 30, 2026-11-02).
+
+/**
+ * The text with accents dropped, one UTF-16 unit for one (`Empfänger` reads `Empfanger`), so a label
+ * matches with or without the accents OCR may lose, at the same indexes as the text.
+ */
+function foldAccents(text: string): string {
+  let out = '';
+  for (const c of text) {
+    const d = c.length === 1 ? c.normalize('NFD').replace(/\p{M}/gu, '') : c;
+    out += d.length === c.length ? d : c;
+  }
+  return out;
+}
+
+/** Labels as a regex alternation, longest first (`titular de la cuenta` before `titular`). */
+function alternation(labels: string[]): string {
+  return [...new Set(labels.map(foldAccents))]
+    .sort((a, b) => b.length - a.length)
+    .map((l) => l.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '\\s+').replace(/'/g, "['\u2019]"))
+    .join('|');
+}
+
+const SETS = Object.values(NAME_LABELS);
+const LABEL = alternation(SETS.flatMap((s) => [...s.labels]));
+const ANY_LABEL = alternation(SETS.flatMap((s) => [...s.labels, ...s.colonOnly]));
+/** A label at the start of the line, with or without a colon; a colon-only label with its colon. */
+const LABEL_START = new RegExp(`^\\s*(?:(?:${LABEL})(?=\\s|:|$)|(?:${ANY_LABEL}) ?(?=:))(?: ?:)?\\s*`, 'iu');
+/** A label later in the line, only with a colon (`Status: done  From: Jane Doe`, French `Nom : Jean`). */
+const LABEL_COLON = new RegExp(`(?<![\\p{L}\\p{N}])(?:${ANY_LABEL}) ?:\\s*`, 'giu');
 
 /** Where the name starts after a label in this line: its index, `'next'` for a lone label, or -1. */
-function nameStart(text: string): number | 'next' {
+function nameStart(line: string): number | 'next' {
+  const text = foldAccents(line);
   const m = LABEL_START.exec(text);
   if (m) return m[0].length >= text.trimEnd().length ? 'next' : m[0].length;
   for (const c of text.matchAll(LABEL_COLON)) {
@@ -557,6 +594,74 @@ function visible(text: string, best: Array<Span | null>): Array<Span | null> {
   return best.map((s, i) => (s && /\s/.test(text[i] ?? '') ? null : s));
 }
 
+// ---------------------------------------------------------------------------------------------
+// The trade amount (owner 2026-11-02: the automatic blur never hides the amount).
+
+/**
+ * Amount labels: a whole number right after one, equal to the trade amount, is the amount even with
+ * no currency marker or decimals (`Amount: 12345678`, `Total 250,000`). Without a label a bare whole
+ * number may be a reference or an account, so it is not kept.
+ */
+const AMOUNT_LABEL = new RegExp(
+  `(?<![\\p{L}])(?:${[
+    'amount', 'total', 'sum', 'sent', 'paid', 'received', 'transferred',
+    'montant', 'somme', 'betrag', 'summe', 'importe', 'monto', 'valor', 'quantia', 'bedrag',
+    'kwota', 'importo', 'tutar', 'jumlah', 'nominal', 'сумма', 'сума', '金额', '金額', '합계', '금액',
+  ].join('|')})\\s*[:：]?\\s*$`,
+  'iu',
+);
+/** A run of 16 or more digits, which the amount reader does not take. */
+const LONG_DIGITS = /(?<![\p{L}\p{N}])\d{16,}(?![\p{N}])/gu;
+
+/** Per character of a normalised line: whether it is part of the trade amount. */
+function amountKept(text: string, keep: Keep): boolean[] {
+  const k: boolean[] = new Array<boolean>(text.length).fill(false);
+  for (const a of findAmounts(text, keep.exponent)) {
+    if (a.value !== keep.fiatCents) continue;
+    if (a.marker !== null || a.decimals || AMOUNT_LABEL.test(text.slice(0, a.start))) mark(k, a.start, a.end);
+  }
+  const unit = 10n ** BigInt(keep.exponent);
+  if (keep.fiatCents % unit === 0n) {
+    const whole = (keep.fiatCents / unit).toString();
+    for (const m of text.matchAll(LONG_DIGITS)) {
+      if (m[0].replace(/^0+(?=\d)/, '') === whole && AMOUNT_LABEL.test(text.slice(0, m.index))) mark(k, m.index, m.index + m[0].length);
+    }
+  }
+  return k;
+}
+
+/**
+ * The boxes of the trade amount in OCR words: a whole word, or the part of a word that holds it (by
+ * character position, as `detectSensitive` cuts words). Pass them to `padAndMerge` so padding and
+ * merging never cover the amount either (owner 2026-11-02).
+ */
+export function amountBoxes(words: OcrWord[], keep: Keep): Box[] {
+  const out: Box[] = [];
+  for (const l of linesOf(words)) {
+    const n = normalize(l.text);
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), amountKept(n.text, keep)).keep;
+    for (const { word, start, end } of l.words) {
+      const charW = (word.x1 - word.x0) / (end - start);
+      for (let c = start; c < end; ) {
+        if (!k[c]) {
+          c++;
+          continue;
+        }
+        let d = c;
+        while (d < end && k[d]) d++;
+        out.push({
+          x0: c === start ? word.x0 : Math.floor(word.x0 + charW * (c - start)),
+          y0: word.y0,
+          x1: d === end ? word.x1 : Math.ceil(word.x0 + charW * (d - start)),
+          y1: word.y1,
+        });
+        c = d;
+      }
+    }
+  }
+  return out;
+}
+
 /**
  * Regions over OCR words that look like private details (spec 4.2), one per run of words of the same
  * kind on a line, in reading order. Never covers the trade code (in any grouping or case, after
@@ -572,12 +677,9 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
   const norms = lines.map((l) => normalize(l.text));
   const texts = norms.map((n) => n.text);
   const kept = texts.map((text) => {
-    const k: boolean[] = new Array<boolean>(text.length).fill(false);
+    const k = amountKept(text, keep);
     markDates(text, k);
     for (const m of text.matchAll(codeRe)) mark(k, m.index, m.index + m[0].length);
-    for (const a of findAmounts(text, keep.exponent)) {
-      if ((a.marker !== null || a.decimals) && a.value === keep.fiatCents) mark(k, a.start, a.end);
-    }
     return k;
   });
   const spans: Span[][] = lines.map(() => []);
@@ -655,9 +757,10 @@ export function detectSensitive(words: OcrWord[], keep: Keep, opts: DetectOption
         let d = c;
         while (d < end && best[d] && best[d]!.kind === kind) d++;
         out.push({
-          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start ? 1 : 0)))),
+          // Never reaching into a kept character: the amount wins over the extra width (owner 2026-11-02).
+          x0: Math.max(word.x0, Math.floor(word.x0 + charW * (c - start - (c > start && !k[c - 1] ? 1 : 0)))),
           y0: word.y0,
-          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end ? 1 : 0)))),
+          x1: Math.min(word.x1, Math.ceil(word.x0 + charW * (d - start + (d < end && !k[d] ? 1 : 0)))),
           y1: word.y1,
           kind,
         });
@@ -725,6 +828,16 @@ function longDecimalIsAmount(line: string, at: number, num: string, fracLen: num
 /** A range of years, `2023 - 2026` or `2023-2026`. */
 const YEAR_RANGE = /(?<!\d|\d[-/.,] ?)(?:19|20)\d{2} ?[-–—] ?(?:19|20)\d{2}(?!\d| ?[-/.,]\d)/g;
 
+/**
+ * A whole number in thousands groups (owner item 29): 1-3 digits without a leading zero, then groups
+ * of exactly 3 after one separator used throughout (`,` `.` or a space), and an optional decimal part
+ * after the other mark. Not inside a longer run of digits, nor after `+`, a bracket or `/`, so a phone
+ * number (`+34 612 345 678`, `+61 (0)412 345 678`) is never one.
+ */
+const GROUPED = /(?<![\d+()/]|[\d)/][.,' /-]|\+ )[1-9]\d{0,2}([., ])\d{3}(?:\1\d{3})*([.,]\d{1,2})?(?![\d(]|[.,' /-]\d)/g;
+/** Notes allow a grouped number of at most this many digits (`123,456,789`); longer ones are refused. */
+const GROUPED_MAX_DIGITS = 9;
+
 /** The order `detectSensitiveText` reports kinds in (P5-A6's list). */
 const TEXT_ORDER: HiddenKind[] = ['email', 'phone', 'card', 'iban', 'account'];
 
@@ -741,8 +854,15 @@ export function detectSensitiveText(s: string, opts: DetectOptions = {}): Hidden
     const k: boolean[] = new Array<boolean>(line.length).fill(false);
     markDates(line, k);
     // Review M6: the digits after a decimal point (`0.12345678 XMR`) and year ranges (`2023 - 2026`)
-    // are not details. Whole numbers of 6 or more digits (`250000 COP`, `1 250 000 IDR`) still are:
-    // that rule is open owner question 29, unchanged here.
+    // are not details. Owner item 29 (2026-11-02): a number written with thousands separators of up
+    // to 9 digits (`1,250,000`, `1.250.000`, `1 250 000`) is not one either; plain runs of 6 or more
+    // digits (`250000 COP`) and longer grouped numbers still are.
+    for (const m of line.matchAll(GROUPED)) {
+      const dec = m[2];
+      if (dec !== undefined && dec[0] === m[1]) continue;
+      const whole = dec === undefined ? m[0] : m[0].slice(0, -dec.length);
+      if (digitsOf(whole).length <= GROUPED_MAX_DIGITS) mark(k, m.index, m.index + m[0].length);
+    }
     for (const m of line.matchAll(DECIMAL)) {
       if (m[1]!.length >= 4 && !longDecimalIsAmount(line, m.index, m[0], m[1]!.length)) continue;
       mark(k, m.index + m[0].length - m[1]!.length, m.index + m[0].length);

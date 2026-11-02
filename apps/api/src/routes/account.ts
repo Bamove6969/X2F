@@ -7,6 +7,7 @@ import type { Queryable } from '../db/pool.js';
 import { tradeCap, type Stage } from '../traders/stage.js';
 import { ApiError } from '../errors.js';
 import { addAlert } from '../alerts.js';
+import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
 import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
@@ -36,6 +37,17 @@ export interface AccountOverview {
   termsCurrent: boolean;
   /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
   accountHoldUntil: string | null;
+  /**
+   * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
+   * they work for, with their own login methods); null for the account owner.
+   */
+  member: MemberOverview | null;
+}
+
+export interface MemberOverview {
+  /** The member's name, as chat labels show it. */
+  name: string;
+  roles: TeamRole[];
 }
 
 /**
@@ -123,6 +135,13 @@ function idParam(req: FastifyRequest): string {
 
 async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOverview> {
   const { accountId, sessionId } = req.auth;
+  // A member's own login methods (its own login account); the account owner's are not theirs to see.
+  let methodsOf = accountId;
+  if (req.auth.memberId !== null) {
+    const m = await deps.db.query<{ member_account_id: string }>('select member_account_id from team_members where id = $1', [req.auth.memberId]);
+    if (!m.rows[0]) throw new ApiError(401, 'not-authenticated');
+    methodsOf = m.rows[0].member_account_id;
+  }
   const { rows } = await deps.db.query<{
     display_name: string;
     legacy_login_name: boolean;
@@ -139,8 +158,9 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
   );
   const row = rows[0];
   if (!row) throw new ApiError(401, 'not-authenticated');
-  const counts = await methodCounts(deps.db, accountId);
+  const counts = await methodCounts(deps.db, methodsOf);
   const now = deps.clock();
+  const member = req.auth.memberId !== null ? { name: req.auth.memberName ?? '', roles: [...req.auth.memberRoles] } : null;
   const held = row.level === 'recovery' && row.hold_until !== null && now.getTime() < row.hold_until.getTime();
   return {
     displayName: row.display_name,
@@ -150,12 +170,14 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     holdUntil: held ? row.hold_until!.toISOString() : null,
     stage: row.kind === 'trader' ? (await tradeCap(deps.db, accountId, now)).stage : null,
     methods: methodTypes(counts),
-    hasBackup: hasBackup(counts),
-    suggestions: suggestionsFor(counts),
-    logoutTimer: logoutTimerOf(row.kind, row.idle_hours),
+    // A member logs in with two factors by the staff rule: nothing to suggest, and only the account owner sets the timer.
+    hasBackup: member !== null ? true : hasBackup(counts),
+    suggestions: member !== null ? [] : suggestionsFor(counts),
+    logoutTimer: member !== null ? { idleHours: row.idle_hours, adjustable: false } : logoutTimerOf(row.kind, row.idle_hours),
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
+    member,
   };
 }
 
@@ -280,7 +302,8 @@ export function accountRoutes(app: FastifyInstance): void {
     },
   );
 
-  app.get('/v1/account/me', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) =>
+  // Every team member may read who they are and what they may do (Task 18).
+  app.get('/v1/account/me', { preHandler: requireSession({ ...readAny, allowStaleTerms: true, member: 'any' }) }, async (req) =>
     overview(deps(), req),
   );
 
@@ -376,10 +399,11 @@ export function accountRoutes(app: FastifyInstance): void {
 
   app.get('/v1/account/sessions', { preHandler: requireSession({ ...readAny, allowStaleTerms: true }) }, async (req) => {
     const d = deps();
-    const { rows } = await d.db.query<{ id: string; device_label: string; level: SessionLevel; created_at: Date; last_seen_at: Date }>(
-      `select id, device_label, level, created_at, last_seen_at from sessions
-        where account_id = $1 and revoked_at is null and expires_at > $2
-        order by last_seen_at desc, created_at desc, id`,
+    const { rows } = await d.db.query<{ id: string; device_label: string; level: SessionLevel; created_at: Date; last_seen_at: Date; member: string | null }>(
+      `select s.id, s.device_label, s.level, s.created_at, s.last_seen_at, tm.display_name as member
+         from sessions s left join team_members tm on tm.id = s.member_id
+        where s.account_id = $1 and s.revoked_at is null and s.expires_at > $2
+        order by s.last_seen_at desc, s.created_at desc, s.id`,
       [req.auth.accountId, d.clock()],
     );
     return rows.map((s) => ({
@@ -389,6 +413,8 @@ export function accountRoutes(app: FastifyInstance): void {
       createdAt: s.created_at.toISOString(),
       lastSeenAt: s.last_seen_at.toISOString(),
       current: s.id === req.auth.sessionId,
+      // Task 18: a team member's session names the member (the account owner can end it here too).
+      member: s.member,
     }));
   });
 

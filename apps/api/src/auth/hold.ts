@@ -492,6 +492,11 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'DELETE /v1/account/push',
   'POST /v1/account/alerts/:id/seen',
   'POST /v1/account/terms',
+  // Plan 2 Task 18 (team members), classified at its landing next to Tasks 16-17: the account
+  // owner's invites, role changes and removals (team/members.ts; the lock is the account's).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  'DELETE /v1/team/members/:id',
 ];
 
 /**
@@ -523,6 +528,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
+  'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
@@ -559,6 +566,13 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   'POST /v1/wallets',
   'DELETE /v1/wallets/:id',
   'POST /v1/account/approvals/:id',
+  // Plan 2 Task 18 (owner 2026-10-30): every team change waits out a hold; they also check it
+  // under the account lock (team/members.ts `ownerWriteGate`).
+  'POST /v1/team/invites',
+  'PATCH /v1/team/members/:id',
+  // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
+  // refused until then (see team/members.ts `ownerWriteGate`).
+  'DELETE /v1/team/members/:id',
 ];
 
 /**

@@ -20,7 +20,7 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { payMethodOf } from './paySeams.js';
 import { publicName } from './payTypes.js';
 import { useConfirmations } from './release/seams.js';
-import { registerTradeScreen, type TradeScreenProps } from './TradeRoom.js';
+import { registerTradeScreen, type MemberScreenProps } from './TradeRoom.js';
 import './pay.css';
 
 /** The return of a buyer's cancel is complete and the seller may confirm it (pure, for the screen and tests). */
@@ -28,7 +28,8 @@ export function confirmCancelReady(state: string, confirmations: number | null, 
   return state === 'refunded' && confirmations !== null && confirmations >= target;
 }
 
-export function SellerCancelConfirm({ code, view, refresh }: TradeScreenProps) {
+/** Never touches the escrow, so a team member's device shows it too (`forMembers`, Plan 2 Task 18 review round 2, n3). */
+export function SellerCancelConfirm({ code, view, refresh }: MemberScreenProps) {
   const method = payMethodOf(view);
   const buyer = publicName(view.counterparty);
   const got = useConfirmations(view);
@@ -136,4 +137,5 @@ registerTradeScreen({
   // seller has nothing to confirm (review I1; round 2 N1). The generic refunded slot shows it.
   when: (v) => v.settling === 'buyer-cancel' && v.paidAt === null,
   screen: SellerCancelConfirm,
+  forMembers: SellerCancelConfirm,
 });

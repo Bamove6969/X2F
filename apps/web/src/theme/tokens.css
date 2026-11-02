@@ -19,6 +19,7 @@
   --x2f-monero-ink-hover: #ffa060;
   --x2f-monero-hold: #ffc08a;
   --x2f-moderator: #b69cff;
+  --x2f-team: #7aa2ff;
 }
 
 :root[data-theme=day] {
@@ -38,15 +39,20 @@
   --x2f-monero-ink-hover: #9c3f00;
   --x2f-monero-hold: #f7a47a;
   --x2f-moderator: #6741d9;
+  --x2f-team: #2f5bd3;
 }
 
 :root {
   --x2f-space-1: 4px;
   --x2f-space-2: 8px;
+  --x2f-space-3: 12px;
   --x2f-space-4: 16px;
+  --x2f-space-5: 20px;
   --x2f-space-6: 24px;
+  --x2f-space-8: 32px;
   --x2f-radius-sm: 6px;
   --x2f-radius-md: 12px;
+  --x2f-radius-lg: 16px;
   --x2f-radius-pill: 999px;
   --x2f-font-display: "Familjen Grotesk", "Atkinson Hyperlegible Next", system-ui, sans-serif;
   --x2f-font-sans: "Atkinson Hyperlegible Next", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -60,6 +66,16 @@
   --x2f-title-size: 24px;
   --x2f-title-line: 30px;
   --x2f-title-weight: 600;
+  --x2f-sheet-title-family: var(--x2f-font-display);
+  --x2f-sheet-title-size: 24px;
+  --x2f-sheet-title-line: 30px;
+  --x2f-sheet-title-weight: 700;
+  --x2f-sheet-title-tracking: -0.01em;
+  --x2f-screen-title-family: var(--x2f-font-display);
+  --x2f-screen-title-size: 28px;
+  --x2f-screen-title-line: 32px;
+  --x2f-screen-title-weight: 700;
+  --x2f-screen-title-tracking: -0.01em;
   --x2f-heading-family: var(--x2f-font-sans);
   --x2f-heading-size: 18px;
   --x2f-heading-line: 24px;

@@ -47,19 +47,16 @@ export function Login() {
 
   if (waiting !== null) {
     return (
-      <main className="x2f-screen" data-screen="login">
-        <h1 className="x2f-screen__title">Log in</h1>
-        <ApproveOnDevice
-          key={waiting.approvalId}
-          wait={waiting}
-          returnTo={returnTo}
-          onLoggedIn={onLoggedIn}
-          onRestart={() => {
-            setWaiting(null);
-            setMethod('choose');
-          }}
-        />
-      </main>
+      <ApproveOnDevice
+        key={waiting.approvalId}
+        wait={waiting}
+        returnTo={returnTo}
+        onLoggedIn={onLoggedIn}
+        onRestart={() => {
+          setWaiting(null);
+          setMethod('choose');
+        }}
+      />
     );
   }
 
@@ -299,6 +296,7 @@ function PgpLogin({ onLoggedIn, onWait, onCantDo, pendingId: first }: Go & { pen
 function PasskeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState<Pending | null>(null);
 
   const go = async () => {
     setBusy(true);
@@ -307,13 +305,18 @@ function PasskeyLogin({ onLoggedIn, onWait, onCantDo }: Go) {
       const result = await loginWithPasskey(authApi, deviceLabel());
       if (result.status === 'ok') onLoggedIn();
       else if (result.status === 'approve-on-device') onWait(result);
-      else setError('This account needs a staff login. Use PGP or a security key.');
+      // Unreachable today (Plan 2 Task 18 review M8): discoverable passkey login accepts trader
+      // accounts only (the API's webauthn.ts), and a trader's passkey login is 'ok' or 'approve-on-device'. Should
+      // the API ever answer a second step here, show it: the server still decides every pair.
+      else setPending({ pendingId: result.pendingId, needs: result.needs });
     } catch (e) {
       if (!onCantDo(e)) setError(refusalText(e, 'That passkey did not work. Try again, or use another way in.'));
     } finally {
       setBusy(false);
     }
   };
+
+  if (pending !== null) return <SecondStep pending={pending} onLoggedIn={onLoggedIn} onWait={onWait} onCantDo={onCantDo} />;
 
   return (
     <section className="x2f-stack" data-part="passkey">

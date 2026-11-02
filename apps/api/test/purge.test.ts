@@ -4,9 +4,11 @@ import type { Deps } from '../src/app.js';
 import { purgeExpired } from '../src/auth/challenges.js';
 import { purgeChatsJob } from '../src/chat/retention.js';
 import { purgeFeedbackForm } from '../src/feedback/form.js';
+import { purgeFeedback } from '../src/feedback/mood.js';
 import { purgeNudges } from '../src/nudge/routes.js';
 import { RETENTION_JOBS } from '../src/retentionJobs.js';
 import { applyEvent } from '../src/trades/store.js';
+import { purgeTeamLeftovers } from '../src/team/members.js';
 import { TRADE_ADDRESS_RETENTION_MS, purgeTradeAddresses, purgeTradeAddressesJob } from '../src/trades/purge.js';
 import { purgeRemovedWalletAddresses } from '../src/wallets/routes.js';
 import { seedAccount } from './helpers/accounts.js';
@@ -146,7 +148,7 @@ describe('trade_events is append-only', () => {
 
 describe('retention scheduler jobs (X-12)', () => {
   it('runs purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddresses and purgeNudges', () => {
-    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm]);
+    expect(RETENTION_JOBS).toEqual([purgeExpired, purgeRemovedWalletAddresses, purgeTeamLeftovers, purgeTradeAddressesJob, purgeNudges, purgeChatsJob, purgeFeedbackForm, purgeFeedback]);
     expect(purgeTradeAddressesJob.name).toBe('purgeTradeAddresses');
   });
 });

@@ -235,6 +235,22 @@ describe('the /v1 check in the web catch-all', () => {
     },
   );
 
+  it('a mix of trailing dots and spaces still behaves like /v1/x', async () => {
+    const res = await app.inject({ method: 'GET', url: '/v1%20.%20.%09/x' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not-found' });
+  });
+
+  it('a long crafted first segment of dots and spaces is judged in linear time', async () => {
+    // '. . . … .x': a trailing-[.\s]+ regex tries every start and backtracks, quadratic in length.
+    const url = `/.${'%20.'.repeat(50_000)}x`;
+    const started = performance.now();
+    const res = await app.inject({ method: 'GET', url });
+    expect(performance.now() - started).toBeLessThan(1_000);
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-security-policy']).toBe(CSP);
+  });
+
   it('a path that only starts with the letters v1 is still the app page', async () => {
     const res = await app.inject({ method: 'GET', url: '/v1x' });
     expect(res.statusCode).toBe(200);

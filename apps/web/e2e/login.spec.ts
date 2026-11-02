@@ -3,6 +3,7 @@
 // screen first. WebAuthn (passkey, security key) runs against a CDP virtual authenticator — the
 // browser stand-in for Plan 2's soft authenticator. The API is stubbed per test with page.route.
 import { expect, test, type CDPSession, type Page, type Route } from '@playwright/test';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 const PGP_MESSAGE = '-----BEGIN PGP MESSAGE-----\n\nwcBMA0test\n-----END PGP MESSAGE-----\n';
 const FAKE_KEY = '-----BEGIN PGP PUBLIC KEY BLOCK-----\n\nmDMEtest\n-----END PGP PUBLIC KEY BLOCK-----\n';
@@ -222,13 +223,24 @@ test('an outage or a wait is not a miss: a neutral retry or the wait, and ten of
 test('passkey login via the virtual authenticator lands on returnTo', async ({ page }) => {
   await page.route('**/v1/account/me', json(overview()));
   await page.route('**/v1/login/webauthn/start', json({ challengeId: 'w1', options: AUTH_OPTIONS }));
-  await page.route('**/v1/login/webauthn/finish', json({ status: 'ok' }));
+  let finishes = 0;
+  await page.route('**/v1/login/webauthn/finish', (r) => {
+    finishes += 1;
+    return json({ status: 'ok' })(r);
+  });
+  const other: string[] = [];
+  page.on('request', (r) => {
+    if (/\/v1\/login\/(pgp|password|totp)/.test(r.url())) other.push(r.url());
+  });
 
   await page.goto(`${LOCAL}/login?returnTo=%2Fbuy`);
   await virtualAuthenticator(page);
   await page.click('[data-method="passkey"]');
   await page.click('[data-part="passkey-login"]');
   await expect(page).toHaveURL(/\/buy$/);
+  // Plan 2 Task 18 review M8: a trader's passkey login is one step, as before (no second step).
+  expect(finishes).toBe(1);
+  expect(other).toEqual([]);
 });
 
 test('security-key login by login name via the virtual authenticator lands on returnTo', async ({ page }) => {
@@ -454,3 +466,30 @@ test('a login refused during the 24-hour hold opens CantDoThat: this login waits
   await expect(popup).not.toContainText('can still be finished');
   await expect(page.locator('[data-part="login-error"]')).toHaveCount(0);
 });
+
+// C2-D1 (LoginApprove board, side=new): the waiting screen at phone sizes: no sideways scroll,
+// every control tappable, a 44 px back control, the number named by its label, and the steps open.
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`new-device approval at ${viewport}: the board's screen, phone layout and 44 px targets`, async ({ page }) => {
+    const id = '33333333-3333-4333-8333-333333333333';
+    await page.route('**/v1/login/password', json({ status: 'approve-on-device', approvalId: id, number: 47, expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+    await page.route(`**/v1/login/approval/${id}/poll`, json({ status: 'waiting', expiresAt: new Date(Date.now() + 300_000).toISOString() }));
+    await setPhone(page, viewport);
+    await page.goto('/login');
+    await page.click('[data-method="password"]');
+    await page.fill('#login-name', 'nightowl');
+    await page.fill('#login-password', 'Correct-Horse-9!');
+    await page.click('[data-part="password-login"]');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Log in');
+    await expect(page.locator('[data-part="approve-number"]')).toHaveText('47');
+    const where = page.getByRole('button', { name: 'Where do I approve it?' });
+    await where.click();
+    await expect(where).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('[data-part="approve-steps"] li')).toHaveCount(3);
+    await expectPhoneLayout(page);
+    for (const sel of ['[aria-label="Back to log in"]', '[data-part="approve-where"]', '[data-part="approve-cancel"]', '[data-part="approve-no-device"] [data-part="approve-backup"]']) {
+      const b = await page.locator(sel).boundingBox();
+      expect(Math.min(b!.width, b!.height), sel).toBeGreaterThanOrEqual(44);
+    }
+  });
+}

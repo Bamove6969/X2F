@@ -136,15 +136,16 @@ describe('the logged-in device (LoginApprove)', () => {
     );
     const sheet = document.body;
     expect(sheet.textContent).toContain('Someone is logging in on Chrome on Windows. Is this you?');
-    expect(sheet.textContent).toContain("Not shown: X2F doesn't log IP addresses.");
+    expect(sheet.textContent).toContain("Not shown. X2F doesn't log IP addresses, so we can't show where.");
     const choices = [...sheet.querySelectorAll('[data-part="approve-choice"]')].map((b) => b.textContent);
     expect(choices).toEqual(['31', '47', '86']);
     expect((part(sheet, 'approve-yes') as HTMLButtonElement).disabled).toBe(true);
-    click([...sheet.querySelectorAll('[data-part="approve-choice"]')][1]!);
+    click([...sheet.querySelectorAll('[data-part="approve-choice"] input')][1]!);
     click(part(sheet, 'approve-yes'));
     await settle();
     expect(calls.find((c) => c.method === 'POST')?.body).toEqual({ choice: 47 });
-    expect(part(sheet, 'approve-done')?.textContent).toContain('Chrome on Windows is logged in');
+    expect(part(sheet, 'approve-done')).not.toBeNull();
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Chrome on Windows is logged in');
   });
 
   it('"No, block it" blocks and suggests changing the login method', async () => {
@@ -175,16 +176,13 @@ describe('the logged-in device (LoginApprove)', () => {
       </MemoryRouter>,
     );
     expect(part(document.body, 'approve-at-limit')).not.toBeNull();
-    click([...document.body.querySelectorAll('[data-part="approve-choice"]')][1]!);
+    click([...document.body.querySelectorAll('[data-part="approve-choice"] input')][1]!);
     click(part(document.body, 'approve-yes'));
     await settle();
-    // The refusal goes through CantDoThat (Plan 5 Task 21); closing it shows the chooser.
-    expect(document.querySelector('[data-part="cant-do-that"]')?.getAttribute('data-from')).toBe('too-many-devices');
-    expect(document.querySelector('[data-part="cant-do-that"]')?.textContent).toContain('log out a device first');
-    click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
-    await settle();
+    // C2-D1 (LoginApprove board): no refusal popup at the limit; the chooser comes straight away.
+    expect(document.querySelector('[data-part="cant-do-that"]')).toBeNull();
     expect(part(document.body, 'approve-choose')?.textContent).toContain('Safari on iOS');
-    click(part(document.body, 'approve-out'));
+    click(document.body.querySelector('[data-part="approve-out"] input'));
     click(part(document.body, 'approve-out-yes'));
     await settle();
     expect(calls.filter((c) => c.method === 'POST').map((c) => c.body)).toEqual([
@@ -206,7 +204,7 @@ describe('the logged-in device (LoginApprove)', () => {
         <LoginApprove approval={VIEW} onDone={() => undefined} />
       </MemoryRouter>,
     );
-    click([...document.body.querySelectorAll('[data-part="approve-choice"]')][1]!);
+    click([...document.body.querySelectorAll('[data-part="approve-choice"] input')][1]!);
     click(part(document.body, 'approve-yes'));
     await settle();
     const popup = document.querySelector('[data-part="cant-do-that"]');
@@ -247,9 +245,13 @@ describe('Devices', () => {
       return undefined;
     };
     const prove = vi.fn(async () => 'T'.repeat(43));
-    const { host } = render(<Devices prove={prove} />);
+    const { host } = render(
+      <MemoryRouter>
+        <Devices prove={prove} />
+      </MemoryRouter>,
+    );
     await settle();
-    expect(part(host, 'devices-count')?.textContent).toBe('Logged in · 2 of 3');
-    expect(part(host, 'one-device-toggle')?.textContent).toBe('Off');
+    expect(part(host, 'devices-count')?.textContent).toBe('2 of 3 devices logged in');
+    expect(part(host, 'one-device-toggle')?.getAttribute('aria-checked')).toBe('false');
   });
 });
