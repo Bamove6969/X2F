@@ -78,7 +78,7 @@ describe('privilege matrix', () => {
       for (const c of CALLERS) {
         const res = await (await browserFor(c)).send(r.method, urlOf(r), r.body);
         const want = expected(c, r);
-        const error = (res.json() as { error?: string }).error;
+        const error = res.body === '' ? undefined : (res.json() as { error?: string }).error; // a 204 has no body
         if (want === 'allowed' && r.allowedAnswer) {
           // Past the guard, the route's own check answers (e.g. no valid tap): exactly that, never a guard refusal.
           expect({ status: res.statusCode, error }, `${c}: ${res.body}`).toEqual(r.allowedAnswer);

@@ -11,6 +11,8 @@ import { staffFeedbackRoutes } from './feedback.js';
 import { keyTapRoutes } from './keyTap.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
+import { staffSettingsRoutes } from './settings.js';
+import { staffSiteRoutes } from './site.js';
 
 /**
  * The moderation process as the staff API sees it (Plan 4 Task 11 builds it; until then nothing
@@ -109,6 +111,9 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   await staffLoginRoutes(app);
   // Plan 4 Task 5: security-key taps bound to an intent (each tapped action consumes its own).
   keyTapRoutes(app, { guard: requireStaff('self'), accountOf: (req) => req.staff.accountId });
+  // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
+  staffSettingsRoutes(app);
+  staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
