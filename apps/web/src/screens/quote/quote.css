@@ -355,6 +355,10 @@
   text-align: right;
 }
 
+.x2f-quote__row > :first-child {
+  flex-shrink: 0;
+}
+
 .x2f-quote__row--total {
   min-height: 52px;
   font-size: 16px;

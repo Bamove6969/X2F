@@ -66,8 +66,13 @@
   background: var(--x2f-surface);
 }
 
+/* A card that is also a form section keeps the card's 16 px gap. */
+.post-section.post-card {
+  gap: var(--x2f-space-4);
+}
+
 /* A card's heading ("Your price", "Who can trade with you"): 18/24 600 ink, not a small label. */
-.post-card-title {
+.post-label.post-card-title {
   font-size: var(--x2f-heading-size);
   line-height: var(--x2f-heading-line);
   font-weight: var(--x2f-heading-weight);

@@ -1011,5 +1011,6 @@ test('72 PostOffer', async ({ page }) => {
   await page.getByLabel('Smallest trade').fill('$50');
   await page.getByLabel('Largest trade').fill('$2,000');
   await expect(page.getByText("Your price follows the market")).toBeVisible();
-  await shot(page, '72-postoffer', { fullPage: true });
+  await shot(page, '72-postoffer');
+  await shot(page, '72b-postoffer-preview', { scrollTo: page.getByText('How others will see it') });
 });
