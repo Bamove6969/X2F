@@ -192,8 +192,8 @@
 }
 
 .x2f-quote__wallet[data-on] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface);
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 
 /*
@@ -215,11 +215,11 @@
 }
 
 .x2f-quote__wallet input:checked {
-  background-image: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-monero) calc(100% - 2px));
+  background-image: radial-gradient(circle closest-side, var(--x2f-ink) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-ink) calc(100% - 2px));
 }
 
 .x2f-quote__wallet input:focus-visible {
-  outline: 2px solid var(--x2f-monero);
+  outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
 }
 

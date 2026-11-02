@@ -1,0 +1,104 @@
+// Design review 1 Nov 2026, X1 / top-10 item 5, and the design conventions (2 Nov): selection is
+// never orange. Selected tiles, chips, radio cards and segments take a 2 px ink border on the
+// raised surface; checkboxes and radios take ink. Orange (--x2f-monero, --x2f-monero-ink) is kept
+// for the one primary action per screen, links, the XMR unit label and the release hold.
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { describe, expect, it } from 'vitest';
+
+const SRC = fileURLToPath(new URL('../src/', import.meta.url));
+
+function cssFiles(dir: string): string[] {
+  return readdirSync(dir).flatMap((n) => {
+    const p = join(dir, n);
+    return statSync(p).isDirectory() ? cssFiles(p) : n.endsWith('.css') ? [p] : [];
+  });
+}
+
+interface Rule {
+  file: string;
+  selector: string;
+  body: string;
+}
+
+/** Innermost rules (a selector and a body with no braces), so rules inside @media are found too. */
+function rules(): Rule[] {
+  const out: Rule[] = [];
+  for (const f of cssFiles(SRC)) {
+    const file = relative(SRC, f);
+    if (file === 'theme/tokens.css') continue;
+    const css = readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    for (const m of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+      out.push({ file, selector: m[1]!.trim().replace(/\s+/g, ' '), body: m[2]! });
+    }
+  }
+  return out;
+}
+
+/** A selector for a chosen, checked, pressed or current state. */
+const SELECTED = /\[aria-(checked|selected|pressed|current)|:checked|\[data-on|__on\b|--on\b/;
+const ACCENT = /var\(--x2f-monero(-ink|-ink-hover)?\)/;
+
+/**
+ * Selected states that stay orange for now because the screen is owned by another branch
+ * (C2-D2 brief: My offers and the tab bar are the lead's, the dispute screens are claude3's).
+ */
+const OWNED_ELSEWHERE = [
+  'screens/dispute/dispute.css .dispute-reason[data-on=\'true\']',
+  'screens/dispute/dispute.css .dispute-reason input:checked',
+  'ui/ui.css .x2f-bottom-nav__tab[aria-current=\'page\']',
+];
+
+/** Every orange use that is not a selected state: one primary action, links, the XMR unit, the hold. */
+const ORANGE_ALLOWED = [
+  // The one primary action per screen and the press-and-hold release button.
+  'ui/ui.css .x2f-button--primary',
+  'ui/ui.css .x2f-hold',
+  'ui/ui.css .x2f-hold:not(:disabled):hover, .x2f-hold[data-holding=\'true\']',
+  // Links and text buttons (boards: a { color: var(--monero-ink) }).
+  'ui/ui.css .x2f-link',
+  'ui/ui.css .x2f-link:hover',
+  'screens/browse/browse.css .x2f-text-button',
+  'screens/browse/browse.css .x2f-text-button:hover',
+  'screens/setup/setup.css .x2f-start__textbutton',
+  'screens/setup/setup.css .x2f-start__textbutton:hover',
+  'screens/quote/quote.css .x2f-quote__switch, .x2f-quote__max',
+  'screens/quote/quote.css .x2f-quote__add',
+  'screens/dispute/dispute.css .dispute-retry',
+  // The XMR unit label (tokens.json monero-ink usage; BuyQuote board).
+  'ui/ui.css .x2f-amount__unit',
+  'screens/quote/quote.css .x2f-quote__xmr-unit',
+  // Owned elsewhere (see OWNED_ELSEWHERE): the dispute radio's focus ring.
+  'screens/dispute/dispute.css .dispute-reason input:focus-visible',
+];
+
+describe('selection is ink, never orange', () => {
+  it('no selected-state rule uses the orange accent', () => {
+    const orange = rules()
+      .filter((r) => SELECTED.test(r.selector) && ACCENT.test(r.body))
+      .map((r) => `${r.file} ${r.selector}`);
+    expect(orange.sort()).toEqual([...OWNED_ELSEWHERE].sort());
+  });
+
+  it('every checkbox and radio accent is ink', () => {
+    const accents = rules().flatMap((r) =>
+      [...r.body.matchAll(/accent-color:\s*([^;]+)/g)].map((m) => `${r.file} ${r.selector}: ${m[1]!.trim()}`),
+    );
+    expect(accents.filter((a) => !a.endsWith(': var(--x2f-ink)'))).toEqual([]);
+    expect(accents).toContain("theme/base.css input[type='checkbox'], input[type='radio']: var(--x2f-ink)");
+  });
+
+  it('orange is only on the primary action, links, the XMR unit and the release hold', () => {
+    const uses = rules()
+      .filter((r) => ACCENT.test(r.body) && !OWNED_ELSEWHERE.includes(`${r.file} ${r.selector}`))
+      .map((r) => `${r.file} ${r.selector}`);
+    expect([...new Set(uses)].sort()).toEqual([...ORANGE_ALLOWED].sort());
+  });
+
+  it('the input focus ring is ink, like every other focus ring', () => {
+    const rings = rules()
+      .filter((r) => r.selector.includes(':focus') && /outline:/.test(r.body) && ACCENT.test(r.body));
+    expect(rings.map((r) => `${r.file} ${r.selector}`)).toEqual(['screens/dispute/dispute.css .dispute-reason input:focus-visible']);
+  });
+});
