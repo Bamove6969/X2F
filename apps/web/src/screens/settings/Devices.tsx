@@ -359,12 +359,12 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     </span>
                   </span>
                   <Switch
-                    on={settings.oneDevice}
-                    onToggle={() => void toggle()}
-                    labelledBy="devices-one-l"
-                    describedBy="devices-one-d"
+                    checked={settings.oneDevice}
+                    onClick={() => void toggle()}
+                    aria-labelledby="devices-one-l"
+                    aria-describedby="devices-one-d"
                     disabled={busy || prove === undefined}
-                    part="one-device-toggle"
+                    data-part="one-device-toggle"
                   />
                 </div>
                 {held !== null ? (
