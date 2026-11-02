@@ -1,5 +1,6 @@
 import { reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
+import { PURGE_ROLE } from '../trades/purge.js';
 import { getMethod } from '../methods/profiles.js';
 
 /**
@@ -13,6 +14,21 @@ import { getMethod } from '../methods/profiles.js';
  */
 
 /**
+ * SQL (boolean): the trade (alias `t`) was OVERTURNED (owner 2026-11-02: "if the trade is
+ * OVERTURNED like it never happened, then the feedback is ERASED. If all ends well and finishes like
+ * a normal trade after the dispute, the feedback remains"). In today's code "overturned" is Plan 4's
+ * `Dispute.overturned` (packages/staff/src/dispute.ts `resolveFinal`): an appeal's round-2 ruling
+ * whose outcome differs from round 1's ("Decision overruled"), on any of the trade's disputes. It
+ * is read from the trader-facing `dispute_rulings` rows (108), which Plan 4 writes when a ruling is
+ * published (round 2 is final at once), so it needs no Plan 4 column. A dispute without an appeal,
+ * or an appeal that keeps round 1's outcome ("Decision stands"), is a normal finish: not overturned.
+ */
+export const overturnedSql = (t: string): string => `exists (
+    select 1 from dispute_rulings r2
+      join dispute_rulings r1 on r1.code = r2.code and r1.seq = r2.seq and r1.round = 1
+     where r2.code = ${t}.code and r2.round = 2 and r2.outcome <> r1.outcome)`;
+
+/**
  * When the trade (alias `t`) became reviewable, as SQL (timestamptz, null while it is not), P5-A3 and
  * P5-A5:
  * - a trade that never had a dispute: only `released`, from its close;
@@ -22,9 +38,12 @@ import { getMethod } from '../methods/profiles.js';
  *   dispute's end (`disputes.closed_at`, else its latest ruling's time).
  * A dispute still `ruled` inside or after its appeal window is not done: Plan 4 moves it to `final`
  * (fail-safe: not reviewable, so it blocks nothing, until then).
+ * An OVERTURNED trade (`overturnedSql`) is never reviewable again: its reviews are erased
+ * (`eraseOverturnedReviews`) and the gate no longer counts it (owner 2026-11-02).
  */
 export const reviewableSinceSql = (t: string): string => `(case
   when ${t}.closed_at is null or ${t}.state = 'disputed' then null
+  when ${overturnedSql(t)} then null
   when ${t}.dispute_by is null and not exists (select 1 from disputes d where d.code = ${t}.code)
     then case when ${t}.state = 'released' then ${t}.closed_at end
   when exists (select 1 from disputes d where d.code = ${t}.code)
@@ -148,4 +167,37 @@ export async function detachReviews(q: Queryable, code: string): Promise<number>
     [code],
   );
   return r.rowCount ?? 0;
+}
+
+/**
+ * C12 (owner 2026-11-02): the reviews of an OVERTURNED trade (`overturnedSql`) are ERASED: its
+ * reviews and its Skip review rows are deleted, so nothing of them shows anywhere, and the trade is
+ * no longer reviewable (`reviewableSinceSql`), so the gate and the pending list leave it out.
+ *
+ * SEAM for Plan 4 (NEEDS_PLAN_4_OVERTURN_ERASES_REVIEWS, apps/api/test/reviews-tripwire.test.ts):
+ * call it with the transaction's client in the SAME transaction that records the overturning
+ * round-2 ruling (the `dispute_rulings` round-2 row), after that write. It must run in a transaction.
+ *
+ * - Lock order: the trade row first (FOR UPDATE), like the review and skip routes
+ *   (routes.ts `reviewableSide`), so a review submitted meanwhile either commits first and is
+ *   deleted here, or waits and then finds the trade not reviewable (409 `not-reviewable`). The lock
+ *   is taken under the caller's role (FOR UPDATE needs update rights x2f_purge does not have).
+ * - The deletes run as x2f_purge (`set local role`), the one role 301's reviews_final trigger lets
+ *   delete a review (308 grants it review_skips); the caller's role is put back afterwards for the
+ *   rest of its transaction. No trigger is changed.
+ * - Only an overturned trade is touched: for any other trade (a normal finish after a dispute keeps
+ *   its reviews) it deletes nothing. Idempotent: a second call deletes nothing.
+ *
+ * Returns how many reviews and skips were deleted.
+ */
+export async function eraseOverturnedReviews(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
+  const { rows } = await q.query<{ overturned: boolean }>(`select ${overturnedSql('t')} as overturned from trades t where t.code = $1 for update`, [code]);
+  if (rows[0]?.overturned !== true) return { reviews: 0, skips: 0 };
+  const { rows: role } = await q.query<{ r: string }>(`select current_setting('role') as r`);
+  // PURGE_ROLE is a compile-time constant (an SQL identifier, not a bound parameter).
+  await q.query(`set local role ${PURGE_ROLE}`);
+  const reviews = await q.query('delete from reviews where trade_code = $1', [code]);
+  const skips = await q.query('delete from review_skips where trade_code = $1', [code]);
+  await q.query(`select set_config('role', $1, true)`, [role[0]!.r]);
+  return { reviews: reviews.rowCount ?? 0, skips: skips.rowCount ?? 0 };
 }
