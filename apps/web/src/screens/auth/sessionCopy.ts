@@ -26,7 +26,7 @@ export const SESSION_COPY = {
   extendBody: (h: number) => `Your ${h}-hour session is up. Confirm it's you to stay logged in for another ${h} hours.`,
   loggingOutIn: 'Logging out in ',
   stayLoggedIn: 'Stay logged in',
-  logOut: 'Log out',
+  // The "Log out" words stay beside the logOut(env) call in SessionPrompt.tsx (test/logout-tripwire.test.ts).
   extended: (h: number) => `You're logged in for another ${h} h.`,
   // Not on the board (a fault): the extend call failed after the proof.
   extendFailed: 'Could not keep you logged in. Try again.',

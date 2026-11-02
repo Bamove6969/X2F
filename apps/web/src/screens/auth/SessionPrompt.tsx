@@ -29,6 +29,9 @@ import { SESSION_COPY as C } from './sessionCopy.js';
 
 type Phase = 'wait' | 'ask' | 'extended' | 'out';
 
+// COPY-UNSIGNED (SessionExtend board); kept beside its logOut(env) call (logout tripwire).
+const LOG_OUT = 'Log out';
+
 export function SessionPrompt() {
   const watch = useSessionWatch();
   const [phase, setPhase] = useState<Phase>('wait');
@@ -120,7 +123,7 @@ export function SessionPrompt() {
           }}
           data-part="session-log-out"
         >
-          {C.logOut}
+          {LOG_OUT}
         </Button>
       </div>
     </Sheet>
