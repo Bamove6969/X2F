@@ -711,3 +711,121 @@ describe('review round 5 (2026-10-30)', () => {
     for (const s of ['paid 0.12345678 Sol', 'paid 0.12345678 ada', 'call me 347.1234567 TRY']) expect(detectSensitiveText(s), s).toEqual(['phone']);
   });
 });
+
+describe('owner answers (2026-11-02)', () => {
+  it('item 34/36: UPI IDs are masked in proofs and refused in notes (one flag, on)', () => {
+    expect(UPI_IDS).toBe(true);
+    expect(masked(ocr('UPI jane@okaxis'))).toEqual([['jane@okaxis', 'account']]);
+    expect(detectSensitiveText('jane@okaxis')).toEqual(['account']);
+    expect(detectSensitiveText('pay me on jane@okaxis next time')).toEqual(['account']);
+  });
+
+  it('item 37: 15- and 16-digit numbers separated by dashes are caught', () => {
+    for (const n of ['4111-1111-1111-1111', '3782-822463-10005', '1234-5678-9012-3456', '12345-67890-12345', '4111–1111–1111–1111', '4111 - 1111 - 1111 - 1111']) {
+      expect(maskedTexts(ocr(`Card ${n}`)), n).toEqual(n.split(' '));
+      expect(detectSensitiveText(`my card ${n}`), n).not.toEqual([]);
+    }
+    expect(masked(ocr('Card 4111-1111-1111-1111'))).toEqual([['4111-1111-1111-1111', 'card']]);
+    expect(masked(ocr('Card 3782-822463-10005'))).toEqual([['3782-822463-10005', 'card']]);
+    expect(detectSensitiveText('card 4111-1111-1111-1111')).toEqual(['card']);
+    expect(detectSensitiveText('card 1234-5678-9012-3456')).toEqual(['account']);
+  });
+
+  it("item 37: '+'-led numbers (phones) are caught", () => {
+    for (const p of ['+447700900123', '+14155550134', '+1-415-555-0134', '+44 7700 900123', '+33 6 12 34 56 78', '+34 612 345 678', '+91-98765-43210', '+49.30.1234567']) {
+      expect(maskedTexts(ocr(`Tel ${p}`)), p).toEqual(p.split(' '));
+      expect(masked(ocr(`Tel ${p}`))[0]?.[1], p).toBe('phone');
+      expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
+    }
+    // The thousands-separator allowance of item 29 never covers a '+'-led number.
+    expect(detectSensitiveText('call +34 612 345 678')).toEqual(['phone']);
+    expect(detectSensitiveText('call +34.612.345.678')).toEqual(['phone']);
+    expect(detectSensitiveText('call +61 (0)412 345 678')).toEqual(['phone']);
+  });
+
+  it('item 29: notes allow numbers with thousands separators up to 9 digits', () => {
+    for (const s of [
+      'Paid 250,000 COP, smooth',
+      'sent 1,250,000 IDR',
+      'about 123,456,789 VND',
+      '250.000 COP',
+      '1.250.000 IDR',
+      '1 250 000 IDR',
+      '250 000',
+      '1,250,000.50 COP',
+      '1.250.000,50 COP',
+      'bought 1,000,000 sats worth',
+    ]) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+  });
+
+  it('item 29: longer grouped numbers, card-length numbers and plain long runs are still refused', () => {
+    // Commas are not refused today in any length (item 37: other separators stay best effort), so
+    // these use '.' and spaces, which are.
+    for (const s of ['1.234.567.890', '1 234 567 890', '4.111.111.111.111.111', '411 111 111 111 111', '4111 1111 1111 1111', '250000 COP', '1250000', 'acct 12345678']) {
+      expect(detectSensitiveText(s), s).not.toEqual([]);
+    }
+    // Not a thousands grouping: groups that are not 3 digits, a leading zero, mixed separators.
+    for (const s of ['012 345 678', '1.2345.678', '12.34.567', '1 250.000 000']) {
+      expect(detectSensitiveText(s), s).not.toEqual([]);
+    }
+  });
+
+  it('item 29: proof images are unchanged (a grouped number is still masked)', () => {
+    expect(maskedTexts(ocr('Ref 1 250 000'))).toEqual(['1', '250', '000']);
+    expect(maskedTexts(ocr('Ref 1.250.000'))).toEqual(['1.250.000']);
+  });
+
+  it('item 30: name labels in the other languages mask the name after them', () => {
+    const lines: Array<[string, string]> = [
+      ['es', 'Beneficiario: María García'],
+      ['es', 'Titular de la cuenta: María García'],
+      ['es', 'Destinatario María García'],
+      ['de', 'Empfänger: Max Mustermann'],
+      ['de', 'Kontoinhaber: Max Mustermann'],
+      ['de', 'Zahlungsempfänger Max Mustermann'],
+      ['fr', 'Bénéficiaire: Jean Dupont'],
+      ['fr', 'Titulaire du compte: Jean Dupont'],
+      ['fr', 'Destinataire Jean Dupont'],
+      ['nl', 'Begunstigde: Jan Jansen'],
+      ['nl', 'Rekeninghouder: Jan Jansen'],
+      ['nl', 'Ontvanger Jan Jansen'],
+      ['it', 'Intestatario: Mario Rossi'],
+      ['it', 'Beneficiario: Mario Rossi'],
+      ['it', 'Ordinante Mario Rossi'],
+      ['pt', 'Favorecido: João Silva'],
+      ['pt', 'Beneficiário: João Silva'],
+      ['pt', 'Destinatário João Silva'],
+    ];
+    for (const [lang, line] of lines) {
+      const name = line.split(' ').slice(-2);
+      expect(masked(ocr(line)), `${lang}: ${line}`).toEqual(name.map((t) => [t, 'name']));
+    }
+  });
+
+  it('item 30: OCR that drops the accents still finds the label', () => {
+    expect(maskedTexts(ocr('Beneficiaire: Jean Dupont'))).toEqual(['Jean', 'Dupont']);
+    expect(maskedTexts(ocr('Empfanger: Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+  });
+
+  it('item 30: a foreign label alone on its line masks the next line, and a later label needs its colon', () => {
+    expect(maskedTexts(ocr('Empfänger', 'Max Mustermann', 'SEPA'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Estado: OK Beneficiario: Ana Costa'))).toEqual(['Ana', 'Costa']);
+    expect(maskedTexts(ocr('Statut: OK Nom : Jean Dupont'))).toEqual(['Jean', 'Dupont']);
+  });
+
+  it('item 30: short foreign prepositions count only with a colon', () => {
+    expect(maskedTexts(ocr('De: Juan Pérez'))).toEqual(['Juan', 'Pérez']);
+    expect(maskedTexts(ocr('Von: Max Mustermann'))).toEqual(['Max', 'Mustermann']);
+    expect(maskedTexts(ocr('Aan: Jan Jansen'))).toEqual(['Jan', 'Jansen']);
+    expect(maskedTexts(ocr('De nada, gracias'))).toEqual([]);
+    expect(maskedTexts(ocr('Van harte bedankt'))).toEqual([]);
+    expect(maskedTexts(ocr('A tiempo y sin problemas'))).toEqual([]);
+  });
+
+  it('item 30: a label inside a longer word is not a label', () => {
+    expect(maskedTexts(ocr('Nombres de prueba'))).toEqual([]);
+    expect(maskedTexts(ocr('Titularidad verificada'))).toEqual([]);
+  });
+});
