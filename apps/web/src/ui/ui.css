@@ -189,6 +189,7 @@
 .x2f-when {
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 /* Amounts (TradeFund board). */
@@ -670,7 +671,8 @@
 }
 
 .x2f-panel > .x2f-button,
-.x2f-panel > a.x2f-button {
+.x2f-panel > a.x2f-button,
+.x2f-panel > .x2f-chip {
   align-self: flex-start;
 }
 
@@ -834,6 +836,12 @@
   border: 2px solid var(--x2f-escrow);
   border-radius: var(--x2f-radius-pill);
   color: var(--x2f-escrow);
+}
+
+.x2f-done__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
 }
 
 .x2f-done__title:focus {
@@ -1099,6 +1107,8 @@
 
 /* A long message box (Feedback board): 12px padding, radius 12, body text, no resize handle. */
 .x2f-input--message.x2f-input {
+  height: auto;
+  min-height: calc(9 * 24px + 26px);
   padding: 12px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-ground);

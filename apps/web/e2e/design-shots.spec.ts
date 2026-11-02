@@ -704,7 +704,10 @@ test('47 Released (Task 24): the buyer\'s view', async ({ page }) => {
 });
 
 test("48 the buyer's refunded trade: why, and the 48-hour Open a dispute", async ({ page }) => {
-  const v = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', closedAt: new Date(Date.parse(SERVER_NOW) - 10 * 3_600_000).toISOString(), txHash: 'ab'.repeat(32) });
+  // The buyer's view of satoshi_ghost's trade (review 48: not mira.k), with the time-ran-out timeline in order.
+  const ago = (min: number) => new Date(Date.parse(SERVER_NOW) - min * 60_000).toISOString();
+  const base = sellerView({ role: 'buyer', state: 'refunded', settling: 'auto-refund', payBy: ago(620), finalAlertAt: ago(615), closedAt: ago(600), txHash: 'ab'.repeat(32) });
+  const v = { ...base, counterparty: { ...base.counterparty, displayName: 'satoshi_ghost' } };
   await openRoom(page, v);
   await expect(page.getByRole('link', { name: 'Open a dispute' })).toBeVisible();
   await shot(page, '48-trade-buyer-refunded');

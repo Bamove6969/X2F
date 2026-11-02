@@ -140,19 +140,21 @@ export function Feedback() {
     return (
       <main className="x2f-page" data-screen="feedback">
         {header}
-        <div className="x2f-done" data-part="feedback-thanks" role="status">
+        <div className="x2f-done">
           <span className="x2f-done__mark">
             <Icon name="check" size={32} stroke={2} />
           </span>
-          <h1 className="x2f-title x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
-            {THANKS_HEAD}
-          </h1>{' '}
-          <p className="x2f-sheet__body">{THANKS_BODY}</p>
+          <div className="x2f-done__text" data-part="feedback-thanks" role="status">
+            <h1 className="x2f-title x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
+              {THANKS_HEAD}
+            </h1>{' '}
+            <p className="x2f-sheet__body">{THANKS_BODY}</p>
+          </div>
+          {/* The board's line under the thanks: who it was sent as. */}
+          <p className="x2f-small" data-part="feedback-sent-as">
+            {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
+          </p>
         </div>
-        {/* The board's line under the thanks: who it was sent as. */}
-        <p className="x2f-footnote" data-part="feedback-sent-as">
-          {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
-        </p>
         <footer className="x2f-page__footer">
           <Button variant="primary" onClick={back}>
             Done
