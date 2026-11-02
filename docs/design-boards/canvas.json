@@ -46,7 +46,7 @@
       "y": 9276
     },
     "BuyerPay.dc.html": {
-      "h": 844,
+      "h": 1076,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 Buyer pays and uploads proof",
@@ -406,7 +406,7 @@
       "x": 5730,
       "y": 17400,
       "w": 390,
-      "h": 900,
+      "h": 1030,
       "page": "all",
       "title": "A8 \u00b7 Refunded",
       "is_interactive": true
