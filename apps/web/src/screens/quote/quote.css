@@ -10,37 +10,58 @@
   color: var(--x2f-ink);
 }
 
+/* Header (BuyQuote board, v2): back and Chat on a 44 px row, then the "Zelle · USD · rate" line,
+   then the screen title (the kit's screen-title). The line is drawn above the title; the reading
+   order stays title, then line. */
 .x2f-quote__header {
-  display: flex;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto;
+  grid-template-areas:
+    'back . chat'
+    'sub sub sub'
+    'title title title';
   align-items: center;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
-  border-bottom: 1px solid var(--x2f-surface-raised);
+  padding: var(--x2f-space-2) var(--x2f-space-4) var(--x2f-space-4);
+}
+
+.x2f-quote__header > .x2f-icon-button {
+  grid-area: back;
+  margin-left: -10px;
+  border-radius: var(--x2f-radius-md);
 }
 
 .x2f-quote__head-text {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  min-width: 0;
+  display: contents;
+}
+
+.x2f-quote__head-text > .x2f-quote__muted-sm {
+  grid-area: sub;
+  margin-top: var(--x2f-space-2);
+  line-height: 16px;
 }
 
 .x2f-quote__title {
-  font-size: 16px;
-  font-weight: 600;
+  grid-area: title;
+  margin-top: var(--x2f-space-1);
   overflow-wrap: anywhere;
 }
 
+/* Chat: a 44 px pill on surface with the chat icon. */
 .x2f-quote__chat {
+  grid-area: chat;
   display: flex;
   align-items: center;
+  gap: var(--x2f-space-2);
   height: 44px;
-  padding: 0 var(--x2f-space-2);
+  margin-right: -10px;
+  padding: 0 14px;
   border: 0;
-  background: transparent;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-surface);
   color: var(--x2f-ink);
   font-family: inherit;
   font-size: 15px;
+  font-weight: 600;
 }
 
 .x2f-quote__chat[aria-disabled='true'] {
@@ -82,7 +103,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-4);
-  padding: var(--x2f-space-4);
+  padding: 0 var(--x2f-space-4) var(--x2f-space-6);
 }
 
 .x2f-quote__amount {
@@ -100,6 +121,7 @@
 .x2f-quote__label {
   padding: 0;
   font-size: 13px;
+  line-height: 16px;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -124,9 +146,10 @@
   gap: var(--x2f-space-2);
   height: 56px;
   padding: 0 14px;
+  box-sizing: border-box;
   border: 1px solid var(--x2f-line);
   border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface);
+  background: var(--x2f-surface-raised);
 }
 
 .x2f-quote__box[data-bad] {
@@ -143,6 +166,7 @@
   color: var(--x2f-ink);
   font-family: var(--x2f-font-mono);
   font-size: 24px;
+  font-weight: 500;
 }
 
 .x2f-quote__sign {
@@ -152,13 +176,15 @@
 }
 
 .x2f-quote__unit {
-  font-size: 15px;
+  font-size: 16px;
+  font-weight: 600;
   color: var(--x2f-ink-muted);
 }
 
 .x2f-quote__help {
   margin: 0;
   font-size: 13px;
+  line-height: 18px;
   color: var(--x2f-ink-muted);
 }
 
@@ -180,20 +206,24 @@
   padding-bottom: var(--x2f-space-2);
 }
 
+/* A wallet card (BuyQuote board, v2): 64 px on surface; the picked one is a 2 px ink border on
+   surface-raised, never orange. */
 .x2f-quote__wallet {
   display: flex;
   align-items: center;
-  gap: 12px;
-  min-height: 56px;
-  padding: var(--x2f-space-2) 14px;
-  border: 2px solid var(--x2f-surface-raised);
+  gap: 14px;
+  min-height: 64px;
+  box-sizing: border-box;
+  padding: 10px var(--x2f-space-4);
+  border: 2px solid transparent;
   border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
   cursor: pointer;
 }
 
 .x2f-quote__wallet[data-on] {
-  border-color: var(--x2f-monero);
-  background: var(--x2f-surface);
+  border-color: var(--x2f-ink);
+  background: var(--x2f-surface-raised);
 }
 
 /*
@@ -215,11 +245,11 @@
 }
 
 .x2f-quote__wallet input:checked {
-  background-image: radial-gradient(circle closest-side, var(--x2f-monero) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-monero) calc(100% - 2px));
+  background-image: radial-gradient(circle closest-side, var(--x2f-ink) 0 5px, transparent 5.5px calc(100% - 2px), var(--x2f-ink) calc(100% - 2px));
 }
 
 .x2f-quote__wallet input:focus-visible {
-  outline: 2px solid var(--x2f-monero);
+  outline: 2px solid var(--x2f-ink);
   outline-offset: 2px;
 }
 
@@ -232,7 +262,8 @@
 }
 
 .x2f-quote__wallet-name {
-  font-size: 15px;
+  font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
   overflow-wrap: anywhere;
 }
@@ -240,18 +271,36 @@
 .x2f-quote__add {
   display: flex;
   align-items: center;
+  align-self: flex-start;
   height: 44px;
   font-size: 15px;
+  font-weight: 600;
   color: var(--x2f-monero-ink);
 }
 
+/* What you get (BuyQuote board, v2): a 16 px card, 20 px padding. */
 .x2f-quote__card {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-4);
-  padding: var(--x2f-space-4);
-  border-radius: var(--x2f-radius-md);
+  padding: var(--x2f-space-5);
+  border-radius: var(--x2f-radius-lg);
   background: var(--x2f-surface);
+}
+
+/* "You receive": the card's heading (18/24 600 ink), not a small label. */
+.x2f-quote__figure > .x2f-quote__label {
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__figure > .x2f-quote__muted-sm {
+  font-size: 14px;
+  line-height: 20px;
 }
 
 .x2f-quote__figure {
@@ -262,28 +311,44 @@
 
 .x2f-quote__xmr {
   font-family: var(--x2f-font-mono);
-  font-size: 28px;
-  line-height: 32px;
+  font-size: 40px;
+  line-height: 44px;
   font-weight: 500;
+  letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
 }
 
 .x2f-quote__xmr-unit {
+  font-family: var(--x2f-font-sans);
   font-size: 18px;
+  line-height: 24px;
+  font-weight: 600;
+  letter-spacing: 0;
   color: var(--x2f-monero-ink);
 }
 
+/* The rows: one 12 px surface-raised block, 48 px rows, a 1 px inset rule between rows. */
 .x2f-quote__rows {
   display: flex;
   flex-direction: column;
-  gap: var(--x2f-space-2);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
   font-size: 14px;
+  line-height: 20px;
 }
 
 .x2f-quote__row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: var(--x2f-space-2);
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 0 14px;
+}
+
+.x2f-quote__row + .x2f-quote__row {
+  background: linear-gradient(var(--x2f-surface), var(--x2f-surface)) top center / calc(100% - 28px) 1px no-repeat;
 }
 
 .x2f-quote__row > :last-child {
@@ -291,13 +356,31 @@
 }
 
 .x2f-quote__row--total {
+  min-height: 52px;
   font-size: 16px;
+  line-height: 22px;
   font-weight: 600;
 }
 
+/* The old rule above the total: the rows draw their own rules now. */
 .x2f-quote__rule {
-  height: 1px;
+  display: none;
+}
+
+.x2f-quote__rule + .x2f-quote__row {
+  background: linear-gradient(var(--x2f-surface), var(--x2f-surface)) top center / calc(100% - 28px) 1px no-repeat;
+}
+
+/* "Nothing changes after you tap Trade…": the kit Notice (plain) as the board's info box. */
+.x2f-quote__main .x2f-outcome[data-tone='plain'] {
+  padding: var(--x2f-space-3) 14px;
+  border-color: color-mix(in srgb, var(--x2f-ink-muted) 30%, transparent);
   background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+.x2f-quote__main .x2f-outcome[data-tone='plain'] .x2f-outcome__icon {
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-quote__muted {
@@ -322,7 +405,11 @@
 }
 
 .x2f-quote__fine--center {
-  font-size: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  font-size: 13px;
   line-height: 16px;
   text-align: center;
 }
@@ -336,9 +423,10 @@
 .x2f-quote__footer {
   display: flex;
   flex-direction: column;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
+  gap: var(--x2f-space-1);
+  padding: var(--x2f-space-4) var(--x2f-space-4) var(--x2f-space-2);
   border-top: 1px solid var(--x2f-surface-raised);
+  background: var(--x2f-ground);
 }
 
 /* Windows high contrast drops gradient drawings: fall back to the native radio. */

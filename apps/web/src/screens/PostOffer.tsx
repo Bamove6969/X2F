@@ -240,79 +240,81 @@ export function PostOffer() {
         <Link to={closePath(location.state)} aria-label="Close" className="post-close">
           <Icon name="close" size={22} />
         </Link>
-        <h1>Post an offer</h1>
+        <h1 className="x2f-screen-title">Post an offer</h1>
       </header>
 
       <main className="post-main">
-        <section className="post-section">
-          <span className="post-label" id={`${ids}-side`}>
-            I want to
-          </span>
-          <RadioChips label={{ by: `${ids}-side` }} options={SIDES} value={form.side} onChange={(v) => set('side', v)} className="post-two post-choices" />
-        </section>
+        <div className="post-card">
+          <section className="post-section">
+            <span className="post-label" id={`${ids}-side`}>
+              I want to
+            </span>
+            <RadioChips label={{ by: `${ids}-side` }} options={SIDES} value={form.side} onChange={(v) => set('side', v)} className="post-two post-choices" />
+          </section>
 
-        <section className="post-method-row">
-          {methods.kind === 'failed' ? (
-            <div className="post-field">
-              <span>Payment method</span>
-              <span className="post-error post-load-failed">{METHODS_FAILED}</span>
-              <Button variant="secondary" onClick={retryMethods}>
-                Retry
-              </Button>
-            </div>
-          ) : (
-            field(
-              'method',
-              'Payment method',
-              <select id="method" value={form.methodId} onChange={(e) => set('methodId', e.target.value)} {...invalid('method')}>
-                <option value="" disabled>
-                  Choose a method
-                </option>
-                {(list ?? []).map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
+          <section className="post-method-row">
+            {methods.kind === 'failed' ? (
+              <div className="post-field">
+                <span>Payment method</span>
+                <span className="post-error post-load-failed">{METHODS_FAILED}</span>
+                <Button variant="secondary" onClick={retryMethods}>
+                  Retry
+                </Button>
+              </div>
+            ) : (
+              field(
+                'method',
+                'Payment method',
+                <select id="method" value={form.methodId} onChange={(e) => set('methodId', e.target.value)} {...invalid('method')}>
+                  <option value="" disabled>
+                    Choose a method
                   </option>
-                ))}
-              </select>,
-              'method',
-            )
-          )}
-          {field(
-            'currency',
-            'Currency',
-            <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
-              {POST_CURRENCIES.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>,
-          )}
-        </section>
-
-        {giftCard ? (
-          <>
-            {field(
-              'country',
-              'Country',
-              <select id="country" value={form.country} onChange={(e) => set('country', e.target.value)} {...invalid('country')}>
-                <option value="" disabled>
-                  Choose the card's country
-                </option>
-                {COUNTRIES.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>,
-              'country',
+                  {(list ?? []).map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+                </select>,
+                'method',
+              )
             )}
-            <p className="post-giftcard">
-              <strong>{GIFT_CARD_WARNING}</strong>
-            </p>
-          </>
-        ) : null}
+            {field(
+              'currency',
+              'Currency',
+              <select id="currency" value={form.currency} onChange={(e) => set('currency', e.target.value)}>
+                {POST_CURRENCIES.map((c) => (
+                  <option key={c}>{c}</option>
+                ))}
+              </select>,
+            )}
+          </section>
 
-        <section className="post-section">
-          <span className="post-label" id={`${ids}-price`}>
+          {giftCard ? (
+            <>
+              {field(
+                'country',
+                'Country',
+                <select id="country" value={form.country} onChange={(e) => set('country', e.target.value)} {...invalid('country')}>
+                  <option value="" disabled>
+                    Choose the card's country
+                  </option>
+                  {COUNTRIES.map((c) => (
+                    <option key={c.code} value={c.code}>
+                      {c.name}
+                    </option>
+                  ))}
+                </select>,
+                'country',
+              )}
+              <p className="post-giftcard">
+                <strong>{GIFT_CARD_WARNING}</strong>
+              </p>
+            </>
+          ) : null}
+        </div>
+
+        <section className="post-section post-card">
+          <span className="post-label post-card-title" id={`${ids}-price`}>
             Your price
           </span>
           <RadioChips
@@ -371,37 +373,39 @@ export function PostOffer() {
           ) : null}
         </section>
 
-        <section className="post-two">
-          {field(
-            'min',
-            'Smallest trade',
-            <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />,
-            'min',
-          )}
-          {field(
-            'max',
-            'Largest trade',
-            <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />,
-            'max',
-          )}
-        </section>
+        <div className="post-card">
+          <section className="post-two">
+            {field(
+              'min',
+              'Smallest trade',
+              <input id="min" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.min} onChange={text('min')} {...invalid('min')} />,
+              'min',
+            )}
+            {field(
+              'max',
+              'Largest trade',
+              <input id="max" type="text" inputMode="decimal" autoComplete="off" className="post-mono" value={form.max} onChange={text('max')} {...invalid('max')} />,
+              'max',
+            )}
+          </section>
 
-        {field(
-          'terms',
-          'Your terms (optional)',
-          <textarea
-            id="terms"
-            rows={3}
-            placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo."
-            value={form.terms}
-            onChange={text('terms')}
-            {...invalid('terms')}
-          />,
-          'terms',
-        )}
+          {field(
+            'terms',
+            'Your terms (optional)',
+            <textarea
+              id="terms"
+              rows={3}
+              placeholder="e.g. Zelle only from an account in your own name. Put the trade number in the memo."
+              value={form.terms}
+              onChange={text('terms')}
+              {...invalid('terms')}
+            />,
+            'terms',
+          )}
+        </div>
 
-        <section className="post-section">
-          <span className="post-label">Who can trade with you</span>
+        <section className="post-section post-card">
+          <span className="post-label post-card-title">Who can trade with you</span>
           <div className="post-inline">
             <label htmlFor="mintrades">Minimum completed trades</label>
             <select id="mintrades" value={form.minTrades} onChange={(e) => set('minTrades', Number(e.target.value) as MinTrades)}>

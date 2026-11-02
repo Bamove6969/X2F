@@ -973,10 +973,10 @@ test('66, 68 browse, sell side: /sell, /sell/ZELLE', async ({ page }) => {
   await page.goto('/sell');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to get paid?');
   await expect(page.locator('main a').first()).toBeVisible();
-  await shot(page, '66-main-sell', { fullPage: true });
+  await shot(page, '66-main-sell');
   await page.goto('/sell/ZELLE');
   await expect(page.locator('article').first()).toBeVisible();
-  await shot(page, '68-selloffers', { fullPage: true });
+  await shot(page, '68-selloffers');
 });
 
 test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
@@ -984,10 +984,10 @@ test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
   await page.goto('/buy');
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to pay?');
   await expect(page.locator('main a').first()).toBeVisible();
-  await shot(page, '67-buymain', { fullPage: true });
+  await shot(page, '67-buymain');
   await page.goto('/buy/ZELLE');
   await expect(page.locator('article').first()).toBeVisible();
-  await shot(page, '69-buyoffers', { fullPage: true });
+  await shot(page, '69-buyoffers');
 });
 
 test('70-71 the buyer quote and the seller quote, a wallet picked', async ({ page }) => {

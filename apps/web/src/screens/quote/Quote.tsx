@@ -7,6 +7,7 @@ import { BlockAction } from '../settings/BlockAction.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { Icon } from '../../ui/icons.js';
+import { Notice } from '../../ui/Notice.js';
 import { fetchMarket, fetchMethodName, fetchOffer, fetchWallets, type PickWallet } from './api.js';
 import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
@@ -245,7 +246,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           <Icon name="chevron-left" size={24} />
         </Link>
         <div className="x2f-quote__head-text">
-          <span className="x2f-quote__title">{copy.title(posterName)}</span>
+          <span className="x2f-quote__title x2f-screen-title">{copy.title(posterName)}</span>
           <span className="x2f-quote__muted-sm">
             {methodName} · {o.currency}
             {rate ? ` · ${perXmr(rate.centsPerXmr, o.currency, exponent)}` : ''}
@@ -257,6 +258,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           aria-disabled, not disabled, so it stays focusable and reads its hint; a tap shows the hint.
         */}
         <button type="button" className="x2f-quote__chat" aria-disabled="true" aria-describedby="quote-chat-hint" onClick={() => setChatHint(true)}>
+          <Icon name="chat" size={18} stroke={1.75} />
           Chat
         </button>
       </header>
@@ -345,7 +347,9 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
             ) : null}
           </div>
         </section>
-        <p className="x2f-quote__fine">{copy.footnote(poster)}</p>
+        <Notice tone="plain" icon="info" live="off">
+          {copy.footnote(poster)}
+        </Notice>
         {signedIn === true && myName !== null && myName !== poster ? (
           <BlockAction displayName={poster} onBlocked={() => setBlockedPoster(true)} />
         ) : null}
