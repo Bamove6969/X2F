@@ -125,8 +125,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     expect(todo).toBeLessThanOrEqual(4);
     // 45 -> 50 (C2-D1, 1 Nov 2026): the LoginApprove and Devices boards' explanations, not rules:
     // what blocking a login did, the advice after a block, why no place is shown, the blocked new
-    // device's note, and how approval works.
-    expect(notARefusal).toBeLessThanOrEqual(50);
+    // device's note, and how approval works. 50 -> 51 (C11, design review fix 2): the DisputeRuling
+    // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
+    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien).
+    expect(notARefusal).toBeLessThanOrEqual(51);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

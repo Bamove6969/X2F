@@ -209,16 +209,17 @@ export interface RulingCopy {
   label: string;
   title: string;
   /** Only for the side the ruling pays, when the API sent the destination. */
-  destination: { app: string | null; end: string; tail: string } | null;
+  destination: { app: string | null; end: string } | null;
   footer: string;
 }
 
 /**
  * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
- * Board lines: "Ruling: release to the buyer", "1.25 XMR goes to you", "To Cake Wallet, address
- * ending …k3Fz, once the appeal window closes." and the footer.
+ * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
+ * you", "Sent to Cake Wallet, address ending …k3Fz." and the footer. The coins move at the ruling,
+ * never held for the appeal window (spec Revision 2026-10-29c; Plan 4 "A1 dropped").
  */
-export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, now: Date): RulingCopy {
+export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date): RulingCopy {
   const r = d.ruling;
   if (r === null) throw new Error('no ruling');
   const amount = `${xmrInText(amountAtomic)} XMR`;
@@ -251,9 +252,7 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   let destination: RulingCopy['destination'] = null;
   if (r.destination !== null && paidSide(r.outcome) === me) {
     const app = r.destination.walletApp === null ? null : (WALLET_APPS[r.destination.walletApp] ?? null);
-    const waiting = !rulingFinal(d, now) && d.appeal === null;
-    // The board's line while the window is open; once final, just the destination (COPY-UNSIGNED).
-    destination = { app, end: r.destination.addressEnd.slice(-4), tail: waiting ? ', once the appeal window closes.' : '.' };
+    destination = { app, end: r.destination.addressEnd.slice(-4) };
   }
   const loser = loserOf(r.outcome);
   // The board's line, true today and neutral on how long: nothing deletes dispute records yet, and
@@ -265,11 +264,38 @@ export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomi
   return { label, title, destination, footer };
 }
 
-/** The appeal window's closing sentence, for the outcome (the board's is for a release). */
-export function windowCloses(outcome: RulingView['outcome']): string {
-  if (outcome === 'release-to-buyer') return ' If nobody appeals, the XMR is released when the window closes.';
-  if (outcome === 'refund-to-seller') return ' If nobody appeals, the XMR is refunded when the window closes.'; // COPY-UNSIGNED
-  return '';
+/**
+ * The appeal window's lien sentence (spec Revision 2026-10-29c "Liens": an overturned ruling puts the
+ * lien on whoever received the coins), for a ruling that moves the XMR; '' for the others. The
+ * receiver reads the board's words; the other side reads who it would fall on (COPY-UNSIGNED).
+ */
+export function overturnLien(outcome: RulingView['outcome'], me: Party, other: string): string {
+  const receiver = paidSide(outcome);
+  if (receiver === null) return '';
+  // not-a-refusal: what an overturned ruling would mean, explained before any appeal (board DisputeRuling)
+  if (receiver === me) return " If an appeal overturns the ruling, you get a lien. You can't trade until you pay the XMR back.";
+  return ` If an appeal overturns the ruling, ${other} gets a lien until they pay the XMR back.`; // COPY-UNSIGNED
+}
+
+/**
+ * The line once an appeal is in. Board DisputeRuling: "Appeal sent. A second moderator will look at
+ * it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they
+ * pay it back." The other side's appeal and the receiver's lien are worded to match (COPY-UNSIGNED).
+ */
+export function appealSentText(d: DisputeView, me: Party, other: string): string {
+  const a = d.appeal;
+  const r = d.ruling;
+  if (a === null || r === null) return '';
+  const who = a.by === me ? 'Appeal sent.' : `${other} appealed.`;
+  if (d.afterRefund) return `${who} A second moderator will decide.`; // COPY-UNSIGNED
+  const receiver = paidSide(r.outcome);
+  const lien =
+    receiver === null
+      ? ''
+      : receiver === me
+        ? ' The XMR has already moved; if they overturn the ruling, you get a lien until you pay it back.'
+        : ' The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.';
+  return `${who} A second moderator will look at it.${lien}`;
 }
 
 /** A Plan 1 `Outcome` as the escrow runtime hands it over (structural, so this file needs no escrow import). */

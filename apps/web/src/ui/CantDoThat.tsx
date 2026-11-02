@@ -12,12 +12,12 @@ import { Sheet } from './Sheet.js';
  * that words a refusal, or names one of CANT_DO_CODES (cantDoCodes.ts), without importing this
  * module or cantDoCodes.ts, unless the line (or the one above) says `// not-a-refusal: <why>`.
  *
- * The body sits in a `role="alert"` paragraph so a screen reader hears it when the popup opens;
- * the popup has no primary button (the screen under it keeps its one `data-primary`).
+ * The body sits in a `role="alert"` paragraph so a screen reader hears it when the popup opens.
  *
- * No board exists yet (Claude Design brief 2026-10-29, item 4): built from the kit's Sheet, Button
- * and existing classes only, with no styling of its own; matched to the board when it lands
- * (tripwire NEEDS_DESIGN_CANTDOTHAT in test/CantDoThat.test.tsx).
+ * Board CantDoThat.dc.html (wip/design-brief; design review 2026-11-01, X2): no X close (OK, a tap
+ * on the scrim and Escape close it), and OK is the popup's one filled primary. Built from the kit's
+ * Sheet and Button only, with no styling of its own. The board is not in design/x2f-app yet, so
+ * there is no parity entry (tripwire NEEDS_DESIGN_CANTDOTHAT in test/cantDoThat-lint.test.ts).
  */
 
 /** The owner's sentence, split around the linked word. */
@@ -40,7 +40,7 @@ export function CantDoThat({
   onClose: () => void;
 }) {
   return (
-    <Sheet open={open} title={title} onClose={onClose}>
+    <Sheet open={open} title={title} closeButton={false} onClose={onClose}>
       <div className="x2f-stack" data-part="cant-do-that" data-from={from}>
         <p role="alert">
           {body}
@@ -52,7 +52,7 @@ export function CantDoThat({
           </Link>
           {FEEDBACK_LINE.after}
         </p>
-        <Button variant="secondary" onClick={onClose}>
+        <Button variant="primary" onClick={onClose}>
           OK
         </Button>
       </div>
