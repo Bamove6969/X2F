@@ -22,7 +22,7 @@ Rules that never bend:
 Set-up steps:
 1. Create a worktree of `wip/design-brief` in your scratchpad and copy `docs/design-boards/` into `scratchpad/design/lead/project/`, and `docs/design-tools/` into `scratchpad/design/tools/`.
 2. Open the canvas https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH with the Artifact read action so publishes are allowed.
-3. Check `git log -3` to see whether the multi-currency commit landed. If not, do that work first (handoff section 0.1).
+3. Confirm `git log -1` shows `760393ac` or later; nothing is in flight.
 4. Message the lead that you are the new design session and give the branch head.
 
 Then wait for the owner or the lead.

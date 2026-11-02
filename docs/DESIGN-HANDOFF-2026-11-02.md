@@ -6,10 +6,10 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
 
 ## 0. State at handover (19:30 UTC, 2 Nov)
 
-- **Canvas:** version 110. **Branch head:** `d9ccbb96` on `wip/design-brief` (plus the multi-currency commit below if it landed; check `git log -3`).
+- **Canvas:** version 111. **Branch head:** `760393ac` on `wip/design-brief`.
 - **Every board is on visual system v2**, published and pushed. Nothing is half-done on the canvas.
-- **In flight when this was written:** the lead's multi-currency correction (section 0.1). A subagent was editing five boards on disk in the container: PostOffer, FlexOffer-Post, FlexOffer-Post-Wide, OfferAd, OfferAd-Wide. If the next commit on the branch is titled "design: per-currency bands…", it landed. If not, the container copy is gone and the work must be redone from `docs/design-boards/` using section 0.1 as the brief.
-- **Owed to the lead:** one message saying the multi-currency boards are published and pushed, with the commit hash.
+- **In flight:** nothing. The multi-currency correction (section 0.1) is published (canvas v111) and pushed in `760393ac`. The lead has been told.
+- **Owed to the lead:** nothing.
 - **Owed to the owner:** nothing. The owner is not waiting on design for anything.
 - **Lead-side backlog for design:** empty apart from 0.1.
 
