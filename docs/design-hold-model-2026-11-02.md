@@ -110,4 +110,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - **Offers and disputes** (owner, via the lead, 2 Nov):
   - Up to 3 buy and 3 sell ads per vendor. One ad covers every currency the vendor supports.
   - Tier amounts are converted at the market rate and shown in the chosen currency.
-  - The buyer can open a dispute as soon as they tap "I've paid".
+  - The buyer can open a dispute 30 minutes after tapping "I've paid" (minimum; some payments take up to 30 min to arrive). Correction from the owner, 2 Nov.

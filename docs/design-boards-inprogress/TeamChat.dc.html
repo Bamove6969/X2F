@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Trade chat, team reply</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; align-items: flex-start; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1; min-width: 0; padding-top: 1px;">
+      <h1 style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">{{title}}</h1>
+      <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">$165.00</span> · Zelle</span>
+    </div>
+    <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  </header>
+
+  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 12px; padding: 12px 16px 16px;">
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted); text-align: center;">Encrypted. If a dispute is opened, a moderator can read this conversation.</p>
+
+    <div role="log" aria-label="Trade chat" style="display: flex; flex-direction: column; gap: 12px;">
+      <sc-for list="{{msgs}}" as="m" hint-placeholder-count="8">
+        <sc-if value="{{m.isSys}}" hint-placeholder-val="{{false}}">
+          <p style="align-self: center; max-width: 92%; margin: 0; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--surface-raised); font-size: 13px; line-height: 18px; color: var(--ink-muted); text-align: center;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span> · {{m.text}}</p>
+        </sc-if>
+        <sc-if value="{{m.isNotice}}" hint-placeholder-val="{{false}}">
+          <div style="align-self: center; max-width: 92%; display: flex; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid color-mix(in srgb, var(--team) 50%, transparent); font-size: 13px; line-height: 18px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M15.5 4.8a3.5 3.5 0 010 6.4"/><path d="M18 14.6c2.1.8 3.5 2.8 3.5 5.4"/></svg>
+            <span style="display: flex; flex-direction: column; gap: 2px;">
+              <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">{{m.t}}</span> · {{m.text}}</span>
+              <sc-if value="{{m.hasSub}}" hint-placeholder-val="{{false}}"><span style="color: var(--ink-muted);">{{m.sub}}</span></sc-if>
+            </span>
+          </div>
+        </sc-if>
+        <sc-if value="{{m.isMsg}}" hint-placeholder-val="{{true}}">
+          <div style="{{m.rowStyle}}">
+            <span style="{{m.metaStyle}}">
+              <sc-if value="{{m.icon}}" hint-placeholder-val="{{false}}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><path d="M15.5 4.8a3.5 3.5 0 010 6.4"/><path d="M18 14.6c2.1.8 3.5 2.8 3.5 5.4"/></svg></sc-if>
+              <sc-if value="{{m.avatar}}" hint-placeholder-val="{{false}}"><span aria-hidden="true" style="display: flex; width: 24px; height: 24px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 11px; line-height: 12px; font-weight: 600; letter-spacing: 0.02em;">DA</span></sc-if>
+              <span style="{{m.whoStyle}}">{{m.who}}</span>
+              <span>·</span>
+              <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.t}}</span>
+            </span>
+            <p style="{{m.bubbleStyle}}">{{m.text}}</p>
+          </div>
+        </sc-if>
+      </sc-for>
+    </div>
+  </main>
+
+  <footer style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--surface-raised);">
+    <label for="tc-msg" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Message</label>
+    <input id="tc-msg" type="text" value="{{draft}}" onChange="{{onDraft}}" placeholder="{{placeholder}}" style="flex-grow: 1; min-width: 0; height: 44px; box-sizing: border-box; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+    <button type="button" aria-label="Send message" onClick="{{send}}" style="display: flex; align-items: center; justify-content: center; width: 44px; height: 44px; flex-shrink: 0; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M4 12l16-8-6 16-2-7z"/></svg>
+    </button>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"viewer":{"editor":"enum","options":["partner","lead"],"default":"partner"},"$preview":{"width":390,"height":892}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { draft: '', sent: [] }; }
+  componentDidUpdate(prev) { if (prev.viewer !== this.props.viewer) this.setState({ draft: '', sent: [] }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const s = this.state;
+
+    // Owner, 2 Nov: a team member's replies get their own colour (--team) so it's very obvious a team member is replying.
+    // The trade partner only ever sees "Team member"; the lead (account owner) sees the member's name here and in the audit log.
+    const lead = this.props.viewer === 'lead';
+    const me = lead ? 'vendor' : 'partner';
+    const MSG = [
+      { k: 'sys', t: '14:02', text: 'Escrow funded. 0.500000 XMR is locked for this trade.' },
+      { k: 'vendor', t: '14:03', text: 'Hi mira.k. Escrow is funded. Please send $165.00 by Zelle with K7M2-9QXA-4FTR-8WPN in the memo.' },
+      { k: 'partner', t: '14:06', text: 'Thanks. Sending now.' },
+      { k: 'partner', t: '14:19', text: 'Sent. Can you check, please?' },
+      { k: 'notice', t: '14:21' },
+      { k: 'member', t: '14:21', text: 'Hi, I’m checking Zelle for you now.' },
+      { k: 'member', t: '14:23', text: 'I can see $165.00 with your memo. Confirming now.' },
+      { k: 'partner', t: '14:24', text: 'Great, thanks.' }
+    ].concat(s.sent.map((x) => ({ k: me, t: x.t, text: x.text })));
+
+    const row = (right, max) => 'display: flex; flex-direction: column; gap: 4px; max-width: ' + max + '; align-self: ' + (right ? 'flex-end; align-items: flex-end;' : 'flex-start; align-items: flex-start;');
+    const meta = 'display: flex; align-items: center; gap: 6px; font-size: 12px; line-height: 16px; color: var(--ink-muted);';
+    const bubble = 'margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 15px; line-height: 21px; color: var(--ink); ';
+    const BUB = {
+      other: bubble + 'background: var(--surface);',
+      own: bubble + 'background: transparent; border: 1px solid var(--line);',
+      team: bubble + 'background: color-mix(in srgb, var(--team) 16%, var(--surface)); border: 1px solid color-mix(in srgb, var(--team) 50%, transparent);'
+    };
+    const NAME = { vendor: 'satoshi_ghost', partner: 'mira.k' };
+
+    const msgs = MSG.map((m) => {
+      if (m.k === 'sys') return { isSys: true, t: m.t, text: m.text };
+      if (m.k === 'notice') return {
+        isNotice: true, t: m.t,
+        text: lead ? 'desk_ana replied for you.' : 'A team member from satoshi_ghost’s team is replying.',
+        hasSub: lead, sub: 'mira.k sees “Team member”, not the name.'
+      };
+      const base = { isMsg: true, t: m.t, text: m.text, metaStyle: meta, icon: false, avatar: false, whoStyle: 'color: var(--ink-muted);' };
+      if (m.k === 'member') {
+        // Partner: people icon + "Team member · satoshi_ghost's team", left. Lead: DA avatar + name, right (sent from your account).
+        return Object.assign(base, {
+          rowStyle: row(lead, '86%'), bubbleStyle: BUB.team,
+          icon: !lead, avatar: lead,
+          who: lead ? 'desk_ana · team member' : 'Team member · satoshi_ghost’s team',
+          whoStyle: 'color: var(--team); font-weight: 600;'
+        });
+      }
+      const mine = m.k === me;
+      return Object.assign(base, {
+        rowStyle: row(mine, '84%'), bubbleStyle: mine ? BUB.own : BUB.other,
+        who: mine ? 'You' : NAME[m.k]
+      });
+    });
+
+    return {
+      rootStyle,
+      title: lead ? 'Selling 0.500000 XMR to mira.k' : 'Buying 0.500000 XMR from satoshi_ghost',
+      placeholder: lead ? 'Message mira.k' : 'Message satoshi_ghost',
+      msgs,
+      draft: s.draft,
+      onDraft: (e) => this.setState({ draft: e.target.value }),
+      send: () => {
+        const text = (s.draft || '').trim();
+        if (!text) return;
+        this.setState({ draft: '', sent: s.sent.concat([{ t: '14:25', text }]) });
+      }
+    };
+  }
+}
+</script>
+</body>
+</html>

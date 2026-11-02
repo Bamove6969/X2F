@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Delete my account</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder,textarea::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    </div>
+    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Delete my account</h1>
+  </header>
+
+  <main style="flex-grow: 1; padding: 20px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <sc-if value="{{blocked}}" hint-placeholder-val="{{true}}">
+      <div role="alert" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 40%, transparent);">
+        <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 16%, transparent); color: var(--caution);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg></span>
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">You can&#39;t delete your account while a trade or dispute is open</h2>
+        <p style="margin: 0; font-size: 15px; line-height: 22px;">You have <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span> open trade and <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1</span> open dispute. The other trader and the moderator still need to reach you, and the XMR in escrow has to be released or returned first.</p>
+      </div>
+      <section aria-labelledby="del-open" style="display: flex; flex-direction: column; padding: 20px 0 4px; border-radius: 16px; background: var(--surface);">
+        <h2 id="del-open" style="margin: 0 0 4px; padding: 0 20px; font-size: 18px; line-height: 24px; font-weight: 600;">Still open</h2>
+        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column;">
+          <li><a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px 12px 20px; color: var(--ink); text-decoration: none;">
+            <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent);"><svg style="color: var(--caution);" width="32" height="8" viewBox="0 0 32 8"><circle cx="4" cy="4" r="4" fill="currentColor"/><circle cx="16" cy="4" r="4" fill="currentColor"/><circle cx="28" cy="4" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Selling to mira.k</span>
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · waiting for payment</span>
+            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg>
+          </a></li>
+          <li style="border-top: 1px solid var(--surface-raised);"><a href="#" style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px 12px 20px; color: var(--ink); text-decoration: none;">
+            <span aria-hidden="true" style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent);"><svg style="color: var(--danger);" width="32" height="8" viewBox="0 0 32 8"><circle cx="4" cy="4" r="4" fill="currentColor"/><circle cx="16" cy="4" r="4" fill="currentColor"/><circle cx="28" cy="4" r="3.25" fill="none" stroke="currentColor" stroke-width="1.5"/></svg></span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">Dispute with satoshi_ghost</span>
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3HXD-7RKM-P2QA-9VNE</span> · moderator reviewing</span>
+            </span>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; color: var(--ink-muted);"><path d="M9 6l6 6-6 6"/></svg>
+          </a></li>
+        </ul>
+      </section>
+      <p style="margin: 0; padding: 0 4px; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Once they&#39;re finished, come back here and you can delete your account. Nothing changes in the meantime.</p>
+    </sc-if>
+    <sc-if value="{{confirming}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--danger) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);">
+        <svg style="flex-shrink: 0; margin-top: 2px; color: var(--danger);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3h8l5 5v8l-5 5H8l-5-5V8z"/><path d="M12 8v5"/><path d="M12 16h.01"/></svg>
+        <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink);">Deleting your account is permanent. There&#39;s no undo, and X2F can&#39;t bring it back.</p>
+      </div>
+      <section aria-labelledby="del-what" style="border-radius: 16px; background: var(--surface); padding: 20px; display: flex; flex-direction: column; gap: 12px;">
+        <h2 id="del-what" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">What happens</h2>
+        <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 10px; font-size: 15px; line-height: 22px;">
+          <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--danger);"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Your username, login methods and saved wallets are deleted. Your username can never be used again.</span></li>
+          <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--danger);"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Your reviews, badges and reputation are gone for good.</span></li>
+          <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--danger);"><path d="M6 6l12 12M18 6L6 18"/></svg><span>Your offers come down straight away.</span></li>
+          <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg><span>Your coins aren&#39;t touched. They&#39;re in your own wallet, not with X2F.</span></li>
+          <li style="display: flex; gap: 10px;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--ink-muted);"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Records of your past trades and disputes stay until they auto-delete (chats <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">30</span> days after the trade, disputes <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">90</span> days). <a href="{{privacyHref}}" style="color: var(--monero-ink); padding: 12px 0;">How this works</a></span></li>
+        </ul>
+      </section>
+      <section aria-label="Confirm" style="display: flex; flex-direction: column; gap: 8px; padding: 20px; border-radius: 16px; background: var(--surface);">
+        <label for="del-name" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">To confirm, type your username: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">nightowl_44</span></label>
+        <input id="del-name" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" value="{{typed}}" onChange="{{onType}}" aria-describedby="del-next" style="height: 48px; box-sizing: border-box; width: 100%; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px;">
+        <p id="del-next" style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Next, you&#39;ll confirm it&#39;s you with your login method.</p>
+      </section>
+    </sc-if>
+    <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; flex-direction: column; gap: 12px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--ink-muted) 35%, transparent);">
+        <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l4 4 10-10"/></svg></span>
+        <h2 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Your account is deleted</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Thanks for trading on X2F. You&#39;ve been logged out on every device.</p>
+      </div>
+    </sc-if>
+  </main>
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <sc-if value="{{blocked}}" hint-placeholder-val="{{true}}">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">See my open trades</a>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Back to settings</a>
+    </sc-if>
+    <sc-if value="{{confirming}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{del}}" disabled="{{notReady}}" style="{{delStyle}}">Delete my account forever</button>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; color: var(--ink-muted); font-size: 15px; font-weight: 600; text-decoration: none;">Keep my account</a>
+    </sc-if>
+    <sc-if value="{{done}}" hint-placeholder-val="{{false}}">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Go to X2F home</a>
+    </sc-if>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme": {"editor": "enum", "options": ["night", "day"], "default": "night"}, "variant": {"editor": "enum", "options": ["blocked", "allowed"], "default": "blocked"}, "$preview": {"width": 390, "height": 844}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { typed: '', done: false }; }
+  componentDidUpdate(prev) { if (prev.variant !== this.props.variant && this.state.done) this.setState({ done: false, typed: '' }); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const blocked = (this.props.variant ?? 'blocked') === 'blocked';
+    const done = !blocked && this.state.done;
+    // Measured content heights per state.
+    const H = blocked ? 844 : (done ? 844 : 889);
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const ready = this.state.typed.trim() === 'nightowl_44';
+    const WIDE = false;
+    // v2 §10: destructive confirm is a danger-tinted button, never orange; disabled until the username matches.
+    const base = 'display: flex; align-items: center; justify-content: center; height: ' + (WIDE ? '48px; padding: 0 24px;' : '56px; width: 100%;') + ' box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: ' + (WIDE ? '16px' : '18px') + '; font-weight: 600; ';
+    return {
+      rootStyle,
+      blocked,
+      confirming: !blocked && !this.state.done,
+      done,
+      typed: this.state.typed,
+      onType: (e) => this.setState({ typed: e.target.value }),
+      notReady: !ready,
+      delStyle: base + (ready ? 'border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); cursor: pointer;' : 'border: 0; background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      del: () => { if (ready) this.setState({ done: true }); },
+      privacyHref: WIDE ? 'SelfDestruct-Wide.dc.html' : 'SelfDestruct.dc.html'
+    };
+  }
+}
+</script>
+</body>
+</html>

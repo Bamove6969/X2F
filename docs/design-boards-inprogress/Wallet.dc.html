@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Your wallets</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; height: 44px; margin: 0 -10px;">
+      <a href="Main.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    </div>
+    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Your wallets</h1>
+  </header>
+
+  <main style="flex-grow: 1; min-height: 0; padding: 8px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">X2F never holds your coins. Link the Monero wallets you already use: you get paid to them and fund trades from them.</p>
+
+    <section aria-labelledby="wl-linked" style="display: flex; flex-direction: column; gap: 4px; padding: 20px 20px 8px; border-radius: 16px; background: var(--surface);">
+      <h2 id="wl-linked" style="margin: 0 0 4px; font-size: 18px; line-height: 24px; font-weight: 600;">Linked wallets</h2>
+      <ul style="margin: 0 -20px; padding: 0; list-style: none;">
+        <sc-for list="{{wallets}}" as="w" hint-placeholder-count="3">
+          <li style="{{w.rowStyle}}">
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg></span>
+            <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{w.name}}</span>
+              <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{w.addr}}</span>{{w.role}}</span>
+            </span>
+            <span style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0;">
+              <span style="{{w.statusStyle}}">{{w.status}}</span>
+              <sc-if value="{{w.statusNote}}" hint-placeholder-val="{{false}}"><span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{w.statusNote}}</span></sc-if>
+            </span>
+          </li>
+        </sc-for>
+      </ul>
+    </section>
+
+    <section aria-labelledby="wl-add" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 4px;">
+        <h2 id="wl-add" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Add a wallet</h2>
+        <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Which app is it in?</span>
+      </div>
+      <div role="radiogroup" aria-label="Wallet app" style="display: flex; flex-wrap: wrap; gap: 8px;">
+        <sc-for list="{{apps}}" as="a" hint-placeholder-count="8">
+          <button type="button" role="radio" aria-checked="{{a.on}}" onClick="{{a.pick}}" style="{{a.style}}">{{a.label}}</button>
+        </sc-for>
+      </div>
+      <sc-if value="{{edgeTip}}" hint-placeholder-val="{{false}}">
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">For best privacy, turn on Full Sync in Edge&#39;s Monero settings. Otherwise Edge&#39;s servers can see payments coming in.</p>
+        </div>
+      </sc-if>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label for="addr" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Receive address from {{appName}}</label>
+        <span style="display: flex; gap: 8px;">
+          <input id="addr" type="text" placeholder="4… or 8…" aria-describedby="addr-help" style="flex-grow: 1; min-width: 0; height: 48px; box-sizing: border-box; padding: 0 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 24px;">
+          <button type="button" aria-label="Scan address QR code" style="display: flex; width: 48px; height: 48px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); cursor: pointer;">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 011-1h3M16 4h3a1 1 0 011 1v3M20 16v3a1 1 0 01-1 1h-3M8 20H5a1 1 0 01-1-1v-3"/><path d="M8 12h8"/></svg>
+          </button>
+        </span>
+        <span id="addr-help" style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Saving asks you to confirm it&#39;s you. Want extra protection? In Security settings, you can make new wallets wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours before they can be paid.</span>
+      </div>
+    </section>
+
+    <section aria-label="Escrow keys" style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent);">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--escrow); flex-shrink: 0; margin-top: 1px;"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);"><span style="font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">1</span> escrow key on this device</span> for trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">K7M2-9QXA-4FTR-8WPN</span>. It holds no coins, is backed up to your PGP key and is deleted when the trade closes.</p>
+    </section>
+
+    <p style="margin: 0; padding: 0 4px; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Addresses are examples.</p>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <button type="button" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Save wallet</button>
+  </footer>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1193}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { app: 'Cake Wallet' };
+  }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const app = this.state.app;
+    // Measured content height; Edge adds its privacy callout.
+    const H = app === 'Edge' ? 1295 : 1193;
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: " + H + "px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const chip = (tone) => 'display: inline-flex; align-items: center; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; background: color-mix(in srgb, ' + tone + ' 14%, transparent); color: ' + tone + ';';
+    const ready = chip('var(--escrow)');
+    const list = [
+      { name: 'Cake Wallet', addr: '…k3Fz', role: ' · gets payouts', status: 'Ready', statusStyle: ready, statusNote: '' },
+      { name: 'Ledger (via Feather)', addr: '…9QbP', role: ' · for large trades', status: 'Ready', statusStyle: ready, statusNote: '' },
+      { name: 'Edge', addr: '…7HcW', role: '', status: 'Ready', statusStyle: ready, statusNote: 'Added today' }
+    ];
+    const wallets = list.map((w, i) => Object.assign({}, w, {
+      rowStyle: 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 20px;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+    }));
+    const names = ['Cake Wallet', 'Edge', 'Feather', 'Monerujo', 'Stack', 'Monero GUI', 'Ledger or Trezor', 'Other'];
+    const base = 'display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; height: 44px; padding: 0 14px; border-radius: 999px; font-family: inherit; font-size: 14px; color: var(--ink); cursor: pointer; ';
+    const apps = names.map((label) => ({
+      label,
+      on: app === label ? 'true' : 'false',
+      style: app === label
+        ? base + 'border: 2px solid var(--ink); background: var(--surface-raised); font-weight: 600;'
+        : base + 'border: 1px solid var(--line); background: transparent;',
+      pick: () => this.setState({ app: label })
+    }));
+    return { rootStyle, wallets, apps, appName: app === 'Other' ? 'your wallet' : app, edgeTip: app === 'Edge' };
+  }
+}
+</script>
+</body>
+</html>

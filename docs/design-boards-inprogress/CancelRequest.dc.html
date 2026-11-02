@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Ask to cancel</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div aria-hidden="{{bgHidden}}" style="flex-grow: 1; display: flex; flex-direction: column;">
+  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+    <a href="#" aria-label="Back to trades" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+    <div style="display: flex; flex-direction: column; flex-grow: 1;">
+      <span style="font-size: 16px; font-weight: 600;">{{headTitle}}</span>
+      <span style="font-size: 13px; color: var(--ink-muted);">Trade K7M2-9QXA-4FTR-8WPN · Zelle · Example</span>
+    </div>
+    <a href="#" style="display: flex; height: 44px; align-items: center; padding: 0 8px; font-size: 15px; color: var(--ink);">Chat</a>
+  </header>
+
+  <main style="flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: 16px;">
+
+    <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+      <span style="display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start; color: var(--escrow);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg>Escrow secured</span>
+      <section aria-label="Payment timer" style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <span style="font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">Time to pay</span>
+          <span style="font-size: 18px; line-height: 32px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; font-weight: 500;">61</span> min</span>
+          <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">of 90 min · ends <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1 Nov 2026, 15:21 UTC</span></span>
+        </div>
+        <svg width="56" height="56" viewBox="0 0 56 56" role="img" aria-label="61 of 90 minutes left" style="flex-shrink: 0;">
+          <circle cx="28" cy="28" r="24" fill="none" stroke-width="6" style="stroke: var(--surface-raised);"/>
+          <circle cx="28" cy="28" r="24" fill="none" stroke-width="6" stroke-linecap="round" stroke-dasharray="102.2 150.8" transform="rotate(-90 28 28)" style="stroke: var(--caution);"/>
+        </svg>
+      </section>
+      <section style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Send exactly</h2>
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">$412.50 <span style="font-size: 16px; color: var(--ink-muted);">USD</span></span>
+        <span style="font-size: 14px; color: var(--ink-muted);">for <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">1.250000 XMR</span></span>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Zelle to</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">[SELLER ZELLE ID]</span></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><span style="color: var(--ink-muted);">Memo</span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span></div>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isStatus}}" hint-placeholder-val="{{false}}">
+      <span style="{{chipStyle}}"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M9 14l-5-5 5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>{{chip}}</span>
+      <section style="display: flex; flex-direction: column; gap: 8px;">
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{headline}}</h1>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">{{lead}}</p>
+      </section>
+
+      <section aria-labelledby="cr-agree" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <div style="display: flex; justify-content: space-between; align-items: baseline; gap: 8px;"><h2 id="cr-agree" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{agreeTitle}}</h2><span style="font-size: 14px; color: var(--ink-muted);">1 Nov 2026</span></div>
+        <ul style="list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px;">
+          <sc-for list="{{agree}}" as="a" hint-placeholder-count="2">
+            <li style="display: flex; align-items: center; gap: 12px; font-size: 15px; line-height: 22px;">
+              <span aria-hidden="true" style="{{a.dotStyle}}"></span>
+              <span style="flex-grow: 1; min-width: 0;"><strong style="font-weight: 600;">{{a.who}}</strong> <span style="color: var(--ink-muted);">{{a.what}}</span></span>
+              <span style="flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; color: var(--ink-muted);">{{a.time}}</span>
+            </li>
+          </sc-for>
+        </ul>
+        <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+          <div style="height: 1px; background: var(--surface-raised);"></div>
+          <dl style="margin: 0; display: flex; flex-direction: column; gap: 8px;">
+            <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{refundLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">14:32 UTC</dd></div>
+            <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Trade amount</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">1.250000 XMR · $412.50</dd></div>
+            <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{chargedLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; text-align: right;">{{chargedValue}}</dd></div>
+          </dl>
+        </sc-if>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isWaiting}}" hint-placeholder-val="{{false}}">
+      <section role="note" style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid var(--caution);">
+        <span style="display: flex; color: var(--caution); flex-shrink: 0; margin-top: 2px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l9 16H3z"/><path d="M12 10v4"/><path d="M12 17h.01"/></svg></span>
+        <p style="margin: 0; font-size: 15px; line-height: 22px;">Don't send any money while you wait. If satoshi_ghost taps Keep trading, the trade carries on and you're told.</p>
+      </section>
+      <aside aria-label="Open for the owner: payment clock while a cancel request waits" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">While the request waits, does the 90-min payment clock keep running?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>A: keeps running; if it ends unanswered, the normal no-show refund applies</li>
+          <li>B: pauses until satoshi_ghost answers</li>
+        </ul>
+      </aside>
+      <aside aria-label="Open for the owner: taking back a cancel request" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">Can the buyer take the request back and carry on paying?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>A: yes, a "Take back the request" button here (the build has "Withdraw", shot 29)</li>
+          <li>B: no, the request stands until satoshi_ghost answers or the clock ends</li>
+        </ul>
+      </aside>
+    </sc-if>
+
+    <sc-if value="{{isRequest}}" hint-placeholder-val="{{false}}">
+      <dl style="margin: 0; display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">mira.k asked</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">1 Nov 2026, 14:20 UTC</dd></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Marked as paid</dt><dd style="margin: 0;">No</dd></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">In escrow</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000 XMR · $412.50</dd></div>
+        <div style="display: flex; justify-content: space-between; gap: 12px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Refund goes to</dt><dd style="margin: 0;">Your refund address <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">…7Qp2</span></dd></div>
+      </dl>
+      <section style="display: flex; gap: 12px; align-items: flex-start; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+        <span style="display: flex; color: var(--escrow); flex-shrink: 0; margin-top: 2px;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Check your bank account first. If mira.k's Zelle payment did arrive, keep trading and release instead of cancelling.</p>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isDeclined}}" hint-placeholder-val="{{false}}">
+      <p role="status" style="margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg>You chose to keep trading. mira.k has been told. The trade carries on as before.</p>
+    </sc-if>
+
+    <sc-if value="{{isDoneSeller}}" hint-placeholder-val="{{false}}">
+      <section aria-labelledby="cr-return" style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <h2 id="cr-return" style="margin: 0; font-size: 16px; line-height: 22px; font-weight: 600;">Coming back to you</h2>
+        <div style="display: flex; justify-content: space-between; font-size: 13px; color: var(--ink-muted);"><span>Confirmations</span><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">2 of 10</span> · about 16 min</span></div>
+        <span role="progressbar" aria-label="Refund confirmations" aria-valuemin="0" aria-valuemax="10" aria-valuenow="2" style="display: block; height: 6px; border-radius: 999px; background: var(--surface-raised); overflow: hidden;"><span style="display: block; width: 20%; height: 100%; background: var(--escrow);"></span></span>
+        <span style="font-size: 14px; line-height: 20px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1.250000 XMR</span> to your refund address <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">…7Qp2</span></span>
+      </section>
+    </sc-if>
+
+    <sc-if value="{{isDoneBuyer}}" hint-placeholder-val="{{false}}">
+      <section aria-labelledby="cr-dispute" style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: 12px; border: 1px solid var(--line);">
+        <h2 id="cr-dispute" style="margin: 0; display: flex; gap: 8px; align-items: center; font-size: 16px; line-height: 22px; font-weight: 600;"><span style="display: flex; color: var(--escrow);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/></svg></span>Did you pay before you cancelled?</h2>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Open a dispute and add your payment proof. If the money reached satoshi_ghost, a moderator makes them send you the 1.250000 XMR as agreed.</p>
+        <button type="button" style="display: flex; align-items: center; height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; cursor: pointer; align-self: flex-start;">Open dispute</button>
+      </section>
+    </sc-if>
+  </main>
+
+  <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+      <a href="BuyerPay.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">I've paid</a>
+      <div style="display: flex; justify-content: space-between;">
+        <button type="button" onClick="{{openSheet}}" style="height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Ask to cancel</button>
+        <button type="button" style="height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; cursor: pointer;">Open dispute</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{isWaiting}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; justify-content: space-between;">
+        <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 4px; color: var(--ink-muted); font-size: 15px; text-decoration: none;">Back to my trades</a>
+        <button type="button" style="height: 44px; padding: 0 4px; border: 0; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; cursor: pointer;">Open dispute</button>
+      </div>
+    </sc-if>
+    <sc-if value="{{isRequest}}" hint-placeholder-val="{{false}}">
+      <button type="button" onClick="{{accept}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Cancel and get my XMR back</button>
+      <button type="button" onClick="{{decline}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep trading</button>
+    </sc-if>
+    <sc-if value="{{isDeclined}}" hint-placeholder-val="{{false}}">
+      <a href="SellerConfirm.dc.html" style="display: flex; align-items: center; justify-content: center; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to the trade</a>
+      <button type="button" onClick="{{reset}}" style="height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Show the request again</button>
+    </sc-if>
+    <sc-if value="{{isDoneBuyer}}" hint-placeholder-val="{{false}}">
+      <a href="BuyOffers.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Find another offer</a>
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 44px; color: var(--ink-muted); font-size: 15px; text-decoration: none;">Back to my trades</a>
+    </sc-if>
+    <sc-if value="{{isDoneSeller}}" hint-placeholder-val="{{false}}">
+      <a href="#" style="display: flex; align-items: center; justify-content: center; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Back to my trades</a>
+    </sc-if>
+  </footer>
+  </div>
+
+  <sc-if value="{{sheetOpen}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="cr-sheet-title" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <h2 id="cr-sheet-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Ask satoshi_ghost to cancel?</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">The trade ends only if they agree. Their XMR goes back to them. Don't send any money while you wait.</p>
+        <button type="button" onClick="{{sendRequest}}" style="height: 48px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Send the request</button>
+        <button type="button" onClick="{{closeSheet}}" style="height: 48px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 16px; cursor: pointer;">Keep trading</button>
+      </section>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["buyer-asks","buyer-waiting","seller-sees-request","cancelled-both"],"default":"buyer-asks"},"side":{"editor":"enum","options":["buyer","seller"],"default":"buyer"},"$preview":{"width":390,"height":1000}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { view: null, key: '', sheet: true }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 1000px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+
+    const STEPS = ['buyer-asks', 'buyer-waiting', 'seller-sees-request', 'cancelled-both'];
+    const step = STEPS.indexOf(this.props.step) >= 0 ? this.props.step : 'buyer-asks';
+    const side = this.props.side === 'seller' ? 'seller' : 'buyer';
+    const key = step + '|' + side;
+    const derived = { 'buyer-asks': 'ask', 'buyer-waiting': 'waiting', 'seller-sees-request': 'request', 'cancelled-both': side === 'seller' ? 'doneSeller' : 'doneBuyer' }[step];
+    const fresh = this.state.key !== key;
+    const view = (!fresh && this.state.view) ? this.state.view : derived;
+    const sheet = view === 'ask' && (fresh ? true : this.state.sheet);
+    const go = (v, extra) => this.setState(Object.assign({ view: v, key, sheet: false }, extra || {}));
+
+    const dot = (state) => 'display: block; width: 12px; height: 12px; flex-shrink: 0; box-sizing: border-box; border-radius: 999px; ' + (state === 'yes' ? 'background: var(--escrow);' : 'border: 2px dashed var(--caution);');
+    const sellerSide = view === 'request' || view === 'declined' || view === 'doneSeller';
+    const C = {
+      waiting: {
+        chip: 'Not cancelled yet', chipColor: 'var(--caution)',
+        headline: 'Waiting for satoshi_ghost to answer',
+        lead: 'You asked to cancel. The trade is still open. It ends only if satoshi_ghost agrees, and then their XMR goes back to them.',
+        agree: [
+          { who: 'You', what: 'asked to cancel', time: '14:20 UTC', state: 'yes' },
+          { who: 'satoshi_ghost', what: 'hasn’t answered yet', time: '', state: 'wait' }
+        ]
+      },
+      request: {
+        chip: 'Cancel asked', chipColor: 'var(--caution)',
+        headline: 'mira.k asked to cancel this trade',
+        lead: 'Nothing changes unless you agree. If you cancel, all 1.250000 XMR in escrow comes back to you.',
+        agree: [
+          { who: 'mira.k', what: 'asked to cancel', time: '14:20 UTC', state: 'yes' },
+          { who: 'You', what: 'haven’t answered yet', time: '', state: 'wait' }
+        ]
+      },
+      declined: {
+        chip: 'Still trading', chipColor: 'var(--ink-muted)',
+        headline: 'The trade carries on',
+        lead: 'mira.k asked to cancel and you said no. The payment clock and the rest of the trade work as before.',
+        agree: [
+          { who: 'mira.k', what: 'asked to cancel', time: '14:20 UTC', state: 'yes' },
+          { who: 'You', what: 'chose to keep trading', time: '14:31 UTC', state: 'yes' }
+        ]
+      },
+      doneBuyer: {
+        chip: 'Cancelled together', chipColor: 'var(--ink-muted)',
+        headline: 'You both cancelled this trade',
+        lead: 'You asked to cancel and satoshi_ghost agreed. All 1.250000 XMR in escrow (about $412.50) is on its way back to satoshi_ghost. Nothing was charged to you.',
+        agree: [
+          { who: 'You', what: 'asked to cancel', time: '14:20 UTC', state: 'yes' },
+          { who: 'satoshi_ghost', what: 'agreed', time: '14:31 UTC', state: 'yes' }
+        ],
+        chargedLabel: 'Charged to you', chargedValue: 'Nothing'
+      },
+      doneSeller: {
+        chip: 'Cancelled together', chipColor: 'var(--ink-muted)',
+        headline: 'You both cancelled this trade',
+        lead: 'mira.k asked to cancel and you agreed. Your 1.250000 XMR (about $412.50) is on its way back to your refund address.',
+        agree: [
+          { who: 'mira.k', what: 'asked to cancel', time: '14:20 UTC', state: 'yes' },
+          { who: 'You', what: 'agreed', time: '14:31 UTC', state: 'yes' }
+        ],
+        chargedLabel: 'Penalty for either of you', chargedValue: 'None'
+      }
+    }[view] || { chip: '', chipColor: 'var(--ink-muted)', headline: '', lead: '', agree: [] };
+
+    return {
+      rootStyle,
+      headTitle: sellerSide ? 'Selling to mira.k' : 'Buying from satoshi_ghost',
+      isAsk: view === 'ask',
+      isStatus: view !== 'ask',
+      isWaiting: view === 'waiting',
+      isRequest: view === 'request',
+      isDeclined: view === 'declined',
+      isDone: view === 'doneBuyer' || view === 'doneSeller',
+      isDoneBuyer: view === 'doneBuyer',
+      isDoneSeller: view === 'doneSeller',
+      sheetOpen: sheet,
+      bgHidden: sheet ? 'true' : 'false',
+      chip: C.chip,
+      chipStyle: 'display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 999px; background: var(--surface-raised); font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; align-self: flex-start; color: ' + C.chipColor + ';',
+      headline: C.headline,
+      agreeTitle: (view === 'doneBuyer' || view === 'doneSeller') ? 'Both agreed' : (view === 'declined' ? 'Cancel request' : 'Both must agree'),
+      lead: C.lead,
+      agree: C.agree.map((a) => ({ who: a.who, what: a.what, time: a.time, dotStyle: dot(a.state) })),
+      refundLabel: view === 'doneSeller' ? 'Refund sent to you' : 'Refund sent to satoshi_ghost',
+      chargedLabel: C.chargedLabel || '',
+      chargedValue: C.chargedValue || '',
+      openSheet: () => go('ask', { sheet: true }),
+      closeSheet: () => go('ask', { sheet: false }),
+      sendRequest: () => go('waiting'),
+      accept: () => go('doneSeller'),
+      decline: () => go('declined'),
+      reset: () => go('request')
+    };
+  }
+}
+</script>
+</body>
+</html>

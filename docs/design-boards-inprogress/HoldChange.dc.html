@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Password-only change</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+a{color:var(--monero-ink)}a:hover{color:var(--ink)}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <div style="{{frameStyle}}">
+    <sc-if value="{{isSubmitted}}" hint-placeholder-val="{{false}}">
+      <div role="status" style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: color-mix(in srgb, var(--caution) 12%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <span style="font-size: 14px; line-height: 20px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{countN}}</span> {{bannerWord}} effect on <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; white-space: nowrap;">3 Nov 2026, 14:05 UTC</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 8px; padding-left: 28px;">
+          <a href="#" style="display: inline-flex; align-items: center; height: 44px; padding: 0 8px; margin-left: -8px; color: var(--ink); font-size: 14px; font-weight: 600; text-decoration: underline;">Review changes</a>
+          <button type="button" onClick="{{openCancel}}" style="height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;">Cancel these changes</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+        <sc-if value="{{showBack}}" hint-placeholder-val="{{false}}">
+          <button type="button" onClick="{{back}}" aria-label="{{backLabel}}" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+        </sc-if>
+        <span aria-hidden="true"></span>
+        <span style="padding-right: 10px; align-self: flex-start; padding-top: 4px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+      </div>
+      <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">{{headTitle}}</h1>
+    </header>
+
+    <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 24px;">
+      <sc-if value="{{isEditLike}}" hint-placeholder-val="{{true}}">
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">Team lead · logged in with just a username and password</p>
+        </div>
+
+        <section aria-labelledby="hc-login" style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 id="hc-login" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Login methods</h2>
+          <div style="display: flex; flex-direction: column; padding: 4px 0; border-radius: 16px; background: var(--surface);">
+            <sc-for list="{{loginRows}}" as="r" hint-placeholder-count="2">
+              <sc-if value="{{r.divider}}" hint-placeholder-val="{{false}}"><div style="height: 1px; margin: 0 16px; background: var(--surface-raised);"></div></sc-if>
+              <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box;">
+                <span style="{{r.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></span>
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+                  <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{r.name}}</span>
+                  <span style="{{r.subStyle}}">{{r.sub}}</span>
+                </span>
+                <button type="button" onClick="{{r.act}}" style="flex-shrink: 0; min-width: 80px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{r.actLabel}}</button>
+              </div>
+            </sc-for>
+          </div>
+          <sc-if value="{{canAdd}}" hint-placeholder-val="{{true}}">
+            <button type="button" aria-expanded="{{addOn}}" onClick="{{toggleAdd}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border: 1.5px dashed var(--line); border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; line-height: 22px; font-weight: 600; text-align: left; cursor: pointer;">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>
+              Add a passkey, security key or PGP key
+            </button>
+          </sc-if>
+          <sc-if value="{{addOpen}}" hint-placeholder-val="{{false}}">
+            <div role="group" aria-label="Stronger login methods" style="display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 16px; background: var(--surface);">
+              <sc-for list="{{addOpts}}" as="o" hint-placeholder-count="3">
+                <button type="button" onClick="{{o.pick}}" style="display: flex; flex-direction: column; gap: 2px; width: 100%; min-height: 56px; padding: 10px 14px; box-sizing: border-box; border: 2px solid transparent; border-radius: 12px; background: var(--surface-raised); color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+                  <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{o.name}}</span>
+                  <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{o.desc}}</span>
+                </button>
+              </sc-for>
+            </div>
+          </sc-if>
+        </section>
+
+        <section aria-labelledby="hc-wallet" style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 id="hc-wallet" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Payout wallets</h2>
+          <div style="display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; border-radius: 16px; background: var(--surface);">
+            <span style="{{walletRow.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg></span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
+              <span style="font-size: 16px; line-height: 22px; font-weight: 600;">XMR payout wallet</span>
+              <span style="{{walletRow.subStyle}}">{{walletRow.pre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{walletRow.addr}}</span>{{walletRow.rest}}</span>
+            </span>
+            <button type="button" onClick="{{walletRow.act}}" style="flex-shrink: 0; min-width: 80px; height: 44px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">{{walletRow.actLabel}}</button>
+          </div>
+        </section>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px;">Nothing changes until you submit. Submitting starts a 24-hour hold.</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isReview}}" hint-placeholder-val="{{false}}">
+        <section aria-labelledby="hc-rev" style="display: flex; flex-direction: column; gap: 12px;">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px;">
+            <h2 id="hc-rev" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Review</h2>
+            <span style="font-size: 15px; line-height: 22px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{countN}}</span> {{countWord}}</span>
+          </div>
+          <ol style="margin: 0; padding: 4px 0; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
+            <sc-for list="{{reviewItems}}" as="c" hint-placeholder-count="3">
+              <li style="{{c.style}}">
+                <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{c.n}}</span>
+                <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                  <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{c.label}}</span>
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.a}}</span>{{c.detail}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{c.b}}</span></span>
+                </span>
+              </li>
+            </sc-for>
+          </ol>
+        </section>
+
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--caution) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--caution) 30%, transparent);">
+          <svg style="flex-shrink: 0; margin-top: 2px; color: var(--caution);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <p style="margin: 0; font-size: 15px; line-height: 22px; font-weight: 600;">Click submit to make the changes official and begin the 24-hour hold.</p>
+        </div>
+
+        <section aria-labelledby="hc-facts" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: var(--surface);">
+          <h2 id="hc-facts" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Before you submit</h2>
+          <ul style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 16px;">
+            <li style="display: flex; gap: 14px; align-items: flex-start; font-size: 15px; line-height: 22px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span style="padding-top: 9px;">Your changes take effect only after the 24 hours.</span></li>
+            <li style="display: flex; gap: 14px; align-items: flex-start; font-size: 15px; line-height: 22px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></span><span style="padding-top: 9px;">If you end the hold early with a passkey, security key or PGP key you had before the hold, these changes are thrown away.</span></li>
+            <li style="display: flex; gap: 14px; align-items: flex-start; font-size: 15px; line-height: 22px;"><span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg></span><span style="padding-top: 9px;">We tell the account owner straight away on every channel you set up, like push and secure Jabber, with a list of these changes.</span></li>
+          </ul>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{isSubmitted}}" hint-placeholder-val="{{false}}">
+        <section role="status" aria-labelledby="hc-done" style="display: flex; flex-direction: column; gap: 20px; padding: 24px 20px 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            24-hour hold
+          </span>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <h2 id="hc-done" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 32px; line-height: 36px; font-weight: 700; letter-spacing: -0.02em;">Changes submitted</h2>
+            <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Your account keeps working as normal. Only these changes wait.</p>
+          </div>
+          <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Changes</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">{{countN}}</dd></div>
+            <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Take effect</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500;">3 Nov 2026, 14:05 UTC</dd></div>
+          </dl>
+        </section>
+
+        <section aria-labelledby="hc-ends" style="display: flex; flex-direction: column; gap: 12px;">
+          <h2 id="hc-ends" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">How the hold ends</h2>
+          <ol style="margin: 0; padding: 4px 0; list-style: none; display: flex; flex-direction: column; border-radius: 16px; background: var(--surface);">
+            <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">It ends on its own after 24 hours</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your changes then take effect.</span></span>
+            </li>
+            <li style="height: 1px; margin: 0 16px; background: var(--surface-raised);" aria-hidden="true"></li>
+            <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="15" r="4"/><path d="M11 12l9-9M17 6l3 3M15 8l2 2"/></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">You log in with a passkey, security key or PGP key you had before</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">A passkey, security key or PGP key you had before the hold ends it early. Your submitted changes are then thrown away.</span></span>
+            </li>
+            <li style="height: 1px; margin: 0 16px; background: var(--surface-raised);" aria-hidden="true"></li>
+            <li style="display: flex; gap: 14px; align-items: flex-start; padding: 14px 16px;">
+              <span style="display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M9 12l2 2 4-4"/></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px;"><span style="font-size: 16px; line-height: 22px; font-weight: 600;">A moderator steps in</span><span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">If you or a team member contacts a moderator, they can make the hold longer, or verify you so your changes apply sooner.</span></span>
+            </li>
+          </ol>
+        </section>
+      </sc-if>
+    </main>
+
+    <sc-if value="{{isEditLike}}" hint-placeholder-val="{{true}}">
+      <footer style="display: flex; flex-direction: column; gap: 8px; padding: 12px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+        <span role="status" style="text-align: center; font-size: 14px; line-height: 20px; font-weight: 600; color: var(--ink-muted);">{{waitingText}}</span>
+        <button type="button" disabled="{{noChanges}}" onClick="{{toReview}}" style="{{reviewBtnStyle}}">Review</button>
+        <span style="height: 8px;" aria-hidden="true"></span>
+      </footer>
+    </sc-if>
+    <sc-if value="{{isReview}}" hint-placeholder-val="{{false}}">
+      <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+        <button type="button" onClick="{{submit}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Submit and start the hold</button>
+        <button type="button" onClick="{{toEdit}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Back to editing</button>
+      </footer>
+    </sc-if>
+    <sc-if value="{{isSubmitted}}" hint-placeholder-val="{{false}}">
+      <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
+        <button type="button" onClick="{{toEdit}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Back to Security</button>
+      </footer>
+    </sc-if>
+
+    <sc-if value="{{isWarn}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="hc-warn-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 8px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg>
+            Low security login
+          </span>
+          <h2 id="hc-warn-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Changes here will start a 24-hour hold</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password. That&#39;s low security, so changing your login methods or payout wallets starts a 24-hour hold.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">Your changes take effect after 24 hours. Until then everything keeps working as it does now.</p>
+          <p style="margin: 0; font-size: 16px; line-height: 24px;">We strongly recommend adding a passkey, security key or PGP key now, so this doesn&#39;t happen again.</p>
+          <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised); border: 1px solid color-mix(in srgb, var(--ink-muted) 30%, transparent);">
+            <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+            <p style="margin: 0; font-size: 14px; line-height: 20px;">Want them sooner? A passkey, security key or PGP key you already had can approve them now, or message a moderator on Matrix or Telegram <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">[address to come]</span>.</p>
+          </div>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Adding one is a change too, so it&#39;s part of this hold. Next time, log in with it and your changes won&#39;t start a hold.</p>
+          <div style="display: flex; flex-direction: column; gap: 4px;">
+            <button type="button" onClick="{{addStronger}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Add stronger security</button>
+            <button type="button" onClick="{{continueAnyway}}" style="display: flex; align-items: center; justify-content: center; height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Continue anyway</button>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+    <sc-if value="{{cancelOpen}}" hint-placeholder-val="{{false}}">
+      <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+        <section role="dialog" aria-modal="true" aria-labelledby="hc-cancel-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+          <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+          <h2 id="hc-cancel-t" style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Cancel these <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{countN}}</span> {{countWord}}?</h2>
+          <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Nothing will change on your account.</p>
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            <button type="button" onClick="{{confirmCancel}}" style="height: 56px; border-radius: 12px; border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Cancel changes</button>
+            <button type="button" onClick="{{closeCancel}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Keep them</button>
+          </div>
+        </section>
+      </div>
+    </sc-if>
+  </div>
+
+  <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <p style="margin: 0; font-size: 13px; line-height: 18px; font-weight: 600; color: var(--ink);">Showing: {{stepName}}</p>
+    <aside aria-label="Decided by the owner: no logout during the hold" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Submitting changes from a username-and-password session no longer logs anyone out. The account keeps working as normal; only the submitted changes wait <span style="white-space: nowrap;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</span> before they take effect.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>No logout for you or team members, and trades are not cancelled or put on hold.</li>
+        <li>While changes wait, a banner stays at the top of the app with the count, the date they take effect and Review changes.</li>
+      </ul>
+    </aside>
+    <aside aria-label="Decided by the owner: anyone logged in can cancel" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Anyone logged in to the account, even with just a username and password, can cancel the waiting changes.</span>
+      <span style="color: var(--ink-muted);">Cancel these changes sits next to Review changes in the banner, with a short confirm. Try it on the submitted step.</span>
+    </aside>
+    <aside aria-label="Decided by the owner: owner is told at once" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">The account owner is told at once on every channel they set up (push, secure Jabber and others), listing each change.</span>
+    </aside>
+    <aside aria-label="Open for the owner: password-only wallet and login changes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+      <span style="font-weight: 600;">If someone logs in with just a username and password and changes payout wallets or login methods, should it apply on its own after 24 hours?</span>
+      <span style="color: var(--ink-muted);">Risk raised with the owner: if a thief has the username and password, and the owner only has a username and password too, the owner has no passkey, security key or PGP key to end the hold, so the thief's new wallet would apply automatically. Decided (owner, 2 Nov): the account owner is told at once on every channel they set up (push, secure Jabber and others), listing each change.</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Applies after 24 h (current model)</li>
+        <li>Applies only after a moderator confirms</li>
+        <li>Applies only after the owner confirms with their recovery code</li>
+      </ul>
+    </aside>
+  </section>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["warn","edit","review","submitted"],"default":"warn"},"$preview":{"width":390,"height":1775}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = this.preset(props.step); }
+  preset(step) {
+    const full = step && step !== 'warn';
+    return { stage: null, wallet: !!full, password: !!full, passkey: !!full, added: null, addOpen: false, cancelOpen: false };
+  }
+  componentDidUpdate(prev) { if (prev.step !== this.props.step) this.setState(this.preset(this.props.step)); }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const s = this.state;
+    const stage = s.stage || this.props.step || 'warn';
+    // Phone screen height per stage (measured, night) + the design-notes block under it.
+    const FRAME = { warn: 868, edit: 868, review: 978, submitted: 1017 };
+    const NOTES_H = 907;
+    const frameH = FRAME[stage] || 868;
+    const H = frameH + NOTES_H;
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const frameStyle = 'position: relative; flex-shrink: 0; height: ' + frameH + 'px; display: flex; flex-direction: column; overflow: hidden;';
+    const tile = (pending) => 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (pending ? 'background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution);' : 'background: var(--surface-raised); color: var(--ink);');
+    const sub = (pending, mono) => 'font-size: 13px; line-height: 18px; color: ' + (pending ? 'var(--caution)' : 'var(--ink-muted)') + ';' + (mono ? " font-family: 'Atkinson Hyperlegible Mono', monospace;" : '');
+    const ADD = [
+      { id: 'key', name: 'Security key', desc: 'Tap a YubiKey or similar key.', label: 'Security key added', detail: 'YubiKey 5C' },
+      { id: 'passkey', name: 'Passkey', desc: 'Your face, fingerprint or phone PIN.', label: 'Passkey added', detail: 'This phone' },
+      { id: 'pgp', name: 'PGP key', desc: 'Decrypt a short message in your PGP app.', label: 'PGP key added', detail: 'Ends 7F3A 91C2' }
+    ];
+    const added = ADD.find((a) => a.id === s.added);
+    const loginRows = [
+      { name: 'Password', pending: s.password, sub: s.password ? 'New password set · waiting to submit' : 'Set 12 Jan 2026', act: () => this.setState({ password: !s.password }), actLabel: s.password ? 'Undo' : 'Change' },
+      { name: 'Passkey on Pixel 8', pending: s.passkey, sub: s.passkey ? 'Will be removed · waiting to submit' : 'Added 3 Mar 2026', act: () => this.setState({ passkey: !s.passkey }), actLabel: s.passkey ? 'Undo' : 'Remove' }
+    ];
+    if (added) loginRows.push({ name: added.name + ' (new)', pending: true, sub: added.detail + ' · waiting to submit', act: () => this.setState({ added: null }), actLabel: 'Undo' });
+    const rows = loginRows.map((r, i) => ({ name: r.name, sub: r.sub, act: r.act, actLabel: r.actLabel, divider: i > 0, tileStyle: tile(r.pending), subStyle: sub(r.pending, false) }));
+    const walletRow = {
+      pre: s.wallet ? 'New: ' : '',
+      addr: s.wallet ? '84Fq…k3Wd' : '4A7x…9mPq',
+      rest: s.wallet ? ' · waiting to submit' : '',
+      tileStyle: tile(s.wallet), subStyle: sub(s.wallet, false),
+      act: () => this.setState({ wallet: !s.wallet }), actLabel: s.wallet ? 'Undo' : 'Change'
+    };
+    const list = [];
+    if (s.wallet) list.push({ label: 'New payout wallet', a: '84Fq…k3Wd', detail: ', replaces ', b: '4A7x…9mPq' });
+    if (s.password) list.push({ label: 'Password changed', detail: 'Your new password', mono: false });
+    if (s.passkey) list.push({ label: 'Passkey removed', detail: 'Pixel 8', mono: false });
+    if (added) list.push({ label: added.label, detail: added.detail, mono: false });
+    const n = list.length;
+    const reviewItems = list.map((c, i) => ({
+      n: String(i + 1), label: c.label, detail: c.detail, a: c.a || '', b: c.b || '',
+      style: 'display: flex; align-items: center; gap: 14px; min-height: 64px; box-sizing: border-box; padding: 12px 16px;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+    }));
+    const isEditLike = stage === 'warn' || stage === 'edit';
+    const reviewBtnStyle = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (n === 0 ? 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;' : 'background: var(--monero); color: var(--on-monero); cursor: pointer;');
+    const STEP_NAMES = { warn: 'warning before editing', edit: 'editing', review: 'review before submitting', submitted: 'changes submitted' };
+    return {
+      rootStyle, frameStyle,
+      stepName: STEP_NAMES[stage] || stage,
+      headTitle: stage === 'review' ? 'Review changes' : (stage === 'submitted' ? 'Hold started' : 'Security'),
+      showBack: stage === 'review',
+      backLabel: 'Back to editing',
+      back: () => this.setState({ stage: 'edit' }),
+      isWarn: stage === 'warn', isEditLike, isReview: stage === 'review', isSubmitted: stage === 'submitted',
+      loginRows: rows, walletRow,
+      canAdd: !added, addOpen: s.addOpen && !added, addOn: s.addOpen ? 'true' : 'false',
+      toggleAdd: () => this.setState({ addOpen: !s.addOpen }),
+      addOpts: ADD.map((a) => ({ name: a.name, desc: a.desc, pick: () => this.setState({ added: a.id, addOpen: false }) })),
+      waitingText: n === 0 ? 'No changes yet' : (n === 1 ? '1 change waiting to submit' : n + ' changes waiting to submit'),
+      noChanges: n === 0, reviewBtnStyle,
+      toReview: () => { if (n > 0) this.setState({ stage: 'review' }); },
+      toEdit: () => this.setState({ stage: 'edit' }),
+      submit: () => this.setState({ stage: 'submitted' }),
+      reviewItems,
+      countN: String(n),
+      countWord: n === 1 ? 'change' : 'changes',
+      bannerWord: n === 1 ? 'change takes' : 'changes take',
+      addStronger: () => this.setState({ stage: 'edit', addOpen: true }),
+      continueAnyway: () => this.setState({ stage: 'edit' }),
+      cancelOpen: !!s.cancelOpen && stage === 'submitted',
+      openCancel: () => this.setState({ cancelOpen: true }),
+      closeCancel: () => this.setState({ cancelOpen: false }),
+      confirmCancel: () => this.setState({ cancelOpen: false, stage: 'edit', wallet: false, password: false, passkey: false, added: null })
+    };
+  }
+}
+</script>
+</body>
+</html>
