@@ -23,8 +23,11 @@ const KEPT = ['currency', 'amount', 'unit', 'wallet'] as const;
  * - Two panes (600-999 px, or a book fold's two segments) and three: Fold-Offers. The list in the
  *   first pane, its rows picking the offer; the picked offer's quote in the next pane, with the one
  *   orange Trade. Before one is picked the quote shows the offer the phone's orange Trade is on
- *   (the board's first row). Picking goes to that offer's quote route, so folding back shows the
- *   quote the person was looking at; the amount, its unit and the wallet go with it.
+ *   (the board's first row); with none online there is no quote pane (review N1). Picking goes
+ *   to that offer's quote route, so folding back shows the quote the person was looking at; the
+ *   amount, its unit and the wallet go with it. What the quote holds itself (the amount as typed,
+ *   the take in flight, its refusal) is kept per offer above it (quote/quoteKept.ts), because a
+ *   fold moves the quote between the screen and the pane, which mounts it afresh.
  */
 export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
   const { methodId = '', offerId } = useParams();
@@ -53,7 +56,7 @@ export function OffersRoute({ side, copy }: { side: Side; copy: BrowseCopy }) {
     <Panes
       layout={layout}
       main={<OfferList side={side} copy={copy} onTrade={onTrade} pick={{ id: shown, onPick, onFirst: setFirst }} />}
-      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown }} /> : <div />}
+      side={shown !== null ? <QuoteScreen key={shown} copy={quoteCopy} pane={{ methodId, offerId: shown }} /> : null}
       sideLabel="Quote"
     />
   );

@@ -177,7 +177,8 @@ export function TradeGlance({ view, escrow, serverClock, layout }: Pick<TradeScr
       <div className="x2f-fold-glance__facts">
         {timer ? (
           <p className="x2f-fold-glance__fact" data-glance-timer="">
-            {cover ? null : <span className="x2f-trade-label">{timer.label}</span>}
+            {/* The cover drops the label only for Fold-Cover's "62 min left" (review N2). */}
+            {cover && timer.left ? null : <span className="x2f-trade-label">{timer.label}</span>}
             <span className="x2f-mono">
               <Countdown deadline={timer.deadline} serverClock={serverClock} format="minutes" />
               {timer.left ? ' left' : null}
