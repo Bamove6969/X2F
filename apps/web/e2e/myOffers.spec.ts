@@ -191,7 +191,9 @@ test('during a trading hold: the hold popup on Turn on, then one caution notice,
   }
   const [border, caution] = await notice.evaluate((el) => {
     const probe = document.createElement('span');
-    probe.style.color = 'var(--x2f-caution)';
+    // The kit Notice's caution tone is the v2 callout: a 30% caution border (visual system v2,
+    // section 12), so the probe mixes the same way.
+    probe.style.color = 'color-mix(in srgb, var(--x2f-caution) 30%, transparent)';
     el.append(probe);
     const c = getComputedStyle(probe).color;
     probe.remove();
