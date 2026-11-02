@@ -2,6 +2,7 @@
 // payout-wallet wait explanation (no opt-in toggle), the logout-timer dropdown, remote device
 // log-out, and the one confirm sheet for an action-bound confirm (here: making recovery codes).
 import { expect, test, type Page, type Route } from '@playwright/test';
+import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
 type Overview = Record<string, unknown>;
 function overview(over: Overview = {}): Overview {
@@ -42,7 +43,8 @@ test('the security screen shows methods, the payout-wait explanation (no 24-hour
   await expect(page.locator('[data-part="payout-wait"]')).toContainText('waits 24 hours');
   // The dropped opt-in toggle must not be here.
   await expect(page.getByText('Make new payout addresses wait 24 hours')).toHaveCount(0);
-  await expect(page.locator('[data-part="devices"]')).toBeVisible();
+  // C2-D1: Devices is its own screen; Security links to it.
+  await expect(page.locator('[data-part="devices-link"] a[href="/settings/devices"]')).toHaveText('Devices and sessions');
   await expect(page.locator('[data-part="alerts"]')).toBeVisible();
   await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });
@@ -198,11 +200,17 @@ test('ending another device’s session logs it out', async ({ page }) => {
     await r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
   });
 
-  await page.goto('/settings/security');
+  await page.goto('/settings/devices');
   await expect(page.locator('[data-part="device-list"] li')).toHaveCount(2);
-  await page.click('[data-part="end-session"]');
+  await page.getByRole('button', { name: 'Log out Browser on Android' }).click();
+  // C2-D1 (Devices board): it asks first.
+  const ask = page.getByRole('dialog', { name: 'Log out Browser on Android?' });
+  await expect(ask).toBeVisible();
+  expect(ended).toBe(false);
+  await ask.locator('[data-part="end-confirm"]').click();
   await expect(page.locator('[data-part="device-list"] li')).toHaveCount(1);
-  await expect(page.getByText('Browser on Android')).toHaveCount(0);
+  await expect(page.locator('[data-part="device-list"]')).not.toContainText('Browser on Android');
+  await expect(page.getByRole('status')).toHaveText('Browser on Android was logged out.');
 });
 
 // Task 30 re-review (items 1, 2, 7).
@@ -279,13 +287,15 @@ test('Devices shows the count against the limit; One device at a time needs conf
     return json({ oneDevice: true, maxDevices: 3 })(r);
   });
 
-  await page.goto('/settings/security');
-  await expect(page.locator('[data-part="devices-count"]')).toHaveText('Logged in · 1 of 3');
-  await page.click('[data-part="one-device-toggle"]');
+  await page.goto('/settings/devices');
+  await expect(page.locator('[data-part="devices-count"]')).toHaveText('1 of 3 devices logged in');
+  const sw = page.getByRole('switch', { name: 'One device at a time' });
+  await expect(sw).toHaveAttribute('aria-checked', 'false');
+  await sw.click();
   await expect(page.locator('[role="dialog"]')).toHaveCount(1);
   await page.fill('#confirm-password', 'Correct-Horse-9!');
   await page.click('[data-method="password"] >> text=Confirm');
-  await expect(page.locator('[data-part="one-device-toggle"]')).toHaveText('On');
+  await expect(sw).toHaveAttribute('aria-checked', 'true');
   expect(sent).toEqual({ on: true, confirmToken: 't1' });
 });
 
@@ -305,7 +315,8 @@ test('a logged-in device asked "Is this you?" taps the number and lets the new d
   await expect(sheet).toContainText('Someone is logging in on Chrome on Windows. Is this you?');
   await sheet.locator('[data-part="approve-choice"]', { hasText: '47' }).click();
   await sheet.locator('[data-part="approve-yes"]').click();
-  await expect(sheet.locator('[data-part="approve-done"]')).toContainText('Chrome on Windows is logged in');
+  await expect(sheet.locator('h2')).toHaveText('Chrome on Windows is logged in');
+  await expect(sheet.locator('[data-part="approve-done"]')).toBeVisible();
   expect(decision).toEqual({ choice: 47 });
   await sheet.locator('[data-part="approve-ok"]').click();
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
@@ -324,3 +335,71 @@ test('a held logout-timer change says when it takes effect and keeps the old val
   await expect(page.locator('[data-part="logout-timer-status"]')).toContainText('This change takes effect at');
   await expect(page.locator('[data-part="logout-timer-select"]')).toHaveValue('12');
 });
+
+// C2-D1: the LoginApprove and Devices boards at phone sizes: no sideways scroll, every control
+// tappable, and the board's 44 px targets (number tiles, device cards, switch, row buttons, back).
+async function expectAtLeast44(page: Page, selector: string): Promise<void> {
+  const boxes = await page.locator(selector).evaluateAll((els) =>
+    els.filter((e) => (e as HTMLElement).checkVisibility()).map((e) => ({ s: e.outerHTML.slice(0, 80), ...e.getBoundingClientRect().toJSON() as { width: number; height: number } })),
+  );
+  expect(boxes.length, selector).toBeGreaterThan(0);
+  for (const b of boxes) expect(Math.min(b.width, b.height), b.s).toBeGreaterThanOrEqual(44);
+}
+
+for (const viewport of PHONE_VIEWPORTS) {
+  test(`Devices and sessions at ${viewport}: phone layout, 44 px targets, the switch and named Log out buttons`, async ({ page }) => {
+    await base(page, {
+      sessions: [
+        { id: 's1', deviceLabel: 'Browser on Linux', level: 'full', createdAt: '2026-10-20T00:00:00.000Z', lastSeenAt: new Date().toISOString(), current: true, member: null },
+        { id: 's2', deviceLabel: 'Chrome on Android', level: 'full', createdAt: '2026-10-21T00:00:00.000Z', lastSeenAt: new Date(Date.now() - 7_200_000).toISOString(), current: false, member: null },
+        { id: 's3', deviceLabel: 'Safari on macOS', level: 'full', createdAt: '2026-10-21T00:00:00.000Z', lastSeenAt: new Date(Date.now() - 1_500_000).toISOString(), current: false, member: 'desk_ana' },
+      ],
+    });
+    await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
+    await setPhone(page, viewport);
+    await page.goto('/settings/devices');
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Devices and sessions');
+    await expect(page.locator('[data-part="devices-count"]')).toHaveText('3 of 3 devices logged in');
+    await expect(page.getByRole('button', { name: 'Log out Chrome on Android' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Log out desk_ana on Safari on macOS' })).toBeVisible();
+    await expectPhoneLayout(page);
+    await expectAtLeast44(page, '[aria-label="Back to settings"], [role="switch"], [data-part="end-session"], [data-part="end-others"]');
+    // The back control is the first thing a keyboard reaches.
+    await page.keyboard.press('Tab');
+    await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Back to settings');
+  });
+
+  test(`the "Is this you?" sheet at ${viewport}: phone layout, 44 px tiles and cards, arrow keys pick a number`, async ({ page }) => {
+    await base(page);
+    const id = '22222222-2222-4222-8222-222222222222';
+    await page.route('**/v1/account/approvals', json([
+      { id, deviceLabel: 'Chrome on Windows', choices: [31, 47, 86], createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 120_000).toISOString(), atLimit: true, oneDevice: false },
+    ]));
+    await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 3 }));
+    await page.route(`**/v1/account/approvals/${id}`, json({
+      error: 'too-many-devices',
+      sessions: [
+        { id: 's1', deviceLabel: 'Browser on Linux', lastSeenAt: new Date().toISOString(), current: true },
+        { id: 's2', deviceLabel: 'Chrome on Android', lastSeenAt: new Date(Date.now() - 3 * 86_400_000).toISOString(), current: false },
+      ],
+    }, 409));
+    await setPhone(page, viewport);
+    await page.goto('/settings/security');
+    const sheet = page.getByRole('dialog', { name: 'Someone is logging in on Chrome on Windows. Is this you?' });
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByRole('button', { name: 'Close' })).toHaveCount(0);
+    await expectPhoneLayout(page);
+    await expectAtLeast44(page, '[role="dialog"] .x2f-choice, [role="dialog"] [data-part="approve-yes"], [role="dialog"] [data-part="approve-block"]');
+    const group = sheet.getByRole('radiogroup', { name: "If it's you, tap the number shown on the new device" });
+    await group.getByRole('radio', { name: '31' }).check();
+    await page.keyboard.press('ArrowRight');
+    await expect(group.getByRole('radio', { name: '47' })).toBeChecked();
+    await sheet.locator('[data-part="approve-yes"]').click();
+    const choose = page.getByRole('dialog', { name: 'Choose a device to log out' });
+    await expect(choose).toBeVisible();
+    await expect(page.locator('[data-part="cant-do-that"]')).toHaveCount(0);
+    await expect(choose.getByRole('radiogroup', { name: 'Device to log out' }).getByRole('radio')).toHaveCount(2);
+    await expectAtLeast44(page, '[role="dialog"] .x2f-choice');
+    await expectPhoneLayout(page);
+  });
+}

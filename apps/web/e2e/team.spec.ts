@@ -545,15 +545,17 @@ test('the owner changes roles and removes a member; the member is then signed ou
     await m.context.close();
   }
 
-  // Settings → Security → Devices names a member's session, and the owner can end it.
+  // Settings → Devices and sessions names a member's session, and the owner can end it.
   await page.route('**/v1/account/sessions', json([
     { id: 's-own', deviceLabel: 'Pixel 8', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: true, member: null },
     { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
   ]));
   await page.route(/\/v1\/account\/security.*/, json({ idleHours: 12, adjustable: true }));
-  await page.goto('/settings/security');
-  const row = page.locator('[data-part="device-list"] li[data-member="Basil"]');
-  await expect(row).toContainText('Firefox on Linux · team member Basil');
+  await page.goto('/settings/devices');
+  // C2-D1 (Devices board): members' sessions are their own card.
+  const row = page.locator('[data-part="team-sessions"] li[data-member="Basil"]');
+  await expect(row).toContainText('Basil');
+  await expect(row).toContainText('Firefox on Linux');
   await expect(row.locator('[data-part="end-session"]')).toBeVisible();
 });
 
