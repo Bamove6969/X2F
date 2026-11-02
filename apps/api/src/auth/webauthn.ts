@@ -159,9 +159,16 @@ async function accountById(db: Queryable, accountId: string): Promise<AccountRow
   return rows[0];
 }
 
-async function credentialsOf(db: Queryable, accountId: string): Promise<Array<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>> {
-  const { rows } = await db.query<{ credential_id: Buffer; kind: CredentialKind; attested: boolean }>(
-    'select credential_id, kind, attested from webauthn_credentials where account_id = $1 order by created_at, id',
+interface CredentialSummary {
+  credential_id: Buffer;
+  kind: CredentialKind;
+  attested: boolean;
+  aaguid: string | null;
+}
+
+async function credentialsOf(db: Queryable, accountId: string): Promise<CredentialSummary[]> {
+  const { rows } = await db.query<CredentialSummary>(
+    'select credential_id, kind, attested, aaguid from webauthn_credentials where account_id = $1 order by created_at, id',
     [accountId],
   );
   return rows;
@@ -428,14 +435,23 @@ export async function verifyWebAuthnRegistrationOnly(
   };
 }
 
-/** Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`). */
+/**
+ * Assertion options listing the account's credentials that its kind may use (`assertCredentialAllowed`)
+ * and, when given, that `o.only` also accepts (Plan 4 Task 5: a key tap offers attested security
+ * keys only). No credential left → 403 `method-not-allowed` when `o.only` is given.
+ */
 export async function webauthnAssertionOptions(
   deps: Pick<Deps, 'db' | 'config'>,
   accountId: string,
   challenge: Uint8Array,
+  o: { only?: (c: { kind: CredentialKind; attested: boolean; aaguid: string | null; accountKind: AccountKind }) => boolean } = {},
 ): Promise<PublicKeyCredentialRequestOptionsJSON> {
   const account = await accountById(deps.db, accountId);
-  const creds = (await credentialsOf(deps.db, accountId)).filter((c) => allowed(account.kind, c));
+  const only = o.only;
+  const creds = (await credentialsOf(deps.db, accountId)).filter(
+    (c) => allowed(account.kind, c) && (!only || only({ kind: c.kind, attested: c.attested, aaguid: c.aaguid, accountKind: account.kind })),
+  );
+  if (only && creds.length === 0) throw new ApiError(403, 'method-not-allowed');
   return buildAssertionOptions(deps, creds, challenge);
 }
 
@@ -624,7 +640,7 @@ function loginRoutes(app: FastifyInstance, opts: LoginRouteOptions & { discovera
     // already named the account.
     const lengths = await securityKeyIdLengths(deps.db);
     const decoys = decoyCredentialIds(deps, tag, Math.max(0, MAX_SECURITY_KEYS - creds.length), lengths);
-    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false }))].sort((x, y) =>
+    creds = [...creds, ...decoys.map((id) => ({ credential_id: id, kind: 'security-key' as const, attested: false, aaguid: null }))].sort((x, y) =>
       Buffer.compare(x.credential_id, y.credential_id),
     );
     const options = await buildAssertionOptions(deps, creds);

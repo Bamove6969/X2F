@@ -203,7 +203,9 @@ describe('finishKeyTap and consumeKeyTap', () => {
     const tapId = await tapped(id, key, RULING);
     await expect(consume(tapId, id, { ...RULING, outcome: 'refund-to-seller' })).rejects.toMatchObject(tapInvalid);
     // The same ruling with its keys in another order and the code typed without dashes matches.
-    const reordered = { reasonSha256: RULING.reasonSha256, ...RULING, code: 'abcdefghjkmnpqrs' } as KeyTapIntent;
+    const { reasonSha256, kind, ...rest } = RULING as Extract<KeyTapIntent, { kind: 'ruling' }>;
+    const reordered: KeyTapIntent = { reasonSha256, ...rest, kind, code: 'abcdefghjkmnpqrs' };
+    expect(Object.keys(reordered)[0]).toBe('reasonSha256');
     expect((await consume(tapId, id, reordered)).id).toBe(tapId);
   });
 
@@ -289,7 +291,8 @@ describe('keyTapRoutes', () => {
       if (e instanceof ApiError) return reply.status(e.status).send({ error: e.code });
       return reply.status(500).send({ error: 'internal' });
     });
-    await keyTapRoutes(app, deps, {
+    app.decorate('deps', deps);
+    keyTapRoutes(app, {
       // Stands in for Task 4's `requireStaff('self')`.
       guard: async (req) => {
         if (typeof req.headers['x-test-account'] !== 'string') throw new ApiError(401, 'not-authenticated');
