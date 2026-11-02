@@ -1088,7 +1088,31 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
         await this.loadView();
         if (!this.view || !viewSupports(kind, this.view)) throw new Error(`escrow: the trade does not allow ${kind} now`);
       };
+      // A tap changes the record only once its save succeeds (claude3, C10 follow-up). On a failed
+      // save the fields it set go back to the last saved values, and the restored record is saved
+      // again behind it, so no later save (a tick, a signals seq, one already queued behind the
+      // failed one) stores a tap whose message never left. A field changed by someone else
+      // meanwhile is left alone. Once a save succeeds the tap is committed: a later failed save
+      // (after its message left) undoes nothing.
+      const snap = () => ({ intent: r.intent, paidSeen: r.paidSeen, acceptedAtomic: r.acceptedAtomic ?? null });
+      let saved: ReturnType<typeof snap> | null = null; // taken right before the tap changes the record
+      const save = async (): Promise<void> => {
+        const mine = snap();
+        try {
+          await this.persist();
+        } catch (e) {
+          if (!saved) throw e;
+          if (r.intent === mine.intent) r.intent = saved.intent;
+          if (r.paidSeen === mine.paidSeen) r.paidSeen = saved.paidSeen;
+          if ((r.acceptedAtomic ?? null) === mine.acceptedAtomic) r.acceptedAtomic = saved.acceptedAtomic;
+          this.persist().catch(() => undefined);
+          this.emit();
+          throw e;
+        }
+        saved = mine;
+      };
       const user = (kind: SettleKind): void => {
+        saved = snap();
         r.intent = { kind, outcome: null, done: false, auto: false };
       };
       switch (a.type) {
@@ -1110,7 +1134,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           await fresh('buyer-cancel');
           if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
           user('buyer-cancel');
-          await this.persist(); // the intent is saved before trade.cancel leaves: a reload still builds the refund
+          await save(); // the intent is saved before trade.cancel leaves: a reload still builds the refund
           await this.signals.send('trade.cancel');
           break;
         case 'propose-cancel-sign':
@@ -1138,12 +1162,13 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           if (bound !== null && bound !== amount) throw new Error('escrow: a release for another amount is already under way');
           if (!this.signals) throw new Error('escrow: the signals channel is not running yet');
           const signals = this.signals;
+          saved = snap();
           this.fixAmount(amount);
           r.paidSeen = true;
           // No cancel after "I've paid" (Task 39 review I2): a cancel tapped earlier and not yet
           // settled is dropped here, so this device never goes on signing it in `paid`.
           if (r.intent && !r.intent.done && (r.intent.kind === 'buyer-cancel' || r.intent.kind === 'mutual-cancel')) r.intent = null;
-          await this.persist(); // fixed before the signal leaves
+          await save(); // fixed before the signal leaves
           await signals.send('trade.paid', { amountAtomic: amount, fiatCents: a.fiatCents });
           break;
         }
@@ -1153,7 +1178,7 @@ export function createEscrowRuntime(deps: RuntimeDeps): EscrowRuntime {
           await this.signals.send(a.signal);
           break;
       }
-      await this.persist();
+      await save();
       await this.tickOnce();
     }
 

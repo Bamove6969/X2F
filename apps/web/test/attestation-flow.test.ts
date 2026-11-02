@@ -970,6 +970,80 @@ describe('settling', () => {
     expect(await buyerSignals()).not.toContain('trade.cancel');
   });
 
+  it('a buyer-cancel whose save fails leaves no intent behind: a later save never stores it, and nothing settles on it', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'secured' });
+    await until(async () => (await t.buyer.store.load(CODE))?.intent?.kind === 'release'); // the automatic standing release
+    // Only the first save of the buyer-cancel intent fails; every later save works.
+    let failed = false;
+    const save = t.buyer.store.save.bind(t.buyer.store);
+    t.buyer.store.save = async (r) => {
+      if (!failed && r.intent?.kind === 'buyer-cancel') {
+        failed = true;
+        throw new Error('disk full');
+      }
+      return save(r);
+    };
+    const sent = t.hub.sent.length;
+    await expect(t.buyer.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
+    expect(failed).toBe(true);
+    await t.parties.ticks('buyer', 3);
+    expect((await t.buyer.store.load(CODE))?.intent).toMatchObject({ kind: 'release', auto: true });
+    expect(t.buyer.last()?.intentKind ?? null).toBeNull();
+    expect(t.parties.settles.some((s) => s.o.cosigner === 'mod')).toBe(false);
+    const signals = await channelFor(CODE, 'signals');
+    const rec = (await t.seller.store.load(CODE))!;
+    const { participants } = rec.attestation!.attestation as { participants: Participants };
+    const guard = new ReplayGuard(signals);
+    for (const x of t.hub.sent.slice(sent).filter((y) => y.channel === signals && y.from === 'buyer')) {
+      expect((await open(x.e, { me: rec.identity, myRole: 'seller', participants, trade: signals, guard })).type).not.toBe('trade.cancel');
+    }
+  });
+
+  it('a seller release tap whose save fails leaves no tapped intent behind', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'paid', paidAt: '2026-10-23T12:30:00.000Z' });
+    let failed = false;
+    const save = t.seller.store.save.bind(t.seller.store);
+    t.seller.store.save = async (r) => {
+      if (!failed && r.intent?.kind === 'release' && !r.intent.auto) {
+        failed = true;
+        throw new Error('disk full');
+      }
+      return save(r);
+    };
+    await expect(t.seller.runtime.act(CODE, { type: 'release' })).rejects.toThrow();
+    expect(failed).toBe(true);
+    await t.parties.ticks('seller', 3);
+    expect((await t.seller.store.load(CODE))?.intent ?? null).toBeNull();
+    expect(t.seller.last()?.intentKind ?? null).toBeNull();
+  });
+
+  it('"paid" whose save fails leaves the record as it was: not paid, no fixed amount, the cancel tap kept, no trade.paid', async () => {
+    const t = await ready();
+    t.parties.funds = funded();
+    t.state.view = tradeView({ state: 'secured', cancelProposedBy: 'seller' });
+    await t.buyer.runtime.act(CODE, { type: 'propose-cancel-sign' });
+    let failed = false;
+    const save = t.buyer.store.save.bind(t.buyer.store);
+    t.buyer.store.save = async (r) => {
+      if (!failed && r.paidSeen === true) {
+        failed = true;
+        throw new Error('disk full');
+      }
+      return save(r);
+    };
+    await expect(pay(t.buyer)).rejects.toThrow();
+    expect(failed).toBe(true);
+    await t.parties.ticks('buyer', 3);
+    const rec = (await t.buyer.store.load(CODE))!;
+    expect(rec.paidSeen ?? false).toBe(false);
+    expect(rec.acceptedAtomic ?? null).toBeNull();
+    expect(rec.intent).toMatchObject({ kind: 'mutual-cancel', auto: false });
+  });
+
   it('a save that fails in a tick stops the trade (escrow-failed, retryable) instead of settling with an unsaved bound; retry() runs it again', async () => {
     const t = await ready();
     // Only the save that would store the release binding fails.
