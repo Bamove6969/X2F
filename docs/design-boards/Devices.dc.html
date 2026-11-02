@@ -12,22 +12,26 @@
 <style>
 body{margin:0}
 button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
-    <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-    <h1 style="flex-grow: 1; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Devices and sessions</h1>
-    <span style="align-self: flex-start; flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
+      <span style="padding: 0 10px; flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </div>
+    <h1 style="margin: 8px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Devices and sessions</h1>
   </header>
 
-  <main style="flex-grow: 1; padding: 20px 16px 32px; display: flex; flex-direction: column; gap: 32px;">
+  <main style="flex-grow: 1; padding: 8px 16px 32px; display: flex; flex-direction: column; gap: 32px;">
     <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">See where you&#39;re logged in, log devices out, and choose how long a session lasts.</p>
 
     <section aria-labelledby="dv-dev-h" style="display: flex; flex-direction: column; gap: 12px;">
       <h2 id="dv-dev-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink);">Devices</h2>
 
-      <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--surface);">
+      <div style="display: flex; flex-direction: column; gap: 10px; padding: 20px; border-radius: 16px; background: var(--surface);">
         <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{used}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">3</span> devices logged in</p>
         <div aria-hidden="true" style="display: flex; gap: 4px;">
           <sc-for list="{{meter}}" as="m" hint-placeholder-count="3"><span style="{{m.style}}"></span></sc-for>
@@ -36,21 +40,21 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       </div>
 
       <sc-if value="{{hasDevNote}}" hint-placeholder-val="{{false}}">
-        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{devNote}}</span></p>
+        <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>{{devNote}}</span></p>
       </sc-if>
 
-      <div style="padding: 16px 16px 0; border-radius: 12px; background: var(--surface);">
+      <div style="padding: 20px 20px 0; border-radius: 16px; background: var(--surface);">
         <h3 id="dv-mine-h" style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">Your devices</h3>
         <ul aria-labelledby="dv-mine-h" style="margin: 0; padding: 0; list-style: none;">
         <sc-for list="{{devices}}" as="d" hint-placeholder-count="2">
           <li style="{{d.rowStyle}}">
-            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink);">
-              <sc-if value="{{d.isPhone}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></sc-if>
-              <sc-if value="{{d.isComputer}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></sc-if>
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);">
+              <sc-if value="{{d.isPhone}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></sc-if>
+              <sc-if value="{{d.isComputer}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></sc-if>
             </span>
             <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
               <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{d.name}}</span>
-              <sc-if value="{{d.hasTag}}" hint-placeholder-val="{{true}}"><span style="align-self: flex-start; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink);">{{d.tag}}</span></sc-if>
+              <sc-if value="{{d.hasTag}}" hint-placeholder-val="{{true}}"><span style="align-self: flex-start; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--ink-muted) 16%, transparent); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink);">{{d.tag}}</span></sc-if>
               <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{d.agoPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{d.agoNum}}</span>{{d.agoPost}}</span>
             </span>
             <sc-if value="{{d.canOut}}" hint-placeholder-val="{{true}}">
@@ -62,7 +66,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <button type="button" disabled="{{noOthers}}" onClick="{{askAll}}" style="{{allStyle}}">Log out all other devices</button>
       </div>
 
-      <div style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 0; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 20px 20px 0; border-radius: 16px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
         <h3 id="dv-team-h" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.8 0 4.5 1.9 4.5 4.5"/></svg>Team members logged in</h3>
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">These are your team members&#39; logins, not yours.</p>
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
@@ -103,7 +107,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
       <aside aria-label="Decided by the owner: two-factor method for switching members" style="display: flex; flex-direction: column; gap: 4px; padding: 8px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-        <span>Switching members on or off needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. With just a username and password it starts a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold.</span>
+        <span>Switching members on or off needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. With just a username and password it waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours.</span>
         <span style="color: var(--ink-muted);">Preview with the session tweak. Showing: {{sessionName}}</span>
       </aside>
 
@@ -116,7 +120,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
     <section aria-labelledby="dv-opt-h" style="display: flex; flex-direction: column; gap: 12px;">
       <h2 id="dv-opt-h" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink);">Options</h2>
 
-      <div style="padding: 0 16px; border-radius: 12px; background: var(--surface);">
+      <div style="padding: 0 20px; border-radius: 16px; background: var(--surface);">
         <div style="display: flex; align-items: center; gap: 12px; padding: 16px 0;">
           <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
             <span id="dv-one-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">One device at a time</span>
@@ -125,7 +129,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           <button id="dv-one-sw" type="button" role="switch" aria-checked="{{one.on}}" aria-labelledby="dv-one-l" aria-describedby="dv-one-d" onClick="{{one.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{one.track}}"><span style="{{one.knob}}"></span></span></button>
         </div>
         <sc-if value="{{confirmingOne}}" hint-placeholder-val="{{false}}">
-          <div role="alert" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 12px; border-radius: 6px; background: var(--surface-raised);">
+          <div role="alert" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
             <p style="margin: 0; font-size: 15px; line-height: 22px;">{{oneWarn}}</p>
             <div style="display: flex; gap: 8px;">
               <button type="button" onClick="{{oneConfirm}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border: 2px solid var(--ink); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Turn on</button>
@@ -152,7 +156,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       </div>
 
       <sc-if value="{{hasOptNote}}" hint-placeholder-val="{{false}}">
-        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{optNote}}</span></p>
+        <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--escrow) 10%, var(--surface)); border: 1px solid color-mix(in srgb, var(--escrow) 30%, transparent); font-size: 14px; line-height: 20px; color: var(--ink);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 1px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>{{optNote}}</span></p>
       </sc-if>
 
       <aside aria-label="Open for the owner: default session length" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -192,7 +196,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Three ways in, from the usual one to the last resort.</p>
       </div>
       <ol style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 12px;">
-        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 4px; border-radius: 16px; background: var(--surface);">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
             <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 20px; font-weight: 500; color: var(--ink);">47</span>
             <span style="padding: 4px 8px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Usual way</span>
@@ -203,7 +207,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           </div>
           <a href="LoginApprove.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>See the approval prompt</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
         </li>
-        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 4px; border-radius: 16px; background: var(--surface);">
           <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: var(--ink);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span>
           <div style="display: flex; flex-direction: column; gap: 4px;">
             <h3 style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600; color: var(--ink);">No other device with you?</h3>
@@ -211,7 +215,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
           </div>
           <a href="Login-Backup.dc.html" style="display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; border-top: 1px solid var(--surface-raised); color: var(--ink); font-size: 15px; line-height: 20px; font-weight: 600; text-decoration: none;"><span>Log in another way</span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg></a>
         </li>
-        <li style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 4px; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; flex-direction: column; gap: 12px; padding: 20px 20px 4px; border-radius: 16px; background: var(--surface);">
           <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
             <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--caution) 40%, transparent); box-sizing: border-box; background: color-mix(in srgb, var(--caution) 14%, var(--surface)); color: var(--caution);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 3h10M7 21h10M8 3c0 4 8 5 8 9s-8 5-8 9M16 3c0 4-8 5-8 9s8 5 8 9"/></svg></span>
             <span style="padding: 4px 8px; border-radius: 999px; background: var(--surface-raised); font-size: 12px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Last resort</span>
@@ -229,11 +233,12 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
   <sc-if value="{{asking}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
-      <section role="dialog" aria-modal="true" aria-labelledby="dv-ask-t" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
-        <h2 id="dv-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{askTitle}}</h2>
+      <section role="dialog" aria-modal="true" aria-labelledby="dv-ask-t" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <h2 id="dv-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">{{askTitle}}</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">{{confirmLabel}}</button>
+          <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 1px solid var(--danger); border-radius: 12px; background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">{{confirmLabel}}</button>
           <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">{{cancelLabel}}</button>
         </div>
       </section>
@@ -242,8 +247,9 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
   <sc-if value="{{verifying}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
-      <section role="dialog" aria-modal="true" aria-labelledby="dv-ver-t" aria-describedby="dv-ver-d" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
-        <h2 id="dv-ver-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Confirm it&#39;s you</h2>
+      <section role="dialog" aria-modal="true" aria-labelledby="dv-ver-t" aria-describedby="dv-ver-d" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <h2 id="dv-ver-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">Confirm it&#39;s you</h2>
         <p id="dv-ver-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{verifyText}}</p>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <sc-for list="{{methods}}" as="k" hint-placeholder-count="2">
@@ -257,22 +263,29 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
   <sc-if value="{{holding}}" hint-placeholder-val="{{false}}">
     <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
-      <section role="dialog" aria-modal="true" aria-labelledby="dv-hold-t" aria-describedby="dv-hold-d" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
-        <span aria-hidden="true" style="display: flex; color: var(--caution);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z"/><path d="M12 9v4M12 16h.01"/></svg></span>
-        <h2 id="dv-hold-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">This change starts a 24-hour hold</h2>
-        <p id="dv-hold-d" style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password. Switching team members on or off is a major change, so it starts a <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span>-hour hold: everyone on your account is logged out, and the change takes effect when the hold ends. Add a passkey, security key or PGP key to avoid this next time.</p>
-        <p style="margin: 0; padding: 10px 12px; border-radius: 6px; background: var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink);">The only way around the hold is to message a moderator on Matrix or Telegram <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">[address to come]</span> and ask to be verified over a secure Jabber channel.</p>
+      <section role="dialog" aria-modal="true" aria-labelledby="dv-hold-t" aria-describedby="dv-hold-d" style="width: 100%; box-sizing: border-box; padding: 12px 16px 16px; border-radius: 16px 16px 0 0; background: var(--surface); border-top: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 16px;">
+        <span aria-hidden="true" style="align-self: center; width: 36px; height: 4px; border-radius: 999px; background: var(--line);"></span>
+        <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">24</span> h wait</span></span>
+          <span style="white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+        </div>
+        <h2 id="dv-hold-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em;">This change waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">24</span> hours</h2>
+        <p id="dv-hold-d" style="margin: 0; font-size: 16px; line-height: 24px;">You logged in with just your username and password, so switching team members on or off takes effect after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours. Until then everything keeps working as it does now. Add a passkey, security key or PGP key to make changes like this straight away.</p>
+        <div style="display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; border-radius: 12px; background: var(--surface-raised);">
+          <svg style="flex-shrink: 0; margin-top: 1px; color: var(--ink-muted);" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></svg>
+          <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink);">Want it sooner? Message a moderator on Matrix or Telegram <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink-muted);">[address to come]</span>.</p>
+        </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
           <a href="SetupBackup.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">Add stronger security</a>
-          <a href="HoldChange.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Continue and start the hold</a>
-          <button type="button" onClick="{{holdCancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel</button>
+          <a href="HoldChange.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Submit and wait <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500; margin: 0 0.3em;">24</span> hours</a>
+          <button type="button" onClick="{{holdCancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Cancel</button>
         </div>
       </section>
     </div>
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":390,"height":3317}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"session":{"editor":"enum","options":["strong","password-only"],"default":"strong"},"$preview":{"width":390,"height":3320}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '', off: [], kept: [], teamNote: '', verify: null, hold: null }; }
   renderVals() {
@@ -309,7 +322,7 @@ class Component extends DCLogic {
     // Owner, 2 Nov: members can be switched on and off here too (same as Team). "Can log in" is on by default.
     // Switching off asks first, logs the member out, and keeps the row in this card, dimmed. Switching on needs no confirm.
     // kept = members logged out by switching off; they stay listed. teamLive = members still logged in.
-    // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. With just a username and password it starts a 24-hour hold.
+    // Owner decided 2 Nov: switching members on or off needs a two-factor method you’ve already set up: a passkey, security key or PGP key. With just a username and password it waits 24 hours (owner rule change, 2 Nov: nobody is logged out).
     // session tweak: strong = flipping asks "Confirm it's you" first; password-only = flipping opens the hold pop-up.
     const strongSession = this.props.session !== 'password-only';
     const teamRows = live.filter((d) => d.member);
@@ -419,14 +432,14 @@ class Component extends DCLogic {
     // Board height = measured content height (night, fonts loaded): 3317 for the default state,
     // plus/minus what each state adds or removes, so nothing is clipped and no empty band is left.
     const teamN = team.length;
-    const H = Math.max(844, 3317
+    const H = Math.max(844, 3320
       - 77 * (2 - mine.length)
       - (teamN === 0 ? 215 : (teamN === 1 ? 127 : 0))
       + (vendor ? 72 : 0)
       + (s.single ? 20 : 0)
-      + (s.devNote ? 34 : 0)
-      + (s.teamNote ? 30 : 0)
-      + (s.optNote ? (s.optNote.length > 44 ? 56 : 34) : 0)
+      + (s.devNote ? 58 : 0)
+      + (s.teamNote ? 52 : 0)
+      + (s.optNote ? (s.optNote.length > 44 ? 78 : 58) : 0)
       + (s.confirmOne && !s.single ? 140 : 0));
 
     return {

@@ -13,46 +13,44 @@
 body{margin:0}
 a{color:var(--monero-ink)}a:hover{color:var(--ink)}
 button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; flex-direction: column; gap: 10px; padding: 12px 16px 14px; border-bottom: 1px solid var(--surface-raised);">
-    <div style="display: flex; align-items: center; gap: 8px;">
-      <a href="SellOffers.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; margin-left: -10px; align-items: center; justify-content: center; color: var(--ink);">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg>
-      </a>
-      <span style="flex-grow: 1; font-size: 15px; font-weight: 600;">Before you start</span>
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 0;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+      <a href="SellOffers.dc.html" aria-label="Back" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border-radius: 12px; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
     </div>
+    <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">Before you start</span>
+    <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">Terms of Service</h1>
   </header>
-  <main style="flex-grow: 1; min-height: 0; padding: 16px 16px 12px; display: flex; flex-direction: column; gap: 14px;">
-    <section style="display: flex; flex-direction: column; gap: 6px;">
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 26px; line-height: 32px; font-weight: 600;">Terms of Service</h1>
-      <p style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Please read to the end. The key points first:</p>
+
+  <main style="flex-grow: 1; min-height: 0; padding: 12px 16px 16px; display: flex; flex-direction: column; gap: 12px;">
+    <p id="tos-key" style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">Please read to the end. The key points first:</p>
+    <section aria-labelledby="tos-key" style="flex-shrink: 0; display: flex; flex-direction: column; padding: 16px 20px; border-radius: 16px; background: var(--surface);">
+      <ul aria-label="Key points" style="margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px;">
+        <sc-for list="{{points}}" as="p" hint-placeholder-count="6">
+          <li style="display: flex; gap: 10px; align-items: flex-start;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>{{p.t}}</span></li>
+        </sc-for>
+      </ul>
     </section>
-    <ul aria-label="Key points" style="margin: 0; padding: 12px 14px 12px 32px; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 20px;">
-      <li>X2F never holds your coins.</li>
-      <li>If you post an ad, you pay a 1% fee when the trade completes.</li>
-      <li>Moderators can read your trade chat only if a dispute is opened.</li>
-      <li>Dispute records are kept for 90 days, with private details blurred.</li>
-      <li>No IP addresses are logged.</li>
-      <li>We answer lawful warrants with the little we have.</li>
-    </ul>
-    <div tabindex="0" role="region" aria-label="Full Terms of Service" onScroll="{{onScroll}}" style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 12px 14px; border-radius: 6px; border: 1px solid var(--surface-raised); font-size: 14px; line-height: 21px; color: var(--ink); display: flex; flex-direction: column; gap: 10px;">
-      <p style="margin: 0; font-size: 13px; color: var(--caution);">[Placeholder: the final text comes from X2F's lawyer.]</p>
+    <div tabindex="0" role="region" aria-label="Full Terms of Service" onScroll="{{onScroll}}" style="flex-grow: 1; min-height: 120px; overflow-y: auto; padding: 16px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 21px; color: var(--ink); display: flex; flex-direction: column; gap: 10px;">
+      <p style="margin: 0; font-size: 13px; color: var(--caution);">[Placeholder: the final text comes from X2F&#39;s lawyer.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">1. What X2F is</h2>
       <p style="margin: 0;">[TERMS TEXT: X2F connects buyers and sellers of Monero. It is not a party to any trade and never holds funds.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">2. Your account</h2>
       <p style="margin: 0;">[TERMS TEXT: eligibility, one person per account, keeping your login keys safe.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">3. Trades and escrow</h2>
-      <p style="margin: 0;">[TERMS TEXT: how 2-of-3 escrow works, funding is a commitment, releases can't be undone.]</p>
+      <p style="margin: 0;">[TERMS TEXT: how 2-of-3 escrow works, funding is a commitment, releases can&#39;t be undone.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">4. Fees</h2>
-      <p style="margin: 0;">[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow: before the buyer taps "I've paid" and within the offer's limits, the trade grows to the funded amount and both sides see the new total; otherwise the extra goes back to the seller; refunds return everything to the seller.]</p>
+      <p style="margin: 0;">[TERMS TEXT: 1% on completed trades, paid by the ad poster only; network fees; extra XMR sent to an escrow: before the buyer taps &quot;I&#39;ve paid&quot; and within the offer&#39;s limits, the trade grows to the funded amount and both sides see the new total; otherwise the extra goes back to the seller; refunds return everything to the seller.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">5. Disputes and moderators</h2>
       <p style="margin: 0;">[TERMS TEXT: when moderators can read chats; disputes can be opened up to 48 hours after a trade ends; coins move as soon as a trade ends or a ruling is made; appeals within 48 hours of a ruling; liens on the losing side until they pay back.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">6. Privacy and data</h2>
       <p style="margin: 0;">[TERMS TEXT: no IP logging; trade chats auto-delete 30 days after the trade ends; dispute records kept 90 days and used to train moderators, with private details blurred automatically; no other copy kept.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">7. Police and government requests</h2>
-      <p style="margin: 0;">If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don't log IP addresses or ask for your name, phone number or email address: we can't hand over what we never collect. [Lawyer to word this.]</p>
+      <p style="margin: 0;">If police or a government sends us a lawful request for data backed by a warrant, we will provide what little information we hold. That is exactly why we don&#39;t log IP addresses or ask for your name, phone number or email address: we can&#39;t hand over what we never collect. [Lawyer to word this.]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">8. Prohibited use</h2>
       <p style="margin: 0;">[TERMS TEXT]</p>
       <h2 style="margin: 0; font-size: 15px; font-weight: 600; color: var(--ink);">9. Liability, changes and law</h2>
@@ -60,16 +58,17 @@ button:focus-visible,a:focus-visible,input:focus-visible,textarea:focus-visible,
       <p style="margin: 0; font-size: 13px; color: var(--ink-muted);">End of Terms. Version [DATE].</p>
     </div>
     <sc-if value="{{notRead}}" hint-placeholder-val="{{true}}">
-      <span style="display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>Scroll to the end to continue</span>
+      <span style="flex-shrink: 0; display: flex; align-items: center; justify-content: center; gap: 6px; font-size: 13px; line-height: 16px; color: var(--ink-muted);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14M6 13l6 6 6-6"/></svg>Scroll to the end to continue</span>
     </sc-if>
     <label for="agree" style="{{agreeStyle}}">
       <input id="agree" type="checkbox" checked="{{agreed}}" disabled="{{notRead}}" onChange="{{toggle}}" style="width: 22px; height: 22px; margin: 0; flex-shrink: 0; accent-color: var(--ink);">
-      <span>I have read and agree to the <a href="#" style="padding: 14px 0;">Terms of Service</a> and <a href="#" style="padding: 14px 0;">Privacy Policy</a>.</span>
+      <span>I have read and agree to the <a href="#" style="padding: 12px 0;">Terms of Service</a> and <a href="#" style="padding: 12px 0;">Privacy Policy</a>.</span>
     </label>
   </main>
-  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+
+  <footer style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
     <sc-if value="{{ready}}" hint-placeholder-val="{{false}}">
-      <a href="SetupUsername.dc.html" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer; text-decoration: none;">I accept</a>
+      <a href="SetupUsername.dc.html" style="display: flex; align-items: center; justify-content: center; height: 56px; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-size: 18px; font-weight: 600; text-decoration: none;">I accept</a>
     </sc-if>
     <sc-if value="{{notReady}}" hint-placeholder-val="{{true}}">
       <button type="button" disabled style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;">I accept</button>
@@ -82,16 +81,25 @@ class Component extends DCLogic {
   constructor(props) { super(props); this.state = { read: false, agreed: false }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const { read, agreed } = this.state;
     const ready = read && agreed;
-    return { rootStyle,
-      notRead: !read, agreed, ready, notReady: !ready,
-      agreeStyle: 'display: flex; align-items: flex-start; gap: 10px; min-height: 44px; font-size: 14px; line-height: 20px; ' + (read ? 'color: var(--ink); cursor: pointer;' : 'color: var(--line); cursor: not-allowed;'),
+    const points = [
+      'X2F never holds your coins.',
+      'If you post an ad, you pay a 1% fee when the trade completes.',
+      'Moderators can read your trade chat only if a dispute is opened.',
+      'Dispute records are kept for 90 days, with private details blurred.',
+      'No IP addresses are logged.',
+      'We answer lawful warrants with the little we have.'
+    ].map((t) => ({ t }));
+    // Confirm row (v2 §11): raised, radius 12, 2px ink border once ticked. Muted until the terms are read.
+    const agreeStyle = 'flex-shrink: 0; display: flex; align-items: flex-start; gap: 12px; min-height: 44px; box-sizing: border-box; padding: 14px; border-radius: 12px; background: var(--surface-raised); font-size: 14px; line-height: 20px; border: 2px solid ' + (agreed ? 'var(--ink); ' : 'transparent; ') + (read ? 'color: var(--ink); cursor: pointer;' : 'color: var(--ink-muted); cursor: not-allowed;');
+    return { rootStyle, points,
+      notRead: !read, agreed, ready, notReady: !ready, agreeStyle,
       onScroll: (e) => {
         const el = e.currentTarget;
         if (!read && el.scrollTop + el.clientHeight >= el.scrollHeight - 4) this.setState({ read: true });

@@ -138,7 +138,7 @@
       "y": 0
     },
     "Profile.dc.html": {
-      "h": 844,
+      "h": 1088,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Trader profile",
@@ -182,7 +182,7 @@
       "y": 1444
     },
     "SetupBackup.dc.html": {
-      "h": 844,
+      "h": 939,
       "is_interactive": true,
       "page": "all",
       "title": "4 \u00b7 Backup way to log in (optional)",
@@ -191,7 +191,7 @@
       "y": 4332
     },
     "SetupLogin.dc.html": {
-      "h": 844,
+      "h": 1149,
       "is_interactive": true,
       "page": "all",
       "title": "2 \u00b7 How do you want to log in?",
@@ -200,7 +200,7 @@
       "y": 4332
     },
     "SetupPassword.dc.html": {
-      "h": 844,
+      "h": 863,
       "is_interactive": true,
       "page": "all",
       "title": "Alt 3 \u00b7 Choose a password",
@@ -209,7 +209,7 @@
       "y": 4332
     },
     "SetupPgpChallenge.dc.html": {
-      "h": 844,
+      "h": 919,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 PGP: decrypt your first login code",
@@ -218,7 +218,7 @@
       "y": 4332
     },
     "SetupPgpKey.dc.html": {
-      "h": 844,
+      "h": 1041,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 PGP: add your public key",
@@ -245,7 +245,7 @@
       "y": 4332
     },
     "SetupWallet.dc.html": {
-      "h": 844,
+      "h": 871,
       "is_interactive": true,
       "page": "all",
       "title": "5 \u00b7 Where should we send your XMR?",
@@ -322,7 +322,7 @@
       "y": 1444
     },
     "Wallet.dc.html": {
-      "h": 844,
+      "h": 1193,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Your wallets",
@@ -478,7 +478,7 @@
       "x": 0,
       "y": 26800,
       "w": 390,
-      "h": 900,
+      "h": 844,
       "page": "all",
       "title": "A17 \u00b7 Delete my account",
       "is_interactive": true
@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 33500,
       "w": 390,
-      "h": 3317,
+      "h": 3320,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -793,7 +793,7 @@
       "x": 2420,
       "y": 33500,
       "w": 1280,
-      "h": 1857,
+      "h": 1872,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
@@ -1045,7 +1045,7 @@
       "x": 7770,
       "y": 33500,
       "w": 390,
-      "h": 2260,
+      "h": 2194,
       "page": "all",
       "title": "G5 \u00b7 Account type: become a vendor",
       "is_interactive": true
@@ -1054,7 +1054,7 @@
       "x": 8310,
       "y": 33500,
       "w": 1280,
-      "h": 1340,
+      "h": 1457,
       "page": "all",
       "title": "G5 \u00b7 Account type: become a vendor (wide)",
       "is_interactive": true
