@@ -1,11 +1,10 @@
 import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { fiatCents } from '@x2f/trade';
-import { REVEAL_AFTER_DAYS, reviewWeight } from '@x2f/reputation';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { hasPendingReview, setLateReviewMode } from '../src/reviews/gate.js';
+import { hasPendingReview } from '../src/reviews/gate.js';
 import { loadTradeRow } from '../src/trades/store.js';
 import { testDb } from './helpers/db.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -47,7 +46,6 @@ afterAll(async () => {
   await deps.db.end();
 });
 afterEach(() => {
-  setLateReviewMode('any');
   setNow(START);
 });
 
@@ -88,6 +86,7 @@ const takeBody = (who: Who) => ({
 const take = (who: Who, offer: string) => who.browser.post(`/v1/offers/${offer}/take`, takeBody(who));
 const refusal = (res: { statusCode: number; json(): unknown }) => ({ status: res.statusCode, ...(res.json() as object) });
 const rate = (who: Who, code: string, body: unknown = { neutral: true }) => who.browser.post(`/v1/trades/${code}/review`, body);
+const skip = (who: Who, code: string) => who.browser.post(`/v1/trades/${code}/review/skip`, {});
 const listed = async (offer: string, viewer?: Who) => {
   const url = '/v1/offers?side=sell&method=ZELLE&currency=USD';
   const res = viewer ? await viewer.browser.get(url) : await app.inject({ method: 'GET', url });
@@ -149,21 +148,32 @@ describe('the taker', () => {
     expect((await take(buyer, offer)).statusCode).toBe(200);
   });
 
-  it("LATE_REVIEW 'closed': the trade stops blocking once its reveal deadline has passed", async () => {
-    setLateReviewMode('closed');
+  it('keeps blocking past 7 days: there is no review deadline (owner 2026-11-02: no reveal wait)', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
     await released(buyer);
-    setNow(new Date(START.getTime() + 7 * DAY - 1));
+    setNow(new Date(START.getTime() + 30 * DAY));
     for (const w of [buyer, seller]) await w.browser.post('/t/login', { accountId: w.id });
     expect(refusal(await take(buyer, offer))).toEqual({ status: 409, error: 'review-pending' });
-    setNow(new Date(START.getTime() + 7 * DAY));
-    expect(((await buyer.browser.get('/v1/reviews/pending')).json() as { trades: unknown[] }).trades).toEqual([]);
+    expect(((await buyer.browser.get('/v1/reviews/pending')).json() as { trades: unknown[] }).trades).toHaveLength(1);
+  });
+
+  it('Skip review clears the gate for that trade like a review does (owner 2026-11-01, item 28)', async () => {
+    const seller = await person();
+    const buyer = await person();
+    const offer = await postOffer(seller);
+    const a = await released(buyer);
+    const b = await released(buyer, 'seller');
+    expect((await skip(buyer, a)).statusCode).toBe(204);
+    expect(((await buyer.browser.get('/v1/reviews/pending')).json() as { trades: { code: string }[] }).trades.map((t) => t.code)).toEqual([b]);
+    expect(refusal(await take(buyer, offer))).toEqual({ status: 409, error: 'review-pending' });
+    expect((await skip(buyer, b)).statusCode).toBe(204);
+    expect(await hasPendingReview(deps.db, buyer.id, START)).toBe(false);
     expect((await take(buyer, offer)).statusCode).toBe(200);
   });
 
-  it('stores the trade USD value at take (the starter-limit number), and the review weighs it', async () => {
+  it('stores the trade USD value at take (the starter-limit number), never returned; a review stores no weight', async () => {
     const seller = await person();
     const buyer = await person();
     const offer = await postOffer(seller);
@@ -172,15 +182,24 @@ describe('the taker', () => {
     const { code } = res.json() as { code: string };
     expect((await loadTradeRow(deps.db, code))!.usd_cents).toBe('3300');
     expect(res.body).not.toMatch(/usd/i);
-    // Ended as released (by hand), then the buyer rates: the weight is reviewWeight($33.00).
+    // Ended as released (by hand), then the buyer rates: nothing of the value goes into the review.
     await deps.db.query(`update trades set state = 'released', closed_at = $2 where code = $1`, [code, START]);
     expect((await rate(buyer, code, { neutral: false, stars: 4, phrases: [], tradeBadges: [] })).statusCode).toBe(201);
-    const { rows } = await deps.db.query<{ weight: string }>('select weight from reviews where trade_code = $1', [code]);
-    expect(rows[0]!.weight).toBe(reviewWeight(3300n).toString());
+    const { rows } = await deps.db.query('select * from reviews where trade_code = $1', [code]);
+    expect(Object.keys(rows[0]!)).not.toContain('weight');
   });
 });
 
 describe('the poster (Review Focus 5)', () => {
+  it('a poster who skips: their offer is listed again at once', async () => {
+    const seller = await person();
+    const offer = await postOffer(seller);
+    const code = await released(seller, 'seller');
+    expect(await listed(offer)).toBe(false);
+    expect((await skip(seller, code)).statusCode).toBe(204);
+    expect(await listed(offer)).toBe(true);
+  });
+
   it('with a pending review: their offer is absent from every list, a take of it anyway refuses and creates no trade', async () => {
     const seller = await person();
     const buyer = await person();
@@ -292,10 +311,10 @@ describe('the 301 cutoff (review round 1 M4)', () => {
   });
 });
 
-describe('301 trigger and the reveal deadline (round 2, m2)', () => {
-  it("the reviews_final trigger's deadline interval is REVEAL_AFTER_DAYS: change both together, or detach rounds the wrong way and the purge rolls back", () => {
+describe('301 trigger (owner 2026-11-01, item 27; review m3)', () => {
+  it("the reviews_final trigger allows the month only: no other unit and no reveal deadline in the migration", () => {
     const sql = readFileSync(new URL('../migrations/301_reviews.sql', import.meta.url), 'utf8');
-    expect(sql).toContain(`interval '${REVEAL_AFTER_DAYS} days'`);
-    expect(sql.match(/interval '\d+ days'/g)).toEqual([`interval '${REVEAL_AFTER_DAYS} days'`]);
+    expect(sql).toContain("date_trunc('month', old.created_at, 'UTC')");
+    expect(sql).not.toMatch(/'day'|'week'|interval '\d+ days'/);
   });
 });
