@@ -567,6 +567,12 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The board's link padding: a tall enough tap target inside the line. */
+.x2f-info-block a {
+  padding: 12px 0;
+  font-weight: 600;
+}
+
 /* On the Desktop layout a `wide="dialog"` sheet is a centred 520 px dialog (LoginApprove-Wide). */
 @media (min-width: 1000px) {
   .x2f-sheet-layer[data-wide='dialog']:not([data-pane-of]) {

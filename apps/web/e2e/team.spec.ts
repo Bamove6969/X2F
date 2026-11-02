@@ -161,7 +161,8 @@ test('a full team: the invite control is disabled with the board note, and tappi
   const invite = page.locator('[data-part="invite"]');
   await expect(invite).toHaveAttribute('aria-disabled', 'true');
   await page.getByLabel('Their name in trade chats').fill('Dora');
-  await invite.click();
+  // aria-disabled keeps it focusable; Playwright's click waits for an enabled control, so dispatch the tap.
+  await invite.dispatchEvent('click');
   await expect(page.locator('[role="dialog"]')).toHaveCount(0);
   expect(invites).toBe(0);
   await expectPhoneLayout(page);
