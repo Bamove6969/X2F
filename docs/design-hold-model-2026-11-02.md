@@ -94,3 +94,9 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - Open: how long the prompt waits, and what happens on accounts with no passkey, security key or PGP key.
 - Extending a session can also be confirmed with the password plus an authenticator code (owner, 2 Nov). Open: accounts with only a username and password.
 - Username + password accounts can extend a session too, so any login method works for extending (owner, 2 Nov).
+- **Payment proofs** (owner, 2 Nov):
+  - An encrypted unblurred copy of the uploaded original is kept for moderators.
+  - Without a dispute, it is deleted 48 h after the trade ends.
+  - With a dispute, it is deleted when the ruling's 48 h appeal window closes.
+  - Blur templates are kept as a database: proof-screen layouts with the private areas blanked. No real proofs are stored.
+  - Open: whether traders are told the copy is kept (design recommends yes).
