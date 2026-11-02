@@ -92,3 +92,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - When it runs out, the app asks the user to confirm with a passkey, security key or PGP key to extend by the same time. With no answer, the user is logged out.
   - No fixed maximum. This applies to traders and vendors.
   - Open: how long the prompt waits, and what happens on accounts with no passkey, security key or PGP key.
+- Extending a session can also be confirmed with the password plus an authenticator code (owner, 2 Nov). Open: accounts with only a username and password.
