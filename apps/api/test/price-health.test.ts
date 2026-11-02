@@ -247,11 +247,11 @@ describe('createMarketPrices', () => {
     expect(prices.quote('USD')).toBeNull(); // nothing polled yet
     await prices.poll();
     expect(prices.quote('USD')).toEqual({
-      price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n, fx: null,
+      price: { currency: 'USD', centsPerXmr: 33000n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n, fx: null, route: 'market',
     });
     expect(prices.quote('EUR')).toEqual({
       price: { currency: 'EUR', centsPerXmr: 29700n }, at: T0, sources: 2, exponent: 2, usdCentsPerXmr: 33000n,
-      fx: { currency: 'EUR', rate: decimalToScaled('0.90')!, source: 'coinbase', at: T0 },
+      fx: { currency: 'EUR', rate: decimalToScaled('0.90')!, source: 'coinbase', at: T0 }, route: 'market',
     });
     expect(prices.current('EUR')).toEqual({ currency: 'EUR', centsPerXmr: 29700n });
     // 330 × 156.87 = 51767.1 JPY (no minor unit); 330 × 0.310706 = 102.53298 KWD (3 places), half up.
@@ -556,6 +556,11 @@ describe('with the database', () => {
       expect(body.rejected).toEqual([]);
       expect(body.paused).toContain('GBP');
       expect(body.paused).not.toContain('EUR');
+      // 2026-11-02: per currency, the route pricing it (null: no price).
+      expect(body.coverage.EUR).toBe('market');
+      expect(body.coverage.USD).toBe('market');
+      expect(body.coverage.GBP).toBeNull();
+      expect(Object.keys(body.coverage)).toEqual(Object.keys(CURRENCY_EXPONENTS).sort());
       expect(body.settings).toEqual({ staleAfterMinutes: 60, sanityPercent: 10 });
     });
   });
