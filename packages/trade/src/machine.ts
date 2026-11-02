@@ -413,7 +413,8 @@ function onDispute(t: Trade, by: Party, now: Date): Trade {
     case 'secured':
       return open();
     case 'paid':
-      if (by === 'buyer' && (t.confirmBy === null || now.getTime() < t.confirmBy.getTime())) return fail('too-early');
+      // The buyer from 30 minutes after marking paid (owner 2026-11-01), the seller at once.
+      if (by === 'buyer' && (t.paidAt === null || now.getTime() < addMin(t.paidAt, TIMERS.buyerDisputeAfterPaidMin).getTime())) return fail('too-early');
       return open();
     case 'settling':
       if (t.settleBy === null || !past(now, t.settleBy)) return fail('too-early');

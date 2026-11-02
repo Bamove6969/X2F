@@ -10,6 +10,11 @@ export const TIMERS = {
   lapseCosignMin: 30,
   /** Owner 2026-10-29: the buyer may dispute a refund (to prove they paid) for 48 hours after it lands (was 90 days). */
   disputeAfterRefundHours: 48,
+  /**
+   * Owner 2026-11-01: in `paid` the buyer may open a dispute from this many minutes after marking
+   * paid (`paidAt`), no longer only after the seller's confirm window (`confirmBy`).
+   */
+  buyerDisputeAfterPaidMin: 30,
 } as const;
 
 /** Confirmations after which Monero coins unlock. */

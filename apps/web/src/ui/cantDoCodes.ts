@@ -210,13 +210,21 @@ export function chatCantDoText(code: CantDoCode): string {
   return code === 'own-offer' ? 'This is your own offer.' : "You can't open this chat right now.";
 }
 
+/**
+ * The offer cap the API enforces (owner 2026-11-01, C2-A1: 3 buying and 3 selling offers per
+ * account; apps/api/src/offers/routes.ts OFFER_CAP_DEFAULTS), said wherever the cap is explained:
+ * PostOffer's and My offers' CantDoThat for `too-many-offers` and the My offers footnote.
+ * COPY-UNSIGNED
+ */
+export const OFFER_CAP_LINE = 'You can have 3 buying and 3 selling offers.'; // COPY-UNSIGNED
+
 /** What a refused Post offer says. */
 export function postCantDoText(code: CantDoCode): string {
   switch (code) {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.";
     case 'too-many-offers':
-      return 'You have as many offers as you can post for now. Remove one you no longer need, then post this one.';
+      return `${OFFER_CAP_LINE} Remove one you no longer need, then post this one.`; // COPY-UNSIGNED
     // Plan 2 Task 18: a team member without the Offers role.
     case 'forbidden':
     case 'owner-only':
@@ -270,9 +278,10 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
     case 'trading-hold':
       return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
+      // C2-A1: the cap is per side now (owner 2026-11-01), not per market. COPY-UNSIGNED
       return n === 1
-        ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
-        : 'You have more offers in some markets than the limit allows now. Remove ones you no longer need, then turn these on.';
+        ? `${OFFER_CAP_LINE} Remove one you no longer need, then turn this one on.`
+        : `${OFFER_CAP_LINE} Remove ones you no longer need, then turn these on.`;
     default:
       return "Your account can't turn these offers on right now.";
   }
@@ -284,7 +293,7 @@ export function myOffersCantDoRow(code: CantDoCode): string {
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
-      return 'Stayed off: over the offer limit for this market.';
+      return 'Stayed off: over the offer limit.'; // C2-A1: per side, not per market. COPY-UNSIGNED
     default:
       return 'Stayed off.';
   }

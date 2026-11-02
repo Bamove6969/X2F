@@ -40,7 +40,8 @@ const ms = (iso: string | null): number | null => (iso === null ? null : Date.pa
  * Whether this side may open a dispute now, mirroring the state machine's `open-dispute` rules
  * (the API decides; this only keeps the screen from sending what would be refused):
  * - securing or secured: either side;
- * - paid: the seller at once, the buyer only from the end of the seller's confirm window;
+ * - paid: the seller at once, the buyer from 30 minutes after marking paid (owner 2026-11-01,
+ *   TIMERS.buyerDisputeAfterPaidMin; no longer the end of the seller's confirm window);
  * - settling: either side once the signing window has passed;
  * - refunded: the buyer, until 48 hours after the refund (owner 2026-10-29; was 90 days).
  * `wait` carries the explanation shown instead of sending anything.
@@ -56,11 +57,12 @@ export function disputeEntry(t: DisputeTrade, now: Date): Entry {
       return { kind: 'open' };
     case 'paid': {
       if (t.role === 'seller') return { kind: 'open' };
-      const by = ms(t.confirmBy);
       const paid = ms(t.paidAt);
-      if (by === null) return { kind: 'none' };
+      if (paid === null) return { kind: 'none' };
+      const wait = TIMERS.buyerDisputeAfterPaidMin * 60_000;
+      const by = paid + wait;
       if (n >= by) return { kind: 'open' };
-      const window = paid === null ? '' : formatRemaining(by - paid, 'minutes');
+      const window = formatRemaining(wait, 'minutes');
       return {
         kind: 'wait',
         until: new Date(by),

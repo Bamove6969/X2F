@@ -128,9 +128,14 @@ export const BAD_TERMS_CHAR = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202a-\u
  */
 const LIST_LIMIT = 500;
 
-/** Per-account offer caps (review I1), owner settings with these defaults: live and paused offers count. */
-export const OFFER_CAP_DEFAULTS = Object.freeze({ perMarket: 3, total: 20 });
-export const OFFER_CAP_KEYS = Object.freeze({ perMarket: 'offers_max_per_market', total: 'offers_max_total' });
+/**
+ * The per-account offer cap (owner 2026-11-01, C2-A1; was 3 per side, method and currency and 20 in
+ * all, review I1): at most `perSide` buying and `perSide` selling offers, whatever their method and
+ * currency. An owner setting with this default; live and paused offers count (no grandfathering,
+ * lead 2026-10-30), removed ones do not. Plan 4's Settings screen seeds `offers_max_per_side`.
+ */
+export const OFFER_CAP_DEFAULTS = Object.freeze({ perSide: 3 });
+export const OFFER_CAP_KEYS = Object.freeze({ perSide: 'offers_max_per_side' });
 const OFFER_CAP_MAX = 1000;
 
 interface OfferRow {
@@ -272,23 +277,28 @@ function assertMethodAvailable(methodId: string): void {
   if (!isAvailable(methodId)) throw new ApiError(409, 'method-unavailable');
 }
 
-async function loadOfferCaps(db: Queryable): Promise<{ perMarket: number; total: number }> {
+async function loadOfferCaps(db: Queryable): Promise<{ perSide: number }> {
   const { rows } = await db.query<{ key: string; value: string }>('select key, value from owner_settings where key = any($1)', [
-    [OFFER_CAP_KEYS.perMarket, OFFER_CAP_KEYS.total],
+    [OFFER_CAP_KEYS.perSide],
   ]);
   const get = (k: string, d: number) => {
     const n = Number(rows.find((r) => r.key === k)?.value);
     return Number.isInteger(n) && n >= 1 && n <= OFFER_CAP_MAX ? n : d;
   };
-  return { perMarket: get(OFFER_CAP_KEYS.perMarket, OFFER_CAP_DEFAULTS.perMarket), total: get(OFFER_CAP_KEYS.total, OFFER_CAP_DEFAULTS.total) };
+  return { perSide: get(OFFER_CAP_KEYS.perSide, OFFER_CAP_DEFAULTS.perSide) };
+}
+
+/** 409 `too-many-offers` with the cap that refused it (`{ perSide }`, C2-A1). */
+function tooManyOffers(caps: { perSide: number }): ApiError {
+  return new ApiError(409, 'too-many-offers', { perSide: caps.perSide });
 }
 
 /**
  * Posting or relisting, inside the caller's transaction (review M1): refused while the site's
  * trading is paused (409 `trading-paused`), while the account has a trading hold (409
  * `trading-hold`), without a usable payout wallet (409 `no-wallet`, spec 6.4; a wallet still in
- * its 24-hour wait does not count), and at the account's offer caps (409 `too-many-offers`,
- * review I1; `except` is the offer being relisted).
+ * its 24-hour wait does not count), and at the account's offer cap for the offer's side (409
+ * `too-many-offers` `{ perSide }`, C2-A1; `except` is the offer being relisted).
  *
  * The account row is locked `for update` first, so one account's posts and relists run one at a
  * time (the cap cannot be raced) and a hold being inserted (its foreign key takes a key-share lock
@@ -299,7 +309,7 @@ async function assertMayPost(
   client: Queryable,
   auth: AuthContext,
   now: Date,
-  market: { side: Side; methodId: string; currency: string },
+  market: { side: Side },
   except: string | null,
 ): Promise<void> {
   const accountId = auth.accountId;
@@ -307,13 +317,12 @@ async function assertMayPost(
   const refused = await accountRefusal(client, accountId, now);
   if (refused !== null) throw new ApiError(409, refused);
   const caps = await loadOfferCaps(client);
-  const { rows } = await client.query<{ same: number; total: number }>(
-    `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
-       from offers where account_id = $1 and status <> 'removed' and ($5::uuid is null or id <> $5::uuid)`,
-    [accountId, market.side, market.methodId, market.currency, except],
+  const { rows } = await client.query<{ same: number }>(
+    `select count(*)::int as same
+       from offers where account_id = $1 and side = $2 and status <> 'removed' and ($3::uuid is null or id <> $3::uuid)`,
+    [accountId, market.side, except],
   );
-  const c = rows[0]!;
-  if (c.same >= caps.perMarket || c.total >= caps.total) throw new ApiError(409, 'too-many-offers');
+  if (rows[0]!.same >= caps.perSide) throw tooManyOffers(caps);
 }
 
 /**
@@ -694,10 +703,10 @@ export function offerRoutes(app: FastifyInstance): void {
           // PATCH's order (review N1): the method first, then the account's guards, then the caps.
           let refused: OfferSwitchRefusal | null = isAvailable(o.method_id) ? refusedAll : 'method-unavailable';
           if (refused === null) {
-            // As relisting counts: every other live or paused offer of mine (this one left out).
+            // As relisting counts: every other live or paused offer of mine on its side (this one left out).
             let same = 0;
-            for (const x of mine) if (x.id !== id && x.side === o.side && x.method_id === o.method_id && x.currency === o.currency) same++;
-            if (same >= caps!.perMarket || mine.length - 1 >= caps!.total) refused = 'too-many-offers';
+            for (const x of mine) if (x.id !== id && x.side === o.side) same++;
+            if (same >= caps!.perSide) refused = 'too-many-offers';
           }
           if (refused !== null) {
             out.push({ id, status: o.status, refused });

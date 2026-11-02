@@ -19,7 +19,7 @@
  */
 import { useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link } from 'react-router';
-import { formatXmr } from '@x2f/trade';
+import { TIMERS, formatXmr } from '@x2f/trade';
 import { ApiCallError } from '../../api/client.js';
 import { getTrade } from '../../api/trade.js';
 import { Button } from '../../ui/Button.js';
@@ -502,11 +502,13 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  // The buyer's dispute in paid opens at confirmBy (machine.ts: too-early before it; review Minor 7).
-  const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
+  // The buyer's dispute in paid opens 30 minutes after marking paid (owner 2026-11-01; machine.ts:
+  // too-early before it; review Minor 7), not at confirmBy.
+  const disputeOpensAt = paid && view.paidAt !== null ? new Date(Date.parse(view.paidAt) + TIMERS.buyerDisputeAfterPaidMin * 60_000) : null;
+  const disputeWait = disputeOpensAt !== null && serverClock().getTime() < disputeOpensAt.getTime();
   const dispute = disputeWait ? (
     <span className="x2f-room__dispute-wait">
-      Dispute opens in <Countdown deadline={view.confirmBy!} serverClock={serverClock} format="minutes" />
+      Dispute opens in <Countdown deadline={disputeOpensAt} serverClock={serverClock} format="minutes" />
     </span>
   ) : (
     <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
