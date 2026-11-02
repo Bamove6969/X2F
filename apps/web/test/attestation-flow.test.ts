@@ -1,6 +1,6 @@
 import { ROLES } from '@x2f/core';
 import { EscrowError, PartyError, TransportClosedError } from '@x2f/escrow';
-import { seal, type Participants } from '@x2f/protocol';
+import { open, ReplayGuard, seal, type Participants } from '@x2f/protocol';
 import { channelFor, escrowPlan, fiatCents } from '@x2f/trade';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Attestation } from '@x2f/trade';
@@ -940,16 +940,34 @@ describe('settling', () => {
     t.parties.funds = funded();
     t.state.view = tradeView({ state: 'secured' });
     const signals = await channelFor(CODE, 'signals');
-    const sentBefore = t.hub.sent.filter((x) => x.channel === signals && x.from === 'buyer').length;
-    // Only a record holding the buyer-cancel intent fails to save (other saves, e.g. a new signals seq, work).
+    // The buyer's signals frames, read as the seller reads them. A bare frame count is not enough:
+    // the buyer's answering trade.terms (sent once it has the seller's) can still be on its way
+    // when ready() returns, and the terms are sent again every 5 s until the mod acks them.
+    const buyerSignals = async (): Promise<string[]> => {
+      const rec = (await t.seller.store.load(CODE))!;
+      const { participants } = rec.attestation!.attestation as { participants: Participants };
+      const guard = new ReplayGuard(signals);
+      const types: string[] = [];
+      for (const x of t.hub.sent.filter((y) => y.channel === signals && y.from === 'buyer')) {
+        types.push((await open(x.e, { me: rec.identity, myRole: 'seller', participants, trade: signals, guard })).type);
+      }
+      return types;
+    };
+    await until(async () => (await buyerSignals()).length >= 2); // its own terms and its answer have left
+    expect(await buyerSignals()).not.toContain('trade.cancel');
+    // Only a record holding the buyer-cancel intent fails to save; a save with a new signals seq works.
+    // That save (made before any signals frame leaves) carries the intent too: if it failed as well, a
+    // trade.cancel sent before the intent is saved could never leave and this test would not see it.
+    let seq = (await t.buyer.store.load(CODE))!.signalSeq;
     const save = t.buyer.store.save.bind(t.buyer.store);
     t.buyer.store.save = async (r) => {
-      if (r.intent?.kind === 'buyer-cancel') throw new Error('disk full');
-      return save(r);
+      if (r.intent?.kind === 'buyer-cancel' && r.signalSeq <= seq) throw new Error('disk full');
+      await save(r);
+      seq = Math.max(seq, r.signalSeq);
     };
     await expect(t.buyer.runtime.act(CODE, { type: 'buyer-cancel' })).rejects.toThrow();
     await t.parties.ticks('buyer', 2);
-    expect(t.hub.sent.filter((x) => x.channel === signals && x.from === 'buyer').length).toBe(sentBefore);
+    expect(await buyerSignals()).not.toContain('trade.cancel');
   });
 
   it('a save that fails in a tick stops the trade (escrow-failed, retryable) instead of settling with an unsaved bound; retry() runs it again', async () => {
