@@ -39,6 +39,7 @@ export function CantDoThat({
   title,
   body,
   from,
+  items,
   onClose,
 }: {
   open?: boolean;
@@ -46,6 +47,8 @@ export function CantDoThat({
   body: string;
   /** The refusal code, passed on to the form (`/feedback?from=`). */
   from: string;
+  /** Which things were refused and why, one line each, under the body (My offers' mixed case). */
+  items?: readonly string[] | undefined;
   onClose: () => void;
 }) {
   const msgId = useId();
@@ -68,6 +71,13 @@ export function CantDoThat({
         <p role="alert" id={msgId}>
           {body}
         </p>
+        {items && items.length > 0 ? (
+          <ul className="x2f-list" data-part="cant-do-items">
+            {items.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        ) : null}
         <p className="x2f-info-block" data-part="feedback-line">
           {FEEDBACK_LINE.before}
           <Link className="x2f-link" to={feedbackHref(from)}>

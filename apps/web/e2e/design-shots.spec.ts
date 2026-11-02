@@ -463,7 +463,9 @@ test('31-32 My offers: the list, then two ticked with the bar', async ({ page })
 
 test('33-34 My offers under a trading hold: the refusal, then the lines under each offer', async ({ page }) => {
   const offers = myOffers();
-  offers[0]!.hidden = 'trading-hold';
+  // Every offer off, so the screen learns of the hold from the refused Turn on (with a live offer
+  // the list itself shows the hold, and Turn on is disabled: batch 3 board).
+  for (const o of offers) o.status = 'paused';
   await myOffersApi(page, { offers, refuseOn: 'trading-hold' });
   await page.goto('/profile/offers');
   await page.getByRole('checkbox', { name: 'Select all' }).click();
@@ -472,14 +474,26 @@ test('33-34 My offers under a trading hold: the refusal, then the lines under ea
   await expect(pop).toContainText('trading hold');
   await shot(page, '33-myoffers-hold-refused');
   await pop.getByRole('button', { name: 'OK' }).click();
-  await expect(page.locator('[data-part="summary"]')).toBeVisible();
+  await expect(page.locator('[data-part="hold-notice"]')).toBeVisible();
   await shot(page, '34-myoffers-hold-summary');
+});
+
+test('31w My offers on a wide screen (1280x800): the list, then two ticked', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await myOffersApi(page, { offers: myOffers() });
+  await page.goto('/profile/offers');
+  await expect(page.locator('[data-part="offer"]')).toHaveCount(3);
+  await shot(page, '31w-myoffers-wide-list');
+  await page.locator(`[data-offer="${OA}"]`).getByRole('checkbox').click();
+  await page.locator(`[data-offer="${OB}"]`).getByRole('checkbox').click();
+  await expect(page.getByRole('region', { name: 'Selected offers' })).toContainText('2 selected');
+  await shot(page, '32w-myoffers-wide-selected-bar');
 });
 
 test('35 My offers: empty', async ({ page }) => {
   await myOffersApi(page, { offers: [] });
   await page.goto('/profile/offers');
-  await expect(page.getByText('You have no offers yet.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No offers yet' })).toBeVisible();
   await shot(page, '35-myoffers-empty');
 });
 
