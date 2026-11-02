@@ -13,6 +13,8 @@ import './ui.css';
  *   right (News "Mark all as read").
  * - `titleAs="label"` makes the header title a plain label when the screen's h1 is in the main
  *   (Feedback: "Feedback" in the header, h1 "Tell us what you think").
+ * - `header="compact"` is the visual system v2 compact header (section 5): no bottom border and a
+ *   small muted h1, for a screen whose own h2 carries the big words (LoginApprove v2).
  * - `look="card"` puts the screen in one centred card on the Desktop layout (LoginApprove-Wide);
  *   `look="page"` keeps a wide page whose main may lay out its own columns (Devices-Wide).
  */
@@ -25,6 +27,7 @@ export function FlowScreen({
   back,
   footer,
   look = 'card',
+  header = 'title',
   busy,
   children,
 }: {
@@ -36,13 +39,19 @@ export function FlowScreen({
   back: { label: string; icon?: 'back' | 'close' } & ({ to: string; onClick?: undefined } | { onClick: () => void; to?: undefined });
   footer?: ReactNode;
   look?: 'card' | 'page';
+  header?: 'title' | 'compact';
   busy?: boolean;
   children: ReactNode;
 }) {
-  const icon = back.icon === 'close' ? <Icon name="close" size={22} /> : <Icon name="chevron-left" size={24} />;
+  const icon =
+    back.icon === 'close' ? (
+      <Icon name="close" size={22} />
+    ) : (
+      <Icon name="chevron-left" size={24} stroke={header === 'compact' ? 1.75 : 1.5} />
+    );
   const heading = titleAs === 'h1' ? <h1 className="x2f-flow__title">{title}</h1> : <span className="x2f-flow__title">{title}</span>;
   return (
-    <main className="x2f-flow" data-screen={screen} data-look={look} aria-busy={busy}>
+    <main className="x2f-flow" data-screen={screen} data-look={look} data-header={header} aria-busy={busy}>
       <header className="x2f-flow__header">
         {back.to !== undefined ? (
           <Link className="x2f-icon-button x2f-flow__back" to={back.to} aria-label={back.label}>

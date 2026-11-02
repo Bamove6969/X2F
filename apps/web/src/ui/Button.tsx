@@ -7,8 +7,10 @@ import './ui.css';
 // - secondary: the outlined button (SellOffers "Message nightowl_44").
 // - quiet: the muted text button (BuyerPay "Cancel trade").
 // - danger: the rose text button (BuyerPay "Open dispute").
-// - danger-outline: the outlined rose button (LoginApprove "No, block it", Block "Block nightowl_44", BuyerPaidWaiting "Open a dispute").
-export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'danger-outline';
+// - danger-outline: the danger confirm, a rose wash with a rose outline (LoginApprove "No, block it",
+//   Block "Block nightowl_44", BuyerPaidWaiting "Open a dispute"; visual system v2 section 10).
+// - tertiary: the v2 muted 15/600 text button (LoginApprove "Not now").
+export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'danger-outline' | 'tertiary';
 
 type Common = { variant: ButtonVariant; children: ReactNode; className?: string };
 type AsButton = Common & Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'className' | 'children'> & { href?: undefined };

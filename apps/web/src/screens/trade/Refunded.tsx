@@ -177,7 +177,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
           <Facts layout="rows" rows={facts} part="refunded-facts" />
         </section>
         {entry.kind === 'open' ? (
-          <section className="x2f-panel" data-outline="" aria-labelledby="refunded-dispute" data-part="refunded-dispute">
+          <section className="x2f-panel" data-tone="outline" aria-labelledby="refunded-dispute" data-part="refunded-dispute">
             <h2 className="x2f-panel__title" id="refunded-dispute">
               <Icon name="shield" size={20} />
               {story.disputeTitle}
@@ -199,7 +199,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
             </Link>
           </section>
         ) : entry.kind === 'opened' ? (
-          <section className="x2f-panel" data-outline="" aria-label="The dispute">
+          <section className="x2f-panel" data-tone="outline" aria-label="The dispute">
             {/* COPY-UNSIGNED (Task 27's link) */}
             <Link className="x2f-button x2f-button--secondary" to={disputeHref}>
               Go to the dispute

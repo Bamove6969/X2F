@@ -528,6 +528,8 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/chats/:chat/identity': "the caller's chat identity key for one chat; no account, session, approval or security state",
   'POST /v1/trades/:code/chat': "a participant's chat for an open trade (R42: finishing open trades stays allowed); no new obligation",
   'POST /v1/feedback/form': 'a feedback row only, open to held sessions on purpose (owner 2026-10-29)',
+  // Plan 5 Task 4 (platform feedback), classified at its merge with Tasks 16-17.
+  'POST /v1/feedback': 'a platform-feedback row only, holding nothing about the sender; no account, session, approval or security state, no obligation',
   'POST /v1/trades/:code/dispute': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/appeal': 'finishes an open trade (R42); creates no new obligation',
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",

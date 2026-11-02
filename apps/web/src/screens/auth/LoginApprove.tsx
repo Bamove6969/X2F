@@ -9,7 +9,8 @@
  * and -Wide on wip/design-brief): a sheet with no X close (Escape and the backdrop still close it),
  * a "New login" label over the h2 question, the facts as a <dl>, the numbers as radio tiles, the
  * outlined danger "No, block it", radio cards for the device to log out, and a state icon over the
- * result. At the device limit "Yes" goes straight to the chooser (the board has no refusal popup
+ * result. Design v2 batch 1 (4b355a56): the look comes from the kit's v2 rules (caution chip label,
+ * callouts, 56 px state tiles, danger confirm, tertiary "Not now", strong Devices link). At the device limit "Yes" goes straight to the chooser (the board has no refusal popup
  * there; the lead's earlier CantDoThat step is gone). Other refusals (the 24-hour hold) still go
  * through CantDoThat. All look comes from the UI kit. The screen shows only what the server sends:
  * a coarse device label, the choices and the times. X2F has no IP address or place to show.
@@ -143,7 +144,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
           <>
             <p className="x2f-fine">
               You can see your devices and log any of them out in{' '}
-              <Link className="x2f-link" to={DEVICES_PATH} onClick={onDone}>
+              <Link className="x2f-link x2f-link--strong" to={DEVICES_PATH} onClick={onDone}>
                 Devices
               </Link>
               .
@@ -182,7 +183,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
         >
           Change login method
         </Button>
-        <Button variant="quiet" onClick={onDone} data-part="approve-not-now">
+        <Button variant="tertiary" onClick={onDone} data-part="approve-not-now">
           Not now
         </Button>
       </div>
