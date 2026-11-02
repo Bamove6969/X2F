@@ -113,6 +113,16 @@ describe('POST /v1/feedback', () => {
     expect((await rows()).map((r) => r.note)).toContain('next day');
   });
 
+  it('has no shared daily cap (owner 2026-11-01): a send is stored however many rows today already has', async () => {
+    // Well beyond the old shared cap of 5000 a UTC day.
+    await deps.db.query("insert into platform_feedback (mood, created_on) select 'ok', '2026-10-29' from generate_series(1, 6000)");
+    const { b } = await login('nocap1');
+    expect((await b.post('/v1/feedback', { mood: 'great', note: 'still stored' })).statusCode).toBe(202);
+    expect((await deps.db.query("select created_on::text as d from platform_feedback where note = 'still stored'")).rows).toEqual([{ d: '2026-10-29' }]);
+    const today = await deps.db.query<{ n: number }>("select count(*)::int as n from platform_feedback where created_on = '2026-10-29'");
+    expect(today.rows[0]!.n).toBe(6001);
+  });
+
   it(`stores at most ${FEEDBACK_GLOBAL_DAILY} rows a UTC day from everyone together; beyond it still 202, nothing stored (review M2)`, async () => {
     // Fill today to one under the cap, plus rows on other days that must not count.
     await deps.db.query(
