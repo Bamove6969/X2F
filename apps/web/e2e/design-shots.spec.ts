@@ -1024,10 +1024,12 @@ test("71 the seller quote (mira.k's buy ad), a wallet picked", async ({ page }) 
     const side = new URL(r.request().url()).searchParams.get('side');
     return json(side === 'buy' ? [SELL_QUOTE_OFFER] : [])(r);
   });
-  await page.goto(`/sell/${B.method.id}/${SELL_QUOTE_OFFER.id}?currency=${B.currency}&amount=${B.amount}`);
+  // The seller quote starts in XMR: 1.25 XMR is the board's $412.50 at $330.00.
+  await page.goto(`/sell/${B.method.id}/${SELL_QUOTE_OFFER.id}?currency=${B.currency}&amount=1.25`);
   await page.getByRole('radio', { name: /Cake Wallet/ }).check();
   await expect(page.locator('section[aria-label="What you get"]')).toBeVisible();
   await expect(page.locator('.x2f-quote__title')).toContainText('mira.k');
+  await expect(page.locator('section[aria-label="What you get"]')).toContainText('$412.50 USD');
   await shot(page, '71-sellquote', { fullPage: true });
 });
 
