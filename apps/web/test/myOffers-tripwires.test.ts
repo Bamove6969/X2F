@@ -15,16 +15,15 @@ const BOARDS = ['docs/design-boards/MyOffers.dc.html', 'design/x2f-app/MyOffers.
 
 describe('My offers waits for its board', () => {
   it('NEEDS_DESIGN_MYOFFERS: the MyOffers board is not on the main line yet', () => {
-    // The screen follows the board's behaviour (a tick box per offer, Select all only ticks, the
-    // Selected offers bar with Clear / Turn on / Turn off, a switch per offer, its words) but is built
-    // from the existing kit only: no CSS of its own, kit Buttons for the tick boxes (role="checkbox")
-    // and the switch (role="switch"), no Edit link (no edit screen until Task 35), no parity entry.
-    // When the board lands: match apps/web/src/screens/MyOffers.tsx to it (the switch track, the
-    // dashed card of an Off offer, the 22 px tick box in its 44 px tile), add expectParity for
-    // MyOffers and MyOffers-Wide to e2e/myOffers.spec.ts, and delete this. Review M4's hidden-reason
-    // line ("On, hidden while trading is paused") is not on the board: ask Claude Design. Round-2
-    // review n1: the Selected offers bar sits after the list (no CSS of its own), so with many
-    // offers it is below the fold; place it as the board does (fixed at the bottom).
+    // Design review 1 Nov 2026 (shots 31-35) is in: the screen is built to the board's structure
+    // from kit parts (ui/Switch, ui/Checkbox, ui/SelectAll, ui/SelectCard, ui/ActionBar,
+    // ui/Notice, ui/EmptyState): real switches, 24 px tick boxes on one grid, the selection bar in
+    // the footer above the tab bar, the hold in caution. Still waiting for the board on the line:
+    // add expectParity for MyOffers and MyOffers-Wide to e2e/myOffers.spec.ts (pixel polish comes
+    // with the v2 visual system); build the Wide board's table (On column, Price / Per trade /
+    // Status columns, Post an offer in the header row, the selection bar above the table); the
+    // per-offer Edit link once an edit screen exists (Task 35). Review M4's hidden-reason lines
+    // ("On, hidden while trading is paused") are still not on the board: ask Claude Design.
     for (const b of BOARDS) expect(has(b), `The My offers board landed at ${b}: build MyOffers.tsx to it and add parity`).toBe(false);
   });
   // NEEDS_CANTDOTHAT_MYOFFERS retired 2026-10-29: Plan 5 Task 21 landed; trading-hold and

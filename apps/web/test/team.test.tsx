@@ -115,6 +115,39 @@ describe('Team (settings)', () => {
     const popup = byPart(document, 'cant-do-that');
     expect(popup?.getAttribute('data-from')).toBe('too-many-members');
     expect(popup?.textContent).toContain('A team can have at most 3 members.');
+    // Review shot 19: the title says what happened.
+    expect(document.querySelector('[role="dialog"] h2')?.textContent).toBe('Your team is full');
+  });
+
+  // Design review shot 19 (Team board, the full state): at the limit the invite control is disabled
+  // and the board's note says why, so no popup is reached from a full list (the server's
+  // too-many-members stays as a fallback, test above).
+  it('a full team: Make an invite link is disabled with the board note, and tapping it opens nothing', async () => {
+    members = [
+      ...members,
+      { id: 'm3', displayName: 'Cedric', roles: ['offers'], status: 'active', inviteExpiresAt: null, joinedAt: '2026-10-29T10:00:00.000Z', createdAt: '2026-10-29T09:00:00.000Z' },
+    ];
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(byPart(host, 'team-count')?.textContent).toBe('3 of 3 members');
+    const note = byPart(host, 'team-full');
+    expect(note?.textContent).toBe('You have 3 members, the most allowed. Remove one to add another.');
+    const button = byPart(host, 'invite')!;
+    expect(button.getAttribute('aria-disabled')).toBe('true');
+    expect(button.getAttribute('aria-describedby')).toBe(note?.id);
+    type(host.querySelector<HTMLInputElement>('#team-name')!, 'Dora');
+    await settle();
+    fire(button, new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(byPart(document, 'cant-do-that')).toBeNull();
+    expect(calls.some((c) => c.url === '/v1/team/invites')).toBe(false);
+    expect(host.querySelectorAll('[data-primary]').length).toBe(1);
+  });
+
+  it('with room on the team there is no full note', async () => {
+    const { host } = render(<MemoryRouter><Team /></MemoryRouter>);
+    await settle();
+    expect(byPart(host, 'team-full')).toBeNull();
   });
 
   it("during the account's 24-hour hold a team change opens CantDoThat with the hold's sentence (owner 2026-10-30)", async () => {

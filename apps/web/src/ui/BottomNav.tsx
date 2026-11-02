@@ -6,6 +6,8 @@ import './ui.css';
 // the Sell and the Buy browse screens. The boards with the tab bar (Main, BuyMain) have no primary
 // action, so the bar carries no data-primary (their parity runs with { primary: false }). Each tab
 // carries where it was pressed (router state `from`), so PostOffer's Close can return there.
+// `postOffers` false leaves out Post offer, for a team member without the Offers role (design
+// review 2026-11-01, shot 26: no tab that only leads to a refusal).
 const TABS: { to: string; label: string; icon: IconName; match: (path: string) => boolean }[] = [
   { to: '/sell', label: 'Trade', icon: 'trade', match: (p) => /^\/(sell|buy)(\/|$)/.test(p) },
   { to: '/post', label: 'Post offer', icon: 'plus-circle', match: (p) => /^\/post(\/|$)/.test(p) },
@@ -13,11 +15,12 @@ const TABS: { to: string; label: string; icon: IconName; match: (path: string) =
   { to: '/profile', label: 'Profile', icon: 'user', match: (p) => /^\/profile(\/|$)/.test(p) },
 ];
 
-export function BottomNav() {
+export function BottomNav({ postOffers = true }: { postOffers?: boolean }) {
   const { pathname } = useLocation();
+  const tabs = postOffers ? TABS : TABS.filter((t) => t.to !== '/post');
   return (
     <nav aria-label="Main" className="x2f-bottom-nav">
-      {TABS.map((t) => {
+      {tabs.map((t) => {
         const current = t.match(pathname);
         return (
           <Link key={t.to} to={t.to} state={{ from: pathname }} className="x2f-bottom-nav__tab" aria-current={current ? 'page' : undefined}>
