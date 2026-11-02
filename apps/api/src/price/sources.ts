@@ -17,6 +17,9 @@ export const PRICE_SOURCE_NAMES = ['kraken', 'bitfinex', 'coingecko'] as const;
 export const CANDIDATE_PRICE_SOURCE_NAMES = ['coinpaprika'] as const;
 export type PriceSourceName = (typeof PRICE_SOURCE_NAMES)[number] | (typeof CANDIDATE_PRICE_SOURCE_NAMES)[number];
 const KNOWN_PRICE_SOURCES: readonly PriceSourceName[] = [...PRICE_SOURCE_NAMES, ...CANDIDATE_PRICE_SOURCE_NAMES];
+const isApprovedPriceSource = (n: PriceSourceName): boolean => (PRICE_SOURCE_NAMES as readonly string[]).includes(n);
+/** The exchanges among the sources (CoinGecko and CoinPaprika are aggregators): the median needs one. */
+export const PRICE_EXCHANGES = ['kraken', 'bitfinex'] as const;
 
 /** The default `PRICE_SOURCES`: the three approved ones (never a candidate). */
 export const DEFAULT_PRICE_SOURCES: readonly PriceSourceName[] = PRICE_SOURCE_NAMES;
@@ -198,6 +201,15 @@ export function parsePriceSources(raw: string | undefined): PriceSourceName[] {
       throw new Error(`config: PRICE_SOURCES is malformed (comma-separated, each once, from: ${KNOWN_PRICE_SOURCES.join(', ')})`);
     }
     out.push(known);
+  }
+  // Review M1, fail closed (relaxing it is part of owner call OC1): a candidate only after every
+  // approved source named, and at least one exchange (not only aggregators) behind the median.
+  const firstCandidate = out.findIndex((n) => !isApprovedPriceSource(n));
+  if (firstCandidate !== -1 && out.slice(firstCandidate).some(isApprovedPriceSource)) {
+    throw new Error('config: PRICE_SOURCES lists a candidate source ahead of an approved one (candidates go last)');
+  }
+  if (!out.some((n) => (PRICE_EXCHANGES as readonly string[]).includes(n))) {
+    throw new Error(`config: PRICE_SOURCES needs at least one exchange (${PRICE_EXCHANGES.join(', ')}), not only aggregators`);
   }
   return out;
 }

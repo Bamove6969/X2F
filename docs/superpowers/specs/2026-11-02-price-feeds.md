@@ -53,13 +53,16 @@ NOT yet verified over Tor (the 2026-10-24 sources were): verify before enabling,
 
 | Name | Kind | URL | Covers | Updates |
 |---|---|---|---|---|
-| `coinpaprika` | XMR price | api.coinpaprika.com/v1/tickers/xmr-monero?quotes=USD,EUR | USD, EUR | minutes |
-| `frankfurter` | USD→X | api.frankfurter.app/latest?from=USD | ~30 (ECB) | once a working day |
-| `erapi` | USD→X | open.er-api.com/v6/latest/USD | ~160 | once a day |
+| `coinpaprika` | XMR price | https://api.coinpaprika.com/v1/tickers/xmr-monero?quotes=USD,EUR | USD, EUR | minutes |
+| `frankfurter` | USD→X | https://api.frankfurter.dev/v1/latest?base=USD | ~30 (ECB) | once a working day |
+| `erapi` | USD→X | https://open.er-api.com/v6/latest/USD | ~160 | once a day |
 
 The two FX candidates update daily, which breaks the spec's "sources must update at least hourly"; fetch
 time would always look fresh, so each adapter refuses an answer whose own published time is older than a
 limit (frankfurter 4 days, to ride over weekends and holidays; erapi 2 days). Those limits are OC3.
+Both also refuse a published time in the future (frankfurter: a day after today, UTC; erapi: more than
+5 min ahead of the server clock), and frankfurter refuses any `amount` but 1 (it scales the rates).
+(Review M2, M3.)
 
 ## Privacy (how the server fetches)
 
@@ -73,6 +76,14 @@ limit (frankfurter 4 days, to ride over weekends and holidays; erapi 2 days). Th
   SOCKS dispatcher. Unchanged here; each new vendor is one more party that sees the server's IP until then.
 
 ## Config
+
+**Ordering fails closed (review M1, 2026-11-02):** a bad setting stops the server at startup.
+- `PRICE_SOURCES`: a candidate only after every approved source named, and at least one exchange
+  (Kraken or Bitfinex) must be in the set: a median made only of aggregators (CoinGecko, CoinPaprika)
+  is refused.
+- `FX_SOURCES`: a candidate only after every approved source named, never first and never alone.
+- `PRICE_ROUTES`: must start with `market`; `direct` only after it, never alone or ahead.
+Relaxing any of these is part of owner calls OC1 (vendors) and OC3 (daily sources).
 
 - `PRICE_SOURCES`: XMR sources (default `kraken,bitfinex,coingecko`); now also accepts `coinpaprika`,
   only when named.
@@ -96,6 +107,11 @@ limit (frankfurter 4 days, to ride over weekends and holidays; erapi 2 days). Th
   over weekends). *Recommendation: (a) unless OC4 adds currencies only they cover, then (b).*
 - **OC4. Which currencies X2F prices.** Today 45. Options: keep 45; add every ISO currency an enabled
   source covers. *Recommendation: keep 45 until a vendor asks for one.*
+- **OC6. An alert when a currency moves to a backup route** (review M5). Today, when EUR moves from
+  `market` to `direct` it is not paused, so no "market prices paused" alert fires; only the exchange-rate
+  source's own failing alert does, and the owner sees the route only in `coverage`. Options: (a) no extra
+  alert; (b) an owner-only info alert "<CCY> priced by a backup route" (and an all-clear when it moves
+  back), grouped like the other price alerts. *Recommendation: (b), owner-only.* Not built.
 - **OC5. Anything users see.** Today a currency with no price is hidden (Task 34) and a take is refused
   with the CantDoThat popup (Q9). Should users ever see which feed priced their currency, or that a
   backup is in use? *Recommendation: no; only the owner's Price health panel (Plan 4) shows `coverage`.*

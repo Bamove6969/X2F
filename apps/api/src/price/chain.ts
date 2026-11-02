@@ -37,13 +37,14 @@ export interface PriceChain {
 }
 
 export interface ChainOptions {
-  /** A route's quote older than this is refused (default: the XMR feed's limit, 5 min); null: no check here. */
-  maxAgeMs?: number | null;
+  /** A route's quote older than this is refused (default: the XMR feed's limit, 5 min). Always on. */
+  maxAgeMs?: number;
   /**
    * When set: if any other route also prices the currency and differs from the chosen price by more
    * than this (basis points of the smaller), the currency has no price (fail closed). Unset: off.
    */
   maxGapBps?: number | null;
+  /** The server clock; the real time when not given (the age check never switches off; review M6). */
   clock?: () => Date;
 }
 
@@ -56,7 +57,7 @@ export function farApart(a: bigint, b: bigint, bps: number): boolean {
 
 export function createPriceChain(routes: readonly PriceRoute[], o: ChainOptions = {}): PriceChain {
   const clock = o.clock ?? (() => new Date());
-  const maxAgeMs = o.maxAgeMs === undefined ? PRICE_FEED_DEFAULTS.maxAgeMs : o.maxAgeMs;
+  const maxAgeMs = o.maxAgeMs ?? PRICE_FEED_DEFAULTS.maxAgeMs;
   const maxGapBps = o.maxGapBps ?? null;
 
   function sane(q: RouteQuote | null, currency: string, exponent: number, now: number): q is RouteQuote {
@@ -64,7 +65,7 @@ export function createPriceChain(routes: readonly PriceRoute[], o: ChainOptions 
     if (typeof q.price.centsPerXmr !== 'bigint' || q.price.centsPerXmr <= 0n) return false;
     if (typeof q.usdCentsPerXmr !== 'bigint' || q.usdCentsPerXmr <= 0n) return false;
     const at = q.at instanceof Date ? q.at.getTime() : Number.NaN;
-    return Number.isFinite(at) && (maxAgeMs === null || now - at <= maxAgeMs);
+    return Number.isFinite(at) && now - at <= maxAgeMs;
   }
 
   function ask(r: PriceRoute, currency: string): RouteQuote | null {
@@ -157,7 +158,7 @@ export function priceRoutesFor(names: readonly PriceRouteName[], xmr: PriceFeed,
   return names.map((n) => (n === 'market' ? marketRoute(xmr, fx) : directRoute(xmr)));
 }
 
-/** `PRICE_ROUTES`: comma-separated route names, each known and once, in order; unset or empty: the default. */
+/** `PRICE_ROUTES`: comma-separated route names, each known and once, market first; unset or empty: the default. */
 export function parsePriceRoutes(raw: string | undefined): PriceRouteName[] {
   if (raw === undefined || raw.trim() === '') return [...DEFAULT_PRICE_ROUTES];
   const out: PriceRouteName[] = [];
@@ -168,6 +169,9 @@ export function parsePriceRoutes(raw: string | undefined): PriceRouteName[] {
     }
     out.push(known);
   }
+  // Review M1, fail closed: the market route (the owner's 2026-10-24 design) always comes first; a
+  // backup route only after it. Relaxing this is part of owner call OC1.
+  if (out[0] !== 'market') throw new Error('config: PRICE_ROUTES must start with market (direct only after it)');
   return out;
 }
 

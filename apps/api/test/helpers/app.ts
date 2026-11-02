@@ -96,6 +96,7 @@ export async function testApp(overrides: Partial<Deps> = {}, options: Omit<Build
     prices: createMarketPrices({
       xmr: createPriceFeed([], { ...PRICE_FEED_DEFAULTS, clock: () => now }),
       fx: createFxRates([], { clock: () => now }),
+      clock: () => now,
     }),
     ...overrides,
   };

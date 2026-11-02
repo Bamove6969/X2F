@@ -425,7 +425,7 @@ describe('createMarketPrices', () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([xmrStub('a', () => 33000n), xmrStub('b', () => 33000n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const fx = createFxRates([fxStub('coinbase', () => ({ EUR: '0.9' }))], { clock: c.clock });
-    const prices = createMarketPrices({ xmr, fx, onAlert: () => Promise.reject(new Error('db down')) });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock, onAlert: () => Promise.reject(new Error('db down')) });
     await expect(prices.poll()).resolves.toBeUndefined();
     expect(prices.current('EUR')?.centsPerXmr).toBe(29700n);
   });
@@ -468,7 +468,7 @@ describe('with the database', () => {
     const c = clockAt(T0);
     const xmr = createPriceFeed([xmrStub('kraken', () => 33000n), xmrStub('bitfinex', () => 33010n)], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
     const fx = createFxRates([fxStub('coinbase', () => (fxUp ? { EUR: '0.90' } : new Error('down')))], { clock: c.clock });
-    const prices = createMarketPrices({ xmr, fx });
+    const prices = createMarketPrices({ xmr, fx, clock: c.clock });
     ({ app, deps } = await testApp({ prices, clock: c.clock }));
     db = deps.db;
     await prices.poll();

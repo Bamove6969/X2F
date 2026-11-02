@@ -69,11 +69,9 @@ export function createMarketPrices(o: MarketOptions): MarketPrices {
   const timers: Array<ReturnType<typeof setInterval>> = [];
   const inFlight = new Set<Promise<void>>();
 
-  // The chain's own age check runs on the server clock given here (main.ts always gives one); without
-  // one it is off and each feed's own check applies (the feeds may run on another clock in tests).
+  // The chain's own age check runs on the server clock (the real time when none is given; review M6).
   const chain = createPriceChain(priceRoutesFor(o.routes ?? DEFAULT_PRICE_ROUTES, o.xmr, o.fx), {
     clock,
-    maxAgeMs: o.clock ? PRICE_FEED_DEFAULTS.maxAgeMs : null,
     maxGapBps: o.maxGapBps ?? null,
   });
   const quote = (currency: string): MarketQuote | null => chain.quote(currency);
