@@ -457,7 +457,10 @@
   --x2f-tab-bar-height: calc(var(--x2f-tab-height) + 1px + env(safe-area-inset-bottom, 0px));
 }
 
-[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main {
+/* A screen inside Panes (My offers, the offers) is under its panes' boxes, `display: contents` on
+   a phone (styles/fold.css). */
+[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main,
+[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > .x2f-panes > [data-pane='main'] > main {
   min-height: calc(100dvh - var(--x2f-tab-bar-height));
 }
 
