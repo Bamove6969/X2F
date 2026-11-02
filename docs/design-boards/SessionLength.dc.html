@@ -15,77 +15,87 @@ button:focus-visible,a:focus-visible,select:focus-visible{outline:2px solid var(
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
-    <span style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
-    <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
-      <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600; color: var(--ink-muted);">Trade</span>
+  <div style="position: relative; flex-shrink: 0; height: 844px; display: flex; flex-direction: column; overflow: hidden;">
+    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
+      <span aria-label="X2F" style="display: flex; align-items: center; height: 44px; padding: 0 4px; font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 700; letter-spacing: -0.02em;"><span aria-hidden="true">X<span style="color: var(--monero-ink);">2</span>F</span></span>
+      <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+        <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 22px; font-weight: 600; color: var(--ink-muted);">Trade</span>
+      </sc-if>
+      <span style="margin-left: auto; align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+    </header>
+
+    <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+      <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 32px 16px 24px; display: flex; flex-direction: column; gap: 16px;">
+        <p style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>You’re logged in as mira.k.</span></p>
+
+        <span aria-hidden="true" style="display: flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-top: 16px; border-radius: 12px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+
+        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">How long should this session stay logged in?</h1>
+
+        <div style="display: flex; flex-direction: column; gap: 8px; margin-top: 8px;">
+          <label for="sl-time" style="font-size: 16px; line-height: 24px; font-weight: 600;">Stay logged in for</label>
+          <select id="sl-time" value="{{selValue}}" onChange="{{onPick}}" aria-describedby="sl-vendor sl-rule" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">
+            <option value="" disabled="{{true}}">Choose a time</option>
+            <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+              <option value="{{o.val}}">{{o.label}}</option>
+            </sc-for>
+          </select>
+        </div>
+
+        <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
+          <p id="sl-vendor" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
+        </sc-if>
+
+        <p id="sl-rule" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">We log you out after this long with no activity. Every session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours at most.</p>
+
+        <p style="margin: 8px 0 0; padding-top: 16px; border-top: 1px solid var(--surface-raised); font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
+      </main>
+
+      <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px 16px 24px; border-top: 1px solid var(--surface-raised);">
+        <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
+          <p id="sl-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">Pick a time to continue.</p>
+        </sc-if>
+        <button type="button" disabled="{{noPick}}" aria-describedby="sl-why" onClick="{{go}}" style="{{goStyle}}">Continue</button>
+      </footer>
     </sc-if>
-    <span style="margin-left: auto; align-self: flex-start; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
-  </header>
 
-  <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
-    <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 24px 16px; display: flex; flex-direction: column; gap: 16px;">
-      <p style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>You’re logged in as mira.k.</span></p>
-
-      <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">How long should this session stay logged in?</h1>
-
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <label for="sl-time" style="font-size: 16px; line-height: 24px; font-weight: 600;">Stay logged in for</label>
-        <select id="sl-time" value="{{selValue}}" onChange="{{onPick}}" aria-describedby="sl-vendor sl-rule" style="width: 100%; height: 48px; box-sizing: border-box; padding: 0 12px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">
-          <option value="" disabled="{{true}}">Choose a time</option>
-          <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
-            <option value="{{o.val}}">{{o.label}}</option>
-          </sc-for>
-        </select>
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+      <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;" aria-hidden="true">
+        <span style="height: 48px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+        <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
+      </main>
+      <div style="position: absolute; left: 16px; right: 16px; bottom: 24px; display: flex; flex-direction: column; gap: 12px;">
+        <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 16px; line-height: 24px; color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Logged out after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{doneHours}}</span> h with no activity</span></p>
+        <button type="button" onClick="{{back}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: var(--ground); color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Show the question again</button>
       </div>
+    </sc-if>
+  </div>
 
-      <sc-if value="{{isVendor}}" hint-placeholder-val="{{false}}">
-        <p id="sl-vendor" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">Longer sessions so you don&#39;t miss a trade while you sleep. Turn on alert sounds so a new trade wakes you.</p>
-      </sc-if>
-
-      <p id="sl-rule" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">We log you out after this long with no activity. Every session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours at most.</p>
-
-      <aside aria-label="Decided by the owner: idle logout by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-        <span style="font-weight: 600;">Asked on every login, with nothing pre-selected. The times depend on the account type:</span>
-        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-          <li>Non-vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
-          <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
-          <li>Everyone: a session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h at most</li>
-        </ul>
-        <span style="color: var(--ink-muted);">Preview with the accountType tweak. Showing: {{accountTypeName}}</span>
-      </aside>
-      <aside aria-label="Decided: who counts as a vendor" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
-        <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
-        <span style="color: var(--ink-muted);">Switching needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. See BecomeVendor.</span>
-      </aside>
-    </main>
-
-    <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
-      <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
-        <p id="sl-why" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick a time to continue.</p>
-      </sc-if>
-      <button type="button" disabled="{{noPick}}" aria-describedby="sl-why" onClick="{{go}}" style="{{goStyle}}">Continue</button>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted); text-align: center;">You can change this any time in <a href="Devices.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
-    </footer>
-  </sc-if>
-
-  <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
-    <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;" aria-hidden="true">
-      <span style="height: 48px; border-radius: 12px; background: var(--surface);"></span>
-      <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-      <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-      <span style="height: 96px; border-radius: 12px; background: var(--surface);"></span>
-    </main>
-    <div style="position: absolute; left: 16px; right: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 12px;">
-      <p role="status" style="display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 16px; line-height: 24px; color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Logged out after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{doneHours}}</span> h with no activity</span></p>
-      <button type="button" onClick="{{back}}" style="height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Show the question again</button>
-    </div>
-  </sc-if>
+  <section id="sl-notes" aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 12px; padding: 24px 16px; border-top: 1px solid var(--line);">
+    <h2 style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Design notes</h2>
+    <aside aria-label="Decided by the owner: idle logout by account type" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Asked on every login, with nothing pre-selected. The times depend on the account type:</span>
+      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+        <li>Non-vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+        <li>Vendors: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h</li>
+        <li>Everyone: a session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h at most</li>
+      </ul>
+      <span style="color: var(--ink-muted);">Preview with the accountType tweak. Showing: {{accountTypeName}}</span>
+    </aside>
+    <aside aria-label="Decided: who counts as a vendor" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">A vendor is an account switched to Vendor in Settings &gt; Account type.</span>
+      <span style="color: var(--ink-muted);">Switching needs a two-factor method you&#39;ve already set up: a passkey, security key or PGP key. See BecomeVendor.</span>
+    </aside>
+  </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1020}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"$preview":{"width":390,"height":1259}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '' }; }
   renderVals() {
@@ -106,7 +116,9 @@ class Component extends DCLogic {
     const TIMES = vendor ? [2, 6, 12, 24] : [2, 4, 6, 12];
     const pick = (s.pick && s.pickFor === acct && TIMES.indexOf(s.pick) >= 0) ? s.pick : null;
 
-    const H = step === 'ask' ? 1020 : 844;
+    // Board = 844 px phone screen + the design-notes block under it (measured).
+    const NOTES_H = vendor ? 397 : 415;
+    const H = 844 + NOTES_H;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
 
     const opts = TIMES.map((h) => ({ val: String(h), label: h + ' hours' }));

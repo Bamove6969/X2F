@@ -1027,7 +1027,7 @@
       "x": 5800,
       "y": 33100,
       "w": 390,
-      "h": 1020,
+      "h": 1259,
       "page": "all",
       "title": "G4 \u00b7 After login: session length",
       "is_interactive": true
@@ -1075,6 +1075,24 @@
       "h": 998,
       "page": "all",
       "title": "G6 \u00b7 Team member replies in chat (wide)",
+      "is_interactive": true
+    },
+    "MemberPermissions.dc.html": {
+      "x": 11710,
+      "y": 33100,
+      "w": 390,
+      "h": 3745,
+      "page": "all",
+      "title": "G7 \u00b7 What a team member can do",
+      "is_interactive": true
+    },
+    "MemberPermissions-Wide.dc.html": {
+      "x": 12250,
+      "y": 33100,
+      "w": 1280,
+      "h": 1823,
+      "page": "all",
+      "title": "G7 \u00b7 What a team member can do (wide)",
       "is_interactive": true
     }
   },
@@ -1352,7 +1370,9 @@
     "BecomeVendor.dc.html",
     "BecomeVendor-Wide.dc.html",
     "TeamChat.dc.html",
-    "TeamChat-Wide.dc.html"
+    "TeamChat-Wide.dc.html",
+    "MemberPermissions.dc.html",
+    "MemberPermissions-Wide.dc.html"
   ],
   "pages": [
     {
