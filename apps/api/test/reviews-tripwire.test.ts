@@ -41,13 +41,15 @@ describe('the whole-trade purge forgets which trade and reviewer a review came f
   });
 });
 
-// TRIPWIRE (C12, owner 2026-11-02: "if the trade is OVERTURNED like it never happened, then the
-// feedback is ERASED"): Plan 4 writes the trader-facing rulings (`dispute_rulings`, 108) and so
-// records an overturn (an appeal's round 2 differing from round 1); nothing on this tree writes them
-// yet. Checks the local tree only: once any source file under apps/*/src or packages/*/src inserts
-// into dispute_rulings, some source file must call `eraseOverturnedReviews` (apps/api/src/reviews/
-// store.ts) in the same transaction as the round-2 write, so an overturned trade's reviews and skips
-// are deleted (the gate already leaves an overturned trade out: reviewableSinceSql).
+// TRIPWIRE NEEDS_P4_OVERTURN_ERASES_REVIEWS (C12, owner 2026-11-02, review I2: "if the trade is
+// OVERTURNED like it never happened, then the feedback is ERASED; if all ends well and finishes like
+// a normal trade after the dispute, the feedback remains"). Plan 4's ruling executor is not built:
+// no API code moves a dispute to `final`, writes the trader-facing rulings (`dispute_rulings`, 108),
+// records `overturned` or logs `ruling.final`. Checks the local tree only: once any file under
+// apps/api/src does one of those, that same file must call `eraseReviewsOfTrade(client, code)` (or
+// `eraseOverturnedReviews`, which calls it only for an overturned trade), apps/api/src/reviews/
+// store.ts, in the transaction that records the overturning ruling. A ruling that is not overturned
+// keeps the reviews (reviews.test.ts "late funds escalate").
 function sourceFiles(dir: string): string[] {
   if (!existsSync(dir)) return [];
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -57,14 +59,36 @@ function sourceFiles(dir: string): string[] {
   });
 }
 
-describe('an overturned trade loses its reviews once Plan 4 records overturns', () => {
-  it('NEEDS_PLAN_4_OVERTURN_ERASES_REVIEWS: whoever writes dispute_rulings also calls eraseOverturnedReviews', () => {
-    const roots = ['apps', 'packages'].flatMap((top) =>
-      existsSync(join(ROOT, top)) ? readdirSync(join(ROOT, top)).map((name) => join(ROOT, top, name, 'src')) : [],
-    );
-    const files = roots.flatMap(sourceFiles).map((f) => readFileSync(f, 'utf8'));
-    const writesRulings = files.some((s) => /insert\s+into\s+dispute_rulings\b/i.test(s));
-    const callsErase = files.some((s) => /\beraseOverturnedReviews\(/.test(s) && !/export\s+async\s+function\s+eraseOverturnedReviews\b/.test(s));
-    expect(!writesRulings || callsErase, 'Plan 4 rulings landed: call eraseOverturnedReviews(client, code) in the transaction that writes an overturning round 2').toBe(true);
+/** Does this API source write a final or overturned ruling? (The log action catalogue only names it.) */
+function writesFinalRuling(path: string, src: string): boolean {
+  if (/[\\/]log[\\/]actions\.ts$/.test(path)) return false;
+  return (
+    /insert\s+into\s+dispute_rulings\b/i.test(src) ||
+    /update\s+disputes\b[^;`]*\b(status\s*=\s*'final'|overturned\s*=)/i.test(src) ||
+    /['"`]ruling\.final['"`]/.test(src)
+  );
+}
+
+const callsErase = (src: string): boolean =>
+  /\b(eraseReviewsOfTrade|eraseOverturnedReviews)\(/.test(src.replace(/export\s+async\s+function\s+(eraseReviewsOfTrade|eraseOverturnedReviews)\(/g, ''));
+
+describe('an overturned trade loses its reviews once Plan 4 records final rulings', () => {
+  it('NEEDS_P4_OVERTURN_ERASES_REVIEWS: API code that writes a final/overturned ruling also calls eraseReviewsOfTrade', () => {
+    const offenders = sourceFiles(join(ROOT, 'apps/api/src'))
+      .map((f) => ({ f, src: readFileSync(f, 'utf8') }))
+      .filter(({ f, src }) => writesFinalRuling(f, src) && !callsErase(src))
+      .map(({ f }) => f.slice(ROOT.length));
+    expect(offenders, 'Plan 4 rulings landed: call eraseReviewsOfTrade(client, code) in the transaction that records an overturning ruling').toEqual([]);
+  });
+
+  it('the detector sees the writes it is meant to see (and not the log catalogue)', () => {
+    expect(writesFinalRuling('apps/api/src/x.ts', "insert into dispute_rulings (code) values ($1)")).toBe(true);
+    expect(writesFinalRuling('apps/api/src/x.ts', "update disputes set status = 'final' where code = $1")).toBe(true);
+    expect(writesFinalRuling('apps/api/src/x.ts', 'update disputes set overturned = $2 where code = $1')).toBe(true);
+    expect(writesFinalRuling('apps/api/src/x.ts', "appendLog(c, { action: 'ruling.final', detail })")).toBe(true);
+    expect(writesFinalRuling('apps/api/src/log/actions.ts', "'ruling.final': { overturned: 'bool' }")).toBe(false);
+    expect(writesFinalRuling('apps/api/src/x.ts', "select * from dispute_rulings where code = $1")).toBe(false);
+    expect(callsErase('await eraseReviewsOfTrade(client, code);')).toBe(true);
+    expect(callsErase('export async function eraseReviewsOfTrade(q, code) {}')).toBe(false);
   });
 });

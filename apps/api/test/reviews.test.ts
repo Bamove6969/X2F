@@ -4,7 +4,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import type { Queryable } from '../src/db/pool.js';
 import { hasPendingReview, pendingReviews } from '../src/reviews/gate.js';
-import { REVIEW_DETACH_GRANULARITY, detachReviews, eraseOverturnedReviews, insertReview, reviewableSince } from '../src/reviews/store.js';
+import { REVIEW_DETACH_GRANULARITY, detachReviews, eraseOverturnedReviews, eraseReviewsOfTrade, insertReview, reviewableSince } from '../src/reviews/store.js';
 import { applyEvent, loadTradeRow } from '../src/trades/store.js';
 import { driveTo, seedTrade } from './helpers/trades.js';
 import { tradeApp } from './helpers/tradeApp.js';
@@ -181,7 +181,10 @@ describe('a review shows at once (owner 2026-11-02: no blind reveal)', () => {
     expect((await review(buyer, t.code, { neutral: false, stars: 1, phrases: [], tradeBadges: [] })).statusCode).toBe(201);
   });
 
-  it('a review given while the trade was reviewable stays visible to the other side if late funds escalate the trade', async () => {
+  // Owner 2026-11-02 (review I2): the review STAYS through the dispute and after it, UNLESS the
+  // dispute's ruling is overturned; then eraseReviewsOfTrade deletes it (the overturn tests below;
+  // tripwire NEEDS_P4_OVERTURN_ERASES_REVIEWS for Plan 4's ruling executor).
+  it('a review given while the trade was reviewable stays visible to the other side if late funds escalate the trade (unless the ruling is later overturned)', async () => {
     const { seller, buyer, t } = await tradeIn('released');
     await jump(new Date(START.getTime() + DAY), seller);
     expect((await review(seller, t.code)).statusCode).toBe(201);
@@ -562,6 +565,23 @@ describe('an overturned trade loses its reviews (C12, owner 2026-11-02)', () => 
     // Not overturned: the seam deletes nothing.
     expect(await asTx((c) => eraseOverturnedReviews(c, t.code))).toEqual({ reviews: 0, skips: 0 });
     expect(await counts(t.code)).toEqual({ reviews: 1, skips: 1 });
+  });
+
+  it('eraseReviewsOfTrade (the Plan 4 seam) deletes the trade\'s reviews and skips as x2f_purge, only that trade, idempotent, and gives the role back', async () => {
+    const { seller, buyer, t } = await tradeIn('released');
+    expect((await review(seller, t.code)).statusCode).toBe(201);
+    expect((await skip(buyer, t.code)).statusCode).toBe(204);
+    const other = await tradeIn('released');
+    expect((await review(other.seller, other.t.code)).statusCode).toBe(201);
+    expect(await asTx(async (c) => {
+      const before = (await c.query<{ u: string }>('select current_user as u')).rows[0]!.u;
+      const erased = await eraseReviewsOfTrade(c, t.code);
+      expect((await c.query<{ u: string }>('select current_user as u')).rows[0]!.u).toBe(before);
+      return erased;
+    })).toEqual({ reviews: 1, skips: 1 });
+    expect(await counts(t.code)).toEqual({ reviews: 0, skips: 0 });
+    expect(await counts(other.t.code)).toEqual({ reviews: 1, skips: 0 });
+    expect(await asTx((c) => eraseReviewsOfTrade(c, t.code))).toEqual({ reviews: 0, skips: 0 });
   });
 
   async function asTx<T>(fn: (c: import('pg').PoolClient) => Promise<T>): Promise<T> {

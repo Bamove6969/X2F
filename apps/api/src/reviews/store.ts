@@ -170,29 +170,27 @@ export async function detachReviews(q: Queryable, code: string): Promise<number>
 }
 
 /**
- * C12 (owner 2026-11-02): the reviews of an OVERTURNED trade (`overturnedSql`) are ERASED: its
- * reviews and its Skip review rows are deleted, so nothing of them shows anywhere, and the trade is
- * no longer reviewable (`reviewableSinceSql`), so the gate and the pending list leave it out.
- *
- * SEAM for Plan 4 (NEEDS_PLAN_4_OVERTURN_ERASES_REVIEWS, apps/api/test/reviews-tripwire.test.ts):
- * call it with the transaction's client in the SAME transaction that records the overturning
- * round-2 ruling (the `dispute_rulings` round-2 row), after that write. It must run in a transaction.
+ * C12 (owner 2026-11-02, review I2): ERASE every review and Skip review row of one trade, so nothing
+ * of them shows anywhere. The SEAM Plan 4 calls when a ruling OVERTURNS the trade
+ * (NEEDS_P4_OVERTURN_ERASES_REVIEWS, apps/api/test/reviews-tripwire.test.ts): with the transaction's
+ * client, in the SAME transaction that records the overturning ruling, after that write. It must run
+ * in a transaction. It does not decide whether the trade was overturned: `eraseOverturnedReviews`
+ * below does, from today's `dispute_rulings` rows.
  *
  * - Lock order: the trade row first (FOR UPDATE), like the review and skip routes
  *   (routes.ts `reviewableSide`), so a review submitted meanwhile either commits first and is
- *   deleted here, or waits and then finds the trade not reviewable (409 `not-reviewable`). The lock
- *   is taken under the caller's role (FOR UPDATE needs update rights x2f_purge does not have).
+ *   deleted here, or waits and then finds the trade not reviewable (409 `not-reviewable`, once the
+ *   overturn is recorded). The lock is taken under the caller's role (FOR UPDATE needs update rights
+ *   x2f_purge does not have).
  * - The deletes run as x2f_purge (`set local role`), the one role 301's reviews_final trigger lets
  *   delete a review (309 grants it review_skips); the caller's role is put back afterwards for the
  *   rest of its transaction. No trigger is changed.
- * - Only an overturned trade is touched: for any other trade (a normal finish after a dispute keeps
- *   its reviews) it deletes nothing. Idempotent: a second call deletes nothing.
+ * - Idempotent: a second call deletes nothing.
  *
  * Returns how many reviews and skips were deleted.
  */
-export async function eraseOverturnedReviews(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
-  const { rows } = await q.query<{ overturned: boolean }>(`select ${overturnedSql('t')} as overturned from trades t where t.code = $1 for update`, [code]);
-  if (rows[0]?.overturned !== true) return { reviews: 0, skips: 0 };
+export async function eraseReviewsOfTrade(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
+  await q.query('select 1 from trades where code = $1 for update', [code]);
   const { rows: role } = await q.query<{ r: string }>(`select current_setting('role') as r`);
   // PURGE_ROLE is a compile-time constant (an SQL identifier, not a bound parameter).
   await q.query(`set local role ${PURGE_ROLE}`);
@@ -200,4 +198,17 @@ export async function eraseOverturnedReviews(q: Queryable, code: string): Promis
   const skips = await q.query('delete from review_skips where trade_code = $1', [code]);
   await q.query(`select set_config('role', $1, true)`, [role[0]!.r]);
   return { reviews: reviews.rowCount ?? 0, skips: skips.rowCount ?? 0 };
+}
+
+/**
+ * `eraseReviewsOfTrade`, only if the trade is OVERTURNED (`overturnedSql`): an overturned trade's
+ * reviews and skips are erased and it is no longer reviewable (`reviewableSinceSql`), so the gate
+ * and the pending list leave it out. Any other trade (a normal finish after a dispute keeps its
+ * reviews) is left alone. Locks the trade row first, then decides; same transaction rules as
+ * `eraseReviewsOfTrade`.
+ */
+export async function eraseOverturnedReviews(q: Queryable, code: string): Promise<{ reviews: number; skips: number }> {
+  const { rows } = await q.query<{ overturned: boolean }>(`select ${overturnedSql('t')} as overturned from trades t where t.code = $1 for update`, [code]);
+  if (rows[0]?.overturned !== true) return { reviews: 0, skips: 0 };
+  return eraseReviewsOfTrade(q, code);
 }
