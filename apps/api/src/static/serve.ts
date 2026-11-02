@@ -145,6 +145,13 @@ const FILE_EXTENSIONS = new Set([
   'svg', 'png', 'jpg', 'jpeg', 'gif', 'webp', 'avif', 'ico', 'webmanifest',
 ]);
 
+/** Drops trailing dots and whitespace, like .replace(/[.\s]+$/, '') but linear: that regex backtracks quadratically on '. . . … .x'. */
+function trimTrailingDotsAndSpaces(seg: string): string {
+  let end = seg.length;
+  while (end > 0 && /[.\s]/.test(seg.charAt(end - 1))) end--;
+  return seg.slice(0, end);
+}
+
 function isApiOrFilePath(url: string): boolean {
   const raw = url.split('?', 1)[0] ?? '';
   let path: string;
@@ -156,7 +163,7 @@ function isApiOrFilePath(url: string): boolean {
   // Repeated slashes collapse and trailing dots or spaces on a segment drop, so //v1/x, /v1./x
   // and /v1%20 are judged like /v1/x.
   const segments = path.split('/').filter((seg) => seg !== '');
-  const first = (segments[0] ?? '').replace(/[.\s]+$/, '');
+  const first = trimTrailingDotsAndSpaces(segments[0] ?? '');
   if (first === 'v1') return true;
   const last = segments.at(-1) ?? '';
   const dot = last.lastIndexOf('.');
