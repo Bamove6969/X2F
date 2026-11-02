@@ -29,21 +29,35 @@ import { Button } from '../../ui/Button.js';
 import { Countdown } from '../../ui/Countdown.js';
 import type { IconName } from '../../ui/icons.js';
 import { StatusChip, type Tone } from '../../ui/StatusChip.js';
-import { deviceTotal, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
-import { payTimer } from './payModel.js';
-import { payMethodOf, usePaymentDetails } from './paySeams.js';
+import { deviceTotal, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
+import { payBlock, payTimer } from './payModel.js';
+import { GIFT_CARD_WARNING, payMethodOf, usePaymentDetails, type MethodInfo } from './paySeams.js';
 import type { TradeScreenProps } from './payTypes.js';
 import { refusalCopy } from './release/view.js';
 import { errorSentence } from './SetupStatus.js';
 import { Name } from './TradeTimeline.js';
 
-/** What the glance warns about, in the viewer's role's words, or null (nothing to say, or done). */
+/**
+ * What the glance warns about, in the viewer's role's words, or null (nothing to say, or done).
+ * For the buyer before "I've paid" it is the pay screen's own gate (payModel.ts `payBlock`, review
+ * 2026-11-01 I1): while the escrow is still checking, the device has no amount or the totals
+ * differ, the glance says not to pay, exactly as BuyerPay does, so "Pay now" and "Send exactly"
+ * never show while the screen under them says "don't send any money".
+ */
 export function glanceWarning(
-  view: Pick<TradeScreenProps['view'], 'role'> & { counterparty: Pick<TradeScreenProps['view']['counterparty'], 'displayName'> },
-  escrow: Pick<TradeScreenProps['escrow'], 'phase' | 'error' | 'retryable' | 'refusal'>,
+  view: Pick<TradeScreenProps['view'], 'role' | 'state' | 'paidAt' | 'fiatCents' | 'amountAtomic'> & {
+    counterparty: Pick<TradeScreenProps['view']['counterparty'], 'displayName'>;
+  },
+  escrow: Pick<TradeScreenProps['escrow'], 'phase' | 'error' | 'retryable' | 'refusal' | 'fiatCents' | 'amountAtomic'>,
 ): string | null {
   if (escrow.phase === 'done' || escrow.phase === 'settled-without-device') return null;
-  if (view.role === 'buyer') return escrow.error !== null ? stoppedText(escrow) : refusalText(escrow.refusal);
+  if (view.role === 'buyer') {
+    if (glanceStep(view) === 'pay') {
+      const block = payBlock(view, escrow);
+      return block === null ? null : payBlockText(block, escrow);
+    }
+    return escrow.error !== null ? stoppedText(escrow) : refusalText(escrow.refusal);
+  }
   if (escrow.error !== null) return errorSentence(escrow) ?? 'The escrow stopped on this device.';
   return escrow.refusal !== null ? refusalCopy(escrow.refusal, publicName(view.counterparty)) : null;
 }
@@ -172,7 +186,7 @@ export function TradeGlance({ view, escrow, serverClock, layout }: Pick<TradeScr
           </p>
         ) : null}
         {pay ? (
-          <PayFacts view={view} method={method.name} total={total} xmr={escrow.amountAtomic} />
+          <PayFacts view={view} method={method} total={total} xmr={escrow.amountAtomic} />
         ) : total ? (
           <p className="x2f-fold-glance__fact" data-glance-amount="">
             {/* COPY-UNSIGNED */}
@@ -189,8 +203,13 @@ export function TradeGlance({ view, escrow, serverClock, layout }: Pick<TradeScr
   );
 }
 
-/** Fold-Tabletop's "Send exactly" and "Memo": the buyer's payment, read at a glance. */
-function PayFacts({ view, method, total, xmr }: { view: TradeView; method: string; total: DeviceTotal; xmr: bigint | null }) {
+/**
+ * Fold-Tabletop's "Send exactly" and "Memo": the buyer's payment, read at a glance. It hides the
+ * pay screen's PaymentCard in the bottom half (styles/fold.css), so it carries that card's safety
+ * lines too (review 2026-11-01 I2): pay from an account in your own name and, for a gift-card
+ * method, the gift-card warning. Information only: no control.
+ */
+function PayFacts({ view, method, total, xmr }: { view: TradeView; method: MethodInfo; total: DeviceTotal; xmr: bigint | null }) {
   const details = usePaymentDetails(view.code);
   return (
     <>
@@ -198,7 +217,7 @@ function PayFacts({ view, method, total, xmr }: { view: TradeView; method: strin
         <span className="x2f-trade-label">Send exactly</span>
         <span className="x2f-mono">{total.text}</span>
         <span className="x2f-muted">
-          {total.currency} by {method}
+          {total.currency} by {method.name}
           {xmr !== null ? (
             <>
               {' '}
@@ -216,9 +235,17 @@ function PayFacts({ view, method, total, xmr }: { view: TradeView; method: strin
         <span className="x2f-trade-label">Memo</span>
         <span className="x2f-mono">{view.code}</span>
         <span className="x2f-muted">
-          Put this in the {method} memo so <Name view={view} /> can match your payment.
+          Put this in the {method.name} memo so <Name view={view} /> can match your payment.
         </span>
       </p>
+      <p className="x2f-fold-glance__fact x2f-muted" data-glance-own-name="">
+        Pay from an account in your own name. Payments from someone else's account may be rejected or frozen. Use at your own risk.
+      </p>
+      {method.giftCard ? (
+        <p className="x2f-giftcard x2f-fold-glance__fact" data-tone="danger">
+          <strong>{GIFT_CARD_WARNING}</strong>
+        </p>
+      ) : null}
     </>
   );
 }

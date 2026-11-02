@@ -11,6 +11,7 @@ import { glancePill, glanceStep, glanceTimer, glanceWarning, TradeGlance, utcDat
 import type { TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
 import { PAY_NOW, PAY_SECURED } from '../src/fixtures/payBoard.js';
 import { Sheet } from '../src/ui/Sheet.js';
+import { GIFT_CARD_WARNING } from '../src/screens/trade/paySeams.js';
 import { fire, render } from './render.js';
 
 const none = { tabletop: false, three: false, two: false, panes: false, wide: false, cover: false };
@@ -169,9 +170,9 @@ describe('styles/fold.css', () => {
 });
 
 describe('TradeGlance warning (round-2 review m1, m2)', () => {
-  const ok = { phase: 'ready' as const, error: null, retryable: false, refusal: null };
-  const buyer = { role: 'buyer' as const, counterparty: { displayName: 'mira.k' } };
-  const seller = { role: 'seller' as const, counterparty: { displayName: 'mira.k' } };
+  const ok = { phase: 'ready' as const, error: null, retryable: false, refusal: null, fiatCents: BigInt(PAY_SECURED.fiatCents), amountAtomic: BigInt(PAY_SECURED.amountAtomic) };
+  const buyer = { ...PAY_SECURED, role: 'buyer' as const, counterparty: { ...PAY_SECURED.counterparty, displayName: 'mira.k' } };
+  const seller = { ...buyer, role: 'seller' as const };
 
   it('says nothing once this device is done, whatever refusal is left over', () => {
     for (const phase of ['done', 'settled-without-device'] as const) {
@@ -284,5 +285,56 @@ describe('Task 40 still waits for its design', () => {
     const canvas = JSON.parse(readFileSync(`${boards}canvas.json`, 'utf8')) as { boards: Record<string, unknown> };
     const landed = Object.keys(canvas.boards).some((b) => /^Fold/i.test(b)) || readdirSync(boards).some((f) => /^Fold/i.test(f));
     expect(landed, 'a Fold board landed: build the glance to it (see this test)').toBe(false);
+  });
+});
+
+// Review 2026-11-01 I1: the glance never tells the buyer to pay while the pay screen's own gate
+// (payModel.ts `payBlock`) blocks paying; I2: the tabletop keeps the payment card's safety lines.
+describe('TradeGlance follows the pay gate (review I1, I2)', () => {
+  const clock = () => new Date(PAY_NOW);
+  const escrow = (o: Partial<TradeScreenProps['escrow']> = {}) =>
+    ({ phase: 'ready', error: null, retryable: false, refusal: null, amountAtomic: BigInt(PAY_SECURED.amountAtomic), fiatCents: BigInt(PAY_SECURED.fiatCents), deal: null, ...o }) as unknown as TradeScreenProps['escrow'];
+  const blocked: [string, TradeScreenProps['view'], TradeScreenProps['escrow'], RegExp][] = [
+    ['escrow still checking', PAY_SECURED, escrow({ phase: 'verifying' } as never), /still checking the escrow/],
+    ['escrow setting up', PAY_SECURED, escrow({ phase: 'setting-up' } as never), /don't send any money yet/],
+    ['total differs on the same amount', { ...PAY_SECURED, fiatCents: String(Number(PAY_SECURED.fiatCents) + 100) }, escrow(), /total on the server doesn't match/],
+    ['total differs on another amount', { ...PAY_SECURED, fiatCents: String(Number(PAY_SECURED.fiatCents) + 100) }, escrow({ amountAtomic: BigInt(PAY_SECURED.amountAtomic) + 1n } as never), /checking the new total/],
+    ['no amount on this device', PAY_SECURED, escrow({ fiatCents: null, refusal: 'amount-out-of-range' } as never), /can't confirm the trade amount/],
+    ['refused', PAY_SECURED, escrow({ refusal: 'view-mismatch' } as never), /don't match what you agreed to/],
+    ['stopped', PAY_SECURED, escrow({ phase: 'error', error: 'escrow-failed' } as never), /Don't send any money until it runs again/],
+  ];
+
+  for (const [name, view, e, says] of blocked) {
+    for (const layout of ['tabletop', 'cover'] as const) {
+      it(`${name}, ${layout}: no "Pay now", no "Send exactly", no "then tap I've paid", and the warning`, () => {
+        const { host, unmount } = render(<TradeGlance view={view} escrow={e} serverClock={clock} layout={layout} />);
+        const text = host.textContent ?? '';
+        expect(text).not.toContain('Pay now');
+        expect(text).not.toContain('Waiting for your payment');
+        expect(text).not.toContain('Send exactly');
+        expect(text).not.toContain("then tap I've paid");
+        expect(host.querySelector('[data-glance-pay]')).toBeNull();
+        expect(host.querySelector('[data-glance-warning]')?.textContent).toMatch(says);
+        unmount();
+      });
+    }
+  }
+
+  it('glanceWarning takes the pay gate for the buyer before paying', () => {
+    expect(glanceWarning(PAY_SECURED, escrow({ phase: 'verifying' } as never))).toMatch(/still checking the escrow/);
+    expect(glanceWarning(PAY_SECURED, escrow())).toBeNull();
+  });
+
+  it('tabletop "Send exactly" carries the own-name line', () => {
+    const { host } = render(<TradeGlance view={PAY_SECURED} escrow={escrow()} serverClock={clock} layout="tabletop" />);
+    expect(host.textContent).toContain('Pay from an account in your own name');
+    expect(host.textContent).not.toContain('gift cards');
+  });
+
+  it('tabletop "Send exactly" carries the gift-card warning for a gift-card method', () => {
+    const view = { ...PAY_SECURED, profile: { ...(PAY_SECURED.profile as object), name: 'Amazon gift card', giftCard: true } };
+    const { host } = render(<TradeGlance view={view} escrow={escrow()} serverClock={clock} layout="tabletop" />);
+    expect(host.textContent).toContain('Pay from an account in your own name');
+    expect(host.textContent).toContain(GIFT_CARD_WARNING);
   });
 });
