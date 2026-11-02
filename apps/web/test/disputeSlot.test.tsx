@@ -209,7 +209,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       </MemoryRouter>,
     );
     expect(host.querySelector('.x2f-chip')?.textContent).toBe('Payment time ran out');
-    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] .x2f-facts__row')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
+    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] .x2f-kv__row')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
     const keys = facts.map(([k]) => k);
     expect(keys.slice(-2)).toEqual(['Trade amount', 'Charged to you']);
     expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');

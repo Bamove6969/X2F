@@ -97,9 +97,9 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
           </div>
           <p className="x2f-sheet__body">{C.silent}</p>
           <p className="x2f-callout">{C.openTrades}</p>
-          <p className="x2f-small">{C.later}</p>
+          <p className="x2f-fine">{C.later}</p>
           <div className="x2f-sheet__actions">
-            <Button variant="danger-outline" data-size="large" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
+            <Button variant="danger-outline" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
               {C.action(displayName)}
             </Button>
             <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => go({ kind: 'idle' }, 'open')}>

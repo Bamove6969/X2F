@@ -21,7 +21,8 @@ import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE } from '../../ui/cantDoCodes.js';
 import { Countdown, Duration } from '../../ui/Countdown.js';
-import { Facts, type Fact } from '../../ui/Facts.js';
+import { Disclosure } from '../../ui/Disclosure.js';
+import { KeyValues, type KeyValue } from '../../ui/KeyValues.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TimerCard } from '../../ui/TimerCard.js';
@@ -96,7 +97,7 @@ export function PaidWaitingBody({
       ) : (
         <StatusChip tone="escrow" icon="check" label="Paid" />
       )}
-      <h1 id="paid-title" className="x2f-title">
+      <h1 id="paid-title" className="x2f-h2">
         {ended ? (
           <>
             <Name view={view} /> hasn't confirmed in time
@@ -107,7 +108,7 @@ export function PaidWaitingBody({
           </>
         )}
       </h1>
-      <p className="x2f-small">
+      <p className="x2f-fine">
         {ended ? (
           <>
             {length !== null ? `Their ${length} to check ${method.name} ended` : `Their time to check ${method.name} ended`}
@@ -155,7 +156,7 @@ export function PaidWaitingBody({
 
   const next = (
     <section className="x2f-panel" aria-labelledby="paid-next" data-part="paid-next">
-      <h2 id="paid-next" className="x2f-heading">
+      <h2 id="paid-next" className="x2f-section-title">
         What happens next
       </h2>
       <ol className="x2f-steps">
@@ -181,24 +182,35 @@ export function PaidWaitingBody({
     </section>
   );
 
-  const rows: Fact[] = [
+  const rows: KeyValue[] = [
     ...(details ?? []).map((d) => ({ key: d.label === `${method.name} to` ? 'Sent to' : d.label, value: d.value })),
     { key: 'Memo', value: view.code },
     { key: 'For', value: xmr },
     ...(view.paidAt !== null ? [{ key: 'Marked as paid', value: <When at={view.paidAt} /> }] : []),
   ];
   const payment = (
-    <details className="x2f-disclosure" data-part="paid-payment">
-      <summary>
-        Your payment
-        <span className="x2f-disclosure__summary-note">
-          {total !== null ? <span className="x2f-when">{total.text}</span> : null}
-          {total !== null ? ' · ' : ''}
-          {method.name}
-        </span>
-      </summary>
-      <Facts rows={rows} />
-    </details>
+    <section className="x2f-panel" data-outline="" aria-label="Your payment" data-part="paid-payment">
+      {/* The kit's Disclosure (the LoginApprove board's open and close row). */}
+      <Disclosure
+        part="paid-payment-toggle"
+        summary={
+          <>
+            <span>Your payment</span>
+            <span className="x2f-fine">
+              {total !== null ? <span className="x2f-when">{total.text}</span> : null}
+              {total !== null ? ' · ' : ''}
+              {method.name}
+            </span>
+          </>
+        }
+      >
+        {(id) => (
+          <div id={id}>
+            <KeyValues rows={rows} />
+          </div>
+        )}
+      </Disclosure>
+    </section>
   );
 
   if (wide) {

@@ -136,7 +136,7 @@ export function News() {
           <Icon name="close" size={22} />
         </button>
         <div className="x2f-page__header-text">
-          <h1 className="x2f-title">News</h1>
+          <h1 className="x2f-h2">News</h1>
           {state.status === 'ready' ? (
             <span className="x2f-page__header-sub" role="status" data-part="news-count">
               {total === 0 ? 'No news yet' : `${newCount > 0 ? `${newCount} new` : 'All read'} · ${total === 1 ? '1 post' : `${total} posts`}`}
@@ -164,7 +164,7 @@ export function News() {
         {state.status === 'ready' && state.items.length > 0 ? (
           <section className="x2f-stack" aria-label="Posts" data-part="news-list">
             <div className="x2f-stepper-row">
-              <span className="x2f-overline">Newest first</span>
+              <span className="x2f-kicker">Newest first</span>
               {newCount > 1 ? (
                 <span className="x2f-stepper" data-part="news-stepper">
                   <button type="button" className="x2f-icon-button" aria-label="Previous new post" disabled={step === 0} onClick={() => goTo(step - 1)}>
@@ -187,7 +187,7 @@ export function News() {
       </div>
       <footer className="x2f-page__footer">
         {afterLogin ? (
-          <label className="x2f-choice" data-part="news-hide">
+          <label className="x2f-tick" data-part="news-hide">
             <input
               type="checkbox"
               checked={hide}
@@ -196,9 +196,9 @@ export function News() {
                 setHideAfterLogin(e.target.checked);
               }}
             />
-            <span className="x2f-choice__text">
-              <span className="x2f-choice__title">Don't show me this again</span>
-              <span className="x2f-choice__hint">
+            <span className="x2f-tick__text">
+              <span className="x2f-tick__title">Don't show me this again</span>
+              <span className="x2f-tick__hint">
                 News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.
               </span>
             </span>

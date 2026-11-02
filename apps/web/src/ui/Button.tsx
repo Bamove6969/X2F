@@ -7,7 +7,7 @@ import './ui.css';
 // - secondary: the outlined button (SellOffers "Message nightowl_44").
 // - quiet: the muted text button (BuyerPay "Cancel trade").
 // - danger: the rose text button (BuyerPay "Open dispute").
-// - danger-outline: the outlined rose button (Block "Block nightowl_44", Refunded "Open a dispute").
+// - danger-outline: the outlined rose button (LoginApprove "No, block it", Block "Block nightowl_44", BuyerPaidWaiting "Open a dispute").
 export type ButtonVariant = 'primary' | 'secondary' | 'quiet' | 'danger' | 'danger-outline';
 
 type Common = { variant: ButtonVariant; children: ReactNode; className?: string };

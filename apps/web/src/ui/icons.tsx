@@ -33,6 +33,48 @@ const SHAPES = {
   // BuyerPaidWaiting board: "Message <name> in chat".
   chat: <path d="M4 5h16v11H9l-5 4z" />,
   shield: <path d={SHIELD} />,
+  // LoginApprove board: a blocked login.
+  'shield-x': (
+    <>
+      <path d={SHIELD} />
+      <path d="M9.5 9.5l5 5M14.5 9.5l-5 5" />
+    </>
+  ),
+  // LoginApprove board: a login let in.
+  'check-circle': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M8 12l3 3 5-6" />
+    </>
+  ),
+  // LoginApprove board: the caution notes.
+  'info-circle': (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v5M12 16v.5" />
+    </>
+  ),
+  // Devices board: a phone and a computer in the device list, the team members card.
+  phone: (
+    <>
+      <rect x="7" y="3" width="10" height="18" rx="2" />
+      <path d="M11 18h2" />
+    </>
+  ),
+  computer: (
+    <>
+      <rect x="4" y="5" width="16" height="11" rx="1.5" />
+      <path d="M2 19h20" />
+    </>
+  ),
+  team: (
+    <>
+      <circle cx="9" cy="8" r="3.5" />
+      <path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6" />
+      <circle cx="17" cy="9" r="2.5" />
+      <path d="M17 14c2.8 0 4.5 1.9 4.5 4.5" />
+    </>
+  ),
   'shield-check': (
     <>
       <path d={SHIELD} />
@@ -139,5 +181,19 @@ export function Icon({ name, size = 24, stroke = 1.5 }: { name: IconName; size?:
     >
       {SHAPES[name]}
     </svg>
+  );
+}
+
+export type IconTone = 'escrow' | 'danger' | 'caution' | 'muted';
+
+/**
+ * A state icon above a heading (LoginApprove board: the 32 px escrow check for a login let in, the
+ * danger shield for a blocked one). Decorative: the heading says what happened.
+ */
+export function StatusIcon({ name, tone, size = 32 }: { name: IconName; tone: IconTone; size?: number }) {
+  return (
+    <span className="x2f-status-icon" data-icon-tone={tone}>
+      <Icon name={name} size={size} />
+    </span>
   );
 }

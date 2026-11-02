@@ -23,6 +23,7 @@ import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { displayNameOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
+import { ChoiceGroup } from '../ui/Choice.js';
 import { Icon } from '../ui/icons.js';
 import { waitSentence } from './auth/refusals.js';
 import './screens.css';
@@ -83,6 +84,7 @@ export function Feedback() {
   const textId = useId();
   const hintId = useId();
   const countId = useId();
+  const kindId = useId();
   // Who the last message went as, for the thank-you's "Sent as <name>." (Feedback board).
   const [sentAnonymously, setSentAnonymously] = useState(false);
   const thanks = useRef<HTMLHeadingElement>(null);
@@ -148,13 +150,13 @@ export function Feedback() {
             <Icon name="check" size={32} stroke={2} />
           </span>
           <div className="x2f-done__text" data-part="feedback-thanks" role="status">
-            <h1 className="x2f-title x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
+            <h1 className="x2f-h2 x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
               {THANKS_HEAD}
             </h1>{' '}
             <p className="x2f-sheet__body">{THANKS_BODY}</p>
           </div>
           {/* The board's line under the thanks: who it was sent as. */}
-          <p className="x2f-small" data-part="feedback-sent-as">
+          <p className="x2f-fine" data-part="feedback-sent-as">
             {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
           </p>
         </div>
@@ -182,7 +184,7 @@ export function Feedback() {
       <form className="x2f-page__form" onSubmit={(e) => void submit(e)}>
         <div className="x2f-page__main x2f-page__main--roomy">
           <section className="x2f-stack">
-            <h1 className="x2f-title">Tell us what you think</h1>
+            <h1 className="x2f-h2">Tell us what you think</h1>
             <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
           </section>
           {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
@@ -195,17 +197,13 @@ export function Feedback() {
             </p>
           ) : null}
           {/* Not on the board; kept (design session 2 Nov) as selectable cards, the kit's selection pattern. COPY-UNSIGNED */}
-          <fieldset className="x2f-choices">
-            <legend className="x2f-overline">What is it?</legend>
-            <div className="x2f-cards">
-              {KINDS.map((k) => (
-                <label key={k.id} className="x2f-card-choice">
-                  <input type="radio" name="feedback-kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
-                  <span className="x2f-card-choice__title">{k.label}</span>
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          <div className="x2f-field">
+            <span className="x2f-kicker" id={kindId}>
+              What is it?
+            </span>
+            {/* The kit's ChoiceGroup cards: real radios, selected = 2px ink ring on surface-raised. */}
+            <ChoiceGroup look="card" options={KINDS.map((k) => ({ value: k.id, label: k.label }))} value={kind} onChange={setKind} labelledBy={kindId} part="feedback-kind" />
+          </div>
           <div className="x2f-field">
             <label htmlFor={textId} className="x2f-field-label">
               Your message
@@ -224,12 +222,12 @@ export function Feedback() {
               <span className="x2f-when">{[...text].length}</span> of {FEEDBACK_TEXT_MAX} characters
             </span>
           </div>
-          <label className="x2f-choice" data-boxed="">
+          <label className="x2f-tick" data-boxed="">
             <input type="checkbox" checked={anonymous} aria-describedby={hintId} onChange={(e) => setAnonymous(e.target.checked)} />
-            <span className="x2f-choice__text">
-              <span className="x2f-choice__title">Send anonymously</span>
+            <span className="x2f-tick__text">
+              <span className="x2f-tick__title">Send anonymously</span>
               {/* COPY-UNSIGNED */}
-              <span id={hintId} className="x2f-choice__hint" data-part="anon-hint">
+              <span id={hintId} className="x2f-tick__hint" data-part="anon-hint">
                 {anonymous ? FEEDBACK_ANON_HINT : FEEDBACK_NAMED_HINT}
               </span>
             </span>

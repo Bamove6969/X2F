@@ -123,9 +123,12 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // (Tasks 38-39 landing, 2026-10-29): two warnings that explain, not refuse: PaidConfirmSheet's
     // "After this you can't cancel the trade" and ReleaseWarning's "... and can't be taken back."
     expect(todo).toBeLessThanOrEqual(4);
-    // 45 -> 46 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid", said ahead of time.
-    // 46 -> 47 (design session 2 Nov): the Feedback anonymous hint "we can't follow up with you".
-    expect(notARefusal).toBeLessThanOrEqual(47);
+    // 45 -> 50 (C2-D1, 1 Nov 2026): the LoginApprove and Devices boards' explanations, not rules:
+    // what blocking a login did, the advice after a block, why no place is shown, the blocked new
+    // device's note, and how approval works.
+    // 50 -> 52 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid",
+    // said ahead of time, and the Feedback anonymous hint "we can't follow up with you".
+    expect(notARefusal).toBeLessThanOrEqual(52);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

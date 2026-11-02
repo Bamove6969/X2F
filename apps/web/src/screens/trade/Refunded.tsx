@@ -19,7 +19,7 @@ import { Link } from 'react-router';
 import { formatFiat, formatXmr, TIMERS } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
 import { formatDate } from '../../ui/dates.js';
-import { Facts, type Fact } from '../../ui/Facts.js';
+import { KeyValues, type KeyValue } from '../../ui/KeyValues.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip, type Tone } from '../../ui/StatusChip.js';
 import { TradeHeader } from '../../ui/TradeHeader.js';
@@ -136,7 +136,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   // One day for every row: the day goes in the card's head and each row shows its time (the board).
   const days = new Set(timeline.map((r) => formatDate(r.at)));
   const oneDay = days.size === 1 ? [...days][0]! : null;
-  const facts: Fact[] = [
+  const facts: KeyValue[] = [
     ...timeline.map((r) => ({ key: r.key, label: withName(r.key, name), value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> })),
     {
       key: 'Trade amount',
@@ -157,12 +157,12 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
           <StatusChip tone={story.chip.tone} icon={story.chip.icon} label={story.chip.label} />
         </div>
         <section className="x2f-stack" aria-label="Trade status">
-          <h1 className="x2f-title">{withName(story.title, name)}</h1>
+          <h1 className="x2f-h2">{withName(story.title, name)}</h1>
           <p className="x2f-lead">{withName(story.lead, name)}</p>
         </section>
         <section className="x2f-panel" aria-labelledby="refunded-what">
           {/* "What happened · 29 Oct 2026", the day in mono, when every row is on it (design session 2 Nov). */}
-          <h2 className="x2f-heading" id="refunded-what">
+          <h2 className="x2f-section-title" id="refunded-what">
             What happened
             {oneDay !== null ? (
               <>
@@ -171,7 +171,7 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               </>
             ) : null}
           </h2>
-          <Facts rows={facts} part="refunded-facts" />
+          <KeyValues rows={facts} part="refunded-facts" />
         </section>
         {entry.kind === 'open' ? (
           <section className="x2f-panel" data-outline="" aria-labelledby="refunded-dispute" data-part="refunded-dispute">
@@ -179,12 +179,12 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               <Icon name="shield" size={20} />
               {story.disputeTitle}
             </h2>
-            <p className="x2f-small">
+            <p className="x2f-fine">
               Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator makes them send you the{' '}
               {formatXmr(BigInt(view.amountAtomic))} XMR as agreed.
             </p>
             {Number.isFinite(closed) ? (
-              <p className="x2f-small" data-dispute-window="">
+              <p className="x2f-fine" data-dispute-window="">
                 {/* COPY-UNSIGNED: the window is the owner's (48 hours after the refund). */}
                 You can open one for 48 hours after the refund, until <When at={closed + TIMERS.disputeAfterRefundHours * HOUR_MS} />.
               </p>

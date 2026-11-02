@@ -17,7 +17,7 @@ import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
 import { formatDateTime } from '../../ui/dates.js';
 import {
-  HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_CODE,
+  HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE,
   WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, type CantDoCode,
 } from '../../ui/cantDoCodes.js';
 
@@ -76,13 +76,13 @@ export function heldNote(holdUntil: string): string {
 
 /**
  * What a login, or a logged-in device's answer to a new login, shows in CantDoThat (Plan 2 Task 16,
- * Plan 5 Task 21): the device limit (when approving only: a login is never refused by it since
- * Task 17 review round 2), the hourly cap on approvals, the hold. Null for anything else (the
- * caller words it inline as before).
+ * Plan 5 Task 21): the hourly cap on approvals, the hold, a weak session. Null for anything else
+ * (the caller words it inline as before). The device limit is never one: approving opens the
+ * chooser instead (C2-D1, LoginApprove board), and a login is never refused by it since Task 17
+ * review round 2.
  */
 export function loginCantDo(e: unknown, where: 'login' | 'approve'): { code: CantDoCode; text: string } | null {
   if (!(e instanceof AuthApiError)) return null;
-  if (e.code === TOO_MANY_DEVICES_CODE && where === 'approve') return { code: TOO_MANY_DEVICES_CODE, text: TOO_MANY_DEVICES_APPROVE };
   if (e.status === 429 && e.reason === 'approvals') return { code: TOO_MANY_APPROVALS_CODE, text: TOO_MANY_APPROVALS };
   if (e.code === HOLD_CODE) return { code: HOLD_CODE, text: where === 'login' ? holdLoginSentence(e.holdUntil) : holdApproveSentence(e.holdUntil) };
   if (e.code === WEAK_SESSION_CODE) return { code: WEAK_SESSION_CODE, text: WEAK_SESSION_TEXT };

@@ -63,7 +63,7 @@ const settle = (page: Page) =>
   });
 
 /** Saves `name`-night.png and `name`-day.png (or only night with `nightOnly`), then puts night back. */
-async function shot(page: Page, name: string, o: { nightOnly?: boolean; scrollTo?: Locator } = {}): Promise<void> {
+async function shot(page: Page, name: string, o: { nightOnly?: boolean; scrollTo?: Locator; fullPage?: boolean } = {}): Promise<void> {
   if (o.scrollTo) await o.scrollTo.evaluate((el) => el.scrollIntoView({ block: 'center' }));
   await page.mouse.move(0, 0);
   for (const theme of o.nightOnly ? ['night'] : ['night', 'day']) {
@@ -71,7 +71,7 @@ async function shot(page: Page, name: string, o: { nightOnly?: boolean; scrollTo
       document.documentElement.dataset.theme = t;
     }, theme);
     await settle(page);
-    await page.screenshot({ path: `${OUT}${name}-${theme}.png`, animations: 'disabled', caret: 'hide' });
+    await page.screenshot({ path: `${OUT}${name}-${theme}.png`, animations: 'disabled', caret: 'hide', fullPage: o.fullPage ?? false });
   }
   await page.evaluate(() => {
     document.documentElement.dataset.theme = 'night';
@@ -181,7 +181,8 @@ test('06-07 the logged-in device: "Is this you?", a number picked, then let in',
 
 test('08-10 at the device limit: the ask with its notes, then which device to log out', async ({ page }) => {
   await securityApi(page);
-  await page.route('**/v1/account/approvals', json([approval({ atLimit: true, oneDevice: true })]));
+  // C2-D1: at the limit with One device at a time off (with it on there is no limit to reach).
+  await page.route('**/v1/account/approvals', json([approval({ atLimit: true })]));
   const tooMany = json({
     error: 'too-many-devices',
     max: 3,
@@ -191,18 +192,14 @@ test('08-10 at the device limit: the ask with its notes, then which device to lo
       { id: 's3', deviceLabel: 'Firefox on Windows', lastSeenAt: '2026-10-29T00:00:00.000Z', current: false },
     ],
   }, 409);
-  await page.route(`**/v1/account/approvals/${APPROVAL_ID}`, (r) => (r.request().method() === 'POST' ? tooMany(r) : json(approval({ atLimit: true, oneDevice: true }))(r)));
+  await page.route(`**/v1/account/approvals/${APPROVAL_ID}`, (r) => (r.request().method() === 'POST' ? tooMany(r) : json(approval({ atLimit: true }))(r)));
   await page.goto('/settings/security');
   const sheet = page.locator('[role="dialog"]').first();
   await expect(page.locator('[data-part="approve-at-limit"]')).toBeVisible();
   await page.locator('[data-part="approve-choice"]', { hasText: '86' }).click();
   await shot(page, '08-security-approve-at-limit');
   await page.locator('[data-part="approve-yes"]').click();
-  // CantDoThat says why first; OK leaves the chooser.
-  const cant = page.locator('[data-part="cant-do-that"]');
-  await expect(cant).toHaveAttribute('data-from', 'too-many-devices');
-  await shot(page, '09-security-approve-too-many-devices');
-  await cant.getByRole('button', { name: 'OK' }).click();
+  // C2-D1 (LoginApprove board): no refusal popup at the limit (shot 09 is gone); the chooser comes next.
   await expect(page.locator('[data-part="approve-choose"]')).toBeVisible();
   await page.locator('[data-part="approve-out"]', { hasText: 'Firefox on Windows' }).click();
   await expect(sheet).toBeVisible();
@@ -211,9 +208,22 @@ test('08-10 at the device limit: the ask with its notes, then which device to lo
 
 test('11 Devices: the count against the limit and One device at a time', async ({ page }) => {
   await securityApi(page);
-  await page.goto('/settings/security');
+  await page.goto('/settings/devices');
   await expect(page.locator('[data-part="devices-count"]')).toBeVisible();
-  await shot(page, '11-security-devices', { scrollTo: page.locator('[data-part="devices"]') });
+  await shot(page, '11-security-devices', { fullPage: true });
+});
+
+// C2-D1: the Desktop layout of the LoginApprove-Wide and Devices-Wide boards.
+test('11w-06w the Desktop layout (1280x800): Devices, and the "Is this you?" dialog', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await securityApi(page);
+  await page.goto('/settings/devices');
+  await expect(page.locator('[data-part="devices-count"]')).toBeVisible();
+  await shot(page, '11w-security-devices-wide', { fullPage: true });
+  await page.route('**/v1/account/approvals', json([approval()]));
+  await page.goto('/settings/security');
+  await expect(page.locator('[role="dialog"]')).toContainText('Is this you?');
+  await shot(page, '06w-security-approve-ask-wide');
 });
 
 test('12 a held backup session: the hold banner on Security', async ({ page }) => {
@@ -414,9 +424,9 @@ test("30 the owner's Devices list names a member's session", async ({ page }) =>
       { id: 's-m', deviceLabel: 'Firefox on Linux', level: 'full', createdAt: LATER, lastSeenAt: LATER, current: false, member: 'Basil' },
     ],
   });
-  await page.goto('/settings/security');
-  await expect(page.locator('[data-part="device-list"] li[data-member="Basil"]')).toBeVisible();
-  await shot(page, '30-team-owner-devices-member-session', { scrollTo: page.locator('[data-part="device-list"]') });
+  await page.goto('/settings/devices');
+  await expect(page.locator('[data-part="team-sessions"] li[data-member="Basil"]')).toBeVisible();
+  await shot(page, '30-team-owner-devices-member-session', { fullPage: true });
 });
 
 // ---- 31-35 My offers (Plan 3 Task 36) ---------------------------------------------------------------

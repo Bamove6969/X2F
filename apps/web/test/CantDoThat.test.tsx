@@ -106,7 +106,7 @@ describe('Feedback form', () => {
 
   it('sends a named comment with its refusal code, shows the owner\'s thank-you exactly, and moves focus to it', async () => {
     const { host, sent } = await open('/feedback?from=starter-limit', { status: 202, json: {} });
-    const labels = [...host.querySelectorAll('fieldset label')].map((l) => l.textContent);
+    const labels = [...host.querySelectorAll('[role="radiogroup"] label')].map((l) => l.textContent);
     expect(labels).toEqual(['Complaint', 'Feedback', 'Recommendation']);
     const send_ = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(send_.disabled).toBe(true);
@@ -131,9 +131,11 @@ describe('Feedback form', () => {
     expect(host.querySelector('label[for="' + box.id + '"]')?.textContent).toBe('Your message');
     type(box, 'Hi');
     expect(host.querySelector('[data-part="feedback-count"]')?.textContent).toBe('2 of 2000 characters');
-    // No grooved fieldset: the kit's selectable cards (design session 2 Nov).
-    expect(host.querySelector('fieldset')?.className).toBe('x2f-choices');
-    expect([...host.querySelectorAll('fieldset label')].every((l) => l.className === 'x2f-card-choice')).toBe(true);
+    // No grooved fieldset: the kit's ChoiceGroup cards (design session 2 Nov), named by "What is it?".
+    const group = host.querySelector('[role="radiogroup"]')!;
+    expect(host.querySelector('fieldset')).toBeNull();
+    expect(document.getElementById(group.getAttribute('aria-labelledby')!)?.textContent).toBe('What is it?');
+    expect([...group.querySelectorAll('label')].every((l) => l.getAttribute('data-look') === 'card')).toBe(true);
     await send(host);
     expect(host.querySelector('[data-part="feedback-thanks-heading"]')?.textContent).toBe('Thank you!');
     expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toMatch(/^Sent as .+\.$/);

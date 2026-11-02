@@ -319,7 +319,8 @@ describe("I've paid and PaidConfirmSheet", () => {
     expect(status.getAttribute('role')).toBe('status');
     expect(status.querySelector('h1')?.textContent).toBe('Paid · waiting for satoshi_ghost to confirm');
     expect(document.querySelectorAll('[data-primary]')).toHaveLength(0);
-    expect(document.querySelector('[data-part="paid-payment"]')?.tagName).toBe('DETAILS');
+    // Your payment folds away in the kit's Disclosure, closed at first.
+    expect(document.querySelector('[data-part="paid-payment-toggle"]')?.getAttribute('aria-expanded')).toBe('false');
     expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 59 min');
   });
 
