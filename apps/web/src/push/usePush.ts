@@ -101,6 +101,15 @@ export async function logOut(env: PushEnv): Promise<void> {
     // best-effort: POST /v1/logout drops this session's subscriptions on the server anyway
   }
   await env.api('/v1/logout', { method: 'POST' });
+  forgetLocalSession();
+}
+
+/**
+ * What this tab keeps for a session that has ended: a log-out here, or a session the server ended
+ * (an approval that logged this device out, C2-D1 review N6). It keeps no session itself; the
+ * caller drops the shared session answer (`refreshSession`) where it has to.
+ */
+export function forgetLocalSession(): void {
   // A feedback draft never outlives the account in this tab (Plan 5 Task 21, round-2 N-M6).
   clearFeedbackDraft();
   // Nor a trade chat draft kept across a fold (Task 40 review M5).

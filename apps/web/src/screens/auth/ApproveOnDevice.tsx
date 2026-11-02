@@ -50,6 +50,17 @@ export function ApproveOnDevice({
   const [loggedOut, setLoggedOut] = useState<string[]>([]);
   const [left, setLeft] = useState(() => new Date(wait.expiresAt).getTime() - Date.now());
   const busy = useRef(false);
+  // Review M2: on a stage change focus moves to the new stage's h2 (tabIndex -1), so the change is
+  // read out and a keyboard user is not left on a button that now does something else. Not on mount.
+  const heading = useRef<HTMLHeadingElement>(null);
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    heading.current?.focus();
+  }, [stage]);
 
   useEffect(() => {
     if (stage !== 'waiting') return;
@@ -88,12 +99,15 @@ export function ApproveOnDevice({
   };
 
   const backup = `/login/backup?returnTo=${encodeURIComponent(returnTo)}`;
-  // While waiting the back control cancels the wait, as Cancel does; after it, it starts again.
-  const back = { label: 'Back to log in', onClick: stage === 'waiting' ? cancel : onRestart };
+  // While waiting the back control cancels the wait, as Cancel does; once let in it goes on like
+  // Continue (this device is logged in now, review M1); blocked or expired, it starts again.
+  const back = { label: 'Back to log in', onClick: stage === 'waiting' ? cancel : stage === 'in' ? onLoggedIn : onRestart };
 
   if (stage === 'in') {
     return (
+      // key per stage (review M2): the footer button is a new node, so a press meant for Cancel can't become Continue.
       <FlowScreen
+        key={stage}
         screen="login"
         title="Log in"
         back={back}
@@ -105,7 +119,7 @@ export function ApproveOnDevice({
       >
         <section className="x2f-stack" data-part="approve-in" aria-labelledby="approve-in-h">
           <StatusIcon name="check-circle" tone="escrow" />
-          <h2 className="x2f-h2" id="approve-in-h">
+          <h2 className="x2f-h2" id="approve-in-h" tabIndex={-1} ref={heading}>
             You're in
           </h2>
           <p className="x2f-body">Your other device approved this login.</p>
@@ -123,6 +137,7 @@ export function ApproveOnDevice({
     const blocked = stage === 'blocked';
     return (
       <FlowScreen
+        key={stage}
         screen="login"
         title="Log in"
         back={back}
@@ -139,7 +154,7 @@ export function ApproveOnDevice({
       >
         <section className="x2f-stack" data-part={`approve-${stage}`} aria-labelledby="approve-end-h">
           {blocked ? <StatusIcon name="shield-x" tone="danger" /> : null}
-          <h2 className="x2f-h2" id="approve-end-h">
+          <h2 className="x2f-h2" id="approve-end-h" tabIndex={-1} ref={heading}>
             {blocked ? 'This login was blocked' : 'This request has ended'}
           </h2>
           <p className="x2f-body">{blocked ? 'Your other device said no, or a different number was tapped.' : 'Nobody approved it in time.'}</p>
@@ -155,6 +170,7 @@ export function ApproveOnDevice({
 
   return (
     <FlowScreen
+      key={stage}
       screen="login"
       title="Log in"
       back={back}
@@ -164,14 +180,13 @@ export function ApproveOnDevice({
         </Button>
       }
     >
-      <h2 className="x2f-h2" data-part="approve-wait">
+      <h2 className="x2f-h2" data-part="approve-wait" tabIndex={-1} ref={heading}>
         Approve this login on a device you're already using
       </h2>
       <div className="x2f-number-card">
-        <span className="x2f-kicker" id="approve-your-number">
-          Your number
-        </span>
-        <span className="x2f-big-number" data-part="approve-number" aria-labelledby="approve-your-number">
+        {/* Read in order: "Your number", then the number (review N3: no aria-labelledby on a span). */}
+        <span className="x2f-kicker">Your number</span>
+        <span className="x2f-big-number" data-part="approve-number">
           {wait.number}
         </span>
         <span className="x2f-fine">

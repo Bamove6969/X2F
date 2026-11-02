@@ -3,7 +3,7 @@
  * Plan 2 Task 18 for team members' sessions): its own screen at /settings/devices, linked from
  * Settings → Security. The count against the limit with a meter, your devices with remote log-out
  * (asked first), "Log out all other devices" (your own devices only), team members' sessions in
- * their own card, the "One device at a time" switch (confirm-it's-you) and how a new device gets
+ * their own card with "Log out all team members" (asked first; owner, via the Devices board), the "One device at a time" switch (confirm-it's-you) and how a new device gets
  * in. The current device is marked and cannot log itself out here (that is the Log out button
  * elsewhere).
  *
@@ -37,7 +37,6 @@ const C = {
   title: DEVICES_TITLE,
   back: 'Back to settings',
   devicesTitle: 'Devices',
-  count: (used: number, max: number) => `${used} of ${max} devices logged in`,
   atLimit: "You're at the limit. To let a new device in, you'll pick one to log out.",
   oneMore: 'One more device can log in.',
   more: (n: number) => `${n} more devices can log in.`,
@@ -50,6 +49,8 @@ const C = {
   teamNotYours: "These are your team members' logins, not yours.",
   teamMember: 'Team member',
   teamLogOutLabel: (member: string, device: string) => `Log out ${member} on ${device}`,
+  logOutTeam: 'Log out all team members',
+  teamAllCovers: '"Log out all other devices" covers only your own devices. Use "Log out all team members" for your team.',
   manageTeam: 'Manage roles and invites in Team',
   optionsTitle: 'Options',
   oneDevice: 'One device at a time',
@@ -69,16 +70,22 @@ const C = {
     memberText: (member: string, device: string) => `${member}'s session on ${device} ends right away.`,
     allTitle: (n: number) => (n === 1 ? 'Log out 1 other device?' : `Log out ${n} other devices?`),
     allText: (names: string[]) => `${names.join(' and ')} ${names.length === 1 ? 'is' : 'are'} logged out right away. Only this device stays logged in.`,
+    teamTitle: 'Log out all team members?',
+    // The board's second sentence ("They can log in again unless you switch them off.") names the
+    // members' switch, which X2F does not have yet, so it is left out.
+    teamText: 'Every team member is logged out right away.',
+    teamCancel: 'Keep them logged in',
     cancel: 'Cancel',
   },
   done: {
     one: (name: string) => `${name} was logged out.`,
     member: (member: string, device: string) => `${member} was logged out of ${device}.`,
     all: 'All other devices were logged out.',
+    team: 'All team members were logged out.',
   },
 } as const;
 
-type Ask = { kind: 'one'; s: SessionEntry } | { kind: 'all'; ids: string[]; names: string[] };
+type Ask = { kind: 'one'; s: SessionEntry } | { kind: 'all'; ids: string[]; names: string[] } | { kind: 'team'; ids: string[] };
 
 const memberOfSession = (s: SessionEntry): string | null => (typeof s.member === 'string' && s.member !== '' ? s.member : null);
 
@@ -146,6 +153,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
     if (ask === null) return;
     setAsk(null);
     if (ask.kind === 'all') void end(ask.ids, C.done.all);
+    else if (ask.kind === 'team') void end(ask.ids, C.done.team);
     else {
       const m = memberOfSession(ask.s);
       void end([ask.s.id], m !== null ? C.done.member(m, ask.s.deviceLabel) : C.done.one(ask.s.deviceLabel));
@@ -189,10 +197,17 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
   let askTitle = '';
   let askText = '';
   let askConfirm: string = C.logOut;
+  let askCancel: string = C.ask.cancel;
   if (ask?.kind === 'all') {
     askTitle = C.ask.allTitle(ask.ids.length);
     askText = C.ask.allText(ask.names);
     askConfirm = C.logOutAll;
+  } else if (ask?.kind === 'team') {
+    // Owner, via the Devices board: a separate bulk logout for team members.
+    askTitle = C.ask.teamTitle;
+    askText = C.ask.teamText;
+    askConfirm = C.logOutTeam;
+    askCancel = C.ask.teamCancel;
   } else if (ask?.kind === 'one') {
     const m = memberOfSession(ask.s);
     askTitle = m !== null ? C.ask.memberTitle(m) : C.ask.oneTitle(ask.s.deviceLabel);
@@ -307,6 +322,18 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     );
                   })}
                 </ul>
+                <Button
+                  variant="secondary"
+                  data-tone="team"
+                  disabled={busy}
+                  onClick={() => setAsk({ kind: 'team', ids: team.map((s) => s.id) })}
+                  data-part="end-team"
+                >
+                  {C.logOutTeam}
+                </Button>
+                <p className="x2f-fine" data-part="team-all-covers">
+                  {C.teamAllCovers}
+                </p>
                 <Link className="x2f-row-link" to={TEAM_PATH}>
                   <span>{C.manageTeam}</span>
                   <Icon name="chevron-right" size={18} />
@@ -373,7 +400,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             {askConfirm}
           </Button>
           <Button variant="quiet" onClick={() => setAsk(null)} data-part="end-cancel">
-            {C.ask.cancel}
+            {askCancel}
           </Button>
         </div>
       </Sheet>
