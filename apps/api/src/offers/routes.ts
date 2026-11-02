@@ -15,11 +15,13 @@ import { blockedEitherWaySql } from '../traders/blocks.js';
 import { COMPLETED_TRADES_SQL, loadStarterSettings, opensAt, tradeCap, usdCentsOf } from '../traders/stage.js';
 import { lastSeenSql, onlineSince, traderSummaries, type TraderSummary } from '../traders/summary.js';
 import { usableWallets } from '../wallets/routes.js';
+import { accountTypeOf } from '../routes/accountType.js';
 
 /**
  * Plan 3 Task 4: offers (ads).
  *
- * - `POST /v1/offers` (`requireTrader`) → 201 `{ id }`.
+ * - `POST /v1/offers` (`requireTrader`) → 201 `{ id }`. Only a vendor account posts or turns on
+ *   offers (owner 2 Nov 2026; 403 `not-vendor`, routes/accountType.ts).
  * - `PATCH /v1/offers/:id { status }` (the poster only) → `{ id, status }`.
  * - `GET /v1/offers?side&method&currency&sort=best|online|trades` (no session, P3-M9) → `OfferCard[]`.
  * - `GET /v1/offers/:id` (no session) → `OfferDetail`; a paused offer only to its poster.
@@ -89,10 +91,10 @@ export interface MyOffer {
 
 /**
  * Why one offer was not switched by `POST /v1/account/offers/status`: the posting guards of
- * relisting (`trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
+ * relisting (`not-vendor`, `trading-paused`, `trading-hold`, `no-wallet`, `too-many-offers`, `method-unavailable`),
  * or `not-found` for an id that is not one of my live or paused offers.
  */
-export type OfferSwitchRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
+export type OfferSwitchRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet' | 'too-many-offers' | 'method-unavailable' | 'not-found';
 
 /** One offer's outcome: its status after the call, and why it was not switched when it was refused. */
 export interface OfferSwitchResult {
@@ -305,7 +307,7 @@ async function assertMayPost(
   const accountId = auth.accountId;
   await lockAccountLive(client, auth, now);
   const refused = await accountRefusal(client, accountId, now);
-  if (refused !== null) throw new ApiError(409, refused);
+  if (refused !== null) throw new ApiError(refused === 'not-vendor' ? 403 : 409, refused);
   const caps = await loadOfferCaps(client);
   const { rows } = await client.query<{ same: number; total: number }>(
     `select count(*) filter (where side = $2 and method_id = $3 and currency = $4)::int as same, count(*)::int as total
@@ -334,9 +336,14 @@ async function lockAccountLive(client: Queryable, auth: AuthContext, now: Date):
   await requireLiveSessionInTx(client, auth, now);
 }
 
-/** Why this account may not put any offer live now, or null; run after `lockAccount`. */
-type AccountRefusal = 'trading-paused' | 'trading-hold' | 'no-wallet';
+/**
+ * Why this account may not put any offer live now, or null; run after `lockAccount`. First: only a
+ * vendor posts or turns on offers (owner 2 Nov 2026; 403 `not-vendor`). A trader's offers from
+ * before migration 198 stay listed while live, and can be paused or removed.
+ */
+type AccountRefusal = 'not-vendor' | 'trading-paused' | 'trading-hold' | 'no-wallet';
 async function accountRefusal(client: Queryable, accountId: string, now: Date): Promise<AccountRefusal | null> {
+  if ((await accountTypeOf(client, accountId)) !== 'vendor') return 'not-vendor';
   const flags = await client.query<{ trading_paused: boolean }>('select trading_paused from site_flags for share');
   // No site_flags row fails closed.
   if (flags.rows[0]?.trading_paused !== false) return 'trading-paused';

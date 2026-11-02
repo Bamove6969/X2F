@@ -20,6 +20,7 @@ import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerAsyncHook
 import * as openpgp from 'openpgp';
 import type { Deps } from '../app.js';
 import { addAlert } from '../alerts.js';
+import { assertKeyNotBanned } from '../bans.js';
 import { assertDisplayNameFree, assertNewNames, assertTermsAccepted, createAccount, openNames, sealNames } from '../accounts.js';
 import { subkey, type Config } from '../config.js';
 import type { Queryable } from '../db/pool.js';
@@ -132,13 +133,15 @@ export function openKey(config: Config, sealed: Buffer, fingerprint: string): st
 /**
  * Stores a public key for an account (inside the caller's transaction when given a client):
  * reduced by `storableKey`, sealed, and inserted. A fingerprint already on any account → 409
- * `key-in-use`.
+ * `key-in-use`; a key with a banned fingerprint (primary or subkey) → 409 `key-unavailable`.
  */
 export async function insertPgpKey(
   db: Queryable,
   config: Config,
   a: { accountId: string; fingerprint: string; armored: string; now: Date },
 ): Promise<void> {
+  // The ban list (owner 2 Nov 2026, bans.ts): checked again where the key is written.
+  await assertKeyNotBanned(db, config, a.armored);
   const sealed = sealKey(config, await storableKey(a.armored, a.now), a.fingerprint);
   try {
     await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
@@ -668,7 +671,8 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const names = await assertNewNames(deps.db, b.displayName, b.loginName);
   const publicKey = str(b, 'publicKey');
   const inspection = await inspectOrRefuse(publicKey, now);
-  await assertDisplayNameFree(deps.db, names);
+  await assertKeyNotBanned(deps.db, deps.config, publicKey);
+  await assertDisplayNameFree(deps.db, names, deps.config);
   // Fingerprint clashes are not checked here: only `finish`, after the code proves the key, says key-in-use.
   const { storable, pending } = await pendingKey(deps.config, publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
@@ -745,6 +749,7 @@ const inspected = new WeakMap<FastifyRequest, { armored: string; fingerprint: st
 const inspectNewKey: preHandlerAsyncHookHandler = async function (req) {
   const armored = str(body(req), 'publicKey');
   const r = await inspectOrRefuse(armored, req.server.deps.clock());
+  await assertKeyNotBanned(req.server.deps.db, req.server.deps.config, armored);
   inspected.set(req, { armored, fingerprint: r.fingerprint });
 };
 
@@ -777,7 +782,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     try {
       // Task 17: a waiting login's new key starts the hold and waits in it.
       held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc });
-      if (held === null) await applyPgpKey(client, req.auth.accountId, pending.fingerprint, sealed, now);
+      if (held === null) await applyPgpKey(client, deps.config, req.auth.accountId, pending.fingerprint, sealed, now);
       await client.query('commit');
     } catch (e) {
       await client.query('rollback');
@@ -808,6 +813,7 @@ export async function issueTeamJoinChallenge(
 ): Promise<IssuedChallenge & { fingerprint: string }> {
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
+  await assertKeyNotBanned(deps.db, deps.config, a.publicKey);
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
     accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
@@ -843,9 +849,11 @@ export async function checkTeamJoinCode(
 /**
  * The write of an added key (the route's, or a pending one when the hold ends by time): the sealed
  * storable key as `pendingKey` made it, alert `login-method-added`. 409 `key-in-use` when the
- * fingerprint is on any account.
+ * fingerprint is on any account, 409 `key-unavailable` when the key is on the ban list.
  */
-export async function applyPgpKey(db: Queryable, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
+export async function applyPgpKey(db: Queryable, config: Config, accountId: string, fingerprint: string, sealed: Buffer, now: Date): Promise<void> {
+  // The ban list (owner 2 Nov 2026): a key banned while it waited out the hold is refused here too.
+  await assertKeyNotBanned(db, config, openKey(config, sealed, fingerprint));
   try {
     await db.query('insert into pgp_keys (account_id, fingerprint, armored_enc, created_at) values ($1, $2, $3, $4)', [
       accountId, fingerprint, sealed, now,

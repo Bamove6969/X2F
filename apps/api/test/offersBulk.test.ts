@@ -5,6 +5,7 @@ import type { Deps } from '../src/app.js';
 import { SWITCH_MAX_IDS } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
 import { testDb } from './helpers/db.js';
+import { makeVendor } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 
@@ -60,6 +61,8 @@ async function addWallet(accountId: string): Promise<void> {
 async function poster(): Promise<Who> {
   const t = await trader();
   await addWallet(t.id);
+  // Owner 2 Nov 2026: only vendors post.
+  await makeVendor(deps, t.id);
   return t;
 }
 

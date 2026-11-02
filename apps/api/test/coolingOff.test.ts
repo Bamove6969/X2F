@@ -16,7 +16,7 @@ import { hashPassword } from '../src/auth/password.js';
 import { PUSH_SUBSCRIPTION_CAP } from '../src/push/send.js';
 import { STRONG_COMBOS, loginStrength } from '../src/auth/strength.js';
 import { codeOf, decrypt, genKey, type Pair } from './helpers/pgpKeys.js';
-import { accountIdByLoginName, seedAccount } from './helpers/accounts.js';
+import { accountIdByLoginName, makeVendor, seedAccount } from './helpers/accounts.js';
 import { fixtureLeakedList } from './helpers/leaked.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from './helpers/softAuthenticator.js';
 import { FIAT, driveTo, seedTrade } from './helpers/trades.js';
@@ -1267,6 +1267,7 @@ describe('review round 2', () => {
 
       /** An open team invite of `o` (Offers role); returns the member id. */
       async function teamInvite(o: { b: Browser; id: string }): Promise<string> {
+        await makeVendor(deps, o.id);
         const displayName = unique('Mate');
         const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
         const r = await o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken });
@@ -1393,6 +1394,7 @@ describe('review round 2', () => {
         // Plan 2 Task 18 (team members), at its landing.
         'POST /v1/team/invites': async () => {
           const o = await passkeyWithPassword();
+          await makeVendor(deps, o.id);
           const displayName = unique('Mate');
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-invite', name: displayName, roles: 'offers' });
           return { b: o.b, accountId: o.id, fire: () => o.b.post('/v1/team/invites', { displayName, roles: ['offers'], confirmToken }) };
@@ -1409,6 +1411,13 @@ describe('review round 2', () => {
           const confirmToken = await tokenFor(deps, o.b, o.id, { kind: 'team-remove', memberId: mid });
           return { b: o.b, accountId: o.id, fire: () => del(o.b, `/v1/team/members/${mid}`, { confirmToken }) };
         },
+      };
+
+      // Owner 2 Nov 2026: switching to a vendor account (a passkey on the account; confirmed with it).
+      ROWS['PUT /v1/account/type'] = async () => {
+        const o = await passkeyWithPassword();
+        const confirmToken = await issueConfirmToken(deps, { sessionId: await sessionOf(o.b), accountId: o.id, action: { kind: 'become-vendor' }, method: 'passkey' });
+        return { b: o.b, accountId: o.id, fire: () => o.b.put('/v1/account/type', { type: 'vendor', confirmToken }) };
       };
 
       it('the table covers exactly LIVE_SESSION_ROUTES (the trading ones in take.test.ts)', () => {

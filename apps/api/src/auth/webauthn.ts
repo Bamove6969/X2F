@@ -725,7 +725,7 @@ async function registerStart(req: FastifyRequest, reply: FastifyReply) {
   const body = record(req.body);
   const names = await assertNewNames(deps.db, body.displayName, body.loginName);
   const kind = credentialKind(body.kind);
-  await assertDisplayNameFree(deps.db, names);
+  await assertDisplayNameFree(deps.db, names, deps.config);
   // The account does not exist yet: its WebAuthn user handle is chosen now and kept with the challenge.
   const userID = randomBytes(32);
   const options = await buildRegistrationOptions(deps, { kind, accountKind: 'trader', userID, userName: names.displayName, exclude: [] });

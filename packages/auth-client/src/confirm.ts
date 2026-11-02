@@ -51,6 +51,11 @@ export function teamRolesAction(memberId: string, roles: readonly ('offers' | 't
   return { kind: 'team-roles', memberId, roles: rolesText(roles) };
 }
 
+/** Owner 2 Nov 2026: the action switching to a vendor account is confirmed for. */
+export function becomeVendorAction(): Extract<ConfirmAction, { kind: 'become-vendor' }> {
+  return { kind: 'become-vendor' };
+}
+
 /** The action removing a member (or cancelling an invite) is confirmed for. */
 export function teamRemoveAction(memberId: string): Extract<ConfirmAction, { kind: 'team-remove' }> {
   return { kind: 'team-remove', memberId };

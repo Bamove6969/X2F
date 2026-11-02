@@ -38,5 +38,7 @@ export {
   addressHash,
   addressesHash,
   describeAction,
+  STRONG_ONLY_ACTIONS,
+  needsStrongConfirm,
 } from './confirmAction.js';
 export { DEFAULT_IDLE_HOURS, IDLE_HOURS, type IdleHours, isIdleHours } from './logoutTimer.js';

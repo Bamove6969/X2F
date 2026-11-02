@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
 import { rateSql } from '../src/offers/routes.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { currentLoginTag, seedAccount } from './helpers/accounts.js';
+import { currentLoginTag, makeVendor, seedAccount } from './helpers/accounts.js';
 import { Browser } from './helpers/totp.js';
 import { tradeApp } from './helpers/tradeApp.js';
 import { seedTrade } from './helpers/trades.js';
@@ -64,10 +64,11 @@ async function addWallet(accountId: string, usable = true): Promise<void> {
   );
 }
 
-/** A trader with one usable payout wallet. */
+/** A vendor (owner 2 Nov 2026: only vendors post) with one usable payout wallet. */
 async function poster(): Promise<Who> {
   const t = await trader();
   await addWallet(t.id);
+  await makeVendor(deps, t.id);
   return t;
 }
 

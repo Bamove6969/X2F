@@ -16,7 +16,7 @@ import { MAX_TEAM_MEMBERS, MEMBER_SIGNING_EVENTS, OWNER_DEVICE_ROUTES } from '..
 import { createSoftAuthenticator } from './helpers/softAuthenticator.js';
 import { openEvents, until, type SseStream } from './helpers/sse.js';
 import type { MarketPrices, MarketQuote } from '../src/price/market.js';
-import { seedAccount } from './helpers/accounts.js';
+import { makeVendor, seedAccount } from './helpers/accounts.js';
 import { testDb } from './helpers/db.js';
 import { codeOf, decrypt, genKey } from './helpers/pgpKeys.js';
 import { Browser, ORIGIN } from './helpers/totp.js';
@@ -91,9 +91,10 @@ async function addWallet(accountId: string): Promise<string> {
   return rows[0]!.id;
 }
 
-/** A team account (a trader with a usable wallet). */
+/** A team account (a vendor with a usable wallet; owner 2 Nov 2026: teams are for vendors only). */
 async function team(): Promise<Who & { wallet: string }> {
   const t = await trader();
+  await makeVendor(deps, t.id);
   return { ...t, wallet: await addWallet(t.id) };
 }
 

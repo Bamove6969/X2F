@@ -192,6 +192,20 @@ export interface AccountOverview {
    * for, with their own login methods); null for the account owner. Optional: older API builds do not send it.
    */
   member?: { name: string; roles: TeamRole[] } | null;
+  /**
+   * Owner 2 Nov 2026: 'trader' (takes offers) or 'vendor' (posts offers, may have team members,
+   * pays the 1% fee); a member sees the account they work for. Optional: older API builds do not
+   * send it (read it with `isVendor`).
+   */
+  accountType?: AccountType;
+}
+
+/** Owner 2 Nov 2026: Trader and Vendor accounts. */
+export type AccountType = 'trader' | 'vendor';
+
+/** True only when the API says the account is a vendor (an older API build that sends nothing: false). */
+export function isVendor(me: Pick<AccountOverview, 'accountType'> | null | undefined): boolean {
+  return me?.accountType === 'vendor';
 }
 
 /** Plan 2 Task 18: a team member's roles (spec 6.7). */
@@ -413,6 +427,12 @@ export interface AuthApi {
   /** Full trader sessions only; applies to the current session at once. */
   setLogoutTimer(b: { idleHours: IdleHours }): Promise<LogoutTimer | Held>;
 
+  /**
+   * Owner 2 Nov 2026: switch to a vendor account. Confirm `become-vendor` (`becomeVendorAction`;
+   * only a passkey, security key or PGP key may confirm it). 403 `vendor-needs-key` without one.
+   */
+  becomeVendor(b: Token): Promise<{ accountType: 'vendor' }>;
+
   // Team members (Plan 2 Task 18). The account owner's side: a member gets 403 `owner-only`.
   getTeam(): Promise<{ members: TeamMember[]; max: number }>;
   /** Confirm `team-invite` (`teamInviteAction`); 409 `too-many-members` `{ max }`, 409 `display-name-taken`. `invite` is shown once. */
@@ -566,6 +586,8 @@ export function createAuthApi(o: { baseUrl?: string; fetch?: typeof fetch } = {}
     removeWallet: (id) => done(call('DELETE', `/v1/wallets/${seg(id)}`)),
     getLogoutTimer: () => get('/v1/account/security/logout-timer'),
     setLogoutTimer: (b) => call('PUT', '/v1/account/security/logout-timer', b),
+
+    becomeVendor: (b) => call('PUT', '/v1/account/type', { type: 'vendor', ...b }),
 
     getTeam: () => get('/v1/team'),
     inviteMember: (b) => post('/v1/team/invites', b),

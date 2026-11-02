@@ -27,6 +27,7 @@ const SHAPES: Record<ConfirmAction['kind'], Record<string, (v: string) => boolea
   'team-invite': { name: (v) => TEAM_NAME.test(v), roles: (v) => TEAM_ROLES.test(v) },
   'team-roles': { memberId: (v) => UUID.test(v), roles: (v) => TEAM_ROLES.test(v) },
   'team-remove': { memberId: (v) => UUID.test(v) },
+  'become-vendor': {},
 };
 
 /**

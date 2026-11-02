@@ -198,7 +198,7 @@ async function applyChange(db: Queryable, config: Config, accountId: string, c: 
       await applyTotp(db, accountId, Buffer.from(c.secretEnc, 'base64'), c.step, now);
       return false;
     case 'pgp':
-      await applyPgpKey(db, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now);
+      await applyPgpKey(db, config, accountId, c.fingerprint, Buffer.from(c.keyEnc, 'base64'), now);
       return false;
     case 'webauthn':
       await applyCredential(db, accountId, c.credential, c.label, now);
@@ -497,6 +497,8 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account (routes/accountType.ts; the lock is the account's).
+  'PUT /v1/account/type',
 ];
 
 /**
@@ -571,6 +573,8 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
   // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Owner 2 Nov 2026: switching to a vendor account waits out a hold (checked again under the lock).
+  'PUT /v1/account/type',
 ];
 
 /**

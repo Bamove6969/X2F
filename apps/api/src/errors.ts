@@ -95,7 +95,12 @@ export type ApiErrorCode =
   | 'owner-only'
   | 'forbidden'
   | 'too-many-members'
-  | 'member-cannot-sign';
+  | 'member-cannot-sign'
+  // Owner 2 Nov 2026: Trader and Vendor accounts (only a vendor posts offers or has a team; the
+  // switch needs a passkey, security key or PGP key), and the ban list (a banned PGP key).
+  | 'not-vendor'
+  | 'vendor-needs-key'
+  | 'key-unavailable';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
