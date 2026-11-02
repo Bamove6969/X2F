@@ -841,6 +841,7 @@ describe('review round 1', () => {
   });
 
   it(`N5: finish is throttled per account (${PAST_REP_FINISHES_PER_HOUR} an hour), the next 429 slow-down`, async () => {
+    expect(PAST_REP_FINISHES_PER_HOUR).toBe(10); // owner item 76: keep 10 an hour
     const t = new Date('2026-11-03T08:00:00Z');
     setNow(t);
     const { b } = await login();
@@ -892,6 +893,17 @@ describe('signing help (owner item 75, COPY-UNSIGNED)', () => {
       expect(res.statusCode, code).toBe(400);
       expect(res.json(), code).toMatchObject({ error: code, help: [...PAST_REP_SIGNING_HELP] });
     }
+  });
+
+  it('strict (item 75): a signature dated even one second after the server clock is refused bad-signature, with the help', async () => {
+    const { b } = await login();
+    const c = await start(b, ed);
+    const ahead = await finishOf(b, c.challengeId, await clearsign(c.text, ed, new Date(T0.getTime() + 1000)));
+    expect(ahead.statusCode, ahead.body).toBe(400);
+    expect(ahead.json()).toMatchObject({ error: 'bad-signature', help: [...PAST_REP_SIGNING_HELP] });
+    expect(await rows()).toEqual([]);
+    const onTime = await finishOf(b, c.challengeId, await clearsign(c.text, ed, T0));
+    expect(onTime.statusCode, onTime.body).toBe(201);
   });
 
   it('start answers its key refusals with the help (and the key detail as before); other refusals carry none', async () => {

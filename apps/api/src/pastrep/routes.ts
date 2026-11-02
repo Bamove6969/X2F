@@ -170,7 +170,9 @@ export function pastRepRoutes(app: FastifyInstance): void {
     const verdict = await verifyPastRepSignature(signed, c.text, armored, now);
     if (!verdict.ok) throw new ApiError(400, verdict.reason, { help: PAST_REP_SIGNING_HELP });
     // Review round 1 M4: only the verified signature packet, re-armored with no headers.
-    const signature = verdict.signature;
+    // Owner item 71: sealed under its own AAD and the claim id, so it opens only for that row.
+    const claimId = randomUUID();
+    const signatureEnc = sealKey(deps.config, verdict.signature, claimId, PAST_REP_SIG_AAD);
 
     const id = await withTx(deps.db, async (db) => {
       // Review round 1 M3 (Task 18's ownerWriteGate pattern): under the account lock, the calling
