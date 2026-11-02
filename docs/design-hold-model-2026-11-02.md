@@ -87,3 +87,8 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - After 24 h of continuous use, the user confirms with a passkey, security key or PGP key and stays logged in.
   - Trader screens never mention 24 hours.
   - Open: what happens on accounts with no passkey, security key or PGP key.
+- **Sessions, revised** (owner, 2 Nov; replaces the entry above):
+  - The chosen time is the session length.
+  - When it runs out, the app asks the user to confirm with a passkey, security key or PGP key to extend by the same time. With no answer, the user is logged out.
+  - No fixed maximum. This applies to traders and vendors.
+  - Open: how long the prompt waits, and what happens on accounts with no passkey, security key or PGP key.
