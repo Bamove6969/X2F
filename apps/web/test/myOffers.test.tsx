@@ -242,7 +242,11 @@ describe('the My offers screen', () => {
     expect(posts().map((c) => (c.body!.ids as string[]).length)).toEqual([100, 100, 30]);
     expect(q(host, '[data-part="summary"]').textContent).toBe('230 offers turned on.');
     expect(host.querySelectorAll('[data-status="live"]')).toHaveLength(230);
-  });
+    // Its own time budget: 230 rows rendered several times take ~0.8 s alone and several times
+    // that under the full parallel suite, past the 5 s default. A timeout here also broke every
+    // later test in this file (the timed-out body keeps calling act(), and React refuses
+    // overlapping act() calls), which is why the full run showed six failures.
+  }, 30_000);
 
   it('turning on while held: every offer stays off and each row says why, as an alert (N3)', async () => {
     onSwitch = (body) => ({

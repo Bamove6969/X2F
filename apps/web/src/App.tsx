@@ -22,6 +22,7 @@ import { LoginApprove, useLoginApprovals } from './screens/auth/LoginApprove.js'
 import { MemberInvite } from './screens/auth/MemberInvite.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
@@ -176,6 +177,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/settings/devices" element={<DevicesRoute />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />
