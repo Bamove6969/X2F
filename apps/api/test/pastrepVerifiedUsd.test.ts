@@ -2,7 +2,8 @@
 // ("Completed over $X") ONLY through a moderator-verified dollar figure. Migration 310 adds
 // `past_reputation.verified_usd_cents` (bigint, null = not verified); only a moderator sets it,
 // through `setVerifiedPastRepUsd` (the staff route and screen are Plan 4's); the traded total reads
-// `verifiedPastRepUsdCents`, which sums live claims with a figure. Null or a dead claim adds nothing.
+// `verifiedPastRepUsdCents`, which sums APPROVED claims with a figure (owner 2026-11-02). Null, a signed
+// (not yet approved) or a dead claim adds nothing.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -10,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../src/app.js';
-import { setVerifiedPastRepUsd, verifiedPastRepUsdCents } from '../src/pastrep/store.js';
+import { PASTREP_VERIFY_ROLES, setVerifiedPastRepUsd, verifiedPastRepUsdCents } from '../src/pastrep/store.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
 
@@ -25,6 +26,9 @@ const account = (kind: 'trader' | 'staff' | 'owner' | 'member' = 'trader', disab
   n += 1;
   return seedAccount(deps, { loginName: `vusd${n}x`, displayName: `Vusd${String(n).padStart(3, '0')}`, kind, disabled });
 };
+
+/** The actor Plan 4's staff route passes (`req.staff`): here a senior moderator. */
+const senior = (accountId: string) => ({ accountId, role: 'senior' as const });
 
 // One owner account may exist (`one_owner`): made once, reused.
 let ownerId: string | undefined;
@@ -64,7 +68,7 @@ describe('migration 310: past_reputation.verified_usd_cents', () => {
     expect(await row(id)).toEqual({ verified_usd_cents: null, verified_usd_by: null, verified_usd_at: null });
   });
 
-  it('the database refuses a figure set by anyone but an enabled staff account, or with no time', async () => {
+  it('the database refuses a figure set by anyone but an enabled staff account or the owner, or with no time', async () => {
     const trader = await account();
     const staff = await account('staff');
     const id = await claim(trader);
@@ -72,7 +76,6 @@ describe('migration 310: past_reputation.verified_usd_cents', () => {
       deps.db.query('update past_reputation set verified_usd_cents = $2, verified_usd_by = $3, verified_usd_at = $4 where id = $1', [id, cents, by, at]);
     await expect(set(null)).rejects.toMatchObject({ code: '42501' });
     await expect(set(trader)).rejects.toMatchObject({ code: '42501' });
-    await expect(set(await owner())).rejects.toMatchObject({ code: '42501' });
     await expect(set(await account('member'))).rejects.toMatchObject({ code: '42501' });
     await expect(set(await account('staff', true))).rejects.toMatchObject({ code: '42501' });
     await expect(set(staff, null)).rejects.toMatchObject({ code: '42501' });
@@ -81,6 +84,10 @@ describe('migration 310: past_reputation.verified_usd_cents', () => {
     expect((await row(id)).verified_usd_cents).toBeNull();
     await set(staff);
     expect(await row(id)).toEqual({ verified_usd_cents: '100', verified_usd_by: staff, verified_usd_at: T0 });
+    // Owner 2026-11-02: the owner may enter it too (the role check, senior or owner, is the seam's).
+    const own = await owner();
+    await set(own, T0, 200);
+    expect(await row(id)).toEqual({ verified_usd_cents: '200', verified_usd_by: own, verified_usd_at: T0 });
   });
 });
 
@@ -90,26 +97,46 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
     const staff = await account('staff');
     const signed = await claim(trader, { site: 'LocalMonero' });
     const approved = await claim(trader, { site: 'Paxful', status: 'approved' });
-    expect(await setVerifiedPastRepUsd(deps.db, signed, 1_250_000_00, staff, T0)).toEqual({ ok: true });
-    expect(await setVerifiedPastRepUsd(deps.db, approved, 99, staff, T0)).toEqual({ ok: true });
+    expect(await setVerifiedPastRepUsd(deps.db, signed, 1_250_000_00, senior(staff), T0)).toEqual({ ok: true });
+    expect(await setVerifiedPastRepUsd(deps.db, approved, 99, senior(staff), T0)).toEqual({ ok: true });
     expect(await row(signed)).toEqual({ verified_usd_cents: '125000000', verified_usd_by: staff, verified_usd_at: T0 });
-    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(1_250_000_00 + 99);
+    // Owner 2026-11-02: a figure may be entered before approval, but only an APPROVED claim counts.
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(99);
   });
 
   it('anyone but an enabled staff account is refused not-staff and nothing is stored', async () => {
     const trader = await account();
     const id = await claim(trader);
     for (const by of [trader, await owner(), await account('member'), await account('staff', true), '00000000-0000-4000-8000-000000000000']) {
-      expect(await setVerifiedPastRepUsd(deps.db, id, 500, by, T0), by).toEqual({ ok: false, reason: 'not-staff' });
+      expect(await setVerifiedPastRepUsd(deps.db, id, 500, senior(by), T0), by).toEqual({ ok: false, reason: 'not-staff' });
+    }
+    // The owner role on an account that is not the owner's: not-staff too.
+    expect(await setVerifiedPastRepUsd(deps.db, id, 500, { accountId: await account('staff'), role: 'owner' }, T0)).toEqual({ ok: false, reason: 'not-staff' });
+    expect((await row(id)).verified_usd_cents).toBeNull();
+  });
+
+  it('owner 2026-11-02: only a senior moderator or the owner may enter it; a mod or helper is refused forbidden', async () => {
+    expect([...PASTREP_VERIFY_ROLES]).toEqual(['owner', 'senior']);
+    const trader = await account();
+    const id = await claim(trader, { status: 'approved' });
+    for (const role of ['mod', 'helper'] as const) {
+      expect(await setVerifiedPastRepUsd(deps.db, id, 500, { accountId: await account('staff'), role }, T0), role).toEqual({ ok: false, reason: 'forbidden' });
     }
     expect((await row(id)).verified_usd_cents).toBeNull();
+    const sen = await account('staff');
+    expect(await setVerifiedPastRepUsd(deps.db, id, 500, senior(sen), T0)).toEqual({ ok: true });
+    expect(await row(id)).toEqual({ verified_usd_cents: '500', verified_usd_by: sen, verified_usd_at: T0 });
+    const own = await owner();
+    expect(await setVerifiedPastRepUsd(deps.db, id, 700, { accountId: own, role: 'owner' }, T0)).toEqual({ ok: true });
+    expect(await row(id)).toEqual({ verified_usd_cents: '700', verified_usd_by: own, verified_usd_at: T0 });
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(700);
   });
 
   it('a figure that is not a whole positive number of cents is refused bad-amount', async () => {
     const id = await claim(await account());
     const staff = await account('staff');
     for (const cents of [0, -5, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
-      expect(await setVerifiedPastRepUsd(deps.db, id, cents, staff, T0), String(cents)).toEqual({ ok: false, reason: 'bad-amount' });
+      expect(await setVerifiedPastRepUsd(deps.db, id, cents, senior(staff), T0), String(cents)).toEqual({ ok: false, reason: 'bad-amount' });
     }
     expect((await row(id)).verified_usd_cents).toBeNull();
   });
@@ -119,35 +146,49 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
     const staff = await account('staff');
     for (const status of ['revoked', 'rejected', 'removed']) {
       const id = await claim(trader, { site: `S-${status}`, status });
-      expect(await setVerifiedPastRepUsd(deps.db, id, 500, staff, T0), status).toEqual({ ok: false, reason: 'not-live' });
+      expect(await setVerifiedPastRepUsd(deps.db, id, 500, senior(staff), T0), status).toEqual({ ok: false, reason: 'not-live' });
       expect((await row(id)).verified_usd_cents).toBeNull();
     }
-    expect(await setVerifiedPastRepUsd(deps.db, '00000000-0000-4000-8000-000000000000', 500, staff, T0)).toEqual({ ok: false, reason: 'not-found' });
+    expect(await setVerifiedPastRepUsd(deps.db, '00000000-0000-4000-8000-000000000000', 500, senior(staff), T0)).toEqual({ ok: false, reason: 'not-found' });
   });
 
   it('null clears the figure (the claim adds nothing again)', async () => {
     const trader = await account();
     const staff = await account('staff');
-    const id = await claim(trader);
-    await setVerifiedPastRepUsd(deps.db, id, 700, staff, T0);
-    expect(await setVerifiedPastRepUsd(deps.db, id, null, staff, T0)).toEqual({ ok: true });
+    const id = await claim(trader, { status: 'approved' });
+    await setVerifiedPastRepUsd(deps.db, id, 700, senior(staff), T0);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(700);
+    expect(await setVerifiedPastRepUsd(deps.db, id, null, senior(staff), T0)).toEqual({ ok: true });
     expect(await row(id)).toEqual({ verified_usd_cents: null, verified_usd_by: null, verified_usd_at: null });
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
   });
 });
 
 describe('verifiedPastRepUsdCents (what the traded total may add)', () => {
-  it('sums only the account’s live claims with a figure: never unverified, never a dead claim', async () => {
+  it('owner 2026-11-02: a signed (not yet approved) claim with a figure counts nothing; once approved it counts', async () => {
+    const trader = await account();
+    const staff = await account('staff');
+    const id = await claim(trader, { site: 'Pending' });
+    expect(await setVerifiedPastRepUsd(deps.db, id, 5_000_00, senior(staff), T0)).toEqual({ ok: true });
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
+    await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [id]);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(5_000_00);
+    // Read at query time: revoked after approval stops counting at once.
+    await deps.db.query(`update past_reputation set status = 'revoked' where id = $1`, [id]);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
+  });
+
+  it('sums only the account’s approved claims with a figure: never unverified, never a dead claim', async () => {
     const trader = await account();
     const otherTrader = await account();
     const staff = await account('staff');
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
-    await claim(trader, { site: 'NoFigure' });
-    const kept = await claim(trader, { site: 'Kept' });
-    const revoked = await claim(trader, { site: 'Revoked' });
+    await claim(trader, { site: 'NoFigure', status: 'approved' });
+    const kept = await claim(trader, { site: 'Kept', status: 'approved' });
+    const revoked = await claim(trader, { site: 'Revoked', status: 'approved' });
     const removed = await claim(trader, { site: 'Removed', status: 'approved' });
-    const others = await claim(otherTrader, { site: 'Kept' });
-    for (const id of [kept, revoked, removed, others]) expect(await setVerifiedPastRepUsd(deps.db, id, 10_000_00, staff, T0)).toEqual({ ok: true });
+    const others = await claim(otherTrader, { site: 'Kept', status: 'approved' });
+    for (const id of [kept, revoked, removed, others]) expect(await setVerifiedPastRepUsd(deps.db, id, 10_000_00, senior(staff), T0)).toEqual({ ok: true });
     await deps.db.query(`update past_reputation set status = 'revoked' where id = $1`, [revoked]);
     await deps.db.query(`update past_reputation set status = 'removed' where id = $1`, [removed]);
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(10_000_00);
@@ -175,7 +216,9 @@ describe('stand-ins', () => {
   it('NEEDS_P4_PASTREP_VERIFIED_USD: the moderator route sets the figure through setVerifiedPastRepUsd', () => {
     // When Plan 4's staff API lands (`buildStaffApi`, `apps/api/src/staff`, or a staff app): add the
     // moderator route that sets a claim's verified dollar figure (perm check, activity-log entry with
-    // the claim id and no amount text in it), calling `setVerifiedPastRepUsd` only; then delete this test.
+    // the claim id and no amount text in it), calling `setVerifiedPastRepUsd` only and passing the
+    // signed-in staff member's real role (`req.staff.role`) as the actor: owner 2026-11-02, only
+    // senior moderators and the owner (`PASTREP_VERIFY_ROLES`, role senior|owner); then delete this test.
     const staffFiles = [
       ...sources(join(ROOT, 'apps/api/src/staff')),
       ...sources(join(ROOT, 'apps/staff-api/src')),

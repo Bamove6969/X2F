@@ -18,8 +18,9 @@ import { verifiedPastRepUsdSql } from '../pastrep/store.js';
  *
  * The public bucket is `tradedBucketUsd(own_usd_cents + verifiedPastRepUsdCents)`: the account's own
  * counted total plus the volume proven on other sites, ONLY through the dollar figure a moderator
- * verified on a live past-reputation claim (owner 2026-11-02, lead 07:48; migration 310,
- * `pastrep/store.ts`). An unverified (null) or dead (rejected, removed, revoked) claim adds nothing,
+ * verified on an APPROVED past-reputation claim (owner 2026-11-02, lead 07:48; migration 310,
+ * `pastrep/store.ts`). An unverified (null), not-yet-approved (`signed`) or dead (rejected, removed,
+ * revoked) claim adds nothing,
  * and is read live, so a revoked claim stops counting at once. With no trades of its own, verified
  * imported volume alone counts (OWNER-Q: the owner said the line includes it; plan default).
  */
