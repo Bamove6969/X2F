@@ -223,14 +223,26 @@ describe('ModeratorTag: the violet badge only inside a disputed trade', () => {
 describe('DisputeOpen', () => {
   it('explains when the buyer can open a dispute and sends nothing before then', () => {
     const onOpen = vi.fn(async () => undefined);
-    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(30)} onOpen={onOpen} />));
-    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 2 h of your payment.");
+    // 29 min after marking paid (owner 2026-11-01: the buyer may dispute from 30 min).
+    const { host } = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(29)} onOpen={onOpen} />));
+    expect(host.textContent).toContain("You can open a dispute if the seller hasn't confirmed within 30 min of your payment.");
     const primary = host.querySelector<HTMLButtonElement>('[data-primary]')!;
     expect(primary.textContent).toBe('Open dispute');
     expect(primary.disabled).toBe(true);
     fire(primary, new MouseEvent('click', { bubbles: true }));
     expect(onOpen).not.toHaveBeenCalled();
     expect(host.querySelector('input[type=file]')).toBeNull();
+  });
+
+  it("from 30 minutes after marking paid the buyer may open one; the seller's-time flag shows only once confirmBy has passed (owner 2026-11-01)", () => {
+    const early = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(30)} onOpen={vi.fn(async () => undefined)} />));
+    expect(early.host.querySelector<HTMLButtonElement>('[data-primary]')!.disabled).toBe(false);
+    expect(early.host.textContent).not.toContain("Seller's time to confirm ran out");
+    expect(early.host.querySelector('.dispute-wait')).toBeNull();
+    early.unmount();
+    const late = render(inRouter(<DisputeOpen trade={trade()} methodName="Zelle" now={at(120)} onOpen={vi.fn(async () => undefined)} />));
+    expect(late.host.textContent).toContain("Seller's time to confirm ran out");
+    late.unmount();
   });
 
   it('sends the picked reason and the note once the window has ended', async () => {
