@@ -334,7 +334,7 @@
       "x": 5730,
       "y": 14400,
       "w": 390,
-      "h": 844,
+      "h": 1195,
       "page": "all",
       "title": "A4 \u00b7 \"Can't do that\" popup",
       "is_interactive": true
@@ -343,7 +343,7 @@
       "x": 6200,
       "y": 14400,
       "w": 1280,
-      "h": 800,
+      "h": 1051,
       "page": "all",
       "title": "A4 \u00b7 \"Can't do that\" popup (wide)",
       "is_interactive": true
@@ -460,7 +460,7 @@
       "x": 5730,
       "y": 23400,
       "w": 390,
-      "h": 1980,
+      "h": 2159,
       "page": "all",
       "title": "A16 \u00b7 Alerts settings",
       "is_interactive": true
@@ -469,7 +469,7 @@
       "x": 6200,
       "y": 23400,
       "w": 1280,
-      "h": 1340,
+      "h": 1034,
       "page": "all",
       "title": "A16 \u00b7 Alerts settings (wide)",
       "is_interactive": true
@@ -496,7 +496,7 @@
       "x": 1910,
       "y": 26400,
       "w": 390,
-      "h": 1260,
+      "h": 1305,
       "page": "all",
       "title": "A18 \u00b7 Support tickets",
       "is_interactive": true
@@ -505,7 +505,7 @@
       "x": 2380,
       "y": 26400,
       "w": 1280,
-      "h": 1000,
+      "h": 996,
       "page": "all",
       "title": "A18 \u00b7 Support tickets (wide)",
       "is_interactive": true
@@ -514,7 +514,7 @@
       "x": 3820,
       "y": 26400,
       "w": 390,
-      "h": 1000,
+      "h": 876,
       "page": "all",
       "title": "A19 \u00b7 Self-destruct",
       "is_interactive": true
@@ -523,7 +523,7 @@
       "x": 4290,
       "y": 26400,
       "w": 1280,
-      "h": 900,
+      "h": 800,
       "page": "all",
       "title": "A19 \u00b7 Self-destruct (wide)",
       "is_interactive": true
@@ -640,7 +640,7 @@
       "x": 5730,
       "y": 20400,
       "w": 390,
-      "h": 980,
+      "h": 927,
       "page": "all",
       "title": "A12 \u00b7 Emergency stop",
       "is_interactive": true

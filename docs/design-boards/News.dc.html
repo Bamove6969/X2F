@@ -11,33 +11,39 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
 <style>
 body{margin:0}
-button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+button:focus-visible,a:focus-visible,input:focus-visible,label:focus-within{outline:2px solid var(--ink);outline-offset:2px}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
   <sc-if value="{{open}}" hint-placeholder-val="{{true}}">
-    <header style="display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--surface-raised);">
-      <button type="button" onClick="{{close}}" aria-label="Close News" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--ink); cursor: pointer;">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
-      </button>
-      <div style="display: flex; flex-direction: column; flex-grow: 1;">
-        <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">News</h1>
-        <span style="font-size: 13px; color: var(--ink-muted);">{{countLabel}}</span>
+    <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+      <div style="display: flex; align-items: center; justify-content: space-between; height: 44px; margin: 0 -10px;">
+        <button type="button" onClick="{{close}}" aria-label="Close News" style="display: flex; width: 44px; height: 44px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--ink); cursor: pointer;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+        <sc-if value="{{hasNew}}" hint-placeholder-val="{{true}}">
+          <button type="button" onClick="{{markAll}}" style="display: inline-flex; align-items: center; gap: 8px; height: 44px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--surface); color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12l5 5L18 6"/><path d="M12 16l1 1 9-11"/></svg>
+            Mark all as read
+          </button>
+        </sc-if>
       </div>
-      <sc-if value="{{hasNew}}" hint-placeholder-val="{{true}}">
-        <button type="button" onClick="{{markAll}}" style="height: 44px; padding: 0 8px; border: 0; background: transparent; color: var(--monero-ink); font-family: inherit; font-size: 15px; cursor: pointer;">Mark all as read</button>
-      </sc-if>
+      <span style="margin-top: 8px; font-size: 13px; line-height: 16px; color: var(--ink-muted);">{{countLabel}}</span>
+      <h1 style="margin: 4px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">News</h1>
     </header>
 
-    <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
+    <main style="flex-grow: 1; padding: 0 16px 24px; display: flex; flex-direction: column; gap: 12px;">
       <span style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Newest first</span>
       <sc-for list="{{posts}}" as="p" hint-placeholder-count="4">
         <article style="{{p.cardStyle}}">
-          <button type="button" aria-expanded="{{p.expandedAttr}}" onClick="{{p.toggle}}" style="display: flex; align-items: flex-start; gap: 12px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+          <button type="button" aria-expanded="{{p.expandedAttr}}" onClick="{{p.toggle}}" style="display: flex; align-items: center; gap: 14px; width: 100%; min-height: 64px; padding: 12px 16px; border: 0; border-radius: 16px; background: transparent; color: var(--ink); font-family: inherit; text-align: left; cursor: pointer;">
+            <span aria-hidden="true" style="{{p.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10v4h3l6 4V6L7 10z"/><path d="M17 9a4 4 0 010 6"/></svg></span>
             <span style="display: flex; flex-direction: column; gap: 4px; flex-grow: 1; min-width: 0;">
               <span style="display: flex; align-items: center; gap: 8px; font-size: 13px; line-height: 16px;">
                 <sc-if value="{{p.isNew}}" hint-placeholder-val="{{true}}">
-                  <span style="display: inline-flex; align-items: center; gap: 6px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--escrow);"><span aria-hidden="true" style="width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>New</span>
+                  <span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 8px; border-radius: 999px; background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><span aria-hidden="true" style="width: 6px; height: 6px; border-radius: 999px; background: var(--escrow);"></span>New</span>
                 </sc-if>
                 <sc-if value="{{p.isSeen}}" hint-placeholder-val="{{false}}">
                   <span style="color: var(--ink-muted);">Read</span>
@@ -46,21 +52,21 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
               </span>
               <span style="{{p.titleStyle}}">{{p.title}}</span>
             </span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="{{p.chevronStyle}}"><path d="M6 9l6 6 6-6"/></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="{{p.chevronStyle}}"><path d="M6 9l6 6 6-6"/></svg>
           </button>
           <sc-if value="{{p.expanded}}" hint-placeholder-val="{{false}}">
-            <p style="margin: 0; padding: 0 16px 16px; font-size: 16px; line-height: 24px;">{{p.body}}</p>
+            <p style="margin: 0 16px 16px; padding: 14px; border-radius: 12px; background: var(--surface-raised); font-size: 16px; line-height: 24px;">{{p.body}}</p>
           </sc-if>
         </article>
       </sc-for>
       <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">Posts are examples.</span>
     </main>
 
-    <footer style="display: flex; flex-direction: column; gap: 12px; padding: 16px; border-top: 1px solid var(--surface-raised);">
+    <footer style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 8px; border-top: 1px solid var(--surface-raised); background: var(--ground);">
       <sc-if value="{{withCheckbox}}" hint-placeholder-val="{{false}}">
-        <label for="news-hide" style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 16px; cursor: pointer;">
-          <input id="news-hide" type="checkbox" checked="{{hide}}" onChange="{{toggleHide}}" style="width: 22px; height: 22px; margin: 0; accent-color: var(--ink); flex-shrink: 0;">
-          <span style="display: flex; flex-direction: column;">Don't show me this again<span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.</span></span>
+        <label for="news-hide" style="{{hideStyle}}">
+          <input id="news-hide" type="checkbox" checked="{{hide}}" onChange="{{toggleHide}}" style="width: 22px; height: 22px; margin: 1px 0 0; accent-color: var(--ink); flex-shrink: 0;">
+          <span style="display: flex; flex-direction: column; gap: 2px; font-size: 16px; line-height: 24px; font-weight: 600;">Don't show me this again<span style="font-size: 13px; line-height: 18px; font-weight: 400; color: var(--ink-muted);">News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.</span></span>
         </label>
       </sc-if>
       <button type="button" onClick="{{close}}" style="height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">Continue</button>
@@ -68,14 +74,14 @@ button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid var(-
   </sc-if>
 
   <sc-if value="{{closed}}" hint-placeholder-val="{{false}}">
-    <header style="display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--surface-raised);" aria-hidden="true">
-      <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+    <header style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px;" aria-hidden="true">
+      <span style="display: flex; align-items: center; height: 44px; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
       <span style="width: 132px; height: 44px; border-radius: 999px; background: var(--surface);"></span>
     </header>
-    <main style="flex-grow: 1; padding: 16px; display: flex; flex-direction: column; gap: 12px;">
-      <span aria-hidden="true" style="height: 60px; border-radius: 12px; background: var(--surface);"></span>
-      <span aria-hidden="true" style="height: 60px; border-radius: 12px; background: var(--surface);"></span>
-      <button type="button" onClick="{{reopen}}" style="margin-top: auto; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; cursor: pointer;">Show News again</button>
+    <main style="flex-grow: 1; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 16px;">
+      <span aria-hidden="true" style="height: 64px; border-radius: 16px; background: var(--surface);"></span>
+      <span aria-hidden="true" style="height: 64px; border-radius: 16px; background: var(--surface);"></span>
+      <button type="button" onClick="{{reopen}}" style="margin-top: auto; height: 48px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Show News again</button>
     </main>
   </sc-if>
 </div>
@@ -88,8 +94,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
@@ -110,14 +116,19 @@ class Component extends DCLogic {
         isNew, isSeen: !isNew,
         expanded: open,
         expandedAttr: open ? 'true' : 'false',
-        cardStyle: 'display: flex; flex-direction: column; border-radius: 12px; ' + (isNew
-          ? 'background: var(--surface); box-shadow: inset 3px 0 0 var(--escrow);'
+        // New posts: a primary card. Read posts step back to an outline card.
+        cardStyle: 'display: flex; flex-direction: column; border-radius: 16px; ' + (isNew
+          ? 'background: var(--surface); border: 1px solid transparent;'
           : 'background: transparent; border: 1px solid var(--surface-raised);'),
-        titleStyle: 'font-size: 16px; line-height: 24px; ' + (isNew ? 'font-weight: 600; color: var(--ink);' : 'font-weight: 400; color: var(--ink-muted);'),
-        chevronStyle: 'flex-shrink: 0; margin-top: 4px; color: var(--ink-muted); transform: rotate(' + (open ? '180' : '0') + 'deg);',
+        tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; ' + (isNew
+          ? 'background: color-mix(in srgb, var(--escrow) 14%, transparent); color: var(--escrow);'
+          : 'background: var(--surface-raised); color: var(--ink-muted);'),
+        titleStyle: 'font-size: 16px; line-height: 22px; ' + (isNew ? 'font-weight: 600; color: var(--ink);' : 'font-weight: 400; color: var(--ink-muted);'),
+        chevronStyle: 'flex-shrink: 0; color: var(--ink-muted); transform: rotate(' + (open ? '180' : '0') + 'deg);',
         toggle: () => this.setState({ expanded: open ? null : id, seen: Object.assign({}, this.state.seen, { [id]: true }) })
       };
     });
+    const hide = this.state.hide;
     return {
       rootStyle, posts,
       open: this.state.open,
@@ -125,7 +136,8 @@ class Component extends DCLogic {
       hasNew: newCount > 0,
       countLabel: newCount > 0 ? newCount + ' new · ' + data.length + ' posts' : 'All read · ' + data.length + ' posts',
       withCheckbox: this.props.variant === 'with-dont-show-again',
-      hide: this.state.hide,
+      hide,
+      hideStyle: 'display: flex; align-items: flex-start; gap: 12px; min-height: 44px; padding: 14px; box-sizing: border-box; border-radius: 12px; background: var(--surface-raised); cursor: pointer; border: 2px solid ' + (hide ? 'var(--ink);' : 'transparent;'),
       toggleHide: () => this.setState({ hide: !this.state.hide }),
       markAll: () => this.setState({ seen: { n1: true, n2: true, n3: true, n4: true } }),
       close: () => this.setState({ open: false }),
