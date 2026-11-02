@@ -3,11 +3,13 @@
  *
  * - `POST /v1/account/past-rep/start { site, url, claimedTrades, publicKey }` → `{ challengeId,
  *   text, expiresAt }` (60 min). 400 `bad-site`, `bad-url`, the KeyRefusal codes of
- *   `inspectPublicKey(key, now, PAST_REP_INSPECT)`; 409 `site-claimed`. Never says whether another
+ *   `inspectPublicKey(key, now, PAST_REP_INSPECT)` and `key-no-signing` (each with `help`,
+ *   PAST_REP_SIGNING_HELP); 409 `site-claimed`. Never says whether another
  *   account claims the key: that is checked only at finish.
  * - `POST /v1/account/past-rep/finish { challengeId, signed }` → 201 `{ id, status: 'signed' }`.
- *   400 `bad-signature`, `wrong-text`, `wrong-key`, `challenge-expired` (also for an unknown id or
- *   another account's challenge); 409 `challenge-used`, `fingerprint-claimed`, `site-claimed`.
+ *   400 `bad-signature`, `wrong-text`, `wrong-key` (each with `help`, PAST_REP_SIGNING_HELP),
+ *   `challenge-expired` (also for an unknown id or another account's challenge); 409
+ *   `challenge-used`, `fingerprint-claimed` (another account's live claim on the key), `site-claimed`.
  *   The only route that creates a claim, and only after the signature verifies.
  * - `GET /v1/account/past-rep` → the caller's own claims; `DELETE /v1/account/past-rep/:id` → removed.
  *
@@ -19,9 +21,13 @@
  * under the account lock in its insert transaction (`LIVE_SESSION_ROUTES`, review round 1 M3). Start
  * and finish are throttled per account (`PAST_REP_STARTS_PER_HOUR`, `PAST_REP_FINISHES_PER_HOUR`,
  * 429 `slow-down`). Start refuses a key that cannot sign (400 `key-no-signing`). The stored
- * signature is the one verified packet re-armored with no headers. Past reputation never feeds
- * X2F's own counts.
+ * signature is the one verified packet re-armored with no headers, sealed under PAST_REP_SIG_AAD
+ * and the claim id (`signature_enc`; owner item 71). One account may use one key for several sites
+ * (owner item 72); another account's live claim on the key is 409 `fingerprint-claimed`, enforced
+ * by the table's trigger under a per-key lock. A revoked claim's key may claim again (item 74).
+ * Past reputation never feeds X2F's own counts.
  */
+import { randomUUID } from 'node:crypto';
 import { PAST_REP_MIN_RSA_BITS, PAST_REP_VERIFY_CONFIG, inspectPublicKey, type InspectOptions } from '@x2f/accounts';
 import * as openpgp from 'openpgp';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -32,6 +38,7 @@ import { requireSession } from '../auth/sessions.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { PAST_REP_CHALLENGE_MINUTES, checkEvidenceUrl, checkSite, pastRepChallenge, pastRepNonce } from './challenge.js';
+import { PAST_REP_SIGNING_HELP } from './help.js';
 import { verifyPastRepSignature } from './verify.js';
 
 /** P5-A22: a past-reputation key only needs to sign, and may be RSA 2048. */
@@ -39,6 +46,12 @@ export const PAST_REP_INSPECT: InspectOptions = Object.freeze({ minRsaBits: PAST
 
 /** The AAD label past-reputation keys are sealed under (`x2f/pastrep-key/<fingerprint>`). */
 export const PAST_REP_KEY_AAD = 'x2f/pastrep-key/';
+
+/**
+ * The AAD label stored signatures are sealed under (`x2f/pastrep-sig/<claim id>`; owner item 71: a
+ * signature may carry a Signer's User ID, so it is kept only encrypted).
+ */
+export const PAST_REP_SIG_AAD = 'x2f/pastrep-sig/';
 
 /** Largest `int` the table holds. */
 const INT_MAX = 2_147_483_647;
@@ -105,9 +118,10 @@ export function pastRepRoutes(app: FastifyInstance): void {
     // PAST_REP_STARTS_PER_HOUR per account: taken before the key inspection, after the cheap checks.
     req.server.budgets.pastRepStart.take(req.auth.accountId);
     const inspection = await inspectPublicKey(b.publicKey, now, PAST_REP_INSPECT);
-    if (!inspection.ok) throw new ApiError(400, inspection.reason, { detail: inspection.detail });
+    // Owner item 75: key refusals carry the signing help (PAST_REP_SIGNING_HELP).
+    if (!inspection.ok) throw new ApiError(400, inspection.reason, { detail: inspection.detail, help: PAST_REP_SIGNING_HELP });
     // Review round 1 N3: a key with no signing key usable now (under the verify config) could never finish.
-    if (!(await canSign(b.publicKey, now))) throw new ApiError(400, 'key-no-signing');
+    if (!(await canSign(b.publicKey, now))) throw new ApiError(400, 'key-no-signing', { help: PAST_REP_SIGNING_HELP });
     const accountId = req.auth.accountId;
     if (await siteClaimed(deps.db, accountId, site)) throw new ApiError(409, 'site-claimed');
 
@@ -154,7 +168,7 @@ export function pastRepRoutes(app: FastifyInstance): void {
     const armored = openKey(deps.config, sealed, c.fingerprint, PAST_REP_KEY_AAD);
 
     const verdict = await verifyPastRepSignature(signed, c.text, armored, now);
-    if (!verdict.ok) throw new ApiError(400, verdict.reason);
+    if (!verdict.ok) throw new ApiError(400, verdict.reason, { help: PAST_REP_SIGNING_HELP });
     // Review round 1 M4: only the verified signature packet, re-armored with no headers.
     const signature = verdict.signature;
 
@@ -167,21 +181,25 @@ export function pastRepRoutes(app: FastifyInstance): void {
       const locked = await db.query<{ used_at: Date | null }>('select used_at from challenges where id = $1 for update', [challengeId]);
       if (locked.rows.length === 0) throw new ApiError(400, 'challenge-expired');
       if (locked.rows[0]!.used_at !== null) throw new ApiError(409, 'challenge-used');
-      const clash = await db.query('select 1 from past_reputation where fingerprint = $1 and status = any($2::text[])', [c.fingerprint, LIVE]);
+      // Owner item 72: another account's live claim on the key (the trigger re-checks under a lock).
+      const clash = await db.query(
+        'select 1 from past_reputation where fingerprint = $1 and account_id <> $2 and status = any($3::text[])',
+        [c.fingerprint, accountId, LIVE],
+      );
       if (clash.rows.length > 0) throw new ApiError(409, 'fingerprint-claimed');
       if (await siteClaimed(db, accountId, c.site)) throw new ApiError(409, 'site-claimed');
       let inserted: string;
       try {
         const r = await db.query<{ id: string }>(
           `insert into past_reputation
-             (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature, status, created_at)
-           values ($1, $2, $3, $4, $5, $6, $7, $8, 'signed', $9) returning id`,
-          [accountId, c.site, c.url, c.claimedTrades, c.fingerprint, sealed, c.text, signature, now],
+             (id, account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
+           values ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'signed', $10) returning id`,
+          [claimId, accountId, c.site, c.url, c.claimedTrades, c.fingerprint, sealed, c.text, signatureEnc, now],
         );
         inserted = r.rows[0]!.id;
       } catch (e) {
         const err = e as { code?: string; constraint?: string };
-        if (err.code === '23505' && err.constraint === 'past_reputation_fingerprint_live') throw new ApiError(409, 'fingerprint-claimed');
+        if (err.code === '23505' && err.constraint === 'past_reputation_fingerprint_account') throw new ApiError(409, 'fingerprint-claimed');
         if (err.code === '23505' && err.constraint === 'past_reputation_site_live') throw new ApiError(409, 'site-claimed');
         throw e;
       }

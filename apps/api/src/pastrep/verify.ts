@@ -14,9 +14,9 @@
  *   the server clock (review round 1 N1; the plan's "+ 5 min" is an open question).
  * - On success, the one verified signature packet re-armored with no armor headers (review round 1
  *   M4: a pasted `Comment:` or `Version:` line is free text and is not kept). It verifies as a
- *   detached signature over the issued text.
- * - A signature carrying a Signer's User ID subpacket (an email, often) is refused
- *   (`bad-signature`): it could not be stored without keeping that user ID (R16). Lead question.
+ *   detached signature over the issued text. It may hold a Signer's User ID, so it is stored sealed.
+ * - A signature carrying a Signer's User ID subpacket (an email, often; GnuPG's `--sender`) is
+ *   accepted (owner item 71); the caller stores the result only sealed (PAST_REP_SIG_AAD).
  *
  * Nothing here logs, and nothing it returns holds key material or a user ID.
  */
@@ -119,7 +119,6 @@ export async function verifyPastRepSignature(signed: string, text: string, armor
   if (packets.length !== 1) return refuse('wrong-key');
   const packet = packets[0]!;
   if (!(await byClaimedKey(key, packet, now))) return refuse('wrong-key');
-  if (packet.signersUserID !== null && packet.signersUserID !== undefined && packet.signersUserID !== '') return refuse('bad-signature');
 
   const created = packet.created;
   const inWindow = (d: Date | null): boolean =>
