@@ -14,7 +14,7 @@ import { openKey } from '../src/auth/pgp.js';
 import { HOLD_BLOCKED_ROUTES, LIVE_SESSION_EXEMPT, LIVE_SESSION_ROUTES, startHold } from '../src/auth/hold.js';
 import { PAST_REP_FINISHES_PER_HOUR, PAST_REP_STARTS_PER_HOUR } from '../src/limits.js';
 import { PAST_REP_ARCHIVE_HOSTS, PAST_REP_SITES, pastRepChallenge } from '../src/pastrep/challenge.js';
-import { PAST_REP_KEY_AAD } from '../src/pastrep/routes.js';
+import { PAST_REP_KEY_AAD, PAST_REP_SIG_AAD } from '../src/pastrep/routes.js';
 import { verifyPastRepSignature } from '../src/pastrep/verify.js';
 import { seedAccount } from './helpers/accounts.js';
 import { testApp } from './helpers/app.js';
@@ -179,7 +179,7 @@ describe('start and finish', () => {
     expect(res.statusCode, res.body).toBe(201);
   });
 
-  it("a signature carrying a Signer's User ID (an email) → bad-signature, nothing stored (R16; lead question)", async () => {
+  it("item 71: a GnuPG-style signature carrying a Signer's User ID (an email) is accepted and stored only sealed (x2f/pastrep-sig/<id>)", async () => {
     const { b } = await login();
     const c = await start(b, ed);
     const original = openpgp.SignaturePacket.prototype.sign;
@@ -196,8 +196,28 @@ describe('start and finish', () => {
     const parsed = (await openpgp.readCleartextMessage({ cleartextMessage: signed })) as unknown as { signature: openpgp.Signature };
     expect((parsed.signature.packets[0] as openpgp.SignaturePacket).signersUserID).toBe('Old Trader <old@example.org>');
     const res = await b.post('/v1/account/past-rep/finish', { challengeId: c.challengeId, signed });
-    expect(res.json()).toMatchObject({ error: 'bad-signature' });
-    expect(await rows()).toEqual([]);
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.body).not.toContain('old@example.org');
+    const id = res.json().id as string;
+    // The stored bytes hold neither the email nor any readable signature.
+    const [row] = await rows();
+    expect(row).not.toHaveProperty('signature');
+    const sealed = row!.signature_enc as Buffer;
+    expect(Buffer.isBuffer(sealed)).toBe(true);
+    expect(sealed.includes(Buffer.from('old@example.org'))).toBe(false);
+    expect(sealed.includes(Buffer.from('BEGIN PGP'))).toBe(false);
+    const all = await deps.db.query<{ t: string }>('select p::text as t from past_reputation p union all select c::text from challenges c');
+    for (const r of all.rows) expect(r.t).not.toContain('old@example.org');
+    // The right label opens it, and it still verifies over the issued text (the email is inside, sealed).
+    const opened = openKey(deps.config, sealed, id, PAST_REP_SIG_AAD);
+    expect(opened.startsWith('-----BEGIN PGP SIGNATURE-----\n\n')).toBe(true);
+    expect(((await openpgp.readSignature({ armoredSignature: opened })).packets[0] as openpgp.SignaturePacket).signersUserID).toBe('Old Trader <old@example.org>');
+    expect(await verifyPastRepSignature(opened, row!.challenge_text as string, ed.publicKey, T0)).toMatchObject({ ok: true });
+    // A wrong label, or another claim's id, does not open it.
+    expect(() => openKey(deps.config, sealed, id, PAST_REP_KEY_AAD)).toThrow();
+    expect(() => openKey(deps.config, sealed, id)).toThrow();
+    expect(() => openKey(deps.config, sealed, ed.fingerprint, PAST_REP_SIG_AAD)).toThrow();
+    expect(() => openKey(deps.config, sealed, '00000000-0000-4000-8000-000000000000', PAST_REP_SIG_AAD)).toThrow();
   });
 
   it('a garbled paste → bad-signature', async () => {
@@ -436,6 +456,89 @@ describe('one fingerprint, one account (P5-A24)', () => {
     expect((await b.get('/v1/account/past-rep')).json()).toMatchObject([{ id, status: 'removed' }]);
     const c2 = await start(b, ed);
     expect((await b.post('/v1/account/past-rep/finish', { challengeId: c2.challengeId, signed: await clearsign(c2.text, ed) })).statusCode).toBe(201);
+  });
+
+  it('item 72: the same key backs two sites of the same account', async () => {
+    const { b, id } = await login();
+    const c1 = await start(b, ed, { site: 'LocalMonero' });
+    expect((await finishOf(b, c1.challengeId, await clearsign(c1.text, ed))).statusCode).toBe(201);
+    const c2 = await start(b, ed, { site: 'AgoraDesk' });
+    const res = await finishOf(b, c2.challengeId, await clearsign(c2.text, ed));
+    expect(res.statusCode, res.body).toBe(201);
+    const both = await rows();
+    expect(both).toHaveLength(2);
+    expect(both).toEqual(expect.arrayContaining([
+      expect.objectContaining({ account_id: id, site: 'LocalMonero', fingerprint: ed.fingerprint, status: 'signed' }),
+      expect.objectContaining({ account_id: id, site: 'AgoraDesk', fingerprint: ed.fingerprint, status: 'signed' }),
+    ]));
+    // The same site twice is still one live claim (P5-A21).
+    const c3 = await start(b, other, { site: 'Paxful' });
+    expect((await finishOf(b, c3.challengeId, await clearsign(c3.text, other))).statusCode).toBe(201);
+    expect((await b.post('/v1/account/past-rep/start', startBody(ed, { site: 'AgoraDesk' }))).json()).toMatchObject({ error: 'site-claimed' });
+  });
+
+  it('item 72: a key live on one account is refused for another even when that account already uses the key elsewhere', async () => {
+    const a = await login();
+    const c1 = await start(a.b, ed);
+    expect((await finishOf(a.b, c1.challengeId, await clearsign(c1.text, ed))).statusCode).toBe(201);
+    const bAcc = await login();
+    const c2 = await start(bAcc.b, ed, { site: 'Bisq' });
+    const res = await finishOf(bAcc.b, c2.challengeId, await clearsign(c2.text, ed));
+    expect(res.statusCode).toBe(409);
+    expect(res.json()).toMatchObject({ error: 'fingerprint-claimed' });
+    expect(await rows()).toHaveLength(1);
+  });
+
+  it('item 72: two accounts finishing the same key at once → exactly one row, the other fingerprint-claimed (race-safe)', async () => {
+    for (let round = 0; round < 3; round += 1) {
+      await deps.db.query('delete from past_reputation');
+      const a = await login();
+      const bAcc = await login();
+      const ca = await start(a.b, ed, { site: 'LocalMonero' });
+      const cb = await start(bAcc.b, ed, { site: 'Paxful' });
+      const [sa, sb] = await Promise.all([clearsign(ca.text, ed), clearsign(cb.text, ed)]);
+      const res = await Promise.all([finishOf(a.b, ca.challengeId, sa), finishOf(bAcc.b, cb.challengeId, sb)]);
+      expect(res.map((r) => r.statusCode).sort(), res.map((r) => r.body).join(' | ')).toEqual([201, 409]);
+      expect(res.find((r) => r.statusCode === 409)!.json()).toMatchObject({ error: 'fingerprint-claimed' });
+      expect(await rows()).toHaveLength(1);
+    }
+  });
+
+  it('item 72: the database itself refuses a live row whose key is live on another account; the same account is fine', async () => {
+    const a = await login();
+    const c = await start(a.b, ed);
+    expect((await finishOf(a.b, c.challengeId, await clearsign(c.text, ed))).statusCode).toBe(201);
+    const bAcc = await login();
+    const [row] = await rows();
+    const copy = (account: string, site: string, status = 'signed') =>
+      deps.db.query(
+        `insert into past_reputation (account_id, site, evidence_url, claimed_trades, fingerprint, key_enc, challenge_text, signature_enc, status, created_at)
+         values ($1, $2, $3, 1, $4, $5, $6, $7, $8, $9)`,
+        [account, site, URL_OK, ed.fingerprint, row!.key_enc, row!.challenge_text, row!.signature_enc, status, T0],
+      );
+    await expect(copy(bAcc.id, 'Bisq')).rejects.toMatchObject({ code: '23505', constraint: 'past_reputation_fingerprint_account' });
+    await expect(copy(bAcc.id, 'Bisq', 'approved')).rejects.toMatchObject({ code: '23505', constraint: 'past_reputation_fingerprint_account' });
+    await copy(bAcc.id, 'Bisq', 'rejected');
+    await copy(a.id, 'Bisq');
+    // Turning another account's dead row live again is refused too.
+    await expect(deps.db.query(`update past_reputation set status = 'signed' where account_id = $1`, [bAcc.id])).rejects.toMatchObject({ code: '23505' });
+  });
+
+  it('item 74: a claim a moderator revoked may be filed again with the same key and goes back to a moderator (signed)', async () => {
+    const { b, id } = await login();
+    const c1 = await start(b, ed);
+    const first = (await finishOf(b, c1.challengeId, await clearsign(c1.text, ed))).json().id as string;
+    await deps.db.query(`update past_reputation set status = 'revoked', decided_at = $2, reason = 'test' where id = $1`, [first, T0]);
+    const c2 = await start(b, ed);
+    const res = await finishOf(b, c2.challengeId, await clearsign(c2.text, ed));
+    expect(res.statusCode, res.body).toBe(201);
+    expect(res.json()).toEqual({ id: expect.any(String), status: 'signed' });
+    const both = await rows();
+    expect(both).toHaveLength(2);
+    expect(both).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: first, account_id: id, site: 'LocalMonero', fingerprint: ed.fingerprint, status: 'revoked' }),
+      expect.objectContaining({ id: res.json().id, account_id: id, site: 'LocalMonero', fingerprint: ed.fingerprint, status: 'signed' }),
+    ]));
   });
 
   it("another account's claim cannot be removed (404) and is not listed", async () => {
@@ -692,7 +795,7 @@ describe('review round 1', () => {
     expect(signed).toContain('Comment: a@b.c');
     expect((await finishOf(b, c.challengeId, signed)).statusCode).toBe(201);
     const [row] = await rows();
-    const stored = row!.signature as string;
+    const stored = openKey(deps.config, row!.signature_enc as Buffer, row!.id as string, PAST_REP_SIG_AAD);
     expect(stored).not.toContain('a@b.c');
     expect(stored).not.toContain('Leaky');
     expect(stored).not.toContain('BEGIN PGP SIGNED MESSAGE');
