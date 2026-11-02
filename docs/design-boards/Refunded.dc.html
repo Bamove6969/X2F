@@ -46,8 +46,8 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
         </div>
         <div style="height: 1px; margin: 0 16px; background: var(--surface);"></div>
         <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 16px;">
-          <dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Charged to you</dt>
-          <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; font-weight: 500;">Nothing</dd>
+          <dt style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">X2F fee</dt>
+          <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; font-weight: 500;">None</dd>
         </div>
       </dl>
     </section>
@@ -108,7 +108,7 @@ class Component extends DCLogic {
       'buyer-cancelled': {
         chip: 'Cancelled',
         headline: 'You cancelled this trade',
-        lead: 'All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. Nothing was charged to you.',
+        lead: 'All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. X2F took nothing from you. If you already sent the payment, open a dispute below.',
         rows: [
           { k: 'You cancelled', v: '10:38 UTC' },
           { k: 'Refund sent to satoshi_ghost', v: '10:39 UTC' },

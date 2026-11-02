@@ -54,8 +54,8 @@ button,a{transition:background-color 150ms ease-out,border-color 150ms ease-out,
               <dd style="margin: 0; display: flex; align-items: baseline; flex-wrap: wrap; column-gap: 12px;"><span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 32px; line-height: 36px; font-weight: 500; letter-spacing: -0.01em;">1.250000</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span></span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 16px; line-height: 24px; color: var(--ink-muted);">$412.50</span></dd>
             </div>
             <div style="display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 16px 20px; border-left: 1px solid var(--surface);">
-              <dt style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Charged to you</dt>
-              <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 36px; font-weight: 500;">Nothing</dd>
+              <dt style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">X2F fee</dt>
+              <dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 20px; line-height: 36px; font-weight: 500;">None</dd>
             </div>
           </dl>
         </section>
@@ -118,7 +118,7 @@ class Component extends DCLogic {
       'buyer-cancelled': {
         chip: 'Cancelled',
         headline: 'You cancelled this trade',
-        lead: 'All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. Nothing was charged to you.',
+        lead: 'All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. X2F took nothing from you. If you already sent the payment, open a dispute below.',
         rows: [
           { k: 'You cancelled', v: '10:38 UTC' },
           { k: 'Refund sent to satoshi_ghost', v: '10:39 UTC' },

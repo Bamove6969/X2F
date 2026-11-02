@@ -69,14 +69,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Your total so far: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{exact}}</span> · {{exactNote}}</p>
     </section>
 
-    <aside aria-label="Open for the owner: what counts towards trade volume" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-      <span style="font-weight: 600;">Does this count only completed trades on X2F, or also imported reputation?</span>
-      <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Only trades completed on X2F (the line stays exactly as written).</li>
-        <li>X2F trades plus imported reputation. The line would then need a word for it, and the Settings explanation too.</li>
-      </ul>
-    </aside>
+    <aside aria-label="Decided: what the volume counts" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span><span style="font-weight: 600;">The total includes verified volume from other sites.</span><span style="color: var(--ink-muted);">Trades completed on X2F, plus past-reputation claims that were verified. Unverified claims never count.</span></aside>
   </main>
 
   <section aria-label="Design notes" style="flex-shrink: 0; display: flex; flex-direction: column; gap: 16px; padding: 24px 16px 32px; border-top: 1px solid var(--line);">
