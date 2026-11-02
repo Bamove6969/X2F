@@ -108,8 +108,6 @@ export type ApiErrorCode =
   | 'note-bad-character'
   | 'note-personal-details'
   | 'neutral-with-details'
-  | 'late-review-neutral-only'
-  | 'late-review-closed'
   // Plan 2, Task 18: team members.
   | 'owner-only'
   | 'forbidden'

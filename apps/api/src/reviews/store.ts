@@ -1,13 +1,15 @@
-import { REVEAL_AFTER_DAYS, isRevealed, revealAt, reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
+import { reviewMonth, type ReviewInput, type Side } from '@x2f/reputation';
 import type { Queryable } from '../db/pool.js';
 import { getMethod } from '../methods/profiles.js';
 
 /**
- * Plan 5 Task 3: the reviews table (301_reviews.sql) and when a trade can be reviewed.
+ * Plan 5 Task 3: the reviews table (301_reviews.sql), Skip review (review_skips) and when a trade
+ * can be reviewed.
  *
- * A review is permanent and anonymous in public (spec 5.1, owner 2026-10-29 and 2026-10-29b). It
- * stores only its weight, never the trade's USD amount (lead decision 2026-10-30), and holds its
- * own method, reveal anchor and date, so it needs nothing from `trades` once the trade is purged.
+ * A review is permanent and anonymous in public (spec 5.1, owner 2026-10-29 and 2026-10-29b). It is
+ * stars, trade badges, phrases or a note, nothing else (owner 2026-11-01: no weight, no amount), and
+ * holds its own method and date, so it needs nothing from `trades` once the trade is purged. It
+ * shows as soon as it is submitted (owner 2026-11-02: no blind reveal).
  */
 
 /**
@@ -50,16 +52,14 @@ export interface ReviewRow {
   phrases: string[];
   trade_badges: string[];
   note: string | null;
-  weight: string;
   method_id: string;
-  reviewable_since: Date;
   created_at: Date;
 }
 
 /**
  * What anyone may see of a review (P5-A10 as revised 2026-10-29b): stars or Neutral, the phrases,
  * the trade badges, the note, the method's name and the month. Never the reviewer, the trade, an
- * amount, the weight or an exact time.
+ * amount or an exact time.
  */
 export interface PublicReview {
   neutral: boolean;
@@ -90,24 +90,15 @@ export async function reviewsOfTrade(db: Queryable, code: string): Promise<{ buy
   return { buyer: rows.find((r) => r.reviewer_role === 'buyer') ?? null, seller: rows.find((r) => r.reviewer_role === 'seller') ?? null };
 }
 
-/**
- * The blind reveal of one trade's reviews as `viewer` sees it (spec 5.3, @x2f/reputation `revealAt`).
- * The anchor is the viewer's OWN stored review's `reviewable_since`, else the trade's reviewable time
- * now (`live`); null when there is neither (nothing to reveal). It is never the other side's stored
- * row (review round 1, M1): stored and live can differ (a released trade later escalated to a
- * dispute has no live time; a dispute going `final` then `closed` moves it later), and an anchor
- * taken from the counterparty's row would tell the viewer that the counterparty has rated, and could
- * show their review while the viewer cannot rate.
- */
-export function revealFacts(
-  live: Date | null,
-  reviews: { buyer: ReviewRow | null; seller: ReviewRow | null },
-  viewer: Side,
-): { revealAt: Date; revealed: (now: Date) => boolean } | null {
-  const anchor = reviews[viewer]?.reviewable_since ?? live;
-  if (anchor === null) return null;
-  const facts = { reviewableSince: anchor, submitted: { buyer: reviews.buyer?.created_at ?? null, seller: reviews.seller?.created_at ?? null } };
-  return { revealAt: revealAt(facts), revealed: (now) => isRevealed(facts, now) };
+/** Whether `side` skipped reviewing the trade (review_skips, owner 2026-11-01 item 28). */
+export async function hasSkipped(db: Queryable, code: string, side: Side): Promise<boolean> {
+  const { rowCount } = await db.query('select 1 from review_skips where trade_code = $1 and side = $2', [code, side]);
+  return (rowCount ?? 0) > 0;
+}
+
+/** Records a Skip review for one side; it leaves no review (nothing shows, nothing counts). */
+export async function insertSkip(q: Queryable, code: string, side: Side): Promise<void> {
+  await q.query('insert into review_skips (trade_code, side) values ($1, $2)', [code, side]);
 }
 
 export interface NewReview {
@@ -116,55 +107,45 @@ export interface NewReview {
   subjectId: string;
   reviewerRole: Side;
   input: ReviewInput;
-  /** From @x2f/reputation `reviewWeight` (never the USD amount itself). */
-  weight: bigint;
   methodId: string;
-  reviewableSince: Date;
   createdAt: Date;
 }
 
 export async function insertReview(q: Queryable, r: NewReview): Promise<void> {
   const i = r.input;
   await q.query(
-    `insert into reviews (trade_code, reviewer_id, subject_id, reviewer_role, neutral, stars, phrases, trade_badges, note, weight,
-                          method_id, reviewable_since, created_at)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `insert into reviews (trade_code, reviewer_id, subject_id, reviewer_role, neutral, stars, phrases, trade_badges, note,
+                          method_id, created_at)
+     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
     [
       r.tradeCode, r.reviewerId, r.subjectId, r.reviewerRole, i.neutral,
       i.neutral ? null : i.stars, i.neutral ? [] : i.phrases, i.neutral ? [] : i.tradeBadges, i.neutral ? null : (i.note ?? null),
-      r.weight.toString(), r.methodId, r.reviewableSince, r.createdAt,
+      r.methodId, r.createdAt,
     ],
   );
 }
 
 /**
- * How coarse a review's times become when its trade is purged (review round 1, I2): an exact release
- * or review time would link a permanent review to an outside record of its trade.
+ * How coarse a review's time becomes when its trade is purged (review round 1, I2): an exact review
+ * time would link a permanent review to an outside record of its trade. Month and year (owner
+ * 2026-11-01, item 27); 301's trigger allows exactly this unit.
  */
-export const REVIEW_DETACH_GRANULARITY: 'day' | 'week' | 'month' = 'month'; // PENDING OWNER (owner list item 27): month is a placeholder, easy to flip (day|week|month)
+export const REVIEW_DETACH_GRANULARITY = 'month';
 
 /**
  * SEAM for the Plan 7 whole-trade purge (apps/api/src/retention/tradePurge.ts on
  * wip/lead-p7-retention) and Plan 5 Task 20: before the trade row is deleted, in the same
  * transaction and AS x2f_purge (`set local role x2f_purge`), forget which trade and which reviewer a
  * review came from. The reviews themselves stay (permanent); `trade_code` and `reviewer_id` are
- * nulled together, and the two times are coarsened to `REVIEW_DETACH_GRANULARITY` (UTC):
- * `created_at` truncated down; `reviewable_since` truncated down once its reveal deadline (+7 days)
- * has passed, otherwise rounded UP to the next unit start so the reveal is never brought forward.
- * 301's trigger allows exactly that to x2f_purge and nothing else. A detached review is never
- * matched again, so a second call is a no-op. Returns the number of reviews detached.
+ * nulled together and `created_at` is truncated to its UTC month. 301's trigger allows exactly that
+ * to x2f_purge and nothing else. A detached review is never matched again, so a second call is a
+ * no-op. Returns the number of reviews detached. (The trade's review_skips rows go with the trade
+ * row itself: on delete cascade.)
  */
 export async function detachReviews(q: Queryable, code: string): Promise<number> {
   const r = await q.query(
-    `update reviews set trade_code = null, reviewer_id = null,
-       created_at = date_trunc($2, created_at, 'UTC'),
-       reviewable_since = case
-         when reviewable_since + make_interval(days => $3) <= now() then date_trunc($2, reviewable_since, 'UTC')
-         when date_trunc($2, reviewable_since, 'UTC') = reviewable_since then reviewable_since
-         else date_trunc($2, reviewable_since, 'UTC') + ('1 ' || $2)::interval
-       end
-     where trade_code = $1`,
-    [code, REVIEW_DETACH_GRANULARITY, REVEAL_AFTER_DAYS],
+    `update reviews set trade_code = null, reviewer_id = null, created_at = date_trunc('month', created_at, 'UTC') where trade_code = $1`,
+    [code],
   );
   return r.rowCount ?? 0;
 }

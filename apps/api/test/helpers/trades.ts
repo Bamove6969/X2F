@@ -116,8 +116,8 @@ export async function seedReviews(deps: Pick<Deps, 'db' | 'clock'>, code: string
     ['seller', t.seller_account_id, t.buyer_account_id],
   ] as const) {
     await insertReview(deps.db, {
-      tradeCode: code, reviewerId, subjectId, reviewerRole, input: { neutral: true }, weight: 1_000n,
-      methodId: t.method_id, reviewableSince: now, createdAt: now,
+      tradeCode: code, reviewerId, subjectId, reviewerRole, input: { neutral: true },
+      methodId: t.method_id, createdAt: now,
     });
   }
 }

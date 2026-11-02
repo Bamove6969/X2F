@@ -53,11 +53,8 @@ export const CANT_DO_CODES = [
   'forbidden',
   'too-many-members',
   'member-cannot-sign',
-  // Plan 5 Task 3: rate your last trade first (the rate-first gate, spec 5.1), and P5-A31's late
-  // review rules (owner OPEN; only the default 'any' is in force today).
+  // Plan 5 Task 3: rate (or skip rating) your last trade first (the rate-first gate, spec 5.1).
   'review-pending',
-  'late-review-neutral-only',
-  'late-review-closed',
   // Guessed for refusals whose API tasks are not on the main line yet (Plan 4's lien and trade
   // ban): check them when those land.
   'lien',

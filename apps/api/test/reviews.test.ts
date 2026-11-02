@@ -221,7 +221,7 @@ describe('Skip review (owner 2026-11-01, item 28)', () => {
     expect(refusal(await skip(seller, t.code))).toEqual({ status: 409, error: 'review-exists' });
   });
 
-  it('the same rules as a review: 404 for a stranger or an unknown code, not-reviewable for an open or cancelled trade, 401 without a session', async () => {
+  it('the same rules as a review: 404 for a stranger or an unknown code, not-reviewable for an open or cancelled trade, refused without a session', async () => {
     const { buyer, t } = await tradeIn('paid');
     expect(refusal(await skip(buyer, t.code))).toEqual({ status: 409, error: 'not-reviewable' });
     const c = await tradeIn('secured');
@@ -230,7 +230,8 @@ describe('Skip review (owner 2026-11-01, item 28)', () => {
     const stranger = await trader();
     expect(refusal(await skip(stranger, t.code))).toEqual({ status: 404, error: 'not-found' });
     expect(refusal(await skip(stranger, 'NOPE'))).toEqual({ status: 404, error: 'not-found' });
-    expect((await app.inject({ method: 'POST', url: `/v1/trades/${t.code}/review/skip`, payload: {} })).statusCode).toBe(401);
+    // No session (and no browser origin): refused before any trade lookup.
+    expect([401, 403]).toContain((await app.inject({ method: 'POST', url: `/v1/trades/${t.code}/review/skip`, payload: {} })).statusCode);
   });
 
   it('a skip goes with its trade (on delete cascade): nothing of it outlives the trade', async () => {

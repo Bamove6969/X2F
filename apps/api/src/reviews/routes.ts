@@ -1,32 +1,32 @@
 import { normalizeTradeCode } from '@x2f/core';
-import { ReviewError, assertLateReviewAllowed, reviewWeight, validateReview, type ReviewErrorCode, type Side } from '@x2f/reputation';
+import { ReviewError, validateReview, type ReviewErrorCode, type Side } from '@x2f/reputation';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type pg from 'pg';
 import { requireSession } from '../auth/sessions.js';
 import { ApiError, type ApiErrorCode } from '../errors.js';
 import { loadTradeRow, type TradeRow } from '../trades/store.js';
-import { lateReviewMode, pendingReviews } from './gate.js';
+import { pendingReviews } from './gate.js';
 import { hasPersonalDetails } from './sensitive.js';
-import { insertReview, reviewableSince, reviewsOfTrade, revealFacts, toPublicReview, type PublicReview } from './store.js';
+import { hasSkipped, insertReview, insertSkip, reviewableSince, reviewsOfTrade, toPublicReview, type PublicReview } from './store.js';
 
 /**
- * Plan 5 Task 3: reviews with blind reveal (spec 5.1, 5.3).
+ * Plan 5 Task 3: reviews (spec 5.1) and Skip review (owner 2026-11-01, item 28).
  *
  * - `GET /v1/reviews/pending` (trader) → `{ trades: { code, counterparty, reviewableSince }[] }`: the
- *   trades this trader must rate before their next trade (the gate, gate.ts). `counterparty` is the
- *   other trader's public display name.
- * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, revealAt }`: `theirs`
- *   only once revealed (both rated, or 7 days after the trade became reviewable); `revealAt` is null
- *   while the trade is not reviewable and the caller has no review of it (the anchor is the caller's
- *   own review, else the live reviewable time, never the other side's review: round 1 M1).
- * - `POST /v1/trades/:code/review` (participant) body `ReviewInput` → 201 with no body. Refusals:
- *   409 `not-reviewable`, 409 `review-exists`, 400 with the @x2f/reputation `ReviewError` code
- *   (including P5-A31's `late-review-neutral-only` / `late-review-closed`).
+ *   trades this trader must rate or skip before their next trade (the gate, gate.ts).
+ *   `counterparty` is the other trader's public display name.
+ * - `GET /v1/trades/:code/review` (participant) → `{ reviewable, mine, theirs, skipped }`: `theirs`
+ *   as soon as the other side has submitted it (owner 2026-11-02: no blind reveal); `skipped` is
+ *   true when the CALLER skipped (the other side's skip is never shown: it shows nothing to anyone).
+ * - `POST /v1/trades/:code/review` (participant) body `ReviewInput` → 201 with no body.
+ * - `POST /v1/trades/:code/review/skip` (participant) → 204 with no body: this side is done with
+ *   the trade (gate, pending list) and leaves no review.
+ *   Both POSTs refuse 409 `not-reviewable`, 409 `review-exists` (this side already reviewed OR
+ *   skipped); the review also 400 with the @x2f/reputation `ReviewError` code.
  *
  * The reviewer's side and the subject come from the trade row and the session, never the body. A
- * review stores only its weight (`reviewWeight` of the trade's take-time `usd_cents`), and no
- * answer carries an amount, a weight, a reviewer, an account id or an exact time. An unknown code
- * and someone else's trade get the same 404.
+ * review stores no amount and no weight (owner 2026-11-01), and no answer carries an amount, a
+ * reviewer, an account id or an exact time. An unknown code and someone else's trade get the same 404.
  */
 
 const trader = requireSession({ kinds: ['trader'] });
@@ -70,7 +70,21 @@ export interface TradeReviewView {
   reviewable: boolean;
   mine: PublicReview | null;
   theirs: PublicReview | null;
-  revealAt: string | null;
+  /** The caller skipped reviewing this trade. */
+  skipped: boolean;
+}
+
+/**
+ * The checks both POSTs share, in a transaction with the trade row locked (so a dispute opened
+ * meanwhile, which locks it too, is seen or waits, and a review and a skip of one side serialize).
+ */
+async function reviewableSide(c: pg.PoolClient, code: string, me: string): Promise<{ row: TradeRow; side: Side }> {
+  const row = await loadTradeRow(c, code, true);
+  const side = row === null ? null : sideOf(row, me);
+  if (row === null || side === null) throw new ApiError(404, 'not-found');
+  if ((await reviewableSince(c, code)) === null) throw new ApiError(409, 'not-reviewable');
+  if ((await reviewsOfTrade(c, code))[side] !== null || (await hasSkipped(c, code, side))) throw new ApiError(409, 'review-exists');
+  return { row, side };
 }
 
 export function reviewRoutes(app: FastifyInstance): void {
@@ -86,18 +100,16 @@ export function reviewRoutes(app: FastifyInstance): void {
     const row = await loadTradeRow(deps.db, code);
     const side = row === null ? null : sideOf(row, req.auth.accountId);
     if (row === null || side === null) throw new ApiError(404, 'not-found');
-    const now = deps.clock();
     const since = await reviewableSince(deps.db, code);
     const reviews = await reviewsOfTrade(deps.db, code);
-    const reveal = revealFacts(since, reviews, side);
+    const skipped = await hasSkipped(deps.db, code, side);
     const mine = reviews[side];
     const theirs = reviews[other(side)];
-    const lateClosed = lateReviewMode() === 'closed' && theirs !== null && reveal !== null && reveal.revealed(now);
     return {
-      reviewable: since !== null && mine === null && !lateClosed,
+      reviewable: since !== null && mine === null && !skipped,
       mine: mine === null ? null : toPublicReview(mine),
-      theirs: theirs !== null && reveal !== null && reveal.revealed(now) ? toPublicReview(theirs) : null,
-      revealAt: reveal === null ? null : reveal.revealAt.toISOString(),
+      theirs: theirs === null ? null : toPublicReview(theirs),
+      skipped,
     };
   });
 
@@ -106,23 +118,11 @@ export function reviewRoutes(app: FastifyInstance): void {
     const code = codeOf(req);
     const me = req.auth.accountId;
     await inTransaction(deps.db, async (c) => {
-      // The trade row locked, so a dispute opened meanwhile (which locks it too) is seen or waits.
-      const row = await loadTradeRow(c, code, true);
-      const side = row === null ? null : sideOf(row, me);
-      if (row === null || side === null) throw new ApiError(404, 'not-found');
-      const since = await reviewableSince(c, code);
-      if (since === null) throw new ApiError(409, 'not-reviewable');
-      const reviews = await reviewsOfTrade(c, code);
-      if (reviews[side] !== null) throw new ApiError(409, 'review-exists');
+      const { row, side } = await reviewableSide(c, code, me);
       const rated = other(side);
-      const now = deps.clock();
       let input;
       try {
         input = validateReview(req.body, rated, hasPersonalDetails);
-        // P5-A31: late = the other side's review was already revealed to this reviewer.
-        const reveal = revealFacts(since, reviews, side);
-        const afterReveal = reviews[rated] !== null && reveal !== null && reveal.revealed(now);
-        assertLateReviewAllowed(input, afterReveal, lateReviewMode());
       } catch (e) {
         if (e instanceof ReviewError) throw new ApiError(400, asApiCode(e.code));
         throw e;
@@ -134,10 +134,8 @@ export function reviewRoutes(app: FastifyInstance): void {
           subjectId: rated === 'buyer' ? row.buyer_account_id : row.seller_account_id,
           reviewerRole: side,
           input,
-          weight: reviewWeight(row.usd_cents === null ? null : BigInt(row.usd_cents)),
           methodId: row.method_id,
-          reviewableSince: since,
-          createdAt: now,
+          createdAt: deps.clock(),
         });
       } catch (e) {
         // The unique (trade_code, reviewer_role) backstop of a double submit.
@@ -146,5 +144,22 @@ export function reviewRoutes(app: FastifyInstance): void {
       }
     });
     return reply.code(201).send();
+  });
+
+  app.post('/v1/trades/:code/review/skip', { preHandler: trader }, async (req, reply) => {
+    const deps = req.server.deps;
+    const code = codeOf(req);
+    const me = req.auth.accountId;
+    await inTransaction(deps.db, async (c) => {
+      const { side } = await reviewableSide(c, code, me);
+      try {
+        await insertSkip(c, code, side);
+      } catch (e) {
+        // The primary key (trade_code, side) backstop of a double tap.
+        if ((e as { code?: unknown } | null)?.code === '23505') throw new ApiError(409, 'review-exists');
+        throw e;
+      }
+    });
+    return reply.code(204).send();
   });
 }
