@@ -72,3 +72,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - **Not tracked:** Monero addresses, payment details, IP addresses and device fingerprints.
 - Team members' sessions do not count toward the lead's 3 devices (owner, 2 Nov).
 - The lead can log out one member's session, or all of them with "Log out all team members". "Log out all other devices" covers only the lead's own devices (owner, 2 Nov).
+- Switching a team member on or off needs a Strong login. A session with just a username and password gets the 24 h hold pop-up instead (owner, 2 Nov). The weakest possible login is username + password; username and display name are always separate and both required.

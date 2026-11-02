@@ -123,7 +123,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
       <aside aria-label="Open for the owner: weaker logins" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
         <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-        <span style="font-weight: 600;">Does using a recovery code or a password-only login remove vendor status?</span>
+        <span style="font-weight: 600;">Does using a recovery code, or logging in with just a username and password, remove vendor status?</span>
         <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
           <li>No: vendor status stays</li>
           <li>Paused: offers are hidden until the next Strong login</li>
@@ -234,7 +234,7 @@ class Component extends DCLogic {
 
     const reqs = [{
       title: 'Strong login for the account holder', met: strong, hasAction: !strong,
-      pre: strong ? 'A passkey is set up for the account holder (team lead).' : 'The account holder (team lead) needs a passkey, security key or PGP key. A password alone isn’t enough.',
+      pre: strong ? 'A passkey is set up for the account holder (team lead).' : 'The account holder (team lead) needs a passkey, security key or PGP key. A username and password alone isn’t enough.',
       n1: '', mid: '', n2: '', post: ''
     }];
     if (extra) reqs.push({
