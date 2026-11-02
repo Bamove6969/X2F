@@ -8,7 +8,7 @@
  * elsewhere).
  *
  * Laid out to the "Devices and sessions" board (C2-D1; docs/design-boards/Devices.dc.html and
- * -Wide on wip/design-brief); all look comes from the UI kit. Words: devicesCopy.ts
+ * -Wide on wip/design-brief); all look comes from the UI kit. Words: `C` below
  * (COPY-UNSIGNED). The count is the API's: a team member's session counts toward the limit
  * (`devicesInUse`), so the screen counts it too.
  */
@@ -27,10 +27,56 @@ import { Switch } from '../../ui/Switch.js';
 import { ConfirmOpenProvider, isConfirmAbort, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { heldNote, refusalText, weakSessionCantDo } from '../auth/refusals.js';
-import { DEVICES_COPY as C, deviceKind, initials } from './devicesCopy.js';
+import { DEVICES_TITLE, deviceKind, initials } from './devicesCopy.js';
 import { OwnerOnly } from './OwnerOnly.js';
 import { TEAM_PATH } from './teamCopy.js';
 import '../screens.css';
+
+// COPY-UNSIGNED (all of DEVICES_COPY).
+const C = {
+  title: DEVICES_TITLE,
+  back: 'Back to settings',
+  devicesTitle: 'Devices',
+  count: (used: number, max: number) => `${used} of ${max} devices logged in`,
+  atLimit: "You're at the limit. To let a new device in, you'll pick one to log out.",
+  oneMore: 'One more device can log in.',
+  more: (n: number) => `${n} more devices can log in.`,
+  mineTitle: 'Your devices',
+  thisDevice: 'This device',
+  logOut: 'Log out',
+  logOutLabel: (name: string) => `Log out ${name}`,
+  logOutAll: 'Log out all other devices',
+  teamTitle: 'Team members logged in',
+  teamNotYours: "These are your team members' logins, not yours.",
+  teamMember: 'Team member',
+  teamLogOutLabel: (member: string, device: string) => `Log out ${member} on ${device}`,
+  manageTeam: 'Manage roles and invites in Team',
+  optionsTitle: 'Options',
+  oneDevice: 'One device at a time',
+  oneDeviceHint: 'When on, approving a new device logs out the one you were using.',
+  oneDeviceOn: 'One device at a time is on.',
+  oneDeviceOff: 'One device at a time is off.',
+  howTitle: 'How a new device gets in',
+  howApproveTitle: 'Approve it on a logged-in device',
+  // not-a-refusal: explains how approval works
+  howApprove: 'Your other devices ask "Is this you?". Tap the 2-digit number the new device shows. Say no and the login is blocked.',
+  noIp: "X2F doesn't log IP addresses, so devices are named only by browser and system.",
+  recovery: 'Recovery login',
+  ask: {
+    oneTitle: (name: string) => `Log out ${name}?`,
+    oneText: "It's logged out right away. To use it again, approve it from a device you're still logged in on.",
+    memberTitle: (member: string) => `Log out ${member}?`,
+    memberText: (member: string, device: string) => `${member}'s session on ${device} ends right away.`,
+    allTitle: (n: number) => (n === 1 ? 'Log out 1 other device?' : `Log out ${n} other devices?`),
+    allText: (names: string[]) => `${names.join(' and ')} ${names.length === 1 ? 'is' : 'are'} logged out right away. Only this device stays logged in.`,
+    cancel: 'Cancel',
+  },
+  done: {
+    one: (name: string) => `${name} was logged out.`,
+    member: (member: string, device: string) => `${member} was logged out of ${device}.`,
+    all: 'All other devices were logged out.',
+  },
+} as const;
 
 type Ask = { kind: 'one'; s: SessionEntry } | { kind: 'all'; ids: string[]; names: string[] };
 
@@ -169,10 +215,10 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             {max !== null && sessions !== null ? (
               <div className="x2f-panel">
                 <p className="x2f-h3" data-part="devices-count">
-                  <span className="x2f-mono">{used}</span> of <span className="x2f-mono">{max}</span> devices logged in
+                  <span className="x2f-num">{used}</span> of <span className="x2f-num">{max}</span> devices logged in
                 </p>
                 <Meter used={used} max={max} part="devices-meter" />
-                {meterNote !== null ? <p className="x2f-muted">{meterNote}</p> : null}
+                {meterNote !== null ? <p className="x2f-fine">{meterNote}</p> : null}
               </div>
             ) : null}
             {note !== null ? (
@@ -229,7 +275,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                   <Icon name="team" size={20} />
                   {C.teamTitle}
                 </h3>
-                <p className="x2f-muted">{C.teamNotYours}</p>
+                <p className="x2f-fine">{C.teamNotYours}</p>
                 <ul className="x2f-items" aria-labelledby="devices-team-h">
                   {team.map((s) => {
                     const m = memberOfSession(s)!;
@@ -281,7 +327,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                     <span className="x2f-h3" id="devices-one-l">
                       {C.oneDevice}
                     </span>
-                    <span className="x2f-muted" id="devices-one-d">
+                    <span className="x2f-fine" id="devices-one-d">
                       {C.oneDeviceHint}
                     </span>
                   </span>
@@ -295,7 +341,7 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
                   />
                 </div>
                 {held !== null ? (
-                  <p className="x2f-muted" role="status" data-part="held-note">
+                  <p className="x2f-fine" role="status" data-part="held-note">
                     {held}
                   </p>
                 ) : null}
@@ -314,15 +360,15 @@ export function Devices({ prove }: { prove?: (a: ConfirmAction) => Promise<strin
             </h2>
             <div className="x2f-panel">
               <h3 className="x2f-h3">{C.howApproveTitle}</h3>
-              <p className="x2f-muted">{C.howApprove}</p>
+              <p className="x2f-fine">{C.howApprove}</p>
             </div>
-            <p className="x2f-muted">{C.noIp}</p>
+            <p className="x2f-fine">{C.noIp}</p>
           </section>
         </div>
       </div>
       <Sheet open={ask !== null} title={askTitle} closeButton={false} wide="dialog" onClose={() => setAsk(null)}>
         <div className="x2f-stack">
-          <p className="x2f-text">{askText}</p>
+          <p className="x2f-body">{askText}</p>
           <Button variant="danger-outline" onClick={confirmAsk} data-part="end-confirm">
             {askConfirm}
           </Button>

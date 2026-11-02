@@ -1,14 +1,13 @@
-// TRIPWIRE for Plan 2 Task 16 (new-device approval): Claude Design owns all aesthetics (owner,
-// 2026-10-29), and the LoginApprove and Devices boards are still in progress on the design branch
-// (design update 2026-10-29, section 5), not in this checkout. So ApproveOnDevice.tsx and
-// LoginApprove.tsx (both sides of LoginApprove) and Devices.tsx are built from existing UI-kit
-// classes and components only, with no stylesheet of their own, no inline styles and no
-// expectParity entry. This looks at this checkout only and fails once either board lands in
-// design/x2f-app/: then restyle the three to the boards (the board's copy wins), add
+// TRIPWIRE for Plan 2 Task 16 (new-device approval). C2-D1 (1 Nov 2026) rebuilt ApproveOnDevice.tsx,
+// LoginApprove.tsx and Devices.tsx to the LoginApprove and "Devices and sessions" boards, which so far
+// live on the design branch (wip/design-brief, docs/design-boards/), not in this checkout's
+// design/x2f-app/. Their look stays in the UI kit (apps/web/src/ui), so the three screens still
+// carry no stylesheet of their own and no inline styles. This looks at this checkout only and fails
+// once either board lands in design/x2f-app/: then capture its parity reference, add
 // `expectParity(page, 'LoginApprove')` / `'Devices'` at PHONE_VIEWPORTS to an e2e spec, and delete
-// this test. Still OPEN when the boards land (Plan 2 Revision 2026-10-29b): the "no logged-in
-// device" rule and the backup-login waits (Task 17) the new-device board's "I don't have my other
-// device" note describes; until decided the screen links to the backup login without them.
+// this test. Still OPEN (Plan 2 Revision 2026-10-29b; C2-D1 report): the passkey / security key /
+// PGP way in without an approval that the new-device board's "No other device with you?" card
+// describes; until decided the card links to the existing backup login.
 import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -18,11 +17,11 @@ const BOARDS = `${ROOT}design/x2f-app/`;
 const SCREENS = ['auth/ApproveOnDevice.tsx', 'auth/LoginApprove.tsx', 'settings/Devices.tsx'];
 
 describe('Task 16 stand-ins', () => {
-  it('NEEDS_DESIGN_DEVICES: no LoginApprove or Devices board yet, so their screens carry no styling of their own', () => {
+  it('NEEDS_PARITY_DEVICES: the LoginApprove and Devices boards are not in design/x2f-app yet, and the screens carry no styling of their own', () => {
     const canvas = JSON.parse(readFileSync(`${BOARDS}canvas.json`, 'utf8')) as { boards: Record<string, unknown> };
     const board = Object.keys(canvas.boards).some((b) => /^(LoginApprove|Devices)/i.test(b)) ||
       existsSync(`${BOARDS}LoginApprove.dc.html`) || existsSync(`${BOARDS}Devices.dc.html`);
-    expect(board, 'Claude Design delivered the LoginApprove or Devices board: style the Task 16 screens to it (see this test)').toBe(false);
+    expect(board, 'The LoginApprove or Devices board reached design/x2f-app: add its parity reference and expectParity (see this test)').toBe(false);
     for (const f of SCREENS) {
       const src = readFileSync(`${ROOT}apps/web/src/screens/${f}`, 'utf8');
       expect(src, f).not.toMatch(/style=\{/);

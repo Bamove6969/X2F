@@ -108,9 +108,9 @@ export function ApproveOnDevice({
           <h2 className="x2f-h2" id="approve-in-h">
             You're in
           </h2>
-          <p className="x2f-text">Your other device approved this login.</p>
+          <p className="x2f-body">Your other device approved this login.</p>
           {loggedOut.length > 0 ? (
-            <p className="x2f-muted" data-part="approve-logged-out">
+            <p className="x2f-fine" data-part="approve-logged-out">
               Logged out to make room: {loggedOut.join(', ')}.
             </p>
           ) : null}
@@ -142,12 +142,12 @@ export function ApproveOnDevice({
           <h2 className="x2f-h2" id="approve-end-h">
             {blocked ? 'This login was blocked' : 'This request has ended'}
           </h2>
-          <p className="x2f-text">{blocked ? 'Your other device said no, or a different number was tapped.' : 'Nobody approved it in time.'}</p>
+          <p className="x2f-body">{blocked ? 'Your other device said no, or a different number was tapped.' : 'Nobody approved it in time.'}</p>
           {blocked ? (
-            // COPY-UNSIGNED (LoginApprove board, side=new, Draft copy).
-            <p className="x2f-text">This device can't log in until it's approved. Nobody else on your account is affected.</p>
+            // COPY-UNSIGNED (LoginApprove board, side=new, Draft copy). not-a-refusal: says what the block means
+            <p className="x2f-body">This device can't log in until it's approved. Nobody else on your account is affected.</p>
           ) : null}
-          <p className="x2f-muted">If it was you, try again. You'll get a new number.</p>
+          <p className="x2f-fine">If it was you, try again. You'll get a new number.</p>
         </section>
       </FlowScreen>
     );
@@ -174,14 +174,14 @@ export function ApproveOnDevice({
         <span className="x2f-big-number" data-part="approve-number" aria-labelledby="approve-your-number">
           {wait.number}
         </span>
-        <span className="x2f-muted">
+        <span className="x2f-fine">
           On your other device, tap {wait.number}, then Yes, let them in.
         </span>
       </div>
       <p className="x2f-icon-line" data-part="approve-countdown" data-mask="clock">
         <Icon name="clock" size={20} />
         <span>
-          Waiting for approval. This ends in <span className="x2f-mono">{mmss(left)}</span>.
+          Waiting for approval. This ends in <span className="x2f-num">{mmss(left)}</span>.
         </span>
       </p>
       <Disclosure summary="Where do I approve it?" part="approve-where">

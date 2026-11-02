@@ -116,11 +116,11 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     body = (
       <div className="x2f-stack" data-part="approve-done">
         {approval.oneDevice ? (
-          <p className="x2f-text">This device is now logged out, because One device at a time is on.</p>
+          <p className="x2f-body">This device is now logged out, because One device at a time is on.</p>
         ) : stage.out?.current === true ? (
-          <p className="x2f-text">You chose this device, so it is now logged out.</p>
+          <p className="x2f-body">You chose this device, so it is now logged out.</p>
         ) : stage.out !== null ? (
-          <p className="x2f-text">{stage.out.deviceLabel} has been logged out.</p>
+          <p className="x2f-body">{stage.out.deviceLabel} has been logged out.</p>
         ) : null}
         {selfOut ? (
           <Button
@@ -135,7 +135,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
           </Button>
         ) : (
           <>
-            <p className="x2f-muted">
+            <p className="x2f-fine">
               You can see your devices and log any of them out in{' '}
               <Link className="x2f-link" to={DEVICES_PATH} onClick={onDone}>
                 Devices
@@ -154,16 +154,17 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     lead = <StatusIcon name="shield-x" tone="danger" />;
     body = (
       <div className="x2f-stack" data-part="approve-blocked">
-        <p className="x2f-text">
+        <p className="x2f-body">
           {stage.wrong
-            ? "The number you tapped didn't match the one on the new device, so that login was blocked to be safe. If it was you, start again on the new device. Nobody else is affected."
+            ? "The number you tapped didn't match the one on the new device, so that login was blocked to be safe. If it was you, start again on the new device. Nobody else is affected." // not-a-refusal: says what blocking did, the person chose it
             : `${label} was not let in. It can't log in, and nothing else changes: you and your team stay logged in.`}
         </p>
         <section className="x2f-panel" data-tone="caution" aria-labelledby="approve-change-h">
           <h3 className="x2f-h3" id="approve-change-h">
             Change your login method
           </h3>
-          <p className="x2f-muted">If you didn't try to log in, someone else may have your login details. Change how you log in now so they can't try again.</p>
+          {/* not-a-refusal: advice after a block */}
+          <p className="x2f-fine">If you didn't try to log in, someone else may have your login details. Change how you log in now so they can't try again.</p>
         </section>
         <Button
           variant="primary"
@@ -184,7 +185,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     title = 'This request has ended';
     body = (
       <div className="x2f-stack" data-part="approve-ended">
-        <p className="x2f-text">Nobody was let in.</p>
+        <p className="x2f-body">Nobody was let in.</p>
         <Button variant="primary" onClick={onDone} data-part="approve-ok">
           OK
         </Button>
@@ -195,7 +196,7 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
     kicker = `New login · ${label}`;
     body = (
       <div className="x2f-stack" data-part="approve-choose">
-        <p className="x2f-text">
+        <p className="x2f-body">
           {stage.max !== null ? `You can be logged in on ${stage.max} devices at once. ` : ''}To let {label} in, one of these has to be logged out.
         </p>
         <ChoiceGroup
@@ -229,12 +230,13 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
           </div>
           <div>
             <dt>Time</dt>
-            <dd className="x2f-mono" data-mask="clock">
+            <dd className="x2f-num" data-mask="clock">
               {utcWhen(approval.createdAt)}
             </dd>
           </div>
           <div>
             <dt>Where</dt>
+            {/* not-a-refusal: explains why there is no place */}
             <dd>Not shown. X2F doesn't log IP addresses, so we can't show where.</dd>
           </div>
         </dl>
@@ -260,9 +262,9 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
           Yes, let them in
         </Button>
         {blockButton}
-        <p className="x2f-muted" data-mask="clock" data-part="approve-countdown">
+        <p className="x2f-fine" data-mask="clock" data-part="approve-countdown">
           If you do nothing, the request ends in{' '}
-          <span className="x2f-mono" data-ink="true">
+          <span className="x2f-num" data-ink="true">
             {mmss(left)}
           </span>{' '}
           and they stay out.

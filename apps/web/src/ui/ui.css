@@ -702,7 +702,7 @@
 }
 
 /* Caution note in a box (Notice). */
-.x2f-notice {
+.x2f-caution-note {
   display: flex;
   gap: var(--x2f-space-2);
   margin: 0;
@@ -713,7 +713,7 @@
   line-height: 20px;
 }
 
-.x2f-notice__icon {
+.x2f-caution-note__icon {
   display: flex;
   flex-shrink: 0;
   color: var(--x2f-caution);
@@ -939,25 +939,25 @@
   font-weight: 600;
 }
 
-.x2f-text {
+.x2f-body {
   margin: 0;
   font-size: 16px;
   line-height: 24px;
 }
 
-.x2f-muted {
+.x2f-fine {
   margin: 0;
   color: var(--x2f-ink-muted);
   font-size: 14px;
   line-height: 20px;
 }
 
-.x2f-mono {
+.x2f-num {
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
 }
 
-.x2f-mono[data-ink='true'] {
+.x2f-num[data-ink='true'] {
   color: var(--x2f-ink);
 }
 

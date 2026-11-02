@@ -15,7 +15,7 @@ import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
-import { DEVICES_COPY, DEVICES_PATH } from './devicesCopy.js';
+import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
@@ -188,9 +188,9 @@ function SecurityScreen() {
         <Methods prove={prove} />
         <PayoutWait />
         {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
-        <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_COPY.title}>
+        <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
           <Link className="x2f-row-link" to={DEVICES_PATH}>
-            <span>{DEVICES_COPY.title}</span>
+            <span>{DEVICES_TITLE}</span>
             <Icon name="chevron-right" size={20} />
           </Link>
         </section>

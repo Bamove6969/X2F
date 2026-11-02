@@ -8,8 +8,8 @@ import './ui.css';
  */
 export function Notice({ children, part, role }: { children: ReactNode; part?: string; role?: 'status' | 'alert' }) {
   return (
-    <p className="x2f-notice" data-tone="caution" data-part={part} role={role}>
-      <span className="x2f-notice__icon">
+    <p className="x2f-caution-note" data-tone="caution" data-part={part} role={role}>
+      <span className="x2f-caution-note__icon">
         <Icon name="info-circle" size={18} />
       </span>
       <span>{children}</span>
