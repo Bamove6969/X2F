@@ -70,9 +70,9 @@ async function rule(code: string, o: { outcome: string; round?: 1 | 2; ruledAt: 
 }
 
 describe('POST /v1/trades/:code/dispute', () => {
-  it('refuses the buyer before the seller\'s confirm window ends, and writes nothing', async () => {
+  it('refuses the buyer before 30 minutes after marking paid (29:59), and writes nothing (owner 2026-11-01)', async () => {
     const { buyer, t } = await tradeIn('paid');
-    setNow(at(119 * MIN));
+    setNow(at(29 * MIN + 59_000));
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note: '' });
     expect(res.statusCode).toBe(409);
     expect(errorOf(res)).toBe('too-early');
@@ -81,15 +81,15 @@ describe('POST /v1/trades/:code/dispute', () => {
     expect(await eventTypes(t.code)).not.toContain('open-dispute');
   });
 
-  it('opens a dispute once the window has ended: the trade, its event and the dispute row in one go', async () => {
+  it('opens a dispute from 30:00 after marking paid, inside the seller\'s 2-hour window: the trade, its event and the dispute row in one go', async () => {
     const { buyer, seller, t } = await tradeIn('paid');
-    setNow(at(120 * MIN));
+    setNow(at(30 * MIN));
     const note = 'I sent $412.50 by Zelle at 10:02 from my own account.';
     const res = await buyer.browser.post(dispute(t.code), { reason: 'paid', note });
     expect(res.statusCode).toBe(200);
     const body = res.json() as Record<string, unknown>;
     expect(body).toMatchObject({ openedBy: 'buyer', reason: 'paid', afterRefund: false, status: 'open', moderator: null, ruling: null, appeal: null });
-    expect(body.openedAt).toBe(at(120 * MIN).toISOString());
+    expect(body.openedAt).toBe(at(30 * MIN).toISOString());
     expect(body).not.toHaveProperty('note');
     expect((await loadTrade(deps.db, t.code))!.state).toBe('disputed');
     expect(await eventTypes(t.code)).toContain('open-dispute');

@@ -84,14 +84,16 @@ const at = (m: number) => () => new Date(T0 + m * MIN);
 const inRouter = (ui: React.ReactNode) => <MemoryRouter>{ui}</MemoryRouter>;
 
 describe('disputeEntry (mirrors the state machine; the server clock decides)', () => {
-  it('makes the buyer wait for the end of the confirm window, with the board explanation', () => {
-    const e = disputeEntry(trade(), new Date(T0 + 119 * MIN));
+  it('makes the buyer wait 30 minutes from marking paid (owner 2026-11-01), not the whole confirm window, with the board explanation', () => {
+    // paidAt 0, confirmBy 120: 29:59 waits, 30:00 opens.
+    const e = disputeEntry(trade(), new Date(T0 + 29 * MIN + 59_000));
     expect(e).toEqual({
       kind: 'wait',
-      until: new Date(T0 + 120 * MIN),
-      text: "You can open a dispute if the seller hasn't confirmed within 2 h of your payment.",
+      until: new Date(T0 + 30 * MIN),
+      text: "You can open a dispute if the seller hasn't confirmed within 30 min of your payment.",
     });
-    expect(disputeEntry(trade(), new Date(T0 + 120 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade(), new Date(T0 + 30 * MIN))).toEqual({ kind: 'open' });
+    expect(disputeEntry(trade({ paidAt: null }), new Date(T0 + 30 * MIN))).toEqual({ kind: 'none' });
     expect(disputeEntry(trade({ role: 'seller' }), new Date(T0))).toEqual({ kind: 'open' });
   });
 

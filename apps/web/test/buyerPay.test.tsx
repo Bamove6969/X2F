@@ -739,12 +739,14 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
-    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+  it("in paid, Open dispute waits 30 minutes from marking paid (owner 2026-11-01; too-early before it), not for confirmBy", () => {
+    // 29:59 after marking paid: still waiting, 1 min left.
+    const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-(29 * 60 + 59) / 60), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeUndefined();
-    expect(text()).toContain('Dispute opens in');
+    expect(text()).toContain('Dispute opens in 1 min');
     r.unmount();
-    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
+    // 30:00 after marking paid, with the seller's window still open: the link is there.
+    mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-30), confirmBy: at(90) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     expect(maybe('Open dispute')).toBeDefined();
   });
 

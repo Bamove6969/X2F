@@ -746,9 +746,15 @@ describe('open-dispute', () => {
     }
   });
 
-  test('in paid: the seller any time, the buyer only from confirmBy', () => {
+  test('in paid: the seller any time, the buyer from 30 minutes after marking paid (owner 2026-11-01), not from confirmBy', () => {
+    // paid() marks paid at 40; its confirmBy is 160.
+    expect(TIMERS.buyerDisputeAfterPaidMin).toBe(30);
     expect(apply(paid(), { type: 'open-dispute' }, 'seller', at(41)).state).toBe('disputed');
-    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(159)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(69, 59_999)))).toBe('too-early');
+    expect(rule(() => apply(paid(), { type: 'open-dispute' }, 'buyer', at(69, 59_000)))).toBe('too-early');
+    const d = apply(paid(), { type: 'open-dispute' }, 'buyer', at(70));
+    expect(d.state).toBe('disputed');
+    expect(d.dispute).toEqual({ by: 'buyer', at: at(70) });
     expect(apply(paid(), { type: 'open-dispute' }, 'buyer', at(160)).state).toBe('disputed');
   });
 

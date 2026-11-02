@@ -297,7 +297,8 @@ describe('refusalText', () => {
     expect(refusalText('trading-hold')).toMatch(/trading hold/);
     expect(refusalText('trading-paused')).toMatch(/paused/);
     expect(refusalText('method-unavailable')).toMatch(/payment method/);
-    expect(refusalText('too-many-offers')).toMatch(/Remove one/);
+    // The cap the API enforces (owner 2026-11-01: 3 buying and 3 selling offers per account), in the cap's own line.
+    expect(refusalText('too-many-offers')).toBe('You can have 3 buying and 3 selling offers. Remove one you no longer need, then post this one.');
     expect(refusalText('something-new')).toMatch(/wasn't posted/);
     for (const code of ['trading-hold', 'trading-paused', 'method-unavailable', 'too-many-offers', 'x']) expect(refusalText(code)).not.toContain('!');
   });
