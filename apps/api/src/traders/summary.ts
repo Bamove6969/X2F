@@ -23,9 +23,9 @@ export interface TraderSummary {
   /** The starter-limits stage (spec 2.3; plan Task 4 Revision 2026-10-26): the New badge shows until 'graduated'. */
   stage: Stage;
   /**
-   * C12b (owner 2026-11-01/02): "Completed over $X in trades to date", X in whole US dollars rounded
-   * down (@x2f/reputation `tradedBucketUsd`); null unless the trader opted in and X is at least
-   * $10,000. Never the exact total.
+   * C12b (owner 2026-11-01/02): "Completed over $X in trades to date", X in whole US dollars, the
+   * largest step strictly below the total (@x2f/reputation `tradedBucketUsd`, review M1); null
+   * unless the trader opted in and the total is over $10,000. Never the exact total.
    */
   tradedOverUsd: number | null;
 }

@@ -156,6 +156,14 @@ describe('the opt-in line (off by default)', () => {
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
   });
 
+  it('opted in at exactly $10,000: nothing shows ("over $10,000" would not be true; review M1)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(10_000));
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+  });
+
   it('refuses a body that is not { show: boolean }, and a request with no session', async () => {
     const who = await trader();
     for (const show of ['yes', 1, null, undefined]) expect((await optIn(who, show)).statusCode, String(show)).toBe(400);
