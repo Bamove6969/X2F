@@ -3,8 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MemoryRouter } from 'react-router';
 import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
+import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
+import { mayPostOffers } from '../src/session/member.js';
+import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
+import { Checkbox } from '../src/ui/Checkbox.js';
+import { EmptyState } from '../src/ui/EmptyState.js';
+import { Notice } from '../src/ui/Notice.js';
+import { SelectAll } from '../src/ui/SelectAll.js';
+import { SelectCard } from '../src/ui/SelectCard.js';
+import { Switch } from '../src/ui/Switch.js';
 import { Countdown, formatRemaining } from '../src/ui/Countdown.js';
 import { DesktopShell } from '../src/ui/DesktopShell.js';
 import { EscrowDots } from '../src/ui/EscrowDots.js';
@@ -353,6 +362,31 @@ describe('BottomNav', () => {
     expect(links.slice(1).every((a) => !a.hasAttribute('aria-current'))).toBe(true);
   });
 
+  // Design review shot 26: a team member without the Offers role never reaches Post offer.
+  it('hides Post offer when the session may not post offers', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <BottomNav postOffers={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile']);
+  });
+
+  it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
+    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    expect(mayPostOffers(me(null))).toBe(true);
+    expect(mayPostOffers(me(undefined))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers'] }))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers', 'trades'] }))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['trades'] }))).toBe(false);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: [] }))).toBe(false);
+    // Signed out: the tab stays (PostOffer sends a signed-out poster to setup).
+    expect(mayPostOffers({ status: 'signed-out' })).toBe(true);
+    // Review N2: while the session loads the role is not known, so the tab waits (a Trades-only
+    // member never sees it appear and vanish on a cold load).
+    expect(mayPostOffers({ status: 'loading' })).toBe(false);
+  });
+
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {
     const { host } = render(
       <MemoryRouter initialEntries={['/sell']}>
@@ -397,4 +431,100 @@ describe('DesktopShell', () => {
     expect(host.textContent).toContain('X2F');
     expect(host.textContent).toContain('room');
   });
+});
+
+// Design review 1 Nov 2026 (MyOffers shots 31-35): the switch, tick box, select card, action bar,
+// notice and empty state are kit parts, so the next screens get them without CSS of their own.
+describe('Switch, Checkbox, SelectAll and SelectCard', () => {
+  it('Switch is a real role="switch" button with a track and knob and no words', () => {
+    const clicks: number[] = [];
+    const { host, rerender } = render(<Switch checked={false} aria-label="Zelle offer" onClick={() => clicks.push(1)} />);
+    const b = host.querySelector('button')!;
+    expect([b.getAttribute('role'), b.getAttribute('aria-checked'), b.getAttribute('data-on'), b.type, b.textContent]).toEqual(['switch', 'false', 'false', 'button', '']);
+    expect(b.querySelector('.x2f-switch__track[aria-hidden="true"] .x2f-switch__knob')).not.toBeNull();
+    fire(b, new MouseEvent('click', { bubbles: true }));
+    expect(clicks).toHaveLength(1);
+    rerender(<Switch checked aria-label="Zelle offer" />);
+    expect(host.querySelector('button')!.getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('Checkbox is a native tick box in a 44 px label, with a mixed state', () => {
+    const seen: boolean[] = [];
+    const { host, rerender } = render(<Checkbox checked={false} mixed aria-label="Select all" onChange={(v) => seen.push(v)} />);
+    const input = host.querySelector('label.x2f-tickbox > input[type="checkbox"]') as HTMLInputElement;
+    expect(input.indeterminate).toBe(true);
+    fire(input, new MouseEvent('click', { bubbles: true }));
+    expect(seen).toEqual([true]);
+    rerender(<Checkbox checked aria-label="Select all" onChange={() => {}} />);
+    expect([input.checked, input.indeterminate]).toEqual([true, false]);
+  });
+
+  it('Checkbox keeps showing mixed while the parent keeps it mixed, even after a click (review N1)', () => {
+    const { host, rerender } = render(<Checkbox checked={false} mixed aria-label="Select all" onChange={() => {}} />);
+    const input = host.querySelector('input') as HTMLInputElement;
+    fire(input, new MouseEvent('click', { bubbles: true }));
+    rerender(<Checkbox checked={false} mixed aria-label="Select all" onChange={() => {}} />);
+    expect(input.indeterminate).toBe(true);
+  });
+
+  it('SelectAll names its box "Select all" and describes it with the hint', () => {
+    const { host } = render(<SelectAll checked={false} mixed={false} hint="Pick offers." onChange={() => {}} />);
+    const input = host.querySelector('input[data-part="select-all"]')!;
+    const name = document.getElementById(input.getAttribute('aria-labelledby')!)!;
+    const hint = document.getElementById(input.getAttribute('aria-describedby')!)!;
+    expect([name.textContent, hint.textContent]).toEqual(['Select all', 'Pick offers.']);
+  });
+
+  it('SelectCard puts the tick box, content and control on one grid and marks on and selected', () => {
+    const { host } = render(
+      <ul>
+        <SelectCard on={false} selected data-offer="x" select={<i data-k="s" />} control={<i data-k="c" />}>
+          <span>Body</span>
+        </SelectCard>
+      </ul>,
+    );
+    const li = host.querySelector('li.x2f-select-card')!;
+    expect([li.getAttribute('data-on'), li.getAttribute('data-selected'), li.getAttribute('data-offer')]).toEqual(['false', 'true', 'x']);
+    expect([...li.children].map((c) => c.className)).toEqual(['x2f-select-card__select', 'x2f-select-card__body', 'x2f-select-card__control']);
+  });
+
+  it('Notice live="off" has no role, and an icon can be turned off', () => {
+    const { host } = render(
+      <>
+        <Notice live="off" data-part="note">
+          Part of the page.
+        </Notice>
+        <Notice tone="caution" icon={false} title="Paused">
+          Body.
+        </Notice>
+      </>,
+    );
+    const [a, b] = [...host.querySelectorAll('.x2f-outcome')];
+    expect([a!.hasAttribute('role'), a!.getAttribute('data-part')]).toEqual([false, 'note']);
+    expect([b!.querySelector('.x2f-outcome__icon'), b!.querySelector('.x2f-outcome__title')!.textContent]).toEqual([null, 'Paused']);
+  });
+
+  it('ActionBar, Notice and EmptyState', () => {
+    const { host } = render(
+      <>
+        <ActionBar role="region" aria-label="Selected offers" data-selection="true">
+          <span>2 selected</span>
+        </ActionBar>
+        <Notice tone="caution">Held.</Notice>
+        <Notice tone="plain">Done.</Notice>
+        <EmptyState icon="trade" title="No offers yet">
+          Post one.
+        </EmptyState>
+      </>,
+    );
+    expect(host.querySelector('.x2f-action-bar[role="region"][data-selection="true"]')!.textContent).toBe('2 selected');
+    const notes = [...host.querySelectorAll('.x2f-outcome')];
+    expect(notes.map((n) => [n.getAttribute('data-tone'), n.getAttribute('role')])).toEqual([['caution', 'alert'], ['plain', 'status']]);
+    // One Notice for the kit (merged with the Devices one): caution shows the info icon by default,
+    // plain none; `live="off"` makes a note that is part of the page (LoginApprove).
+    expect(notes.map((n) => n.querySelector('.x2f-outcome__icon') !== null)).toEqual([true, false]);
+    expect(host.querySelector('section.x2f-empty h2')!.textContent).toBe('No offers yet');
+    expect(host.querySelector('section.x2f-empty svg')!.getAttribute('width')).toBe('32');
+  });
+
 });

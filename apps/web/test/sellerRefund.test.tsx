@@ -227,7 +227,7 @@ describe('SellerRefund: Give 30 more min', () => {
     const m = mount(sellerView({ extensions: 1 }));
     fire(m.button('Give 30 more min')!, new MouseEvent('click', { bubbles: true }));
     await settle();
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toMatch(/all the extra time it can get/);
+    expect(document.querySelector('[role="dialog"] [data-part="cant-do-message"]')?.textContent).toMatch(/all the extra time it can get/);
     expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=no-extensions-left');
     expect(m.host.querySelector('[role="alert"]')).toBeNull();
     expect(m.calls).toEqual([]);
@@ -259,7 +259,7 @@ describe('SellerRefund: Nudge', () => {
     fire(m.button('Nudge mira.k')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     // Plan 5 Task 21: the nudge limit opens CantDoThat (a portal on the body) with its feedback link.
-    expect(document.querySelector('[role="dialog"] [role="alert"]')?.textContent).toBe('You can nudge once every 10 minutes.');
+    expect(document.querySelector('[role="dialog"] [data-part="cant-do-message"]')?.textContent).toBe('You can nudge once every 10 minutes.');
     expect(document.querySelector('[data-part="feedback-line"] a')?.getAttribute('href')).toBe('/feedback?from=too-soon');
   });
 });

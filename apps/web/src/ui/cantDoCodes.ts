@@ -167,11 +167,15 @@ export const CANT_DO_TITLE = {
   extend: "You can't give more time",
   block: "You can't block this trader",
   myOffers: "Some offers can't be turned on",
+  // Design session 2 Nov 2026: a Turn on that a trading hold refused for every offer. COPY-UNSIGNED
+  myOffersHold: "You can't turn offers on during a trading hold",
   login: "You can't log in here yet",
   approve: "This login can't be let in",
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
   team: "This can't be done on the team",
+  // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
+  teamFull: 'Your team is full',
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */
@@ -309,6 +313,20 @@ export function myOffersRowText(code: string): string {
       return "Something went wrong and this offer wasn't changed. Try again.";
   }
 }
+
+/**
+ * My offers during a moderator's trading hold (design session 2 Nov 2026), COPY-UNSIGNED. The hold
+ * has no end date in the API (trading_holds has only created_at and lifted_at; a lead API
+ * follow-up), so the agreed "until the hold ends on <date>" clause is said without its date.
+ */
+export const MY_OFFERS_HOLD = {
+  title: 'Your offers are paused during a trading hold',
+  body: 'Nobody can see or take them until the hold ends. Trades already started carry on.',
+  popup: 'They stay paused until the hold ends. Trades already started carry on.',
+} as const;
+
+/** The trading hold's code (a dispute's hold on the account); My offers reads it to show the hold state. */
+export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
 
 /** Why a live offer is hidden (Task 36 review M4, `hidden` on GET /v1/account/offers), as its status line. COPY-UNSIGNED */
 export const MY_OFFERS_HIDDEN = {
