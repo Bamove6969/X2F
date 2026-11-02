@@ -112,12 +112,15 @@ describe('UI kit: v2 rules the LoginApprove boards use', () => {
   });
 
   it('callouts: a 10% tone wash and a 30% tone border (the notice and the change-method box)', () => {
-    for (const sel of ['.x2f-caution-note', ".x2f-panel[data-tone='caution']"]) {
-      const r = rule(sel);
-      expect(r, sel).toContain('background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface));');
-      expect(r, sel).toContain('border: 1px solid color-mix(in srgb, var(--x2f-caution) 30%, transparent);');
-      expect(r, sel).toContain('padding: var(--x2f-space-3) 14px;');
-    }
+    // The kit's one Notice (main 5bfb450) carries the v2 callout on its caution tone.
+    const n = rule(".x2f-outcome[data-tone='caution']");
+    expect(n).toContain('background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface));');
+    expect(n).toContain('border-color: color-mix(in srgb, var(--x2f-caution) 30%, transparent);');
+    expect(n).toContain('padding: var(--x2f-space-3) 14px;');
+    const r = rule(".x2f-panel[data-tone='caution']");
+    expect(r).toContain('background: color-mix(in srgb, var(--x2f-caution) 10%, var(--x2f-surface));');
+    expect(r).toContain('border: 1px solid color-mix(in srgb, var(--x2f-caution) 30%, transparent);');
+    expect(r).toContain('padding: var(--x2f-space-3) 14px;');
   });
 
   it('state icons are 56 px tiles with a 14% tone wash', () => {
@@ -162,9 +165,10 @@ describe('UI kit: v2 rules the LoginApprove boards use', () => {
 
 describe('kit parts', () => {
   it('Notice is a caution callout with the triangle icon', () => {
-    const { host } = render(<Notice part="n">Careful.</Notice>);
+    const { host } = render(<Notice live="off" data-part="n">Careful.</Notice>);
     const p = part(host, 'n')!;
-    expect(p.classList.contains('x2f-caution-note')).toBe(true);
+    expect(p.classList.contains('x2f-outcome')).toBe(true);
+    expect(p.getAttribute('data-tone')).toBe('caution');
     expect(p.querySelector('svg path')?.getAttribute('d')).toBe('M12 3l9 16H3z');
     expect(p.querySelector('svg')?.getAttribute('stroke-width')).toBe('1.75');
   });

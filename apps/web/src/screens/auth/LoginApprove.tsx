@@ -259,9 +259,9 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
         />
         {/* With One device at a time on there is no limit to reach: approving logs this device out. */}
         {approval.oneDevice ? (
-          <Notice part="approve-one-device">One device at a time is on, so letting them in logs this device out.</Notice>
+          <Notice live="off" data-part="approve-one-device">One device at a time is on, so letting them in logs this device out.</Notice>
         ) : approval.atLimit ? (
-          <Notice part="approve-at-limit">You're logged in on the most devices allowed. Next you'll choose one to log out.</Notice>
+          <Notice live="off" data-part="approve-at-limit">You're logged in on the most devices allowed. Next you'll choose one to log out.</Notice>
         ) : null}
         {errorLine}
         <Button variant="primary" disabled={busy || pick === null} onClick={() => void decide({ choice: pick! })} data-part="approve-yes">
