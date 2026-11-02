@@ -140,3 +140,9 @@ Supersedes the earlier "limits converted at the market rate" note and the "≈" 
 - **Trading hold, new rule:** an open dispute never blocks trading. A moderator freezes trading only when someone ignores a dispute (about 48 h with no reply) or ignores a ruling. The moderator writes in the dispute what the person must do to get trading back (for example pay X to Y); the person does it and messages the moderators, who check and lift the freeze. A freeze has **no end time**: My offers says "until the hold ends" with no date. Moderator tools come in Plan 4.
 - **Payment instructions:** per payment type and per currency where they differ (bank: USD routing, EUR IBAN, GBP sort code).
 - Boards updated for these: MyOffers (+Wide, Fold-MyOffers): hold notice without a date, sample "Fixed price" offer now follows the market; ModCase: the ruling's account action reads "Freeze trading on the losing side · only if they ignore the dispute or the ruling · no end time". Canvas v112.
+
+## Decided (owner, via the lead, 2 Nov ~16:30 UTC)
+- **Trading freeze:** only a separate, later action after someone has actually ignored the dispute (about 48 h) or the ruling. Not an option on the ruling card. ModCase: removed from the ruling's account actions; drawn as its own "Freeze trading" card (placeholder until Plan 4).
+- **ProofBlur:** the uploader can only add blur, never remove an automatic blur ("unless we get good feedback as to why to backtrack"). The automatic blur never hides the amount. If the uploader's own blur covers the amount or memo, a warning shows (draft: "The amount is hidden, so the seller may not be able to check your payment."); they can still post. Boards default to add-only; both OPEN boxes are now Decided.
+- **"Stay logged in?" prompt:** waits 2 minutes. SessionExtend OPEN box is now Decided.
+- Still open: member-permission presets, template blanking, SetupTerms step count, incident-ID format.

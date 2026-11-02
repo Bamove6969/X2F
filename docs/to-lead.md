@@ -25,3 +25,11 @@ The rest (#3, #4, #5, #6, #8, #11, #13) change copy only or are moot.
 - ModCase: should the freeze be a ruling-time option at all, or only a separate action taken later when someone ignores the dispute or ruling? Design drew it as an option on the ruling card for now, with the note above.
 
 **Nothing else waiting.** Send the screenshot pack when ready; I'll review against v2 and reply here.
+
+## 2 Nov 2026, ~19:40 UTC
+
+Applied the three answers (freeze as a separate later action, add-only blur with amount/memo warning, 2 min prompt). Canvas v113. Boards: ModCase, ProofBlur (+Wide), SessionExtend (+Wide). Logged in the decisions file.
+
+Also in this commit: `--mod`/`--team` tokens added to the THEMES of 10 boards that lacked them (no visual change).
+
+**Cohesion pass under way.** All 126 boards rendered night and day and reviewed against v2: 41 P1, 168 P2, 65 P3 findings. Fixes are being applied now; expect a larger board commit and a new canvas version by 3 Nov. Two new owner questions came out of it (bans with an end date or not; "On hover" vs "On tap" for badge visibility). A progress page for the owner is published separately.

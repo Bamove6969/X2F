@@ -105,7 +105,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             </div>
             <fieldset style="margin: 0; padding: 8px 16px; border: 0; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; min-width: 0;">
               <legend style="float: left; width: 100%; margin: 8px 0 4px; padding: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Account action</legend>
-              <sc-for list="{{actions}}" as="a" hint-placeholder-count="4">
+              <sc-for list="{{actions}}" as="a" hint-placeholder-count="3">
                 <label style="display: flex; align-items: center; gap: 12px; min-height: 44px; font-size: 15px; cursor: pointer;">
                   <input type="radio" name="acct" checked="{{a.on}}" onChange="{{a.pick}}" style="width: 20px; height: 20px; margin: 0; accent-color: var(--ink);">
                   <span>{{a.label}} <span style="color: var(--ink-muted); font-size: 13px;">{{a.note}}</span></span>
@@ -186,6 +186,15 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
             <span style="display: inline-flex; align-items: baseline; gap: 6px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 28px; line-height: 32px; font-weight: 500;">4.000000</span><span style="font-size: 16px; font-weight: 600; color: var(--monero-ink);">XMR</span><span style="font-size: 16px; color: var(--ink-muted);">locked</span></span>
             <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> keys, any <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> release it: harbor_lin, quietfox and the moderator key. Your ruling signs with the winning side's key. Nothing has moved yet.</span>
           </section>
+          <section aria-labelledby="fz-title" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: transparent; border: 1px solid var(--line);">
+            <h2 id="fz-title" style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">Freeze trading</h2>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Not part of the ruling. Use it only after someone ignores this dispute (about <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">48</span> h without a reply) or ignores the ruling. A freeze has no end time: you write in the dispute what they must do to get trading back, they do it and message the moderators, and you lift it.</span>
+            <div style="display: flex; flex-direction: column; gap: 8px;">
+              <button type="button" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: 12px; border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Freeze trading for harbor_lin</button>
+              <button type="button" style="display: flex; align-items: center; justify-content: center; height: 48px; padding: 0 24px; border-radius: 12px; border: 1px solid var(--danger); background: color-mix(in srgb, var(--danger) 14%, transparent); color: var(--danger); font-family: inherit; font-size: 16px; font-weight: 600; cursor: pointer;">Freeze trading for quietfox</button>
+            </div>
+            <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">Both have replied in time, so neither button applies yet. Full freeze tooling comes with Plan 4.</span>
+          </section>
         </div>
       </div>
 
@@ -214,7 +223,6 @@ class Component extends DCLogic {
       pick: () => this.setState({ outcome: o.id }) }));
     const actions = [
       ['none', 'None', ''],
-      ['hold', 'Freeze trading on the losing side', 'only if they ignore the dispute or the ruling · no end time · write what they must do to get it back'],
       ['freeze', 'Freeze the losing account', 'senior moderator or owner confirms'],
       ['ban', 'Ban the losing account', 'senior moderator or owner confirms']
     ].map(([id, label, note]) => ({ label, note, on: acct === id, pick: () => this.setState({ acct: id }) }));

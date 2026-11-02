@@ -110,12 +110,11 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </ul>
       <span style="color: var(--ink-muted);">Preview with the accountType tweak (trader: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, vendor: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> h) and the step tweak. A PGP key button shows only if the account has one.</span>
     </aside>
-    <aside aria-label="Open for the owner: how long the prompt waits" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
-      <span style="font-weight: 600;">How long does the prompt wait before logging out?</span>
+    <aside aria-label="Decided by the owner: the prompt waits 2 minutes" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">The prompt waits <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> min, then logs the user out.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Draft: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> min (shown here with <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1:58</span> left)</li>
-        <li>Another time the owner picks</li>
+        <li>Shown here with <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">1:58</span> left.</li>
       </ul>
     </aside>
     <aside aria-label="Decided by the owner: the password can extend" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
@@ -138,7 +137,7 @@ class Component extends DCLogic {
     const s = this.state;
 
     // Owner, 2 Nov: the chosen session time runs out, then we ask for a passkey, security key, PGP key or the password
-    // (plus authenticator code if set up) to extend by the same time. No answer before the countdown ends: logged out. Countdown length is OPEN (draft 2 min).
+    // (plus authenticator code if set up) to extend by the same time. No answer before the countdown ends: logged out. Countdown length: 2 min (owner, 2 Nov).
     const vendor = this.props.accountType === 'vendor';
     const hours = vendor ? 24 : 4;
     const STEPS = ['ask', 'extended', 'logged-out'];

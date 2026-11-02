@@ -233,7 +233,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
         <li>Photo metadata (EXIF: location, device) is stripped on the phone.</li>
         <li>Likely private details are pre-blurred: account and card numbers, full names, addresses, phone numbers, email addresses.</li>
-        <li>The buyer reviews, adds or removes blur, then sends. Auto-blur is best-effort, and the screen says so.</li>
+        <li>The buyer reviews, adds blur where needed, then sends. Auto-blur is best-effort, and the screen says so.</li>
         <li>The seller only gets the blurred version. A moderator sees the unblurred original only in a dispute.</li>
       </ul>
     </aside>
@@ -265,30 +265,27 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
       </ul>
     </aside>
 
-    <aside aria-label="Open for the owner: removing automatic blurs" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Can the buyer remove an automatic blur, or only add more?</span>
+    <aside aria-label="Decided by the owner: automatic blurs stay" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Add only. The uploader can add blur but never remove an automatic blur. The automatic blur never hides the amount.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Remove, after &quot;Show this? The seller will see it.&quot; (useful: the seller may want to see the payment came from the buyer&#39;s own name)</li>
-        <li>Add only: Remove blur works on boxes the buyer drew; automatic blurs stay on</li>
+                <li>Remove blur works only on boxes the uploader drew. Owner: revisit only &quot;if we get good feedback as to why to backtrack&quot;.</li>
       </ul>
       <span style="color: var(--ink-muted);">Preview with the removeAuto tweak. Showing: {{removeAutoName}}</span>
     </aside>
 
-    <aside aria-label="Open for the owner: protecting the amount and memo" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-      <span style="font-weight: 600;">Should the amount and memo be protected from accidental blurring (warn if blurred)?</span>
+    <aside aria-label="Decided by the owner: warn when the amount or memo is hidden" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px solid var(--line); font-size: 13px; line-height: 18px; color: var(--ink);">
+      <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Decided · owner, 2 Nov</span>
+      <span style="font-weight: 600;">Warn, don&#39;t block. If the uploader&#39;s own blur covers the amount or memo, a caution note shows; they can still send.</span>
       <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-        <li>Warn: a caution note appears while a blur covers the amount or memo; sending still works</li>
-        <li>No protection: the buyer can blur anything without a warning</li>
-        <li>(Blocking it outright is a third option; not drawn)</li>
-      </ul>
+        <li>Owner&#39;s draft: &quot;The amount is hidden, so the seller may not be able to check your payment.&quot;</li>
+                      </ul>
       <span style="color: var(--ink-muted);">Preview with the protect tweak: pick Add blur, then tap the amount. Showing: {{protectName}}</span>
     </aside>
   </section>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["confirm-to-show","add-only"],"default":"confirm-to-show"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":390,"height":2353}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["review","drawing","removing","preview","sent"],"default":"review"},"removeAuto":{"editor":"enum","options":["add-only","confirm-to-show"],"default":"add-only"},"protect":{"editor":"enum","options":["warn","no-warning"],"default":"warn"},"$preview":{"width":390,"height":2353}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -304,8 +301,8 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
     const STEPS = ['review', 'drawing', 'removing', 'preview', 'sent'];
@@ -387,7 +384,7 @@ class Component extends DCLogic {
     let alertKind = '';
     let alertText = '';
     if (c.toast) { alertKind = 'info'; alertText = 'Automatic blurs stay on. You can add more, or remove blurs you added.'; }
-    else if (warnOn && (has('amount') || has('memo'))) { alertKind = 'caution'; alertText = 'The amount or memo is blurred. satoshi_ghost needs both to find your payment.'; }
+    else if (warnOn && (has('amount') || has('memo'))) { alertKind = 'caution'; alertText = 'The amount or memo is hidden, so satoshi_ghost may not be able to check your payment.'; }
 
     const toolBtn = (sel, off) => 'display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 52px; padding: 0 4px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 12px; line-height: 16px; font-weight: 600; white-space: nowrap; ' +
       (off ? 'background: var(--surface-raised); color: var(--ink-muted); border: 2px solid transparent; cursor: not-allowed;' : sel ? 'background: var(--surface-raised); color: var(--ink); border: 2px solid var(--ink); cursor: pointer;' : 'background: var(--surface); color: var(--ink); border: 2px solid transparent; cursor: pointer;');
