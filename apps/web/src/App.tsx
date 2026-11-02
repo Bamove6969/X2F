@@ -33,7 +33,7 @@ import { Team } from './screens/settings/Team.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
-import { memberOf } from './session/member.js';
+import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopHeader } from './ui/DesktopShell.js';
@@ -58,13 +58,14 @@ function Layout({ nav }: { nav: boolean }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
+  const session = useSession();
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
       {wide ? <DesktopHeader /> : null}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         <Outlet />
       </div>
-      {nav && !wide ? <BottomNav /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
     </div>
   );
 }

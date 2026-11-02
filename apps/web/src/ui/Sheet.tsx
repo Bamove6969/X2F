@@ -23,7 +23,16 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * and the backdrop still close), `focusKey` moves focus back to the sheet whenever it changes (a
  * step that removes the focused button), and `wide="dialog"` centres the sheet as a dialog on the
  * Desktop layout instead of a bottom sheet.
+ *
+ * For the CantDoThat board (design v2 batch 2): `handle` draws the grab handle at the top of the
+ * bottom sheet, and a swipe down from the handle (a touch or pen drag of SWIPE_CLOSE_PX or more)
+ * calls `onClose`, like a tap on the backdrop. Review M1: the drag starts on the handle, which has
+ * `touch-action: none` and a 44 px hit area (ui.css), so a real touch screen sends pointerup
+ * instead of taking the drag as a pan; pointercancel forgets the gesture. Review M2: a mouse drag
+ * never closes it (the wide dialog hides the handle, and a mouse drag selects text).
  */
+const SWIPE_CLOSE_PX = 64;
+
 export function Sheet({
   open,
   title,
@@ -35,6 +44,7 @@ export function Sheet({
   closeButton = true,
   focusKey,
   wide,
+  handle = false,
   onClose,
   children,
 }: {
@@ -48,11 +58,13 @@ export function Sheet({
   closeButton?: boolean;
   focusKey?: string;
   wide?: 'dialog';
+  handle?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const dragFrom = useRef<number | null>(null);
   // Read while rendering the opening, before focus moves into the sheet.
   const pane = useMemo(() => (open ? paneOf(document.activeElement) : null), [open]);
 
@@ -107,6 +119,28 @@ export function Sheet({
         tabIndex={-1}
         onKeyDown={onKeyDown}
       >
+        {handle ? (
+          <span
+            className="x2f-sheet__handle"
+            data-part="sheet-handle"
+            aria-hidden="true"
+            onPointerDown={(e) => {
+              if (e.pointerType === 'mouse') return;
+              dragFrom.current = e.clientY;
+              try {
+                e.currentTarget.setPointerCapture(e.pointerId);
+              } catch {
+                // No active pointer to capture (a synthetic event): the gesture still ends on the handle.
+              }
+            }}
+            onPointerUp={(e) => {
+              const from = dragFrom.current;
+              dragFrom.current = null;
+              if (from !== null && e.pointerType !== 'mouse' && e.clientY - from >= SWIPE_CLOSE_PX) onClose();
+            }}
+            onPointerCancel={() => void (dragFrom.current = null)}
+          />
+        ) : null}
         <div className="x2f-sheet__head">
           {eyebrow === undefined && kicker === undefined && lead === undefined ? (
             <h2 id={titleId} className="x2f-sheet__title">

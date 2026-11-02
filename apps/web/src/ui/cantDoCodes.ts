@@ -174,6 +174,8 @@ export const CANT_DO_TITLE = {
   devices: "That device can't be logged out from here",
   chat: "This chat can't open",
   team: "This can't be done on the team",
+  // COPY-UNSIGNED: the design review's title for shot 19 (too-many-members, now a server fallback).
+  teamFull: 'Your team is full',
 } as const;
 
 /** What a refused take says (spec 2.3: a starter-limit names only the caller's own stage and cap). */

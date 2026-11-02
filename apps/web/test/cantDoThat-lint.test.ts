@@ -125,8 +125,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     expect(todo).toBeLessThanOrEqual(4);
     // 45 -> 50 (C2-D1, 1 Nov 2026): the LoginApprove and Devices boards' explanations, not rules:
     // what blocking a login did, the advice after a block, why no place is shown, the blocked new
-    // device's note, and how approval works.
-    expect(notARefusal).toBeLessThanOrEqual(50);
+    // device's note, and how approval works. 50 -> 51 (C11, design review fix 2): the DisputeRuling
+    // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
+    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien).
+    expect(notARefusal).toBeLessThanOrEqual(51);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
@@ -188,5 +190,16 @@ describe('Task 21 waits for its Claude Design boards', () => {
     const boards = join(ROOT, 'design/x2f-app');
     const names = existsSync(boards) ? readdirSync(boards, { recursive: true }).map(String) : [];
     expect(names.filter((n) => /cant-?do|feedback/i.test(n)), 'a CantDoThat or Feedback board landed: match the screens to it').toEqual([]);
+  });
+});
+
+// Review M1: on a real touch screen the browser takes a drag on the scrolling sheet as a pan and
+// sends pointercancel. The grab handle opts out (touch-action: none) and is at least 44 px tall.
+describe('the sheet grab handle takes the touch gesture', () => {
+  it('touch-action: none and a 44 px hit area', () => {
+    const css = readFileSync(join(SRC, 'ui/ui.css'), 'utf8');
+    const rule = /\.x2f-sheet__handle \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/touch-action:\s*none;/);
+    expect(rule).toMatch(/height:\s*44px;/);
   });
 });
