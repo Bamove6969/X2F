@@ -52,3 +52,11 @@ export async function confirmTokenMethod(deps: Pick<Deps, 'db'>, token: string):
   ]);
   return rows[0]?.method;
 }
+
+/**
+ * Makes an account a vendor directly (tests only; owner 2 Nov 2026: only vendors post offers and
+ * have team members). The real switch, `PUT /v1/account/type`, is tested in vendor.test.ts.
+ */
+export async function makeVendor(deps: Pick<Deps, 'db' | 'clock'>, accountId: string): Promise<void> {
+  await deps.db.query("update accounts set account_type = 'vendor', vendor_since = $2 where id = $1", [accountId, deps.clock()]);
+}
