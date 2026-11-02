@@ -802,18 +802,18 @@
       "x": 3900,
       "y": 33100,
       "w": 390,
-      "h": 1320,
+      "h": 1986,
       "page": "all",
-      "title": "G3 \u00b7 Team members (after launch)",
+      "title": "G3 \u00b7 Team members",
       "is_interactive": true
     },
     "Team-Wide.dc.html": {
       "x": 4370,
       "y": 33100,
       "w": 1280,
-      "h": 900,
+      "h": 1073,
       "page": "all",
-      "title": "G3 \u00b7 Team members (after launch) (wide)",
+      "title": "G3 \u00b7 Team members (wide)",
       "is_interactive": true
     },
     "SignupSecurity.dc.html": {

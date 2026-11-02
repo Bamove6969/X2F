@@ -142,11 +142,25 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       </section>
     </div>
   </sc-if>
+  <sc-if value="{{verifying}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: flex-end;">
+      <section role="dialog" aria-modal="true" aria-labelledby="mp-ver-t" aria-describedby="mp-ver-d" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <h2 id="mp-ver-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Confirm it&#39;s you</h2>
+        <p id="mp-ver-d" style="margin: 0; font-size: 16px; line-height: 24px;">{{verifyText}}</p>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{methods}}" as="k" hint-placeholder-count="2">
+            <button type="button" onClick="{{k.use}}" style="display: flex; align-items: center; gap: 12px; width: 100%; height: 56px; box-sizing: border-box; padding: 0 16px; border: 1px solid var(--line); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 16px; font-weight: 600; text-align: left; cursor: pointer;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0;"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg><span>{{k.label}}</span></button>
+          </sc-for>
+          <button type="button" onClick="{{verifyCancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel</button>
+        </div>
+      </section>
+    </div>
+  </sc-if>
 </div>
 </x-dc>
 <script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"preset":{"editor":"enum","options":["chat-only","offers","trades","everything","custom"],"default":"trades"},"$preview":{"width":390,"height":3745}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { on: null, saved: null, ask: null, note: '' }; }
+  constructor(props) { super(props); this.state = { on: null, saved: null, ask: null, note: '', verify: false }; }
   renderVals() {
     const THEMES = {
       night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
@@ -294,7 +308,12 @@ class Component extends DCLogic {
       presetName: startPreset ? startPreset.label : 'Custom',
       clean: !dirty,
       saveStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; ' + (dirty ? 'background: var(--monero); color: var(--on-monero); cursor: pointer;' : 'background: var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
-      save: () => { if (dirty) this.setState({ saved: on, note: 'Saved. desk_ana can now do ' + on.length + ' of ' + availIds.length + ' things.' }); },
+      // Owner, 2 Nov: changing permissions always needs a two-factor method already set up. Save asks first, like Devices.
+      save: () => { if (dirty) this.setState({ verify: true }); },
+      verifying: s.verify && dirty,
+      verifyText: 'Saving lets desk_ana do ' + on.length + ' of ' + availIds.length + ' things. Changing permissions needs a two-factor method you’ve already set up: a passkey, security key or PGP key.',
+      methods: ['Use my passkey', 'Use my security key'].map((label) => ({ label, use: () => this.setState({ verify: false, saved: on, note: 'Saved. desk_ana can now do ' + on.length + ' of ' + availIds.length + ' things.' }) })),
+      verifyCancel: () => this.setState({ verify: false }),
       cancelEdits: () => this.setState({ on: saved, note: '' }),
       hasNote: s.note !== '', note: s.note,
       asking: s.ask !== null,

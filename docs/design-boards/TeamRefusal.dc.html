@@ -31,19 +31,19 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 
     <section aria-labelledby="tr-list" style="display: flex; flex-direction: column; gap: 8px;">
       <h2 id="tr-list" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Team members · 2 of 3</h2>
-      <ul style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
+      <ul style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
         <sc-for list="{{members}}" as="m" hint-placeholder-count="2">
           <li style="{{m.rowStyle}}">
-            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Familjen Grotesk', sans-serif; font-size: 18px; font-weight: 700;">{{m.initial}}</span>
+            <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">{{m.initials}}</span>
             <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{m.name}}</span>
-              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Roles: {{m.role}}</span>
+              <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;"><span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{m.name}}</span><span style="padding: 1px 8px; border-radius: 999px; border: 1px solid var(--team); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--team);">Team member</span></span>
+              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{m.allowed}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">19</span> allowed · {{m.preset}}</span>
             </span>
-            <button type="button" aria-label="{{m.actLabel}}" onClick="{{m.act}}" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; flex-shrink: 0; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Change roles</button>
+            <button type="button" aria-label="{{m.actLabel}}" onClick="{{m.act}}" style="display: inline-flex; align-items: center; gap: 6px; min-height: 44px; flex-shrink: 0; padding: 0 4px; border: 0; background: transparent; color: var(--ink); font-family: inherit; font-size: 14px; text-decoration: underline; cursor: pointer;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Edit what they can do</button>
           </li>
         </sc-for>
       </ul>
-      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can still see your team here. Inviting members and changing roles are locked on this device.</p>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can still see your team here. Adding members and changing what they can do are locked on this device.</p>
     </section>
   </main>
   <footer style="display: flex; flex-direction: column; gap: 8px; padding: 16px; border-top: 1px solid var(--surface-raised);">
@@ -55,7 +55,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
       <section role="dialog" aria-modal="true" aria-labelledby="tr-sheet-t" style="width: 100%; box-sizing: border-box; padding: 24px 16px 16px; border-radius: 12px 12px 0 0; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
         <span style="display: inline-flex; align-self: flex-start; align-items: center; gap: 6px; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V8a4 4 0 018 0v3"/></svg>Passkey, security key or PGP key needed</span>
         <h2 id="tr-sheet-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{sheetTitle}}</h2>
-        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device's login is Weak: you proved it's you with just your username and password. Inviting team members and changing their roles need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
+        <p style="margin: 0; font-size: 16px; line-height: 24px;">This device's login is Weak: you proved it's you with just your username and password. Adding team members and changing what they can do need a two-factor method you&#39;ve already set up: a passkey, security key or PGP key.</p>
 
         <ol aria-label="Login strength" style="margin: 0; padding: 0; list-style: none; display: flex; gap: 6px;">
           <li style="flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; gap: 2px; padding: 10px; border-radius: 6px; border: 2px solid var(--caution);">
@@ -87,7 +87,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["invite","change-role","page"],"default":"invite"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"variant":{"editor":"enum","options":["invite","edit-permissions","page"],"default":"invite"},"$preview":{"width":390,"height":844}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -95,33 +95,32 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const VARIANTS = ['invite', 'change-role', 'page'];
+    const VARIANTS = ['invite', 'edit-permissions', 'page'];
     const variant = VARIANTS.indexOf(this.props.variant) >= 0 ? this.props.variant : 'invite';
     const s = this.state;
     const sheet = s.base === variant ? s.sheet : (variant === 'page' ? 'none' : variant);
     const open = (kind, who) => this.setState({ base: variant, sheet: kind, who: who || s.who, note: '' });
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; min-height: 844px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const LIST = [
-      { name: 'desk_sam', role: 'Offers and Trades' },
-      { name: 'desk_ana', role: 'Trades' }
+      { name: 'desk_sam', initials: 'DS', allowed: '12', preset: 'Custom' },
+      { name: 'desk_ana', initials: 'DA', allowed: '9', preset: 'Trade handler' }
     ];
     const members = LIST.map((m, i) => ({
       name: m.name,
-      role: m.role,
-      initial: m.name.replace('desk_', '').charAt(0).toUpperCase(),
-      actLabel: 'Change roles for ' + m.name,
-      act: () => open('change-role', m.name),
-      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+      initials: m.initials, allowed: m.allowed, preset: m.preset,
+      actLabel: 'Edit what ' + m.name + ' can do',
+      act: () => open('edit-permissions', m.name),
+      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 0;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : '')
     }));
     return {
       rootStyle,
       members,
-      sheetOpen: sheet === 'invite' || sheet === 'change-role',
-      sheetTitle: sheet === 'change-role' ? "You can't change " + s.who + "'s roles from this device" : "You can't invite members from this device",
+      sheetOpen: sheet === 'invite' || sheet === 'edit-permissions',
+      sheetTitle: sheet === 'edit-permissions' ? "You can't change what " + s.who + " can do from this device" : "You can't add members from this device",
       openInvite: () => open('invite'),
       closeSheet: () => this.setState({ base: variant, sheet: 'none' }),
       goAdd: () => this.setState({ base: variant, sheet: 'none', note: 'Next: Login methods, where you add a passkey, security key or PGP key.' }),
