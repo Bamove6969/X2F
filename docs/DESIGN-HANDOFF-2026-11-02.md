@@ -1,6 +1,38 @@
-# X2F design session handoff (2 Nov 2026)
+# X2F design session handoff (2 Nov 2026, updated 19:30 UTC)
 
-Written by the design session (cloud, "Continuation") so that a fresh design session, or the lead, can carry on without this chat. Read this file top to bottom before you touch anything.
+Written by the design session (cloud, "Continuation") so that a fresh design session, or the lead, can carry on without this chat. Read this file top to bottom before you touch anything. **Section 0 is the live state at the moment of handover; start there.**
+
+---
+
+## 0. State at handover (19:30 UTC, 2 Nov)
+
+- **Canvas:** version 110. **Branch head:** `d9ccbb96` on `wip/design-brief` (plus the multi-currency commit below if it landed; check `git log -3`).
+- **Every board is on visual system v2**, published and pushed. Nothing is half-done on the canvas.
+- **In flight when this was written:** the lead's multi-currency correction (section 0.1). A subagent was editing five boards on disk in the container: PostOffer, FlexOffer-Post, FlexOffer-Post-Wide, OfferAd, OfferAd-Wide. If the next commit on the branch is titled "design: per-currency bands…", it landed. If not, the container copy is gone and the work must be redone from `docs/design-boards/` using section 0.1 as the brief.
+- **Owed to the lead:** one message saying the multi-currency boards are published and pushed, with the commit hash.
+- **Owed to the owner:** nothing. The owner is not waiting on design for anything.
+- **Lead-side backlog for design:** empty apart from 0.1.
+
+### 0.1 Multi-currency correction (owner with claude2 overnight, relayed by the lead)
+Supersedes the "limits converted at the market rate" note and every "≈" figure on OfferAd. Also logged in `docs/design-hold-model-2026-11-02.md`.
+1. The vendor types amount bands **per currency**. No conversion, no rounding.
+2. Pricing is **market ± % only**. No fixed-price offers; remove the "Fixed price" radio from FlexOffer-Post (+Wide).
+3. At most **5 currencies** per offer. A currency with no market price is hidden for that currency only.
+4. Buyers filter first by currency and payment method and see prices in that currency.
+5. Bands are contiguous, no overlap: 200–400 then 401–600.
+6. Payment instructions are per payment type **and** per currency where they differ (Bank transfer: USD = account + routing, EUR = IBAN/SEPA).
+
+Board plan: Currencies chip multi-select stays (already on all three post boards, selected = 2px ink ring). Helper copy becomes "Pick up to 5. You set the smallest and largest trade for each one." PostOffer gets one Smallest/Largest row per ticked currency. FlexOffer-Post gets a USD | EUR segmented control above the tiers, tiers per currency, bands 50–500 and 501–2,000, and a per-currency instructions field under Bank transfer with a "Same for all currencies" tick. OfferAd drops the "≈ Converted from USD" line and shows the selected currency's own bands. Spec: `docs/superpowers/specs/2026-11-02-task34-multi-currency.md` on `wip/second-p3-task34`.
+
+### 0.2 Done today after the 2 Nov limit reset (all pushed)
+- Option-B cancel sweep across BuyerPay, TradeFund, Refunded (+Wide), CancelRequest, Fold-Trade, Fold-Tabletop; ProfileVisibility board; MemberPermissions (+Wide); ProofBlur (+Wide).
+- Refunded hero row: "X2F fee: None" (was "Charged to you: Nothing").
+- BuyerPaidWaiting (+Wide): design note, the Payment proof row stays; empty it reads "Add payment proof · optional" and opens ProofBlur.
+- ModCase: cancel rate on trader cards tagged "mod only".
+- PostOffer, FlexOffer-Post (+Wide): Currencies chip multi-select.
+
+### 0.3 Kickoff prompt for the fresh session
+A ready-to-paste prompt is in `docs/DESIGN-KICKOFF-PROMPT.md`.
 
 ---
 
@@ -12,7 +44,7 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
   - The owner wants all questions to go **through the lead**. Exception: design may go straight to the owner when it strongly disagrees with something, and must explain why. The owner has used this several times (security points, honesty about stored proofs).
 - **Lead:** a Claude Code session on the owner's Windows PC, connected with Remote Control.
   - Remote session id: `session_01Btihb34hJU5sMkyYMAzy4k` (its title changes).
-  - Message it with the claude-code-remote `send_message` tool. This needed the owner's one-time trust approval, which is already granted for this session.
+  - Message it with the claude-code-remote `send_message` tool. A fresh session needs the owner's one-time trust approval again (the tool refuses with a content_digest; call `confirm_repository_trust` with it and the owner taps Allow). If the lead's session id has changed, ask the owner for the new link.
   - The lead runs the builders: **claude2** and **claude3**, plus helpers.
   - The lead relays owner answers to design, and builds from the commits design names.
 - **Design session:** this one. It owns the design canvas, the boards, `docs/design-*` on `wip/design-brief`, and design reviews of built screenshots.
@@ -54,7 +86,7 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
 ### Committing
 - From a worktree of `wip/design-brief`: copy boards into `docs/design-boards/`, then commit.
 - Commit command: `env GIT_COMMITTER_NAME=Claude GIT_COMMITTER_EMAIL=noreply@anthropic.com git -c user.name=flem -c user.email=bamove@gmail.com commit`.
-- Trailers: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` and `Claude-Session: https://claude.ai/code/session_01XZAz2tn1YbpoyEtNYuAJim`.
+- Trailers: `Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>` (use whatever model the new session runs; the harness reminder names it) and `Claude-Session: https://claude.ai/code/session_01XZAz2tn1YbpoyEtNYuAJim`.
 - Push with `git push origin HEAD:wip/design-brief`. No model ids anywhere in commits.
 
 ---

@@ -120,3 +120,16 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - Every cancel, including a buyer's, is recorded in one cancel figure. Only moderators see it (ModCase). It is never public.
   - The volume line includes verified past-reputation volume from other sites.
   - A trade with a skipped review still counts as completed.
+
+## Multi-currency offers (owner with claude2 overnight, relayed by the lead 2 Nov)
+
+Supersedes the earlier "limits converted at the market rate" note and the "≈" figures on OfferAd.
+
+- The vendor types amount bands **per currency**. Nothing is converted or rounded.
+- Pricing is **market ± % only**. There are no fixed-price offers.
+- At most **5 currencies** per offer. A currency with no market price is hidden for that currency only.
+- Buyers filter first by currency and payment method and see prices in the filtered currency.
+- Bands are contiguous with no overlap: 200–400, then 401–600.
+- Payment instructions are per payment type **and** per currency where they differ (Bank transfer: USD = account + routing, EUR = IBAN/SEPA).
+- Spec: `docs/superpowers/specs/2026-11-02-task34-multi-currency.md` on `wip/second-p3-task34`.
+- Boards: PostOffer, FlexOffer-Post (+Wide), OfferAd (+Wide).
