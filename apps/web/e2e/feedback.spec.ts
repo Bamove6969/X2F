@@ -45,7 +45,9 @@ test('a refusal opens CantDoThat; its feedback link leads to the form; an anonym
 
   const popup = page.getByRole('dialog', { name: "This offer can't be posted" });
   await expect(popup).toBeVisible();
-  await expect(popup.getByRole('alert')).toHaveText(/trading hold/);
+  // Review N1: the message is the dialog's description, not also an alert.
+  await expect(popup).toHaveAccessibleDescription(/trading hold/);
+  await expect(popup.getByRole('alert')).toHaveCount(0);
   await expect(popup.locator('[data-part="feedback-line"]')).toHaveText('If you feel this feature can be improved please leave feedback');
   // Review X2 (board CantDoThat): no X close; OK is the popup's one filled primary.
   await expect(popup.getByRole('button', { name: 'Close' })).toHaveCount(0);

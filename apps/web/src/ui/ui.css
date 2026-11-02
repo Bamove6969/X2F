@@ -561,8 +561,26 @@
 }
 
 /* The bottom sheet's grab handle (CantDoThat board, design v2 batch 2); the dialog form has none. */
+/* The bar is 36 x 4 px; the element around it is the 44 px tall hit area a swipe starts on
+   (review M1). touch-action: none keeps the browser from taking the drag as a pan (pointercancel).
+   The negative margins keep the bar where it was: 16 px from the top, 16 px above the title. It sits
+   above the title's top edge so the whole hit area takes the touch. */
 .x2f-sheet__handle {
+  position: relative;
+  z-index: 1;
   align-self: center;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 96px;
+  height: 44px;
+  margin: calc(-1 * var(--x2f-space-4)) 0 -24px;
+  padding-top: var(--x2f-space-4);
+  touch-action: none;
+}
+
+.x2f-sheet__handle::before {
+  content: '';
   width: 36px;
   height: 4px;
   border-radius: 999px;

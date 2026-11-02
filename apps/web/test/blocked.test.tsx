@@ -184,7 +184,7 @@ describe('BlockAction', () => {
     // Task 21's popup (portalled into the body), with its feedback link for this refusal.
     const popup = document.querySelector('[data-part="cant-do-that"]')!;
     expect(popup.getAttribute('data-from')).toBe('cannot-block');
-    expect(popup.querySelector('[role="alert"]')?.textContent).toBe('That trader cannot be blocked.');
+    expect(popup.querySelector('[data-part="cant-do-message"]')?.textContent).toBe('That trader cannot be blocked.');
     expect(popup.querySelector('a')?.getAttribute('href')).toBe('/feedback?from=cannot-block');
     expect(host.querySelector('[role="alert"]')).toBeNull();
     expect(popup.closest('[role="dialog"]')?.contains(document.activeElement)).toBe(true);

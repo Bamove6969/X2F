@@ -14,7 +14,8 @@ import { Sheet } from './Sheet.js';
  * that words a refusal, or names one of CANT_DO_CODES (cantDoCodes.ts), without importing this
  * module or cantDoCodes.ts, unless the line (or the one above) says `// not-a-refusal: <why>`.
  *
- * The body sits in a `role="alert"` paragraph so a screen reader hears it when the popup opens.
+ * The body is the dialog's `aria-describedby`, so a screen reader hears it with the title when the
+ * popup opens (not also `role="alert"`: review N1, it would be read twice).
  *
  * Boards CantDoThat / CantDoThat-Wide (design v2 batch 2, wip/design-brief 0955ab95; supersede the
  * review's X2 note): the one shared refusal dialog. Phone: a bottom sheet with a grab handle;
@@ -68,7 +69,9 @@ export function CantDoThat({
       onClose={onClose}
     >
       <div className="x2f-stack" data-part="cant-do-that" data-from={from}>
-        <p role="alert" id={msgId}>
+        {/* Review N1: the dialog's description, read with the title when it opens; not also an
+            alert, or a screen reader reads it twice. */}
+        <p id={msgId} data-part="cant-do-message">
           {body}
         </p>
         {items && items.length > 0 ? (

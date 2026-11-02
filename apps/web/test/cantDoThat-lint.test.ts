@@ -192,3 +192,14 @@ describe('Task 21 waits for its Claude Design boards', () => {
     expect(names.filter((n) => /cant-?do|feedback/i.test(n)), 'a CantDoThat or Feedback board landed: match the screens to it').toEqual([]);
   });
 });
+
+// Review M1: on a real touch screen the browser takes a drag on the scrolling sheet as a pan and
+// sends pointercancel. The grab handle opts out (touch-action: none) and is at least 44 px tall.
+describe('the sheet grab handle takes the touch gesture', () => {
+  it('touch-action: none and a 44 px hit area', () => {
+    const css = readFileSync(join(SRC, 'ui/ui.css'), 'utf8');
+    const rule = /\.x2f-sheet__handle \{([^}]*)\}/.exec(css)?.[1] ?? '';
+    expect(rule).toMatch(/touch-action:\s*none;/);
+    expect(rule).toMatch(/height:\s*44px;/);
+  });
+});

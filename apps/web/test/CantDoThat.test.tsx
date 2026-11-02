@@ -30,7 +30,7 @@ describe('CantDoThat', () => {
     );
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.querySelector('h2')?.textContent).toBe("This trade can't start");
-    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe('Your account is on Starter limits.');
+    expect(dialog.querySelector('[data-part="cant-do-message"]')?.textContent).toBe('Your account is on Starter limits.');
     const line = dialog.querySelector('[data-part="feedback-line"]')!;
     expect(line.textContent).toBe(LINE);
     const link = line.querySelector('a')!;
@@ -65,19 +65,51 @@ describe('CantDoThat', () => {
     expect(dialog.querySelector('h2')?.textContent).toBe("You can't do that yet");
     expect(dialog.querySelector('[data-part="sheet-handle"]')?.getAttribute('aria-hidden')).toBe('true');
     expect(dialog.querySelector('[data-part="cant-do-tile"]')?.getAttribute('aria-hidden')).toBe('true');
-    const msg = dialog.querySelector('[role="alert"]')!;
+    // Review N1: the dialog describes itself with the message, so the message is not also an alert
+    // (a screen reader would read it twice on open).
+    const msg = dialog.querySelector('[data-part="cant-do-message"]')!;
+    expect(msg.textContent).toBe("Sorry, you're limited to 2 offers per side (buying or selling) for each currency.");
     expect(dialog.getAttribute('aria-describedby')).toBe(msg.id);
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
     expect(dialog.querySelector('[data-part="feedback-line"]')?.classList.contains('x2f-info-block')).toBe(true);
     expect(document.querySelector('.x2f-sheet-layer')?.getAttribute('data-wide')).toBe('dialog');
-    // A swipe down on the sheet closes it like OK; a short drag does not.
-    const drag = (dy: number) => {
-      fire(dialog, new MouseEvent('pointerdown', { bubbles: true, clientY: 100 }) as unknown as Event);
-      fire(dialog, new MouseEvent('pointerup', { bubbles: true, clientY: 100 + dy }) as unknown as Event);
+  });
+
+  // Review M1/M2: a swipe down from the grab handle closes the sheet on a touch screen (the handle
+  // takes the gesture: touch-action none, so the browser sends pointerup, not pointercancel); a
+  // cancelled gesture is forgotten; a mouse drag never closes it (the wide dialog hides the handle,
+  // and selecting the message with the mouse must not close it); a drag on the body does nothing.
+  it('closes on a touch swipe down from the handle, never on a mouse drag or a cancelled gesture', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <CantDoThat body="No." from="too-many-offers" onClose={onClose} />
+      </MemoryRouter>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const handle = dialog.querySelector<HTMLElement>('[data-part="sheet-handle"]')!;
+    const msg = dialog.querySelector<HTMLElement>('[data-part="cant-do-message"]')!;
+    const ev = (type: string, pointerType: string, clientY: number) =>
+      new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType, clientY });
+    const drag = (el: HTMLElement, pointerType: string, dy: number, end = 'pointerup') => {
+      fire(el, ev('pointerdown', pointerType, 100));
+      fire(el, ev(end, pointerType, 100 + dy));
     };
-    drag(20);
+    drag(handle, 'touch', 20);
     expect(onClose).not.toHaveBeenCalled();
-    drag(120);
+    drag(handle, 'mouse', 200);
+    expect(onClose).not.toHaveBeenCalled();
+    drag(msg, 'mouse', 200);
+    drag(msg, 'touch', 200);
+    expect(onClose).not.toHaveBeenCalled();
+    // A cancelled touch, then a later pointerup with no pointerdown, is not a swipe.
+    drag(handle, 'touch', 200, 'pointercancel');
+    fire(handle, ev('pointerup', 'touch', 400));
+    expect(onClose).not.toHaveBeenCalled();
+    drag(handle, 'touch', 120);
     expect(onClose).toHaveBeenCalledTimes(1);
+    drag(handle, 'pen', 120);
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('a code without the API shape is left off the link', () => {
