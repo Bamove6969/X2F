@@ -161,17 +161,28 @@ test('Select all only ticks; the bar turns the ticked offers on or off; a reload
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'true');
 });
 
-test('during a trading hold: one caution notice, a Paused chip on every offer, the switches disabled, and the hold popup on Turn on', async ({ page }) => {
+test('during a trading hold: the hold popup on Turn on, then one caution notice, a Paused chip on every offer, everything that switches disabled, and Post an offer refused', async ({ page }) => {
   const s = fresh();
   s.refuseOn = 'trading-hold';
-  // As routes.ts: during a hold every live offer is hidden: 'trading-hold'.
-  s.offers[0]!.hidden = 'trading-hold';
-  s.offers[2]!.hidden = 'trading-hold';
+  // Every offer off: the list cannot show the hold (the API marks only live offers hidden), so the
+  // screen learns it from the refused Turn on.
+  for (const o of s.offers) o.status = 'paused';
   await stub(page, s);
   await page.goto('/profile/offers');
+  await expect(page.locator('[data-part="hold-notice"]')).toHaveCount(0);
+  await page.getByRole('checkbox', { name: 'Select all' }).click();
+  await page.getByRole('button', { name: 'Turn on' }).click();
+  // None can be turned on: the hold's own popup, with its feedback link (Plan 5 Task 21).
+  const pop = page.getByRole('dialog');
+  await expect(pop).toContainText("You can't turn offers on during a trading hold");
+  await expect(pop).toContainText('They stay paused until the hold ends. Trades already started carry on.');
+  await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
+  await pop.getByRole('button', { name: 'OK' }).click();
+  await expect(pop).toHaveCount(0);
   // Design session 2 Nov 2026: one caution notice at the top, a chip on every offer, on or off.
   const notice = page.locator('[data-part="hold-notice"]');
   await expect(notice).toHaveText('Your offers are paused during a trading holdNobody can see or take them until the hold ends. Trades already started carry on.');
+  await expect(page.locator('.x2f-outcome')).toHaveCount(1);
   await expect(page.getByText('Trading hold · all offers paused')).toBeVisible();
   for (const id of [A, B, C]) {
     await expect(row(page, id).locator('[data-part="status"]')).toHaveText('Paused · trading hold');
@@ -187,24 +198,28 @@ test('during a trading hold: one caution notice, a Paused chip on every offer, t
     return [getComputedStyle(el).borderTopColor, c];
   });
   expect(border).toBe(caution);
-  await page.getByRole('checkbox', { name: 'Select all' }).click();
-  await page.getByRole('button', { name: 'Turn on' }).click();
-  // None can be turned on: the hold's own popup, with its feedback link (Plan 5 Task 21).
-  const pop = page.getByRole('dialog');
-  await expect(pop).toContainText("You can't turn offers on during a trading hold");
-  await expect(pop).toContainText('They stay paused until the hold ends. Trades already started carry on.');
-  await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
-  await pop.getByRole('button', { name: 'OK' }).click();
-  await expect(pop).toHaveCount(0);
-  // Still one notice: no second line repeats the hold, and nothing reads "turned on".
-  await expect(page.locator('.x2f-outcome')).toHaveCount(1);
-  await expect(page.locator('[data-part="summary"]')).toHaveCount(0);
-  await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
-  await expect(sw(page, B)).toHaveAttribute('aria-checked', 'false');
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
     await expectPhoneLayout(page);
   }
+  // Batch 3 board: Turn on / Turn off are disabled too, and Post an offer is refused with CantDoThat.
+  await tick(page, A).click();
+  await expect(page.getByRole('button', { name: 'Turn on' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Turn off' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Clear' }).click();
+  await page.getByRole('link', { name: 'Post an offer' }).click();
+  await expect(pop).toContainText("Your account has a trading hold while a dispute is open, so you can't post offers until it's resolved.");
+  await expect(page).toHaveURL(/\/profile\/offers$/);
+});
+
+test('a live offer hidden by a hold shows the hold state on load', async ({ page }) => {
+  const s = fresh();
+  s.offers[0]!.hidden = 'trading-hold';
+  s.offers[2]!.hidden = 'trading-hold';
+  await stub(page, s);
+  await page.goto('/profile/offers');
+  await expect(page.locator('[data-part="hold-notice"]')).toBeVisible();
+  for (const id of [A, B, C]) await expect(sw(page, id)).toBeDisabled();
 });
 
 test('PostOffer links to My offers; an empty list still offers Post an offer', async ({ page }) => {

@@ -460,9 +460,9 @@ test('31-32 My offers: the list, then two ticked with the bar', async ({ page })
 
 test('33-34 My offers under a trading hold: the refusal, then the lines under each offer', async ({ page }) => {
   const offers = myOffers();
-  // As routes.ts: during a hold every live offer is hidden: 'trading-hold'.
-  offers[0]!.hidden = 'trading-hold';
-  offers[2]!.hidden = 'trading-hold';
+  // Every offer off, so the screen learns of the hold from the refused Turn on (with a live offer
+  // the list itself shows the hold, and Turn on is disabled: batch 3 board).
+  for (const o of offers) o.status = 'paused';
   await myOffersApi(page, { offers, refuseOn: 'trading-hold' });
   await page.goto('/profile/offers');
   await page.getByRole('checkbox', { name: 'Select all' }).click();

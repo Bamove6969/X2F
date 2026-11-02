@@ -128,12 +128,12 @@ export function allHint(selected: number, total: number): string {
 }
 
 /**
- * The board's footnote, without its cap sentence ("You can have 2 offers per side (buying or
- * selling) for each currency."): the API's caps are 3 per market and 20 in all, both settings
- * (routes.ts OFFER_CAP_DEFAULTS), so the board's number is not what the server enforces. An owner
- * question (lead report, 2 Nov 2026); the empty state leaves the same sentence out.
+ * The board's footnote with its cap line from the batch 3 MyOffers board (owner, 2 Nov 2026: 3
+ * buying and 3 selling offers per vendor; one offer covers all the currencies it lists).
+ * COPY-UNSIGNED. The API still enforces the old caps (3 per market, 20 in all: routes.ts
+ * OFFER_CAP_DEFAULTS), a lead API follow-up.
  */
-export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal.';
+export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 3 buying and 3 selling offers. Each offer can cover several currencies.';
 
 /** The offers with each switch result's status applied; ids reported `not-found` are dropped. */
 export function applyResults(offers: readonly MyOffer[], results: readonly SwitchResult[]): MyOffer[] {

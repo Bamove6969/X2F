@@ -19,7 +19,7 @@ import { ApiCallError } from '../api/client.js';
 import { ActionBar } from '../ui/ActionBar.js';
 import { Button } from '../ui/Button.js';
 import { CantDoThat } from '../ui/CantDoThat.js';
-import { CANT_DO_TITLE, MY_OFFERS_HOLD, TRADING_HOLD_CODE, myOffersCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
+import { CANT_DO_TITLE, MY_OFFERS_HOLD, TRADING_HOLD_CODE, myOffersCantDoText, postCantDoText, type CantDoCode } from '../ui/cantDoCodes.js';
 import { Checkbox } from '../ui/Checkbox.js';
 import { EmptyState } from '../ui/EmptyState.js';
 import { Icon } from '../ui/icons.js';
@@ -314,16 +314,29 @@ export function MyOffers() {
           <Button variant="quiet" disabled={busy} onClick={() => setSelected(new Set())} data-part="clear">
             Clear
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => void run(idsFor(offers, selected), 'live', true)} data-part="turn-on">
+          {/* Batch 3 board: Turn on / Turn off are disabled during a trading hold, like the switches. */}
+          <Button variant="secondary" disabled={busy || held} onClick={() => void run(idsFor(offers, selected), 'live', true)} data-part="turn-on">
             Turn on
           </Button>
-          <Button variant="secondary" disabled={busy} onClick={() => void run(idsFor(offers, selected), 'paused', true)} data-part="turn-off">
+          <Button variant="secondary" disabled={busy || held} onClick={() => void run(idsFor(offers, selected), 'paused', true)} data-part="turn-off">
             Turn off
           </Button>
         </ActionBar>
       ) : ready ? (
         <ActionBar>
-          <Link className="x2f-button x2f-button--primary" to="/post" state={{ from: MY_OFFERS_PATH }} data-primary="" data-part="post">
+          {/* During a trading hold, posting is refused: the CantDoThat popup instead of the form (batch 3). */}
+          <Link
+            className="x2f-button x2f-button--primary"
+            to="/post"
+            state={{ from: MY_OFFERS_PATH }}
+            data-primary=""
+            data-part="post"
+            onClick={(e) => {
+              if (!held) return;
+              e.preventDefault();
+              setCantDo({ title: CANT_DO_TITLE.post, body: postCantDoText(TRADING_HOLD_CODE), from: TRADING_HOLD_CODE });
+            }}
+          >
             Post an offer
           </Link>
         </ActionBar>

@@ -12,7 +12,7 @@ import { parseMyOffers, parseSwitch, type MyOffer } from '../src/screens/myoffer
 import {
   allHint, applyResults, batches, cantDoFor, countLine, idsFor, isHeld, offerLimits, offerMethods, offerPrice, offerPriceParts, offerTitle, refusalLine, statusLine, summaryLine,
 } from '../src/screens/myoffers/model.js';
-import { CANT_DO_TITLE, MY_OFFERS_HOLD, myOffersCantDoText } from '../src/ui/cantDoCodes.js';
+import { CANT_DO_TITLE, MY_OFFERS_HOLD, myOffersCantDoText, postCantDoText } from '../src/ui/cantDoCodes.js';
 import { fire, render } from './render.js';
 
 const A = '11111111-1111-4111-8111-111111111111';
@@ -324,6 +324,23 @@ describe('the My offers screen', () => {
     }
   });
 
+  it('during a hold, Post an offer opens CantDoThat instead of the form (batch 3 board)', async () => {
+    list[0] = { ...list[0]!, hidden: 'trading-hold' };
+    const host = await mount();
+    const post = q<HTMLAnchorElement>(host, '[data-part="post"]');
+    expect(post.hasAttribute('data-primary')).toBe(true);
+    await click(post);
+    const pop = document.querySelector('[data-part="cant-do-that"]')!;
+    expect(pop.getAttribute('data-from')).toBe('trading-hold');
+    expect(pop.querySelector('[role="alert"]')!.textContent).toBe(postCantDoText('trading-hold'));
+    expect(document.querySelector('[role="dialog"]')!.textContent).toContain(CANT_DO_TITLE.post);
+  });
+
+  it('the footnote carries the cap line (batch 3 board, COPY-UNSIGNED)', async () => {
+    const host = await mount();
+    expect(q(host, '[data-part="footnote"]').textContent).toContain('You can have 3 buying and 3 selling offers. Each offer can cover several currencies.');
+  });
+
   it('a Turn on that some offers pass and some cannot: "Some offers can\'t be turned on", listing which and why', async () => {
     onSwitch = (body) => {
       const results = body.ids.map((id) => (id === B ? { id, status: 'paused', refused: 'too-many-offers' } : { id, status: 'live' }));
@@ -342,22 +359,33 @@ describe('the My offers screen', () => {
     expect(q(host, '[data-part="hold-notice"]')).toBeNull();
   });
 
-  it('the hold state follows each Turn on: a later Turn on that works brings the count back (review M1)', async () => {
+  it('the hold state comes from the latest Turn on and is cleared by a fresh list read (review M1)', async () => {
     onSwitch = (body) => ({
       status: 200,
       json: { status: body.status, results: body.ids.map((id) => ({ id, status: list.find((o) => o.id === id)!.status, refused: 'trading-hold' })) },
     });
-    const host = await mount();
+    let host = await mount();
     await click(sw(host, B));
     expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers paused');
     await click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
-    // The switches are disabled during the hold; the bar's Turn on still asks the server.
-    onSwitch = allSwitch;
+    // Batch 3 board: the switches and the bar's Turn on / Turn off are disabled during the hold.
     await click(tick(host, B));
+    expect(q<HTMLButtonElement>(host, '[data-part="turn-on"]').disabled).toBe(true);
+    expect(q<HTMLButtonElement>(host, '[data-part="turn-off"]').disabled).toBe(true);
+    host.remove();
+
+    // A Turn on refused for the hold that also re-reads the list (an offer removed elsewhere): the
+    // fresh list marks no live offer hidden, so the screen leaves the hold state.
+    onSwitch = (body) => {
+      list = list.filter((o) => o.id !== C);
+      return { status: 200, json: { status: body.status, results: [{ id: B, status: 'paused', refused: 'trading-hold' }, { id: C, refused: 'not-found' }] } };
+    };
+    host = await mount();
+    await click(tick(host, B));
+    await click(tick(host, C));
     await click(q(host, '[data-part="turn-on"]'));
-    expect(q(host, '[data-part="count"]').textContent).toBe('2 of 3 offers on');
+    expect(q(host, '[data-part="count"]').textContent).toBe('1 of 2 offers on');
     expect(sw(host, B).disabled).toBe(false);
-    expect(row(host, C).querySelector('[data-part="status"]')!.textContent).toBe('Off · hidden from everyone');
   });
 
   it('the selected count is a live region that exists before the first tick, so "1 selected" is announced (review N2)', async () => {
