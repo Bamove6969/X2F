@@ -112,7 +112,16 @@ export type ApiErrorCode =
   | 'owner-only'
   | 'forbidden'
   | 'too-many-members'
-  | 'member-cannot-sign';
+  | 'member-cannot-sign'
+  // Plan 5, Task 10: past reputation claims.
+  | 'bad-site'
+  | 'bad-url'
+  | 'bad-signature'
+  | 'wrong-text'
+  | 'wrong-key'
+  | 'challenge-used'
+  | 'site-claimed'
+  | 'fingerprint-claimed';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

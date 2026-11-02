@@ -143,6 +143,20 @@ export const CHAT_OPEN_BUCKET: BucketSize = { capacity: 20, perMinute: 20 / 60 }
 /** `POST /v1/chats/:chat/envelopes` (Task 20 review M7): chat lines per trader across all chats, 30 a minute. */
 export const CHAT_POST_BUCKET: BucketSize = { capacity: 30, perMinute: 30 };
 
+/**
+ * `POST /v1/account/past-rep/start` (Plan 5 Task 10, lead follow-up 2026-11-01): starts per account
+ * an hour. Each start inspects a pasted key and stores a challenge. The owner may change it.
+ */
+export const PAST_REP_STARTS_PER_HOUR = 10;
+export const PAST_REP_START_BUCKET: BucketSize = { capacity: PAST_REP_STARTS_PER_HOUR, perMinute: PAST_REP_STARTS_PER_HOUR / 60 };
+/**
+ * `POST /v1/account/past-rep/finish` (Task 10 review round 1 N5): finishes per account an hour. Each
+ * opens the sealed key and runs up to four signature checks. Same number as start until decided
+ * (open question for the lead/owner).
+ */
+export const PAST_REP_FINISHES_PER_HOUR = 10;
+export const PAST_REP_FINISH_BUCKET: BucketSize = { capacity: PAST_REP_FINISHES_PER_HOUR, perMinute: PAST_REP_FINISHES_PER_HOUR / 60 };
+
 export interface Budgets {
   register: TokenBucket;
   start: TokenBucket;
@@ -155,6 +169,10 @@ export interface Budgets {
   chatOpen: KeyedBuckets;
   /** Per account. */
   chatPost: KeyedBuckets;
+  /** Per account: `POST /v1/account/past-rep/start`. */
+  pastRepStart: KeyedBuckets;
+  /** Per account: `POST /v1/account/past-rep/finish`. */
+  pastRepFinish: KeyedBuckets;
 }
 
 /** One set of request budgets per app, on that app's clock (`buildApi` decorates it as `app.budgets`). */
@@ -167,5 +185,7 @@ export function newBudgets(clock: () => Date): Budgets {
     approvalDecision: new KeyedBuckets(APPROVAL_DECISION_BUCKET, clock),
     chatOpen: new KeyedBuckets(CHAT_OPEN_BUCKET, clock),
     chatPost: new KeyedBuckets(CHAT_POST_BUCKET, clock),
+    pastRepStart: new KeyedBuckets(PAST_REP_START_BUCKET, clock),
+    pastRepFinish: new KeyedBuckets(PAST_REP_FINISH_BUCKET, clock),
   };
 }

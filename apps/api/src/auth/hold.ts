@@ -497,6 +497,9 @@ export const LIVE_SESSION_ROUTES: readonly string[] = [
   'POST /v1/team/invites',
   'PATCH /v1/team/members/:id',
   'DELETE /v1/team/members/:id',
+  // Plan 5 Task 10 review round 1 M3: the claim insert re-checks the session and the hold under the
+  // account lock (as Task 18's ownerWriteGate).
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**
@@ -540,6 +543,10 @@ export const LIVE_SESSION_EXEMPT: Readonly<Record<string, string>> = {
   'POST /v1/trades/:code/identity': "a participant's identity for an open trade; no new obligation",
   'POST /v1/trades/:code/wallet': "the poster's payout wallet for an open trade, from the account's own usable wallets",
   'POST /v1/trades/:code/final-alert-seen': 'review round 5 X1, an owner question; unchanged here',
+  // Plan 5 Task 10: past reputation. No login, session, approval, security or trading state: the
+  // caller's own claim rows only (a moderator approves before anything shows).
+  'POST /v1/account/past-rep/start': "writes only a past-rep challenge bound to the caller's account; its finish re-checks it",
+  'DELETE /v1/account/past-rep/:id': "sets the caller's own past-rep claim to removed",
 };
 
 /**
@@ -578,6 +585,10 @@ export const HOLD_BLOCKED_ROUTES: readonly string[] = [
   // TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land);
   // refused until then (see team/members.ts `ownerWriteGate`).
   'DELETE /v1/team/members/:id',
+  // Plan 5 Task 10 (owner 1 Nov: during a hold the account is offline to everyone). Listing and
+  // removing one's own claims stay open.
+  'POST /v1/account/past-rep/start',
+  'POST /v1/account/past-rep/finish',
 ];
 
 /**
