@@ -14,7 +14,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
-import { APPEAL_MIN, dayTime, rulingCopy, rulingFinal, windowCloses } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, overturnLien, rulingCopy, rulingFinal } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -37,14 +37,13 @@ function AppealSection({
   const whyId = useId();
   const r = dispute.ruling!;
   const now = serverClock();
-  const locked = dispute.afterRefund ? 'A second moderator will decide.' /* COPY-UNSIGNED */ : 'The XMR stays locked until a second moderator decides.';
 
   if (dispute.appeal !== null) {
     return (
       <section aria-label="Appeal" className="dispute-appeal">
         <span className="dispute-appeal-sent">
           <Icon name="clock" size={16} stroke={2} />
-          {dispute.appeal.by === me ? `Appeal sent. ${locked}` : `${other} appealed. ${locked}` /* COPY-UNSIGNED */}
+          {appealSentText(dispute, me, other)}
         </span>
       </section>
     );
@@ -88,8 +87,8 @@ function AppealSection({
         </span>
       </div>
       <p className="dispute-muted">
-        Either of you can appeal until {dayTime(until)}. An appeal goes to a senior moderator or the owner who hasn't seen this case.
-        {windowCloses(r.outcome)}
+        Either of you can appeal until {dayTime(until)} ({APPEAL_WINDOW_H} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
+        {overturnLien(r.outcome, me, other)}
       </p>
       {writing ? (
         <div className="dispute-stack-8">
@@ -172,8 +171,10 @@ export function DisputeRuling({
             <h1 className="dispute-title">{copy.title}</h1>
             {copy.destination !== null ? (
               <span className="dispute-muted-14">
-                To {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
-                {copy.destination.tail}
+                {/* Review I1 (NEEDS_PLAN_4_RULING_PAYOUT, rules.ts): where the XMR goes, not the board's
+                    "Sent to …", until the API reports the payout executed. COPY-UNSIGNED */}
+                Goes to {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
+                .
               </span>
             ) : null}
           </div>

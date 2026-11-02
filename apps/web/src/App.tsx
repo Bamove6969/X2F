@@ -27,12 +27,13 @@ import { quotePath } from './screens/quote/quoteModel.js';
 import { SellQuote } from './screens/quote/SellQuote.js';
 import { DisputeScreen } from './screens/dispute/DisputeScreen.js';
 import { Blocked } from './screens/settings/Blocked.js';
+import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
-import { memberOf } from './session/member.js';
+import { mayPostOffers, memberOf } from './session/member.js';
 import { useSession } from './session/useSession.js';
 import { BottomNav } from './ui/BottomNav.js';
 import { DesktopHeader } from './ui/DesktopShell.js';
@@ -57,13 +58,14 @@ function Layout({ nav }: { nav: boolean }) {
   const layout = useFoldLayout();
   useFoldAttribute(layout);
   const wide = layout === 'wide';
+  const session = useSession();
   return (
     <div data-shell={wide ? 'desktop' : 'phone'} className={wide ? 'x2f-desktop' : undefined}>
       {wide ? <DesktopHeader /> : null}
       <div data-shell-body="" className={wide ? 'x2f-desktop__body' : undefined}>
         <Outlet />
       </div>
-      {nav && !wide ? <BottomNav /> : null}
+      {nav && !wide ? <BottomNav postOffers={mayPostOffers(session)} /> : null}
     </div>
   );
 }
@@ -192,6 +194,7 @@ export function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/login/backup" element={<BackupLogin />} />
           <Route path="/settings/security" element={<Security />} />
+          <Route path="/settings/devices" element={<DevicesRoute />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/settings/team" element={<Team />} />
           <Route path="/team/join" element={<MemberInvite />} />
