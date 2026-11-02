@@ -4,9 +4,12 @@
  * when something is new (authApi.afterLogin) and works logged out, because the emergency-stop
  * message sends everyone here ("Check the News section").
  *
- * No board yet: Claude Design owns the look (design brief 2026-10-29, item 13), so this screen uses
- * only existing UI-kit classes and components and adds no styling of its own
- * (test/news-tripwire.test.ts NEEDS_DESIGN_NEWS). All copy here is // COPY-UNSIGNED.
+ * Laid out from the News board (origin/wip/design-brief docs/design-boards/News.dc.html; design
+ * review 1 Nov shot 60) with UI-kit parts only, no stylesheet of its own (NEEDS_DESIGN_NEWS still
+ * waits for the board in design/x2f-app): Close News, "3 new · 4 posts", Mark all as read,
+ * "Newest first", collapsible posts (a new one on surface with the escrow edge and "New", a read
+ * one outlined with "Read"), dates in the one format (ui/dates.ts). Board copy is used as drawn;
+ * the rest is // COPY-UNSIGNED.
  *
  * New versus seen is kept on this device only (news-model.ts). Messages that were new when the
  * page opened keep their "New" mark for this visit; opening the page marks them seen for next time.
@@ -17,39 +20,52 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../api/client.js';
 import { Button } from '../ui/Button.js';
-import { fetchNews, markSeen, postedDate, readLastSeen, rememberNews, type NewsItem } from './news-model.js';
+import { Icon } from '../ui/icons.js';
+import { When } from '../ui/When.js';
+import { fetchNews, markSeen, readLastSeen, rememberNews, type NewsItem } from './news-model.js';
 import './screens.css';
 
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: NewsItem[]; seenBefore: number };
 
-function Message({ item, isNew }: { item: NewsItem; isNew: boolean }) {
+/** A post (News board): a button opens and closes it; new posts have the escrow edge and "New". */
+function Post({ item, isNew, open, onToggle }: { item: NewsItem; isNew: boolean; open: boolean; onToggle: () => void }) {
   const titleId = `news-${item.id}-title`;
+  const bodyId = `news-${item.id}-body`;
   return (
-    <article className="x2f-card" data-part="news-item" data-new={isNew ? '' : undefined} aria-labelledby={titleId}>
-      <div className="x2f-row">
-        <h2 className="x2f-card__title" id={titleId}>
-          {item.title}
-        </h2>
-        {isNew ? (
-          <span className="x2f-badge" data-tone="escrow" data-part="news-new">
-            New
+    <article className="x2f-post" data-part="news-item" data-new={isNew ? '' : undefined} aria-labelledby={titleId}>
+      <h2 className="x2f-post__heading">
+        <button type="button" className="x2f-post__toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+          <span className="x2f-post__text">
+            <span className="x2f-post__meta" data-part="news-date">
+              {isNew ? (
+                <span className="x2f-post__new" data-part="news-new">
+                  New
+                </span>
+              ) : (
+                <span>Read</span>
+              )}
+              <When at={item.publishedAt} />
+              {item.editedAt !== null ? (
+                <span>
+                  {/* COPY-UNSIGNED */}
+                  Updated <When at={item.editedAt} />
+                </span>
+              ) : null}
+            </span>
+            <span className="x2f-post__title" id={titleId} data-part="news-title">
+              {item.title}
+            </span>
           </span>
-        ) : null}
+          <span className="x2f-post__chevron">
+            <Icon name="chevron-down" size={18} />
+          </span>
+        </button>
+      </h2>
+      <div className="x2f-post__body" id={bodyId} hidden={!open}>
+        {item.body.split(/\n+/).map((para, i) => (
+          <p key={i}>{para}</p>
+        ))}
       </div>
-      <p className="x2f-note" data-part="news-date">
-        Posted <time dateTime={item.publishedAt}>{postedDate(item.publishedAt)}</time>
-        {item.editedAt !== null ? (
-          <>
-            {' · Updated '}
-            <time dateTime={item.editedAt}>{postedDate(item.editedAt)}</time>
-          </>
-        ) : null}
-      </p>
-      {item.body.split(/\n+/).map((para, i) => (
-        <p className="x2f-sheet__body" key={i}>
-          {para}
-        </p>
-      ))}
     </article>
   );
 }
@@ -60,6 +76,8 @@ export function News() {
   const returnTo = returnToFrom(search);
   const [state, setState] = useState<State>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  // Which posts are open: every new one, or the newest when nothing is new (lead choice; the board opens one).
+  const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -69,6 +87,8 @@ export function News() {
         if (ctl.signal.aborted) return;
         const seenBefore = readLastSeen();
         setState({ status: 'ready', items, seenBefore });
+        const fresh = items.filter((i) => i.id > seenBefore).map((i) => i.id);
+        setOpen(new Set(fresh.length > 0 ? fresh : items.slice(0, 1).map((i) => i.id)));
         rememberNews(items);
         const newest = items.reduce((m, i) => Math.max(m, i.id), 0);
         if (newest > 0) markSeen(newest);
@@ -81,39 +101,67 @@ export function News() {
   }, [attempt]);
 
   const newCount = state.status === 'ready' ? state.items.filter((i) => i.id > state.seenBefore).length : 0;
+  const total = state.status === 'ready' ? state.items.length : 0;
+  const leave = () => void navigate(returnTo);
+  const toggle = (id: number) =>
+    setOpen((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  // This device already counts every shown post as seen (markSeen on open); this clears the marks now.
+  const markAll = () => {
+    if (state.status !== 'ready') return;
+    setState({ ...state, seenBefore: state.items.reduce((m, i) => Math.max(m, i.id), state.seenBefore) });
+  };
 
   return (
-    <main className="x2f-screen" data-screen="news" aria-busy={state.status === 'loading'}>
-      <h1 className="x2f-screen__title">News</h1>
-      <p className="x2f-sheet__body">Messages from X2F. The newest is at the top.</p>
-      {state.status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
-      {state.status === 'error' ? (
-        <div className="x2f-stack">
-          <p className="x2f-error" role="alert">
-            Could not load the news. Check your connection and try again.
-          </p>
-          <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)} data-part="news-retry">
-            Try again
-          </Button>
-        </div>
-      ) : null}
-      {state.status === 'ready' ? (
-        <>
-          <p className="x2f-note" role="status" data-part="news-count">
-            {state.items.length === 0 ? 'No news yet.' : newCount === 0 ? 'Nothing new since your last visit.' : newCount === 1 ? '1 new message.' : `${newCount} new messages.`}
-          </p>
-          {state.items.length > 0 ? (
-            <section className="x2f-stack" aria-label="Messages" data-part="news-list">
-              {state.items.map((i) => (
-                <Message key={i.id} item={i} isNew={i.id > state.seenBefore} />
-              ))}
-            </section>
+    <main className="x2f-page" data-screen="news" aria-busy={state.status === 'loading'}>
+      <header className="x2f-page__header">
+        <button type="button" className="x2f-icon-button" aria-label="Close News" onClick={leave}>
+          <Icon name="close" size={22} />
+        </button>
+        <div className="x2f-page__header-text">
+          <h1 className="x2f-title">News</h1>
+          {state.status === 'ready' ? (
+            <span className="x2f-page__header-sub" role="status" data-part="news-count">
+              {total === 0 ? 'No news yet' : `${newCount > 0 ? `${newCount} new` : 'All read'} · ${total === 1 ? '1 post' : `${total} posts`}`}
+            </span>
           ) : null}
-        </>
-      ) : null}
-      <Button variant="primary" onClick={() => void navigate(returnTo)} data-part="news-continue">
-        Continue
-      </Button>
+        </div>
+        {newCount > 0 ? (
+          <button type="button" className="x2f-header-action" onClick={markAll} data-part="news-mark-all">
+            Mark all as read
+          </button>
+        ) : null}
+      </header>
+      <div className="x2f-page__main">
+        {state.status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
+        {state.status === 'error' ? (
+          <div className="x2f-stack">
+            <p className="x2f-error" role="alert">
+              Could not load the news. Check your connection and try again.
+            </p>
+            <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)} data-part="news-retry">
+              Try again
+            </Button>
+          </div>
+        ) : null}
+        {state.status === 'ready' && state.items.length > 0 ? (
+          <section className="x2f-stack" aria-label="Posts" data-part="news-list">
+            <span className="x2f-overline">Newest first</span>
+            {state.items.map((i) => (
+              <Post key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
+            ))}
+          </section>
+        ) : null}
+      </div>
+      <footer className="x2f-page__footer">
+        <Button variant="primary" onClick={leave} data-part="news-continue">
+          Continue
+        </Button>
+      </footer>
     </main>
   );
 }

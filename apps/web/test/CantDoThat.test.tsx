@@ -123,9 +123,27 @@ describe('Feedback form', () => {
     expect(window.sessionStorage.getItem('x2f.feedback-draft')).toBeNull();
   });
 
+  it('the Feedback board (design review 62-63): the heading, a 9-row box with its count, 44px choice rows; the thanks says who it went as, and Write another starts over', async () => {
+    const { host } = await open('/feedback', { status: 202, json: {} });
+    expect(host.querySelector('h1')?.textContent).toBe('Tell us what you think');
+    const box = host.querySelector('textarea')!;
+    expect(box.getAttribute('rows')).toBe('9');
+    expect(host.querySelector('label[for="' + box.id + '"]')?.textContent).toBe('Your message');
+    type(box, 'Hi');
+    expect(host.querySelector('[data-part="feedback-count"]')?.textContent).toBe('2 of 2000 characters');
+    // No grooved fieldset: the kit's plain group of 44px rows (X4).
+    expect(host.querySelector('fieldset')?.className).toBe('x2f-choices');
+    expect([...host.querySelectorAll('fieldset label')].every((l) => l.className === 'x2f-choice')).toBe(true);
+    await send(host);
+    expect(host.querySelector('[data-part="feedback-thanks-heading"]')?.textContent).toBe('Thank you!');
+    expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toMatch(/^Sent as .+\.$/);
+    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Write another')!, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('textarea')?.value).toBe('');
+  });
+
   it('"Send anonymously" sends anonymous: true and the hint promises only what is true (review M1)', async () => {
     const { host, sent } = await open('/feedback?from=trading-hold', { status: 202, json: {} });
-    const box = [...host.querySelectorAll('label')].find((l) => l.textContent === 'Send anonymously')!.querySelector('input')!;
+    const box = [...host.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Send anonymously'))!.querySelector('input')!;
     fire(box, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe(FEEDBACK_ANON_HINT);
     expect(FEEDBACK_ANON_HINT).toMatch(/We don't record who sent it/);
@@ -133,6 +151,7 @@ describe('Feedback form', () => {
     await send(host);
     // No refusal code on an anonymous send.
     expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'feedback', text: 'Hi', anonymous: true } }]);
+    expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toBe('Sent anonymously.');
   });
 
   it('a signed-out visitor is told before typing, and the draft survives the log-in round trip (review M6)', async () => {

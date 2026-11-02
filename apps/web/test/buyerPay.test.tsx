@@ -308,14 +308,18 @@ describe("I've paid and PaidConfirmSheet", () => {
     expect(dialog()!.querySelector('[role="alert"]')?.textContent).toBeTruthy();
   });
 
-  it('paid: "Marked as paid" once this device recorded the tap (escrow.paidRecorded)', () => {
+  it('paid: "Marking as paid…" until this device recorded the tap, then the BuyerPaidWaiting status with no disabled button (design review 39)', () => {
     const paidView = tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) });
     const r = mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: false }) }));
     expect(text()).toContain('Marking as paid…');
     r.unmount();
     mount(props({ view: paidView, escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(text()).toContain('Marked as paid');
-    expect(document.querySelectorAll('[data-primary]')).toHaveLength(1);
+    const status = document.querySelector('[data-part="paid-status"]')!;
+    expect(status.getAttribute('role')).toBe('status');
+    expect(status.querySelector('h1')?.textContent).toBe('Paid · waiting for satoshi_ghost to confirm');
+    expect(document.querySelectorAll('[data-primary]')).toHaveLength(0);
+    expect(document.querySelector('[data-part="paid-payment"]')?.tagName).toBe('DETAILS');
+    expect(document.querySelector('[data-part="confirm-timer"] [role="timer"]')?.textContent).toBe('1 h 59 min');
   });
 
   it('paid, but this device never recorded it (a reload, another tab, a lost response): Finish sends only trade.paid, with the device total', async () => {
@@ -741,11 +745,17 @@ describe('review minors 1, 5 and 7', () => {
 
   it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
     const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(maybe('Open dispute')).toBeUndefined();
-    expect(text()).toContain('Dispute opens in');
+    const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
+    expect(waiting.tagName).toBe('BUTTON');
+    expect(waiting.disabled).toBe(true);
+    // "in 1 h 59 min": a space before the countdown (review 39 "in2 h").
+    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d+ \w{3} \d{4}, \d\d:\d\d UTC, in 1 h 59 min, if satoshi_ghost hasn't confirmed\.$/);
     r.unmount();
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
-    expect(maybe('Open dispute')).toBeDefined();
+    const open = document.querySelector('[data-part="paid-dispute"]')!;
+    expect(open.tagName).toBe('A');
+    expect(open.textContent).toBe('Open a dispute');
+    expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
   });
 
   it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {
@@ -816,7 +826,7 @@ describe('review round 2 (2026-10-28): fix round 3', () => {
   it('I1: once recorded, a later view mismatch keeps "Marked as paid" (nothing to finish)', () => {
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1) }), escrow: fakeEscrow({ refusal: 'view-mismatch', paidRecorded: true }) }));
     expect(maybe('Finish marking as paid')).toBeUndefined();
-    expect(maybe('Marked as paid')).toBeDefined();
+    expect(document.querySelector('[data-part="paid-status"]')).not.toBeNull();
   });
 
   it('Minor 2: the same amount with another total will not clear: a final sentence, not "checking"', () => {

@@ -12,6 +12,8 @@ import './releaseScreens.js'; // Task 24: SellerConfirm, Released
 
 import './refundScreens.js'; // Task 25: SellerRefund, FinalAlert
 
-import '../dispute/DisputeSlot.js'; // Task 27: DisputeRoom/DisputeRuling (disputed), the buyer's refunded view
+import '../dispute/DisputeSlot.js'; // Task 27: DisputeRoom/DisputeRuling (disputed)
+
+import './Refunded.js'; // Task 27 (design results 2 Nov): the buyer's refunded view, Refunded board
 
 import './SellerCancelConfirm.js'; // Task 39: the seller's Confirm cancel after a buyer's cancel

@@ -3,7 +3,10 @@
  * and Task 20's ChatPanel (under its notice) today; Plan 5's profile when it lands. Asks once (Claude Design's Block
  * board: what the block does, that it is silent, that open trades finish), then blocks. A block
  * the API refuses (400 yourself, 404 a closed account) opens CantDoThat (Plan 5 Task 21) with its
- * feedback link; a failure (network, server) stays inline. Kit parts only.
+ * feedback link; a failure (network, server) stays inline. Kit parts only. The question is the
+ * Block board's confirm sheet (design review 1 Nov, shot 64): the kit Sheet with the title
+ * "Block <name>?", the list, the silent and open-trades lines, then a 56px outlined danger
+ * "Block <name>" and Cancel as separate full-width buttons (never run together).
  * Focus (review M2): opening moves it to the question, Cancel returns it to "Block <name>", and the
  * outcome is announced (role="status") and focused. Nothing is shown to the person being blocked.
  */
@@ -12,6 +15,7 @@ import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
+import { Sheet } from '../../ui/Sheet.js';
 import { CANNOT_BLOCK, CANNOT_BLOCK_CODE, CANT_DO_TITLE } from '../../ui/cantDoCodes.js';
 import { blockTrader } from './blockApi.js';
 import { BLOCK_COPY as C } from './blockCopy.js';
@@ -68,30 +72,7 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
       </div>
     );
   }
-  if (state.kind === 'asking' || state.kind === 'busy') {
-    return (
-      <div role="group" aria-labelledby="block-ask-h" data-part="block-ask">
-        <p className="x2f-sheet__body" id="block-ask-h" tabIndex={-1} ref={ask}>
-          <strong>{C.confirmTitle(displayName)}</strong>
-        </p>
-        <p className="x2f-sheet__body">{C.confirmLead(displayName)}</p>
-        <ul className="x2f-sheet__body">
-          {C.cant.map((t) => (
-            <li key={t}>{t}</li>
-          ))}
-        </ul>
-        <p className="x2f-sheet__body">{C.silent}</p>
-        <p className="x2f-sheet__body">{C.openTrades}</p>
-        <p className="x2f-note">{C.later}</p>
-        <Button variant="danger" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
-          {C.action(displayName)}
-        </Button>
-        <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => go({ kind: 'idle' }, 'open')}>
-          {C.cancel}
-        </Button>
-      </div>
-    );
-  }
+  const asking = state.kind === 'asking' || state.kind === 'busy';
   return (
     <div data-part="block" ref={open}>
       {state.kind === 'error' ? (
@@ -102,6 +83,31 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
       <Button variant="quiet" onClick={() => go({ kind: 'asking' }, 'ask')} data-part="block-open">
         {C.action(displayName)}
       </Button>
+      <Sheet open={asking} title={C.confirmTitle(displayName)} initialFocus="#block-ask-h" onClose={() => go({ kind: 'idle' }, 'open')}>
+        <div className="x2f-sheet__content" data-part="block-ask">
+          <div className="x2f-stack">
+            <p className="x2f-sheet__body" id="block-ask-h" tabIndex={-1} ref={ask}>
+              {C.confirmLead(displayName)}
+            </p>
+            <ul className="x2f-sheet__list">
+              {C.cant.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          </div>
+          <p className="x2f-sheet__body">{C.silent}</p>
+          <p className="x2f-callout">{C.openTrades}</p>
+          <p className="x2f-small">{C.later}</p>
+          <div className="x2f-sheet__actions">
+            <Button variant="danger-outline" data-size="large" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">
+              {C.action(displayName)}
+            </Button>
+            <Button variant="quiet" disabled={state.kind === 'busy'} onClick={() => go({ kind: 'idle' }, 'open')}>
+              {C.cancel}
+            </Button>
+          </div>
+        </div>
+      </Sheet>
       <CantDoThat
         open={state.kind === 'refused'}
         title={CANT_DO_TITLE.block}

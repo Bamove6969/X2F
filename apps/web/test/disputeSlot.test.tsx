@@ -7,7 +7,8 @@ import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { serverClock } from '../src/api/client.js';
 import type { TradeView } from '../src/api/trade.js';
-import { DisputeSlot, RefundedSlot } from '../src/screens/dispute/DisputeSlot.js';
+import { DisputeSlot } from '../src/screens/dispute/DisputeSlot.js';
+import { RefundedSlot } from '../src/screens/trade/Refunded.js';
 import { PENDING_ESCROW } from '../src/screens/trade/seams.js';
 import '../src/screens/trade/screens.js';
 import { screenFor, type TradeScreenProps } from '../src/screens/trade/TradeRoom.js';
@@ -176,7 +177,8 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     const cases: [Partial<TradeView>, string, string][] = [
       [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'You cancelled this trade', 'You cancelled'],
       [{ settling: 'buyer-cancel' }, 'Cancelling: returning the XMR to the seller', 'The trade is cancelled once the seller confirms'],
-      [{ settling: 'auto-refund' }, 'The payment time ran out', 'Payment time ran out, the seller cancelled; everything in escrow went back to the original owner.'],
+      // The Refunded board's time-ran-out variant (design review 48), with "the seller" for the name.
+      [{ settling: 'auto-refund' }, 'Payment time ran out', "You didn't tap I've paid in time, so the seller cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to the seller."],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
       [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
       // A moderator's refund to the seller is built as mutual-cancel: the dispute decides the reason.
@@ -193,8 +195,39 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       expect(host.textContent).toContain(text);
       // The 48-hour line only while a dispute can still be opened: never after a cancel (owner 2026-10-29, question 4).
       const cancel = over.dispute === undefined && (over.settling === 'buyer-cancel' || over.settling === 'mutual-cancel');
-      expect(host.textContent.includes('you can still open a dispute')).toBe(over.dispute === undefined && !cancel);
+      expect(host.querySelector('[data-dispute-window]') !== null).toBe(over.dispute === undefined && !cancel);
     }
+  });
+
+  it('the Refunded board (design review 48): the chip, What happened with UTC times, the amount, Charged to you, the outlined dispute, Find another offer', () => {
+    const v = refunded({ settling: 'auto-refund' });
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(v)} />
+      </MemoryRouter>,
+    );
+    expect(host.querySelector('.x2f-chip')?.textContent).toBe('Payment time ran out');
+    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] .x2f-facts__row')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
+    const keys = facts.map(([k]) => k);
+    expect(keys.slice(-2)).toEqual(['Trade amount', 'Charged to you']);
+    expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');
+    expect(facts.at(-1)![1]).toBe('Nothing');
+    expect(keys).toContain('Refund sent to the seller');
+    // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
+    for (const [k, val] of facts.slice(0, -2)) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
+    const dispute = host.querySelector('[data-part="refunded-dispute"]')!;
+    expect(dispute.querySelector('h2')?.textContent).toBe('Did you send the money anyway?');
+    expect(dispute.querySelector('a.x2f-button--danger-outline')?.textContent).toBe('Open a dispute');
+    expect(host.querySelector('footer a[data-primary]')?.textContent).toBe('Find another offer');
+  });
+
+  it("Charged to you is left out once the buyer marked paid (their payment may have left)", () => {
+    const { host } = render(
+      <MemoryRouter>
+        <RefundedSlot {...props(refunded({ settling: 'mutual-cancel', paidAt: at(-11 * 60 * MIN) }))} />
+      </MemoryRouter>,
+    );
+    expect(host.textContent).not.toContain('Charged to you');
   });
 
   it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {

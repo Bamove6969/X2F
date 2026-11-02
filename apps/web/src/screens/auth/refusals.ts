@@ -15,6 +15,7 @@
  */
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../../api/client.js';
+import { formatDateTime } from '../../ui/dates.js';
 import {
   HOLD_CODE, TOO_MANY_APPROVALS, TOO_MANY_APPROVALS_CODE, TOO_MANY_DEVICES_APPROVE, TOO_MANY_DEVICES_CODE,
   WEAK_SESSION_CODE, WEAK_SESSION_TEXT, holdApproveText, holdLoginText, holdText, type CantDoCode,
@@ -34,9 +35,9 @@ function refusalOf(e: unknown): Refusal | null {
   return null;
 }
 
-/** A clock time in the person's own time zone, e.g. "Tue 3:05 PM". */
+/** A moment in the one date format (ui/dates.ts), e.g. "6 Nov 2026, 15:00 UTC". */
 export function localTime(at: Date): string {
-  return at.toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  return formatDateTime(at);
 }
 
 /** "until Tue 3:05 PM" for `holdUntil` (an ISO time), or "for a day" if the server sent none. */

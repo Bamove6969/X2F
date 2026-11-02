@@ -34,6 +34,7 @@ import { setFinalAlertPaidSheet } from './FinalAlert.js';
 import { errorSentence } from './SetupStatus.js';
 import { deviceRate, deviceTotal, PaidFlowSheet, payBlockText, refusalText, stoppedText, type DeviceTotal } from './PaidFlowSheet.js';
 import { buyerCancelMode, escrowChip, escrowConfirming, finishBlock, payBlock, payTimer, showProposal, type EscrowChip } from './payModel.js';
+import { PaidWaitingActions, PaidWaitingBody } from './PaidWaiting.js';
 import { PayWarning } from './PayWarning.js';
 import { setWarned, warned } from './warned.js';
 import { GIFT_CARD_WARNING, payMethodOf, postPayEvent, usePaymentDetails, useTradeChat, type MethodInfo, type PayEvent } from './paySeams.js';
@@ -343,7 +344,7 @@ function ChatSlot({ view }: { view: TradeView }) {
   return Chat ? <Chat code={view.code} name={publicName(view.counterparty)} /> : null;
 }
 
-function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
+function ChatButton({ view, primary, link }: { view: TradeView; primary?: boolean; link?: boolean }) {
   const [open, setOpen] = useState(false);
   // With the room's chat pane showing (Task 40), the chat is already beside the screen: the sheet
   // closes on unfold (one draft, one composer), and the primary Chat moves the focus there.
@@ -363,6 +364,11 @@ function ChatButton({ view, primary }: { view: TradeView; primary?: boolean }) {
         <Button variant="primary" onClick={onChat}>
           Chat
         </Button>
+      ) : link ? (
+        <button type="button" className="x2f-inline-action" onClick={onChat} data-part="paid-chat">
+          <Icon name="chat" size={20} />
+          Message {publicName(view.counterparty)} in chat
+        </button>
       ) : (
         <button type="button" className="x2f-room__chat" onClick={onChat} data-chat-link="">
           Chat
@@ -491,9 +497,10 @@ export function BuyerPay(p: TradeScreenProps) {
     <Button variant="primary" disabled={!finishOk || finishing} aria-busy={finishing || undefined} onClick={() => void finish()}>
       Finish marking as paid
     </Button>
-  ) : (
+  ) : escrow.paidRecorded ? null : (
+    // While this device records the tap; once it has, the paid status card says so (BuyerPaidWaiting board).
     <Button variant="primary" disabled aria-live="polite">
-      {escrow.paidRecorded ? 'Marked as paid' : 'Marking as paid…'}
+      Marking as paid…
     </Button>
   );
   const cancel =
@@ -502,13 +509,9 @@ export function BuyerPay(p: TradeScreenProps) {
         Cancel trade
       </Button>
     );
-  // The buyer's dispute in paid opens at confirmBy (machine.ts: too-early before it; review Minor 7).
-  const disputeWait = paid && view.confirmBy !== null && serverClock().getTime() < Date.parse(view.confirmBy);
-  const dispute = disputeWait ? (
-    <span className="x2f-room__dispute-wait">
-      Dispute opens in <Countdown deadline={view.confirmBy!} serverClock={serverClock} format="minutes" />
-    </span>
-  ) : (
+  // Before "I've paid" either side may open a dispute. In paid the buyer's opens at confirmBy
+  // (machine.ts: too-early before it; review Minor 7): PaidWaitingActions says when.
+  const dispute = (
     <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger">
       Open dispute
     </Link>
@@ -572,6 +575,52 @@ export function BuyerPay(p: TradeScreenProps) {
       Buying from <Name view={view} />
     </>
   );
+
+  // After "I've paid": the BuyerPaidWaiting board (status, the seller's confirm window, what happens
+  // next, the payment folded away; Nudge and the dispute below).
+  if (paid) {
+    const actions = (
+      <>
+        {primary}
+        <PaidWaitingActions view={view} serverClock={serverClock} />
+      </>
+    );
+    if (wide) {
+      return (
+        <>
+          <WideRoom view={view} method={method} title={title} chip={null}>
+            {notices}
+            <PaidWaitingBody
+              view={view}
+              method={method}
+              total={total}
+              serverClock={serverClock}
+              wide
+              chatAction={
+                <button type="button" className="x2f-inline-action" onClick={(e) => focusAsideChat(e.currentTarget)} data-part="paid-chat">
+                  <Icon name="chat" size={20} />
+                  Message {publicName(view.counterparty)} in chat
+                </button>
+              }
+            />
+            <div className="x2f-page__footer">{actions}</div>
+          </WideRoom>
+          {sheets}
+        </>
+      );
+    }
+    return (
+      <div className="x2f-pay" data-layout="phone" data-screen-part="paid-waiting">
+        <TradeHeader title={title} code={view.code} method={method} backTo="/trades" action={<ChatButton view={view} />} />
+        <div className="x2f-pay__main">
+          {notices}
+          <PaidWaitingBody view={view} method={method} total={total} serverClock={serverClock} wide={false} chatAction={<ChatButton view={view} link />} />
+        </div>
+        <footer className="x2f-pay__footer">{actions}</footer>
+        {sheets}
+      </div>
+    );
+  }
 
   if (wide) {
     return (

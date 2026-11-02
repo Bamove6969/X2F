@@ -83,8 +83,8 @@ function page(path = '/news') {
   );
 }
 
-const titles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"] h2')].map((h) => h.textContent);
-const newTitles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"][data-new] h2')].map((h) => h.textContent);
+const titles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"] [data-part="news-title"]')].map((h) => h.textContent);
+const newTitles = (host: HTMLElement) => [...host.querySelectorAll('[data-part="news-item"][data-new] [data-part="news-title"]')].map((h) => h.textContent);
 
 describe('the News page', () => {
   it('lists messages newest first, each with its posted date; all new on a first visit; logged out works', async () => {
@@ -94,8 +94,9 @@ describe('the News page', () => {
     expect(newTitles(host)).toEqual(['Upgrade done', 'Planned upgrade', 'Welcome']);
     const times = [...host.querySelectorAll('[data-part="news-date"] time')].map((t) => t.getAttribute('datetime'));
     expect(times).toEqual(ITEMS.map((i) => i.publishedAt));
-    expect(host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^Posted /);
-    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('3 new messages.');
+    // The News board: "New", then the date in the one format (ui/dates.ts).
+    expect(host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^New\d+ \w{3} \d{4}, \d\d:\d\d UTC$/);
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('3 new · 3 posts');
     // Paragraphs keep the line breaks of the body.
     expect([...host.querySelectorAll('[data-part="news-item"]')][0]!.textContent).toContain('Thanks for waiting.');
     // Only the news was asked for: no session call, nothing sent back about reading.
@@ -116,7 +117,7 @@ describe('the News page', () => {
     await settle();
     expect(newTitles(host)).toEqual(['Fresh']);
     expect(host.querySelector('[data-part="news-new"]')!.textContent).toBe('New');
-    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('1 new message.');
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('1 new · 4 posts');
     expect(calls.every((c) => c.method === 'GET')).toBe(true);
   });
 
@@ -125,13 +126,35 @@ describe('the News page', () => {
     const a = page();
     await settle();
     expect(newTitles(a.host)).toEqual([]);
-    expect(a.host.querySelector('[data-part="news-count"]')!.textContent).toBe('Nothing new since your last visit.');
+    expect(a.host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
+    // Nothing new: the newest post is open, the others closed; read posts say "Read"; no Mark all as read.
+    expect([...a.host.querySelectorAll('[data-part="news-item"] button[aria-expanded]')].map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(a.host.querySelector('[data-part="news-date"]')!.textContent).toMatch(/^Read/);
+    expect(a.host.querySelector('[data-part="news-mark-all"]')).toBeNull();
     a.unmount();
     news = { status: 200, body: { items: [], serverNow: '2026-10-29T12:00:00.000Z' } };
     const b = page();
     await settle();
-    expect(b.host.querySelector('[data-part="news-count"]')!.textContent).toBe('No news yet.');
+    expect(b.host.querySelector('[data-part="news-count"]')!.textContent).toBe('No news yet');
     expect(b.host.querySelector('[data-part="news-list"]')).toBeNull();
+  });
+
+  it('the News board: posts open and close, every new one starts open, Mark all as read clears the marks', async () => {
+    const { host } = page();
+    await settle();
+    const toggles = () => [...host.querySelectorAll<HTMLButtonElement>('[data-part="news-item"] button[aria-expanded]')];
+    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true']);
+    fire(toggles()[1]!, new MouseEvent('click', { bubbles: true }));
+    expect(toggles()[1]!.getAttribute('aria-expanded')).toBe('false');
+    const body = host.querySelector<HTMLElement>(`#${toggles()[1]!.getAttribute('aria-controls')}`)!;
+    expect(body.hidden).toBe(true);
+    expect(host.querySelector('[aria-label="Close News"]')).not.toBeNull();
+    fire(host.querySelector('[data-part="news-mark-all"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(newTitles(host)).toEqual([]);
+    expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
+    expect(host.querySelector('[data-part="news-mark-all"]')).toBeNull();
+    // Still nothing sent anywhere about reading.
+    expect(calls).toEqual([{ url: '/v1/news', method: 'GET' }]);
   });
 
   it('a failed load says so and retries; nothing is marked seen', async () => {

@@ -10,10 +10,12 @@
  * sessionStorage through the log-in round trip; it is dropped once sent. After Send, focus moves to
  * the thank-you heading (review M7).
  *
- * No board exists for this screen yet (Claude Design brief 2026-10-29, item 5): it is built from the
- * existing kit classes only, with no styling of its own, and is matched to the board when it lands
- * (tripwire NEEDS_DESIGN_CANTDOTHAT). The owner's words are used where he gave them (the checkbox
- * and the thank-you); the rest is marked COPY-UNSIGNED.
+ * Laid out from the Feedback board (origin/wip/design-brief docs/design-boards/Feedback.dc.html,
+ * views form and sent; design review 1 Nov shots 62-63) with UI-kit parts only: the back header,
+ * "Tell us what you think", a 9-row message box with its count, "Send anonymously" as a 24px box in
+ * a 44px row, and the thank-you with "Sent as <name>." and Write another. The kind radios are not
+ * on the board; they stay (the API files by kind) as 44px rows. The owner's words are used where he
+ * gave them (the checkbox and the thank-you); board copy is used as drawn; the rest is COPY-UNSIGNED.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router';
@@ -21,6 +23,7 @@ import { ApiCallError, api, safeReturnTo } from '../api/client.js';
 import { displayNameOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
+import { Icon } from '../ui/icons.js';
 import { waitSentence } from './auth/refusals.js';
 import './screens.css';
 
@@ -35,6 +38,10 @@ export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form d
 
 /** The owner's wording, exactly (2026-10-29). copy-lint lets this one sentence keep its "!". */
 export const FEEDBACK_THANKS = 'Thank you! Each and every comment is appreciated and reviewed to help make this community a better place for us all.';
+/** The Feedback board sets the owner's sentence as the heading "Thank you!" and the line under it. */
+const THANKS_SPLIT = FEEDBACK_THANKS.search(/[.!?] /) + 1;
+const THANKS_HEAD = FEEDBACK_THANKS.slice(0, THANKS_SPLIT);
+const THANKS_BODY = FEEDBACK_THANKS.slice(THANKS_SPLIT + 1);
 
 const KINDS: readonly { id: FeedbackKind; label: string }[] = [
   { id: 'complaint', label: 'Complaint' },
@@ -72,6 +79,9 @@ export function Feedback() {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const textId = useId();
   const hintId = useId();
+  const countId = useId();
+  // Who the last message went as, for the thank-you's "Sent as <name>." (Feedback board).
+  const [sentAnonymously, setSentAnonymously] = useState(false);
   const thanks = useRef<HTMLHeadingElement>(null);
 
   // Once the account is known, a draft written by a different account is dropped.
@@ -103,6 +113,7 @@ export function Feedback() {
     try {
       await sendFeedback({ kind, text: clean, anonymous, from });
       clearFeedbackDraft();
+      setSentAnonymously(anonymous);
       setState({ kind: 'sent' });
     } catch (err) {
       if (err instanceof ApiCallError && err.status === 401) setState({ kind: 'signed-out' });
@@ -115,87 +126,126 @@ export function Feedback() {
     }
   };
 
+  const back = () => void (key === 'default' ? navigate('/sell') : navigate(-1));
+  const header = (
+    <header className="x2f-page__header">
+      <button type="button" className="x2f-icon-button" aria-label="Back" onClick={back}>
+        <Icon name="chevron-left" />
+      </button>
+      <span className="x2f-page__header-title">Feedback</span>
+    </header>
+  );
+
   if (state.kind === 'sent') {
     return (
-      <main className="x2f-screen" data-screen="feedback">
-        <h1 className="x2f-screen__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
-          Feedback sent
-        </h1>
-        <p role="status" data-part="feedback-thanks">
-          {FEEDBACK_THANKS}
+      <main className="x2f-page" data-screen="feedback">
+        {header}
+        <div className="x2f-done" data-part="feedback-thanks" role="status">
+          <span className="x2f-done__mark">
+            <Icon name="check" size={32} stroke={2} />
+          </span>
+          <h1 className="x2f-title x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
+            {THANKS_HEAD}
+          </h1>{' '}
+          <p className="x2f-sheet__body">{THANKS_BODY}</p>
+        </div>
+        {/* The board's line under the thanks: who it was sent as. */}
+        <p className="x2f-footnote" data-part="feedback-sent-as">
+          {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
         </p>
-        <Button variant="primary" onClick={() => void (key === 'default' ? navigate('/sell') : navigate(-1))}>
-          Done
-        </Button>
+        <footer className="x2f-page__footer">
+          <Button variant="primary" onClick={back}>
+            Done
+          </Button>
+          <Button
+            variant="quiet"
+            onClick={() => {
+              setText('');
+              setState({ kind: 'idle' });
+            }}
+          >
+            Write another
+          </Button>
+        </footer>
       </main>
     );
   }
 
   return (
-    <main className="x2f-screen" data-screen="feedback">
-      <h1 className="x2f-screen__title">Feedback</h1>
-      {/* COPY-UNSIGNED */}
-      <p className="x2f-note">A complaint, feedback, a recommendation, anything. Every comment is read.</p>
-      {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
-        <p className="x2f-note" data-part="feedback-login-first">
-          {/* COPY-UNSIGNED */}
-          <Link className="x2f-link" to={loginHref}>
-            Log in
-          </Link>{' '}
-          to send feedback. You can write it first: it is kept while you log in.
-        </p>
-      ) : null}
-      <form className="x2f-stack" onSubmit={(e) => void submit(e)}>
-        <fieldset className="x2f-field">
-          <legend className="x2f-label">What is it?</legend>
-          <div className="x2f-row">
+    <main className="x2f-page" data-screen="feedback">
+      {header}
+      <form className="x2f-page__form" onSubmit={(e) => void submit(e)}>
+        <div className="x2f-page__main x2f-page__main--roomy">
+          <section className="x2f-stack">
+            <h1 className="x2f-title">Tell us what you think</h1>
+            <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+          </section>
+          {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
+            <p className="x2f-note" data-part="feedback-login-first">
+              {/* COPY-UNSIGNED */}
+              <Link className="x2f-link" to={loginHref}>
+                Log in
+              </Link>{' '}
+              to send feedback. You can write it first: it is kept while you log in.
+            </p>
+          ) : null}
+          {/* Not on the board (it has no kind): kept because the API files each message by kind. Three 44px radio rows (X4). COPY-UNSIGNED */}
+          <fieldset className="x2f-choices">
+            <legend className="x2f-overline">What is it?</legend>
             {KINDS.map((k) => (
-              <label key={k.id}>
+              <label key={k.id} className="x2f-choice">
                 <input type="radio" name="feedback-kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
-                {k.label}
+                <span className="x2f-choice__title">{k.label}</span>
               </label>
             ))}
+          </fieldset>
+          <div className="x2f-field">
+            <label htmlFor={textId} className="x2f-field-label">
+              Your message
+            </label>
+            <textarea
+              id={textId}
+              className="x2f-input x2f-input--message"
+              rows={9}
+              value={text}
+              maxLength={FEEDBACK_TEXT_MAX}
+              placeholder="Write anything you like"
+              aria-describedby={countId}
+              onChange={(e) => setText(e.target.value)}
+            />
+            <span id={countId} className="x2f-field-count" data-part="feedback-count">
+              <span className="x2f-when">{[...text].length}</span> of {FEEDBACK_TEXT_MAX} characters
+            </span>
           </div>
-        </fieldset>
-        <div className="x2f-field">
-          <label htmlFor={textId} className="x2f-label">
-            Your comment
+          <label className="x2f-choice" data-boxed="">
+            <input type="checkbox" checked={anonymous} aria-describedby={hintId} onChange={(e) => setAnonymous(e.target.checked)} />
+            <span className="x2f-choice__text">
+              <span className="x2f-choice__title">Send anonymously</span>
+              {/* COPY-UNSIGNED */}
+              <span id={hintId} className="x2f-choice__hint" data-part="anon-hint">
+                {anonymous ? FEEDBACK_ANON_HINT : 'Sent with your username, so X2F staff can message you for details.'}
+              </span>
+            </span>
           </label>
-          <textarea
-            id={textId}
-            className="x2f-input"
-            rows={6}
-            value={text}
-            maxLength={FEEDBACK_TEXT_MAX}
-            onChange={(e) => setText(e.target.value)}
-          />
+          {state.kind === 'signed-out' ? (
+            <p className="x2f-error" role="alert">
+              <Link className="x2f-link" to={loginHref}>
+                Log in
+              </Link>{' '}
+              to send feedback. What you wrote is kept.
+            </p>
+          ) : null}
+          {state.kind === 'failed' ? (
+            <p className="x2f-error" role="alert">
+              {state.message}
+            </p>
+          ) : null}
         </div>
-        <label className="x2f-row">
-          <input type="checkbox" checked={anonymous} aria-describedby={hintId} onChange={(e) => setAnonymous(e.target.checked)} />
-          Send anonymously
-        </label>
-        {/* COPY-UNSIGNED */}
-        <p id={hintId} className="x2f-note" data-part="anon-hint">
-          {anonymous
-            ? FEEDBACK_ANON_HINT
-            : 'Sent with your username, so X2F staff can message you for details.'}
-        </p>
-        {state.kind === 'signed-out' ? (
-          <p className="x2f-error" role="alert">
-            <Link className="x2f-link" to={loginHref}>
-              Log in
-            </Link>{' '}
-            to send feedback. What you wrote is kept.
-          </p>
-        ) : null}
-        {state.kind === 'failed' ? (
-          <p className="x2f-error" role="alert">
-            {state.message}
-          </p>
-        ) : null}
-        <Button variant="primary" type="submit" disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
-          Send
-        </Button>
+        <footer className="x2f-page__footer">
+          <Button variant="primary" type="submit" disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
+            Send
+          </Button>
+        </footer>
       </form>
     </main>
   );

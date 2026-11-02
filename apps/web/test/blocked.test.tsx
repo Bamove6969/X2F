@@ -155,13 +155,18 @@ describe('BlockAction', () => {
     const onBlocked = vi.fn();
     const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" onBlocked={onBlocked} /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
-    const ask = byPart(host, 'block-ask')!;
-    expect(ask.textContent).toContain('Block mira.k?');
+    // The Block board's confirm sheet (portalled into the body; design review 64).
+    const ask = byPart(document.body, 'block-ask')!;
+    const sheet = ask.closest('[role="dialog"]')!;
+    expect(sheet.querySelector('h2')?.textContent).toBe('Block mira.k?');
+    const [yes, no] = [...ask.querySelectorAll('.x2f-sheet__actions button')];
+    expect(yes?.className).toContain('x2f-button--danger-outline');
+    expect(no?.textContent).toBe('Cancel');
     expect(ask.textContent).toContain("They won't be told you blocked them.");
     expect(ask.textContent).toContain("Open trades with them aren't affected. They finish normally.");
-    expect(document.activeElement).toBe(host.querySelector('#block-ask-h'));
+    expect(document.activeElement).toBe(document.querySelector('#block-ask-h'));
     expect(calls.filter((c) => c.method === 'POST')).toEqual([]);
-    fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
+    fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(calls.at(-1)).toEqual({ url: '/v1/account/blocks', method: 'POST', body: { displayName: 'mira.k' } });
     expect(onBlocked).toHaveBeenCalledOnce();
@@ -173,13 +178,13 @@ describe('BlockAction', () => {
   it('Cancel blocks nobody; a refusal opens CantDoThat, a failure stays inline', async () => {
     const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
-    fire([...host.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!, new MouseEvent('click', { bubbles: true }));
+    fire([...document.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!, new MouseEvent('click', { bubbles: true }));
     expect(byPart(host, 'block-open')).not.toBeNull();
     // Focus is back on "Block mira.k".
     expect(document.activeElement).toBe(byPart(host, 'block-open'));
     failNext = 404;
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
-    fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
+    fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     // Task 21's popup (portalled into the body), with its feedback link for this refusal.
     const popup = document.querySelector('[data-part="cant-do-that"]')!;
@@ -194,7 +199,7 @@ describe('BlockAction', () => {
     expect(document.activeElement).toBe(byPart(host, 'block-open'));
     failNext = 500;
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
-    fire(byPart(host, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
+    fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
     await settle();
     expect(host.querySelector('[role="alert"]')?.textContent).toBe('Could not block mira.k. Try again.');
   });

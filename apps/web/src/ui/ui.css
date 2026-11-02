@@ -54,6 +54,23 @@
   color: var(--x2f-danger);
 }
 
+/* The outlined danger action (Block board "Block nightowl_44", BuyerPaidWaiting and Refunded
+   "Open a dispute"): a 2px danger border, never a fill, so it never reads as the primary. */
+.x2f-button--danger-outline {
+  height: 48px;
+  padding: 0 var(--x2f-space-4);
+  border: 2px solid var(--x2f-danger);
+  border-radius: var(--x2f-radius-md);
+  background: transparent;
+  color: var(--x2f-danger);
+  font-size: 16px;
+}
+
+.x2f-button--danger-outline[data-size='large'] {
+  height: 56px;
+  font-size: 18px;
+}
+
 /* Disabled controls drop to ink-muted text and keep their outline (design-system README). */
 .x2f-button:disabled,
 .x2f-button[aria-disabled='true'] {
@@ -92,6 +109,11 @@
 
 .x2f-chip[data-tone='danger'] {
   color: var(--x2f-danger);
+}
+
+/* A finished state that is neither good nor bad (Refunded board: "Payment time ran out"). */
+.x2f-chip[data-tone='muted'] {
+  color: var(--x2f-ink-muted);
 }
 
 /* Badge pills (SellOffers board). */
@@ -143,6 +165,28 @@
 
 /* Countdowns use the mono face with tabular figures; the context sets the colour. */
 .x2f-countdown {
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Durations ("1 h 52 min", conventions 2 Nov 2026): only the digits are mono; the unit words are
+   in the body face, so mono's wide advance never opens gaps around "h" and "min". */
+.x2f-duration {
+  white-space: nowrap;
+}
+
+.x2f-duration__n {
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.x2f-duration__unit {
+  font-family: var(--x2f-font-sans);
+  font-weight: 400;
+}
+
+/* A moment ("6 Nov 2026, 15:00 UTC", ui/When.tsx): mono, never broken inside the time. */
+.x2f-when {
   font-family: var(--x2f-font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -481,4 +525,590 @@
   flex-grow: 1;
   min-height: 0;
   padding: var(--x2f-space-6) 32px;
+}
+
+/* ---- Result and form screens (Refunded, BuyerPaidWaiting, Feedback, News, Block boards) ----
+   A phone page is a header, a main column and a footer with the actions; the trade room's own
+   frame (.x2f-pay) has the same shape. */
+.x2f-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--x2f-ground);
+  color: var(--x2f-ink);
+}
+
+.x2f-page__header {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-bottom: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-page__header-text {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-page__header-sub {
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-page__header-title {
+  font-family: var(--x2f-title-family);
+  font-size: 22px;
+  line-height: 28px;
+  font-weight: 600;
+}
+
+/* A form that is the whole page: its main grows and its footer holds the submit. */
+.x2f-page__form {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+}
+
+.x2f-page__main {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  gap: var(--x2f-space-4);
+  padding: var(--x2f-space-4);
+  min-width: 0;
+}
+
+.x2f-page__main--roomy {
+  gap: var(--x2f-space-6);
+  padding-top: var(--x2f-space-6);
+}
+
+.x2f-page__footer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+/* Type roles from the system: title 24/30, heading 18/24, the muted lead, the uppercase label. */
+.x2f-title {
+  margin: 0;
+  font-family: var(--x2f-title-family);
+  font-size: var(--x2f-title-size);
+  line-height: var(--x2f-title-line);
+  font-weight: var(--x2f-title-weight);
+}
+
+.x2f-heading {
+  margin: 0;
+  font-family: var(--x2f-heading-family);
+  font-size: var(--x2f-heading-size);
+  line-height: var(--x2f-heading-line);
+  font-weight: var(--x2f-heading-weight);
+}
+
+.x2f-lead {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-small {
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-overline {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+/* A grouped block: surface fill, or (data-outline) a line border on the ground. */
+.x2f-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-panel[data-outline] {
+  border: 1px solid var(--x2f-line);
+  background: transparent;
+}
+
+.x2f-panel__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+}
+
+.x2f-panel__title {
+  display: flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 16px;
+  line-height: 22px;
+  font-weight: 600;
+}
+
+.x2f-panel > .x2f-button,
+.x2f-panel > a.x2f-button {
+  align-self: flex-start;
+}
+
+/* Key and value rows (ui/Facts.tsx): the key muted on the left, the value mono on the right. */
+.x2f-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.x2f-facts__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.x2f-facts__row[data-rule] {
+  padding-top: var(--x2f-space-2);
+  border-top: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-facts__key {
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-facts__value {
+  min-width: 0;
+  margin: 0;
+  font-family: var(--x2f-font-mono);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* A numbered list of next steps (BuyerPaidWaiting "What happens next"). */
+.x2f-steps {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  margin: 0;
+  padding-left: 20px;
+  font-size: 15px;
+  line-height: 22px;
+}
+
+/* A section that opens and closes (<details>; BuyerPaidWaiting "Your payment"). */
+.x2f-disclosure {
+  border: 1px solid var(--x2f-surface-raised);
+  border-radius: var(--x2f-radius-md);
+}
+
+.x2f-disclosure > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  min-height: 48px;
+  padding: 0 var(--x2f-space-4);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.x2f-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.x2f-disclosure__summary-note {
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-disclosure > :not(summary) {
+  padding: 0 var(--x2f-space-4) var(--x2f-space-4);
+}
+
+/* A 24px checkbox or radio inside a 44px tap row (X4; Feedback "Send anonymously"). */
+.x2f-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 0;
+  cursor: pointer;
+}
+
+.x2f-choice[data-boxed] {
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+}
+
+.x2f-choice input {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  accent-color: var(--x2f-ink);
+}
+
+.x2f-choice__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.x2f-choice__title {
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.x2f-choice[data-boxed] .x2f-choice__title {
+  font-weight: 600;
+}
+
+.x2f-choice__hint {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
+}
+
+/* A group of choices with a plain label, never the browser's grooved fieldset (X4). */
+.x2f-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.x2f-choices > legend {
+  padding: 0;
+  margin-bottom: var(--x2f-space-1);
+}
+
+/* A centred done state (Feedback board "Thank you!"). */
+.x2f-done {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-grow: 1;
+  gap: var(--x2f-space-4);
+  padding: 32px var(--x2f-space-6);
+  text-align: center;
+}
+
+.x2f-done__mark {
+  display: flex;
+  width: 64px;
+  height: 64px;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--x2f-escrow);
+  border-radius: var(--x2f-radius-pill);
+  color: var(--x2f-escrow);
+}
+
+.x2f-done__title:focus {
+  outline: none;
+}
+
+/* A collapsible post (News board): new ones on surface with an escrow edge, read ones outlined. */
+.x2f-post {
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--x2f-radius-md);
+  border: 1px solid var(--x2f-surface-raised);
+}
+
+.x2f-post[data-new] {
+  border-color: transparent;
+  background: var(--x2f-surface);
+  box-shadow: inset 3px 0 0 var(--x2f-escrow);
+}
+
+.x2f-post__toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 64px;
+  padding: 12px var(--x2f-space-4);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.x2f-post__heading {
+  margin: 0;
+}
+
+.x2f-post__text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-post__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  font-size: 13px;
+  line-height: 16px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-post__new {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+  color: var(--x2f-escrow);
+}
+
+.x2f-post__new::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-escrow);
+}
+
+.x2f-post__title {
+  font-size: 16px;
+  line-height: 24px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-post[data-new] .x2f-post__title {
+  font-weight: 600;
+  color: var(--x2f-ink);
+}
+
+.x2f-post__chevron {
+  display: flex;
+  flex-shrink: 0;
+  margin-top: 4px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-post__toggle[aria-expanded='true'] .x2f-post__chevron {
+  transform: rotate(180deg);
+}
+
+.x2f-post__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+  padding: 0 var(--x2f-space-4) var(--x2f-space-4);
+}
+
+.x2f-post__body p {
+  margin: 0;
+}
+
+/* A text action on the right of a page header (News "Mark all as read"). */
+.x2f-header-action {
+  flex-shrink: 0;
+  height: 44px;
+  padding: 0 var(--x2f-space-2);
+  border: 0;
+  background: transparent;
+  color: var(--x2f-monero-ink);
+  font: inherit;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* A sheet's list and its call-out (Block board). */
+.x2f-sheet__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-1);
+  margin: 0;
+  padding-left: 20px;
+}
+
+.x2f-callout {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  font-size: 15px;
+  line-height: 22px;
+}
+
+.x2f-sheet__content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-4);
+}
+
+.x2f-sheet__actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-2);
+}
+
+/* A timer card (ui/TimerCard.tsx; BuyerPay, BuyerPaidWaiting): text left, the 56px ring right. */
+.x2f-timer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: var(--x2f-space-4);
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface);
+  --x2f-timer-tone: var(--x2f-ink-muted);
+}
+
+.x2f-timer[data-tone='caution'] {
+  --x2f-timer-tone: var(--x2f-caution);
+}
+
+.x2f-timer[data-tone='escrow'] {
+  --x2f-timer-tone: var(--x2f-escrow);
+}
+
+.x2f-timer__text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--x2f-space-1);
+  min-width: 0;
+}
+
+.x2f-timer__label {
+  font-size: var(--x2f-label-size);
+  line-height: var(--x2f-label-line);
+  font-weight: var(--x2f-label-weight);
+  letter-spacing: var(--x2f-label-tracking);
+  text-transform: uppercase;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-timer__value {
+  font-size: 18px;
+  line-height: 32px;
+}
+
+.x2f-timer__value .x2f-duration__n {
+  font-size: 28px;
+  font-weight: 500;
+}
+
+.x2f-timer__hint {
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-timer__hint .x2f-when {
+  color: var(--x2f-ink);
+}
+
+.x2f-timer__ring {
+  flex-shrink: 0;
+}
+
+.x2f-timer__ring-track {
+  stroke: var(--x2f-surface-raised);
+}
+
+.x2f-timer__ring-left {
+  stroke: var(--x2f-timer-tone);
+}
+
+/* The chat link in a card (BuyerPaidWaiting "Message satoshi_ghost in chat"). */
+.x2f-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-2);
+  align-self: flex-start;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--x2f-ink);
+  font: inherit;
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+/* An outlined action in the caution colour (BuyerPaidWaiting "Nudge satoshi_ghost"). */
+.x2f-button--secondary[data-tone='caution'] {
+  color: var(--x2f-caution);
+}
+
+/* A centred small line under the actions. */
+.x2f-footnote {
+  margin: 0;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--x2f-ink-muted);
+  text-align: center;
+}
+
+.x2f-footnote .x2f-when,
+.x2f-footnote .x2f-duration {
+  color: var(--x2f-ink);
+}
+
+/* A field's own label (Feedback "Your message"): 15/600, not the uppercase overline. */
+.x2f-field-label {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* A long message box (Feedback board): 12px padding, radius 12, body text, no resize handle. */
+.x2f-input--message.x2f-input {
+  padding: 12px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-ground);
+  font-size: 16px;
+  line-height: 24px;
+  resize: none;
+}
+
+.x2f-field-count {
+  align-self: flex-end;
+  font-size: 13px;
+  color: var(--x2f-ink-muted);
 }

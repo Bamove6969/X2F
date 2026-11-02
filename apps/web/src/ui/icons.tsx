@@ -7,6 +7,7 @@ const SHIELD = 'M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6z';
 const SHAPES = {
   'chevron-left': <path d="M15 18l-6-6 6-6" />,
   'chevron-right': <path d="M9 6l6 6-6 6" />,
+  'chevron-down': <path d="M6 9l6 6 6-6" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   clock: (
     <>
@@ -22,6 +23,15 @@ const SHAPES = {
     </>
   ),
   check: <path d="M5 12l4 4 10-10" />,
+  // Refunded board: the XMR went back.
+  undo: (
+    <>
+      <path d="M9 14l-5-5 5-5" />
+      <path d="M4 9h11a5 5 0 010 10h-3" />
+    </>
+  ),
+  // BuyerPaidWaiting board: "Message <name> in chat".
+  chat: <path d="M4 5h16v11H9l-5 4z" />,
   shield: <path d={SHIELD} />,
   'shield-check': (
     <>

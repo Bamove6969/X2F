@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import type { AlertEntry } from '@x2f/auth-client';
 import { authApi } from '../auth/authApi.js';
+import { formatDateTime } from '../../ui/dates.js';
 
 /**
  * Plain words for every alert kind the server records (`AlertKind` in apps/api/src/alerts.ts).
@@ -75,8 +76,8 @@ export function Alerts() {
         {(alerts ?? []).map((a) => (
           <li className="x2f-list__row" key={a.id} data-kind={a.kind} data-unseen={a.seenAt === null ? 'true' : 'false'}>
             <span className="x2f-list__label">{alertWords(a.kind)}</span>
-            <time className="x2f-list__time" dateTime={a.createdAt}>
-              {new Date(a.createdAt).toLocaleString()}
+            <time className="x2f-list__time x2f-when" dateTime={a.createdAt}>
+              {formatDateTime(a.createdAt)}
             </time>
           </li>
         ))}

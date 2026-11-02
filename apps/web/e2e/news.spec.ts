@@ -23,8 +23,8 @@ async function stubNews(page: Page, items: unknown[]): Promise<{ writes: string[
   return { writes };
 }
 
-const titles = (page: Page) => page.locator('[data-part="news-item"] h2').allTextContents();
-const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] h2').allTextContents();
+const titles = (page: Page) => page.locator('[data-part="news-item"] [data-part="news-title"]').allTextContents();
+const newTitles = (page: Page) => page.locator('[data-part="news-item"][data-new] [data-part="news-title"]').allTextContents();
 
 test('logged out: newest first with dates, all new, then seen on the next visit', async ({ page }) => {
   const s = await stubNews(page, ITEMS);
@@ -36,12 +36,12 @@ test('logged out: newest first with dates, all new, then seen on the next visit'
   expect(await page.locator('[data-part="news-date"] time').evaluateAll((ts) => ts.map((t) => t.getAttribute('datetime')))).toEqual(
     ITEMS.map((i) => i.publishedAt),
   );
-  await expect(page.locator('[data-part="news-date"]').first()).toHaveText(/^Posted .*2026/);
+  await expect(page.locator('[data-part="news-date"]').first()).toHaveText(/^New\s*\d+ \w{3} 2026, \d\d:\d\d UTC/);
   await expect(page.locator('[data-primary]')).toHaveCount(1);
   await expect(page.locator('input[type="checkbox"]')).toHaveCount(0);
 
   await page.reload();
-  await expect(page.locator('[data-part="news-count"]')).toHaveText('Nothing new since your last visit.');
+  await expect(page.locator('[data-part="news-count"]')).toHaveText('All read · 3 posts');
   expect(await newTitles(page)).toEqual([]);
   // Reading sent nothing back.
   expect(s.writes).toEqual([]);

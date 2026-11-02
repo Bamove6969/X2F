@@ -262,7 +262,7 @@ describe('ChatPanel: block (Task 37)', () => {
     expect(order.map((e) => e.className || 'block')).toEqual(['x2f-chat__notice', expect.stringContaining('x2f-button'), 'x2f-chat__lines']);
     const before = client.sync.mock.calls.length;
     act(() => open!.click());
-    act(() => host.querySelector<HTMLButtonElement>('[data-part="block-confirm"]')!.click());
+    act(() => document.querySelector<HTMLButtonElement>('[data-part="block-confirm"]')!.click());
     await flush();
     expect(fetch).toHaveBeenCalledWith('/v1/account/blocks', expect.objectContaining({ method: 'POST' }));
     expect(host.querySelector('[data-part="block-done"]')?.textContent).toContain('You blocked Sam.');

@@ -47,11 +47,6 @@ export function unseenOf(items: readonly NewsItem[], lastSeen: number): NewsItem
   return items.filter((i) => i.id > lastSeen);
 }
 
-/** "29 Oct 2026, 09:00" in the reader's own locale and time zone. */
-export function postedDate(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
-
 /** Reads `GET /v1/news`, keeping only well-formed items (newest first, as the server sends them). */
 export async function fetchNews(signal?: AbortSignal): Promise<NewsList> {
   const raw = await api<unknown>('/v1/news', signal ? { signal } : {});

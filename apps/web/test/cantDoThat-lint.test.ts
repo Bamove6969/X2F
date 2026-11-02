@@ -123,7 +123,8 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // (Tasks 38-39 landing, 2026-10-29): two warnings that explain, not refuse: PaidConfirmSheet's
     // "After this you can't cancel the trade" and ReleaseWarning's "... and can't be taken back."
     expect(todo).toBeLessThanOrEqual(4);
-    expect(notARefusal).toBeLessThanOrEqual(45);
+    // 45 -> 46 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid", said ahead of time.
+    expect(notARefusal).toBeLessThanOrEqual(46);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

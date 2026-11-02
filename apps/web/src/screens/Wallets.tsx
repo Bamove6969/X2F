@@ -1,3 +1,4 @@
+import { formatDateTime } from '../ui/dates.js';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { AuthApiError, isHeld, walletsAction, withConfirm, type Held } from '@x2f/auth-client';
@@ -34,9 +35,8 @@ import { OwnerOnly } from './settings/OwnerOnly.js';
 
 const LABEL_MAX = 40;
 
-function when(iso: string): string {
-  return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-}
+/** "6 Nov 2026, 15:00 UTC" (ui/dates.ts, the one date format). */
+const when = (iso: string): string => formatDateTime(iso);
 
 /** 403 `recovery-session`: a backup login cannot change where coins are paid (Plan 2; in the refusal text map). */
 export { RECOVERY_SESSION_WALLETS };
