@@ -64,6 +64,11 @@ function posterLine(offer: Offer, now: Date): string {
   return parts.join(' · ');
 }
 
+/** C12b (owner 2026-11-01/02): the trader's opt-in volume line. COPY-UNSIGNED */
+function tradedLine(usd: number): string {
+  return `Completed over $${usd.toLocaleString('en-US')} in trades to date`;
+}
+
 function marginLine(offer: Offer, currency: string, copy: BrowseCopy, market: bigint | null): { text: string; favourable: boolean } | null {
   if (offer.rate === null) return null;
   if (offer.pricing.mode === 'fixed') {
@@ -177,6 +182,7 @@ export function OfferCard({ offer, currency, copy, primary, now, market = null, 
             <span data-username>{name}</span>
           </span>
           <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
+          {offer.poster.tradedOverUsd !== null ? <span className="x2f-offer__sub">{tradedLine(offer.poster.tradedOverUsd)}</span> : null}
           <Badges offer={offer} />
         </div>
         {!closed && !offer.poster.online ? (

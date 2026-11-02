@@ -52,6 +52,11 @@ export interface TraderSummary {
   badges: string[];
   /** The poster's starter-limits stage, from the API (spec 2.3). New shows until 'graduated'. */
   stage: Stage;
+  /**
+   * C12b: the opt-in "Completed over $X in trades to date" line, X in whole US dollars (already
+   * rounded down by the API); null (or missing) shows nothing.
+   */
+  tradedOverUsd: number | null;
 }
 
 export type Pricing = { mode: 'market'; marginBps: number } | { mode: 'fixed'; centsPerXmr: bigint };
@@ -177,6 +182,7 @@ function parsePoster(v: unknown, at: string): TraderSummary {
       return b;
     }),
     stage: oneOf(o, 'stage', at, STAGES),
+    tradedOverUsd: o.tradedOverUsd === undefined || o.tradedOverUsd === null ? null : num(o, 'tradedOverUsd', at),
   };
 }
 

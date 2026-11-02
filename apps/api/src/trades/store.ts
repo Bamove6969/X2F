@@ -6,6 +6,7 @@ import type { Queryable } from '../db/pool.js';
 import { openSystemDispute } from '../disputes/store.js';
 import { ApiError } from '../errors.js';
 import { actorOfBy, appendLog, tradeLogDetail } from '../log/append.js';
+import { countTradeTotals } from '../traders/tradedTotal.js';
 
 /**
  * Called after an event is committed (the app passes Task 19's `tradeEventPublisher`: SSE, Web
@@ -361,6 +362,9 @@ export async function applyEvent(
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
       if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      // C12b: a completed trade adds its take-time USD value to both sides' running totals, a settled
+      // buyer cancel to the buyer's cancel count (idempotent per trade; traders/tradedTotal.ts).
+      if (next.state !== prev.state && (next.state === 'released' || next.state === 'refunded')) await countTradeTotals(client, code);
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,
