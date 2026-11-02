@@ -38,7 +38,7 @@ export const FROM_CODE = /^[a-z0-9-]{1,40}$/;
 // Control and format characters (bidi overrides, invisible marks), except the line break, the tab,
 // and the zero-width non-joiner and joiner (U+200C, U+200D: Persian and other scripts need ZWNJ,
 // emoji sequences need ZWJ).
-const HIDDEN = /(?![\n\t\u200c\u200d])[\p{Cc}\p{Cf}]/u;
+export const HIDDEN = /(?![\n\t\u200c\u200d])[\p{Cc}\p{Cf}]/u;
 const DAY_MS = 86_400_000;
 
 export interface FeedbackFormItem {
