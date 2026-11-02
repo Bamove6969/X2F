@@ -40,7 +40,6 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
         <span style="font-size: 15px; line-height: 20px; font-weight: 600;">{{headTitle}}</span>
         <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Trade <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">K7M2-9QXA-4FTR-8WPN</span> · Zelle · Example</span>
       </div>
-      <span style="flex-shrink: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
     </header>
   </sc-if>
 
@@ -56,6 +55,10 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
   </sc-if>
 
   <main style="{{mainStyle}}">
+
+    <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+      <div style="display: flex; justify-content: flex-end; margin-bottom: -8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span></div>
+    </sc-if>
 
     <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
       <section aria-label="Escrow and payment time" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--escrow) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--escrow) 35%, transparent);">
@@ -92,7 +95,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
     <sc-if value="{{isReturning}}" hint-placeholder-val="{{false}}">
       <section role="status" aria-labelledby="cr-head" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--caution) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--caution) 35%, transparent);">
         <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
-          <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14l-5-5 5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>{{chip}}</span>
+          <span style="display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; background: color-mix(in srgb, var(--caution) 14%, transparent); color: var(--caution); font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; white-space: nowrap;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 14l-5-5 5-5"/><path d="M4 9h11a5 5 0 010 10h-3"/></svg>{{chip}}</span>
           <svg style="flex-shrink: 0; color: var(--caution);" width="62" height="14" viewBox="0 0 62 14" aria-hidden="true"><circle cx="7" cy="7" r="7" fill="currentColor"/><circle cx="31" cy="7" r="7" fill="currentColor"/><circle cx="55" cy="7" r="6" fill="none" stroke="currentColor" stroke-width="2"/></svg>
         </div>
         <div style="display: flex; flex-direction: column; gap: 8px;">
@@ -107,7 +110,7 @@ button,a,label{transition:background-color 150ms ease-out,border-color 150ms eas
           </span>
         </div>
         <dl style="display: flex; flex-direction: column; margin: 0; border-radius: 12px; background: var(--surface-raised);">
-          <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{whenLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; white-space: nowrap;">1 Nov 2026, 14:20 UTC</dd></div>
+          <div style="display: flex; flex-direction: column; gap: 2px; padding: 12px 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">{{whenLabel}}</dt><dd style="margin: 0; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; font-weight: 500; white-space: nowrap;">1 Nov 2026, 14:20 UTC</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
           <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; min-height: 48px; padding: 0 14px; font-size: 14px; line-height: 20px;"><dt style="color: var(--ink-muted);">Going back to</dt><dd style="margin: 0; font-size: 15px; text-align: right;">{{refundTo}}</dd></div>
           <div style="height: 1px; margin: 0 14px; background: var(--surface);"></div>
@@ -241,7 +244,7 @@ class Component extends DCLogic {
     const go = (v, extra) => this.setState(Object.assign({ view: v, key, sheet: false }, extra || {}));
 
     // Measured app heights per view (the design notes sit below the app screen).
-    const APP_H = { ask: 844, returningBuyer: 933, returningSeller: 847, doneBuyer: 1022, doneSeller: 844 }[view] || 844;
+    const APP_H = { ask: 844, returningBuyer: 951, returningSeller: 865, doneBuyer: 1034, doneSeller: 844 }[view] || 844;
     const NOTES_H = 343;
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + (APP_H + NOTES_H) + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const appStyle = 'position: relative; flex-shrink: 0; height: ' + APP_H + 'px; display: flex; flex-direction: column;';
@@ -249,7 +252,7 @@ class Component extends DCLogic {
     const sellerSide = view === 'returningSeller' || view === 'doneSeller';
     const isDone = view === 'doneBuyer' || view === 'doneSeller';
     const isReturning = view === 'returningBuyer' || view === 'returningSeller';
-    const mainStyle = 'flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: ' + (isDone ? '8px' : '0') + ' 16px 24px;';
+    const mainStyle = 'flex-grow: 1; display: flex; flex-direction: column; gap: 16px; padding: ' + (isDone ? '4px' : '0') + ' 16px 24px;';
 
     const C = {
       returningBuyer: {
@@ -277,7 +280,7 @@ class Component extends DCLogic {
       doneSeller: {
         chip: 'Cancelled',
         headline: 'mira.k cancelled this trade',
-        lead: 'Your 1.250000 XMR (about $412.50) is back at your refund address …7Qp2. Nothing was charged to you.',
+        lead: 'Your 1.250000 XMR (about $412.50) is back at your refund address …⁠7Qp2. Nothing was charged to you.',
         rows: [
           { k: 'mira.k cancelled', v: '14:20 UTC' },
           { k: 'Refund sent to you', v: '14:21 UTC' },

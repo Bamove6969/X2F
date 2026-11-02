@@ -55,7 +55,7 @@
       "y": 1444
     },
     "Desktop.dc.html": {
-      "h": 800,
+      "h": 958,
       "page": "all",
       "title": "Desktop \u00b7 buyer paying",
       "w": 1280,
@@ -147,7 +147,7 @@
       "y": 2888
     },
     "Review.dc.html": {
-      "h": 844,
+      "h": 1403,
       "is_interactive": true,
       "page": "all",
       "title": "4 \u00b7 Released, rate the trade",
@@ -165,7 +165,7 @@
       "y": 0
     },
     "SellerConfirm.dc.html": {
-      "h": 844,
+      "h": 1124,
       "is_interactive": true,
       "page": "all",
       "title": "3 \u00b7 Seller checks bank and releases",
@@ -174,7 +174,7 @@
       "y": 1444
     },
     "SellerRefund.dc.html": {
-      "h": 844,
+      "h": 1075,
       "page": "all",
       "title": "Alt \u00b7 buyer missed the deadline",
       "w": 390,
@@ -313,7 +313,7 @@
       "y": 7576
     },
     "TradeFund.dc.html": {
-      "h": 844,
+      "h": 1226,
       "is_interactive": true,
       "page": "all",
       "title": "1 \u00b7 Seller funds escrow",
@@ -874,7 +874,7 @@
       "x": 0,
       "y": 41200,
       "w": 390,
-      "h": 1000,
+      "h": 1187,
       "page": "all",
       "title": "I1 \u00b7 Ask to cancel (both must agree)",
       "is_interactive": true
@@ -883,7 +883,7 @@
       "x": 510,
       "y": 41200,
       "w": 390,
-      "h": 1340,
+      "h": 1389,
       "page": "all",
       "title": "I2 \u00b7 Buyer after I've paid",
       "is_interactive": true
@@ -1009,7 +1009,7 @@
       "x": 4290,
       "y": 47720,
       "w": 1280,
-      "h": 1040,
+      "h": 1234,
       "page": "all",
       "title": "I2 \u00b7 Buyer after I've paid (wide)",
       "is_interactive": true
@@ -1063,7 +1063,7 @@
       "x": 9740,
       "y": 34300,
       "w": 390,
-      "h": 892,
+      "h": 864,
       "page": "all",
       "title": "G6 \u00b7 Team member replies in chat",
       "is_interactive": true
@@ -1072,7 +1072,7 @@
       "x": 10280,
       "y": 34300,
       "w": 1280,
-      "h": 998,
+      "h": 1046,
       "page": "all",
       "title": "G6 \u00b7 Team member replies in chat (wide)",
       "is_interactive": true

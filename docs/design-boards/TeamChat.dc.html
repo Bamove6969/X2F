@@ -110,13 +110,13 @@ class Component extends DCLogic {
     const NAME = { vendor: 'satoshi_ghost', partner: 'mira.k' };
 
     const msgs = MSG.map((m) => {
-      if (m.k === 'sys') return { isSys: true, t: m.t, text: m.text };
+      if (m.k === 'sys') return { isSys: true, isNotice: false, isMsg: false, t: m.t, text: m.text };
       if (m.k === 'notice') return {
-        isNotice: true, t: m.t,
+        isSys: false, isNotice: true, isMsg: false, t: m.t,
         text: lead ? 'desk_ana replied for you.' : 'A team member from satoshi_ghost’s team is replying.',
         hasSub: lead, sub: 'mira.k sees “Team member”, not the name.'
       };
-      const base = { isMsg: true, t: m.t, text: m.text, metaStyle: meta, icon: false, avatar: false, whoStyle: 'color: var(--ink-muted);' };
+      const base = { isSys: false, isNotice: false, isMsg: true, t: m.t, text: m.text, metaStyle: meta, icon: false, avatar: false, whoStyle: 'color: var(--ink-muted);' };
       if (m.k === 'member') {
         // Partner: people icon + "Team member · satoshi_ghost's team", left. Lead: DA avatar + name, right (sent from your account).
         return Object.assign(base, {

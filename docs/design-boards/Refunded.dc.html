@@ -106,13 +106,13 @@ class Component extends DCLogic {
     const rootStyle = THEMES[theme] + 'position: relative; width: 390px; height: ' + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const C = {
       'buyer-cancelled': {
-        chip: 'Cancelled together',
-        headline: 'You both cancelled this trade',
-        lead: 'You asked to cancel and satoshi_ghost agreed. All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. Nothing was charged to you.',
+        chip: 'Cancelled',
+        headline: 'You cancelled this trade',
+        lead: 'All 1.250000 XMR in escrow (about $412.50) went back to satoshi_ghost. Nothing was charged to you.',
         rows: [
-          { k: 'You asked to cancel', v: '10:38 UTC' },
-          { k: 'satoshi_ghost agreed', v: '10:41 UTC' },
-          { k: 'Refund sent to satoshi_ghost', v: '10:42 UTC' }
+          { k: 'You cancelled', v: '10:38 UTC' },
+          { k: 'Refund sent to satoshi_ghost', v: '10:39 UTC' },
+          { k: 'Refund confirmed', v: '10:59 UTC' }
         ]
       },
       'time-ran-out': {

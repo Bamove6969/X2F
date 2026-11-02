@@ -210,7 +210,7 @@ class Component extends DCLogic {
       { id: 'tAccept', g: 'trades', name: 'Accept a new trade on an offer', desc: 'Every trade on your offers waits for someone to accept it. Trades are never accepted automatically.', sensitive: true },
       { id: 'tPaid', g: 'trades', name: 'Confirm payment received', desc: 'Mark that the buyer’s payment has arrived.', sensitive: true },
       { id: 'tRelease', g: 'trades', name: 'Release XMR to the buyer', desc: 'Send the XMR in escrow to the buyer to finish a trade.', sensitive: true },
-      { id: 'tCancel', g: 'trades', name: 'Ask to cancel / agree to cancel', desc: 'Ask the other trader to cancel, or agree when they ask.' },
+      { id: 'tCancel', g: 'trades', name: 'Cancel a trade', desc: 'End a trade before any payment is made. The escrow goes back to the seller.' },
       { id: 'tNudge', g: 'trades', name: 'Nudge the other trader', desc: 'Send a reminder when the other trader goes quiet.' },
       { id: 'kTake', g: 'taker', name: 'Take another trader’s offer', desc: 'Start a trade on someone else’s offer, as you.' },
       { id: 'kPaid', g: 'taker', name: 'Mark “I’ve paid”', desc: 'Tell the seller the payment is sent.' },
