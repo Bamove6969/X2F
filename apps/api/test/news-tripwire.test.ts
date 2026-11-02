@@ -18,7 +18,7 @@ describe('Task 28 stand-ins', () => {
     // appended to the activity log (no message text in the entry, just the id and the action).
     // Keep tools/news.ts only if the lead wants an offline path; otherwise delete it with news/cli.ts.
     // Fires on Task 4 (the staff API) only: `packages/staff` (Tasks 1-3) has no routes to add News to.
-    const staffLanded = /buildStaffApi/.test(read('apps/api/src/app.ts')) || has('apps/api/src/staff');
+    const staffLanded = /buildStaffApi/.test(read('apps/api/src/app.ts')) || has('apps/api/src/staff/app.ts');
     expect(staffLanded, 'Plan 4 staff API landed: add the site.control News routes (see this test)').toBe(false);
   });
 

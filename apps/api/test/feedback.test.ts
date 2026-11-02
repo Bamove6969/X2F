@@ -251,7 +251,7 @@ describe('Task 4 waits for the Plan 4 staff pieces', () => {
     // GET /staff/v1/feedback?before → { items: { mood, note, createdOn }[], counts } from listFeedback
     // and feedbackMoodCounts (and the feedback form rows from listFeedbackForm, Task 21), perm
     // `feedback.read`; the matrix test shows a moderator gets `forbidden`.
-    const staffApi = has('apps/api/src/staff') || /buildStaffApi/.test(read('apps/api/src/app.ts'));
+    const staffApi = has('apps/api/src/staff/app.ts') || /buildStaffApi/.test(read('apps/api/src/app.ts'));
     expect(staffApi, 'Plan 4 staff API landed: serve listFeedback on GET /staff/v1/feedback (see this test)').toBe(false);
   });
 
