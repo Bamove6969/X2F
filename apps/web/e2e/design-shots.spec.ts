@@ -18,7 +18,7 @@ import { attestationBytes, channelFor, chatIdentityProofValid, type Attestation 
 import type { FastifyInstance } from 'fastify';
 import sodium from 'libsodium-wrappers';
 import type { TradeView } from '../src/api/trade.js';
-import { BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardSellOffers } from '../src/fixtures/boards.js';
+import { BOARD_BUY_LIVE_USD, BOARD_BUY_OFFERS, BOARD_SELL_LIVE_USD, BOARD_SELL_OFFERS, boardBuyOffers, boardSellOffers } from '../src/fixtures/boards.js';
 import { PAY_NOW, PAY_SECURED, PAY_SECURING } from '../src/fixtures/payBoard.js';
 import { BOARD_BUY_QUOTE as B } from '../src/fixtures/quoteBoard.js';
 import { stubBrowseApi } from './browse-stub.js';
@@ -964,4 +964,52 @@ test('64-65 block a trader from the quote; Blocked traders', async ({ page }) =>
   await page.getByRole('link', { name: 'Blocked traders' }).click();
   await expect(page.locator('[data-part="blocked-list"] [data-username]')).toHaveCount(1);
   await shot(page, '65-blocked-traders');
+});
+
+// ---- 66-72 The offers screens on design v2 (batch 3): Main, BuyMain, SellOffers, BuyOffers, the quotes, PostOffer
+
+test('66, 68 browse, sell side: /sell, /sell/ZELLE', async ({ page }) => {
+  await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
+  await page.goto('/sell');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to get paid?');
+  await expect(page.locator('main a').first()).toBeVisible();
+  await shot(page, '66-main-sell', { fullPage: true });
+  await page.goto('/sell/ZELLE');
+  await expect(page.locator('article').first()).toBeVisible();
+  await shot(page, '68-selloffers', { fullPage: true });
+});
+
+test('67, 69 browse, buy side: /buy, /buy/ZELLE', async ({ page }) => {
+  await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_BUY_LIVE_USD }, offers: (c) => (c === 'USD' ? boardBuyOffers() : []), market: { USD: BOARD_BUY_OFFERS.marketCentsPerXmr } });
+  await page.goto('/buy');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('How do you want to pay?');
+  await expect(page.locator('main a').first()).toBeVisible();
+  await shot(page, '67-buymain', { fullPage: true });
+  await page.goto('/buy/ZELLE');
+  await expect(page.locator('article').first()).toBeVisible();
+  await shot(page, '69-buyoffers', { fullPage: true });
+});
+
+test('70-71 the buyer quote and the seller quote, a wallet picked', async ({ page }) => {
+  await blockApi(page);
+  await page.goto(`/buy/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
+  await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+  await expect(page.locator('section[aria-label="What you get"]')).toContainText('1.250000 XMR');
+  await shot(page, '70-buyquote', { fullPage: true });
+  await page.goto(`/sell/${B.method.id}/${B.offer.id}?currency=${B.currency}&amount=${B.amount}`);
+  await page.getByRole('radio', { name: /Cake Wallet/ }).check();
+  await expect(page.locator('section[aria-label="What you get"]')).toBeVisible();
+  await shot(page, '71-sellquote', { fullPage: true });
+});
+
+test('72 PostOffer', async ({ page }) => {
+  await page.route('**/v1/account/me', json({ displayName: 'nightowl_44', kind: 'trader', level: 'full', termsCurrent: true }));
+  await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
+  await page.route('**/v1/offers?*', json([]));
+  await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
+  await page.goto('/post?method=ZELLE');
+  await page.getByLabel('Smallest trade').fill('$50');
+  await page.getByLabel('Largest trade').fill('$2,000');
+  await expect(page.getByText("Your price follows the market")).toBeVisible();
+  await shot(page, '72-postoffer', { fullPage: true });
 });
