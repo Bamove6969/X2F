@@ -99,7 +99,13 @@ export type ApiErrorCode =
   | 'too-many-members'
   | 'member-cannot-sign'
   // Plan 4, Task 4: staff login hours (a login, or an open session, outside the window).
-  | 'outside-login-hours';
+  | 'outside-login-hours'
+  // Plan 4, Task 7: staff invites and the owner's protections.
+  | 'invite-invalid'
+  | 'security-key-required'
+  | 'two-factors-required'
+  | 'owner-protected'
+  | 'owner-needs-two-keys';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {

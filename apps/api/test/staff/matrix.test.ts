@@ -51,6 +51,7 @@ function expected(c: Caller, r: StaffRouteRow): { status: number; error: string 
   if (c === 'switched-off mod') return { status: 403, error: 'account-disabled' };
   if (c === 'out-of-hours mod') return { status: 401, error: 'outside-login-hours' };
   const role = ROLE_OF[c]!;
+  if (r.ownerOnly && role !== 'owner') return { status: 403, error: 'forbidden' };
   return can(role, r.perm as Parameters<typeof can>[1]) ? 'allowed' : { status: 403, error: 'forbidden' };
 }
 
