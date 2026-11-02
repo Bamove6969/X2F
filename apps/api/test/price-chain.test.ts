@@ -129,6 +129,13 @@ describe('createPriceChain', () => {
     });
   });
 
+  it('keeps its age check without a clock option: it then uses the real time (review M6)', () => {
+    const old = new Date(Date.now() - PRICE_FEED_DEFAULTS.maxAgeMs - 1_000);
+    const fresh = new Date();
+    expect(createPriceChain([fakeRoute('a', { EUR: rq('EUR', 27_000n, { at: old }) })]).quote('EUR')).toBeNull();
+    expect(createPriceChain([fakeRoute('a', { EUR: rq('EUR', 27_000n, { at: fresh }) })]).quote('EUR')).toMatchObject({ route: 'a' });
+  });
+
   it('coverage lists every supported currency with its route or null', () => {
     const chain = createPriceChain([fakeRoute('a', { USD: rq('USD', 30_000n), EUR: rq('EUR', 27_000n) }), fakeRoute('b', { GBP: rq('GBP', 23_000n) })], opts);
     const cov = chain.coverage();
@@ -201,6 +208,15 @@ describe('directRoute', () => {
 });
 
 describe('createMarketPrices with several routes', () => {
+  it('keeps the chain age check without a clock option (review M6): a feed on an old clock gives no price', async () => {
+    const c = clockAt(new Date('2020-01-01T00:00:00Z'));
+    const xmr = createPriceFeed([xmrStub('a', () => [q('USD', 30_000n)]), xmrStub('b', () => [q('USD', 30_000n)])], { ...PRICE_FEED_DEFAULTS, clock: c.clock });
+    const prices = createMarketPrices({ xmr, fx: createFxRates([], { clock: c.clock }) });
+    await prices.poll();
+    expect(xmr.quote('USD')).not.toBeNull();
+    expect(prices.quote('USD')).toBeNull();
+  });
+
   async function setup(routes?: Parameters<typeof createMarketPrices>[0]['routes'], maxGapBps?: number) {
     const c = clockAt(T0);
     let fxDown = false;
@@ -276,8 +292,10 @@ describe('config', () => {
     expect(parsePriceRoutes(undefined)).toEqual(['market']);
     expect(parsePriceRoutes(' ')).toEqual(['market']);
     expect(parsePriceRoutes('market,direct')).toEqual(['market', 'direct']);
-    expect(parsePriceRoutes('direct, market')).toEqual(['direct', 'market']);
-    for (const bad of ['nope', 'market,market', 'market,', 'MARKET']) expect(() => parsePriceRoutes(bad)).toThrow('PRICE_ROUTES');
+    // Review M1: the market route always comes first; direct only after it, never alone or ahead.
+    for (const bad of ['nope', 'market,market', 'market,', 'MARKET', 'direct', 'direct,market', 'direct, market']) {
+      expect(() => parsePriceRoutes(bad)).toThrow('PRICE_ROUTES');
+    }
     expect(loadConfig(ENV).priceRoutes).toEqual(['market']);
     expect(loadConfig({ ...ENV, PRICE_ROUTES: 'market,direct' }).priceRoutes).toEqual(['market', 'direct']);
     expect(() => loadConfig({ ...ENV, PRICE_ROUTES: 'x' })).toThrow('PRICE_ROUTES');
@@ -302,6 +320,26 @@ describe('config', () => {
     expect(parseFxSources('coinbase,bitpay,coingecko,erapi')).toEqual(['coinbase', 'bitpay', 'coingecko', 'erapi']);
     expect(loadConfig(ENV).priceSources).not.toContain('coinpaprika');
     expect(loadConfig(ENV).fxSources).toEqual(['coinbase', 'bitpay', 'coingecko']);
+  });
+
+  it('refuses a candidate placed ahead of an approved source, or with no approved one (review M1)', () => {
+    expect(parsePriceSources('kraken,bitfinex,coingecko,coinpaprika')).toEqual(['kraken', 'bitfinex', 'coingecko', 'coinpaprika']);
+    for (const bad of ['coinpaprika,kraken', 'kraken,coinpaprika,bitfinex', 'coinpaprika']) {
+      expect(() => parsePriceSources(bad)).toThrow('PRICE_SOURCES');
+    }
+    expect(parseFxSources('bitpay,erapi,frankfurter')).toEqual(['bitpay', 'erapi', 'frankfurter']);
+    for (const bad of ['erapi,coinbase,bitpay', 'coinbase,frankfurter,bitpay', 'erapi', 'frankfurter,erapi']) {
+      expect(() => parseFxSources(bad)).toThrow('FX_SOURCES');
+    }
+    expect(() => loadConfig({ ...ENV, FX_SOURCES: 'erapi,coinbase' })).toThrow('FX_SOURCES');
+    expect(() => loadConfig({ ...ENV, PRICE_SOURCES: 'coinpaprika,kraken' })).toThrow('PRICE_SOURCES');
+  });
+
+  it('refuses a PRICE_SOURCES set with no exchange (Kraken or Bitfinex) behind its median (review M1)', () => {
+    for (const bad of ['coingecko', 'coingecko,coinpaprika']) expect(() => parsePriceSources(bad)).toThrow('PRICE_SOURCES');
+    expect(parsePriceSources('bitfinex,coingecko')).toEqual(['bitfinex', 'coingecko']);
+    expect(parsePriceSources('kraken,coingecko,coinpaprika')).toEqual(['kraken', 'coingecko', 'coinpaprika']);
+    expect(() => loadConfig({ ...ENV, PRICE_SOURCES: 'coingecko' })).toThrow('PRICE_SOURCES');
   });
 });
 
@@ -378,6 +416,17 @@ describe('candidate exchange-rate sources', () => {
       await expect(one('frankfurter', { ...BODY, date: 'soon' }).source.fetchRates(signal())).rejects.toThrow();
       await expect(one('frankfurter', BODY, 500).source.fetchRates(signal())).rejects.toThrow();
     });
+    it('refuses a published date in the future (review M2): today is fine, tomorrow is not', async () => {
+      await expect(one('frankfurter', { ...BODY, date: '2026-11-02' }).source.fetchRates(signal())).resolves.toBeInstanceOf(Map);
+      await expect(one('frankfurter', { ...BODY, date: '2026-11-03' }).source.fetchRates(signal())).rejects.toThrow();
+      await expect(one('frankfurter', { ...BODY, date: '2099-01-01' }).source.fetchRates(signal())).rejects.toThrow();
+    });
+    it('refuses any amount but 1 (review M3: Frankfurter scales the rates by it)', async () => {
+      await expect(one('frankfurter', { ...BODY, amount: 1 }).source.fetchRates(signal())).resolves.toBeInstanceOf(Map);
+      for (const amount of [10, 0, '1', undefined]) {
+        await expect(one('frankfurter', { ...BODY, amount }).source.fetchRates(signal())).rejects.toThrow();
+      }
+    });
   });
 
   describe('erapi (open.er-api.com)', () => {
@@ -396,6 +445,12 @@ describe('candidate exchange-rate sources', () => {
       await expect(one('erapi', { ...BODY, result: 'error' }).source.fetchRates(signal())).rejects.toThrow();
       await expect(one('erapi', { ...BODY, base_code: 'EUR' }).source.fetchRates(signal())).rejects.toThrow();
       await expect(one('erapi', { ...BODY, time_last_update_unix: 'x' }).source.fetchRates(signal())).rejects.toThrow();
+    });
+    it('refuses a published time more than 5 min in the future (review M2)', async () => {
+      const t = Math.floor(now.getTime() / 1000);
+      await expect(one('erapi', { ...BODY, time_last_update_unix: t + 300 }).source.fetchRates(signal())).resolves.toBeInstanceOf(Map);
+      await expect(one('erapi', { ...BODY, time_last_update_unix: t + 301 }).source.fetchRates(signal())).rejects.toThrow();
+      await expect(one('erapi', { ...BODY, time_last_update_unix: 4_102_444_800 }).source.fetchRates(signal())).rejects.toThrow();
     });
   });
 });
