@@ -1,6 +1,7 @@
 import { createECDH, hkdfSync, timingSafeEqual } from 'node:crypto';
 import { constants, readFileSync, statSync } from 'node:fs';
 import { access, stat } from 'node:fs/promises';
+import { parsePriceRouteMaxGap, parsePriceRoutes, type PriceRouteName } from './price/chain.js';
 import { parseFxSources, type FxSourceName } from './price/fx.js';
 import { parsePriceSources, type PriceSourceName } from './price/sources.js';
 
@@ -23,6 +24,10 @@ export interface Config {
   priceSources: PriceSourceName[];
   /** `FX_SOURCES` (spec 11.6): the exchange-rate sources, in trust order; default Coinbase, BitPay, CoinGecko. */
   fxSources: FxSourceName[];
+  /** `PRICE_ROUTES` (2026-11-02): the ways a currency is priced, tried in order; default the market route only. */
+  priceRoutes: PriceRouteName[];
+  /** `PRICE_ROUTE_MAX_GAP_PCT` as basis points: routes further apart leave the currency unpriced; null (unset) = off. */
+  priceRouteMaxGapBps: number | null;
   /** Peppers mixed into password hashes (HMAC before Argon2id); `X2F_PASSWORD_PEPPERS`. */
   passwordPeppers: Keyring;
   /** Keys of the recovery-code HMAC; `X2F_RECOVERY_CODE_KEYS`. */
@@ -204,6 +209,8 @@ export function loadConfig(env: Env): Config {
 
   const priceSources = parsePriceSources(env.PRICE_SOURCES);
   const fxSources = parseFxSources(env.FX_SOURCES);
+  const priceRoutes = parsePriceRoutes(env.PRICE_ROUTES);
+  const priceRouteMaxGapBps = parsePriceRouteMaxGap(env.PRICE_ROUTE_MAX_GAP_PCT);
   const passwordPeppers = parseKeyring('X2F_PASSWORD_PEPPERS', ringSource(env, 'X2F_PASSWORD_PEPPERS'));
   const recoveryCodeKeys = parseKeyring('X2F_RECOVERY_CODE_KEYS', ringSource(env, 'X2F_RECOVERY_CODE_KEYS'));
   const totpKeys = parseKeyring('X2F_TOTP_KEYS', ringSource(env, 'X2F_TOTP_KEYS'));
@@ -231,7 +238,7 @@ export function loadConfig(env: Env): Config {
   return {
     siteName, origins, rpId, databaseUrl, leakedListPath, serverKey, attestationDir,
     moneroNetwork, termsVersion, pgpSigningKeyPath, pgpSigningFingerprint, passwordPeppers, recoveryCodeKeys, totpKeys,
-    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources,
+    loginNameKeys, legacySecrets, vapidPublic, vapidPrivate, priceSources, fxSources, priceRoutes, priceRouteMaxGapBps,
   };
 }
 

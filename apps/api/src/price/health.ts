@@ -37,6 +37,8 @@ export interface HealthSnapshot {
 
 const LABELS: Readonly<Record<string, string>> = {
   kraken: 'Kraken', bitfinex: 'Bitfinex', coingecko: 'CoinGecko', coinbase: 'Coinbase', bitpay: 'BitPay',
+  // Candidate sources, off unless named in config (2026-11-02 plan note).
+  coinpaprika: 'CoinPaprika', frankfurter: 'Frankfurter', erapi: 'ExchangeRate-API',
 };
 const label = (name: string): string => LABELS[name] ?? name;
 
