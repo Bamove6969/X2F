@@ -14,70 +14,106 @@ body{margin:0}
 a{color:inherit;text-decoration:none}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
 input::placeholder{color:var(--ink-muted)}
+button,a,label{transition:background-color 150ms ease-out,border-color 150ms ease-out,color 150ms ease-out}
+@media (prefers-reduced-motion: reduce){*{transition:none !important;animation:none !important}}
 </style>
 </helmet>
 <div style="{{rootStyle}}">
-  <header style="display: flex; flex-direction: column; gap: 12px; padding: 16px 16px 12px; border-bottom: 1px solid var(--surface-raised);">
-    <div style="display: flex; align-items: center; justify-content: space-between;">
+  <header style="display: flex; flex-direction: column; padding: 8px 16px 16px;">
+    <div style="display: flex; align-items: center; justify-content: space-between; height: 44px;">
       <div style="display: flex; align-items: center; gap: 4px;">
-        <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
-        <a href="News.dc.html" aria-label="Site news, 2 new" style="position: relative; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; color: var(--ink); font-size: 14px; text-decoration: none;">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
+        <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.02em;">X2F</span>
+        <a href="News.dc.html" aria-label="Site news, 2 new" style="position: relative; display: inline-flex; align-items: center; gap: 6px; height: 44px; padding: 0 8px; border-radius: 12px; color: var(--ink); font-size: 14px; text-decoration: none;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0112 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 003.4 0"/></svg>
           <span aria-hidden="true" style="position: absolute; top: 10px; left: 21px; width: 8px; height: 8px; border-radius: 999px; background: var(--escrow);"></span>
           <span>Site news</span>
         </a>
       </div>
       <div role="tablist" aria-label="Buy or sell" style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 999px; background: var(--surface);">
-        <button type="button" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 36px; padding: 0 18px; border-radius: 999px; background: transparent; color: var(--ink-muted); font-size: 15px; font-weight: 600;">Buy</span></button>
+        <button type="button" role="tab" aria-selected="false" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 36px; padding: 0 18px; border-radius: 999px; border: 2px solid transparent; background: transparent; color: var(--ink-muted); font-size: 15px; font-weight: 600;">Buy</span></button>
         <button type="button" role="tab" aria-selected="true" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -4px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; width: 100%; height: 36px; padding: 0 18px; border-radius: 999px; border: 2px solid var(--ink); background: var(--surface-raised); color: var(--ink); font-size: 15px; font-weight: 600;">Sell</span></button>
       </div>
     </div>
-    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">How do you want to get paid?</h1>
-    <div style="display: flex; gap: 8px;">
-      <label for="cur" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Currency</label>
-      <select id="cur" style="height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px;">
-        <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>BRL</option><option>INR</option>
-      </select>
-      <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Search payment methods</label>
-      <input id="q" type="search" value="{{query}}" onChange="{{onQuery}}" placeholder="Search {{total}} payment methods" style="flex-grow: 1; min-width: 0; height: 44px; padding: 0 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
-    </div>
-    <div role="radiogroup" aria-label="Sort" style="display: flex; gap: 8px; align-items: center;">
-      <span style="font-size: 13px; color: var(--ink-muted);">Sort</span>
-      <sc-for list="{{sorts}}" as="s" hint-placeholder-count="3">
-        <button type="button" role="radio" aria-checked="{{s.on}}" onClick="{{s.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -6px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{s.style}}">{{s.label}}</span></button>
-      </sc-for>
-    </div>
+    <h1 style="margin: 12px 0 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 28px; line-height: 32px; font-weight: 700; letter-spacing: -0.01em;">How do you want to get paid?</h1>
   </header>
 
-  <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 8px 16px 16px; display: flex; flex-direction: column; gap: 16px;">
-    <sc-for list="{{sections}}" as="sec" hint-placeholder-count="3">
-      <section style="display: flex; flex-direction: column;">
-        <h2 style="margin: 8px 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">{{sec.title}}</h2>
-        <sc-for list="{{sec.rows}}" as="m" hint-placeholder-count="4">
-          <a href="SellOffers.dc.html" style="display: flex; align-items: center; gap: 12px; min-height: 60px; padding: 8px 0; border-bottom: 1px solid var(--surface-raised);">
-            <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
-              <span style="font-size: 16px; font-weight: 600;">{{m.name}}</span>
-              <span style="{{m.subStyle}}">{{m.sub}}</span>
-            </span>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="color: var(--ink-muted); flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg>
-          </a>
+  <main style="flex-grow: 1; min-height: 0; overflow-y: auto; padding: 0 16px 16px; display: flex; flex-direction: column; gap: 16px;">
+    <section aria-labelledby="mkt-label" style="display: flex; flex-direction: column; gap: 12px; padding: 20px; border-radius: 16px; background: linear-gradient(180deg, color-mix(in srgb, var(--ink-muted) 14%, var(--surface)) 0%, var(--surface) 140px); border: 1px solid color-mix(in srgb, var(--ink-muted) 35%, transparent);">
+      <div style="display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <span id="mkt-label" style="font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Market price</span>
+        <label for="cur" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Currency</label>
+        <select id="cur" style="height: 44px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600;">
+          <option>USD</option><option>EUR</option><option>GBP</option><option>CAD</option><option>BRL</option><option>INR</option>
+        </select>
+      </div>
+      <span style="display: inline-flex; align-items: baseline; gap: 8px; margin-top: -8px;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 40px; line-height: 44px; font-weight: 500; letter-spacing: -0.02em;">$329.90</span><span style="font-size: 18px; line-height: 24px; font-weight: 600; color: var(--ink-muted);">/ XMR</span></span>
+      <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Offers set their price from this, plus or minus their margin.</p>
+    </section>
+
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+      <label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden;">Search payment methods</label>
+      <span style="position: relative; display: block;">
+        <svg style="position: absolute; left: 14px; top: 14px; color: var(--ink-muted);" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
+        <input id="q" type="search" value="{{query}}" onChange="{{onQuery}}" placeholder="Search {{total}} payment methods" style="box-sizing: border-box; width: 100%; height: 48px; padding: 0 14px 0 44px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface-raised); color: var(--ink); font-family: inherit; font-size: 16px;">
+      </span>
+      <div role="radiogroup" aria-label="Sort" style="display: flex; gap: 8px; align-items: center;">
+        <span style="font-size: 13px; line-height: 16px; color: var(--ink-muted);">Sort</span>
+        <sc-for list="{{sorts}}" as="s" hint-placeholder-count="3">
+          <button type="button" role="radio" aria-checked="{{s.on}}" onClick="{{s.pick}}" style="display: inline-flex; align-items: center; justify-content: center; height: 44px; margin: -6px 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer;"><span style="{{s.style}}">{{s.label}}</span></button>
         </sc-for>
+      </div>
+    </div>
+
+    <sc-for list="{{sections}}" as="sec" hint-placeholder-count="2">
+      <section style="display: flex; flex-direction: column; gap: 12px;">
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 8px; padding-top: 4px;">
+          <h2 style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;">{{sec.title}}</h2>
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 13px; line-height: 16px; color: var(--ink-muted);">{{sec.count}}</span>
+        </div>
+        <div style="display: flex; flex-direction: column; border-radius: 16px; background: var(--surface); overflow: hidden;">
+          <sc-for list="{{sec.rows}}" as="m" hint-placeholder-count="4">
+            <a href="SellOffers.dc.html" style="{{m.rowStyle}}">
+              <span style="{{m.tileStyle}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="{{m.icon}}"/></svg></span>
+              <span style="display: flex; flex-direction: column; gap: 2px; flex-grow: 1; min-width: 0;">
+                <span style="font-size: 16px; line-height: 22px; font-weight: 600;">{{m.name}}</span>
+                <sc-if value="{{m.live}}" hint-placeholder-val="{{true}}">
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; color: var(--ink);">{{m.n}}</span>{{m.mid}}</span>
+                </sc-if>
+                <sc-if value="{{m.none}}" hint-placeholder-val="{{false}}">
+                  <span style="font-size: 13px; line-height: 18px; color: var(--ink-muted);">{{m.noneText}}</span>
+                </sc-if>
+              </span>
+              <sc-if value="{{m.live}}" hint-placeholder-val="{{true}}">
+                <span style="display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: 2px;">
+                  <span style="font-size: 12px; line-height: 16px; color: var(--ink-muted);">{{m.pre}}</span>
+                  <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 15px; line-height: 20px; font-weight: 500;">{{m.rate}}</span>
+                </span>
+              </sc-if>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--ink-muted); flex-shrink: 0;"><path d="M9 6l6 6-6 6"/></svg>
+            </a>
+          </sc-for>
+        </div>
       </section>
     </sc-for>
     <sc-if value="{{empty}}" hint-placeholder-val="{{false}}">
-      <p style="margin: 24px 0; font-size: 15px; line-height: 22px; color: var(--ink-muted); text-align: center;">No method called "{{query}}" yet. You can post an offer with a custom payment method.</p>
+      <section aria-labelledby="empty-title" style="display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 48px 24px; text-align: center;">
+        <span style="display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--surface-raised); color: var(--ink);"><svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></span>
+        <h2 id="empty-title" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 700; letter-spacing: -0.01em; overflow-wrap: anywhere;">No method called "{{query}}" yet</h2>
+        <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You can post an offer with a custom payment method.</p>
+        <a href="PostOffer.dc.html" style="display: inline-flex; align-items: center; justify-content: center; height: 48px; margin-top: 4px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); color: var(--ink); font-size: 16px; font-weight: 600; text-decoration: none;">Post an offer</a>
+      </section>
     </sc-if>
-    <p style="margin: 0; font-size: 12px; color: var(--ink-muted);">Buyer counts and rates are examples.</p>
+    <p style="margin: 0; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Buyer counts and rates are examples.</p>
   </main>
-  <nav aria-label="Main" style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--surface-raised); background: var(--ground);">
-    <a href="Main.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; background: var(--surface-raised); box-shadow: inset 0 2px 0 var(--ink); color: var(--ink); font-size: 12px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/></svg>Trade</a>
-    <a href="PostOffer.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
-    <a href="Wallet.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
-    <a href="Profile.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
+  <nav aria-label="Main" style="display: grid; flex-shrink: 0; grid-template-columns: repeat(4, minmax(0, 1fr)); border-top: 1px solid var(--surface-raised); background: var(--ground);">
+    <a href="Main.dc.html" aria-current="page" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; background: var(--surface-raised); box-shadow: inset 0 2px 0 var(--ink); color: var(--ink); font-size: 12px; font-weight: 600;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 7h13l-3-3"/><path d="M17 17H4l3 3"/></svg>Trade</a>
+    <a href="PostOffer.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg>Post offer</a>
+    <a href="Wallet.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M16 12h2"/></svg>Wallets</a>
+    <a href="Profile.dc.html" style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; height: 60px; color: var(--ink-muted); font-size: 12px;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c1-4 4-6 8-6s7 2 8 6"/></svg>Profile</a>
   </nav>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":844}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1180}}'>
 class Component extends DCLogic {
   constructor(props) {
     super(props);
@@ -85,11 +121,11 @@ class Component extends DCLogic {
   }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "width: 390px; height: 844px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const rootStyle = THEMES[theme] + "position: relative; overflow: hidden; width: 390px; height: 1180px; box-sizing: border-box; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     // [name, group, example USD buyers, example best USD rate]. Names: Haveno's method list (data/payment-methods.json).
     const data = [
       ["Uphold", "Payment apps", 0, 0.00],
@@ -172,11 +208,27 @@ class Component extends DCLogic {
       ["Kaspi", "Payment apps", 0, 0.00],
       ["Custom method", "Other", 0, 0.00]
     ];
+    // One stroke icon per method group (20px, stroke 1.75) for the row's icon tile.
+    const ICONS = {
+      'Payment apps': 'M8 3h8a1 1 0 011 1v16a1 1 0 01-1 1H8a1 1 0 01-1-1V4a1 1 0 011-1zM11 18h2',
+      'Bank transfers': 'M3 10l9-6 9 6M5 10v8M9.5 10v8M14.5 10v8M19 10v8M3 20h18',
+      'Cash & money orders': 'M5 6h14a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2zM12 9.5a2.5 2.5 0 110 5 2.5 2.5 0 010-5z',
+      'Gift cards & vouchers': 'M4 9h16v11H4zM12 9v11M12 9C10 5 6 5 6 7.5S9 9 12 9zM12 9c2-4 6-4 6-1.5S15 9 12 9z',
+      'Other': 'M5 12a1 1 0 102 0 1 1 0 10-2 0M11 12a1 1 0 102 0 1 1 0 10-2 0M17 12a1 1 0 102 0 1 1 0 10-2 0'
+    };
     const { sort, query } = this.state;
-    const toRow = (d) => ({
+    const toRow = (d, i) => ({
       name: d[0],
-      sub: d[2] > 0 ? d[2] + (d[2] === 1 ? ' buyer' : ' buyers') + ' paying in USD · up to $' + d[3].toFixed(2) : 'No USD buyers right now · post an offer',
-      subStyle: 'font-size: 13px; line-height: 18px; color: var(--ink-muted);'
+      live: d[2] > 0,
+      none: d[2] === 0,
+      n: String(d[2]),
+      mid: (d[2] === 1 ? ' buyer' : ' buyers') + ' paying in USD',
+      pre: 'up to',
+      rate: '$' + d[3].toFixed(2),
+      noneText: 'No USD buyers right now · post an offer',
+      icon: ICONS[d[1]] || ICONS.Other,
+      tileStyle: 'display: flex; flex-shrink: 0; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: var(--surface-raised); color: ' + (d[2] > 0 ? 'var(--ink);' : 'var(--ink-muted);'),
+      rowStyle: 'display: flex; align-items: center; gap: 14px; min-height: 64px; padding: 12px 16px; box-sizing: border-box; color: var(--ink); text-decoration: none;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
     });
     const cmp = {
       buyers: (a, b) => b[2] - a[2] || a[0].localeCompare(b[0]),
@@ -187,14 +239,14 @@ class Component extends DCLogic {
     let sections;
     if (q) {
       const hits = data.filter((d) => d[0].toLowerCase().indexOf(q) >= 0).sort(cmp);
-      sections = hits.length ? [{ title: hits.length + (hits.length === 1 ? ' match' : ' matches'), rows: hits.map(toRow) }] : [];
+      sections = hits.length ? [{ title: hits.length + (hits.length === 1 ? ' match' : ' matches'), count: '', rows: hits.map(toRow) }] : [];
     } else {
       // Top section comes only from live offers in the chosen currency, never from our own guesses.
       const live = data.filter((d) => d[2] > 0).sort(cmp);
       const rest = data.filter((d) => d[2] === 0).sort((a, b) => a[0].localeCompare(b[0]));
       sections = [
-        { title: 'Buyers paying in USD', rows: live.map(toRow) },
-        { title: 'All payment methods', rows: rest.map(toRow) }
+        { title: 'Buyers paying in USD', count: String(live.length), rows: live.map(toRow) },
+        { title: 'All payment methods', count: String(rest.length), rows: rest.map(toRow) }
       ];
     }
     const sortDefs = [['buyers', 'Most buyers'], ['rate', 'Best rate'], ['az', 'A–Z']];
