@@ -784,7 +784,7 @@
       "x": 1950,
       "y": 33100,
       "w": 390,
-      "h": 2540,
+      "h": 2690,
       "page": "all",
       "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
@@ -818,7 +818,7 @@
     },
     "SignupSecurity.dc.html": {
       "x": 0,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 3060,
       "page": "all",
@@ -827,7 +827,7 @@
     },
     "RecoveryCode.dc.html": {
       "x": 510,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 1360,
       "page": "all",
@@ -836,7 +836,7 @@
     },
     "RecoveryHold.dc.html": {
       "x": 1020,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 1700,
       "page": "all",
@@ -845,7 +845,7 @@
     },
     "BlockQueued.dc.html": {
       "x": 1530,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 1540,
       "page": "all",
@@ -854,7 +854,7 @@
     },
     "Compromised.dc.html": {
       "x": 2040,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 1680,
       "page": "all",
@@ -863,7 +863,7 @@
     },
     "TeamRefusal.dc.html": {
       "x": 2550,
-      "y": 35700,
+      "y": 36100,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -872,7 +872,7 @@
     },
     "CancelRequest.dc.html": {
       "x": 0,
-      "y": 38800,
+      "y": 39200,
       "w": 390,
       "h": 1000,
       "page": "all",
@@ -881,7 +881,7 @@
     },
     "BuyerPaidWaiting.dc.html": {
       "x": 510,
-      "y": 38800,
+      "y": 39200,
       "w": 390,
       "h": 1340,
       "page": "all",
@@ -890,7 +890,7 @@
     },
     "InviteInvalid.dc.html": {
       "x": 1020,
-      "y": 38800,
+      "y": 39200,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -899,7 +899,7 @@
     },
     "Fold-MyOffers.dc.html": {
       "x": 1530,
-      "y": 38800,
+      "y": 39200,
       "w": 840,
       "h": 1000,
       "page": "all",
@@ -908,7 +908,7 @@
     },
     "HoldChange.dc.html": {
       "x": 0,
-      "y": 40640,
+      "y": 41040,
       "w": 390,
       "h": 1220,
       "page": "all",
@@ -917,7 +917,7 @@
     },
     "TradeTechIssue.dc.html": {
       "x": 510,
-      "y": 40640,
+      "y": 41040,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -926,7 +926,7 @@
     },
     "MemberApproval.dc.html": {
       "x": 1020,
-      "y": 40640,
+      "y": 41040,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -935,7 +935,7 @@
     },
     "SignupSecurity-Wide.dc.html": {
       "x": 0,
-      "y": 42360,
+      "y": 42760,
       "w": 1280,
       "h": 1720,
       "page": "all",
@@ -944,7 +944,7 @@
     },
     "RecoveryCode-Wide.dc.html": {
       "x": 1430,
-      "y": 42360,
+      "y": 42760,
       "w": 1280,
       "h": 980,
       "page": "all",
@@ -953,7 +953,7 @@
     },
     "RecoveryHold-Wide.dc.html": {
       "x": 2860,
-      "y": 42360,
+      "y": 42760,
       "w": 1280,
       "h": 957,
       "page": "all",
@@ -962,7 +962,7 @@
     },
     "HoldChange-Wide.dc.html": {
       "x": 4290,
-      "y": 42360,
+      "y": 42760,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -971,7 +971,7 @@
     },
     "Compromised-Wide.dc.html": {
       "x": 5720,
-      "y": 42360,
+      "y": 42760,
       "w": 1280,
       "h": 1050,
       "page": "all",
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 44120,
+      "y": 44520,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 44120,
+      "y": 44520,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -998,7 +998,7 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 44120,
+      "y": 44520,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1007,7 +1007,7 @@
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 44120,
+      "y": 44520,
       "w": 1280,
       "h": 1040,
       "page": "all",
@@ -1016,7 +1016,7 @@
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 44120,
+      "y": 44520,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1184,7 +1184,7 @@
     },
     "sec1101": {
       "x": 0,
-      "y": 35400,
+      "y": 35800,
       "text": "Login strength, recovery and compromised account \u00b7 1 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1192,7 +1192,7 @@
     },
     "gaps1101": {
       "x": 0,
-      "y": 38500,
+      "y": 38900,
       "text": "Gaps from the 1 Nov screenshot review",
       "kind": "title1",
       "maxW": 7480,
@@ -1200,7 +1200,7 @@
     },
     "hold1102": {
       "x": 0,
-      "y": 40340,
+      "y": 40740,
       "text": "Owner's hold model \u00b7 2 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1208,7 +1208,7 @@
     },
     "wide1102": {
       "x": 0,
-      "y": 42060,
+      "y": 42460,
       "text": "Desktop versions of the 1\u20132 Nov screens",
       "kind": "title1",
       "maxW": 7480,

@@ -35,8 +35,14 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{meterNote}}</p>
       </div>
 
-      <ul aria-label="Logged-in devices" style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
-        <sc-for list="{{devices}}" as="d" hint-placeholder-count="3">
+      <sc-if value="{{hasDevNote}}" hint-placeholder-val="{{false}}">
+        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{devNote}}</span></p>
+      </sc-if>
+
+      <div style="padding: 16px 16px 0; border-radius: 12px; background: var(--surface);">
+        <h3 id="dv-mine-h" style="margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;">Your devices</h3>
+        <ul aria-labelledby="dv-mine-h" style="margin: 0; padding: 0; list-style: none;">
+        <sc-for list="{{devices}}" as="d" hint-placeholder-count="2">
           <li style="{{d.rowStyle}}">
             <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);">
               <sc-if value="{{d.isPhone}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></sc-if>
@@ -52,23 +58,45 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
             </sc-if>
           </li>
         </sc-for>
-      </ul>
-
-      <sc-if value="{{hasDevNote}}" hint-placeholder-val="{{false}}">
-        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{devNote}}</span></p>
-      </sc-if>
-
-      <button type="button" disabled="{{noOthers}}" onClick="{{askAll}}" style="{{allStyle}}">Log out all other devices</button>
-
-      <aside aria-label="Open for the owner: team members' sessions" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
-        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
-        <span style="font-weight: 600;">Do members&#39; sessions count toward the 3?</span>
-        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
-          <li>No: they don&#39;t use up your slots</li>
-          <li>Yes: they count like your own devices</li>
         </ul>
-        <span style="color: var(--ink-muted);">Also not decided: can you log out a member&#39;s session here, and does &quot;Log out all other devices&quot; include members? Shown: yes, and no.</span>
-        <span style="color: var(--ink-muted);">Preview with the members tweak. Showing: {{membersName}}</span>
+        <button type="button" disabled="{{noOthers}}" onClick="{{askAll}}" style="{{allStyle}}">Log out all other devices</button>
+      </div>
+
+      <div style="display: flex; flex-direction: column; gap: 4px; padding: 16px 16px 0; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--team) 45%, transparent); background: color-mix(in srgb, var(--team) 10%, var(--surface));">
+        <h3 id="dv-team-h" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 16px; line-height: 24px; font-weight: 600;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true" style="flex-shrink: 0; color: var(--team);"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c0-3.6 2.9-6 6.5-6s6.5 2.4 6.5 6"/><circle cx="17" cy="9" r="2.5"/><path d="M17 14c2.8 0 4.5 1.9 4.5 4.5"/></svg>Team members logged in</h3>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">These are your team members&#39; logins, not yours.</p>
+        <p style="margin: 0; font-size: 13px; line-height: 18px; color: var(--ink-muted);">Team members&#39; logins don&#39;t count toward your <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">3</span> devices.</p>
+        <sc-if value="{{hasTeam}}" hint-placeholder-val="{{true}}">
+          <ul aria-labelledby="dv-team-h" style="margin: 0; padding: 0; list-style: none;">
+            <sc-for list="{{team}}" as="t" hint-placeholder-count="1">
+              <li style="{{t.rowStyle}}">
+                <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--team); color: var(--ground); font-size: 14px; line-height: 16px; font-weight: 600; letter-spacing: 0.02em;">{{t.initials}}</span>
+                <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+                  <span style="display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;">
+                    <span style="font-size: 16px; line-height: 24px; font-weight: 700;">{{t.member}}</span>
+                    <span style="padding: 1px 8px; border-radius: 999px; border: 1px solid var(--team); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--team);">Team member</span>
+                  </span>
+                  <span style="font-size: 14px; line-height: 20px; color: var(--ink);">{{t.name}}</span>
+                  <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{t.agoNum}}</span>{{t.agoPost}}</span>
+                </span>
+                <button type="button" aria-label="{{t.outLabel}}" onClick="{{t.askOut}}" style="min-width: 44px; height: 44px; flex-shrink: 0; margin-right: -8px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Log out</button>
+              </li>
+            </sc-for>
+          </ul>
+        </sc-if>
+        <sc-if value="{{noTeam}}" hint-placeholder-val="{{false}}">
+          <p style="margin: 0; padding: 12px 0 16px; font-size: 15px; line-height: 22px; color: var(--ink-muted);">No team members are logged in.</p>
+        </sc-if>
+      </div>
+
+      <aside aria-label="Open for the owner: logging out team members" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">Can you log out a member&#39;s session here, and does &quot;Log out all other devices&quot; include members?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>Log out a member here: yes or no</li>
+          <li>&quot;Log out all other devices&quot; includes members: yes or no</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Shown: yes, and no.</span>
       </aside>
     </section>
 
@@ -186,39 +214,47 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"members":{"editor":"enum","options":["dont-count","count"],"default":"dont-count"},"$preview":{"width":390,"height":2540}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"accountType":{"editor":"enum","options":["non-vendor","vendor"],"default":"non-vendor"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h","24h"],"default":"not-set"},"$preview":{"width":390,"height":2690}}'>
 class Component extends DCLogic {
   constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '' }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;--team:#7aa2ff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;--team:#2f5bd3;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const H = 2540;
+    const H = 2690;
     const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
 
-    // Owner: up to 3 devices; a team member's session is listed but (OPEN) may not count.
-    const membersCount = this.props.members === 'count';
+    // Owner: up to 3 devices. Decided 2 Nov: team members' sessions don't count toward the 3.
     const ALL = [
       { id: 'linux', name: 'Firefox on Linux', self: true, phone: false, ago: null },
       { id: 'android', name: 'Chrome on Android', self: false, phone: true, ago: ['2', ' h ago'] },
-      { id: 'ana', name: 'Safari on macOS', self: false, phone: false, member: 'desk_ana', ago: ['25', ' min ago'] }
+      { id: 'ana', name: 'Safari on macOS', self: false, phone: false, member: 'desk_ana', initials: 'DA', ago:['25', ' min ago'] }
     ];
     const live = ALL.filter((d) => s.gone.indexOf(d.id) < 0);
     const mine = live.filter((d) => !d.member);
     const others = mine.filter((d) => !d.self);
-    const used = mine.length + (membersCount ? live.filter((d) => d.member).length : 0);
+    const used = mine.length;
     const names = (ds) => ds.map((d) => d.name).join(' and ');
 
-    const devices = live.map((d, i) => ({
+    // Lead's own devices and team members' logins are shown as two separate cards (owner, 2 Nov).
+    const devices = mine.map((d, i) => ({
       name: d.name, isPhone: d.phone, isComputer: !d.phone,
-      hasTag: d.self || !!d.member, tag: d.self ? 'This device' : d.member + ' · team member',
+      hasTag: d.self, tag: 'This device',
       agoPre: d.ago ? '' : 'Active now', agoNum: d.ago ? d.ago[0] : '', agoPost: d.ago ? d.ago[1] : '',
-      canOut: !d.self, outLabel: d.member ? 'Log out ' + d.member + ' on ' + d.name : 'Log out ' + d.name,
+      canOut: !d.self, outLabel: 'Log out ' + d.name,
       askOut: () => this.setState({ ask: d.id }),
       rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 14px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
+    }));
+    const teamLive = live.filter((d) => d.member);
+    const team = teamLive.map((d, i) => ({
+      member: d.member, name: d.name, initials: d.initials,
+      agoNum: d.ago[0], agoPost: d.ago[1],
+      outLabel: 'Log out ' + d.member + ' on ' + d.name,
+      askOut: () => this.setState({ ask: d.id }),
+      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 14px 0;' + (i > 0 ? ' border-top: 1px solid color-mix(in srgb, var(--team) 25%, transparent);' : '')
     }));
     const meter = [0, 1, 2].map((i) => ({ style: 'display: block; flex: 1; height: 8px; border-radius: 999px; box-sizing: border-box; ' + (i < used ? 'background: var(--ink);' : 'border: 1px solid var(--line);') }));
     let meterNote = used >= 3 ? 'You’re at the limit. To let a new device in, you’ll pick one to log out.' : (3 - used === 1 ? 'One more device can log in.' : (3 - used) + ' more devices can log in.');
@@ -267,11 +303,10 @@ class Component extends DCLogic {
     }
 
     return {
-      rootStyle, devices, meter, meterNote, used: String(used), one,
-      membersName: membersCount ? 'Yes, they count' : 'No, they don’t count',
+      rootStyle, devices, team, hasTeam: team.length > 0, noTeam: team.length === 0, meter, meterNote, used: String(used), one,
       hasDevNote: s.devNote !== '', devNote: s.devNote,
       noOthers: others.length === 0,
-      allStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (others.length ? 'border: 1px solid var(--line); color: var(--ink); cursor: pointer;' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
+      allStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; margin: 4px 0 16px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (others.length ? 'border: 1px solid var(--line); color: var(--ink); cursor: pointer;' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
       askAll: () => { if (others.length) this.setState({ ask: 'all' }); },
       confirmingOne: s.confirmOne && !s.single,
       oneWarn: 'Turning this on logs out your other ' + others.length + (others.length === 1 ? ' device' : ' devices') + ' now.',

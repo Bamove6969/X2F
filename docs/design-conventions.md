@@ -71,3 +71,8 @@ Existing boards to match (read 2–3 before writing): same folder, project/*.dc.
 - **Foldables:** see Fold-Notes.dc.html.
   - Unfolded screens are two panes of 412 + 16 + 412, with the gutter centred on the hinge.
   - Nothing crosses the hinge, and dialogs stay inside one pane.
+- **`--team` token** (team members), in every THEMES object that shows members:
+  - night: `#7aa2ff`
+  - day: `#2f5bd3`
+  - Use it wherever a team member appears: session rows, "replied by a team member" in chat, members on Team.
+  - Members' sessions go in their own card. That card has a 10% `--team` tint, a 45% `--team` border, and initials avatars on `--team`.

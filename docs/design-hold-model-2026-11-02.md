@@ -70,3 +70,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - The session length is asked on every login, from a drop-down with nothing pre-selected.
 - **Ban list:** usernames, PGP key fingerprints (including subkeys) and secure Jabber accounts. A banned one can never be used again.
 - **Not tracked:** Monero addresses, payment details, IP addresses and device fingerprints.
+- Team members' sessions do not count toward the lead's 3 devices (owner, 2 Nov).
