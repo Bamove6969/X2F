@@ -470,6 +470,9 @@ const PHONES: Record<string, string[]> = {
   'Cyrillic and Greek look-alikes': ['06 12 3Ο 56 78', '06 12 3О 56 78', '06 12 З4 56 78'],
 };
 
+/** Phones from the table above that are also a thousands-grouped number of 9 digits (owner item 29). */
+const GROUPED_PHONES_PASS_IN_NOTES = ['612 345 678', '912 345 678'];
+
 describe('phone formats per country', () => {
   for (const [country, phones] of Object.entries(PHONES)) {
     it(`${country}: masked in OCR words, refused in notes, dates and amounts nearby kept`, () => {
@@ -478,11 +481,20 @@ describe('phone formats per country', () => {
         expect(masked(ocr(`Tel ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
         expect(masked(ocr(`412.50 on 16.10.26 to ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
         expect(masked(ocr(`Oct 16, 2026 14:32 ${p}`)), p).toEqual(words.map((t) => [t, 'phone']));
-        expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
-        expect(detectSensitiveText(`Paid on 16.10.26 at 14:32, call me ${p}`), p).toEqual(['phone']);
+        // Owner item 29 (2026-11-02): notes allow a number in 3-digit thousands groups of up to 9
+        // digits, so a bare 9-digit phone written that way passes in notes (still masked in images).
+        // OWNER-Q (open, via the lead): accept that, given item 36 (notes refuse all personal details)?
+        const expected = GROUPED_PHONES_PASS_IN_NOTES.includes(p) ? [] : ['phone'];
+        expect(detectSensitiveText(`call me ${p}`), p).toEqual(expected);
+        expect(detectSensitiveText(`Paid on 16.10.26 at 14:32, call me ${p}`), p).toEqual(expected);
       }
     });
   }
+
+  it('item 29: only the bare 9-digit 3-digit-grouped phones pass in notes; any prefix still refuses', () => {
+    expect(GROUPED_PHONES_PASS_IN_NOTES.filter((p) => !Object.values(PHONES).flat().includes(p))).toEqual([]);
+    for (const p of ['+34 612 345 678', '+351 912 345 678', '(612) 345 678', '0612 345 678']) expect(detectSensitiveText(`call me ${p}`), p).toEqual(['phone']);
+  });
 });
 
 describe('review round 3 (2026-10-30)', () => {
