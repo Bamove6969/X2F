@@ -303,7 +303,7 @@ describe('the My offers screen', () => {
     expect(pop.getAttribute('data-from')).toBe('trading-hold');
     expect(document.querySelector('[role="dialog"]')!.textContent).toContain("You can't turn offers on during a trading hold");
     expect(CANT_DO_TITLE.myOffersHold).toBe("You can't turn offers on during a trading hold");
-    expect(pop.querySelector('[role="alert"]')!.textContent).toBe('They stay paused until the hold ends. Trades already started carry on.');
+    expect(pop.querySelector('[data-part="cant-do-message"]')!.textContent).toBe('They stay paused until the hold ends. Trades already started carry on.');
     expect(pop.querySelector('[data-part="cant-do-items"]')).toBeNull();
     expect(pop.querySelector('a')!.getAttribute('href')).toBe('/feedback?from=trading-hold');
     await click([...pop.querySelectorAll('button')].find((b) => b.textContent === 'OK')!);
@@ -335,7 +335,7 @@ describe('the My offers screen', () => {
     await click(post);
     const pop = document.querySelector('[data-part="cant-do-that"]')!;
     expect(pop.getAttribute('data-from')).toBe('trading-hold');
-    expect(pop.querySelector('[role="alert"]')!.textContent).toBe(postCantDoText('trading-hold'));
+    expect(pop.querySelector('[data-part="cant-do-message"]')!.textContent).toBe(postCantDoText('trading-hold'));
     expect(document.querySelector('[role="dialog"]')!.textContent).toContain(CANT_DO_TITLE.post);
   });
 

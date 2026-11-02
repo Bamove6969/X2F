@@ -262,7 +262,8 @@ test('a held user sees the API refusal as text', async ({ page }) => {
   await page.goto('/post?method=ZELLE');
   await fillBoard(page);
   await f(page).post.click();
-  await expect(page.getByRole('alert')).toHaveText(/trading hold/);
+  // CantDoThat: the message is the dialog's description (C11 review N1, not also an alert).
+  await expect(page.getByRole('dialog')).toHaveAccessibleDescription(/trading hold/);
   await expect(page).toHaveURL(/\/post/);
 });
 
