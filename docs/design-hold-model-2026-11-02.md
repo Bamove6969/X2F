@@ -52,3 +52,7 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - If the team lead has no logged-in device to approve a new login (for example the phone was lost or broken, the battery is dead, or every session timed out), they can log in with a strong method instead: PGP, a security key or a passkey. No approval is needed.
 - Only those three count for this. A password, or a password plus an authenticator, does not.
 - A password-only account in that situation has only the recovery code left, which starts the 24 h hold. This follows from the existing rules.
+
+## Confirmed (owner, directly to design, 2 Nov): several devices at once
+- The team lead can be logged in on up to 3 devices at the same time. Each new device must be approved.
+- "One device at a time" is an optional switch, off by default. It is never forced on the lead.
