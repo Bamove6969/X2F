@@ -13,9 +13,11 @@ type Props = Omit<InputHTMLAttributes<HTMLInputElement>, 'type' | 'className' | 
 
 export function Checkbox({ checked, mixed = false, onChange, ...rest }: Props) {
   const ref = useRef<HTMLInputElement>(null);
+  // Also on `checked`: a click clears the browser's indeterminate, so set it again whenever either
+  // changes (review N1), and after every click while the parent keeps it mixed.
   useEffect(() => {
     if (ref.current) ref.current.indeterminate = mixed;
-  }, [mixed]);
+  });
   return (
     <label className="x2f-tickbox">
       <input {...rest} ref={ref} type="checkbox" checked={checked} onChange={(e) => onChange(e.currentTarget.checked)} />

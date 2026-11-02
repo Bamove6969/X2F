@@ -66,6 +66,8 @@ export function MyOffers() {
     try {
       const offers = await fetchMyOffers(signal);
       setLoad({ kind: 'ready', offers });
+      // A fresh list says by itself whether a hold hides the live offers (review M1).
+      setRefusedHold(false);
       // A selection can only hold offers still on the list.
       setSelected((s) => new Set([...s].filter((id) => offers.some((o) => o.id === id))));
     } catch (e) {
@@ -115,7 +117,8 @@ export function MyOffers() {
       }
       return next;
     });
-    if (results.some((r) => r.refused === TRADING_HOLD_CODE)) setRefusedHold(true);
+    // Each Turn on says afresh whether a hold refused it (review M1): one that works ends the hold state.
+    if (status === 'live') setRefusedHold(results.some((r) => r.refused === TRADING_HOLD_CODE));
     if (status === 'live') setCantDo(cantDoFor(results));
     const said = summaryLine(status, results, before);
     if (failed !== null) {
@@ -274,11 +277,17 @@ export function MyOffers() {
         </>
       ) : null}
 
+      {/* The count's live region is always there, so the first "1 selected" is announced (review N2);
+          the bar shows the same words to the eye. */}
+      {listed ? (
+        <span className="x2f-offscreen" aria-live="polite" data-part="sel-count">
+          {nSelected > 0 ? `${nSelected} selected` : ''}
+        </span>
+      ) : null}
+
       {listed && nSelected > 0 ? (
         <ActionBar role="region" aria-label="Selected offers" data-selection="true" data-part="bar">
-          <span aria-live="polite" data-part="sel-count">
-            {nSelected} selected
-          </span>
+          <span aria-hidden="true">{nSelected} selected</span>
           <Button variant="quiet" disabled={busy} onClick={() => setSelected(new Set())} data-part="clear">
             Clear
           </Button>

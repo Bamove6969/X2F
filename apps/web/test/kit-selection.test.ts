@@ -20,5 +20,9 @@ describe('ui.css', () => {
     expect(rule("[data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main")).toContain('100dvh - var(--x2f-tab-bar-height)');
     expect(rule("[data-shell='phone']:has(> .x2f-bottom-nav) .x2f-action-bar")).toContain('bottom: var(--x2f-tab-bar-height)');
     expect(rule(".x2f-outcome[data-tone='caution']")).toContain('--x2f-caution');
+    // Review N4: the tab bar's offset is derived from the tab height and includes the safe area.
+    expect(rule(':root')).toMatch(/--x2f-tab-bar-height: calc\(var\(--x2f-tab-height\) \+ 1px \+ env\(safe-area-inset-bottom/);
+    expect(rule('.x2f-bottom-nav__tab')).toContain('height: var(--x2f-tab-height)');
+    expect(rule('.x2f-bottom-nav')).toContain('padding-bottom: env(safe-area-inset-bottom');
   });
 });

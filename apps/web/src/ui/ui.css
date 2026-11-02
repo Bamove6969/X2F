@@ -417,6 +417,7 @@
   position: sticky;
   bottom: 0;
   display: grid;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
   grid-template-columns: repeat(4, minmax(0, 1fr));
   border-top: 1px solid var(--x2f-surface-raised);
   background: var(--x2f-ground);
@@ -428,7 +429,7 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  height: 60px;
+  height: var(--x2f-tab-height);
   color: var(--x2f-ink-muted);
   font-size: 12px;
 }
@@ -441,9 +442,11 @@
 }
 
 /* The tab bar is pinned to the bottom: a screen above it fills the rest of the viewport, so a short
-   screen does not leave the bar floating mid-screen. 60 px tabs and the 1 px top line. */
+   screen does not leave the bar floating mid-screen. The bar's height is the tab height, its 1 px
+   top line and the phone's bottom safe area (review N4), so the action bar above it never overlaps. */
 :root {
-  --x2f-tab-bar-height: 61px;
+  --x2f-tab-height: 60px;
+  --x2f-tab-bar-height: calc(var(--x2f-tab-height) + 1px + env(safe-area-inset-bottom, 0px));
 }
 
 [data-shell='phone']:has(> .x2f-bottom-nav) > [data-shell-body] > main {
@@ -783,4 +786,14 @@
   font-size: 13px;
   line-height: 18px;
   color: var(--x2f-ink-muted);
+}
+
+/* Read by assistive tech, not drawn (a live region whose words the screen shows elsewhere). */
+.x2f-offscreen {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }

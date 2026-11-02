@@ -432,6 +432,14 @@ describe('Switch, Checkbox, SelectAll and SelectCard', () => {
     expect([input.checked, input.indeterminate]).toEqual([true, false]);
   });
 
+  it('Checkbox keeps showing mixed while the parent keeps it mixed, even after a click (review N1)', () => {
+    const { host, rerender } = render(<Checkbox checked={false} mixed aria-label="Select all" onChange={() => {}} />);
+    const input = host.querySelector('input') as HTMLInputElement;
+    fire(input, new MouseEvent('click', { bubbles: true }));
+    rerender(<Checkbox checked={false} mixed aria-label="Select all" onChange={() => {}} />);
+    expect(input.indeterminate).toBe(true);
+  });
+
   it('SelectAll names its box "Select all" and describes it with the hint', () => {
     const { host } = render(<SelectAll checked={false} mixed={false} hint="Pick offers." onChange={() => {}} />);
     const input = host.querySelector('input[data-part="select-all"]')!;

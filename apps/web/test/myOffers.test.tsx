@@ -318,6 +318,33 @@ describe('the My offers screen', () => {
     expect(row(host, B).querySelector('[data-part="refused"]')).toBeNull();
   });
 
+  it('the hold state follows each Turn on: a later Turn on that works brings the count back (review M1)', async () => {
+    onSwitch = (body) => ({
+      status: 200,
+      json: { status: body.status, results: body.ids.map((id) => ({ id, status: list.find((o) => o.id === id)!.status, refused: 'trading-hold' })) },
+    });
+    const host = await mount();
+    await click(sw(host, B));
+    expect(q(host, '[data-part="count"]').textContent).toBe('Trading hold · all offers hidden');
+    await click([...document.querySelectorAll('[data-part="cant-do-that"] button')].find((b) => b.textContent === 'OK')!);
+    onSwitch = allSwitch;
+    await click(sw(host, B));
+    expect(q(host, '[data-part="count"]').textContent).toBe('2 of 3 offers on');
+    expect(row(host, C).querySelector('[data-part="status"]')!.textContent).toBe('Off · hidden from everyone');
+  });
+
+  it('the selected count is a live region that exists before the first tick, so "1 selected" is announced (review N2)', async () => {
+    const host = await mount();
+    const live = q(host, '[data-part="sel-count"]');
+    expect(live).not.toBeNull();
+    expect([live.getAttribute('aria-live'), live.textContent]).toEqual(['polite', '']);
+    await click(tick(host, A));
+    expect(q(host, '[data-part="sel-count"]')).toBe(live);
+    expect(live.textContent).toBe('1 selected');
+    await click(tick(host, A));
+    expect(live.textContent).toBe('');
+  });
+
   it('a refusal that is not a "can\'t do that" (no wallet) stays inline, with no popup', async () => {
     onSwitch = (body) => ({ status: 200, json: { status: body.status, results: body.ids.map((id) => ({ id, status: 'paused', refused: 'no-wallet' })) } });
     const host = await mount();
