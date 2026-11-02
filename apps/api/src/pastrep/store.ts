@@ -4,9 +4,13 @@
  *
  * - `setVerifiedPastRepUsd` is the one writer of `verified_usd_cents`. Plan 4's moderator route calls
  *   it (tripwire NEEDS_P4_PASTREP_VERIFIED_USD); the staff perm check and the activity-log entry are
- *   that route's. Here: the setter must be an enabled staff account and the claim live (`signed` or
- *   `approved`), checked inside the one UPDATE, so a claim revoked meanwhile is never given a figure.
- *   `null` clears the figure. The table's trigger refuses a figure from anyone else as well.
+ *   that route's, and it passes the signed-in staff member's real role (`req.staff.role`) as the actor.
+ *   Here: the actor's role must be in `PASTREP_VERIFY_ROLES` (owner 2026-11-02: senior moderators and
+ *   the owner only; else `forbidden`), the account must match it (an enabled `staff` account for
+ *   `senior`, the enabled `owner` account for `owner`; else `not-staff`), and the claim live (`signed`
+ *   or `approved`), checked inside the one UPDATE, so a claim revoked meanwhile is never given a
+ *   figure. `null` clears the figure. The table's trigger refuses a figure from any account that is
+ *   not enabled staff or the owner as well (roles are not in the database on this branch).
  * - `verifiedPastRepUsdCents` is what the traded total ("Completed over $X") may add: the sum of the
  *   account's APPROVED claims with a figure (owner 2026-11-02: a moderator may enter the figure on a
  *   `signed` claim before approving it, but it counts nothing until the claim is approved). An
@@ -14,32 +18,45 @@
  *   revoked or a figure cleared stops counting at once. The traded
  *   total itself is C12's (`traders/tradedTotal.ts`, NEEDS_C12_PASTREP_IN_TRADED_TOTAL).
  */
+import type { StaffRole } from '@x2f/staff';
 import type { Queryable } from '../db/pool.js';
 
 const LIVE = ['signed', 'approved'];
 /** The one status whose figure counts (owner 2026-11-02: "without some sort of backing it up", nothing). */
 const COUNTS = 'approved';
+/**
+ * Who may enter a verified dollar figure: owner 2026-11-02, senior moderators and the owner only "for
+ * the time being" (may extend to 'mod' later).
+ */
+export const PASTREP_VERIFY_ROLES: readonly StaffRole[] = ['owner', 'senior'];
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-export type SetVerifiedUsdResult = { ok: true } | { ok: false; reason: 'not-found' | 'not-live' | 'not-staff' | 'bad-amount' };
+export type SetVerifiedUsdResult = { ok: true } | { ok: false; reason: 'not-found' | 'not-live' | 'not-staff' | 'forbidden' | 'bad-amount' };
+
+/** The staff member entering the figure: their account and their role (Plan 4's `req.staff`). */
+export type PastRepVerifier = { accountId: string; role: StaffRole };
 
 /** Sets (or, with `null`, clears) a claim's verified dollar figure in whole US cents. */
 export async function setVerifiedPastRepUsd(
-  q: Queryable, claimId: string, cents: number | null, staffId: string, now: Date,
+  q: Queryable, claimId: string, cents: number | null, actor: PastRepVerifier, now: Date,
 ): Promise<SetVerifiedUsdResult> {
+  if (!PASTREP_VERIFY_ROLES.includes(actor.role)) return { ok: false, reason: 'forbidden' };
   if (cents !== null && !(Number.isSafeInteger(cents) && cents > 0)) return { ok: false, reason: 'bad-amount' };
+  const staffId = actor.accountId;
+  // The account kind the role needs: the owner role is the owner account, every other role a staff account.
+  const kind = actor.role === 'owner' ? 'owner' : 'staff';
   if (!UUID.test(claimId)) return { ok: false, reason: 'not-found' };
   if (!UUID.test(staffId)) return { ok: false, reason: 'not-staff' };
   const set = cents === null ? [null, null, null] : [cents, staffId, now];
   const { rows } = await q.query<{ id: string }>(
     `update past_reputation set verified_usd_cents = $2, verified_usd_by = $3, verified_usd_at = $4
       where id = $1 and status = any($6::text[])
-        and exists (select 1 from accounts where id = $5 and kind = 'staff' and disabled_at is null)
+        and exists (select 1 from accounts where id = $5 and kind = $7 and disabled_at is null)
       returning id`,
-    [claimId, ...set, staffId, LIVE],
+    [claimId, ...set, staffId, LIVE, kind],
   );
   if (rows.length > 0) return { ok: true };
-  const staff = await q.query("select 1 from accounts where id = $1 and kind = 'staff' and disabled_at is null", [staffId]);
+  const staff = await q.query('select 1 from accounts where id = $1 and kind = $2 and disabled_at is null', [staffId, kind]);
   if (staff.rows.length === 0) return { ok: false, reason: 'not-staff' };
   const claim = await q.query('select 1 from past_reputation where id = $1', [claimId]);
   return { ok: false, reason: claim.rows.length === 0 ? 'not-found' : 'not-live' };
