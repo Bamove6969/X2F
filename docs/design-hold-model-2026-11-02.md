@@ -43,3 +43,7 @@ Nothing else starts a hold. Team members can never start one.
 
 ## Obsolete
 The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone is logged out during a hold, so nobody can block anything.
+
+## Decided (owner, directly to design, 2 Nov)
+- When a password-only change starts a hold, the account owner is notified immediately on every channel they set up (push, secure Jabber and others). The notification lists each change.
+- Still open: whether password-only changes to payout wallets or login methods should apply automatically after 24 h, or need a moderator or the owner's recovery code to confirm first.
