@@ -1058,6 +1058,24 @@
       "page": "all",
       "title": "G5 \u00b7 Account type: become a vendor (wide)",
       "is_interactive": true
+    },
+    "TeamChat.dc.html": {
+      "x": 9740,
+      "y": 33100,
+      "w": 390,
+      "h": 892,
+      "page": "all",
+      "title": "G6 \u00b7 Team member replies in chat",
+      "is_interactive": true
+    },
+    "TeamChat-Wide.dc.html": {
+      "x": 10280,
+      "y": 33100,
+      "w": 1280,
+      "h": 998,
+      "page": "all",
+      "title": "G6 \u00b7 Team member replies in chat (wide)",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1332,7 +1350,9 @@
     "SessionLength.dc.html",
     "SessionLength-Wide.dc.html",
     "BecomeVendor.dc.html",
-    "BecomeVendor-Wide.dc.html"
+    "BecomeVendor-Wide.dc.html",
+    "TeamChat.dc.html",
+    "TeamChat-Wide.dc.html"
   ],
   "pages": [
     {
