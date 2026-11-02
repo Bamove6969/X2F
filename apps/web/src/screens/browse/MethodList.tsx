@@ -6,6 +6,7 @@ import { RadioChips } from './RadioChips.js';
 import type { BrowseCopy } from './SellCopy.js';
 import { SuggestMethodSheet } from './SuggestMethodSheet.js';
 import './browse.css';
+import { NewsBell } from '../../ui/NewsBell.js';
 
 // The Main board (/sell) and, with side="buy", the BuyMain board (/buy): the methods with live offers
 // in the chosen currency first, then every other method A–Z, a currency picker, search and Sort.
@@ -84,7 +85,10 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
     <div className="x2f-browse">
       <header className="x2f-browse__header">
         <div className="x2f-browse__bar">
-          <span className="x2f-wordmark">X2F</span>
+          <span className="x2f-brand">
+            <span className="x2f-wordmark">X2F</span>
+            <NewsBell />
+          </span>
           <div role="tablist" aria-label="Buy or sell" className="x2f-segment">
             {(['buy', 'sell'] as const).map((s) => (
               <button

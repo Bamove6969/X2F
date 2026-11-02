@@ -4,6 +4,7 @@
 // have no board yet (spec wording or Plan 4 A8) and wait for the owner's sign-off.
 import { TIMERS, formatXmr } from '@x2f/trade';
 import { formatRemaining } from '../../ui/Countdown.js';
+import { formatDateTime, formatUtcTime } from '../../ui/dates.js';
 import type { DisputeReason, DisputeTrade, DisputeView, Party, Reason, RulingView } from './api.js';
 
 /** The buyer's reasons, from the DisputeOpen board. */
@@ -150,20 +151,14 @@ export function xmrInText(atomic: string | bigint): string {
   return `${whole}.${kept}`;
 }
 
-const pad = (n: number) => String(n).padStart(2, '0');
-
-/** "10:14", in the viewer's own time zone. */
-export function clockTime(d: Date, timeZone?: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', ...(timeZone ? { timeZone } : {}) }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('hour')}:${get('minute')}`;
+/** "10:14 UTC": a time under a heading that names the day (ui/dates.ts, the one format; review M1). */
+export function clockTime(d: Date): string {
+  return formatUtcTime(d);
 }
 
-/** "Fri 16 Oct, 10:14" (the boards' date), in the viewer's own time zone. */
-export function dayTime(d: Date, timeZone?: string): string {
-  const parts = new Intl.DateTimeFormat('en-GB', { weekday: 'short', day: 'numeric', month: 'short', ...(timeZone ? { timeZone } : {}) }).formatToParts(d);
-  const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '';
-  return `${get('weekday')} ${get('day')} ${get('month')}, ${clockTime(d, timeZone)}`;
+/** "16 Oct 2026, 10:14 UTC" (ui/dates.ts, the one date format; review M1). */
+export function dayTime(d: Date): string {
+  return formatDateTime(d);
 }
 
 /** "in 23 h" or "in 40 min" (whole hours down, minutes up, as the DisputeRoom board's "(in 23 h)"). */

@@ -124,11 +124,11 @@ describe('disputeEntry (mirrors the state machine; the server clock decides)', (
 });
 
 describe('copy helpers', () => {
-  it('writes amounts in sentences as the boards do, and dates as "Fri 16 Oct, 10:14"', () => {
+  it('writes amounts in sentences as the boards do, and dates as "16 Oct 2026, 10:14 UTC"', () => {
     expect(xmrInText('1250000000000')).toBe('1.25');
     expect(xmrInText('1000000000000')).toBe('1.00');
     expect(xmrInText('1234567000000')).toBe('1.234567');
-    expect(dayTime(new Date('2026-10-16T10:14:00Z'), 'UTC')).toBe('Fri 16 Oct, 10:14');
+    expect(dayTime(new Date('2026-10-16T10:14:00Z'))).toBe('16 Oct 2026, 10:14 UTC');
     expect(inTime(23 * 60 * MIN + 59 * MIN)).toBe('in 23 h');
     expect(inTime(40 * MIN)).toBe('in 40 min');
   });

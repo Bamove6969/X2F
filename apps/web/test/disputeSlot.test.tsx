@@ -180,7 +180,8 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'You cancelled this trade', 'You cancelled'],
       [{ settling: 'buyer-cancel' }, `Cancelling: returning the XMR to ${S}`, `The trade is cancelled once ${S} confirms`],
       // The Refunded board's time-ran-out variant (design review 48), naming the seller.
-      [{ settling: 'auto-refund' }, 'Payment time ran out', `You didn't tap I've paid in time, so ${S} cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to ${S}.`],
+      // The owner's Decision 7 wording (review M2), naming the seller, with the design session's ending (2 Nov).
+      [{ settling: 'auto-refund' }, 'Payment time ran out', `Payment time ran out, ${S} cancelled; everything in escrow went back to the original owner. X2F took nothing from you. If you already sent the payment, open a dispute below.`],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
       [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
       // A moderator's refund to the seller is built as mutual-cancel: the dispute decides the reason.
@@ -209,11 +210,11 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
       </MemoryRouter>,
     );
     expect(host.querySelector('.x2f-chip')?.textContent).toBe('Payment time ran out');
-    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] .x2f-kv__row')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
+    const facts = [...host.querySelectorAll('[data-part="refunded-facts"] > div')].map((r) => [r.querySelector('dt')!.textContent, r.querySelector('dd')!.textContent]);
     const keys = facts.map(([k]) => k);
-    expect(keys.slice(-2)).toEqual(['Trade amount', 'Charged to you']);
+    expect(keys.slice(-2)).toEqual(['Trade amount', 'X2F fee']);
     expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');
-    expect(facts.at(-1)![1]).toBe('Nothing');
+    expect(facts.at(-1)![1]).toBe('None');
     expect(keys).toContain(`Refund sent to ${S}`);
     expect(host.querySelector('#refunded-what')?.textContent).toMatch(/^What happened · \d+ \w{3} \d{4}$/);
     expect(host.textContent).not.toMatch(/the seller/i);
@@ -227,13 +228,16 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(host.querySelector('footer a[data-primary]')?.textContent).toBe('Find another offer');
   });
 
-  it("Charged to you is left out once the buyer marked paid (their payment may have left)", () => {
-    const { host } = render(
-      <MemoryRouter>
-        <RefundedSlot {...props(refunded({ settling: 'mutual-cancel', paidAt: at(-11 * 60 * MIN) }))} />
-      </MemoryRouter>,
-    );
-    expect(host.textContent).not.toContain('Charged to you');
+  it('"X2F fee: None" on every refund, paid first or not (design session 2 Nov; was "Charged to you: Nothing")', () => {
+    for (const over of [{ settling: 'auto-refund' as const }, { settling: 'mutual-cancel' as const, paidAt: at(-11 * 60 * MIN) }]) {
+      const { host } = render(
+        <MemoryRouter>
+          <RefundedSlot {...props(refunded(over))} />
+        </MemoryRouter>,
+      );
+      expect(host.textContent).toContain('X2F fee');
+      expect(host.textContent).not.toContain('Charged to you');
+    }
   });
 
   it("review I1: a cancel's refund that landed after I've paid keeps the dispute and is not called a cancel", () => {

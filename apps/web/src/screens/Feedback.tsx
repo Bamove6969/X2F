@@ -24,6 +24,8 @@ import { displayNameOf, useSession } from '../session/useSession.js';
 import { clearFeedbackDraft, loadFeedbackDraft, saveFeedbackDraft } from './feedbackDraft.js';
 import { Button } from '../ui/Button.js';
 import { ChoiceGroup } from '../ui/Choice.js';
+import { CheckRow } from '../ui/CheckRow.js';
+import { FlowScreen } from '../ui/FlowScreen.js';
 import { Icon } from '../ui/icons.js';
 import { waitSentence } from './auth/refusals.js';
 import './screens.css';
@@ -82,9 +84,11 @@ export function Feedback() {
   const [anonymous, setAnonymous] = useState(draft?.anonymous ?? false);
   const [state, setState] = useState<State>({ kind: 'idle' });
   const textId = useId();
-  const hintId = useId();
   const countId = useId();
   const kindId = useId();
+  const formId = useId();
+  const box = useRef<HTMLTextAreaElement>(null);
+  const focusBox = useRef(false);
   // Who the last message went as, for the thank-you's "Sent as <name>." (Feedback board).
   const [sentAnonymously, setSentAnonymously] = useState(false);
   const thanks = useRef<HTMLHeadingElement>(null);
@@ -104,6 +108,10 @@ export function Feedback() {
   }, [kind, text, anonymous, state.kind, owner, session.status, draft]);
   useEffect(() => {
     if (state.kind === 'sent') thanks.current?.focus();
+    else if (focusBox.current) {
+      focusBox.current = false;
+      box.current?.focus();
+    }
   }, [state.kind]);
   const signedOut = session.status === 'signed-out' || state.kind === 'signed-out';
   const loginHref = `/login?returnTo=${encodeURIComponent(safeReturnTo(pathname + search))}`;
@@ -132,19 +140,34 @@ export function Feedback() {
   };
 
   const back = () => void (key === 'default' ? navigate('/sell') : navigate(-1));
-  const header = (
-    <header className="x2f-page__header">
-      <button type="button" className="x2f-icon-button" aria-label="Back" onClick={back}>
-        <Icon name="chevron-left" />
-      </button>
-      <span className="x2f-page__header-title">Feedback</span>
-    </header>
-  );
+  const backControl = { label: 'Back', onClick: back };
 
   if (state.kind === 'sent') {
     return (
-      <main className="x2f-page" data-screen="feedback">
-        {header}
+      <FlowScreen
+        screen="feedback"
+        title="Feedback"
+        titleAs="label"
+        back={backControl}
+        footer={
+          <>
+            <Button variant="primary" onClick={back}>
+              Done
+            </Button>
+            <Button
+              variant="quiet"
+              onClick={() => {
+                setText('');
+                setState({ kind: 'idle' });
+                // Review N3: focus goes to the new message box, not lost with the button.
+                focusBox.current = true;
+              }}
+            >
+              Write another
+            </Button>
+          </>
+        }
+      >
         <div className="x2f-done">
           <span className="x2f-done__mark">
             <Icon name="check" size={32} stroke={2} />
@@ -153,105 +176,94 @@ export function Feedback() {
             <h1 className="x2f-h2 x2f-done__title" tabIndex={-1} ref={thanks} data-part="feedback-thanks-heading">
               {THANKS_HEAD}
             </h1>{' '}
-            <p className="x2f-sheet__body">{THANKS_BODY}</p>
+            <p className="x2f-body">{THANKS_BODY}</p>
           </div>
           {/* The board's line under the thanks: who it was sent as. */}
           <p className="x2f-fine" data-part="feedback-sent-as">
             {sentAnonymously || owner === null ? 'Sent anonymously.' : `Sent as ${owner}.`}
           </p>
         </div>
-        <footer className="x2f-page__footer">
-          <Button variant="primary" onClick={back}>
-            Done
-          </Button>
-          <Button
-            variant="quiet"
-            onClick={() => {
-              setText('');
-              setState({ kind: 'idle' });
-            }}
-          >
-            Write another
-          </Button>
-        </footer>
-      </main>
+      </FlowScreen>
     );
   }
 
   return (
-    <main className="x2f-page" data-screen="feedback">
-      {header}
-      <form className="x2f-page__form" onSubmit={(e) => void submit(e)}>
-        <div className="x2f-page__main x2f-page__main--roomy">
-          <section className="x2f-stack">
-            <h1 className="x2f-h2">Tell us what you think</h1>
-            <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
-          </section>
-          {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
-            <p className="x2f-note" data-part="feedback-login-first">
-              {/* COPY-UNSIGNED */}
-              <Link className="x2f-link" to={loginHref}>
-                Log in
-              </Link>{' '}
-              to send feedback. You can write it first: it is kept while you log in.
-            </p>
-          ) : null}
-          {/* Not on the board; kept (design session 2 Nov) as selectable cards, the kit's selection pattern. COPY-UNSIGNED */}
-          <div className="x2f-field">
-            <span className="x2f-kicker" id={kindId}>
-              What is it?
-            </span>
-            {/* The kit's ChoiceGroup cards: real radios, selected = 2px ink ring on surface-raised. */}
-            <ChoiceGroup look="card" options={KINDS.map((k) => ({ value: k.id, label: k.label }))} value={kind} onChange={setKind} labelledBy={kindId} part="feedback-kind" />
-          </div>
-          <div className="x2f-field">
-            <label htmlFor={textId} className="x2f-field-label">
-              Your message
-            </label>
-            <textarea
-              id={textId}
-              className="x2f-input x2f-input--message"
-              rows={9}
-              value={text}
-              maxLength={FEEDBACK_TEXT_MAX}
-              placeholder="Write anything you like"
-              aria-describedby={countId}
-              onChange={(e) => setText(e.target.value)}
-            />
-            <span id={countId} className="x2f-field-count" data-part="feedback-count">
-              <span className="x2f-when">{[...text].length}</span> of {FEEDBACK_TEXT_MAX} characters
-            </span>
-          </div>
-          <label className="x2f-tick" data-boxed="">
-            <input type="checkbox" checked={anonymous} aria-describedby={hintId} onChange={(e) => setAnonymous(e.target.checked)} />
-            <span className="x2f-tick__text">
-              <span className="x2f-tick__title">Send anonymously</span>
-              {/* COPY-UNSIGNED */}
-              <span id={hintId} className="x2f-tick__hint" data-part="anon-hint">
-                {anonymous ? FEEDBACK_ANON_HINT : FEEDBACK_NAMED_HINT}
-              </span>
-            </span>
-          </label>
-          {state.kind === 'signed-out' ? (
-            <p className="x2f-error" role="alert">
-              <Link className="x2f-link" to={loginHref}>
-                Log in
-              </Link>{' '}
-              to send feedback. What you wrote is kept.
-            </p>
-          ) : null}
-          {state.kind === 'failed' ? (
-            <p className="x2f-error" role="alert">
-              {state.message}
-            </p>
-          ) : null}
+    <FlowScreen
+      screen="feedback"
+      title="Feedback"
+      titleAs="label"
+      back={backControl}
+      footer={
+        <Button variant="primary" type="submit" form={formId} disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
+          Send
+        </Button>
+      }
+    >
+      <form id={formId} onSubmit={(e) => void submit(e)}>
+        <section className="x2f-stack">
+          <h1 className="x2f-h2">Tell us what you think</h1>
+          <p className="x2f-lead">A complaint, feedback, a recommendation, anything at all. Every message is read.</p>
+        </section>
+        {session.status === 'signed-out' && state.kind !== 'signed-out' ? (
+          <p className="x2f-note" data-part="feedback-login-first">
+            {/* COPY-UNSIGNED */}
+            <Link className="x2f-link" to={loginHref}>
+              Log in
+            </Link>{' '}
+            to send feedback. You can write it first: it is kept while you log in.
+          </p>
+        ) : null}
+        {/* Not on the board; kept (design session 2 Nov) as the kit's ChoiceGroup cards: real radios, selected = 2px ink ring on surface-raised. COPY-UNSIGNED */}
+        <div className="x2f-field">
+          <span className="x2f-kicker" id={kindId}>
+            What is it?
+          </span>
+          <ChoiceGroup look="card" options={KINDS.map((k) => ({ value: k.id, label: k.label }))} value={kind} onChange={setKind} labelledBy={kindId} part="feedback-kind" />
         </div>
-        <footer className="x2f-page__footer">
-          <Button variant="primary" type="submit" disabled={clean === '' || tooLong || state.kind === 'sending' || signedOut} aria-busy={state.kind === 'sending'}>
-            Send
-          </Button>
-        </footer>
+        <div className="x2f-field">
+          <label htmlFor={textId} className="x2f-field-label">
+            Your message
+          </label>
+          <textarea
+            id={textId}
+            ref={box}
+            className="x2f-input x2f-input--message"
+            rows={9}
+            value={text}
+            maxLength={FEEDBACK_TEXT_MAX}
+            placeholder="Write anything you like"
+            aria-describedby={countId}
+            onChange={(e) => setText(e.target.value)}
+          />
+          {/* Counts what maxLength counts (review N8). */}
+          <span id={countId} className="x2f-field-count" data-part="feedback-count">
+            <span className="x2f-when">{text.length}</span> of {FEEDBACK_TEXT_MAX} characters
+          </span>
+        </div>
+        {/* COPY-UNSIGNED */}
+        <CheckRow
+          boxed
+          part="feedback-anon"
+          hintPart="anon-hint"
+          checked={anonymous}
+          onChange={setAnonymous}
+          title="Send anonymously"
+          hint={anonymous ? FEEDBACK_ANON_HINT : FEEDBACK_NAMED_HINT}
+        />
+        {state.kind === 'signed-out' ? (
+          <p className="x2f-error" role="alert">
+            <Link className="x2f-link" to={loginHref}>
+              Log in
+            </Link>{' '}
+            to send feedback. What you wrote is kept.
+          </p>
+        ) : null}
+        {state.kind === 'failed' ? (
+          <p className="x2f-error" role="alert">
+            {state.message}
+          </p>
+        ) : null}
       </form>
-    </main>
+    </FlowScreen>
   );
 }

@@ -550,6 +550,12 @@
   font-size: 18px;
 }
 
+/* The 48 px size (BuyerPaidWaiting "Open a dispute" under Nudge). */
+.x2f-button--danger-outline[data-size='medium'] {
+  height: 48px;
+  font-size: 16px;
+}
+
 .x2f-button:focus-visible,
 .x2f-icon-button:focus-visible {
   outline: 2px solid var(--x2f-ink);
@@ -827,6 +833,14 @@
   line-height: 20px;
 }
 
+/* A neutral call-out on the raised surface (Block board "Open trades with them aren't affected"). */
+.x2f-outcome[data-tone='neutral'] {
+  border-color: transparent;
+  background: var(--x2f-surface-raised);
+  font-size: 15px;
+  line-height: 22px;
+}
+
 .x2f-outcome[data-tone='caution'] {
   border-color: var(--x2f-caution);
 }
@@ -915,6 +929,33 @@
   color: var(--x2f-ink-muted);
 }
 
+/* The row's note before the chevron (BuyerPaidWaiting "Your payment  $412.50 · Zelle"). */
+.x2f-disclosure__summary {
+  display: flex;
+  flex-grow: 1;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  margin-right: var(--x2f-space-2);
+}
+
+.x2f-disclosure__note {
+  color: var(--x2f-ink-muted);
+  font-size: 14px;
+  font-weight: 400;
+}
+
+/* The part a Disclosure opens, under its row. */
+.x2f-disclosure__body {
+  padding-bottom: var(--x2f-space-4);
+}
+
+/* A Disclosure on the ground with a line border instead of the surface (BuyerPaidWaiting). */
+.x2f-disclosure[data-outline] {
+  border: 1px solid var(--x2f-surface-raised);
+  background: transparent;
+}
+
 .x2f-disclosure__button[data-open='true'] .x2f-disclosure__chevron {
   transform: rotate(180deg);
 }
@@ -956,6 +997,27 @@
   font-size: var(--x2f-title-size);
   line-height: var(--x2f-title-line);
   font-weight: var(--x2f-title-weight);
+}
+
+/* A title with a muted line under it (FlowScreen `sub`; News "3 new · 4 posts"). */
+.x2f-flow__heading {
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  min-width: 0;
+}
+
+.x2f-flow__sub {
+  color: var(--x2f-ink-muted);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+/* A form that is the whole main (Feedback): its submit is in the footer via form=. */
+.x2f-flow__main > form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--x2f-space-6);
 }
 
 .x2f-flow__main {
@@ -1351,75 +1413,7 @@
   align-items: start;
 }
 
-/* ---- Result and form screens (Refunded, BuyerPaidWaiting, Feedback, News, Block boards) ----
-   A phone page is a header, a main column and a footer with the actions; the trade room's own
-   frame (.x2f-pay) has the same shape. */
-.x2f-page {
-  display: flex;
-  flex-direction: column;
-  min-height: 100dvh;
-  max-width: 720px;
-  margin: 0 auto;
-  background: var(--x2f-ground);
-  color: var(--x2f-ink);
-}
-
-.x2f-page__header {
-  display: flex;
-  align-items: center;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
-  border-bottom: 1px solid var(--x2f-surface-raised);
-}
-
-.x2f-page__header-text {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  min-width: 0;
-}
-
-.x2f-page__header-sub {
-  font-size: 13px;
-  line-height: 16px;
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-page__header-title {
-  font-family: var(--x2f-title-family);
-  font-size: 22px;
-  line-height: 28px;
-  font-weight: 600;
-}
-
-/* A form that is the whole page: its main grows and its footer holds the submit. */
-.x2f-page__form {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-}
-
-.x2f-page__main {
-  display: flex;
-  flex-direction: column;
-  flex-grow: 1;
-  gap: var(--x2f-space-4);
-  padding: var(--x2f-space-4);
-  min-width: 0;
-}
-
-.x2f-page__main--roomy {
-  gap: var(--x2f-space-6);
-  padding-top: var(--x2f-space-6);
-}
-
-.x2f-page__footer {
-  display: flex;
-  flex-direction: column;
-  gap: var(--x2f-space-2);
-  padding: var(--x2f-space-4);
-  border-top: 1px solid var(--x2f-surface-raised);
-}
+/* ---- Result and form screens (Refunded, BuyerPaidWaiting, Feedback, News, Block boards) ---- */
 
 .x2f-lead {
   margin: 0;
@@ -1456,35 +1450,31 @@
   align-self: flex-start;
 }
 
-/* Key and value rows (ui/KeyValues.tsx): the key muted on the left, the value mono on the right. */
-.x2f-kv {
-  display: flex;
-  flex-direction: column;
+/* Facts in rows (ui/Facts.tsx layout="rows"; Refunded, BuyerPaidWaiting): the key muted on the
+   left, the value mono on the right, no box of its own. The stacked layout is the base rule. */
+.x2f-facts[data-layout='rows'] {
   gap: var(--x2f-space-2);
-  margin: 0;
-  font-size: 14px;
-  line-height: 20px;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
 }
 
-.x2f-kv__row {
-  display: flex;
+.x2f-facts[data-layout='rows'] > div {
+  flex-direction: row;
   justify-content: space-between;
   gap: 12px;
 }
 
-.x2f-kv__row[data-rule] {
+.x2f-facts[data-layout='rows'] > div[data-rule] {
   padding-top: var(--x2f-space-2);
   border-top: 1px solid var(--x2f-surface-raised);
 }
 
-.x2f-kv__key {
-  color: var(--x2f-ink-muted);
-}
-
-.x2f-kv__value {
+.x2f-facts[data-layout='rows'] dd {
   min-width: 0;
-  margin: 0;
   font-family: var(--x2f-font-mono);
+  font-size: 14px;
+  line-height: 20px;
   font-variant-numeric: tabular-nums;
   text-align: right;
   overflow-wrap: anywhere;
@@ -1649,22 +1639,13 @@
   cursor: pointer;
 }
 
-/* A sheet's list and its call-out (Block board). */
+/* A sheet's list (Block board). */
 .x2f-sheet__list {
   display: flex;
   flex-direction: column;
   gap: var(--x2f-space-1);
   margin: 0;
   padding-left: 20px;
-}
-
-.x2f-callout {
-  margin: 0;
-  padding: 12px;
-  border-radius: var(--x2f-radius-md);
-  background: var(--x2f-surface-raised);
-  font-size: 15px;
-  line-height: 22px;
 }
 
 .x2f-sheet__content {
@@ -1945,52 +1926,41 @@
   cursor: default;
 }
 
-/* A checkbox row: a 24px box inside a 44px tap row (X4; Feedback "Send anonymously", News
-   "Don't show me this again"). `data-boxed` puts it on a surface card. */
-.x2f-tick {
+/* A tick box with its words (ui/CheckRow.tsx): the kit's 44px Checkbox, then the title and hint.
+   `data-boxed` puts it on a surface card (Feedback "Send anonymously"). */
+.x2f-check-row {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  min-height: 44px;
-  padding: 10px 0;
-  cursor: pointer;
+  gap: var(--x2f-space-1);
 }
 
-.x2f-tick[data-boxed] {
-  padding: var(--x2f-space-4);
+.x2f-check-row[data-boxed] {
+  padding: 6px var(--x2f-space-4) 6px 6px;
   border-radius: var(--x2f-radius-md);
   background: var(--x2f-surface);
 }
 
-.x2f-tick input {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  margin: 0;
-  accent-color: var(--x2f-ink);
-}
-
-.x2f-tick__text {
+.x2f-check-row__text {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  padding: 10px 0;
 }
 
-.x2f-tick__title {
+.x2f-check-row__title {
   font-size: 16px;
   line-height: 24px;
+  cursor: pointer;
 }
 
-.x2f-tick[data-boxed] .x2f-tick__title {
+.x2f-check-row[data-boxed] .x2f-check-row__title {
   font-weight: 600;
 }
 
-.x2f-tick__hint {
-
-.x2f-select-card__title {
-  font-size: 16px;
-  line-height: 24px;
-  font-weight: 600;
+.x2f-check-row__hint {
+  font-size: 14px;
+  line-height: 20px;
+  color: var(--x2f-ink-muted);
 }
 
 .x2f-select-card__line {
@@ -2105,4 +2075,26 @@
   padding: 2px var(--x2f-space-2);
   border: 1px solid currentColor;
   border-radius: var(--x2f-radius-pill);
+}
+
+/* The Site news bell beside the logo (ui/NewsBell.tsx): a teal dot while something is new. */
+.x2f-news-bell {
+  position: relative;
+}
+
+.x2f-news-bell__dot {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--x2f-radius-pill);
+  background: var(--x2f-escrow);
+}
+
+/* The logo with the bell beside it. */
+.x2f-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
 }

@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { AuthApiError } from '@x2f/auth-client';
 import { ApiCallError } from '../src/api/client.js';
-import { heldNote, holdLoginSentence, holdSentence, localTime, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
+import { heldNote, holdLoginSentence, holdSentence, momentText, loginCantDo, refusalText, weakSessionCantDo } from '../src/screens/auth/refusals.js';
 import { TOO_MANY_APPROVALS, WEAK_SESSION_TEXT } from '../src/ui/cantDoCodes.js';
 
 const UNTIL = '2026-10-30T14:05:00.000Z';
@@ -17,7 +17,7 @@ describe('the 24-hour hold', () => {
 
   it('a change that waits says when it takes effect and how to cancel it', () => {
     const t = heldNote(UNTIL);
-    expect(t).toContain(`takes effect at ${localTime(new Date(UNTIL))}`);
+    expect(t).toContain(`takes effect at ${momentText(new Date(UNTIL))}`);
     expect(t).toContain('cancels it');
     expect(heldNote('broken')).toContain('takes effect in a day');
   });
@@ -34,7 +34,7 @@ describe('loginCantDo', () => {
   it('round 3 R3-M3: a login refused during the hold says this login cannot get in until it ends, and what the reader can do', () => {
     const t = loginCantDo(new AuthApiError(403, 'recovery-hold', { holdUntil: UNTIL }), 'login');
     expect(t).toEqual({ code: 'recovery-hold', text: holdLoginSentence(UNTIL) });
-    expect(t!.text).toContain(`This login can't get in until ${localTime(new Date(UNTIL))}.`);
+    expect(t!.text).toContain(`This login can't get in until ${momentText(new Date(UNTIL))}.`);
     expect(t!.text).toContain('If not, wait and log in again when the hold ends.');
     expect(t!.text).toContain('If you had a passkey, a security key, or an authenticator code set up before the hold');
     // Nothing it cannot keep: this login finishes no trades, and the account's held changes are not the reader's to make here.

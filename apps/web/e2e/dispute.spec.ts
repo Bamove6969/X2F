@@ -192,7 +192,7 @@ test('DisputeRoom: rose In dispute chip, locked amount, deadline line and the jo
   const chip = page.locator('.x2f-chip[data-tone="danger"]');
   await expect(chip).toHaveText('In dispute');
   await expect(page.getByText('1.25 XMR locked in escrow')).toBeVisible();
-  await expect(page.getByText('Replied in 38 min · ruling due by Fri 16 Oct, 10:14 (in 23 h)')).toBeVisible();
+  await expect(page.getByText('Replied in 38 min · ruling due by 16 Oct 2026, 10:14 UTC (in 23 h)')).toBeVisible();
   await expect(page.getByRole('region', { name: 'Moderator joined' })).toContainText('Moderator sarah.v joined this dispute');
   await expect(page.getByText('10:14 · You opened a dispute: I paid, but the seller hasn\'t released')).toBeVisible();
   await expect(page.getByText('10:52 · Moderator sarah.v joined this dispute')).toBeVisible();

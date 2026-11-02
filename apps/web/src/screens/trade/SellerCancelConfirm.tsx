@@ -20,6 +20,7 @@ import { TradeHeader } from '../../ui/TradeHeader.js';
 import { payMethodOf } from './paySeams.js';
 import { publicName } from './payTypes.js';
 import { useConfirmations } from './release/seams.js';
+import { When } from '../../ui/When.js';
 import { registerTradeScreen, type MemberScreenProps } from './TradeRoom.js';
 import './pay.css';
 
@@ -107,8 +108,13 @@ export function SellerCancelConfirm({ code, view, refresh }: MemberScreenProps) 
           <p className="x2f-room__grown" role="status" data-input-needed="">
             Your input is needed to cancel this trade.
             {closesAt !== null
-              ? ` If you don't confirm, it closes as cancelled by itself on ${new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeStyle: 'short' }).format(closesAt)}.`
-              : ''}
+              ? (
+                  <>
+                    {" If you don't confirm, it closes as cancelled by itself on "}
+                    <When at={closesAt} />.
+                  </>
+                )
+              : null}
           </p>
         ) : null}
         {error !== null ? (

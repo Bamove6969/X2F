@@ -16,10 +16,12 @@
  * "Don't show me this again" (design session 2 Nov) shows on the News page that opened by itself
  * after a login (`?after=login`), and is kept on this device only (news-model.ts).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { returnToFrom } from '../api/client.js';
 import { Button } from '../ui/Button.js';
+import { CheckRow } from '../ui/CheckRow.js';
+import { FlowScreen } from '../ui/FlowScreen.js';
 import { Icon } from '../ui/icons.js';
 import { When } from '../ui/When.js';
 import { fetchNews, markSeen, readHideAfterLogin, readLastSeen, rememberNews, setHideAfterLogin, type NewsItem } from './news-model.js';
@@ -34,7 +36,8 @@ function Post({ item, isNew, open, onToggle }: { item: NewsItem; isNew: boolean;
   return (
     <article className="x2f-post" data-part="news-item" data-new={isNew ? '' : undefined} aria-labelledby={titleId}>
       <h2 className="x2f-post__heading">
-        <button type="button" className="x2f-post__toggle" aria-expanded={open} aria-controls={bodyId} onClick={onToggle}>
+        {/* Named by the title alone (review N9); the New/Read mark and the date stay visible. */}
+        <button type="button" className="x2f-post__toggle" aria-expanded={open} aria-controls={bodyId} aria-labelledby={titleId} onClick={onToggle}>
           <span className="x2f-post__text">
             <span className="x2f-post__meta" data-part="news-date">
               {isNew ? (
@@ -124,90 +127,90 @@ export function News() {
       return next;
     });
   // This device already counts every shown post as seen (markSeen on open); this clears the marks now.
+  const list = useRef<HTMLElement>(null);
   const markAll = () => {
     if (state.status !== 'ready') return;
     setState({ ...state, seenBefore: state.items.reduce((m, i) => Math.max(m, i.id), state.seenBefore) });
+    // Review N3: the button goes, so focus moves to the first post instead of being lost.
+    requestAnimationFrame(() => list.current?.querySelector<HTMLElement>('[data-part="news-item"] button')?.focus());
   };
 
+  const countText = total === 0 ? 'No news yet' : `${newCount > 0 ? `${newCount} new` : 'All read'} · ${total === 1 ? '1 post' : `${total} posts`}`;
+
   return (
-    <main className="x2f-page" data-screen="news" aria-busy={state.status === 'loading'}>
-      <header className="x2f-page__header">
-        <button type="button" className="x2f-icon-button" aria-label="Close News" onClick={leave}>
-          <Icon name="close" size={22} />
-        </button>
-        <div className="x2f-page__header-text">
-          <h1 className="x2f-h2">News</h1>
-          {state.status === 'ready' ? (
-            <span className="x2f-page__header-sub" role="status" data-part="news-count">
-              {total === 0 ? 'No news yet' : `${newCount > 0 ? `${newCount} new` : 'All read'} · ${total === 1 ? '1 post' : `${total} posts`}`}
-            </span>
-          ) : null}
-        </div>
-        {newCount > 0 ? (
+    <FlowScreen
+      screen="news"
+      title="News"
+      busy={state.status === 'loading'}
+      back={{ label: 'Close News', icon: 'close', onClick: leave }}
+      sub={
+        state.status === 'ready' ? (
+          <span role="status" data-part="news-count">
+            {countText}
+          </span>
+        ) : undefined
+      }
+      action={
+        newCount > 0 ? (
           <button type="button" className="x2f-header-action" onClick={markAll} data-part="news-mark-all">
             Mark all as read
           </button>
-        ) : null}
-      </header>
-      <div className="x2f-page__main">
-        {state.status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
-        {state.status === 'error' ? (
-          <div className="x2f-stack">
-            <p className="x2f-error" role="alert">
-              Could not load the news. Check your connection and try again.
-            </p>
-            <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)} data-part="news-retry">
-              Try again
-            </Button>
-          </div>
-        ) : null}
-        {state.status === 'ready' && state.items.length > 0 ? (
-          <section className="x2f-stack" aria-label="Posts" data-part="news-list">
-            <div className="x2f-stepper-row">
-              <span className="x2f-kicker">Newest first</span>
-              {newCount > 1 ? (
-                <span className="x2f-stepper" data-part="news-stepper">
-                  <button type="button" className="x2f-icon-button" aria-label="Previous new post" disabled={step === 0} onClick={() => goTo(step - 1)}>
-                    <Icon name="chevron-left" size={20} />
-                  </button>
-                  <span role="status" data-part="news-step">
-                    <span className="x2f-when">{step + 1}</span> of <span className="x2f-when">{newCount}</span> new
-                  </span>
-                  <button type="button" className="x2f-icon-button" aria-label="Next new post" disabled={step >= newCount - 1} onClick={() => goTo(step + 1)}>
-                    <Icon name="chevron-right" size={20} />
-                  </button>
-                </span>
-              ) : null}
-            </div>
-            {state.items.map((i) => (
-              <Post key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
-            ))}
-          </section>
-        ) : null}
-      </div>
-      <footer className="x2f-page__footer">
-        {afterLogin ? (
-          <label className="x2f-tick" data-part="news-hide">
-            <input
-              type="checkbox"
+        ) : undefined
+      }
+      footer={
+        <>
+          {afterLogin ? (
+            <CheckRow
+              part="news-hide"
               checked={hide}
-              onChange={(e) => {
-                setHide(e.target.checked);
-                setHideAfterLogin(e.target.checked);
+              onChange={(on) => {
+                setHide(on);
+                setHideAfterLogin(on);
               }}
+              title="Don't show me this again"
+              hint="News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen."
             />
-            <span className="x2f-tick__text">
-              <span className="x2f-tick__title">Don't show me this again</span>
-              <span className="x2f-tick__hint">
-                News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.
+          ) : null}
+          <Button variant="primary" onClick={leave} data-part="news-continue">
+            Continue
+          </Button>
+        </>
+      }
+    >
+      {state.status === 'loading' ? <p className="x2f-note">Loading…</p> : null}
+      {state.status === 'error' ? (
+        <div className="x2f-stack">
+          <p className="x2f-error" role="alert">
+            Could not load the news. Check your connection and try again.
+          </p>
+          <Button variant="secondary" onClick={() => setAttempt((n) => n + 1)} data-part="news-retry">
+            Try again
+          </Button>
+        </div>
+      ) : null}
+      {state.status === 'ready' && state.items.length > 0 ? (
+        <section className="x2f-stack" aria-label="Posts" data-part="news-list" ref={list}>
+          <div className="x2f-stepper-row">
+            <span className="x2f-kicker">Newest first</span>
+            {newCount > 1 ? (
+              <span className="x2f-stepper" data-part="news-stepper">
+                <button type="button" className="x2f-icon-button" aria-label="Previous new post" disabled={step === 0} onClick={() => goTo(step - 1)}>
+                  <Icon name="chevron-left" size={20} />
+                </button>
+                <span role="status" data-part="news-step">
+                  <span className="x2f-when">{step + 1}</span> of <span className="x2f-when">{newCount}</span> new
+                </span>
+                <button type="button" className="x2f-icon-button" aria-label="Next new post" disabled={step >= newCount - 1} onClick={() => goTo(step + 1)}>
+                  <Icon name="chevron-right" size={20} />
+                </button>
               </span>
-            </span>
-          </label>
-        ) : null}
-        <Button variant="primary" onClick={leave} data-part="news-continue">
-          Continue
-        </Button>
-      </footer>
-    </main>
+            ) : null}
+          </div>
+          {state.items.map((i) => (
+            <Post key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
+          ))}
+        </section>
+      ) : null}
+    </FlowScreen>
   );
 }

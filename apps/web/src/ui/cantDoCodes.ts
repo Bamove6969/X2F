@@ -349,7 +349,7 @@ export const HOLD_CODE = 'recovery-hold' satisfies CantDoCode;
 /**
  * 403 `recovery-hold`: the account's 24-hour hold after a login with only one way of proving it's
  * you, or a backup login (Plan 2 Task 17; owner 2026-10-29 14:12: PGP alone does not end it).
- * `when` is "until Tue 3:05 PM" or "for a day".
+ * `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  */
 export function holdText(when: string): string {
   return `Your account is on a 24-hour hold after a login with only one way of proving it's you, so new trades, wallet changes and login changes wait ${when}. Trades already open can still be finished. Logging in with a passkey, a security key, or your password and authenticator code from before the hold ends it.`;
@@ -357,7 +357,7 @@ export function holdText(when: string): string {
 
 /**
  * 403 `recovery-hold` on the login screen (review round 3 R3-M3): this login was refused a session
- * because it waits, and the hold is still running. `when` is "until Tue 3:05 PM" or "for a day".
+ * because it waits, and the hold is still running. `when` is "until 6 Nov 2026, 15:00 UTC" or "for a day".
  * It says what this login cannot do and what the reader can do, whatever methods the account has
  * (the login screen does not know them); review round 4 R4-M3: a backup login spends a recovery
  * code and pushes the hold's end out to 24 hours from then. COPY-UNSIGNED

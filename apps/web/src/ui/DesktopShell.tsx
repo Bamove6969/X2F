@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router';
+import { NewsBell } from './NewsBell.js';
 import './ui.css';
 
 // The frame of the Desktop board (1280×800): the X2F wordmark and the Buy, Sell, My trades and
@@ -25,7 +26,10 @@ export function DesktopHeader() {
   const { pathname } = useLocation();
   return (
     <header className="x2f-desktop__header">
-      <span className="x2f-wordmark">X2F</span>
+      <span className="x2f-brand">
+        <span className="x2f-wordmark">X2F</span>
+        <NewsBell />
+      </span>
       <nav aria-label="Main" className="x2f-desktop__nav">
         {LINKS.map((l) => (
           <Link key={l.to} to={l.to} aria-current={l.match(pathname) ? 'page' : undefined}>

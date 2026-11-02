@@ -603,7 +603,7 @@ export function BuyerPay(p: TradeScreenProps) {
                 </button>
               }
             />
-            <div className="x2f-page__footer">{actions}</div>
+            <div className="x2f-stack" data-part="paid-actions">{actions}</div>
           </WideRoom>
           {sheets}
         </>

@@ -213,7 +213,7 @@ describe('Feedback form', () => {
 
   it('"Send anonymously" sends anonymous: true and the hint promises only what is true (review M1)', async () => {
     const { host, sent } = await open('/feedback?from=trading-hold', { status: 202, json: {} });
-    const box = [...host.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Send anonymously'))!.querySelector('input')!;
+    const box = host.querySelector<HTMLInputElement>('[data-part="feedback-anon"] input')!;
     fire(box, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe(FEEDBACK_ANON_HINT);
     expect(FEEDBACK_ANON_HINT).toBe("Your username isn't attached, so we can't follow up with you.");

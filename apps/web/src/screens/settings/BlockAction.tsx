@@ -15,6 +15,7 @@ import { Link } from 'react-router';
 import { ApiCallError } from '../../api/client.js';
 import { Button } from '../../ui/Button.js';
 import { CantDoThat } from '../../ui/CantDoThat.js';
+import { Notice } from '../../ui/Notice.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { CANNOT_BLOCK, CANNOT_BLOCK_CODE, CANT_DO_TITLE } from '../../ui/cantDoCodes.js';
 import { blockTrader } from './blockApi.js';
@@ -104,7 +105,9 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
             </ul>
           </div>
           <p className="x2f-sheet__body">{C.silent}</p>
-          <p className="x2f-callout">{C.openTrades}</p>
+          <Notice tone="neutral" icon={false} live="off">
+            {C.openTrades}
+          </Notice>
           <p className="x2f-fine">{C.later}</p>
           <div className="x2f-sheet__actions">
             <Button variant="danger-outline" disabled={state.kind === 'busy'} onClick={() => void block()} data-part="block-confirm">

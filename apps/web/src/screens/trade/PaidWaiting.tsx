@@ -22,7 +22,7 @@ import { CantDoThat } from '../../ui/CantDoThat.js';
 import { CANT_DO_TITLE, NUDGE_TOO_SOON, NUDGE_TOO_SOON_CODE } from '../../ui/cantDoCodes.js';
 import { Countdown, Duration } from '../../ui/Countdown.js';
 import { Disclosure } from '../../ui/Disclosure.js';
-import { KeyValues, type KeyValue } from '../../ui/KeyValues.js';
+import { Facts, type Fact } from '../../ui/Facts.js';
 import { Icon } from '../../ui/icons.js';
 import { StatusChip } from '../../ui/StatusChip.js';
 import { TimerCard } from '../../ui/TimerCard.js';
@@ -48,17 +48,18 @@ export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, now
 export const DISPUTE_AFTER_PAID_MS = 30 * MIN_MS;
 
 /**
- * When the buyer's Open a dispute becomes available in `paid`: 30 minutes after I've paid (owner,
- * 2 Nov), but never before the server allows it. Today the state machine refuses the buyer's
- * dispute until confirmBy (machine.ts `too-early`), so that is the later of the two and the button
- * never offers what the server would refuse. Follow-up for the API: allow it 30 min after paid;
- * then this is paidAt + 30 min alone. Null when neither time is known (the button is offered).
+ * When the buyer's Open a dispute becomes available in `paid`: 30 minutes after I've paid (the
+ * owner's rule, 2 Nov), but never before the server allows it. Today the state machine refuses the
+ * buyer's dispute until confirmBy, and while confirmBy is unknown (machine.ts `too-early`), so the
+ * time is the later of the two, and null (not offered at all) without confirmBy (review M5). When
+ * the API allows it 30 min after paid (claude2's change), the client still follows what the
+ * server's view says.
  */
 export function disputeOpensAt(view: Pick<TradeView, 'paidAt' | 'confirmBy'>): number | null {
-  const paid = view.paidAt === null ? NaN : Date.parse(view.paidAt) + DISPUTE_AFTER_PAID_MS;
   const server = view.confirmBy === null ? NaN : Date.parse(view.confirmBy);
-  const times = [paid, server].filter(Number.isFinite);
-  return times.length === 0 ? null : Math.max(...times);
+  if (!Number.isFinite(server)) return null;
+  const paid = view.paidAt === null ? NaN : Date.parse(view.paidAt) + DISPUTE_AFTER_PAID_MS;
+  return Number.isFinite(paid) ? Math.max(paid, server) : server;
 }
 
 /** "2 hours", "1 hour", "90 minutes": the window's length in a sentence. */
@@ -144,7 +145,13 @@ export function PaidWaitingBody({
         tone={ended ? 'caution' : 'escrow'}
         left={win.leftMs}
         total={win.lengthMs}
-        ringLabel={ended ? 'No time left to confirm' : `${Math.ceil(win.leftMs / MIN_MS)} of ${Math.round(win.lengthMs / MIN_MS)} minutes left to confirm`}
+        ringLabel={
+          ended
+            ? 'No time left to confirm'
+            : win.lengthMs > 0
+              ? `${Math.ceil(win.leftMs / MIN_MS)} of ${Math.round(win.lengthMs / MIN_MS)} minutes left to confirm`
+              : `${Math.ceil(win.leftMs / MIN_MS)} minutes left to confirm`
+        }
         value={ended ? <Duration ms={0} /> : <Countdown deadline={new Date(win.ends)} serverClock={serverClock} format="minutes" />}
         hint={
           <>
@@ -182,31 +189,30 @@ export function PaidWaitingBody({
     </section>
   );
 
-  const rows: KeyValue[] = [
+  const rows: Fact[] = [
     ...(details ?? []).map((d) => ({ key: d.label === `${method.name} to` ? 'Sent to' : d.label, value: d.value })),
     { key: 'Memo', value: view.code },
     { key: 'For', value: xmr },
     ...(view.paidAt !== null ? [{ key: 'Marked as paid', value: <When at={view.paidAt} /> }] : []),
   ];
   const payment = (
-    <section className="x2f-panel" data-outline="" aria-label="Your payment" data-part="paid-payment">
-      {/* The kit's Disclosure (the LoginApprove board's open and close row). */}
+    <section aria-label="Your payment" data-part="paid-payment">
+      {/* The kit's Disclosure (LoginApprove board) with its note slot, outlined as on this board. */}
       <Disclosure
         part="paid-payment-toggle"
-        summary={
+        outline
+        summary="Your payment"
+        note={
           <>
-            <span>Your payment</span>
-            <span className="x2f-fine">
-              {total !== null ? <span className="x2f-when">{total.text}</span> : null}
-              {total !== null ? ' · ' : ''}
-              {method.name}
-            </span>
+            {total !== null ? <span className="x2f-when">{total.text}</span> : null}
+            {total !== null ? ' · ' : ''}
+            {method.name}
           </>
         }
       >
         {(id) => (
-          <div id={id}>
-            <KeyValues rows={rows} />
+          <div id={id} className="x2f-disclosure__body">
+            <Facts layout="rows" rows={rows} />
           </div>
         )}
       </Disclosure>
@@ -240,7 +246,7 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
   const name = publicName(view.counterparty);
   const now = serverClock().getTime();
   const opensAt = disputeOpensAt(view);
-  const [nudge, setNudge] = useState<'sent' | 'failed' | null>(null);
+  const [nudge, setNudge] = useState<'sent' | 'failed' | 'gone' | null>(null);
   const [nudgeLimit, setNudgeLimit] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -253,6 +259,9 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
       if (r.result === NUDGE_TOO_SOON_CODE) {
         setNudge(null);
         setNudgeLimit(true);
+      } else if (r.result === 'no-shared-context') {
+        // Nothing shared to nudge about any more (the trade moved on): the button goes (review N2).
+        setNudge('gone');
       } else setNudge(r.result === 'sent' ? 'sent' : 'failed');
     } catch {
       setNudge('failed');
@@ -263,33 +272,38 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
 
   return (
     <>
-      {nudge === 'sent' ? (
-        <p role="status" className="x2f-footnote" data-part="nudge-sent">
-          Nudge sent. You can send another in 10 min.
-        </p>
-      ) : (
+      {nudge === 'gone' ? null : (
         <Button variant="secondary" data-tone="caution" disabled={busy} onClick={() => void onNudge()} data-part="nudge">
           <Icon name="bell-ring" size={20} />
           Nudge <Name view={view} />
         </Button>
       )}
+      {/* The button stays after a send (review N1); the server's 10-minute limit answers a second tap. */}
+      {nudge === 'sent' ? (
+        <p role="status" className="x2f-footnote" data-part="nudge-sent">
+          Nudge sent. You can send another in 10 min.
+        </p>
+      ) : null}
       {nudge === 'failed' ? (
         <p role="alert" className="x2f-error">
           That did not work. Try again.
         </p>
       ) : null}
-      {opensAt === null || now >= opensAt ? (
-        <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger-outline" data-part="paid-dispute">
+      {opensAt !== null && now >= opensAt ? (
+        <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger-outline" data-size="medium" data-part="paid-dispute">
           Open a dispute
         </Link>
       ) : (
         <>
-          <Button variant="secondary" disabled aria-describedby="paid-dispute-when" data-part="paid-dispute">
+          {/* aria-disabled, not disabled: it stays focusable, so its "Available from" is reachable (review N4). */}
+          <Button variant="secondary" aria-disabled="true" aria-describedby={opensAt !== null ? 'paid-dispute-when' : undefined} data-part="paid-dispute">
             Open a dispute
           </Button>
-          <p id="paid-dispute-when" className="x2f-footnote">
-            Available from <When at={opensAt} />, in <Countdown deadline={new Date(opensAt)} serverClock={serverClock} format="minutes" />.
-          </p>
+          {opensAt !== null ? (
+            <p id="paid-dispute-when" className="x2f-footnote">
+              Available from <When at={opensAt} />, in <Countdown deadline={new Date(opensAt)} serverClock={serverClock} format="minutes" />.
+            </p>
+          ) : null}
         </>
       )}
       <p className="x2f-footnote">
