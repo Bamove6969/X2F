@@ -1,5 +1,5 @@
 import type { Price } from '@x2f/trade';
-import { DEFAULT_PRICE_ROUTES, createPriceChain, priceRoutesFor, type ChainQuote, type PriceRouteName } from './chain.js';
+import { DEFAULT_PRICE_ROUTES, createPriceChain, priceRoutesFor, type PriceRouteName, type RouteQuote } from './chain.js';
 import { PRICE_FEED_DEFAULTS, type PriceFeed, type PriceSourceHealth } from './feed.js';
 import { FX_DEFAULTS, type FxHealth, type FxRates } from './fx.js';
 import { createAlertGrouper, type PriceAlert } from './health.js';
@@ -12,8 +12,14 @@ import { createAlertGrouper, type PriceAlert } from './health.js';
  * configured (`PRICE_ROUTES`), a currency the market route cannot price falls back to the next.
  */
 
-/** The local price with its USD value, the exchange rate used (null for USD or a route without one) and the route. */
-export type MarketQuote = ChainQuote;
+/**
+ * The local price with its USD value and the exchange rate used (null for USD or a route without one).
+ * `route` names the route that priced it; always set by `createMarketPrices`, optional so that
+ * hand-made quotes (test fakes, other branches) keep type-checking.
+ */
+export interface MarketQuote extends RouteQuote {
+  route?: string;
+}
 
 export interface PriceHealthView {
   xmr: PriceSourceHealth[];

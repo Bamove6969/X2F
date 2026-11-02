@@ -38,6 +38,8 @@ export function testConfig(over: Partial<Config> = {}): Config {
     pgpSigningFingerprint: '0'.repeat(40),
     priceSources: ['kraken', 'bitfinex', 'coingecko'],
     fxSources: ['coinbase', 'bitpay', 'coingecko'],
+    priceRoutes: ['market'],
+    priceRouteMaxGapBps: null,
     passwordPeppers: testRing(),
     recoveryCodeKeys: testRing(),
     totpKeys: testRing(),
