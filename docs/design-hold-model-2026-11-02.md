@@ -106,3 +106,4 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - Ending early with a passkey, security key or PGP key the user already had discards the changes.
   - The owner is still notified on every channel.
   - Only a recovery-code login logs everyone out and pauses or cancels trades.
+- Waiting changes can be cancelled by anyone logged in, including with just a username and password (owner, 2 Nov).
