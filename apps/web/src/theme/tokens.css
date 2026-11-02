@@ -19,6 +19,7 @@
   --x2f-monero-ink-hover: #ffa060;
   --x2f-monero-hold: #ffc08a;
   --x2f-moderator: #b69cff;
+  --x2f-team: #7aa2ff;
 }
 
 :root[data-theme=day] {
@@ -38,6 +39,7 @@
   --x2f-monero-ink-hover: #9c3f00;
   --x2f-monero-hold: #f7a47a;
   --x2f-moderator: #6741d9;
+  --x2f-team: #2f5bd3;
 }
 
 :root {

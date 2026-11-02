@@ -47,19 +47,16 @@ export function Login() {
 
   if (waiting !== null) {
     return (
-      <main className="x2f-screen" data-screen="login">
-        <h1 className="x2f-screen__title">Log in</h1>
-        <ApproveOnDevice
-          key={waiting.approvalId}
-          wait={waiting}
-          returnTo={returnTo}
-          onLoggedIn={onLoggedIn}
-          onRestart={() => {
-            setWaiting(null);
-            setMethod('choose');
-          }}
-        />
-      </main>
+      <ApproveOnDevice
+        key={waiting.approvalId}
+        wait={waiting}
+        returnTo={returnTo}
+        onLoggedIn={onLoggedIn}
+        onRestart={() => {
+          setWaiting(null);
+          setMethod('choose');
+        }}
+      />
     );
   }
 
