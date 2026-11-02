@@ -30,18 +30,86 @@ describe('CantDoThat', () => {
     );
     const dialog = document.querySelector('[role="dialog"]')!;
     expect(dialog.querySelector('h2')?.textContent).toBe("This trade can't start");
-    expect(dialog.querySelector('[role="alert"]')?.textContent).toBe('Your account is on Starter limits.');
+    expect(dialog.querySelector('[data-part="cant-do-message"]')?.textContent).toBe('Your account is on Starter limits.');
     const line = dialog.querySelector('[data-part="feedback-line"]')!;
     expect(line.textContent).toBe(LINE);
     const link = line.querySelector('a')!;
     expect(link.textContent).toBe('feedback');
     expect(link.getAttribute('href')).toBe('/feedback?from=starter-limit');
-    // No primary button: the screen under the popup keeps its one data-primary.
-    expect(dialog.querySelector('[data-primary]')).toBeNull();
+    // Design review X2 (board CantDoThat.dc.html): no X close, and OK is the popup's one filled primary.
+    expect(dialog.querySelector('button[aria-label="Close"]')).toBeNull();
+    expect([...dialog.querySelectorAll('button')].map((b) => b.textContent)).toEqual(['OK']);
+    expect([...dialog.querySelectorAll('[data-primary]')].map((b) => b.textContent)).toEqual(['OK']);
+    expect(dialog.querySelector('button')!.className).toContain('x2f-button--primary');
     fire([...dialog.querySelectorAll('button')].find((b) => b.textContent === 'OK')!, new MouseEvent('click', { bubbles: true }));
     expect(onClose).toHaveBeenCalledTimes(1);
+    // A tap on the scrim closes it too.
+    fire(document.querySelector('[data-part="backdrop"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(onClose).toHaveBeenCalledTimes(2);
     fire(link, new MouseEvent('click', { bubbles: true, button: 0 }));
     expect(document.querySelector('[data-testid="where"]')?.textContent).toBe('/feedback?from=starter-limit');
+  });
+
+  // Design v2 batch 2 (board CantDoThat / CantDoThat-Wide, wip/design-brief 0955ab95): the one
+  // shared refusal dialog. Phone: a bottom sheet with a grab handle; wide: a centred dialog. An info
+  // tile above the title, the title defaulting to the board's, the message describing the dialog,
+  // the feedback line in an info block, OK the one orange button, no X; scrim and a swipe down close it.
+  it('follows the v2 board: grab handle, info tile, default title, message as description, feedback info block', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <CantDoThat body="Sorry, you're limited to 2 offers per side (buying or selling) for each currency." from="too-many-offers" onClose={onClose} />
+      </MemoryRouter>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.querySelector('h2')?.textContent).toBe("You can't do that yet");
+    expect(dialog.querySelector('[data-part="sheet-handle"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(dialog.querySelector('[data-part="cant-do-tile"]')?.getAttribute('aria-hidden')).toBe('true');
+    // Review N1: the dialog describes itself with the message, so the message is not also an alert
+    // (a screen reader would read it twice on open).
+    const msg = dialog.querySelector('[data-part="cant-do-message"]')!;
+    expect(msg.textContent).toBe("Sorry, you're limited to 2 offers per side (buying or selling) for each currency.");
+    expect(dialog.getAttribute('aria-describedby')).toBe(msg.id);
+    expect(dialog.querySelector('[role="alert"]')).toBeNull();
+    expect(dialog.querySelector('[data-part="feedback-line"]')?.classList.contains('x2f-info-block')).toBe(true);
+    expect(document.querySelector('.x2f-sheet-layer')?.getAttribute('data-wide')).toBe('dialog');
+  });
+
+  // Review M1/M2: a swipe down from the grab handle closes the sheet on a touch screen (the handle
+  // takes the gesture: touch-action none, so the browser sends pointerup, not pointercancel); a
+  // cancelled gesture is forgotten; a mouse drag never closes it (the wide dialog hides the handle,
+  // and selecting the message with the mouse must not close it); a drag on the body does nothing.
+  it('closes on a touch swipe down from the handle, never on a mouse drag or a cancelled gesture', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <CantDoThat body="No." from="too-many-offers" onClose={onClose} />
+      </MemoryRouter>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    const handle = dialog.querySelector<HTMLElement>('[data-part="sheet-handle"]')!;
+    const msg = dialog.querySelector<HTMLElement>('[data-part="cant-do-message"]')!;
+    const ev = (type: string, pointerType: string, clientY: number) =>
+      new PointerEvent(type, { bubbles: true, cancelable: true, pointerId: 1, pointerType, clientY });
+    const drag = (el: HTMLElement, pointerType: string, dy: number, end = 'pointerup') => {
+      fire(el, ev('pointerdown', pointerType, 100));
+      fire(el, ev(end, pointerType, 100 + dy));
+    };
+    drag(handle, 'touch', 20);
+    expect(onClose).not.toHaveBeenCalled();
+    drag(handle, 'mouse', 200);
+    expect(onClose).not.toHaveBeenCalled();
+    drag(msg, 'mouse', 200);
+    drag(msg, 'touch', 200);
+    expect(onClose).not.toHaveBeenCalled();
+    // A cancelled touch, then a later pointerup with no pointerdown, is not a swipe.
+    drag(handle, 'touch', 200, 'pointercancel');
+    fire(handle, ev('pointerup', 'touch', 400));
+    expect(onClose).not.toHaveBeenCalled();
+    drag(handle, 'touch', 120);
+    expect(onClose).toHaveBeenCalledTimes(1);
+    drag(handle, 'pen', 120);
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
   it('a code without the API shape is left off the link', () => {

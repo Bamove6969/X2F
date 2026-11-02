@@ -231,7 +231,7 @@ describe('Your wallets', () => {
 
   describe('refusals say what to do (round 2, M1)', () => {
     function alertText(): string {
-      return document.querySelector('[role="alert"]')?.textContent ?? '';
+      return document.querySelector('[data-part="cant-do-message"], [role="alert"]')?.textContent ?? '';
     }
 
     it('a backup-login session is told it cannot add wallets, not to check the addresses', async () => {

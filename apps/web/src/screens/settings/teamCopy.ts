@@ -70,6 +70,8 @@ export const TEAM_COPY = {
   nameLabel: 'Their name in trade chats',
   nameHint: 'Chat shows it as "Team <your name> member: <their name>".',
   inviteButton: 'Make an invite link',
+  // Team board (wip/design-brief), the full state, with the 1 Nov limit as a number.
+  full: (max: number) => `You have ${max} members, the most allowed. Remove one to add another.`,
   inviteMade: (name: string) => `Invite for ${name} made. Send them this link yourself. It works once, for 24 hours, and is shown only now.`,
   copyLink: 'Copy link',
   copied: 'Copied',

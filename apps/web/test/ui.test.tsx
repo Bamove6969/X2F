@@ -5,6 +5,8 @@ import { Amount } from '../src/ui/Amount.js';
 import { BadgePill } from '../src/ui/BadgePill.js';
 import { ActionBar } from '../src/ui/ActionBar.js';
 import { BottomNav } from '../src/ui/BottomNav.js';
+import { mayPostOffers } from '../src/session/member.js';
+import type { Session } from '../src/session/useSession.js';
 import { Button } from '../src/ui/Button.js';
 import { Checkbox } from '../src/ui/Checkbox.js';
 import { EmptyState } from '../src/ui/EmptyState.js';
@@ -358,6 +360,31 @@ describe('BottomNav', () => {
     expect(links.map((a) => a.textContent)).toEqual(['Trade', 'Post offer', 'Wallets', 'Profile']);
     expect(links[0]!.getAttribute('aria-current')).toBe('page');
     expect(links.slice(1).every((a) => !a.hasAttribute('aria-current'))).toBe(true);
+  });
+
+  // Design review shot 26: a team member without the Offers role never reaches Post offer.
+  it('hides Post offer when the session may not post offers', () => {
+    const { host } = render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <BottomNav postOffers={false} />
+      </MemoryRouter>,
+    );
+    expect([...host.querySelectorAll('nav a')].map((a) => a.textContent)).toEqual(['Trade', 'Wallets', 'Profile']);
+  });
+
+  it('mayPostOffers: the account owner and an Offers member may; a Trades-only member may not', () => {
+    const me = (member: unknown) => ({ status: 'signed-in', me: { displayName: 'Calcium', member } }) as unknown as Session;
+    expect(mayPostOffers(me(null))).toBe(true);
+    expect(mayPostOffers(me(undefined))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers'] }))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['offers', 'trades'] }))).toBe(true);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: ['trades'] }))).toBe(false);
+    expect(mayPostOffers(me({ name: 'Aurora', roles: [] }))).toBe(false);
+    // Signed out: the tab stays (PostOffer sends a signed-out poster to setup).
+    expect(mayPostOffers({ status: 'signed-out' })).toBe(true);
+    // Review N2: while the session loads the role is not known, so the tab waits (a Trades-only
+    // member never sees it appear and vanish on a cold load).
+    expect(mayPostOffers({ status: 'loading' })).toBe(false);
   });
 
   it('the tab bar carries no data-primary: the Main and BuyMain boards have no primary action', () => {

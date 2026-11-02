@@ -310,14 +310,11 @@ test('17-18 the owner\'s team: members and the activity log', async ({ page }) =
   await shot(page, '18-team-owner-activity-log', { scrollTo: page.locator('[data-part="log-list"]') });
 });
 
-test('19 a 4th member is refused (CantDoThat too-many-members)', async ({ page }) => {
-  await ownerApi(page, { members: [member('m1', 'Aurora', ['trades']), member('m2', 'Basil', ['offers'])], inviteAnswer: { status: 409, body: { error: 'too-many-members', max: 3 } } });
+test('19 a full team: the invite control disabled with the board note (review shot 19; the popup is a server fallback)', async ({ page }) => {
+  await ownerApi(page, { members: [member('m1', 'Aurora', ['trades']), member('m2', 'Basil', ['offers']), member('m3', 'Cedric', ['offers', 'trades'])] });
   await page.goto('/settings/team');
-  await page.getByLabel('Their name in trade chats').fill('Cedric');
-  await page.locator('[data-part="invite"]').click();
-  await confirmWithPassword(page);
-  await expect(page.locator('[data-part="cant-do-that"]')).toHaveAttribute('data-from', 'too-many-members');
-  await shot(page, '19-team-refused-too-many-members');
+  await expect(page.locator('[data-part="team-full"]')).toBeVisible();
+  await shot(page, '19-team-full-invite-disabled', { scrollTo: page.locator('[data-part="invite"]') });
 });
 
 test('20 an invite from a one-proof login is refused (CantDoThat weak-session)', async ({ page }) => {
@@ -368,18 +365,14 @@ test('25 a member opens an owner-only screen (CantDoThat owner-only)', async ({ 
   await shot(page, '25-team-member-owner-only');
 });
 
-test('26 a Trades-only member tries to post an offer (CantDoThat role)', async ({ page }) => {
+test('26 a Trades-only member: no Post offer tab (review shot 26)', async ({ page }) => {
+  await stubBrowseApi(page, { signedIn: true, live: { USD: BOARD_SELL_LIVE_USD }, offers: (c) => (c === 'USD' ? boardSellOffers() : []), market: { USD: BOARD_SELL_OFFERS.marketCentsPerXmr } });
   await page.route('**/v1/account/me', json(memberMe(['trades'])));
-  await page.route(/\/v1\/methods\?/, json({ live: [], all: [{ id: 'ZELLE', name: 'Zelle', group: 'Payment apps', giftCard: false, offers: 0, bestRate: null }] }));
-  await page.route('**/v1/offers?*', json([]));
-  await page.route(/\/v1\/price\?/, json({ currency: 'USD', centsPerXmr: '32990', usdCentsPerXmr: '32990', exponent: 2, at: '2026-10-24T12:00:00.000Z' }));
-  await page.route('**/v1/offers', (r) => (r.request().method() === 'POST' ? json({ error: 'forbidden' }, 403)(r) : r.fallback()));
-  await page.goto('/post?method=ZELLE');
-  await page.getByLabel('Smallest trade').fill('$50');
-  await page.getByLabel('Largest trade').fill('$2,000');
-  await page.getByRole('button', { name: 'Post offer' }).click();
-  await expect(page.locator('[data-part="cant-do-that"]')).toHaveAttribute('data-from', 'forbidden');
-  await shot(page, '26-team-member-role-refused');
+  await page.goto('/sell');
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  await expect(nav.getByRole('link', { name: 'Trade' })).toBeVisible();
+  await expect(nav.getByRole('link', { name: 'Post offer' })).toHaveCount(0);
+  await shot(page, '26-team-member-trades-only-nav');
 });
 
 test("27 a Trades member's device when an offer is taken: a notice, not the accept sheet", async ({ page }) => {
@@ -517,7 +510,14 @@ function identity(): Identity {
   };
 }
 
-async function stubChat(page: Page, tradeCode: string, me: 'buyer' | 'seller', other: string, lines: string[]): Promise<void> {
+async function stubChat(
+  page: Page,
+  tradeCode: string,
+  me: 'buyer' | 'seller',
+  other: string,
+  lines: string[],
+  o: { modLines?: string[]; disputeOpen?: boolean } = {},
+): Promise<void> {
   const chatId = 'C7AT-2M9Q-XA4F-TR8W';
   const them: 'buyer' | 'seller' = me === 'buyer' ? 'seller' : 'buyer';
   const channel = await channelFor(chatId, 'chat');
@@ -539,7 +539,7 @@ async function stubChat(page: Page, tradeCode: string, me: 'buyer' | 'seller', o
     const path = url.pathname.replace(`/v1/chats/${chatId}`, '');
     const method = r.request().method();
     if (path === '' && method === 'GET') {
-      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: other }, tradeCode, disputeOpen: false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
+      return json({ chat: chatId, role: me, offerId: '00000000-0000-4000-8000-000000000000', counterparty: { displayName: other }, tradeCode, disputeOpen: o.disputeOpen ?? false, attested: attestation !== null, mySignPublic: registered[0]?.signPublic ?? null, createdAt: at, lastMessageAt: null })(r);
     }
     if (path === '/identity' && method === 'POST') {
       const body = r.request().postDataJSON() as { signPublic: string; boxPublic: string; proof: string };
@@ -552,6 +552,11 @@ async function stubChat(page: Page, tradeCode: string, me: 'buyer' | 'seller', o
       for (const text of lines) {
         const env = await seal({ trade: channel, from: them, seq: seq++, type: 'chat.msg', payload: { text }, to: ['buyer', 'seller', 'mod'], me: peer, participants: participants() });
         envelopes.push({ id: String(envelopes.length + 1), senderRole: them, envelope: env, at });
+      }
+      let modSeq = 0;
+      for (const text of o.modLines ?? []) {
+        const env = await seal({ trade: channel, from: 'mod', seq: modSeq++, type: 'chat.msg', payload: { text }, to: ['buyer', 'seller', 'mod'], me: mod, participants: participants() });
+        envelopes.push({ id: String(envelopes.length + 1), senderRole: 'mod', envelope: env, at });
       }
       return json({ ok: true, role: me }, 201)(r);
     }
@@ -866,9 +871,21 @@ test('57 DisputeOpen', async ({ page }) => {
 });
 
 test('58 DisputeRoom', async ({ page }) => {
+  // Design review shot 58 showed "Couldn't open the chat": this test played no chat API
+  // (GET /v1/trades/:code/chat fell through to the server) on the production build, which pins no
+  // moderation key to check the attestation with. It now runs on the fixtures build with the chat
+  // played as for 49 (stubChat), the dispute open, and a moderator line.
   await disputeApi(page, disputeTrade({ state: 'disputed', dispute: { by: 'buyer', at: T('10:14') }, serverNow: T('11:00') }), disputeView());
-  await page.goto(`/trade/${BOARD.code}/dispute`);
+  await noEvents(page);
+  await stubChat(page, BOARD.code, 'buyer', 'satoshi_ghost', ['I sent nothing back yet, checking my Zelle.'], {
+    disputeOpen: true,
+    modLines: [
+      "Hi both. I've read the chat and seen the proof. mira.k, please send me the unblurred screenshot so I can check the sender name. satoshi_ghost, please look in your Zelle activity for $412.50 today with the note K7M2-9QXA-4FTR-8WPN.",
+    ],
+  });
+  await page.goto(`${FX}/trade/${BOARD.code}/dispute`);
   await expect(page.getByText('In dispute', { exact: true })).toBeVisible();
+  await expect(page.locator('[data-from="mod"]').first()).toBeVisible({ timeout: 30_000 });
   await shot(page, '58-dispute-room');
 });
 
