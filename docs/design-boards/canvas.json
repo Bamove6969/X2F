@@ -1112,6 +1112,24 @@
       "page": "all",
       "title": "G8 \u00b7 Stay logged in? (wide)",
       "is_interactive": true
+    },
+    "ProofBlur.dc.html": {
+      "x": 2520,
+      "y": 40000,
+      "w": 390,
+      "h": 2353,
+      "page": "all",
+      "title": "I5 \u00b7 Check your payment proof (blur)",
+      "is_interactive": true
+    },
+    "ProofBlur-Wide.dc.html": {
+      "x": 3060,
+      "y": 40000,
+      "w": 1280,
+      "h": 1478,
+      "page": "all",
+      "title": "I5 \u00b7 Check your payment proof (wide)",
+      "is_interactive": true
     }
   },
   "createdOnFiles": {
@@ -1392,7 +1410,9 @@
     "MemberPermissions.dc.html",
     "MemberPermissions-Wide.dc.html",
     "SessionExtend.dc.html",
-    "SessionExtend-Wide.dc.html"
+    "SessionExtend-Wide.dc.html",
+    "ProofBlur.dc.html",
+    "ProofBlur-Wide.dc.html"
   ],
   "pages": [
     {
