@@ -81,3 +81,9 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 - **Team member permissions are per member** (owner, 2 Nov). They replace the two roles: the lead switches each action on or off, starting from a preset if they like. The only things never available to members are the owner-only items: wallets, team, login and security, sessions, account type, and deleting the account.
 - **No auto-accept:** every trade must be accepted by the account that posted the ad. "Accept a new trade" can be granted to members (owner, 2 Nov).
 - Release XMR can be granted to a member. Every sensitive permission shows a warning when switched on, saying what it allows. Adding a member or changing permissions always needs a passkey, security key or PGP key (owner, 2 Nov).
+- **Sessions** (owner, 2 Nov):
+  - There is no fixed maximum. A session logs out only after the chosen idle time with no activity.
+  - Traders choose 2, 4, 6 or 12 h; vendors choose 2, 6, 12 or 24 h.
+  - After 24 h of continuous use, the user confirms with a passkey, security key or PGP key and stays logged in.
+  - Trader screens never mention 24 hours.
+  - Open: what happens on accounts with no passkey, security key or PGP key.
