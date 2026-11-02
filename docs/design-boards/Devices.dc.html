@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Devices</title>
+<title>Devices and sessions</title>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -17,59 +17,143 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
 <div style="{{rootStyle}}">
   <header style="display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--surface-raised);">
     <a href="#" aria-label="Back to settings" style="display: flex; width: 44px; height: 44px; margin-left: -10px; flex-shrink: 0; align-items: center; justify-content: center; color: var(--ink);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></a>
-    <h1 style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Devices</h1>
+    <h1 style="flex-grow: 1; margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">Devices and sessions</h1>
+    <span style="align-self: flex-start; flex-shrink: 0; white-space: nowrap; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
   </header>
-  <main style="flex-grow: 1; padding: 16px 16px 24px; display: flex; flex-direction: column; gap: 24px;">
-    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">You can be logged in on up to 3 devices at once. A new device has to be approved from one of these.</p>
 
-    <section aria-labelledby="dv-list" style="display: flex; flex-direction: column; gap: 8px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px;">
-        <h2 id="dv-list" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Logged in · {{countLine}}</h2>
-        <span aria-hidden="true" style="display: flex; gap: 4px;">
+  <main style="flex-grow: 1; padding: 20px 16px 32px; display: flex; flex-direction: column; gap: 32px;">
+    <p style="margin: 0; font-size: 16px; line-height: 24px; color: var(--ink-muted);">See where you&#39;re logged in, log devices out, and choose how long a session lasts.</p>
+
+    <section aria-labelledby="dv-dev-h" style="display: flex; flex-direction: column; gap: 12px;">
+      <h2 id="dv-dev-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Devices</h2>
+
+      <div style="display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: 12px; background: var(--surface);">
+        <p style="margin: 0; font-size: 18px; line-height: 24px; font-weight: 600;"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{used}}</span> of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">3</span> devices logged in</p>
+        <div aria-hidden="true" style="display: flex; gap: 4px;">
           <sc-for list="{{meter}}" as="m" hint-placeholder-count="3"><span style="{{m.style}}"></span></sc-for>
-        </span>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{meterNote}}</p>
       </div>
-      <ul style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
+
+      <ul aria-label="Logged-in devices" style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
         <sc-for list="{{devices}}" as="d" hint-placeholder-count="3">
           <li style="{{d.rowStyle}}">
             <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);">
               <sc-if value="{{d.isPhone}}" hint-placeholder-val="{{true}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/></svg></sc-if>
               <sc-if value="{{d.isComputer}}" hint-placeholder-val="{{false}}"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="4" y="5" width="16" height="11" rx="1.5"/><path d="M2 19h20"/></svg></sc-if>
             </span>
-            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
-              <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{d.name}}<sc-if value="{{d.self}}" hint-placeholder-val="{{false}}"><span style="font-weight: 400; color: var(--ink-muted);"> · this device</span></sc-if></span>
-              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{d.active}}</span>
-              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Logged in <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{d.since}}</span></span>
+            <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px;">
+              <span style="font-size: 16px; line-height: 24px; font-weight: 600;">{{d.name}}</span>
+              <sc-if value="{{d.hasTag}}" hint-placeholder-val="{{true}}"><span style="align-self: flex-start; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); font-size: 12px; line-height: 16px; font-weight: 600; color: var(--ink);">{{d.tag}}</span></sc-if>
+              <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">{{d.agoPre}}<span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">{{d.agoNum}}</span>{{d.agoPost}}</span>
             </span>
             <sc-if value="{{d.canOut}}" hint-placeholder-val="{{true}}">
-              <button type="button" aria-label="{{d.outLabel}}" onClick="{{d.askOut}}" style="height: 44px; flex-shrink: 0; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Log out</button>
+              <button type="button" aria-label="{{d.outLabel}}" onClick="{{d.askOut}}" style="min-width: 44px; height: 44px; flex-shrink: 0; margin-right: -8px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--danger); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Log out</button>
             </sc-if>
           </li>
         </sc-for>
       </ul>
-      <sc-if value="{{hasNote}}" hint-placeholder-val="{{false}}">
-        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{note}}</span></p>
+
+      <sc-if value="{{hasDevNote}}" hint-placeholder-val="{{false}}">
+        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{devNote}}</span></p>
       </sc-if>
+
       <button type="button" disabled="{{noOthers}}" onClick="{{askAll}}" style="{{allStyle}}">Log out all other devices</button>
+
+      <aside aria-label="Open for the owner: team members' sessions" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">Do members&#39; sessions count toward the 3?</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li>No: they don&#39;t use up your slots</li>
+          <li>Yes: they count like your own devices</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Also not decided: can you log out a member&#39;s session here, and does &quot;Log out all other devices&quot; include members? Shown: yes, and no.</span>
+        <span style="color: var(--ink-muted);">Preview with the members tweak. Showing: {{membersName}}</span>
+      </aside>
     </section>
 
-    <section aria-labelledby="dv-one" style="display: flex; flex-direction: column; gap: 8px;">
-      <h2 id="dv-one" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Extra safety</h2>
-      <div style="border-radius: 12px; background: var(--surface); padding: 0 16px;">
-        <div style="display: flex; align-items: center; gap: 12px; min-height: 64px; padding: 12px 0;">
-          <span style="flex-grow: 1; display: flex; flex-direction: column; gap: 2px;">
+    <section aria-labelledby="dv-opt-h" style="display: flex; flex-direction: column; gap: 12px;">
+      <h2 id="dv-opt-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">Options</h2>
+
+      <div style="padding: 0 16px; border-radius: 12px; background: var(--surface);">
+        <div style="display: flex; align-items: center; gap: 12px; padding: 16px 0;">
+          <span style="flex-grow: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px;">
             <span id="dv-one-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">One device at a time</span>
-            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">When you approve a new device, the one you were using is logged out. Only one device is ever logged in.</span>
+            <span id="dv-one-d" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">When on, approving a new device logs out the one you were using.</span>
           </span>
-          <button type="button" role="switch" aria-checked="{{one.on}}" aria-labelledby="dv-one-l" onClick="{{one.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; padding: 0; border: 0; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{one.track}}"><span style="{{one.knob}}"></span></span></button>
+          <button id="dv-one-sw" type="button" role="switch" aria-checked="{{one.on}}" aria-labelledby="dv-one-l" aria-describedby="dv-one-d" onClick="{{one.toggle}}" style="display: flex; align-items: center; justify-content: center; width: 60px; height: 44px; flex-shrink: 0; margin-right: -4px; padding: 0; border: 0; border-radius: 999px; background: transparent; cursor: pointer;"><span aria-hidden="true" style="{{one.track}}"><span style="{{one.knob}}"></span></span></button>
+        </div>
+        <sc-if value="{{confirmingOne}}" hint-placeholder-val="{{false}}">
+          <div role="alert" style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 16px; padding: 12px; border-radius: 6px; background: var(--surface-raised);">
+            <p style="margin: 0; font-size: 15px; line-height: 22px;">{{oneWarn}}</p>
+            <div style="display: flex; gap: 8px;">
+              <button type="button" onClick="{{oneConfirm}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border: 2px solid var(--ink); border-radius: 12px; background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; font-weight: 600; cursor: pointer;">Turn on</button>
+              <button type="button" onClick="{{oneCancel}}" style="display: flex; align-items: center; justify-content: center; height: 44px; padding: 0 16px; border: 0; border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Keep it off</button>
+            </div>
+          </div>
+        </sc-if>
+
+        <div role="group" aria-labelledby="dv-idle-l" aria-describedby="dv-idle-n" style="display: flex; flex-direction: column; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
+          <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 12px;">
+            <span id="dv-idle-l" style="font-size: 16px; line-height: 24px; font-weight: 600;">Log me out after no activity</span>
+            <span style="{{idleValStyle}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{idleNum}}</span>{{idleUnit}}</span>
+          </div>
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+            <sc-for list="{{idleOpts}}" as="o" hint-placeholder-count="4">
+              <button type="button" onClick="{{o.pick}}" aria-pressed="{{o.pressed}}" aria-label="{{o.aria}}" style="{{o.style}}"><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span> h</button>
+            </sc-for>
+          </div>
+          <p id="dv-idle-n" style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">Every session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours at most.</p>
         </div>
       </div>
+
+      <sc-if value="{{hasOptNote}}" hint-placeholder-val="{{false}}">
+        <p role="status" style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{optNote}}</span></p>
+      </sc-if>
+
+      <aside aria-label="Open for the owner: default idle logout" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+        <span style="font-weight: 600;">Default not decided (current build: <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h)</span>
+        <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+          <li><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">4</span> h, <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h or <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h</li>
+          <li>Until chosen, nothing is pre-selected</li>
+        </ul>
+        <span style="color: var(--ink-muted);">Preview with the idleDefault tweak. Showing: {{idleDefaultName}}</span>
+      </aside>
+      <aside aria-label="Open for the owner: idle logout for vendors" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); font-size: 13px; line-height: 18px; color: var(--ink);">
+        <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+        <span style="font-weight: 600;">Vendors: rule not decided yet</span>
+        <span style="color: var(--ink-muted);">The four choices above are for non-vendors.</span>
+      </aside>
     </section>
 
-    <section aria-labelledby="dv-how" style="display: flex; flex-direction: column; gap: 12px;">
-      <h2 id="dv-how" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">How a new device gets in</h2>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">When you log in somewhere new, every device here asks &quot;Is this you?&quot; and you tap the number the new device shows. If you say no, the login is blocked.</p>
-      <p style="margin: 0; font-size: 15px; line-height: 22px;">Lost your only device? <a href="Login-Backup.dc.html" style="color: var(--monero-ink); padding: 14px 0;">Log in with a backup</a>.</p>
+    <section aria-labelledby="dv-how-h" style="display: flex; flex-direction: column; gap: 12px;">
+      <h2 id="dv-how-h" style="margin: 0; font-size: 13px; line-height: 16px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink-muted);">How a new device gets in</h2>
+      <ol style="margin: 0; padding: 0 16px; list-style: none; border-radius: 12px; background: var(--surface);">
+        <li style="display: flex; gap: 12px; padding: 16px 0;">
+          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 14px; font-weight: 500; color: var(--ink);">47</span>
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Approve it on a logged-in device</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Your devices ask &quot;Is this you?&quot;. Tap the <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">2</span>-digit number the new device shows. If you say no, the login is blocked.</span>
+          </span>
+        </li>
+        <li style="display: flex; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
+          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="12" r="4"/><path d="M12 12h9M18 12v3M21 12v2"/></svg></span>
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">No other device with you?</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Log in with a passkey, security key or PGP key.</span>
+            <a href="Login-Backup.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-bottom: -12px; font-size: 14px; color: var(--ink);">Log in another way</a>
+          </span>
+        </li>
+        <li style="display: flex; gap: 12px; padding: 16px 0; border-top: 1px solid var(--surface-raised);">
+          <span aria-hidden="true" style="display: flex; width: 40px; height: 40px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 999px; background: var(--surface-raised); color: var(--ink-muted);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l3 2M9 2h6"/></svg></span>
+          <span style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+            <span style="font-size: 16px; line-height: 24px; font-weight: 600;">Only have a password?</span>
+            <span style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Use your recovery code. That starts a hold of <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours before you get in.</span>
+            <a href="RecoveryHold.dc.html" style="align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-bottom: -12px; font-size: 14px; color: var(--ink);">How the hold works</a>
+          </span>
+        </li>
+      </ol>
       <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">X2F doesn&#39;t log IP addresses, so devices are named only by browser and system.</p>
     </section>
   </main>
@@ -80,7 +164,7 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
         <h2 id="dv-ask-t" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">{{askTitle}}</h2>
         <p style="margin: 0; font-size: 16px; line-height: 24px;">{{askText}}</p>
         <div style="display: flex; flex-direction: column; gap: 4px;">
-          <button type="button" onClick="{{confirm}}" style="{{confirmStyle}}">{{confirmLabel}}</button>
+          <button type="button" onClick="{{confirm}}" style="display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;">{{confirmLabel}}</button>
           <button type="button" onClick="{{cancel}}" style="display: flex; align-items: center; justify-content: center; min-height: 44px; border: 0; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 15px; cursor: pointer;">Cancel</button>
         </div>
       </section>
@@ -88,72 +172,100 @@ button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset
   </sc-if>
 </div>
 </x-dc>
-<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"$preview":{"width":390,"height":1040}}'>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"idleDefault":{"editor":"enum","options":["not-set","2h","4h","6h","12h"],"default":"not-set"},"members":{"editor":"enum","options":["dont-count","count"],"default":"dont-count"},"$preview":{"width":390,"height":2200}}'>
 class Component extends DCLogic {
-  constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, note: '' }; }
+  constructor(props) { super(props); this.state = { gone: [], ask: null, single: false, confirmOne: false, idle: null, devNote: '', optNote: '' }; }
   renderVals() {
     const THEMES = {
-      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);',
-      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);'
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
     };
     const theme = this.props.theme === 'day' ? 'day' : 'night';
-    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: 1040px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
+    const H = 2200;
+    const rootStyle = THEMES[theme] + "position: relative; width: 390px; height: " + H + "px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex; flex-direction: column;";
     const s = this.state;
+
+    // Owner: up to 3 devices; a team member's session is listed but (OPEN) may not count.
+    const membersCount = this.props.members === 'count';
     const ALL = [
-      { id: 'pixel', name: 'Pixel 10 Pro Fold', self: true, phone: true, active: 'Active now', since: '2 Sep 2026' },
-      { id: 'firefox', name: 'Firefox, Linux', self: false, phone: false, active: 'Last active 2 hours ago', since: '14 Oct 2026' },
-      { id: 'chrome', name: 'Chrome, Windows', self: false, phone: false, active: 'Last active 3 days ago', since: '21 Oct 2026' }
+      { id: 'linux', name: 'Firefox on Linux', self: true, phone: false, ago: null },
+      { id: 'android', name: 'Chrome on Android', self: false, phone: true, ago: ['2', ' h ago'] },
+      { id: 'ana', name: 'Safari on macOS', self: false, phone: false, member: 'desk_ana', ago: ['25', ' min ago'] }
     ];
     const live = ALL.filter((d) => s.gone.indexOf(d.id) < 0);
-    const others = live.filter((d) => !d.self);
+    const mine = live.filter((d) => !d.member);
+    const others = mine.filter((d) => !d.self);
+    const used = mine.length + (membersCount ? live.filter((d) => d.member).length : 0);
     const names = (ds) => ds.map((d) => d.name).join(' and ');
+
     const devices = live.map((d, i) => ({
-      name: d.name, self: d.self, isPhone: d.phone, isComputer: !d.phone, active: d.active, since: d.since,
-      canOut: !d.self, outLabel: 'Log out ' + d.name,
+      name: d.name, isPhone: d.phone, isComputer: !d.phone,
+      hasTag: d.self || !!d.member, tag: d.self ? 'This device' : d.member + ' · team member',
+      agoPre: d.ago ? '' : 'Active now', agoNum: d.ago ? d.ago[0] : '', agoPost: d.ago ? d.ago[1] : '',
+      canOut: !d.self, outLabel: d.member ? 'Log out ' + d.member + ' on ' + d.name : 'Log out ' + d.name,
       askOut: () => this.setState({ ask: d.id }),
       rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 14px 0;' + (i > 0 ? ' border-top: 1px solid var(--surface-raised);' : '')
     }));
-    const meter = [0, 1, 2].map((i) => ({ style: 'display: block; width: 20px; height: 8px; border-radius: 999px; box-sizing: border-box; ' + (i < live.length ? 'background: var(--ink);' : 'border: 1px solid var(--line);') }));
-    const sw = (on, toggle) => ({
-      on: on ? 'true' : 'false', isOn: on, toggle,
-      track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (on ? 'var(--escrow); background: var(--escrow); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
-      knob: 'width: 24px; height: 24px; border-radius: 999px; background: ' + (on ? 'var(--ground);' : 'var(--ink-muted);')
-    });
-    const goneAll = () => ALL.filter((d) => !d.self).map((d) => d.id);
-    const one = sw(s.single, () => {
-      if (s.single) this.setState({ single: false, note: 'One device at a time is off. You can be logged in on up to 3 devices again.' });
-      else if (others.length) this.setState({ ask: 'single' });
-      else this.setState({ single: true, note: 'One device at a time is on.' });
-    });
-    const dangerBtn = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--danger); border-radius: 12px; background: transparent; color: var(--danger); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;';
-    const primaryBtn = 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 0; border-radius: 12px; background: var(--monero); color: var(--on-monero); font-family: inherit; font-size: 18px; font-weight: 600; cursor: pointer;';
-    let askTitle = '', askText = '', confirmLabel = '', confirmStyle = dangerBtn, confirm = () => {};
+    const meter = [0, 1, 2].map((i) => ({ style: 'display: block; flex: 1; height: 8px; border-radius: 999px; box-sizing: border-box; ' + (i < used ? 'background: var(--ink);' : 'border: 1px solid var(--line);') }));
+    let meterNote = used >= 3 ? 'You’re at the limit. To let a new device in, you’ll pick one to log out.' : (3 - used === 1 ? 'One more device can log in.' : (3 - used) + ' more devices can log in.');
+    if (s.single) meterNote = 'One device at a time is on, so only this device stays logged in.';
+
+    // One device at a time: optional, off by default. Turning it on asks first if other devices are logged in.
+    const one = {
+      on: s.single ? 'true' : 'false',
+      toggle: () => {
+        if (s.single) this.setState({ single: false, confirmOne: false, optNote: 'One device at a time is off.' });
+        else if (others.length) this.setState({ confirmOne: true, optNote: '' });
+        else this.setState({ single: true, optNote: 'One device at a time is on.' });
+      },
+      track: 'display: flex; align-items: center; width: 52px; height: 32px; box-sizing: border-box; padding: 3px; border-radius: 999px; border: 1px solid ' + (s.single ? 'var(--ink); background: var(--ink); justify-content: flex-end;' : 'var(--line); background: var(--surface-raised); justify-content: flex-start;'),
+      knob: 'width: 24px; height: 24px; border-radius: 999px; background: ' + (s.single ? 'var(--ground);' : 'var(--ink-muted);')
+    };
+    const ownGone = () => s.gone.concat(others.map((d) => d.id));
+
+    // Idle logout: 2, 4, 6 or 12 h (non-vendors). Default is OPEN: nothing pre-selected unless the tweak picks one.
+    const IDLE = [2, 4, 6, 12];
+    const propIdle = parseInt(this.props.idleDefault, 10);
+    const idle = s.idle !== null ? s.idle : (IDLE.indexOf(propIdle) >= 0 ? propIdle : 0);
+    const idleOpts = IDLE.map((h) => ({
+      num: String(h), aria: h + ' hours', pressed: idle === h ? 'true' : 'false',
+      pick: () => this.setState({ idle: h, optNote: 'Saved.' }),
+      style: 'height: 48px; box-sizing: border-box; border-radius: 6px; font-family: inherit; font-size: 16px; cursor: pointer; color: var(--ink); ' + (idle === h ? 'border: 2px solid var(--ink); background: var(--surface-raised);' : 'border: 1px solid var(--line); background: var(--surface);')
+    }));
+
+    let askTitle = '', askText = '', confirmLabel = 'Log out', confirm = () => {};
     const target = ALL.find((d) => d.id === s.ask);
-    if (target) {
+    if (target && target.member) {
+      askTitle = 'Log out ' + target.member + '?';
+      askText = target.member + '’s session on ' + target.name + ' ends right away.';
+      confirm = () => this.setState({ gone: s.gone.concat([target.id]), ask: null, devNote: target.member + ' was logged out of ' + target.name + '.' });
+    } else if (target) {
       askTitle = 'Log out ' + target.name + '?';
-      askText = 'It is logged out right away. To log in there again, it has to be approved from a device you are still logged in on.';
-      confirmLabel = 'Log out';
-      confirm = () => this.setState({ gone: s.gone.concat([target.id]), ask: null, note: target.name + ' was logged out.' });
+      askText = 'It’s logged out right away. To use it again, approve it from a device you’re still logged in on.';
+      confirm = () => this.setState({ gone: s.gone.concat([target.id]), ask: null, devNote: target.name + ' was logged out.' });
     } else if (s.ask === 'all') {
       askTitle = others.length === 1 ? 'Log out 1 other device?' : 'Log out ' + others.length + ' other devices?';
-      askText = names(others) + ' will be logged out right away. Only this device stays logged in.';
+      askText = names(others) + (others.length === 1 ? ' is' : ' are') + ' logged out right away. Only this device stays logged in.';
       confirmLabel = 'Log out all other devices';
-      confirm = () => this.setState({ gone: goneAll(), ask: null, note: 'All other devices were logged out. Only this device is logged in.' });
-    } else if (s.ask === 'single') {
-      askTitle = 'Turn on One device at a time?';
-      askText = names(others) + ' will be logged out now. After this, approving a new device logs out the one you were using.';
-      confirmLabel = 'Turn on and log them out';
-      confirmStyle = primaryBtn;
-      confirm = () => this.setState({ single: true, gone: goneAll(), ask: null, note: 'One device at a time is on. Your other devices were logged out.' });
+      confirm = () => this.setState({ gone: ownGone(), ask: null, devNote: 'All other devices were logged out.' });
     }
+
     return {
-      rootStyle, devices, meter, one,
-      countLine: s.single ? '1 device at a time' : live.length + ' of 3 devices',
-      hasNote: s.note !== '', note: s.note,
+      rootStyle, devices, meter, meterNote, used: String(used), one,
+      membersName: membersCount ? 'Yes, they count' : 'No, they don’t count',
+      hasDevNote: s.devNote !== '', devNote: s.devNote,
       noOthers: others.length === 0,
-      allStyle: others.length ? dangerBtn : 'display: flex; align-items: center; justify-content: center; width: 100%; height: 56px; border: 2px solid var(--surface-raised); border-radius: 12px; background: transparent; color: var(--ink-muted); font-family: inherit; font-size: 18px; font-weight: 600; cursor: not-allowed;',
+      allStyle: 'display: flex; align-items: center; justify-content: center; width: 100%; height: 48px; border-radius: 12px; background: transparent; font-family: inherit; font-size: 16px; font-weight: 600; ' + (others.length ? 'border: 1px solid var(--line); color: var(--ink); cursor: pointer;' : 'border: 1px solid var(--surface-raised); color: var(--ink-muted); cursor: not-allowed;'),
       askAll: () => { if (others.length) this.setState({ ask: 'all' }); },
-      asking: s.ask !== null, askTitle, askText, confirmLabel, confirmStyle, confirm,
+      confirmingOne: s.confirmOne && !s.single,
+      oneWarn: 'Turning this on logs out your other ' + others.length + (others.length === 1 ? ' device' : ' devices') + ' now.',
+      oneConfirm: () => this.setState({ single: true, confirmOne: false, gone: ownGone(), optNote: 'One device at a time is on. Your other devices were logged out.' }),
+      oneCancel: () => this.setState({ confirmOne: false }),
+      idleOpts, idleNum: idle ? String(idle) : '', idleUnit: idle ? ' h' : 'Not set',
+      idleValStyle: 'flex-shrink: 0; font-size: 16px; line-height: 24px; color: ' + (idle ? 'var(--ink);' : 'var(--ink-muted);'),
+      idleDefaultName: IDLE.indexOf(propIdle) >= 0 ? propIdle + ' h' : 'none (not set)',
+      hasOptNote: s.optNote !== '', optNote: s.optNote,
+      asking: s.ask !== null, askTitle, askText, confirmLabel, confirm,
       cancel: () => this.setState({ ask: null })
     };
   }

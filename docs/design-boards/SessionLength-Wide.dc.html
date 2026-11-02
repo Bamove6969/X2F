@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session length (wide)</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@600;700&amp;family=Atkinson+Hyperlegible+Next:wght@400;600&amp;family=Atkinson+Hyperlegible+Mono:wght@400;500&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible,a:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+</style>
+</helmet>
+<div style="{{rootStyle}}">
+  <nav aria-label="Main" style="width: 240px; flex-shrink: 0; box-sizing: border-box; padding: 24px 16px; border-right: 1px solid var(--surface-raised); display: flex; flex-direction: column; gap: 8px;">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 700; letter-spacing: -0.02em; padding: 0 8px 16px;">X2F</span>
+    <a href="#" aria-current="page" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; background: var(--surface-raised); box-shadow: inset 2px 0 0 var(--ink); color: var(--ink); font-weight: 600; text-decoration: none;">Trade</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Post offer</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Wallets</a>
+    <a href="#" style="display: flex; align-items: center; height: 44px; padding: 0 12px; border-radius: 6px; color: var(--ink-muted); text-decoration: none;">Profile</a>
+  </nav>
+  <main style="flex-grow: 1; padding: 32px 48px; display: flex; flex-direction: column; gap: 16px;" aria-hidden="true">
+    <span style="font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; font-weight: 600;">Trade</span>
+    <span style="width: 720px; height: 56px; border-radius: 12px; background: var(--surface);"></span>
+    <span style="width: 720px; height: 120px; border-radius: 12px; background: var(--surface);"></span>
+    <span style="width: 720px; height: 120px; border-radius: 12px; background: var(--surface);"></span>
+    <span style="width: 720px; height: 120px; border-radius: 12px; background: var(--surface);"></span>
+  </main>
+
+  <sc-if value="{{isAsk}}" hint-placeholder-val="{{true}}">
+    <div style="position: absolute; inset: 0; background: var(--scrim); display: flex; align-items: center; justify-content: center;">
+      <section role="dialog" aria-modal="true" aria-labelledby="slw-q" aria-describedby="slw-rule" style="width: 480px; box-sizing: border-box; padding: 32px; border-radius: 12px; background: var(--surface); display: flex; flex-direction: column; gap: 16px;">
+        <p style="display: flex; gap: 8px; margin: 0; font-size: 15px; line-height: 22px; color: var(--escrow);"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px;"><path d="M5 12l4 4 10-10"/></svg><span>{{loggedInText}}</span></p>
+        <h2 id="slw-q" style="margin: 0; font-family: 'Familjen Grotesk', sans-serif; font-size: 24px; line-height: 30px; font-weight: 600;">How long should this session stay logged in?</h2>
+        <div role="radiogroup" aria-labelledby="slw-q" style="display: flex; flex-direction: column; gap: 8px;">
+          <sc-for list="{{opts}}" as="o" hint-placeholder-count="4">
+            <button type="button" role="radio" aria-checked="{{o.checked}}" aria-label="{{o.aria}}" onClick="{{o.pick}}" style="{{o.style}}">
+              <span style="display: flex; align-items: baseline; gap: 12px;">
+                <span><span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{o.num}}</span> h</span>
+                <sc-if value="{{o.hasTag}}" hint-placeholder-val="{{false}}">
+                  <span style="font-size: 13px; line-height: 16px; font-weight: 400; color: var(--ink-muted);">{{o.tag}}</span>
+                </sc-if>
+              </span>
+              <span aria-hidden="true" style="{{o.ring}}"><span style="{{o.dot}}"></span></span>
+            </button>
+          </sc-for>
+        </div>
+        <p id="slw-rule" style="margin: 0; font-size: 15px; line-height: 22px; color: var(--ink-muted);">We log you out after this long with no activity. Every session ends after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">24</span> hours at most.</p>
+        <div style="display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding-top: 8px;">
+          <sc-if value="{{noPick}}" hint-placeholder-val="{{true}}">
+            <span id="slw-why" style="font-size: 14px; line-height: 20px; color: var(--ink-muted);">Pick a time to continue.</span>
+          </sc-if>
+          <button type="button" disabled="{{noPick}}" aria-describedby="slw-why" onClick="{{go}}" style="{{goStyle}}">Continue</button>
+        </div>
+        <p style="margin: 0; font-size: 14px; line-height: 20px; color: var(--ink-muted);">You can change this any time in <a href="Devices-Wide.dc.html" style="color: var(--monero-ink); padding: 12px 0;">Devices and sessions</a>.</p>
+      </section>
+
+      <div style="position: absolute; top: 72px; right: 24px; width: 336px; display: flex; flex-direction: column; gap: 12px;">
+        <aside aria-label="Open for the owner: when this is asked" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); background: var(--surface); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+          <span style="font-weight: 600;">When is this asked?</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>Only the very first login after signing up</li>
+            <li>The first login on each new device</li>
+            <li>Every login</li>
+          </ul>
+          <span style="color: var(--ink-muted);">Preview with the askWhen tweak. Showing: {{askWhenName}}</span>
+        </aside>
+        <aside aria-label="Open for the owner: pre-selected time" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); background: var(--surface); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose (not decided)</span>
+          <span style="font-weight: 600;">Is one of the times pre-selected?</span>
+          <ul style="margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px;">
+            <li>None: they must choose</li>
+            <li>The account&#39;s saved choice (shown as <span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">6</span> h)</li>
+            <li><span style="font-family: 'Atkinson Hyperlegible Mono', monospace;">12</span> h (current build default)</li>
+          </ul>
+          <span style="color: var(--ink-muted);">On a first-ever login there is no saved choice yet. Preview with the preselect tweak. Showing: {{preselectName}}</span>
+        </aside>
+        <aside aria-label="Open for the owner: vendor times" style="display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 6px; border: 1px dashed var(--caution); background: var(--surface); font-size: 13px; line-height: 18px; color: var(--ink);">
+          <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--caution);">OPEN · owner to choose</span>
+          <span style="font-weight: 600;">Vendors: which times can they choose?</span>
+          <span style="color: var(--ink-muted);">Not decided. The four times are for non-vendors.</span>
+        </aside>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isDone}}" hint-placeholder-val="{{false}}">
+    <div style="position: absolute; left: 288px; bottom: 32px; width: 720px; display: flex; align-items: center; gap: 16px;">
+      <p role="status" style="display: flex; flex-grow: 1; gap: 10px; align-items: flex-start; margin: 0; padding: 14px 16px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface-raised); font-size: 16px; line-height: 24px; color: var(--ink);"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true" style="flex-shrink: 0; margin-top: 2px; color: var(--escrow);"><path d="M5 12l4 4 10-10"/></svg><span>Logged out after <span style="font-family: 'Atkinson Hyperlegible Mono', monospace; font-weight: 500;">{{doneHours}}</span> h with no activity</span></p>
+      <button type="button" onClick="{{back}}" style="flex-shrink: 0; height: 44px; padding: 0 20px; border-radius: 12px; border: 1px solid var(--line); background: transparent; color: var(--ink); font-family: inherit; font-size: 15px; cursor: pointer;">Show the question again</button>
+    </div>
+  </sc-if>
+
+  <span style="position: absolute; top: 16px; right: 24px; font-family: 'Atkinson Hyperlegible Mono', monospace; font-size: 12px; line-height: 16px; color: var(--ink-muted);">Draft copy</span>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["night","day"],"default":"night"},"step":{"editor":"enum","options":["ask","done"],"default":"ask"},"askWhen":{"editor":"enum","options":["first login after sign-up","first login on each device","every login"],"default":"first login after sign-up"},"preselect":{"editor":"enum","options":["none","saved choice","12 h"],"default":"none"},"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = { pick: null, pickFor: '', stepOver: null, stepFor: '' }; }
+  renderVals() {
+    const THEMES = {
+      night: '--ground:#0e1116;--surface:#171b22;--surface-raised:#20262f;--line:#6b7584;--ink:#eef1f5;--ink-muted:#9aa4b2;--monero:#ff7a1a;--monero-ink:#ff7a1a;--on-monero:#1a0e05;--escrow:#4cc3d9;--caution:#f2c14e;--danger:#ff6b8a;--scrim:rgba(0,0,0,0.6);--mod:#b69cff;',
+      day: '--ground:#f5f6f8;--surface:#ffffff;--surface-raised:#eceef2;--line:#7a8494;--ink:#12161c;--ink-muted:#566070;--monero:#f26822;--monero-ink:#b84a00;--on-monero:#1a0e05;--escrow:#0b7285;--caution:#8a5a00;--danger:#c2255c;--scrim:rgba(18,22,28,0.45);--mod:#6741d9;'
+    };
+    const theme = this.props.theme === 'day' ? 'day' : 'night';
+    const rootStyle = THEMES[theme] + "position: relative; width: 1280px; height: 800px; box-sizing: border-box; overflow: hidden; background: var(--ground); color: var(--ink); font-family: 'Atkinson Hyperlegible Next', system-ui, sans-serif; display: flex;";
+    const s = this.state;
+
+    // Tweaks. Local state only applies while the tweak it was made under is unchanged.
+    const propStep = this.props.step === 'done' ? 'done' : 'ask';
+    const step = (s.stepOver && s.stepFor === propStep) ? s.stepOver : propStep;
+    const ASK = ['first login after sign-up', 'first login on each device', 'every login'];
+    const askWhen = ASK.indexOf(this.props.askWhen) >= 0 ? this.props.askWhen : ASK[0];
+    const PRE = ['none', 'saved choice', '12 h'];
+    const pre = PRE.indexOf(this.props.preselect) >= 0 ? this.props.preselect : 'none';
+    const SAVED = 6;
+    const preHours = pre === 'saved choice' ? SAVED : (pre === '12 h' ? 12 : null);
+    const pick = (s.pick && s.pickFor === pre) ? s.pick : preHours;
+
+    const loggedIn = {
+      'first login after sign-up': 'You’re logged in. Welcome to X2F, mira.k.',
+      'first login on each device': 'You’re logged in on a new device: Firefox on Linux.',
+      'every login': 'You’re logged in as mira.k.'
+    };
+
+    // Owner decision (non-vendors): 2, 4, 6 or 12 h.
+    const opts = [2, 4, 6, 12].map((h) => {
+      const on = pick === h;
+      return {
+        num: String(h), aria: h + ' hours', checked: on ? 'true' : 'false',
+        hasTag: pre === 'saved choice' && h === SAVED, tag: 'Your saved choice',
+        pick: () => this.setState({ pick: h, pickFor: pre }),
+        style: 'display: flex; align-items: center; justify-content: space-between; height: 56px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 18px; font-weight: 600; text-align: left; color: var(--ink); cursor: pointer; ' + (on ? 'padding: 0 16px; border: 2px solid var(--ink); background: var(--surface-raised);' : 'padding: 0 17px; border: 1px solid var(--line); background: var(--surface);'),
+        ring: 'display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; box-sizing: border-box; border-radius: 999px; border: 2px solid ' + (on ? 'var(--ink);' : 'var(--line);'),
+        dot: 'width: 10px; height: 10px; border-radius: 999px; background: ' + (on ? 'var(--ink);' : 'transparent;')
+      };
+    });
+
+    const noPick = !pick;
+    const goStyle = 'height: 48px; min-width: 160px; padding: 0 24px; box-sizing: border-box; border-radius: 12px; font-family: inherit; font-size: 16px; font-weight: 600; ' + (noPick ? 'border: 2px solid var(--surface-raised); background: transparent; color: var(--ink-muted); cursor: not-allowed;' : 'border: 0; background: var(--monero); color: var(--on-monero); cursor: pointer;');
+
+    return {
+      rootStyle,
+      isAsk: step === 'ask',
+      isDone: step === 'done',
+      loggedInText: loggedIn[askWhen],
+      askWhenName: askWhen,
+      preselectName: pre,
+      opts,
+      noPick,
+      goStyle,
+      go: () => { if (pick) this.setState({ stepOver: 'done', stepFor: propStep, pick: pick, pickFor: pre }); },
+      back: () => this.setState({ stepOver: 'ask', stepFor: propStep }),
+      doneHours: String(pick || 4)
+    };
+  }
+}
+</script>
+</body>
+</html>

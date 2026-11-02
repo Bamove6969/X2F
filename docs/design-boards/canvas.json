@@ -784,18 +784,18 @@
       "x": 1950,
       "y": 33100,
       "w": 390,
-      "h": 1040,
+      "h": 2200,
       "page": "all",
-      "title": "G2 \u00b7 Devices",
+      "title": "G2 \u00b7 Devices and sessions",
       "is_interactive": true
     },
     "Devices-Wide.dc.html": {
       "x": 2420,
       "y": 33100,
       "w": 1280,
-      "h": 800,
+      "h": 1320,
       "page": "all",
-      "title": "G2 \u00b7 Devices (wide)",
+      "title": "G2 \u00b7 Devices and sessions (wide)",
       "is_interactive": true
     },
     "Team.dc.html": {
@@ -818,7 +818,7 @@
     },
     "SignupSecurity.dc.html": {
       "x": 0,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 2740,
       "page": "all",
@@ -827,7 +827,7 @@
     },
     "RecoveryCode.dc.html": {
       "x": 510,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 1360,
       "page": "all",
@@ -836,7 +836,7 @@
     },
     "RecoveryHold.dc.html": {
       "x": 1020,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 1700,
       "page": "all",
@@ -845,7 +845,7 @@
     },
     "BlockQueued.dc.html": {
       "x": 1530,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 1540,
       "page": "all",
@@ -854,7 +854,7 @@
     },
     "Compromised.dc.html": {
       "x": 2040,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 1680,
       "page": "all",
@@ -863,7 +863,7 @@
     },
     "TeamRefusal.dc.html": {
       "x": 2550,
-      "y": 34700,
+      "y": 35700,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -872,7 +872,7 @@
     },
     "CancelRequest.dc.html": {
       "x": 0,
-      "y": 37800,
+      "y": 38800,
       "w": 390,
       "h": 1000,
       "page": "all",
@@ -881,7 +881,7 @@
     },
     "BuyerPaidWaiting.dc.html": {
       "x": 510,
-      "y": 37800,
+      "y": 38800,
       "w": 390,
       "h": 1340,
       "page": "all",
@@ -890,7 +890,7 @@
     },
     "InviteInvalid.dc.html": {
       "x": 1020,
-      "y": 37800,
+      "y": 38800,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -899,7 +899,7 @@
     },
     "Fold-MyOffers.dc.html": {
       "x": 1530,
-      "y": 37800,
+      "y": 38800,
       "w": 840,
       "h": 1000,
       "page": "all",
@@ -908,7 +908,7 @@
     },
     "HoldChange.dc.html": {
       "x": 0,
-      "y": 39640,
+      "y": 40640,
       "w": 390,
       "h": 1220,
       "page": "all",
@@ -917,7 +917,7 @@
     },
     "TradeTechIssue.dc.html": {
       "x": 510,
-      "y": 39640,
+      "y": 40640,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -926,7 +926,7 @@
     },
     "MemberApproval.dc.html": {
       "x": 1020,
-      "y": 39640,
+      "y": 40640,
       "w": 390,
       "h": 844,
       "page": "all",
@@ -935,7 +935,7 @@
     },
     "SignupSecurity-Wide.dc.html": {
       "x": 0,
-      "y": 41360,
+      "y": 42360,
       "w": 1280,
       "h": 1460,
       "page": "all",
@@ -944,7 +944,7 @@
     },
     "RecoveryCode-Wide.dc.html": {
       "x": 1430,
-      "y": 41360,
+      "y": 42360,
       "w": 1280,
       "h": 980,
       "page": "all",
@@ -953,7 +953,7 @@
     },
     "RecoveryHold-Wide.dc.html": {
       "x": 2860,
-      "y": 41360,
+      "y": 42360,
       "w": 1280,
       "h": 957,
       "page": "all",
@@ -962,7 +962,7 @@
     },
     "HoldChange-Wide.dc.html": {
       "x": 4290,
-      "y": 41360,
+      "y": 42360,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -971,7 +971,7 @@
     },
     "Compromised-Wide.dc.html": {
       "x": 5720,
-      "y": 41360,
+      "y": 42360,
       "w": 1280,
       "h": 1050,
       "page": "all",
@@ -980,7 +980,7 @@
     },
     "TradeTechIssue-Wide.dc.html": {
       "x": 0,
-      "y": 43120,
+      "y": 44120,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -989,7 +989,7 @@
     },
     "MemberApproval-Wide.dc.html": {
       "x": 1430,
-      "y": 43120,
+      "y": 44120,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -998,7 +998,7 @@
     },
     "CancelRequest-Wide.dc.html": {
       "x": 2860,
-      "y": 43120,
+      "y": 44120,
       "w": 1280,
       "h": 800,
       "page": "all",
@@ -1007,7 +1007,7 @@
     },
     "BuyerPaidWaiting-Wide.dc.html": {
       "x": 4290,
-      "y": 43120,
+      "y": 44120,
       "w": 1280,
       "h": 1040,
       "page": "all",
@@ -1016,11 +1016,29 @@
     },
     "InviteInvalid-Wide.dc.html": {
       "x": 5720,
-      "y": 43120,
+      "y": 44120,
       "w": 1280,
       "h": 800,
       "page": "all",
       "title": "I3 \u00b7 Invite link doesn't work (wide)",
+      "is_interactive": true
+    },
+    "SessionLength.dc.html": {
+      "x": 5800,
+      "y": 33100,
+      "w": 390,
+      "h": 1240,
+      "page": "all",
+      "title": "G4 \u00b7 After login: session length",
+      "is_interactive": true
+    },
+    "SessionLength-Wide.dc.html": {
+      "x": 6340,
+      "y": 33100,
+      "w": 1280,
+      "h": 800,
+      "page": "all",
+      "title": "G4 \u00b7 After login: session length (wide)",
       "is_interactive": true
     }
   },
@@ -1148,7 +1166,7 @@
     },
     "sec1101": {
       "x": 0,
-      "y": 34400,
+      "y": 35400,
       "text": "Login strength, recovery and compromised account \u00b7 1 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1156,7 +1174,7 @@
     },
     "gaps1101": {
       "x": 0,
-      "y": 37500,
+      "y": 38500,
       "text": "Gaps from the 1 Nov screenshot review",
       "kind": "title1",
       "maxW": 7480,
@@ -1164,7 +1182,7 @@
     },
     "hold1102": {
       "x": 0,
-      "y": 39340,
+      "y": 40340,
       "text": "Owner's hold model \u00b7 2 Nov (draft copy)",
       "kind": "title1",
       "maxW": 7480,
@@ -1172,7 +1190,7 @@
     },
     "wide1102": {
       "x": 0,
-      "y": 41060,
+      "y": 42060,
       "text": "Desktop versions of the 1\u20132 Nov screens",
       "kind": "title1",
       "maxW": 7480,
@@ -1292,7 +1310,9 @@
     "MemberApproval-Wide.dc.html",
     "CancelRequest-Wide.dc.html",
     "BuyerPaidWaiting-Wide.dc.html",
-    "InviteInvalid-Wide.dc.html"
+    "InviteInvalid-Wide.dc.html",
+    "SessionLength.dc.html",
+    "SessionLength-Wide.dc.html"
   ],
   "pages": [
     {
