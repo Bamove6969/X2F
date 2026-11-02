@@ -532,7 +532,7 @@
       "x": 5730,
       "y": 26400,
       "w": 390,
-      "h": 1100,
+      "h": 1058,
       "page": "all",
       "title": "B \u00b7 Log in",
       "is_interactive": true
@@ -541,7 +541,7 @@
       "x": 6200,
       "y": 26400,
       "w": 1280,
-      "h": 1100,
+      "h": 1121,
       "page": "all",
       "title": "B \u00b7 Log in (wide)",
       "is_interactive": true
@@ -550,7 +550,7 @@
       "x": 0,
       "y": 29400,
       "w": 390,
-      "h": 1200,
+      "h": 1110,
       "page": "all",
       "title": "B \u00b7 Log in with a backup",
       "is_interactive": true
@@ -559,7 +559,7 @@
       "x": 470,
       "y": 29400,
       "w": 1280,
-      "h": 1340,
+      "h": 1163,
       "page": "all",
       "title": "B \u00b7 Log in with a backup (wide)",
       "is_interactive": true
@@ -766,7 +766,7 @@
       "x": 0,
       "y": 33100,
       "w": 390,
-      "h": 1180,
+      "h": 844,
       "page": "all",
       "title": "G1 \u00b7 New-login approval",
       "is_interactive": true
@@ -775,7 +775,7 @@
       "x": 470,
       "y": 33100,
       "w": 1280,
-      "h": 1080,
+      "h": 800,
       "page": "all",
       "title": "G1 \u00b7 New-login approval (wide)",
       "is_interactive": true
@@ -829,7 +829,7 @@
       "x": 510,
       "y": 36500,
       "w": 390,
-      "h": 1360,
+      "h": 1642,
       "page": "all",
       "title": "H2 \u00b7 Recovery code",
       "is_interactive": true
@@ -838,7 +838,7 @@
       "x": 1020,
       "y": 36500,
       "w": 390,
-      "h": 1700,
+      "h": 1794,
       "page": "all",
       "title": "H3 \u00b7 Recovery hold",
       "is_interactive": true
@@ -946,7 +946,7 @@
       "x": 1430,
       "y": 43560,
       "w": 1280,
-      "h": 980,
+      "h": 1531,
       "page": "all",
       "title": "H2 \u00b7 Recovery code (wide)",
       "is_interactive": true
@@ -955,7 +955,7 @@
       "x": 2860,
       "y": 43560,
       "w": 1280,
-      "h": 957,
+      "h": 960,
       "page": "all",
       "title": "H3 \u00b7 Recovery hold (wide)",
       "is_interactive": true

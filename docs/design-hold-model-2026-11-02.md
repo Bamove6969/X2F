@@ -107,3 +107,7 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - The owner is still notified on every channel.
   - Only a recovery-code login logs everyone out and pauses or cancels trades.
 - Waiting changes can be cancelled by anyone logged in, including with just a username and password (owner, 2 Nov).
+- **Offers and disputes** (owner, via the lead, 2 Nov):
+  - Up to 3 buy and 3 sell ads per vendor. One ad covers every currency the vendor supports.
+  - Tier amounts are converted at the market rate and shown in the chosen currency.
+  - The buyer can open a dispute as soon as they tap "I've paid".
