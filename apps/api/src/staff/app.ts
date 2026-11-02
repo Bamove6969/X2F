@@ -6,7 +6,8 @@ import { STAFF_REALM } from '../auth/sessions.js';
 import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
-import { assertRoutePerm, type StaffRoutePerm } from './guard.js';
+import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
+import { keyTapRoutes } from './keyTap.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
@@ -106,6 +107,8 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
 
   app.get('/healthz', { config: { perm: 'public-login' } }, async () => ({ ok: true }));
   await staffLoginRoutes(app);
+  // Plan 4 Task 5: security-key taps, used by every tapped action (Tasks 7, 8, 12).
+  keyTapRoutes(app, { guard: requireStaff('self'), accountOf: (req) => req.staff.accountId });
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).

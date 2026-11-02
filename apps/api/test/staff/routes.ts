@@ -20,6 +20,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self' },
+  // Task 5: security-key taps.
+  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', body: { kind: 'emergency-stop' } },
+  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', body: { response: {} } },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },

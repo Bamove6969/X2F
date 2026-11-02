@@ -80,9 +80,11 @@ describe('privilege matrix', () => {
         const want = expected(c, r);
         const error = (res.json() as { error?: string }).error;
         if (want === 'allowed') {
+          // Allowed: the handler ran. It may still refuse with its own code (a tap that does not
+          // exist is 403 `tap-invalid`, a target that is the owner 409 `owner-protected`), never
+          // with one of the guard's.
           expect(res.statusCode, `${c}: ${res.body}`).toBeLessThan(500);
-          expect([401, 403], `${c}: ${res.body}`).not.toContain(res.statusCode);
-          expect(REFUSALS, `${c}`).not.toContain(error);
+          expect(REFUSALS, `${c}: ${res.body}`).not.toContain(error);
         } else {
           expect({ status: res.statusCode, error }, c).toEqual(want);
         }
