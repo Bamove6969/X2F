@@ -277,10 +277,10 @@ export const CANNOT_BLOCK = 'That trader cannot be blocked.';
  */
 export function myOffersCantDoText(code: CantDoCode, n: number): string {
   switch (code) {
-    case 'trading-hold':
-      return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'not-vendor':
       return 'Only vendor accounts can turn offers on. Switch to a vendor account in Settings, Account type.';
+    case 'trading-hold':
+      return "Your account has a trading hold while a dispute is open, so your offers stay off until it's resolved.";
     case 'too-many-offers':
       return n === 1
         ? 'You have more offers in this market than the limit allows now. Remove one you no longer need, then turn this one on.'
@@ -293,12 +293,12 @@ export function myOffersCantDoText(code: CantDoCode, n: number): string {
 /** The short line under each offer a CantDoThat refusal kept off (the popup gives the reason in full). COPY-UNSIGNED */
 export function myOffersCantDoRow(code: CantDoCode): string {
   switch (code) {
+    case 'not-vendor':
+      return 'Stayed off: only vendor accounts can turn offers on.';
     case 'trading-hold':
       return 'Stayed off: your account has a trading hold.';
     case 'too-many-offers':
       return 'Stayed off: over the offer limit for this market.';
-    case 'not-vendor':
-      return 'Stayed off: only vendor accounts can turn offers on.';
     default:
       return 'Stayed off.';
   }
