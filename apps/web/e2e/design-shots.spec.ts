@@ -865,7 +865,8 @@ test('60 News', async ({ page }) => {
     item(1, '2026-10-20T09:00:00.000Z', 'Welcome', 'Hello from X2F.'),
   ], serverNow: '2026-11-02T12:00:00.000Z' }));
   await page.route('**/v1/account/me', json({ error: 'not-authenticated' }, 401));
-  await page.goto('/news');
+  // As it opens after a login: with "Don't show me this again" (design session 2 Nov).
+  await page.goto('/news?after=login&returnTo=%2Fbuy');
   await expect(page.getByRole('heading', { level: 1, name: 'News' })).toBeVisible();
   await shot(page, '60-news');
 });

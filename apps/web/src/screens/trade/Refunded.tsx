@@ -9,10 +9,12 @@
  *
  * The rules are Task 27's, unchanged: `disputeEntry` decides whether a dispute can still be opened,
  * `refundReason` words every kind of refund except the board's "time ran out", and a buyer's
- * cancel reads "Cancelling" until the seller confirms the XMR is back (Task 39). The seller stays
- * "the seller" in the copy (owner 2026-10-29; the board names them: an open question).
+ * cancel reads "Cancelling" until the seller confirms the XMR is back (Task 39). The seller is named
+ * as the board does (design session 2 Nov: "satoshi_ghost", not "the seller"): every "the seller"
+ * in these sentences and in refundReason's is shown as their public name (`withName`).
  * Lines not on the board are COPY-UNSIGNED.
  */
+import { Fragment, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { formatFiat, formatXmr, TIMERS } from '@x2f/trade';
 import { methodOf, type TradeView } from '../../api/trade.js';
@@ -37,6 +39,17 @@ interface Story {
   lead: string;
   /** The dispute card's question, when a dispute can still be opened. */
   disputeTitle: string;
+}
+
+/** A sentence with every "the seller" shown as the seller's public name, marked as a username. */
+export function withName(text: string, name: string): ReactNode {
+  const parts = text.split(/\b[Tt]he seller\b/);
+  return parts.map((p, i) => (
+    <Fragment key={i}>
+      {i > 0 ? <span data-username="">{name}</span> : null}
+      {p}
+    </Fragment>
+  ));
 }
 
 /** "1.250000 XMR (about $412.50)". */
@@ -75,7 +88,7 @@ export function refundStory(view: TradeView): Story {
     return {
       chip: { tone: 'muted', icon: 'undo', label: 'Payment time ran out' },
       title: 'Payment time ran out',
-      // The board's lead, with "the seller" for the name and "in time" for "within the 90 minutes" (an extension makes it longer).
+      // The board's lead, with "in time" for "within the 90 minutes" (an extension makes it longer).
       lead: `You didn't tap I've paid in time, so the seller cancelled. Everything in escrow, ${amount}, went back to the seller.`,
       disputeTitle: 'Did you send the money anyway?',
     };
@@ -117,13 +130,14 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
   const trade = tradeFromView(view);
   const method = methodOf(view);
   const story = refundStory(view);
+  const name = trade.counterparty;
   const entry = disputeEntry(trade, serverClock());
   const timeline = refundTimeline(view);
   // One day for every row: the day goes in the card's head and each row shows its time (the board).
   const days = new Set(timeline.map((r) => formatDate(r.at)));
   const oneDay = days.size === 1 ? [...days][0]! : null;
   const facts: Fact[] = [
-    ...timeline.map((r) => ({ key: r.key, value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> })),
+    ...timeline.map((r) => ({ key: r.key, label: withName(r.key, name), value: <When at={r.at} form={oneDay !== null ? 'time' : 'date-time'} /> })),
     {
       key: 'Trade amount',
       value: `${formatXmr(BigInt(view.amountAtomic))} XMR · ${formatFiat(BigInt(view.fiatCents), view.lockedRate.currency)}`,
@@ -143,16 +157,20 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
           <StatusChip tone={story.chip.tone} icon={story.chip.icon} label={story.chip.label} />
         </div>
         <section className="x2f-stack" aria-label="Trade status">
-          <h1 className="x2f-title">{story.title}</h1>
-          <p className="x2f-lead">{story.lead}</p>
+          <h1 className="x2f-title">{withName(story.title, name)}</h1>
+          <p className="x2f-lead">{withName(story.lead, name)}</p>
         </section>
         <section className="x2f-panel" aria-labelledby="refunded-what">
-          <div className="x2f-panel__head">
-            <h2 className="x2f-heading" id="refunded-what">
-              What happened
-            </h2>
-            {oneDay !== null ? <span className="x2f-small x2f-when">{oneDay}</span> : null}
-          </div>
+          {/* "What happened · 29 Oct 2026", the day in mono, when every row is on it (design session 2 Nov). */}
+          <h2 className="x2f-heading" id="refunded-what">
+            What happened
+            {oneDay !== null ? (
+              <>
+                {' · '}
+                <span className="x2f-when">{oneDay}</span>
+              </>
+            ) : null}
+          </h2>
           <Facts rows={facts} part="refunded-facts" />
         </section>
         {entry.kind === 'open' ? (
@@ -162,7 +180,8 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
               {story.disputeTitle}
             </h2>
             <p className="x2f-small">
-              Open a dispute and add your payment proof. If the money reached the seller, a moderator makes them send you the {formatXmr(BigInt(view.amountAtomic))} XMR as agreed.
+              Open a dispute and add your payment proof. If the money reached <span data-username="">{name}</span>, a moderator makes them send you the{' '}
+              {formatXmr(BigInt(view.amountAtomic))} XMR as agreed.
             </p>
             {Number.isFinite(closed) ? (
               <p className="x2f-small" data-dispute-window="">
@@ -170,8 +189,10 @@ export function RefundedSlot({ view, serverClock }: TradeScreenProps) {
                 You can open one for 48 hours after the refund, until <When at={closed + TIMERS.disputeAfterRefundHours * HOUR_MS} />.
               </p>
             ) : null}
-            <Link className="x2f-button x2f-button--danger-outline" to={disputeHref}>
+            {/* A secondary way on (design session 2 Nov): the danger text button with a chevron; Find another offer stays the primary. */}
+            <Link className="x2f-button x2f-button--danger" to={disputeHref} data-part="refunded-open-dispute">
               Open a dispute
+              <Icon name="chevron-right" size={18} />
             </Link>
           </section>
         ) : entry.kind === 'opened' ? (

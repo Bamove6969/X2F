@@ -13,8 +13,8 @@
  * Laid out from the Feedback board (origin/wip/design-brief docs/design-boards/Feedback.dc.html,
  * views form and sent; design review 1 Nov shots 62-63) with UI-kit parts only: the back header,
  * "Tell us what you think", a 9-row message box with its count, "Send anonymously" as a 24px box in
- * a 44px row, and the thank-you with "Sent as <name>." and Write another. The kind radios are not
- * on the board; they stay (the API files by kind) as 44px rows. The owner's words are used where he
+ * a 44px row, and the thank-you with "Sent as <name>." and Write another. The kind is not on the
+ * board; it stays (the API files by kind; design session 2 Nov) as the kit's selectable cards. The owner's words are used where he
  * gave them (the checkbox and the thank-you); board copy is used as drawn; the rest is COPY-UNSIGNED.
  */
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
@@ -31,8 +31,11 @@ export type FeedbackKind = 'complaint' | 'feedback' | 'recommendation';
 
 export const FEEDBACK_TEXT_MAX = 2000;
 
-/** The anonymous hint (review M1: only what is strictly true). COPY-UNSIGNED */
-export const FEEDBACK_ANON_HINT = "Sent without your username. We don't record who sent it, so nobody can ask you about it.";
+/** The anonymous hint (design session 2 Nov; still only what is strictly true, review M1). COPY-UNSIGNED */
+// not-a-refusal: says what an anonymous message means for a reply, nothing is refused
+export const FEEDBACK_ANON_HINT = "Your username isn't attached, so we can't follow up with you.";
+/** The named hint (design session 2 Nov). COPY-UNSIGNED */
+export const FEEDBACK_NAMED_HINT = 'Your username is attached, so we can reply in the app.';
 /** A 400 from the form. COPY-UNSIGNED */
 export const FEEDBACK_BAD_TEXT = 'Your comment has a hidden character the form does not take. Retype it, or paste it as plain text.';
 
@@ -191,15 +194,17 @@ export function Feedback() {
               to send feedback. You can write it first: it is kept while you log in.
             </p>
           ) : null}
-          {/* Not on the board (it has no kind): kept because the API files each message by kind. Three 44px radio rows (X4). COPY-UNSIGNED */}
+          {/* Not on the board; kept (design session 2 Nov) as selectable cards, the kit's selection pattern. COPY-UNSIGNED */}
           <fieldset className="x2f-choices">
             <legend className="x2f-overline">What is it?</legend>
-            {KINDS.map((k) => (
-              <label key={k.id} className="x2f-choice">
-                <input type="radio" name="feedback-kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
-                <span className="x2f-choice__title">{k.label}</span>
-              </label>
-            ))}
+            <div className="x2f-cards">
+              {KINDS.map((k) => (
+                <label key={k.id} className="x2f-card-choice">
+                  <input type="radio" name="feedback-kind" value={k.id} checked={kind === k.id} onChange={() => setKind(k.id)} />
+                  <span className="x2f-card-choice__title">{k.label}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
           <div className="x2f-field">
             <label htmlFor={textId} className="x2f-field-label">
@@ -225,7 +230,7 @@ export function Feedback() {
               <span className="x2f-choice__title">Send anonymously</span>
               {/* COPY-UNSIGNED */}
               <span id={hintId} className="x2f-choice__hint" data-part="anon-hint">
-                {anonymous ? FEEDBACK_ANON_HINT : 'Sent with your username, so X2F staff can message you for details.'}
+                {anonymous ? FEEDBACK_ANON_HINT : FEEDBACK_NAMED_HINT}
               </span>
             </span>
           </label>

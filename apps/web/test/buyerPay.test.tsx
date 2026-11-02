@@ -3,6 +3,7 @@ import { act } from 'react';
 import { MemoryRouter } from 'react-router';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BuyerCancelling, BuyerPay, SellerWaiting, TASK23_SLOTS } from '../src/screens/trade/BuyerPay.js';
+import { disputeOpensAt } from '../src/screens/trade/PaidWaiting.js';
 import { GIFT_CARD_WARNING, setTradeChat, setPaymentDetailsSource } from '../src/screens/trade/paySeams.js';
 import type { TradeEscrow, TradeScreenProps, TradeView } from '../src/screens/trade/payTypes.js';
 import { render } from './render.js';
@@ -743,19 +744,29 @@ describe('review minors 1, 5 and 7', () => {
     expect(document.querySelector('[data-grown]')).toBeNull();
   });
 
-  it("in paid, Open dispute waits for confirmBy (the buyer's dispute is too-early before it)", () => {
+  it("in paid, Open a dispute waits for the later of I've paid + 30 min (owner 2 Nov) and the server's confirmBy, then opens", () => {
     const r = mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-1), confirmBy: at(119) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const waiting = document.querySelector<HTMLButtonElement>('[data-part="paid-dispute"]')!;
     expect(waiting.tagName).toBe('BUTTON');
     expect(waiting.disabled).toBe(true);
-    // "in 1 h 59 min": a space before the countdown (review 39 "in2 h").
-    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d+ \w{3} \d{4}, \d\d:\d\d UTC, in 1 h 59 min, if satoshi_ghost hasn't confirmed\.$/);
+    // The server's rule is later here (confirmBy, machine.ts too-early), so that is the time; "in 1 h 59 min" keeps its space (review 39 "in2 h").
+    expect(document.getElementById(waiting.getAttribute('aria-describedby')!)?.textContent).toMatch(/^Available from \d+ \w{3} \d{4}, \d\d:\d\d UTC, in 1 h 59 min\.$/);
     r.unmount();
     mount(props({ view: tradeView({ ...SECURED, state: 'paid', paidAt: at(-121), confirmBy: at(-1) }), escrow: fakeEscrow({ paidRecorded: true }) }));
     const open = document.querySelector('[data-part="paid-dispute"]')!;
     expect(open.tagName).toBe('A');
     expect(open.textContent).toBe('Open a dispute');
     expect(document.querySelector('[data-part="paid-status"] h1')?.textContent).toBe("satoshi_ghost hasn't confirmed in time");
+  });
+
+  it('disputeOpensAt: 30 min after I\'ve paid, never before the server allows it', () => {
+    const t = (min: number) => new Date(Date.UTC(2026, 10, 6, 15, 0) + min * 60_000).toISOString();
+    // The server's confirmBy is later: it wins.
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(120) })).toBe(Date.parse(t(120)));
+    // A server window shorter than 30 min (or once the API allows it): paid + 30 min.
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: t(10) })).toBe(Date.parse(t(30)));
+    expect(disputeOpensAt({ paidAt: t(0), confirmBy: null })).toBe(Date.parse(t(30)));
+    expect(disputeOpensAt({ paidAt: null, confirmBy: null })).toBeNull();
   });
 
   it("the wide seller room's Chat goes to the chat beside it, never a second chat panel", async () => {

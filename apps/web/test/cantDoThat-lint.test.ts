@@ -124,7 +124,8 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // "After this you can't cancel the trade" and ReleaseWarning's "... and can't be taken back."
     expect(todo).toBeLessThanOrEqual(4);
     // 45 -> 46 (design results, 2 Nov): BuyerPaidWaiting's "You can't cancel after marking as paid", said ahead of time.
-    expect(notARefusal).toBeLessThanOrEqual(46);
+    // 46 -> 47 (design session 2 Nov): the Feedback anonymous hint "we can't follow up with you".
+    expect(notARefusal).toBeLessThanOrEqual(47);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

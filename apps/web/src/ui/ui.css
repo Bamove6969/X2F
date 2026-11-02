@@ -1122,3 +1122,75 @@
   font-size: 13px;
   color: var(--x2f-ink-muted);
 }
+
+/* Selectable cards (the kit's selection pattern, conventions 2 Nov: selection is never orange): a
+   radio or checkbox inside a 48px card; the selected card has a 2px ink ring on surface-raised. The
+   input stays in the tab order and is read out; the ring shows the choice. */
+.x2f-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
+  gap: var(--x2f-space-2);
+}
+
+.x2f-card-choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: var(--x2f-space-2) 12px;
+  border: 1px solid var(--x2f-line);
+  border-radius: var(--x2f-radius-md);
+  background: transparent;
+  color: var(--x2f-ink);
+  text-align: center;
+  cursor: pointer;
+}
+
+.x2f-card-choice input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.x2f-card-choice:has(input:checked) {
+  border: 2px solid var(--x2f-ink);
+  background: var(--x2f-surface-raised);
+  font-weight: 600;
+}
+
+.x2f-card-choice:has(input:focus-visible) {
+  outline: 2px solid var(--x2f-ink);
+  outline-offset: 2px;
+}
+
+.x2f-card-choice__title {
+  font-size: 15px;
+  line-height: 20px;
+}
+
+/* A label with a "1 of 3 new" stepper on the right (News board). */
+.x2f-stepper-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  min-height: 44px;
+}
+
+.x2f-stepper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--x2f-space-1);
+  font-size: 14px;
+  color: var(--x2f-ink-muted);
+}
+
+.x2f-stepper .x2f-icon-button:disabled {
+  color: var(--x2f-line);
+  cursor: default;
+}

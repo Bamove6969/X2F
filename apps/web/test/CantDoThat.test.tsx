@@ -112,7 +112,7 @@ describe('Feedback form', () => {
     expect(send_.disabled).toBe(true);
     fire(host.querySelector<HTMLInputElement>('input[value="complaint"]')!, new MouseEvent('click', { bubbles: true }));
     type(host.querySelector('textarea')!, '  The cap is too low.  ');
-    expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toMatch(/with your username/);
+    expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe('Your username is attached, so we can reply in the app.');
     await send(host);
     expect(sent).toEqual([{ url: '/v1/feedback/form', body: { kind: 'complaint', text: 'The cap is too low.', anonymous: false, from: 'starter-limit' } }]);
     expect(host.querySelector('[data-part="feedback-thanks"]')?.textContent).toBe(FEEDBACK_THANKS);
@@ -131,9 +131,9 @@ describe('Feedback form', () => {
     expect(host.querySelector('label[for="' + box.id + '"]')?.textContent).toBe('Your message');
     type(box, 'Hi');
     expect(host.querySelector('[data-part="feedback-count"]')?.textContent).toBe('2 of 2000 characters');
-    // No grooved fieldset: the kit's plain group of 44px rows (X4).
+    // No grooved fieldset: the kit's selectable cards (design session 2 Nov).
     expect(host.querySelector('fieldset')?.className).toBe('x2f-choices');
-    expect([...host.querySelectorAll('fieldset label')].every((l) => l.className === 'x2f-choice')).toBe(true);
+    expect([...host.querySelectorAll('fieldset label')].every((l) => l.className === 'x2f-card-choice')).toBe(true);
     await send(host);
     expect(host.querySelector('[data-part="feedback-thanks-heading"]')?.textContent).toBe('Thank you!');
     expect(host.querySelector('[data-part="feedback-sent-as"]')?.textContent).toMatch(/^Sent as .+\.$/);
@@ -146,7 +146,7 @@ describe('Feedback form', () => {
     const box = [...host.querySelectorAll('label')].find((l) => l.textContent?.startsWith('Send anonymously'))!.querySelector('input')!;
     fire(box, new MouseEvent('click', { bubbles: true }));
     expect(host.querySelector('[data-part="anon-hint"]')?.textContent).toBe(FEEDBACK_ANON_HINT);
-    expect(FEEDBACK_ANON_HINT).toMatch(/We don't record who sent it/);
+    expect(FEEDBACK_ANON_HINT).toBe("Your username isn't attached, so we can't follow up with you.");
     type(host.querySelector('textarea')!, 'Hi');
     await send(host);
     // No refusal code on an anonymous send.

@@ -52,7 +52,7 @@ test('the buyer\'s refunded trade says the payment time ran out and offers "Open
   await openRoom(page, buyerRefunded());
   await expect(page.getByRole('heading', { name: 'Payment time ran out' })).toBeVisible();
   // The Refunded board's time-ran-out lead (design review 48).
-  await expect(page.getByText("You didn't tap I've paid in time, so the seller cancelled.")).toBeVisible();
+  await expect(page.getByText(/^You didn't tap I've paid in time, so \S+ cancelled\./)).toBeVisible();
   await expect(page.getByRole('link', { name: 'Open a dispute' })).toHaveAttribute('href', `/trade/${CODE}/dispute`);
 });
 

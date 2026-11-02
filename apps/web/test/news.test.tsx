@@ -7,6 +7,7 @@ import { afterLogin } from '../src/screens/auth/authApi.js';
 import { News } from '../src/screens/News.js';
 import {
   NEWS_DISMISS_ENABLED,
+  NEWS_HIDE_KEY,
   NEWS_SEEN_KEY,
   markSeen,
   readLastSeen,
@@ -139,11 +140,23 @@ describe('the News page', () => {
     expect(b.host.querySelector('[data-part="news-list"]')).toBeNull();
   });
 
-  it('the News board: posts open and close, every new one starts open, Mark all as read clears the marks', async () => {
+  it('the News board: only the newest unread post opens, "1 of 3 new" steps through the new ones, Mark all as read clears the marks', async () => {
     const { host } = page();
     await settle();
     const toggles = () => [...host.querySelectorAll<HTMLButtonElement>('[data-part="news-item"] button[aria-expanded]')];
-    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'true', 'true']);
+    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['true', 'false', 'false']);
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('1 of 3 new');
+    const prev = host.querySelector<HTMLButtonElement>('[aria-label="Previous new post"]')!;
+    const next = host.querySelector<HTMLButtonElement>('[aria-label="Next new post"]')!;
+    expect(prev.disabled).toBe(true);
+    fire(next, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('2 of 3 new');
+    expect(toggles().map((b) => b.getAttribute('aria-expanded'))).toEqual(['false', 'true', 'false']);
+    fire(next, new MouseEvent('click', { bubbles: true }));
+    expect(next.disabled).toBe(true);
+    fire(prev, new MouseEvent('click', { bubbles: true }));
+    expect(host.querySelector('[data-part="news-step"]')!.textContent).toBe('2 of 3 new');
+    // A post opens and closes by itself too.
     fire(toggles()[1]!, new MouseEvent('click', { bubbles: true }));
     expect(toggles()[1]!.getAttribute('aria-expanded')).toBe('false');
     const body = host.querySelector<HTMLElement>(`#${toggles()[1]!.getAttribute('aria-controls')}`)!;
@@ -153,6 +166,7 @@ describe('the News page', () => {
     expect(newTitles(host)).toEqual([]);
     expect(host.querySelector('[data-part="news-count"]')!.textContent).toBe('All read · 3 posts');
     expect(host.querySelector('[data-part="news-mark-all"]')).toBeNull();
+    expect(host.querySelector('[data-part="news-stepper"]')).toBeNull();
     // Still nothing sent anywhere about reading.
     expect(calls).toEqual([{ url: '/v1/news', method: 'GET' }]);
   });
@@ -181,12 +195,26 @@ describe('the News page', () => {
     expect(where).toBe('/sell');
   });
 
-  it('has no "Don\'t show me this again" checkbox: the owner has not decided', async () => {
-    expect(NEWS_DISMISS_ENABLED).toBe(false);
-    const { host } = page();
+  it('"Don\'t show me this again" (design session 2 Nov): only on the News that opened after a login; ticked, News stops opening after login on this device', async () => {
+    expect(NEWS_DISMISS_ENABLED).toBe(true);
+    const plain = page();
     await settle();
-    expect(host.querySelector('input[type="checkbox"]')).toBeNull();
-    expect(host.textContent).not.toMatch(/show (me )?this again/i);
+    expect(plain.host.querySelector('input[type="checkbox"]')).toBeNull();
+    plain.unmount();
+    const { host } = page('/news?after=login&returnTo=%2Fwallets');
+    await settle();
+    const box = host.querySelector<HTMLInputElement>('[data-part="news-hide"] input[type="checkbox"]')!;
+    expect(box.checked).toBe(false);
+    expect(host.querySelector('[data-part="news-hide"]')!.textContent).toContain('Site news');
+    fire(box, new MouseEvent('click', { bubbles: true }));
+    expect(window.localStorage.getItem(NEWS_HIDE_KEY)).toBe('1');
+    // Even with something new, a login now goes straight on.
+    news = { status: 200, body: { items: [item(9, 31, 'Newer'), ...ITEMS], serverNow: '2026-10-31T12:00:00.000Z' } };
+    const go: string[] = [];
+    await afterLogin((to) => go.push(to), '/wallets');
+    expect(go).toEqual(['/wallets']);
+    fire(box, new MouseEvent('click', { bubbles: true }));
+    expect(window.localStorage.getItem(NEWS_HIDE_KEY)).toBeNull();
   });
 });
 
@@ -226,7 +254,7 @@ describe('after login', () => {
   it('opens News first when something is new, carrying returnTo', async () => {
     const go: string[] = [];
     await afterLogin((to) => go.push(to), '/wallets');
-    expect(go).toEqual(['/news?returnTo=%2Fwallets']);
+    expect(go).toEqual(['/news?after=login&returnTo=%2Fwallets']);
   });
 
   it('goes straight on when everything was seen, or the news cannot be read', async () => {
@@ -244,6 +272,6 @@ describe('after login', () => {
     me = { status: 200, body: { termsCurrent: false } };
     const go: string[] = [];
     await afterLogin((to) => go.push(to), '/wallets');
-    expect(go).toEqual([`/terms?returnTo=${encodeURIComponent('/news?returnTo=%2Fwallets')}`]);
+    expect(go).toEqual([`/terms?returnTo=${encodeURIComponent('/news?after=login&returnTo=%2Fwallets')}`]);
   });
 });

@@ -3,12 +3,13 @@
  * 1 Nov 2026 shot 39, NEEDS_DESIGN "the after-I've-paid buyer state"): the status card says the
  * trade is paid and the seller is checking, the timer shows the seller's confirm window, "What
  * happens next" says what each side does, and the payment's details fold away under "Your
- * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), the dispute, which
- * opens only when the confirm window ends (the state machine's rule today: the board's "OPEN ·
- * owner to choose" question), and the reminder that a paid trade can't be cancelled.
+ * payment". The footer has Nudge (the API's nudge on an open trade, spec 2.4), Open a dispute
+ * (disabled with "Available from … in …" until `disputeOpensAt`: 30 min after I've paid, owner
+ * 2 Nov, but never before the server allows it), and the reminder that a paid trade can't be
+ * cancelled.
  *
- * Once the window ends without a release the status turns to "hasn't confirmed in time" and Open
- * a dispute becomes the outlined danger action (the board's window=ended). BuyerPay.tsx keeps the
+ * Once the window ends without a release the status turns to "hasn't confirmed in time" (the
+ * board's window=ended). BuyerPay.tsx keeps the
  * escrow side: Finish marking as paid, the refusals and the stopped escrow come in as `notices`
  * and `primary`. Lines not on the board are COPY-UNSIGNED.
  */
@@ -40,6 +41,23 @@ export function confirmWindow(view: Pick<TradeView, 'paidAt' | 'confirmBy'>, now
   const lengthMs = Number.isFinite(paid) ? Math.max(0, ends - paid) : 0;
   const leftMs = Math.max(0, ends - nowMs);
   return { ends, lengthMs, leftMs, ended: leftMs === 0 };
+}
+
+/** The owner's rule (2 Nov): the buyer may open a dispute 30 minutes after tapping I've paid. */
+export const DISPUTE_AFTER_PAID_MS = 30 * MIN_MS;
+
+/**
+ * When the buyer's Open a dispute becomes available in `paid`: 30 minutes after I've paid (owner,
+ * 2 Nov), but never before the server allows it. Today the state machine refuses the buyer's
+ * dispute until confirmBy (machine.ts `too-early`), so that is the later of the two and the button
+ * never offers what the server would refuse. Follow-up for the API: allow it 30 min after paid;
+ * then this is paidAt + 30 min alone. Null when neither time is known (the button is offered).
+ */
+export function disputeOpensAt(view: Pick<TradeView, 'paidAt' | 'confirmBy'>): number | null {
+  const paid = view.paidAt === null ? NaN : Date.parse(view.paidAt) + DISPUTE_AFTER_PAID_MS;
+  const server = view.confirmBy === null ? NaN : Date.parse(view.confirmBy);
+  const times = [paid, server].filter(Number.isFinite);
+  return times.length === 0 ? null : Math.max(...times);
 }
 
 /** "2 hours", "1 hour", "90 minutes": the window's length in a sentence. */
@@ -208,8 +226,8 @@ export function PaidWaitingBody({
 /** The footer: Nudge, the dispute (waiting or open), and the no-cancel line. */
 export function PaidWaitingActions({ view, serverClock }: { view: TradeView; serverClock: () => Date }) {
   const name = publicName(view.counterparty);
-  const win = confirmWindow(view, serverClock().getTime());
-  const ended = win?.ended ?? false;
+  const now = serverClock().getTime();
+  const opensAt = disputeOpensAt(view);
   const [nudge, setNudge] = useState<'sent' | 'failed' | null>(null);
   const [nudgeLimit, setNudgeLimit] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -248,7 +266,7 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
           That did not work. Try again.
         </p>
       ) : null}
-      {ended ? (
+      {opensAt === null || now >= opensAt ? (
         <Link to={`/trade/${encodeURIComponent(view.code)}/dispute`} className="x2f-button x2f-button--danger-outline" data-part="paid-dispute">
           Open a dispute
         </Link>
@@ -257,12 +275,9 @@ export function PaidWaitingActions({ view, serverClock }: { view: TradeView; ser
           <Button variant="secondary" disabled aria-describedby="paid-dispute-when" data-part="paid-dispute">
             Open a dispute
           </Button>
-          {win !== null ? (
-            <p id="paid-dispute-when" className="x2f-footnote">
-              Available from <When at={win.ends} />, in <Countdown deadline={new Date(win.ends)} serverClock={serverClock} format="minutes" />, if <Name view={view} /> hasn't
-              confirmed.
-            </p>
-          ) : null}
+          <p id="paid-dispute-when" className="x2f-footnote">
+            Available from <When at={opensAt} />, in <Countdown deadline={new Date(opensAt)} serverClock={serverClock} format="minutes" />.
+          </p>
         </>
       )}
       <p className="x2f-footnote">

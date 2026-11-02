@@ -147,6 +147,8 @@ describe('DisputeSlot', () => {
 
 describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   const refunded = (over: Partial<TradeView> = {}) => sellerView({ role: 'buyer', state: 'refunded', closedAt: at(-10 * 60 * MIN), ...over }) as TradeView;
+  // The Refunded screen names the seller (design session 2 Nov): the fixture's counterparty.
+  const S = sellerView().counterparty.displayName;
 
   it('offers "Open a dispute" within 48 hours of the refund (owner 2026-10-29), linking to the dispute page', () => {
     const { host } = render(
@@ -176,9 +178,9 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
   it('says why the XMR went back to the seller, for every kind of refund (owner 2026-10-29)', () => {
     const cases: [Partial<TradeView>, string, string][] = [
       [{ settling: 'buyer-cancel', cancelConfirmedAt: at(-9 * DAY) }, 'You cancelled this trade', 'You cancelled'],
-      [{ settling: 'buyer-cancel' }, 'Cancelling: returning the XMR to the seller', 'The trade is cancelled once the seller confirms'],
-      // The Refunded board's time-ran-out variant (design review 48), with "the seller" for the name.
-      [{ settling: 'auto-refund' }, 'Payment time ran out', "You didn't tap I've paid in time, so the seller cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to the seller."],
+      [{ settling: 'buyer-cancel' }, `Cancelling: returning the XMR to ${S}`, `The trade is cancelled once ${S} confirms`],
+      // The Refunded board's time-ran-out variant (design review 48), naming the seller.
+      [{ settling: 'auto-refund' }, 'Payment time ran out', `You didn't tap I've paid in time, so ${S} cancelled. Everything in escrow, 1.250000 XMR (about $412.50), went back to ${S}.`],
       [{ settling: 'mutual-cancel' }, 'You both cancelled this trade', 'agreed to cancel'],
       [{ settling: 'lapse-refund' }, 'The funding time ran out', "wasn't fully funded in time"],
       // A moderator's refund to the seller is built as mutual-cancel: the dispute decides the reason.
@@ -212,12 +214,16 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
     expect(keys.slice(-2)).toEqual(['Trade amount', 'Charged to you']);
     expect(facts.at(-2)![1]).toBe('1.250000 XMR · $412.50');
     expect(facts.at(-1)![1]).toBe('Nothing');
-    expect(keys).toContain('Refund sent to the seller');
+    expect(keys).toContain(`Refund sent to ${S}`);
+    expect(host.querySelector('#refunded-what')?.textContent).toMatch(/^What happened · \d+ \w{3} \d{4}$/);
+    expect(host.textContent).not.toMatch(/the seller/i);
     // Every time is the one format: "HH:MM UTC" under a dated head, or the full "D Mon YYYY, HH:MM UTC".
     for (const [k, val] of facts.slice(0, -2)) expect(val, k!).toMatch(/^(\d+ \w{3} \d{4}, )?\d\d:\d\d UTC$/);
     const dispute = host.querySelector('[data-part="refunded-dispute"]')!;
     expect(dispute.querySelector('h2')?.textContent).toBe('Did you send the money anyway?');
-    expect(dispute.querySelector('a.x2f-button--danger-outline')?.textContent).toBe('Open a dispute');
+    // A danger text button with a chevron (design session 2 Nov); Find another offer stays the primary.
+    expect(dispute.querySelector('a.x2f-button--danger')?.textContent).toBe('Open a dispute');
+    expect(dispute.querySelector('a.x2f-button--danger svg')).not.toBeNull();
     expect(host.querySelector('footer a[data-primary]')?.textContent).toBe('Find another offer');
   });
 
@@ -237,7 +243,7 @@ describe('RefundedSlot (the buyer, spec 2.3 dispute after refund)', () => {
           <RefundedSlot {...props(refunded({ settling, paidAt: at(-11 * 60 * MIN) }))} />
         </MemoryRouter>,
       );
-      expect(host.querySelector('h1')?.textContent).toBe('The XMR went back to the seller after you paid');
+      expect(host.querySelector('h1')?.textContent).toBe(`The XMR went back to ${S} after you paid`);
       expect([...host.querySelectorAll('a')].filter((a) => a.textContent === 'Open a dispute'), settling).toHaveLength(1);
       expect(host.textContent).not.toContain('Cancelling');
     }

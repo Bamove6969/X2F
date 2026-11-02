@@ -13,8 +13,8 @@
  *
  * New versus seen is kept on this device only (news-model.ts). Messages that were new when the
  * page opened keep their "New" mark for this visit; opening the page marks them seen for next time.
- * A "Don't show me this again" checkbox is NOT built: the owner has not decided
- * (NEWS_DISMISS_ENABLED stays false).
+ * "Don't show me this again" (design session 2 Nov) shows on the News page that opened by itself
+ * after a login (`?after=login`), and is kept on this device only (news-model.ts).
  */
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
@@ -22,7 +22,7 @@ import { returnToFrom } from '../api/client.js';
 import { Button } from '../ui/Button.js';
 import { Icon } from '../ui/icons.js';
 import { When } from '../ui/When.js';
-import { fetchNews, markSeen, readLastSeen, rememberNews, type NewsItem } from './news-model.js';
+import { fetchNews, markSeen, readHideAfterLogin, readLastSeen, rememberNews, setHideAfterLogin, type NewsItem } from './news-model.js';
 import './screens.css';
 
 type State = { status: 'loading' } | { status: 'error' } | { status: 'ready'; items: NewsItem[]; seenBefore: number };
@@ -76,8 +76,12 @@ export function News() {
   const returnTo = returnToFrom(search);
   const [state, setState] = useState<State>({ status: 'loading' });
   const [attempt, setAttempt] = useState(0);
-  // Which posts are open: every new one, or the newest when nothing is new (lead choice; the board opens one).
+  // Which posts are open: the newest unread one, or the newest when nothing is new (design session 2 Nov).
   const [open, setOpen] = useState<ReadonlySet<number>>(new Set());
+  // Where the "1 of 3 new" stepper is among the new posts.
+  const [step, setStep] = useState(0);
+  const afterLogin = new URLSearchParams(search).get('after') === 'login';
+  const [hide, setHide] = useState(() => readHideAfterLogin());
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -87,8 +91,8 @@ export function News() {
         if (ctl.signal.aborted) return;
         const seenBefore = readLastSeen();
         setState({ status: 'ready', items, seenBefore });
-        const fresh = items.filter((i) => i.id > seenBefore).map((i) => i.id);
-        setOpen(new Set(fresh.length > 0 ? fresh : items.slice(0, 1).map((i) => i.id)));
+        setOpen(new Set(items.slice(0, 1).map((i) => i.id)));
+        setStep(0);
         rememberNews(items);
         const newest = items.reduce((m, i) => Math.max(m, i.id), 0);
         if (newest > 0) markSeen(newest);
@@ -100,7 +104,16 @@ export function News() {
     return () => ctl.abort();
   }, [attempt]);
 
-  const newCount = state.status === 'ready' ? state.items.filter((i) => i.id > state.seenBefore).length : 0;
+  const fresh = state.status === 'ready' ? state.items.filter((i) => i.id > state.seenBefore) : [];
+  const newCount = fresh.length;
+  // Steps through the new posts, newest first, opening only that one.
+  const goTo = (i: number) => {
+    const target = fresh[i];
+    if (target === undefined) return;
+    setStep(i);
+    setOpen(new Set([target.id]));
+    requestAnimationFrame(() => document.getElementById(`news-${target.id}-title`)?.closest('article')?.scrollIntoView?.({ block: 'nearest' }));
+  };
   const total = state.status === 'ready' ? state.items.length : 0;
   const leave = () => void navigate(returnTo);
   const toggle = (id: number) =>
@@ -150,7 +163,22 @@ export function News() {
         ) : null}
         {state.status === 'ready' && state.items.length > 0 ? (
           <section className="x2f-stack" aria-label="Posts" data-part="news-list">
-            <span className="x2f-overline">Newest first</span>
+            <div className="x2f-stepper-row">
+              <span className="x2f-overline">Newest first</span>
+              {newCount > 1 ? (
+                <span className="x2f-stepper" data-part="news-stepper">
+                  <button type="button" className="x2f-icon-button" aria-label="Previous new post" disabled={step === 0} onClick={() => goTo(step - 1)}>
+                    <Icon name="chevron-left" size={20} />
+                  </button>
+                  <span role="status" data-part="news-step">
+                    <span className="x2f-when">{step + 1}</span> of <span className="x2f-when">{newCount}</span> new
+                  </span>
+                  <button type="button" className="x2f-icon-button" aria-label="Next new post" disabled={step >= newCount - 1} onClick={() => goTo(step + 1)}>
+                    <Icon name="chevron-right" size={20} />
+                  </button>
+                </span>
+              ) : null}
+            </div>
             {state.items.map((i) => (
               <Post key={i.id} item={i} isNew={i.id > state.seenBefore} open={open.has(i.id)} onToggle={() => toggle(i.id)} />
             ))}
@@ -158,6 +186,24 @@ export function News() {
         ) : null}
       </div>
       <footer className="x2f-page__footer">
+        {afterLogin ? (
+          <label className="x2f-choice" data-part="news-hide">
+            <input
+              type="checkbox"
+              checked={hide}
+              onChange={(e) => {
+                setHide(e.target.checked);
+                setHideAfterLogin(e.target.checked);
+              }}
+            />
+            <span className="x2f-choice__text">
+              <span className="x2f-choice__title">Don't show me this again</span>
+              <span className="x2f-choice__hint">
+                News won't open when you log in. You can still read it any time under Site news, the bell at the top of the screen.
+              </span>
+            </span>
+          </label>
+        ) : null}
         <Button variant="primary" onClick={leave} data-part="news-continue">
           Continue
         </Button>
