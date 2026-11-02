@@ -44,8 +44,9 @@ import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import { COOKIE_ATTRS, deviceHash, ensureDeviceCookie, isTrusted } from './device.js';
 import {
-  endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, startHold, weakOf, weakRefusal, type ProvenMethod,
+  endHoldIfOwner, holdInTx, holdRefusal, lockAccount, ownerProof, requireLiveSessionInTx, settleOf, weakOf, weakRefusal, type ProvenMethod,
 } from './hold.js';
+import { discardChangesIfOwner } from './holdChanges.js';
 import { loginStrength, waits, type LoginFactorKind, type LoginStrength } from './strength.js';
 import { assertNotDisabled, cleanLabel, openSession, presentedTokenHash, requireSession } from './sessions.js';
 
@@ -191,17 +192,20 @@ async function withTx<T>(deps: Pick<Deps, 'db'>, fn: (db: pg.PoolClient) => Prom
  * login without TOTP, the TOTP second factor): either a full session now (`{ status: 'ok' }`) or an
  * approval to wait for (see the module comment). Staff and owner accounts never get here.
  *
- * Task 17, all in this one transaction with the account locked (review I2): a hold whose time is
- * up settles first; a strong login whose methods all predate a running hold (the real owner) skips
- * the approval (the approving devices may be the thief's) and ends the hold, which ends every
- * waiting and backup session (`endHoldIfOwner`); it is never refused by the device limit: the
- * least recently seen sessions, weak ones first, are logged out to make room (review round 2
- * N-C1: owner proof wins). During a running hold a login that waits opens no session at all, on a
- * trusted device either (403 `recovery-hold`: device trust is a copyable cookie, round 2 N-C1). A
- * waiting login on a device not trusted for the account with nothing logged in to approve it starts
- * the hold with its session. A strong login with no strong session open to answer it goes in, and
- * at the device limit logs out weak sessions to make room (round 2 N-I3: a weak session may not
- * answer a strong login).
+ * Hold model v3 (owner 1-2 Nov 2026; hold.ts), all in this one transaction with the account locked:
+ * - a login that proved a passkey, security key or PGP key discards the changes waiting from a
+ *   password-only session that were submitted while that method was held (holdChanges.ts);
+ * - an account hold (a recovery-code login's) whose time is up settles first; while one runs, only
+ *   a login whose passkey, security key or PGP key the account held when it started gets in (no
+ *   approval: the approving devices may be the thief's; never refused by the device limit, the
+ *   least recently seen sessions, weak ones first, make room; review round 2 N-C1), and it ends the
+ *   hold (`endHoldIfOwner`); every other login is refused (403 `recovery-hold`), on a trusted device
+ *   too (device trust is a copyable cookie);
+ * - with nothing logged in to approve it, a login on a device not trusted for the account gets in
+ *   only with a passkey, security key or PGP key; anything else, a password with its authenticator
+ *   code included, is refused (403 `approval-unavailable`) and nothing is held;
+ * - a strong login with no strong session open to answer it goes in, and at the device limit logs
+ *   out weak sessions to make room (round 2 N-I3: a weak session may not answer a strong login).
  */
 export async function traderLogin(
   deps: Deps,
@@ -226,32 +230,33 @@ export async function traderLogin(
   const settle = settleOf(req);
 
   type Outcome = { kind: 'session'; after: () => void } | { kind: 'wait'; wait: ApprovalWait };
+  let discarded = false;
   const out = await withTx(deps, async (db): Promise<Outcome> => {
     await lockApprovals(db, a.accountId);
     await lockAccount(db, a.accountId);
     /** `room`: log sessions out until this one fits within `max` (`strongToo`: strong sessions may go too, after the weak ones). */
-    const session = async (startsHold: boolean, room?: { max: number; strongToo: boolean }): Promise<Outcome> => {
+    const session = async (room?: { max: number; strongToo: boolean }): Promise<Outcome> => {
       const ended: string[] = [];
-      // The real owner's strong login ends a running hold, and the waiting sessions with it, before its session starts.
-      if (strength === 'strong' && a.proven !== undefined) ended.push(...((await endHoldIfOwner(db, settle, a.accountId, a.proven, now)) ?? []));
+      // The real owner's passkey, security key or PGP key ends a running hold, and the waiting sessions with it, before its session starts.
+      if (a.proven !== undefined) ended.push(...((await endHoldIfOwner(db, settle, a.accountId, a.proven, now)) ?? []));
       if (room !== undefined) ended.push(...(await makeRoom(db, a.accountId, now, presented, room.max, room.strongToo)));
       const s = await openSession(db, deps, req, reply, {
         accountId: a.accountId, level: 'full', deviceLabel: a.deviceLabel, method: a.method, firstSession: false, strength,
       });
-      if (startsHold) await startHold(db, a.accountId, now, { reason: 'weak-new-device', startedBy: s.sessionId });
       return {
         kind: 'session',
         after: () => {
           s.after();
           for (const id of ended) req.server.events.closeSession(a.accountId, id);
-          // The hold's own warning reaches the account's devices (review round 2 N-I2).
-          if (startsHold) void req.server.push.send(a.accountId, 'alert', { exceptSession: s.sessionId }).catch(() => undefined);
         },
       };
     };
     const acct = await db.query<{ kind: string; one_device: boolean }>('select kind, one_device from accounts where id = $1', [a.accountId]);
     const row = acct.rows[0];
-    if (!row || row.kind !== 'trader') return session(false);
+    if (!row || row.kind !== 'trader') return session();
+    // Hold model v3: the owner's pre-existing passkey, security key or PGP key discards the changes
+    // waiting from a password-only session, whatever happens to this login next.
+    discarded = await discardChangesIfOwner(db, a.accountId, a.proven, now);
     // A hold whose time is up is settled here (its pending change applies) before anything is counted.
     const hold = await holdInTx(db, settle, a.accountId, now);
     // This browser already holds a live full session of the account: it is a logged-in device (a
@@ -262,19 +267,19 @@ export async function traderLogin(
             and member_id is null`,
         [a.accountId, presented, now],
       );
-      if (own.rows.length > 0) return session(false);
+      if (own.rows.length > 0 && hold === null) return session();
     }
     const max = row.one_device ? 1 : await maxDevices(db);
     // Task 17: the real owner's strong login during a hold goes straight in (no approval) and ends
     // the hold (`session`). Review round 2 N-C1: never refused by the device limit (the sessions
     // filling it may be a thief's): the waiting ones end with the hold, then the least recently
     // seen make room.
-    if (hold !== null && strength === 'strong' && a.proven !== undefined && ownerProof(hold, a.proven)) {
-      return session(false, { max, strongToo: true });
+    if (hold !== null && ownerProof(hold, a.proven)) {
+      return session({ max, strongToo: true });
     }
-    // Review round 2 N-C1: during the hold a login that waits opens no session, not even on a
-    // trusted device (its trust is a cookie that can be copied).
-    if (hold !== null && waits(strength)) throw holdRefusal(hold.holdUntil);
+    // Hold model v3: during the hold nobody else logs in, not even on a trusted device (its trust is
+    // a cookie that can be copied; review round 2 N-C1), whatever the login proved.
+    if (hold !== null) throw holdRefusal(hold.holdUntil);
     // Plan 2 Task 18: a team member's session is no logged-in device here: it never answers an
     // approval (the approval routes are the account owner's), so the owner's login never waits for
     // one. Member sessions still count toward the device limit (`devicesInUse`).
@@ -284,15 +289,20 @@ export async function traderLogin(
          from sessions where account_id = $1 and level = 'full' and revoked_at is null and expires_at > $2 and member_id is null`,
       [a.accountId, now],
     );
-    // No logged-in device to approve it: the login goes on; a waiting one on a new device holds
-    // the account for 24 hours (Task 17, owner 2026-10-29).
-    if (open.rows[0]!.n === 0) return session(waits(strength) && !(await isTrusted(deps, a.accountId, device)));
+    // Hold model v3 (owner 2 Nov 2026): no logged-in device to approve it: a trusted device goes in;
+    // a new one only with a passkey, security key or PGP key (a password, with or without an
+    // authenticator code, is refused, and nothing is held: the recovery code is that account's way).
+    if (open.rows[0]!.n === 0) {
+      if (await isTrusted(deps, a.accountId, device)) return session();
+      if (a.proven !== undefined && a.proven.kind !== 'password-totp') return session();
+      throw new ApiError(403, 'approval-unavailable');
+    }
     const inUse = await devicesInUse(db, a.accountId, now, presented);
     const trusted = await isTrusted(deps, a.accountId, device);
-    if (trusted && inUse < max) return session(false);
+    if (trusted && inUse < max) return session();
     // Review round 2 N-I3: a strong login that no strong session could answer (a weak session may
     // not) goes in; at the limit weak sessions are logged out to make room.
-    if (strength === 'strong' && open.rows[0]!.answering === 0) return session(false, { max, strongToo: false });
+    if (strength === 'strong' && open.rows[0]!.answering === 0) return session({ max, strongToo: false });
 
     const hourAgo = new Date(now.getTime() - 3_600_000);
     const recent = await db.query<{ n: number; oldest: Date | null }>(
@@ -330,6 +340,8 @@ export async function traderLogin(
     return { kind: 'wait', wait: { status: 'approve-on-device', approvalId, number, expiresAt: expiresAt.toISOString() } };
   });
 
+  // The owner hears that the waiting changes were discarded on every device.
+  if (discarded) void req.server.push.send(a.accountId, 'alert').catch(() => undefined);
   if (out.kind === 'session') {
     out.after();
     return { status: 'ok' };
@@ -408,13 +420,15 @@ async function poll(req: FastifyRequest, reply: FastifyReply): Promise<PollResul
   // Approved: collected once, before its deadline, in one transaction with the session and the
   // logouts the approval asked for (review M7). Review round 3 R3-M1: under the same locks as a
   // login (so it runs wholly before or after the owner's proof, `endHoldIfOwner`), a hold whose time
-  // is up settles first, and during a running hold a login that waits opens no session (403
+  // is up settles first, and during a running hold no approved login opens a session (403
   // `recovery-hold`, as at login; the approval stays uncollected until it expires).
   const done = await withTx(deps, async (db) => {
     await lockApprovals(db, row.account_id);
     await lockAccount(db, row.account_id);
     const hold = await holdInTx(db, settleOf(req), row.account_id, now);
-    if (hold !== null && waits(row.strength)) throw holdRefusal(hold.holdUntil);
+    // Hold model v3: during an account hold no approved login is collected (the recovery-code login
+    // expired every approval anyway).
+    if (hold !== null) throw holdRefusal(hold.holdUntil);
     // Review round 4 R4-M2: an approval dies with the session that granted it (logged out, ended by
     // a password change or by the owner's proof, or expired): `decided_by` must still be live.
     const claimed = await db.query<ApprovalRow>(

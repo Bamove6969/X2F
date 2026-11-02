@@ -74,6 +74,12 @@ export interface TradeView {
   cancelConfirmableAt: string | null;
   nextDeadline: string | null;
   serverNow: string;
+  /**
+   * Hold model v3: the other party's account has a temporary problem (a recovery-code hold; the
+   * trade is paused or marked for cancelling, trades/held.ts). The partner is told only that, never
+   * why. False when the view is built without it (live events).
+   */
+  counterpartyProblem: boolean;
 }
 
 /** The extra facts a view needs that are not trade fields. */
@@ -84,6 +90,8 @@ export interface ViewContext {
   sellerWalletApp: string | null;
   /** `trades.final_alert_seen_at` (not a machine field). */
   finalAlertSeenAt: Date | null;
+  /** Hold model v3: see `TradeView.counterpartyProblem`. */
+  counterpartyProblem?: boolean;
 }
 
 /**
@@ -145,6 +153,7 @@ export function toTradeView(t: Trade, viewerId: string, serverNow: Date, ctx: Vi
     cancelConfirmableAt: iso(t.cancelConfirmableAt),
     nextDeadline: iso(nextDeadline(t)),
     serverNow: serverNow.toISOString(),
+    counterpartyProblem: ctx.counterpartyProblem ?? false,
   };
   if (role === t.poster) view.fee = { atomic: t.feeAtomic.toString() };
   return view;

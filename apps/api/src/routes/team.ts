@@ -11,8 +11,11 @@
  *   sessions end at once.
  * - The three writes re-check the session is live (401) and, owner 2026-10-30, are refused during a
  *   24-hour hold (403 `recovery-hold` `{ holdUntil }`, before the confirm token is spent). Owner
- *   1 Nov 2026 (landing review I1): an invite or a role change needs a strong session, at any time
- *   (403 `weak-session`, before the confirm token is spent); a removal does not.
+ *   1 Nov 2026 (landing review I1): an invite needs a strong session, at any time (403
+ *   `weak-session`, before the confirm token is spent); a removal does not. Hold model v3 (owner
+ *   2 Nov 2026): a role change by a password-only session is staged like the other changes of
+ *   such a session (202 `{ status: 'staged', changeId }`, applied 24 h after it is submitted;
+ *   hold.ts); inside the sign-up window it is still refused (403 `weak-session`).
  * - `GET /v1/team/audit?from&to&member` → the audit log, newest first.
  *
  * The member's side (no session; every answer gives the browser a device cookie, and every step
@@ -35,7 +38,7 @@ import { openNames, sealNames } from '../accounts.js';
 import { ApiError } from '../errors.js';
 import { consumeChallenge } from '../auth/challenges.js';
 import { requireConfirm } from '../auth/confirm.js';
-import { requireNotHeld, settleOf, weakRefusal } from '../auth/hold.js';
+import { gateChange, requireNotHeld, settleOf, stagedReply, weakRefusal } from '../auth/hold.js';
 import { deviceHash, ensureDeviceCookie } from '../auth/device.js';
 import { checkTeamJoinCode, insertPgpKey, issueTeamJoinChallenge, PGP_BODY_LIMIT } from '../auth/pgp.js';
 import { requireSession, startSession } from '../auth/sessions.js';
@@ -49,6 +52,7 @@ import {
   createInvite,
   finishMember,
   inviteView,
+  liveMember,
   listMembers,
   memberNames,
   openInvite,
@@ -180,8 +184,20 @@ export function teamRoutes(app: FastifyInstance): void {
 
   app.patch(
     '/v1/team/members/:id',
-    { preHandler: [owner, checkRoles, requireNotHeld, requireStrongSession, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
-    async (req) => setRoles({ ...req.server.deps, events: req.server.events }, caller(req), idParam(req), input(req).roles),
+    { preHandler: [owner, checkRoles, requireNotHeld, requireConfirm((req) => ({ kind: 'team-roles', memberId: idParam(req), roles: input(req).roles.join(',') }))] },
+    async (req, reply) => {
+      const deps = req.server.deps;
+      const { rows } = await deps.db.query<{ strength: LoginStrength | null }>('select strength from sessions where id = $1', [req.auth.sessionId]);
+      if (!waits(rows[0]?.strength)) return setRoles({ ...deps, events: req.server.events }, caller(req), idParam(req), input(req).roles);
+      // Hold model v3: staged under the account lock (`gateChange`), for a live member only.
+      const staged = await inTransaction(deps.db, async (c) => {
+        const g = await gateChange(c, req, { kind: 'team-roles', memberId: idParam(req), roles: input(req).roles });
+        if (g === null) throw weakRefusal();
+        if (!(await liveMember(c, req.auth.accountId, idParam(req), deps.clock()))) throw new ApiError(404, 'not-found');
+        return g;
+      });
+      return reply.code(202).send(stagedReply(staged));
+    },
   );
 
   app.delete(

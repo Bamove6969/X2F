@@ -21,7 +21,7 @@ import { redeemConfirm } from './confirm.js';
 import type { LoginFactor } from './login.js';
 import { openKey } from './pgp.js';
 import { requireSession } from './sessions.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, stagedReply, requireNotHeld } from './hold.js';
 
 /** Methods that log in on their own (TOTP and recovery codes never do). */
 export const PRIMARY: MethodType[] = ['pgp', 'passkey', 'security-key', 'password'];
@@ -337,21 +337,21 @@ export async function removeMethod(
   req: FastifyRequest,
   type: string,
   id: string,
-): Promise<{ status: 'held'; holdUntil: string } | null> {
+): Promise<{ status: 'staged'; changeId: string } | null> {
   const accountId = req.auth.accountId;
   const body = req.body;
   const raw = body !== null && typeof body === 'object' ? (body as Record<string, unknown>).confirmToken : undefined;
   const token = raw === undefined ? undefined : typeof raw === 'string' ? raw : '';
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   let ended = 0;
   try {
     await client.query('begin');
     try {
       const found = await removable(client, deps.config, accountId, type, id, deps.clock());
       await redeemConfirm({ db: client, clock: deps.clock }, req, { kind: 'remove-method', method: found.type, id }, token);
-      // Task 17: a waiting login's removal starts the hold and waits in it; the method stays
-      // until the hold ends by time (a pre-hold method is never removed early).
+      // Hold model v3: a waiting login's removal is staged; the method stays until 24 h after the
+      // removal is submitted (and a pre-existing passkey, security key or PGP login discards it).
       held = await gateChange(client, req, { kind: 'remove-method', type: found.type, id });
       if (held === null) ended = await applyRemoval(client, deps.config, accountId, found.type, id, req.auth.sessionId, deps.clock());
       await client.query('commit');
@@ -363,8 +363,7 @@ export async function removeMethod(
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, accountId);
-    return heldReply(held);
+    return stagedReply(held);
   }
   // The other sessions are revoked: end their live streams now, not at the stream lifetime.
   if (ended > 0) req.server.events.closeAccount(accountId, req.auth.sessionId);

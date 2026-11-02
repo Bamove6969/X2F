@@ -4,7 +4,7 @@ import type pg from 'pg';
 import { addAlert } from '../alerts.js';
 import { STRONG_CONFIRM_METHODS, redeemConfirm, type ConfirmMethod } from '../auth/confirm.js';
 import { requireSession } from '../auth/sessions.js';
-import { gateChange, heldReply, pushHoldStarted, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
+import { gateChange, stagedReply, requireLiveSessionInTx, requireNotHeld } from '../auth/hold.js';
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 import type { RetentionJob } from '../retention.js';
@@ -257,7 +257,7 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
   const now = deps.clock();
   const client = await deps.db.connect();
   let wallets: Wallet[] = [];
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
@@ -280,8 +280,9 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
       req.confirmedAction = input.action;
       // Plan 2 Task 17 review round 2 N-I4 (lead decision 2026-10-30, the owner's 14:12 ruling over
       // the wallet rule of 10-24): a session whose login waits (PGP alone included) adds no wallet
-      // at once, whatever it confirmed with: the add waits out the account's 24-hour hold like any
-      // security change (`gateChange`; 202 `held`). The sign-up's first 30 minutes are exempt there.
+      // at once, whatever it confirmed with: hold model v3, the add is staged like any security
+      // change and applies 24 h after it is submitted (`gateChange`; 202 `staged`). The sign-up's
+      // first 30 minutes are exempt there.
       held = await gateChange(client, req, { kind: 'wallets', items: input.items, method });
       if (held === null) {
         // Owner, 2026-10-23 and 2026-10-24: an account's first wallets (it has never had one) are
@@ -304,8 +305,7 @@ async function addHandler(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send(heldReply(held));
+    return reply.code(202).send(stagedReply(held));
   }
   return reply.code(201).send(input.batch ? wallets.map(toJson) : toJson(wallets[0]!));
 }

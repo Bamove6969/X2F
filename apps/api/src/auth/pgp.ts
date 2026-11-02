@@ -31,7 +31,7 @@ import { deviceHash, ensureDeviceCookie } from './device.js';
 import { completeLogin, type LoginResult } from './login.js';
 import { methodAllowed } from './methods.js';
 import { requestOrigin } from './origin.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, stagedReply, requireNotHeld } from './hold.js';
 import { requireSession, startSession } from './sessions.js';
 import { NIL_UUID } from './throttle.js';
 
@@ -771,11 +771,11 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
   openKey(deps.config, sealed, pending.fingerprint); // throws for a tampered or foreign payload
   const now = deps.clock();
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   try {
     await client.query('begin');
     try {
-      // Task 17: a waiting login's new key starts the hold and waits in it.
+      // Hold model v3: a waiting login's new key is staged; it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'pgp', fingerprint: pending.fingerprint, keyEnc: pending.keyEnc });
       if (held === null) await applyPgpKey(client, req.auth.accountId, pending.fingerprint, sealed, now);
       await client.query('commit');
@@ -787,8 +787,7 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, req.auth.accountId);
-    return reply.code(202).send({ ...heldReply(held), fingerprint: pending.fingerprint });
+    return reply.code(202).send({ ...stagedReply(held), fingerprint: pending.fingerprint });
   }
   return { fingerprint: pending.fingerprint };
 }

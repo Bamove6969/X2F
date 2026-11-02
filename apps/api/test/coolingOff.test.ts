@@ -1461,10 +1461,12 @@ describe('the route lists', () => {
     expect(src('offers/routes.ts')).toContain("'/v1/offers', { preHandler: [requireTrader, requireNotHeld] }");
     expect(src('wallets/routes.ts')).toContain("'/v1/wallets/:id', { preHandler: [session, requireNotHeld] }");
     // Plan 2 Task 18 (owner 2026-10-30): the three team writes check the hold before spending the confirm token.
-    // Owner 2026-11-01 (landing review I1): invites and role changes also need a strong session,
-    // checked after the hold and before the confirm token is spent; removal does not.
-    expect(src('routes/team.ts').split(', requireNotHeld, requireStrongSession, requireConfirm(').length - 1).toBe(2);
-    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(1);
+    // Owner 2026-11-01 (landing review I1): invites also need a strong session, checked after the
+    // hold and before the confirm token is spent; removal does not. Hold model v3 (owner 2 Nov): a
+    // role change by a password-only session is staged (`gateChange`) instead of refused.
+    expect(src('routes/team.ts').split(', requireNotHeld, requireStrongSession, requireConfirm(').length - 1).toBe(1);
+    expect(src('routes/team.ts').split(', requireNotHeld, requireConfirm(').length - 1).toBe(2);
+    expect(src('routes/team.ts').split('await gateChange(').length - 1).toBe(1);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: true });').length - 1).toBe(2);
     expect(src('team/members.ts').split('await ownerWriteGate(c, caller, now, { strong: false });').length - 1).toBe(1);
     // The trade-finishing routes stay open during the hold, to backup sessions too.

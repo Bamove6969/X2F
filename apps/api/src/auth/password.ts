@@ -16,7 +16,7 @@ import { issueConfirmToken, requireConfirm } from './confirm.js';
 import { deviceHash, ensureDeviceCookie } from './device.js';
 import { methodAllowed, passwordAllowed } from './methods.js';
 import { traderLogin } from './approval.js';
-import { gateChange, heldReply, pushHoldStarted, requireNotHeld } from './hold.js';
+import { gateChange, stagedReply, requireNotHeld } from './hold.js';
 import { assertNotDisabled, requireSession, startSession } from './sessions.js';
 import {
   claimPasswordTry, passwordMiss, throttleCheck, throttleFail, throttleKey, throttleReset, visitorMiss, visitorReset,
@@ -333,12 +333,12 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
   const now = deps.clock();
   const { accountId, sessionId } = req.auth;
   const client = await deps.db.connect();
-  let held: { holdUntil: Date } | null = null;
+  let held: { changeId: string } | null = null;
   let ended = 0;
   try {
     await client.query('begin');
     try {
-      // Task 17: a waiting login's change starts the hold and waits in it (in this transaction).
+      // Hold model v3: a waiting login's change is staged (in this transaction); it applies 24 h after it is submitted.
       held = await gateChange(client, req, { kind: 'password', hash, pepperId });
       if (held === null) ended = await applyPassword(client, accountId, { hash, pepperId }, sessionId, now);
       await client.query('commit');
@@ -350,8 +350,7 @@ async function setPasswordHandler(req: FastifyRequest, reply: FastifyReply) {
     client.release();
   }
   if (held !== null) {
-    pushHoldStarted(req, accountId);
-    return reply.code(202).send(heldReply(held));
+    return reply.code(202).send(stagedReply(held));
   }
   // The other sessions are revoked: end their live streams now, not at the stream lifetime.
   if (ended > 0) req.server.events.closeAccount(accountId, sessionId);

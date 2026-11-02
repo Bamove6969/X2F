@@ -143,11 +143,11 @@ export interface Caller {
  * (`requireStrongSession`, routes/team.ts), so no confirm token is spent. Removal needs no strong
  * session (it only takes access away).
  *
- * TODO(owner 1 Nov: removal queues until hold end, wire to hold_changes when recovery rules land):
- * the owner wants a member removal asked for during a hold queued and applied when the 24 hours
- * end. This branch has no queue for it (the `hold_changes` queue lives on wip/lead-p2-recovery-rules,
- * not landed; `account_holds.pending_change` holds only the one security change that started the
- * hold), so removal stays refused with `recovery-hold` here until then.
+ * Hold model v3 (owner 2 Nov 2026): during an account hold (a recovery-code login) every session of
+ * the account is logged out, so no owner session is left to ask; the 1 Nov wish that a removal
+ * asked for during a hold waits for its end has no case left. A role change by a password-only
+ * session is staged and waits 24 h (routes/team.ts, `gateChange`); a removal by one still applies
+ * at once (it only takes access away; OPEN QUESTION to the owner, see the v3 report).
  */
 async function ownerWriteGate(c: Queryable, caller: Caller, now: Date, o: { strong: boolean }): Promise<void> {
   const live = await requireLiveSessionInTx(c, caller, now);
@@ -254,20 +254,44 @@ export async function setRoles(
   const now = deps.clock();
   const { row, sessions } = await inTransaction(deps.db, async (c) => {
     await ownerWriteGate(c, caller, now, { strong: true });
-    const { rows } = await c.query<MemberRow>(
-      `update team_members set roles = $3
-        where id = $1 and account_id = $4 and ${LIVE_MEMBER}
-        returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
-      [memberId, now, roles, accountId],
-    );
-    const r = rows[0];
+    const r = await updateRoles(c, accountId, memberId, roles, now);
     if (!r) throw new ApiError(404, 'not-found');
-    const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
-    return { row: r, sessions: s };
+    return r;
   });
   // After the commit: a member who lost Trades loses the live streams that carry trade events.
   for (const id of sessions) deps.events.closeSession(accountId, id);
   return toView(row);
+}
+
+/** The roles write (the route's, or a waiting one applied 24 h after a password-only session submitted it). Null for a member who is not live. */
+async function updateRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date): Promise<{ row: MemberRow; sessions: string[] } | null> {
+  const { rows } = await c.query<MemberRow>(
+    `update team_members set roles = $3
+      where id = $1 and account_id = $4 and ${LIVE_MEMBER}
+      returning id, display_name, roles, member_account_id, joined_at, invite_expires_at, created_at`,
+    [memberId, now, roles, accountId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  const s = roles.includes('trades') ? [] : (await c.query<{ id: string }>('select id from sessions where member_id = $1', [memberId])).rows.map((x) => x.id);
+  return { row: r, sessions: s };
+}
+
+/**
+ * Hold model v3: a member's roles waiting from a password-only session, applied when their 24 h
+ * are up (hold.ts `applyChange`, account locked). Throws 404 `not-found` (the change is dropped)
+ * when the member is no longer live. Returns the member's sessions whose live streams must close.
+ */
+export async function applyRoles(c: Queryable, accountId: string, memberId: string, roles: TeamRole[], now: Date = new Date()): Promise<string[]> {
+  const r = await updateRoles(c, accountId, memberId, roles, now);
+  if (!r) throw new ApiError(404, 'not-found');
+  return r.sessions;
+}
+
+/** True when `memberId` is a live member (or open invite) of the account: a role change for it can be staged. */
+export async function liveMember(c: Queryable, accountId: string, memberId: string, now: Date): Promise<boolean> {
+  const { rows } = await c.query(`select 1 from team_members where id = $1 and account_id = $3 and ${LIVE_MEMBER}`, [memberId, now, accountId]);
+  return rows.length > 0;
 }
 
 /**

@@ -145,6 +145,15 @@ export async function openSession(
   // that runs at the same time wait, so it then ends this session too.
   if (row.kind === 'member') {
     if (a.level !== 'full') throw new ApiError(401, 'not-authenticated');
+    // Hold model v3: the team account's lock first (the order of every account write; a
+    // recovery-code login logs the team out under it), then no member logs in while the team
+    // account is held (403 `recovery-hold`).
+    const team = await db.query<{ account_id: string }>('select account_id from team_members where member_account_id = $1', [a.accountId]);
+    if (team.rows[0]) {
+      await db.query('select 1 from accounts where id = $1 for no key update', [team.rows[0].account_id]);
+      const held = await db.query<{ hold_until: Date }>('select hold_until from account_holds where account_id = $1 and hold_until > $2', [team.rows[0].account_id, now]);
+      if (held.rows[0]) throw new ApiError(403, 'recovery-hold', { holdUntil: held.rows[0].hold_until.toISOString() });
+    }
     const tm = await db.query<{ id: string; account_id: string; display_name: string; kind: AccountKind; idle_hours: IdleHours; disabled_at: Date | null }>(
       `select tm.id, tm.account_id, tm.display_name, t.kind, t.idle_hours, t.disabled_at
          from team_members tm join accounts t on t.id = tm.account_id

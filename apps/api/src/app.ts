@@ -6,6 +6,7 @@ import { methodRoutes } from './auth/methods.js';
 import { originHook } from './auth/origin.js';
 import { passwordRoutes } from './auth/password.js';
 import { pgpRoutes, type PgpSigner } from './auth/pgp.js';
+import { holdRoutes } from './auth/holdRoutes.js';
 import { recoveryRoutes } from './auth/recovery.js';
 import { approvalRoutes } from './auth/approval.js';
 import { logoutRoute, runsWithSession } from './auth/sessions.js';
@@ -88,6 +89,8 @@ declare module 'fastify' {
     events: EventBus;
     /** Task 19: the generic Web Push (`send(accountId, kind)`; true when a push service answered 201). */
     push: { send(accountId: string, kind: PushKind, opts?: PushOptions): Promise<boolean> };
+    /** Task 19's trade event delivery, for system events applied outside the trade routes (hold model v3: held trades paused and resumed). */
+    tradePublish: TradePublisher;
     /**
      * Every route other than GET (and HEAD) that runs behind `requireSession`, as `METHOD /path`
      * (Tasks 16-17 review round 5 M1: the tripwire that each is classified, `LIVE_SESSION_ROUTES` or
@@ -188,6 +191,9 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   app.decorate('push', {
     send: (accountId: string, kind: PushKind, opts?: PushOptions) => sendPush({ db: deps.db, clock: deps.clock, config: deps.config, transport, log: app.log }, accountId, kind, opts),
   });
+  // Plan 3, Task 6/19: one trade event publisher for every route that applies trade events.
+  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
+  app.decorate('tradePublish', tradePublish);
   app.decorateRequest('auth', null as never);
   app.decorateRequest('confirmedAction', null);
   await app.register(fastifyCookie);
@@ -249,6 +255,8 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   await pgpRoutes(app);
   totpRoutes(app);
   recoveryRoutes(app);
+  // Hold model v3: the account's hold and the changes waiting their 24 h.
+  holdRoutes(app);
   methodRoutes(app);
   // Task 11: account overview, sessions, alerts and Terms.
   accountRoutes(app);
@@ -267,7 +275,6 @@ export async function buildApi(deps: Deps, options: BuildOptions = {}): Promise<
   eventRoutes(app, events, options.events);
   pushRoutes(app);
   // Plan 3, Task 6: the trade view and the participants' events route; Task 19 delivers its events.
-  const tradePublish = options.tradePublish ?? tradeEventPublisher({ events, push: app.push });
   tradeRoutes(app, { publish: tradePublish, ...(options.txConfirmations ? { txConfirmations: options.txConfirmations } : {}) });
   // Plan 3, Task 27: opening a dispute, its status and the appeal (Plan 4 adds the staff side); same publisher.
   disputeRoutes(app, { publish: tradePublish });

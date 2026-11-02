@@ -15,6 +15,8 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { settleDueChanges } from './auth/holdChanges.js';
+import { syncHeldTradesJob } from './trades/held.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
@@ -84,8 +86,13 @@ const stopRetention = startRetention(deps, [...RETENTION_JOBS]);
 const monerod = monerodUrlFromEnv(process.env);
 const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmations({ url: monerod }) } : {});
 onAlert = ownerAlertSink({ db, clock, push: app.push });
-// Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
-const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
+// Plan 2 Task 17, hold model v3: every minute, holds whose 24 hours are up end, changes whose 24
+// hours are up apply, and held trades are paused or resumed as their holds say.
+const stopHolds = startRetention(
+  deps,
+  [settleDueHolds(config, app.events, app.log), settleDueChanges(config, app.events, app.log), syncHeldTradesJob(app.tradePublish)],
+  60_000,
+);
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);

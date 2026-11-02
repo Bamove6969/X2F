@@ -10,7 +10,9 @@ import { addAlert } from '../alerts.js';
 import type { TeamRole } from '../team/perms.js';
 import { requireConfirm } from '../auth/confirm.js';
 import { maxDevices } from '../auth/approval.js';
-import { gateChange, heldReply, holdUntil, pushHoldStarted, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
+import { changesWait, pendingSummary } from '../auth/holdChanges.js';
+import { revealDue } from '../auth/recovery.js';
+import { gateChange, stagedReply, holdUntil, requireLiveSessionInTx, requireNotHeld, weakOf, weakRefusal, withTx } from '../auth/hold.js';
 import { STAFF_IDLE_HOURS, deadline, requireSession, sessionPolicy, type SessionLevel } from '../auth/sessions.js';
 
 export type Suggestion = 'add-authenticator' | 'add-backup';
@@ -35,8 +37,14 @@ export interface AccountOverview {
   suggestions: Suggestion[];
   logoutTimer: LogoutTimer;
   termsCurrent: boolean;
-  /** Task 17: the end of the account's 24-hour hold while one runs (any session of the account), else null. */
+  /** The end of the account's 24-hour hold (a recovery-code login, hold model v3) while one runs, else null. */
   accountHoldUntil: string | null;
+  /** Hold model v3: the account's changes waiting their 24 h (the banner "N changes take effect on <date>"), else null. */
+  pendingChanges: { count: number; takesEffectAt: string } | null;
+  /** Hold model v3: this session's changes are staged and wait 24 h (the pop-up warns before the first one). */
+  changesWait: boolean;
+  /** Hold model v3: a recovery code replaced a used one and this session may show it once (`POST /v1/account/recovery-code/reveal`). */
+  recoveryCodeToShow: boolean;
   /**
    * Plan 2 Task 18: set when the caller is a team member (the overview is then of the account
    * they work for, with their own login methods); null for the account owner.
@@ -177,6 +185,9 @@ async function overview(deps: Deps, req: FastifyRequest): Promise<AccountOvervie
     // Staff and owner accounts carry no Terms version (R10).
     termsCurrent: row.kind !== 'trader' || row.terms_version === deps.config.termsVersion,
     accountHoldUntil: (await holdUntil(deps, accountId, req.server.events))?.toISOString() ?? null,
+    pendingChanges: member !== null ? null : await pendingSummary(deps.db, accountId),
+    changesWait: member !== null ? false : await changesWait(req),
+    recoveryCodeToShow: member !== null || row.level !== 'full' ? false : await revealDue(deps.db, accountId, sessionId),
     member,
   };
 }
@@ -249,7 +260,7 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!row.legacy_login_name) throw new ApiError(409, 'login-name-set');
     if (r.key === row.display_key) throw new ApiError(400, 'names-same');
     const client = await d.db.connect();
-    let held: { holdUntil: Date } | null = null;
+    let held: { changeId: string } | null = null;
     try {
       await client.query('begin');
       try {
@@ -273,8 +284,7 @@ export function accountRoutes(app: FastifyInstance): void {
       client.release();
     }
     if (held !== null) {
-      pushHoldStarted(req, req.auth.accountId);
-      return reply.code(202).send(heldReply(held));
+      return reply.code(202).send(stagedReply(held));
     }
     return { ok: true };
   });
@@ -332,7 +342,7 @@ export function accountRoutes(app: FastifyInstance): void {
     const idleHours = (body as { idleHours?: unknown }).idleHours;
     if (!isIdleHours(idleHours)) throw new ApiError(400, 'bad-request');
     const client = await d.db.connect();
-    let held: { holdUntil: Date } | null = null;
+    let held: { changeId: string } | null = null;
     try {
       await client.query('begin');
       try {
@@ -348,8 +358,7 @@ export function accountRoutes(app: FastifyInstance): void {
       client.release();
     }
     if (held !== null) {
-      pushHoldStarted(req, req.auth.accountId);
-      return reply.code(202).send(heldReply(held));
+      return reply.code(202).send(stagedReply(held));
     }
     return logoutTimerOf('trader', idleHours);
   });
@@ -375,7 +384,7 @@ export function accountRoutes(app: FastifyInstance): void {
       const d = deps();
       const on = req.confirmedAction?.kind === 'set-one-device' && req.confirmedAction.on === 'on';
       const client = await d.db.connect();
-      let held: { holdUntil: Date } | null = null;
+      let held: { changeId: string } | null = null;
       try {
         await client.query('begin');
         try {
@@ -390,8 +399,7 @@ export function accountRoutes(app: FastifyInstance): void {
         client.release();
       }
       if (held !== null) {
-        pushHoldStarted(req, req.auth.accountId);
-        return reply.code(202).send(heldReply(held));
+        return reply.code(202).send(stagedReply(held));
       }
       return { oneDevice: on, maxDevices: await maxDevices(d.db) };
     },
@@ -490,7 +498,8 @@ export function accountRoutes(app: FastifyInstance): void {
 
 /** The alerts a weak session may not mark seen (review round 2 N-M3): the hold's own and the login alerts. */
 export const OWNER_WARNINGS: readonly string[] = [
-  'hold-started', 'hold-ended', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
+  'hold-started', 'hold-ended', 'hold-extended', 'hold-changes-submitted', 'hold-changes-cancelled', 'hold-changes-discarded', 'hold-changes-applied',
+  'recovery-code-renewed', 'new-login', 'recovery-login', 'login-approval', 'login-blocked', 'logged-out-by-new-device', 'sessions-ended',
 ];
 
 /**

@@ -21,6 +21,14 @@ export type AlertKind =
   // Task 17: the 24-hour hold.
   | 'hold-started'
   | 'hold-ended'
+  // Hold model v3 (owner 1-2 Nov 2026): a moderator moved the hold's end; a password-only session's
+  // changes submitted, cancelled, discarded early or applied; the used recovery code replaced.
+  | 'hold-extended'
+  | 'hold-changes-submitted'
+  | 'hold-changes-cancelled'
+  | 'hold-changes-discarded'
+  | 'hold-changes-applied'
+  | 'recovery-code-renewed'
   // Plan 2 Task 18: to the account owner, about the team.
   | 'team-member-joined'
   | 'team-member-login'

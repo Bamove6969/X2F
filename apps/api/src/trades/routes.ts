@@ -2,6 +2,7 @@ import { addressEnd } from '@x2f/accounts';
 import { normalizeTradeCode } from '@x2f/core';
 import { CLIENT_EVENTS, TradeRuleError, UNLOCK_CONFIRMATIONS, type Trade, type TradeEvent } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
+import { counterpartyProblem, refuseHeldTradeEvent } from './held.js';
 import { requireSession } from '../auth/sessions.js';
 import { requireLiveSessionInTx } from '../auth/hold.js';
 import { ApiError } from '../errors.js';
@@ -103,6 +104,7 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
       profile: profile(t.methodId) ?? null,
       sellerWalletApp: row.seller_wallet_app,
       finalAlertSeenAt: row.final_alert_seen_at,
+      counterpartyProblem: await counterpartyProblem(deps.db, t.code, other),
     });
   };
 
@@ -205,6 +207,8 @@ export function tradeRoutes(app: FastifyInstance, opts: TradeRouteOptions = {}):
         },
         async (client, now) => {
           await requireLiveSessionInTx(client, req.auth, now);
+          // Hold model v3: a trade held by a recovery-code hold moves for nobody (trades/held.ts).
+          await refuseHeldTradeEvent(client, row.code, req.auth.accountId, e.type);
         },
       );
     } catch (err) {
