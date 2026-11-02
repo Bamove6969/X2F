@@ -33,6 +33,12 @@ export const NOTE_MAX = 1000;
 /** The board's appeal form enables "Send appeal" from 10 characters (not counting spaces at the ends). */
 export const APPEAL_MIN = 10;
 
+/**
+ * The appeal window's length in hours (spec Revision 2026-10-29: 48 h; Plan 4's `appealWindowH`
+ * setting defaults to it). The ruling's "(48 h)" reads this, not appealUntil − ruledAt (review N3).
+ */
+export const APPEAL_WINDOW_H = 48;
+
 const HOUR_MS = 60 * 60_000;
 const ms = (iso: string | null): number | null => (iso === null ? null : Date.parse(iso));
 
@@ -216,8 +222,17 @@ export interface RulingCopy {
 /**
  * The ruling card's words for this side. `me` is this side, `other` the other trader's display name.
  * Board lines (DisputeRuling, wip/design-brief): "Ruling: release to the buyer", "1.25 XMR goes to
- * you", "Sent to Cake Wallet, address ending …k3Fz." and the footer. The coins move at the ruling,
- * never held for the appeal window (spec Revision 2026-10-29c; Plan 4 "A1 dropped").
+ * you" and the footer. The board's "Sent to Cake Wallet, address ending …k3Fz." is not true yet: the
+ * page says "Goes to …" (DisputeRuling.tsx) until the API reports the payout executed.
+ *
+ * NEEDS_PLAN_4_RULING_PAYOUT (C11 review I1): the spec and Plan 4 ("A1 dropped", Revision
+ * 2026-10-29c) move the coins at the ruling, but nothing executes a ruling's payout yet, and
+ * rulingAllowsCosign below still holds the co-sign until the ruling is final (round 1 past its window
+ * with no appeal, or round 2). Changing that gate (coins move at the ruling, with or without an
+ * appeal, still through cosignPolicy) is a money rule and belongs to the Plan 4 execution task, not
+ * to copy. When the API reports the payout executed (DisputeView has no such flag today), the
+ * destination line flips to the board's "Sent to …" and the appeal line may say the XMR has moved.
+ * Tripwire NEEDS_PLAN_4_RULING_PAYOUT in test/dispute-tripwires.test.ts.
  */
 export function rulingCopy(d: DisputeView, me: Party, other: string, amountAtomic: string, _now: Date): RulingCopy {
   const r = d.ruling;
@@ -280,7 +295,9 @@ export function overturnLien(outcome: RulingView['outcome'], me: Party, other: s
 /**
  * The line once an appeal is in. Board DisputeRuling: "Appeal sent. A second moderator will look at
  * it. The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they
- * pay it back." The other side's appeal and the receiver's lien are worded to match (COPY-UNSIGNED).
+ * pay it back." Review I1 (NEEDS_PLAN_4_RULING_PAYOUT, above rulingCopy): nothing has moved the XMR
+ * yet, so the page keeps the lien and drops "The XMR has already moved" (COPY-UNSIGNED). The other
+ * side's appeal and the receiver's lien are worded to match (COPY-UNSIGNED).
  */
 export function appealSentText(d: DisputeView, me: Party, other: string): string {
   const a = d.appeal;
@@ -293,8 +310,8 @@ export function appealSentText(d: DisputeView, me: Party, other: string): string
     receiver === null
       ? ''
       : receiver === me
-        ? ' The XMR has already moved; if they overturn the ruling, you get a lien until you pay it back.'
-        : ' The XMR has already moved; if they overturn the ruling, the other trader gets a lien until they pay it back.';
+        ? ' If they overturn the ruling, you get a lien until you pay the XMR back.' // COPY-UNSIGNED (review I1)
+        : ' If they overturn the ruling, the other trader gets a lien until they pay the XMR back.'; // COPY-UNSIGNED (review I1)
   return `${who} A second moderator will look at it.${lien}`;
 }
 
@@ -309,7 +326,8 @@ export interface SettleOutcome {
 /**
  * The ruling gate in front of co-signing a moderator-built transaction (Plan 3 Task 27): only a
  * set the moderator built for this side to co-sign, only when the ruling pays this side, only once
- * the ruling is final (the appeal round, or round 1 past its window with no appeal), and only when
+ * the ruling is final (the appeal round, or round 1 past its window with no appeal; see
+ * NEEDS_PLAN_4_RULING_PAYOUT above rulingCopy: Plan 4's execution task changes this), and only when
  * `cosignPolicy` (Task 12, which checks the exact payouts against this device's own facts) agrees.
  * Anything else is refused. Never throws.
  */

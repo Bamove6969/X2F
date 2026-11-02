@@ -14,7 +14,7 @@ import type { DisputeTrade, DisputeView } from './api.js';
 import { TradeTitle } from './DisputeOpen.js';
 import { DisputeIcon } from './icons.js';
 import { ModeratorTag } from './ModeratorTag.js';
-import { APPEAL_MIN, appealSentText, dayTime, overturnLien, rulingCopy, rulingFinal } from './rules.js';
+import { APPEAL_MIN, APPEAL_WINDOW_H, appealSentText, dayTime, overturnLien, rulingCopy, rulingFinal } from './rules.js';
 import './dispute.css';
 
 function AppealSection({
@@ -65,8 +65,6 @@ function AppealSection({
       </section>
     );
   }
-  // The board's "(48 h)": the window's own length, from the ruling's times (the owner's setting, 48 by default).
-  const windowHours = Math.round((until.getTime() - Date.parse(r.ruledAt)) / 3_600_000);
   const ready = why.trim().length >= APPEAL_MIN;
   const send = async () => {
     if (!ready || busy) return;
@@ -89,7 +87,7 @@ function AppealSection({
         </span>
       </div>
       <p className="dispute-muted">
-        Either of you can appeal until {dayTime(until)} ({windowHours} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
+        Either of you can appeal until {dayTime(until)} ({APPEAL_WINDOW_H} h). An appeal goes to a senior moderator or the owner who hasn't seen this case.
         {overturnLien(r.outcome, me, other)}
       </p>
       {writing ? (
@@ -173,7 +171,9 @@ export function DisputeRuling({
             <h1 className="dispute-title">{copy.title}</h1>
             {copy.destination !== null ? (
               <span className="dispute-muted-14">
-                Sent to {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
+                {/* Review I1 (NEEDS_PLAN_4_RULING_PAYOUT, rules.ts): where the XMR goes, not the board's
+                    "Sent to …", until the API reports the payout executed. COPY-UNSIGNED */}
+                Goes to {copy.destination.app ?? 'your wallet' /* COPY-UNSIGNED */}, address ending <span className="dispute-mono">…{copy.destination.end}</span>
                 .
               </span>
             ) : null}
