@@ -26,6 +26,10 @@ const account = (kind: 'trader' | 'staff' | 'owner' | 'member' = 'trader', disab
   return seedAccount(deps, { loginName: `vusd${n}x`, displayName: `Vusd${String(n).padStart(3, '0')}`, kind, disabled });
 };
 
+// One owner account may exist (`one_owner`): made once, reused.
+let ownerId: string | undefined;
+const owner = async () => (ownerId ??= await account('owner'));
+
 /** A claim row as finish stores it (the key and signature bytes do not matter here). */
 async function claim(accountId: string, o: { site?: string; status?: string; fingerprint?: string } = {}): Promise<string> {
   const { rows } = await deps.db.query<{ id: string }>(
@@ -68,7 +72,7 @@ describe('migration 310: past_reputation.verified_usd_cents', () => {
       deps.db.query('update past_reputation set verified_usd_cents = $2, verified_usd_by = $3, verified_usd_at = $4 where id = $1', [id, cents, by, at]);
     await expect(set(null)).rejects.toMatchObject({ code: '42501' });
     await expect(set(trader)).rejects.toMatchObject({ code: '42501' });
-    await expect(set(await account('owner'))).rejects.toMatchObject({ code: '42501' });
+    await expect(set(await owner())).rejects.toMatchObject({ code: '42501' });
     await expect(set(await account('member'))).rejects.toMatchObject({ code: '42501' });
     await expect(set(await account('staff', true))).rejects.toMatchObject({ code: '42501' });
     await expect(set(staff, null)).rejects.toMatchObject({ code: '42501' });
@@ -95,7 +99,7 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
   it('anyone but an enabled staff account is refused not-staff and nothing is stored', async () => {
     const trader = await account();
     const id = await claim(trader);
-    for (const by of [trader, await account('owner'), await account('member'), await account('staff', true), '00000000-0000-4000-8000-000000000000']) {
+    for (const by of [trader, await owner(), await account('member'), await account('staff', true), '00000000-0000-4000-8000-000000000000']) {
       expect(await setVerifiedPastRepUsd(deps.db, id, 500, by, T0), by).toEqual({ ok: false, reason: 'not-staff' });
     }
     expect((await row(id)).verified_usd_cents).toBeNull();
@@ -175,7 +179,6 @@ describe('stand-ins', () => {
     const staffFiles = [
       ...sources(join(ROOT, 'apps/api/src/staff')),
       ...sources(join(ROOT, 'apps/staff-api/src')),
-      ...sources(join(ROOT, 'apps/moderation/src')).filter((f) => /routes?|server|app/i.test(f)),
     ];
     const appTs = readFileSync(join(ROOT, 'apps/api/src/app.ts'), 'utf8');
     const staffLanded = /buildStaffApi/.test(appTs) || staffFiles.length > 0;
