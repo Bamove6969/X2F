@@ -75,6 +75,8 @@ describe('POST /v1/feedback/form', () => {
   it('a named row holds the account id and the refusal code, so staff can reach out', async () => {
     const { b, id } = await login('named1');
     expect((await b.post('/v1/feedback/form', { kind: 'recommendation', text: 'Line one\r\nLine two', anonymous: false, from: 'offer-cap' })).statusCode).toBe(202);
+    // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+    setNow(new Date(T0.getTime() + FEEDBACK_FORM_MIN_GAP_S * 1000));
     expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'No code', anonymous: false })).statusCode).toBe(202);
     expect(await rows()).toEqual([
       { kind: 'recommendation', body: 'Line one\nLine two', account_id: id, from_code: 'offer-cap', created_on: '2026-10-29' },
@@ -128,7 +130,9 @@ describe('POST /v1/feedback/form', () => {
 
   it('takes a tab, ZWNJ (Persian) and ZWJ (emoji sequences): review M5', async () => {
     const { b } = await login('script1');
-    for (const text of ['tab\there', 'می\u200cخواهم', 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}']) {
+    for (const [i, text] of ['tab\there', 'می\u200cخواهم', 'family \u{1F468}\u200d\u{1F469}\u200d\u{1F467}'].entries()) {
+      // One send per FEEDBACK_FORM_MIN_GAP_S per person: space them out.
+      setNow(new Date(T0.getTime() + i * FEEDBACK_FORM_MIN_GAP_S * 1000));
       expect((await b.post('/v1/feedback/form', { kind: 'feedback', text, anonymous: true })).statusCode, JSON.stringify(text)).toBe(202);
     }
   });
@@ -152,15 +156,25 @@ describe('POST /v1/feedback/form', () => {
   });
 
   it('a failed insert does not use up a send (review M3)', async () => {
-    setNow(new Date('2026-11-15T12:00:00Z'));
+    const base = Date.parse('2026-11-15T12:00:00Z');
+    // One send per FEEDBACK_FORM_MIN_GAP_S per person: every try below is spaced out.
+    let tries = 0;
+    const next = () => setNow(new Date(base + tries++ * FEEDBACK_FORM_MIN_GAP_S * 1000));
+    next();
     const { b } = await login('dbfail1');
     await deps.db.query('alter table feedback_form rename to feedback_form_away');
     try {
-      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+      for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+        next();
+        expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: 'x', anonymous: true })).statusCode).toBe(500);
+      }
     } finally {
       await deps.db.query('alter table feedback_form_away rename to feedback_form');
     }
-    for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `ok${i}`, anonymous: true })).statusCode).toBe(202);
+    for (let i = 0; i < FEEDBACK_FORM_DAILY; i++) {
+      next();
+      expect((await b.post('/v1/feedback/form', { kind: 'feedback', text: `ok${i}`, anonymous: true })).statusCode).toBe(202);
+    }
   });
 
   it('accepts 2000 characters, counted as characters, and a null from', async () => {
