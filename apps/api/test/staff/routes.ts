@@ -20,4 +20,11 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self' },
+  // Plan 4 Task 28: News, written by the owner.
+  { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
+  { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
+  { method: 'DELETE', url: '/staff/v1/news/:id', perm: 'site.control' },
+  // Plan 5 Tasks 4 and 21: platform feedback and the feedback form, read by the owner.
+  { method: 'GET', url: '/staff/v1/feedback', perm: 'feedback.read' },
+  { method: 'GET', url: '/staff/v1/feedback/form', perm: 'feedback.read' },
 ];
