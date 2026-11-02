@@ -133,3 +133,10 @@ Supersedes the earlier "limits converted at the market rate" note and the "≈" 
 - Payment instructions are per payment type **and** per currency where they differ (Bank transfer: USD = account + routing, EUR = IBAN/SEPA).
 - Spec: `docs/superpowers/specs/2026-11-02-task34-multi-currency.md` on `wip/second-p3-task34`.
 - Boards: PostOffer, FlexOffer-Post (+Wide), OfferAd (+Wide).
+
+## Decided (owner, via the lead, 2 Nov ~15:00 UTC)
+- **Offers:** market ± % only, no fixed price (confirmed). Bands are whole currency units and the next band starts one unit later (500, then 501).
+- **Past reputation:** imported LocalMonero history counts toward the opt-in "Completed over $X" line through a dollar figure a moderator checks and enters.
+- **Trading hold, new rule:** an open dispute never blocks trading. A moderator freezes trading only when someone ignores a dispute (about 48 h with no reply) or ignores a ruling. The moderator writes in the dispute what the person must do to get trading back (for example pay X to Y); the person does it and messages the moderators, who check and lift the freeze. A freeze has **no end time**: My offers says "until the hold ends" with no date. Moderator tools come in Plan 4.
+- **Payment instructions:** per payment type and per currency where they differ (bank: USD routing, EUR IBAN, GBP sort code).
+- Boards updated for these: MyOffers (+Wide, Fold-MyOffers): hold notice without a date, sample "Fixed price" offer now follows the market; ModCase: the ruling's account action reads "Freeze trading on the losing side · only if they ignore the dispute or the ruling · no end time". Canvas v112.

@@ -214,7 +214,7 @@ class Component extends DCLogic {
       pick: () => this.setState({ outcome: o.id }) }));
     const actions = [
       ['none', 'None', ''],
-      ['hold', 'Trading hold on the losing side', 'until the appeal window closes'],
+      ['hold', 'Freeze trading on the losing side', 'only if they ignore the dispute or the ruling · no end time · write what they must do to get it back'],
       ['freeze', 'Freeze the losing account', 'senior moderator or owner confirms'],
       ['ban', 'Ban the losing account', 'senior moderator or owner confirms']
     ].map(([id, label, note]) => ({ label, note, on: acct === id, pick: () => this.setState({ acct: id }) }));
