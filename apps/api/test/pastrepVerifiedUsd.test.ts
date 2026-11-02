@@ -2,7 +2,8 @@
 // ("Completed over $X") ONLY through a moderator-verified dollar figure. Migration 310 adds
 // `past_reputation.verified_usd_cents` (bigint, null = not verified); only a moderator sets it,
 // through `setVerifiedPastRepUsd` (the staff route and screen are Plan 4's); the traded total reads
-// `verifiedPastRepUsdCents`, which sums live claims with a figure. Null or a dead claim adds nothing.
+// `verifiedPastRepUsdCents`, which sums APPROVED claims with a figure (owner 2026-11-02). Null, a signed
+// (not yet approved) or a dead claim adds nothing.
 import { randomBytes } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
@@ -93,7 +94,8 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
     expect(await setVerifiedPastRepUsd(deps.db, signed, 1_250_000_00, staff, T0)).toEqual({ ok: true });
     expect(await setVerifiedPastRepUsd(deps.db, approved, 99, staff, T0)).toEqual({ ok: true });
     expect(await row(signed)).toEqual({ verified_usd_cents: '125000000', verified_usd_by: staff, verified_usd_at: T0 });
-    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(1_250_000_00 + 99);
+    // Owner 2026-11-02: a figure may be entered before approval, but only an APPROVED claim counts.
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(99);
   });
 
   it('anyone but an enabled staff account is refused not-staff and nothing is stored', async () => {
@@ -128,8 +130,9 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
   it('null clears the figure (the claim adds nothing again)', async () => {
     const trader = await account();
     const staff = await account('staff');
-    const id = await claim(trader);
+    const id = await claim(trader, { status: 'approved' });
     await setVerifiedPastRepUsd(deps.db, id, 700, staff, T0);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(700);
     expect(await setVerifiedPastRepUsd(deps.db, id, null, staff, T0)).toEqual({ ok: true });
     expect(await row(id)).toEqual({ verified_usd_cents: null, verified_usd_by: null, verified_usd_at: null });
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
@@ -137,16 +140,29 @@ describe('setVerifiedPastRepUsd (the moderator seam)', () => {
 });
 
 describe('verifiedPastRepUsdCents (what the traded total may add)', () => {
-  it('sums only the account’s live claims with a figure: never unverified, never a dead claim', async () => {
+  it('owner 2026-11-02: a signed (not yet approved) claim with a figure counts nothing; once approved it counts', async () => {
+    const trader = await account();
+    const staff = await account('staff');
+    const id = await claim(trader, { site: 'Pending' });
+    expect(await setVerifiedPastRepUsd(deps.db, id, 5_000_00, staff, T0)).toEqual({ ok: true });
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
+    await deps.db.query(`update past_reputation set status = 'approved' where id = $1`, [id]);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(5_000_00);
+    // Read at query time: revoked after approval stops counting at once.
+    await deps.db.query(`update past_reputation set status = 'revoked' where id = $1`, [id]);
+    expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
+  });
+
+  it('sums only the account’s approved claims with a figure: never unverified, never a dead claim', async () => {
     const trader = await account();
     const otherTrader = await account();
     const staff = await account('staff');
     expect(await verifiedPastRepUsdCents(deps.db, trader)).toBe(0);
-    await claim(trader, { site: 'NoFigure' });
-    const kept = await claim(trader, { site: 'Kept' });
-    const revoked = await claim(trader, { site: 'Revoked' });
+    await claim(trader, { site: 'NoFigure', status: 'approved' });
+    const kept = await claim(trader, { site: 'Kept', status: 'approved' });
+    const revoked = await claim(trader, { site: 'Revoked', status: 'approved' });
     const removed = await claim(trader, { site: 'Removed', status: 'approved' });
-    const others = await claim(otherTrader, { site: 'Kept' });
+    const others = await claim(otherTrader, { site: 'Kept', status: 'approved' });
     for (const id of [kept, revoked, removed, others]) expect(await setVerifiedPastRepUsd(deps.db, id, 10_000_00, staff, T0)).toEqual({ ok: true });
     await deps.db.query(`update past_reputation set status = 'revoked' where id = $1`, [revoked]);
     await deps.db.query(`update past_reputation set status = 'removed' where id = $1`, [removed]);
