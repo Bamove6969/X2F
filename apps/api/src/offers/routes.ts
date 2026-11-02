@@ -517,7 +517,7 @@ export function offerRoutes(app: FastifyInstance): void {
         );
         const m = cur.rows[0];
         if (!m) throw new ApiError(404, 'not-found');
-        await assertMayPost(client, req.auth!, now, { side: m.side, methodId: m.method_id, currency: m.currency }, id);
+        await assertMayPost(client, req.auth!, now, { side: m.side }, id);
         if ((await update(client)).rowCount !== 1) throw new ApiError(404, 'not-found');
         await auditMember(client, req.auth, { action: 'offer-relisted', detail: { offerId: id } }, now);
       });

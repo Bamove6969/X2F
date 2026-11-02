@@ -96,7 +96,7 @@ const sampleEvent: Record<TradeEvent['type'], TradeEvent> = {
 
 describe('constants', () => {
   test('TIMERS', () => {
-    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48 });
+    expect(TIMERS).toEqual({ setupMin: 15, fundMin: 30, payMin: 90, extendMin: 30, maxExtensions: 2, finalAlertMin: 15, settleMin: 15, lapseCosignMin: 30, disputeAfterRefundHours: 48, buyerDisputeAfterPaidMin: 30 });
   });
 
   test('every event type is exactly one of system or client', () => {

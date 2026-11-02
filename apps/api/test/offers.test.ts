@@ -416,10 +416,10 @@ describe('starter limits (spec 2.3, Revision 2026-10-24)', () => {
     expect(await opens(graduated.browser)).toEqual({ [small]: '-', [mid]: '-', [big]: '-' });
 
     // In another currency the minimum is converted to USD at the market: €500 = $555.56 > $200.
-    const eur = await post(p, { currency: 'EUR', minFiatCents: '50000', maxFiatCents: '60000', side: 'buy' });
+    // (Another poster: p already has 3 buying offers, the per-side cap.)
+    const eur = await post(await poster(), { currency: 'EUR', minFiatCents: '50000', maxFiatCents: '60000', side: 'buy' });
     expect((await list('side=buy&method=ZELLE&currency=EUR', starter.browser)).find((c) => c.id === eur)?.opensAt).toBe('building');
     // A fixed-price offer is converted the same way (its minimum is still money in its currency).
-    // (Another poster: p already has 3 offers in USD buy ads, the per-market cap.)
     const fixedBig = await post(await poster(), { currency: 'USD', side: 'buy', minFiatCents: '150000', maxFiatCents: '160000', pricing: { mode: 'fixed', centsPerXmr: '1' } });
     expect((await list(q, starter.browser)).find((c) => c.id === fixedBig)?.opensAt).toBe('graduated');
 
@@ -463,7 +463,7 @@ describe('review fixes (Task 4 review 2026-10-28)', () => {
     expect((await p.browser.post('/v1/offers', { ...BODY, currency: 'AUD' })).statusCode).toBe(409);
   });
 
-  it('cap: more than 3 on one side needs no total cap (the old 20-in-all and per-market keys are not read); the owner setting offers_max_per_side moves it, relisting included', async () => {
+  it('cap: the old per-market and 20-in-all settings are not read; the owner setting offers_max_per_side moves the cap, relisting included', async () => {
     expect(OFFER_CAP_DEFAULTS).toEqual({ perSide: 3 });
     expect(OFFER_CAP_KEYS).toEqual({ perSide: 'offers_max_per_side' });
     const q = await poster();
