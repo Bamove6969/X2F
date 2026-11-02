@@ -1,7 +1,7 @@
 /**
  * Settings → Security (Task 30, P3-C4). One screen that gathers: the login methods (list, add,
  * remove, with the last-method guard and TOTP / recovery codes), the payout-wallet wait
- * explanation, the signed-in devices with remote log-out, the inactivity logout timer, and the
+ * explanation, a link to Devices and sessions (its own screen since C2-D1), the inactivity logout timer, and the
  * alerts list. All confirm-it's-you prompts across the screen use one shared `ConfirmSheet` (via
  * `useConfirm`), so there is a single confirm UI (X-4).
  */
@@ -11,10 +11,11 @@ import { IDLE_HOURS, isHeld, type IdleHours, type LogoutTimer as Timer } from '@
 import { ConfirmOpenProvider, useConfirm } from '../auth/ConfirmSheet.js';
 import { authApi } from '../auth/authApi.js';
 import { heldNote, holdSentence } from '../auth/refusals.js';
+import { Icon } from '../../ui/icons.js';
 import { Alerts } from './Alerts.js';
 import { BLOCKED_PATH } from './BlockAction.js';
 import { BLOCK_COPY } from './blockCopy.js';
-import { Devices } from './Devices.js';
+import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
@@ -131,6 +132,11 @@ function LogoutTimer() {
   );
 }
 
+/** The latest of these hold end times (the first on a tie), or null for none. */
+export function latestHoldEnd(ends: readonly string[]): string | null {
+  return ends.reduce<string | null>((a, b) => (a !== null && Date.parse(a) >= Date.parse(b) ? a : b), null);
+}
+
 /**
  * A backup login's recovery session is held, or the account is on its 24-hour hold (Plan 2 Tasks 9
  * and 17): changes on this screen are refused until then, so the screen says so up front, from `me()`.
@@ -146,7 +152,7 @@ function HoldBanner() {
         const ends = [me.level === 'recovery' ? me.holdUntil : null, me.accountHoldUntil ?? null].filter(
           (t): t is string => typeof t === 'string' && Date.parse(t) > Date.now(),
         );
-        setHeld(ends.length === 0 ? null : ends.reduce((a, b) => (Date.parse(a) >= Date.parse(b) ? a : b)));
+        setHeld(latestHoldEnd(ends));
       },
       () => undefined,
     );
@@ -181,7 +187,13 @@ function SecurityScreen() {
         <HoldBanner />
         <Methods prove={prove} />
         <PayoutWait />
-        <Devices prove={prove} />
+        {/* C2-D1: Devices is its own screen ("Devices and sessions" board); Security links to it. */}
+        <section className="x2f-card" data-part="devices-link" aria-label={DEVICES_TITLE}>
+          <Link className="x2f-row-link" to={DEVICES_PATH}>
+            <span>{DEVICES_TITLE}</span>
+            <Icon name="chevron-right" size={20} />
+          </Link>
+        </section>
         <LogoutTimer />
         <Alerts />
         {/* Task 37 review M3: the way to the Blocked list until Plan 5's Profile tab (Block board's Settings, Blocked traders). */}

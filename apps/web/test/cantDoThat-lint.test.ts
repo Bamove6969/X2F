@@ -123,7 +123,10 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // (Tasks 38-39 landing, 2026-10-29): two warnings that explain, not refuse: PaidConfirmSheet's
     // "After this you can't cancel the trade" and ReleaseWarning's "... and can't be taken back."
     expect(todo).toBeLessThanOrEqual(4);
-    expect(notARefusal).toBeLessThanOrEqual(45);
+    // 45 -> 50 (C2-D1, 1 Nov 2026): the LoginApprove and Devices boards' explanations, not rules:
+    // what blocking a login did, the advice after a block, why no place is shown, the blocked new
+    // device's note, and how approval works.
+    expect(notARefusal).toBeLessThanOrEqual(50);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });

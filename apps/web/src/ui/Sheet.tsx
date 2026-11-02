@@ -17,6 +17,12 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * `describedBy` names the element that holds the sheet's message (read out with the title), and
  * `initialFocus` is a selector inside the sheet for the control that gets focus when it opens (the
  * warnings' safe action, review M5); without it the panel itself is focused.
+ *
+ * For the LoginApprove board (C2-D1): `kicker` is a small muted label above the title ("New
+ * login"), `lead` sits above the title (a state icon), `closeButton={false}` drops the X (Escape
+ * and the backdrop still close), `focusKey` moves focus back to the sheet whenever it changes (a
+ * step that removes the focused button), and `wide="dialog"` centres the sheet as a dialog on the
+ * Desktop layout instead of a bottom sheet.
  */
 export function Sheet({
   open,
@@ -24,6 +30,11 @@ export function Sheet({
   eyebrow,
   describedBy,
   initialFocus,
+  kicker,
+  lead,
+  closeButton = true,
+  focusKey,
+  wide,
   onClose,
   children,
 }: {
@@ -32,6 +43,11 @@ export function Sheet({
   eyebrow?: string;
   describedBy?: string;
   initialFocus?: string;
+  kicker?: string | undefined;
+  lead?: ReactNode | undefined;
+  closeButton?: boolean;
+  focusKey?: string;
+  wide?: 'dialog';
   onClose: () => void;
   children: ReactNode;
 }) {
@@ -47,6 +63,14 @@ export function Sheet({
     (first ?? panel.current)?.focus();
     return () => before?.focus();
   }, [open]);
+
+  // A new step of the same sheet: focus goes back to the sheet (its new title is read out).
+  const lastKey = useRef(focusKey);
+  useEffect(() => {
+    if (!open || lastKey.current === focusKey) return;
+    lastKey.current = focusKey;
+    if (panel.current && !panel.current.contains(document.activeElement)) panel.current.focus();
+  }, [open, focusKey]);
 
   if (!open) return null;
 
@@ -71,7 +95,7 @@ export function Sheet({
   };
 
   return createPortal(
-    <div className="x2f-sheet-layer" data-pane-of={pane ?? undefined}>
+    <div className="x2f-sheet-layer" data-pane-of={pane ?? undefined} data-wide={wide}>
       <div className="x2f-sheet-backdrop" data-part="backdrop" aria-hidden="true" onClick={onClose} />
       <div
         ref={panel}
@@ -84,10 +108,22 @@ export function Sheet({
         onKeyDown={onKeyDown}
       >
         <div className="x2f-sheet__head">
-          {eyebrow === undefined ? (
+          {eyebrow === undefined && kicker === undefined && lead === undefined ? (
             <h2 id={titleId} className="x2f-sheet__title">
               {title}
             </h2>
+          ) : eyebrow === undefined ? (
+            <div className="x2f-sheet__heading">
+              {lead}
+              {kicker !== undefined ? (
+                <span className="x2f-sheet__kicker" data-part="sheet-kicker">
+                  {kicker}
+                </span>
+              ) : null}
+              <h2 id={titleId} className="x2f-sheet__title">
+                {title}
+              </h2>
+            </div>
           ) : (
             <div className="x2f-sheet__heading">
               <span className="x2f-sheet__eyebrow">
@@ -99,9 +135,11 @@ export function Sheet({
               </h2>
             </div>
           )}
-          <button type="button" className="x2f-icon-button" aria-label="Close" onClick={onClose}>
-            <Icon name="close" size={22} />
-          </button>
+          {closeButton ? (
+            <button type="button" className="x2f-icon-button" aria-label="Close" onClick={onClose}>
+              <Icon name="close" size={22} />
+            </button>
+          ) : null}
         </div>
         {children}
       </div>

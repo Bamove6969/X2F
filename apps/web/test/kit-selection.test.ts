@@ -13,7 +13,7 @@ describe('ui.css', () => {
       expect(at, sel).toBeGreaterThan(-1);
       return css.slice(at, css.indexOf('}', at));
     };
-    for (const sel of [".x2f-bottom-nav__tab[aria-current='page']", ".x2f-select-card[data-selected='true']", '.x2f-tickbox input', ".x2f-switch[aria-checked='true'] .x2f-switch__track"]) {
+    for (const sel of [".x2f-bottom-nav__tab[aria-current='page']", ".x2f-select-card[data-selected='true']", '.x2f-tickbox input', ".x2f-switch[data-on='true'] .x2f-switch__track"]) {
       expect(rule(sel)).not.toMatch(/monero/);
       expect(rule(sel)).toMatch(/--x2f-ink\b/);
     }

@@ -413,7 +413,7 @@ describe('Switch, Checkbox, SelectAll and SelectCard', () => {
     const clicks: number[] = [];
     const { host, rerender } = render(<Switch checked={false} aria-label="Zelle offer" onClick={() => clicks.push(1)} />);
     const b = host.querySelector('button')!;
-    expect([b.getAttribute('role'), b.getAttribute('aria-checked'), b.type, b.textContent]).toEqual(['switch', 'false', 'button', '']);
+    expect([b.getAttribute('role'), b.getAttribute('aria-checked'), b.getAttribute('data-on'), b.type, b.textContent]).toEqual(['switch', 'false', 'false', 'button', '']);
     expect(b.querySelector('.x2f-switch__track[aria-hidden="true"] .x2f-switch__knob')).not.toBeNull();
     fire(b, new MouseEvent('click', { bubbles: true }));
     expect(clicks).toHaveLength(1);
@@ -461,6 +461,22 @@ describe('Switch, Checkbox, SelectAll and SelectCard', () => {
     expect([...li.children].map((c) => c.className)).toEqual(['x2f-select-card__select', 'x2f-select-card__body', 'x2f-select-card__control']);
   });
 
+  it('Notice live="off" has no role, and an icon can be turned off', () => {
+    const { host } = render(
+      <>
+        <Notice live="off" data-part="note">
+          Part of the page.
+        </Notice>
+        <Notice tone="caution" icon={false} title="Paused">
+          Body.
+        </Notice>
+      </>,
+    );
+    const [a, b] = [...host.querySelectorAll('.x2f-outcome')];
+    expect([a!.hasAttribute('role'), a!.getAttribute('data-part')]).toEqual([false, 'note']);
+    expect([b!.querySelector('.x2f-outcome__icon'), b!.querySelector('.x2f-outcome__title')!.textContent]).toEqual([null, 'Paused']);
+  });
+
   it('ActionBar, Notice and EmptyState', () => {
     const { host } = render(
       <>
@@ -477,6 +493,9 @@ describe('Switch, Checkbox, SelectAll and SelectCard', () => {
     expect(host.querySelector('.x2f-action-bar[role="region"][data-selection="true"]')!.textContent).toBe('2 selected');
     const notes = [...host.querySelectorAll('.x2f-outcome')];
     expect(notes.map((n) => [n.getAttribute('data-tone'), n.getAttribute('role')])).toEqual([['caution', 'alert'], ['plain', 'status']]);
+    // One Notice for the kit (merged with the Devices one): caution shows the info icon by default,
+    // plain none; `live="off"` makes a note that is part of the page (LoginApprove).
+    expect(notes.map((n) => n.querySelector('.x2f-outcome__icon') !== null)).toEqual([true, false]);
     expect(host.querySelector('section.x2f-empty h2')!.textContent).toBe('No offers yet');
     expect(host.querySelector('section.x2f-empty svg')!.getAttribute('width')).toBe('32');
   });
