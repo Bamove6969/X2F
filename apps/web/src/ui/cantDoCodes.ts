@@ -310,6 +310,9 @@ export function myOffersRowText(code: string): string {
   }
 }
 
+/** The trading hold's code (a dispute's hold on the account); My offers reads it to show the hold state. */
+export const TRADING_HOLD_CODE = 'trading-hold' satisfies CantDoCode;
+
 /** Why a live offer is hidden (Task 36 review M4, `hidden` on GET /v1/account/offers), as its status line. COPY-UNSIGNED */
 export const MY_OFFERS_HIDDEN = {
   'trading-paused': 'On, hidden while trading is paused',

@@ -1,9 +1,10 @@
 // My offers (Plan 3 Task 36). The API is stubbed with page.route in the shapes of
 // apps/api/src/offers/routes.ts (GET /v1/account/offers → MyOffer[]; POST /v1/account/offers/status
 // → { status, results }), which apps/api/test/offersBulk.test.ts checks against the real routes.
-// The behaviour follows Claude Design's MyOffers board (origin/wip/design-brief, not on the line
-// yet: tripwire NEEDS_DESIGN_MYOFFERS), so the phone layout rule runs at both phone sizes but there
-// is no expectParity until the board lands.
+// The behaviour and structure follow Claude Design's MyOffers board (origin/wip/design-brief, not on
+// the line yet: tripwire NEEDS_DESIGN_MYOFFERS) and the design review of 1 Nov 2026 (shots 31-35),
+// so the phone layout rule and the review's structure checks run at both phone sizes, but there is
+// no expectParity until the board lands.
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
 
@@ -78,21 +79,54 @@ test('lists my offers with tick boxes and switches, at both phone sizes', async 
   await expect(row(page, A)).toContainText('+0.5% · follows the market');
   await expect(row(page, A)).toContainText('$50 – $2,000 per trade');
   await expect(row(page, B)).toContainText('Off · hidden from everyone');
-  // Review M2 and M3: the names carry the price and limits, and start with the switch's visible text.
-  await expect(sw(page, A)).toHaveAccessibleName('On Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+  // Review M2: the names carry the price and limits. The switch is a real track with no words now.
+  await expect(sw(page, A)).toHaveAccessibleName('Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
   await expect(tick(page, A)).toHaveAccessibleName('Select Selling XMR · USD Zelle +0.5% · follows the market $50 – $2,000 per trade');
+  // Design review 1 Nov 2026 (shot 31): every card's text starts at the same x, on the grid
+  // tick box 44 | content | switch 60; the tick box is 24 px and the switch track 52×32.
+  const xs = await page.locator('[data-part="offer"] .x2f-select-card__eyebrow').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().left)));
+  expect(new Set(xs).size).toBe(1);
+  const box = await tick(page, A).boundingBox();
+  expect([box!.width, box!.height]).toEqual([24, 24]);
+  const track = await row(page, A).locator('.x2f-switch__track').boundingBox();
+  expect([track!.width, track!.height]).toEqual([52, 32]);
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
     await expectPhoneLayout(page);
+    await expectPinnedTabBar(page);
   }
-  // With the bar showing too.
+  // With the bar showing too: it takes the place of Post an offer, right above the tab bar (shot 32).
   await page.getByRole('checkbox', { name: 'Select all' }).click();
-  await expect(page.getByRole('region', { name: 'Selected offers' })).toBeVisible();
+  const bar = page.getByRole('region', { name: 'Selected offers' });
+  await expect(bar).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Post an offer' })).toHaveCount(0);
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
     await expectPhoneLayout(page);
+    await expectPinnedTabBar(page);
+    const b = (await bar.boundingBox())!;
+    const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+    expect(Math.round(b.y + b.height)).toBe(Math.round(nav.y));
   }
+  // A ticked card is ringed in ink, never orange (conventions 2 Nov 2026).
+  const [ring, ink] = await row(page, A).evaluate((el) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--x2f-ink)';
+    el.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return [getComputedStyle(el).boxShadow, c];
+  });
+  expect(ring).toContain(ink);
+  expect(ring).toContain('inset');
+  await expect(tick(page, A)).toHaveCSS('accent-color', ink);
 });
+
+/** The tab bar sits on the bottom edge of the viewport (design review 1 Nov 2026, shot 35). */
+async function expectPinnedTabBar(page: Page): Promise<void> {
+  const nav = (await page.getByRole('navigation', { name: 'Main' }).boundingBox())!;
+  expect(Math.round(nav.y + nav.height)).toBe(page.viewportSize()!.height);
+}
 
 test('Select all only ticks; the bar turns the ticked offers on or off; a reload shows what was saved', async ({ page }) => {
   const s = fresh();
@@ -118,7 +152,7 @@ test('Select all only ticks; the bar turns the ticked offers on or off; a reload
 
   await tick(page, A).click();
   await tick(page, C).click();
-  await expect(page.getByRole('checkbox', { name: 'Select all' })).toHaveAttribute('aria-checked', 'mixed');
+  await expect(page.getByRole('checkbox', { name: 'Select all' })).toHaveJSProperty('indeterminate', true);
   await page.getByRole('button', { name: 'Turn on' }).click();
   expect(s.posts.at(-1)).toEqual({ ids: [A, C], status: 'live' });
   await page.reload();
@@ -127,14 +161,17 @@ test('Select all only ticks; the bar turns the ticked offers on or off; a reload
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'true');
 });
 
-test('turning on while held: the paused offers stay off and say why; the one already on is done', async ({ page }) => {
+test('turning on while held: the paused offers stay off; the header, every row and the summary say the hold, in caution', async ({ page }) => {
   const s = fresh();
   s.refuseOn = 'trading-hold';
+  // As routes.ts: during a hold every live offer is hidden: 'trading-hold'.
   s.offers[0]!.hidden = 'trading-hold';
+  s.offers[2]!.hidden = 'trading-hold';
   await stub(page, s);
   await page.goto('/profile/offers');
-  // Review M4: the On offer says it is hidden.
-  await expect(row(page, A)).toContainText('On, hidden while your account has a trading hold');
+  // Design review shot 34: during a hold the header and every row say so.
+  await expect(page.getByText('Trading hold · all offers hidden')).toBeVisible();
+  for (const id of [A, B, C]) await expect(row(page, id).locator('[data-part="status"]')).toHaveText('Hidden · trading hold');
   await sw(page, C).click(); // turning off works under a hold
   await expect(sw(page, C)).toHaveAttribute('aria-checked', 'false');
   await page.getByRole('checkbox', { name: 'Select all' }).click();
@@ -145,12 +182,24 @@ test('turning on while held: the paused offers stay off and say why; the one alr
   await expect(pop.getByRole('link', { name: 'feedback' })).toHaveAttribute('href', '/feedback?from=trading-hold');
   await pop.getByRole('button', { name: 'OK' }).click();
   await expect(pop).toHaveCount(0);
-  await expect(page.locator('[data-part="summary"]')).toHaveText('1 offer turned on. 2 offers stayed as they were; each one says why below.');
+  // Shot 33: the summary agrees with the popup (the one already on is not "turned on"), in caution, not danger.
+  const summary = page.locator('[data-part="summary"]');
+  await expect(summary).toHaveText('Trading hold: no offers were turned on. They stay hidden until the dispute is resolved.');
+  await expect(summary).toHaveAttribute('data-tone', 'caution');
+  const [border, caution] = await summary.evaluate((el) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--x2f-caution)';
+    el.append(probe);
+    const c = getComputedStyle(probe).color;
+    probe.remove();
+    return [getComputedStyle(el).borderTopColor, c];
+  });
+  expect(border).toBe(caution);
   await expect(sw(page, A)).toHaveAttribute('aria-checked', 'true');
   for (const id of [B, C]) {
     await expect(sw(page, id)).toHaveAttribute('aria-checked', 'false');
-    await expect(row(page, id)).toContainText('trading hold');
-    await expect(sw(page, id)).toHaveAccessibleDescription(/trading hold/);
+    await expect(row(page, id).locator('[data-part="refused"]')).toHaveCount(0);
+    await expect(sw(page, id)).toHaveAccessibleDescription('Hidden · trading hold');
   }
   for (const v of PHONE_VIEWPORTS) {
     await setPhone(page, v);
@@ -167,6 +216,13 @@ test('PostOffer links to My offers; an empty list still offers Post an offer', a
   await page.goto('/post');
   await page.getByRole('link', { name: 'My offers' }).click();
   await expect(page).toHaveURL(/\/profile\/offers$/);
-  await expect(page.getByText('You have no offers yet.')).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'No offers yet' })).toBeVisible();
+  await expect(page.getByText('0 of 0 offers on')).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Post an offer' })).toHaveAttribute('href', '/post');
+  // Shot 35: the tab bar is pinned to the bottom, not floating under the button.
+  for (const v of PHONE_VIEWPORTS) {
+    await setPhone(page, v);
+    await expectPhoneLayout(page);
+    await expectPinnedTabBar(page);
+  }
 });
