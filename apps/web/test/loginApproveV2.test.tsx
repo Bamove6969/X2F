@@ -24,10 +24,15 @@ const tokens = JSON.parse(readFileSync(join(HERE, '../../../design/design-system
   type: { groups: { styles: { name: string; fontSize: string; lineHeight: string; fontWeight: number; letterSpacing?: string }[] }[] };
 };
 
-/** The declarations of the ui.css rule whose selector list is exactly `selector`. */
+/**
+ * The declarations of the ui.css rule whose selector list is exactly `selector`, or else of the
+ * first rule that lists it with others (the shared selection rule: ChoiceGroup, PickButton, SelectCard).
+ */
 function rule(selector: string): string {
   const esc = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const m = css.match(new RegExp(`(?:^|\\n)${esc} \\{([^}]*)\\}`));
+  const m =
+    css.match(new RegExp(`(?:^|\\n)${esc} \\{([^}]*)\\}`)) ??
+    css.match(new RegExp(`(?:^|\\n)(?:[^{}\\n]*,\\n)*${esc}(?:,\\n[^{}\\n]*)* \\{([^}]*)\\}`));
   if (m === null) throw new Error(`no rule "${selector}" in ui.css`);
   return m[1]!.replace(/\s+/g, ' ');
 }
