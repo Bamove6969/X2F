@@ -16,7 +16,7 @@ import { verifyWebAuthnAssertion, webauthnAssertionOptions } from '../auth/webau
 import type { Queryable } from '../db/pool.js';
 import { ApiError } from '../errors.js';
 
-// Plan 4, Task 5: security-key taps bound to one intent (migration 204_key_taps.sql).
+// Plan 4, Task 5: security-key taps bound to one intent (migration 203_key_taps.sql).
 //
 // A staff action that needs a tap (emergency stop, invites, switch-on, role changes, owner keys,
 // settings, rulings) works in three steps:
@@ -302,8 +302,8 @@ export function parseKeyTapIntent(v: unknown): KeyTapIntent {
 // Routes (they plug into Task 4's staff app)
 
 export interface KeyTapRouteOptions {
-  /** The staff app's `requireStaff('self')`. */
-  guard: preHandlerAsyncHookHandler;
+  /** The staff app's `requireStaff('self')` (Task 4: an array of preHandlers, kept as is so its perm check sees it). */
+  guard: preHandlerAsyncHookHandler | preHandlerAsyncHookHandler[];
   /** The signed-in staff member's account (Task 4: `req.staff.accountId`). */
   accountOf(req: FastifyRequest): string;
 }

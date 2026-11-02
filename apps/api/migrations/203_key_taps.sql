@@ -1,5 +1,5 @@
 -- Plan 4, Task 5: security-key taps bound to one intent (spec 6.6, Global Constraints "two-person
--- rule"). Numbered 204, not the plan's 203: Task 4 holds 202 and may need the next number.
+-- rule"). Task 4 holds 202; Task 6 takes 204, Task 7 205, Task 8 206 (coordinator, 2026-11-02).
 --
 -- A tap is started for one `KeyTapIntent` (`intent`, its canonical JSON exactly as hashed into the
 -- WebAuthn challenge, `tapChallenge` in @x2f/staff) with a fresh random `nonce`, answered once by
