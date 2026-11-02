@@ -83,7 +83,15 @@ export function BlockAction({ displayName, onBlocked }: { displayName: string; o
       <Button variant="quiet" onClick={() => go({ kind: 'asking' }, 'ask')} data-part="block-open">
         {C.action(displayName)}
       </Button>
-      <Sheet open={asking} title={C.confirmTitle(displayName)} initialFocus="#block-ask-h" onClose={() => go({ kind: 'idle' }, 'open')}>
+      {/* Review I1: while the block is in flight the sheet stays (no Esc, close or backdrop), so it never looks cancelled and then lands. */}
+      <Sheet
+        open={asking}
+        title={C.confirmTitle(displayName)}
+        initialFocus="#block-ask-h"
+        onClose={() => {
+          if (state.kind !== 'busy') go({ kind: 'idle' }, 'open');
+        }}
+      >
         <div className="x2f-sheet__content" data-part="block-ask">
           <div className="x2f-stack">
             <p className="x2f-sheet__body" id="block-ask-h" tabIndex={-1} ref={ask}>

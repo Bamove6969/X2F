@@ -175,6 +175,24 @@ describe('BlockAction', () => {
     expect(document.activeElement).toBe(done.querySelector('[role="status"]'));
   });
 
+  it('review I1: while the block is in flight the sheet cannot be closed (Esc, close, Cancel), so it never looks cancelled and then lands', async () => {
+    let release: (r: Response) => void = () => undefined;
+    const held = new Promise<Response>((r) => (release = r));
+    const inner = globalThis.fetch;
+    vi.stubGlobal('fetch', (input: string, init: RequestInit = {}) => ((init.method ?? 'GET') === 'POST' ? held : inner(input, init)));
+    const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
+    fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
+    fire(byPart(document.body, 'block-confirm')!, new MouseEvent('click', { bubbles: true }));
+    const sheet = () => byPart(document.body, 'block-ask')?.closest('[role="dialog"]') ?? null;
+    fire(sheet()!, new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    fire(sheet()!.querySelector('[aria-label="Close"]')!, new MouseEvent('click', { bubbles: true }));
+    expect(sheet()).not.toBeNull();
+    expect(byPart(host, 'block-open')).not.toBeNull();
+    release(new Response(null, { status: 204 }));
+    await settle();
+    expect(byPart(host, 'block-done')).not.toBeNull();
+  });
+
   it('Cancel blocks nobody; a refusal opens CantDoThat, a failure stays inline', async () => {
     const { host } = render(<MemoryRouter><BlockAction displayName="mira.k" /></MemoryRouter>);
     fire(byPart(host, 'block-open')!, new MouseEvent('click', { bubbles: true }));
