@@ -116,7 +116,7 @@ describe('POST /v1/offers and GET /v1/offers', () => {
         id,
         poster: {
           displayName: p.displayName, completedTrades: 0, online: true, lastSeenAt: deps.clock().toISOString(),
-          typicalMinutes: null, positivePct: null, badges: [], stage: 'starter',
+          typicalMinutes: null, positivePct: null, badges: [], stage: 'starter', tradedOverUsd: null,
         },
         rate: null,
         pricing: { mode: 'market', marginBps: 50 },
