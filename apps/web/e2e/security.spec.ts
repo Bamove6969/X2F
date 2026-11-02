@@ -213,6 +213,42 @@ test('ending another device’s session logs it out', async ({ page }) => {
   await expect(page.getByRole('status')).toHaveText('Browser on Android was logged out.');
 });
 
+// C2-D1 review I1 (owner, via the Devices board): "Log out all team members" asks first, then ends
+// every team member's session and none of yours; "Log out all other devices" covers only yours.
+test('"Log out all team members" asks first, then ends only the team members\' sessions', async ({ page }) => {
+  const ended: string[] = [];
+  const all = [
+    { id: 's1', deviceLabel: 'Browser on Linux', level: 'full', createdAt: '2026-10-20T00:00:00.000Z', lastSeenAt: new Date().toISOString(), current: true, member: null },
+    { id: 's2', deviceLabel: 'Chrome on Android', level: 'full', createdAt: '2026-10-21T00:00:00.000Z', lastSeenAt: new Date().toISOString(), current: false, member: null },
+    { id: 's3', deviceLabel: 'Safari on macOS', level: 'full', createdAt: '2026-10-21T00:00:00.000Z', lastSeenAt: new Date().toISOString(), current: false, member: 'desk_ana' },
+    { id: 's4', deviceLabel: 'Edge on Windows', level: 'full', createdAt: '2026-10-21T00:00:00.000Z', lastSeenAt: new Date().toISOString(), current: false, member: 'basil' },
+  ];
+  await base(page);
+  await page.route('**/v1/account/security/devices', json({ oneDevice: false, maxDevices: 5 }));
+  await page.route('**/v1/account/sessions', (r) =>
+    r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(all.filter((s) => !ended.includes(s.id))) }),
+  );
+  await page.route('**/v1/account/sessions/*', async (r) => {
+    if (r.request().method() !== 'DELETE') return r.fallback();
+    ended.push(new URL(r.request().url()).pathname.split('/').pop()!);
+    await r.fulfill({ status: 200, contentType: 'application/json', body: '{}' });
+  });
+
+  await page.goto('/settings/devices');
+  const team = page.locator('[data-part="team-sessions"]');
+  await expect(team.locator('li')).toHaveCount(2);
+  await expect(team).toContainText('"Log out all other devices" covers only your own devices. Use "Log out all team members" for your team.');
+  await team.getByRole('button', { name: 'Log out all team members' }).click();
+  const ask = page.getByRole('dialog', { name: 'Log out all team members?' });
+  await expect(ask).toBeVisible();
+  expect(ended).toEqual([]);
+  await ask.getByRole('button', { name: 'Log out all team members' }).click();
+  await expect(page.getByRole('status')).toHaveText('All team members were logged out.');
+  expect(ended).toEqual(['s3', 's4']);
+  await expect(page.locator('[data-part="team-sessions"]')).toHaveCount(0);
+  await expect(page.locator('[data-part="device-list"] li')).toHaveCount(2);
+});
+
 // Task 30 re-review (items 1, 2, 7).
 
 test('with an authenticator app, the confirm sheet needs the code before Confirm and always sends it', async ({ page }) => {
@@ -363,7 +399,7 @@ for (const viewport of PHONE_VIEWPORTS) {
     await expect(page.getByRole('button', { name: 'Log out Chrome on Android' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Log out desk_ana on Safari on macOS' })).toBeVisible();
     await expectPhoneLayout(page);
-    await expectAtLeast44(page, '[aria-label="Back to settings"], [role="switch"], [data-part="end-session"], [data-part="end-others"]');
+    await expectAtLeast44(page, '[aria-label="Back to settings"], [role="switch"], [data-part="end-session"], [data-part="end-others"], [data-part="end-team"]');
     // The back control is the first thing a keyboard reaches.
     await page.keyboard.press('Tab');
     await expect(page.locator(':focus')).toHaveAttribute('aria-label', 'Back to settings');

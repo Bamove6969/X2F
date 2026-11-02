@@ -277,6 +277,12 @@
   outline: none;
 }
 
+/* A flow stage's h2 takes focus on a stage change (ApproveOnDevice, review M2): a programmatic
+   target only, like the sheet itself, so no ring. */
+.x2f-flow h2[tabindex='-1']:focus {
+  outline: none;
+}
+
 .x2f-sheet__head {
   display: flex;
   align-items: center;
@@ -1117,6 +1123,12 @@
 }
 
 .x2f-tag[data-tone='team'] {
+  border-color: var(--x2f-team);
+  color: var(--x2f-team);
+}
+
+/* Devices board: "Log out all team members", outlined in the team colour (disabled keeps the shared look). */
+.x2f-button--secondary[data-tone='team']:not(:disabled) {
   border-color: var(--x2f-team);
   color: var(--x2f-team);
 }
