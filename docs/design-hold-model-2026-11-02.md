@@ -115,3 +115,8 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
   - **Cancel:** the buyer can cancel a trade on their own ("Cancel trade", spec option B). This replaces the 29 Oct "Ask to cancel" / mutual-cancel design. The trade stays open with a status like "Returning XMR to the seller" until all confirmations of the XMR coming back are in.
   - **Reviews:** a review shows as soon as the trade is marked complete. There is no blind-reveal wait. "Skip review" shows nothing to anyone.
   - **Trade volume line, opt-in:** "Completed over $X in trades to date" on Profile and ads. Buying and selling are added, rounded down in $10,000 steps up to $90,000+, then $100,000+, then $50,000 steps ($150,000+, $200,000+ …). A settings toggle turns it on.
+- **Answers, 2 Nov (via the lead):**
+  - OfferAd buttons: "Request to buy XMR" / "Request to sell XMR".
+  - Every cancel, including a buyer's, is recorded in one cancel figure. Only moderators see it (ModCase). It is never public.
+  - The volume line includes verified past-reputation volume from other sites.
+  - A trade with a skipped review still counts as completed.
