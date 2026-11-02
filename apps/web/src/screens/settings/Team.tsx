@@ -9,7 +9,7 @@
  * No Claude Design board yet (NEEDS_DESIGN_TEAM in test/team-tripwires.test.ts): kit parts and
  * existing classes only, no stylesheet of its own and no inline styles.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Link } from 'react-router';
 import {
   AuthApiError,
@@ -179,7 +179,10 @@ export function Team() {
     );
   };
 
+  // Design review shot 19 (Team board, full state): at the limit the invite control is disabled
+  // and the board's note says why; the server's too-many-members popup stays as a fallback.
   const full = members !== null && members.length >= max;
+  const fullId = useId();
 
   return (
     <ConfirmOpenProvider value={open}>
@@ -301,11 +304,17 @@ export function Team() {
               </p>
             </div>
             <RolePicker value={roles} onChange={setRoles} idPrefix="invite-role" />
+            {full ? (
+              <p className="x2f-note" id={fullId} data-part="team-full">
+                {C.full(max)}
+              </p>
+            ) : null}
             <Button
               variant="primary"
               data-primary=""
               aria-disabled={busy || name.trim() === '' || full}
-              onClick={() => (full ? setCantDo({ code: TOO_MANY_MEMBERS_CODE, max }) : name.trim() === '' ? undefined : void invite())}
+              aria-describedby={full ? fullId : undefined}
+              onClick={() => (full || name.trim() === '' ? undefined : void invite())}
               data-part="invite"
             >
               {C.inviteButton}
@@ -350,7 +359,7 @@ export function Team() {
 
         {cantDo !== null ? (
           <CantDoThat
-            title={CANT_DO_TITLE.team}
+            title={cantDo.code === TOO_MANY_MEMBERS_CODE ? CANT_DO_TITLE.teamFull : CANT_DO_TITLE.team}
             body={
               // Owner 2026-10-30: every team change waits out the account's 24-hour hold (the hold's own sentence).
               cantDo.code === HOLD_CODE

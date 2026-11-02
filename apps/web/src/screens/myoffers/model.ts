@@ -2,7 +2,7 @@
 // React so the unit tests can read them. Words follow Claude Design's MyOffers board
 // (origin/wip/design-brief docs/design-boards/MyOffers.dc.html, 2026-10-29); anything the board does
 // not give is lead wording until the owner signs it off (COPY-UNSIGNED).
-import { CANT_DO_CODES, MY_OFFERS_HIDDEN, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
+import { CANT_DO_CODES, MY_OFFERS_HIDDEN, TRADING_HOLD_CODE, isCantDoCode, myOffersRowText, type CantDoCode, type MyOffersHidden } from '../../ui/cantDoCodes.js';
 import { formatAmount, formatPrice, marginText } from '../post/offerForm.js';
 import type { MyOffer, OfferState, SwitchResult } from './api.js';
 
@@ -41,6 +41,22 @@ export function cantDoFor(results: readonly SwitchResult[]): { code: CantDoCode;
   return best;
 }
 
+/**
+ * The CantDoThat popup for a Turn on (design session 2 Nov 2026): `hold` when a trading hold kept
+ * every offer off and none was turned on; otherwise, when a "can't do that" refusal kept some off,
+ * `some` with the refusal that kept the most off (`cantDoFor`) and the ids of every offer kept off,
+ * so the popup can list which and why; null when nothing was refused that way.
+ */
+export function turnOnPopup(results: readonly SwitchResult[], before: readonly MyOffer[]): { kind: 'hold' } | { kind: 'some'; code: CantDoCode; count: number; ids: string[] } | null {
+  const top = cantDoFor(results);
+  if (top === null) return null;
+  const was = new Map(before.map((o) => [o.id, o.status]));
+  const changed = results.some((r) => r.refused === undefined && was.get(r.id) !== 'live');
+  const refused = results.filter((r) => r.refused !== undefined && r.refused !== 'not-found');
+  if (!changed && refused.every((r) => r.refused === TRADING_HOLD_CODE)) return { kind: 'hold' };
+  return { kind: 'some', ...top, ids: refused.map((r) => r.id) };
+}
+
 /** The board's title line: "Selling XMR · USD". */
 export function offerTitle(o: MyOffer): string {
   return `${o.side === 'sell' ? 'Selling XMR' : 'Buying XMR'} · ${o.currency}`;
@@ -51,19 +67,24 @@ export function offerMethods(o: MyOffer): string {
   return `${o.methodName}${o.country ? ` (${o.country})` : ''}`;
 }
 
-/** The price line, as the board: "+0.5% · follows the market" or "$335.00 / XMR · Fixed price". */
-export function offerPrice(o: MyOffer): string {
-  return o.pricing.mode === 'market' ? `${marginText(o.pricing.marginBps)} · follows the market` : `${formatPrice(o.pricing.centsPerXmr, o.currency)} · Fixed price`;
+/** The price line in two parts, as the board: ["+0.5%", "follows the market"] or ["$335.00 / XMR", "Fixed price"]. */
+export function offerPriceParts(o: MyOffer): [string, string] {
+  return o.pricing.mode === 'market' ? [marginText(o.pricing.marginBps), 'follows the market'] : [formatPrice(o.pricing.centsPerXmr, o.currency), 'Fixed price'];
 }
 
-/** The range alone: "$50 – $2,000" (Fold-MyOffers' "Per trade" row). */
-export function offerRange(o: MyOffer): string {
+/** The price line: "+0.5% · follows the market" or "$335.00 / XMR · Fixed price". */
+export function offerPrice(o: MyOffer): string {
+  return offerPriceParts(o).join(' · ');
+}
+
+/** The limits in mono: "$50 – $2,000" (the line adds " per trade"). */
+export function offerLimitsRange(o: MyOffer): string {
   return `${formatAmount(o.minFiatCents, o.currency)} – ${formatAmount(o.maxFiatCents, o.currency)}`;
 }
 
 /** The limits line: "$50 – $2,000 per trade". */
 export function offerLimits(o: MyOffer): string {
-  return `${offerRange(o)} per trade`;
+  return `${offerLimitsRange(o)} per trade`;
 }
 
 /** Fold-MyOffers' "Who can trade": "Anyone", or "10+ completed trades". */
@@ -77,16 +98,34 @@ export function marketLine(o: MyOffer): string {
 }
 
 /**
- * The status line. The board's "On · people can see and take it" / "Off · hidden from everyone",
- * and (review M4) an On offer nobody can see right now says why.
+ * Whether the account has a trading hold, as far as this screen can tell: GET /v1/account/offers
+ * marks every live offer `hidden: 'trading-hold'` during one, and a Turn on refused with
+ * `trading-hold` says so too (`refusedHold`). With only Off offers and no Turn on yet, the screen
+ * cannot know (the API sends no account flag; reported to the lead as an API follow-up).
  */
-export function statusLine(o: MyOffer): string {
-  if (o.status === 'paused') return 'Off · hidden from everyone';
-  return o.hidden !== undefined ? MY_OFFERS_HIDDEN[o.hidden] : 'On · people can see and take it';
+export function isHeld(offers: readonly MyOffer[], refusedHold: boolean): boolean {
+  return refusedHold || offers.some((o) => o.status === 'live' && o.hidden === TRADING_HOLD_CODE);
 }
 
-/** The header line: "3 of 5 offers on". */
-export function countLine(offers: readonly MyOffer[]): string {
+/** The status line's tone: ink for On, ink-muted for Off, caution while held or hidden. */
+export type StatusTone = 'on' | 'off' | 'caution';
+
+/**
+ * The status line. The board's "On · people can see and take it" / "Off · hidden from everyone";
+ * (review M4) an On offer nobody can see right now says why; and during a trading hold every offer
+ * reads "Hidden · trading hold" (design review 1 Nov 2026, shot 34), so no row contradicts the hold.
+ */
+export function statusLine(o: MyOffer, held = false): { text: string; tone: StatusTone } {
+  // COPY-UNSIGNED (design session 2 Nov 2026: one caution chip on every offer, on or off)
+  if (held) return { text: 'Paused · trading hold', tone: 'caution' };
+  if (o.status === 'paused') return { text: 'Off · hidden from everyone', tone: 'off' };
+  return o.hidden !== undefined ? { text: MY_OFFERS_HIDDEN[o.hidden], tone: 'caution' } : { text: 'On · people can see and take it', tone: 'on' };
+}
+
+/** The header line: "3 of 5 offers on", or during a hold "Trading hold · all offers hidden". */
+export function countLine(offers: readonly MyOffer[], held = false): string {
+  // COPY-UNSIGNED (design session 2 Nov 2026)
+  if (held) return 'Trading hold · all offers paused';
   const on = offers.filter((o) => o.status === 'live').length;
   return `${on} of ${offers.length} ${offers.length === 1 ? 'offer' : 'offers'} on`;
 }
@@ -98,8 +137,13 @@ export function allHint(selected: number, total: number): string {
   return `Some selected: ${selected} of ${total}.`;
 }
 
-/** The board's footnote, without its cap sentence: the "2 offers per side" cap comes with Task 34. */
-export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal.';
+/**
+ * The board's footnote with its cap line from the batch 3 MyOffers board (owner, 2 Nov 2026: 3
+ * buying and 3 selling offers per vendor; one offer covers all the currencies it lists).
+ * COPY-UNSIGNED. The API still enforces the old caps (3 per market, 20 in all: routes.ts
+ * OFFER_CAP_DEFAULTS), a lead API follow-up.
+ */
+export const FOOTNOTE = 'Turning an offer off hides it right away. Turned-off offers stay hidden until you turn them back on. Trades already started carry on as normal. You can have 3 buying and 3 selling offers. Each offer can cover several currencies.';
 
 /** The offers with each switch result's status applied; ids reported `not-found` are dropped. */
 export function applyResults(offers: readonly MyOffer[], results: readonly SwitchResult[]): MyOffer[] {
@@ -112,16 +156,29 @@ export function applyResults(offers: readonly MyOffer[], results: readonly Switc
   });
 }
 
-/** The status line after Turn on / Turn off: how many switched, and whether some stayed as they were. */
+/**
+ * The line after Turn on / Turn off, and its tone. It counts against the statuses `before` the
+ * switch, so an offer that was already on is never counted as "turned on" (design review 1 Nov
+ * 2026, shot 33: the old line said "2 offers turned on" while the popup said they stay off). A Turn
+ * on that a trading hold refused says so in the hold's words. Caution when some stayed as they were.
+ */
 // COPY-UNSIGNED
-export function summaryLine(status: OfferState, results: readonly SwitchResult[]): string {
-  const done = results.filter((r) => r.refused === undefined).length;
-  const refused = results.length - done;
+export function summaryLine(status: OfferState, results: readonly SwitchResult[], before: readonly MyOffer[] = []): { text: string; tone: 'plain' | 'caution'; hold?: true } {
+  const was = new Map(before.map((o) => [o.id, o.status]));
+  const ok = results.filter((r) => r.refused === undefined);
+  const changed = ok.filter((r) => was.get(r.id) !== status).length;
+  const already = ok.length - changed;
+  const refused = results.length - ok.length;
   const verb = status === 'live' ? 'on' : 'off';
   const offers = (n: number) => `${n} ${n === 1 ? 'offer' : 'offers'}`;
-  if (refused === 0) return `${offers(done)} turned ${verb}.`;
-  if (done === 0) return `No offers turned ${verb}. Each one says why below.`;
-  return `${offers(done)} turned ${verb}. ${offers(refused)} stayed as they were; each one says why below.`;
+  if (status === 'live' && changed === 0 && results.some((r) => r.refused === TRADING_HOLD_CODE)) {
+    // COPY-UNSIGNED. The screen shows the hold's own notice instead (`hold`), so this is a fallback.
+    return { text: 'Trading hold: no offers were turned on. They stay paused until the hold ends.', tone: 'caution', hold: true };
+  }
+  const parts = [changed > 0 ? `${offers(changed)} turned ${verb}.` : `No offers turned ${verb}.`];
+  if (already > 0) parts.push(`${offers(already)} ${already === 1 ? 'was' : 'were'} already ${verb}.`);
+  if (refused > 0) parts.push(`${offers(refused)} stayed as ${refused === 1 ? 'it was' : 'they were'}; each one says why below.`);
+  return { text: parts.join(' '), tone: refused > 0 ? 'caution' : 'plain' };
 }
 
 /**

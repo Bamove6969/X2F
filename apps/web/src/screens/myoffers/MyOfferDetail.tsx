@@ -1,17 +1,18 @@
 // One of my offers in the pane beside the list (two panes; Fold-MyOffers board, right pane). Built
-// from the kit and the screens' shared classes only, as MyOffers.tsx (NEEDS_DESIGN_MYOFFERS). What
+// from the kit (its Switch is the list's) and the screens' shared classes, as MyOffers.tsx. What
 // the board shows that the API has no data for is left out (not built): "Last edited", the price
 // tiers, each method's own price, "Open trades on it" and the Edit offer link (no edit screen until
 // Task 35).
 import { useId } from 'react';
 import { TIMERS } from '@x2f/trade';
-import { Button } from '../../ui/Button.js';
+import { Switch } from '../../ui/Switch.js';
 import type { MyOffer } from './api.js';
-import { marketLine, offerMethods, offerPrice, offerRange, offerTitle, statusLine, whoCanTrade } from './model.js';
+import { marketLine, offerMethods, offerPrice, offerLimitsRange, offerTitle, statusLine, whoCanTrade } from './model.js';
 
-export function MyOfferDetail({ offer, busy, why, onSwitch }: { offer: MyOffer; busy: boolean; why: string | undefined; onSwitch: () => void }) {
+export function MyOfferDetail({ offer, busy, held, why, onSwitch }: { offer: MyOffer; busy: boolean; held: boolean; why: string | undefined; onSwitch: () => void }) {
   const id = useId();
   const on = offer.status === 'live';
+  const status = statusLine(offer, held);
   return (
     <div className="x2f-screen" data-part="offer-detail" data-detail-offer={offer.id}>
       <h2 className="x2f-screen__title" id={`${id}-title`}>
@@ -19,24 +20,21 @@ export function MyOfferDetail({ offer, busy, why, onSwitch }: { offer: MyOffer; 
       </h2>
       <section className="x2f-row" aria-label="Status">
         <div className="x2f-stack">
-          <span id={`${id}-status`} data-part="detail-status">
-            {statusLine(offer)}
+          <span id={`${id}-status`} data-part="detail-status" data-tone={status.tone}>
+            {status.text}
           </span>
           {why ? <span className="x2f-error">{why}</span> : null}
         </div>
-        <Button
-          variant="secondary"
-          role="switch"
+        {/* The kit Switch, as on each card in the list (review N6); paused during a trading hold. */}
+        <Switch
+          checked={on}
           id={`${id}-switch`}
-          aria-checked={on}
-          aria-labelledby={`${id}-switch ${id}-title ${id}-methods`}
+          aria-labelledby={`${id}-title ${id}-methods`}
           aria-describedby={`${id}-status`}
-          disabled={busy}
+          disabled={busy || held}
           onClick={onSwitch}
           data-part="detail-switch"
-        >
-          {on ? 'On' : 'Off'}
-        </Button>
+        />
       </section>
       <section className="x2f-stack" aria-labelledby={`${id}-price`}>
         <h3 id={`${id}-price`}>Price</h3>
@@ -50,7 +48,7 @@ export function MyOfferDetail({ offer, busy, why, onSwitch }: { offer: MyOffer; 
       <dl className="x2f-stack">
         <div className="x2f-row">
           <dt className="x2f-note">Per trade</dt>
-          <dd>{offerRange(offer)}</dd>
+          <dd>{offerLimitsRange(offer)}</dd>
         </div>
         <div className="x2f-row">
           <dt className="x2f-note">Who can trade</dt>

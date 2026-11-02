@@ -185,6 +185,14 @@ export const KNOWN_EXCEPTIONS: Partial<Record<string, { text: string; why: strin
     { text: 'Send unblurred proof to sarah.v', why: "Plan 5 (SendUnblurred) with Plan 4's proof request." },
   ],
   DisputeRuling: [
+    {
+      text: 'To Cake Wallet, address ending …k3Fz, once the appeal window closes.',
+      why: 'Superseded (design review 2026-11-01 fix 2; board DisputeRuling on wip/design-brief; Plan 4 "A1 dropped"): no wait for the window. The newer board reads "Sent to …", but nothing executes the payout yet (C11 review I1, NEEDS_PLAN_4_RULING_PAYOUT), so the page reads "Goes to Cake Wallet, address ending …k3Fz." (COPY-UNSIGNED) until the API reports it executed.',
+    },
+    {
+      text: "Either of you can appeal until Sat 17 Oct, 14:30. An appeal goes to a senior moderator or the owner who hasn't seen this case. If nobody appeals, the XMR is released when the window closes.",
+      why: 'Superseded (design review 2026-11-01 fix 2; board DisputeRuling on wip/design-brief; spec Revision 2026-10-29c "Liens"): no wait for the window; the page says "(48 h)" and that an overturned ruling puts a lien on whoever received the coins.',
+    },
     { text: 'Open · 47 h 58 min left', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
     { text: '47 h 58 min', why: 'The appeal countdown in the minutes format: a mask cannot stand for a value with a unit inside; dispute.spec.ts checks its shape.' },
   ],
