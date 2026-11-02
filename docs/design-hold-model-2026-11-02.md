@@ -56,3 +56,17 @@ The "queued changes" screen on other devices (BlockQueued) is obsolete: everyone
 ## Confirmed (owner, directly to design, 2 Nov): several devices at once
 - The team lead can be logged in on up to 3 devices at the same time. Each new device must be approved.
 - "One device at a time" is an optional switch, off by default. It is never forced on the lead.
+
+## Decided (owner, directly to design, 2 Nov): accounts and bans
+- **Account types:**
+  - Trader: the default. Takes offers.
+  - Vendor: posts offers.
+  - To become a vendor, the account holder flips a switch in Settings > Account type. This needs a Strong login (a passkey, security key or PGP key).
+- **Team members:** vendor accounts only.
+- **Idle logout:**
+  - Traders choose 2, 4, 6 or 12 h.
+  - Vendors choose 2, 6, 12 or 24 h.
+  - Every session ends after 24 h at most.
+  - The session length is asked on every login, from a drop-down with nothing pre-selected.
+- **Ban list:** usernames, PGP key fingerprints (including subkeys) and secure Jabber accounts. A banned one can never be used again.
+- **Not tracked:** Monero addresses, payment details, IP addresses and device fingerprints.
