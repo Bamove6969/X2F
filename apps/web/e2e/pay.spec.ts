@@ -142,7 +142,7 @@ test.describe("I've paid", () => {
     await expect(room(page)).toHaveAttribute('data-trade-state', 'secured');
   });
 
-  test('Yes posts the device total, sends trade.paid, and shows "Marked as paid" once the device recorded it', async ({ page }) => {
+  test('Yes posts the device total, sends trade.paid, and shows the paid status once the device recorded it (BuyerPaidWaiting)', async ({ page }) => {
     const s = await open(page, PAY_SECURED);
     await primary(page).click();
     await page.getByText(SENTENCE('$412.50')).click();
@@ -150,7 +150,8 @@ test.describe("I've paid", () => {
     await expect(room(page)).toHaveAttribute('data-trade-state', 'paid');
     expect(s.posts).toEqual([{ type: 'mark-paid', fiatCents: '41250' }]);
     expect(await escrowCalls(page)).toEqual(['paid:41250']);
-    await expect(primary(page)).toHaveText('Marked as paid');
+    await expect(page.locator('[data-part="paid-status"]')).toContainText('Paid · waiting for');
+    await expect(page.locator('[data-primary]')).toHaveCount(0);
   });
 
   test('an API amount outside the device range: no total, I\'ve paid disabled, nothing posted (review I1)', async ({ page }) => {
@@ -168,7 +169,8 @@ test.describe("I've paid", () => {
     await page.evaluate(() => window.__x2fSetFixtureEscrow!({ refusal: 'amount-unknown' }));
     await expect(page.getByText("Your device hasn't recorded your payment. Tap to finish.")).toBeVisible();
     await primary(page).click();
-    await expect(primary(page)).toHaveText('Marked as paid');
+    await expect(page.locator('[data-primary]')).toHaveCount(0);
+    await expect(page.locator('[data-part="paid-status"]')).toBeVisible();
     expect(await escrowCalls(page)).toEqual(['paid:41250']);
     expect(s.posts).toEqual([]);
   });
@@ -219,7 +221,7 @@ test.describe('cancel', () => {
 
   test("after I've paid there is no cancel at all (Revision 2026-10-29b)", async ({ page }) => {
     const s = await open(page, { ...PAY_SECURED, state: 'paid', paidAt: at(-5), confirmBy: at(115) });
-    await expect(primary(page)).toHaveText(/Marked as paid|Marking as paid/);
+    await expect(page.locator('[data-part="paid-status"]')).toBeVisible();
     await expect(page.getByRole('button', { name: 'Cancel trade' })).toHaveCount(0);
     await expect(page.getByText('Only cancel if your payment was never sent')).toHaveCount(0);
     expect(s.posts).toEqual([]);
