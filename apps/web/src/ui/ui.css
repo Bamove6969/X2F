@@ -277,6 +277,12 @@
   outline: none;
 }
 
+/* A flow stage's h2 takes focus on a stage change (ApproveOnDevice, review M2): a programmatic
+   target only, like the sheet itself, so no ring. */
+.x2f-flow h2[tabindex='-1']:focus {
+  outline: none;
+}
+
 .x2f-sheet__head {
   display: flex;
   align-items: center;
