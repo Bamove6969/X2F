@@ -19,6 +19,7 @@ import { DEVICES_PATH, DEVICES_TITLE } from './devicesCopy.js';
 import { Methods } from './Methods.js';
 import { PayoutWait } from './PayoutWait.js';
 import { TEAM_COPY, TEAM_PATH } from './teamCopy.js';
+import { ACCOUNT_TYPE_COPY, ACCOUNT_TYPE_PATH } from './accountTypeCopy.js';
 import '../screens.css';
 import { OwnerOnly } from './OwnerOnly.js';
 
@@ -202,6 +203,12 @@ function SecurityScreen() {
             <li className="x2f-list__row">
               <Link className="x2f-button x2f-button--quiet" to={BLOCKED_PATH}>
                 {BLOCK_COPY.title}
+              </Link>
+            </li>
+            {/* Owner 2 Nov 2026: Settings > Account type (Trader or Vendor), until the Settings board places it. */}
+            <li className="x2f-list__row">
+              <Link className="x2f-button x2f-button--quiet" to={ACCOUNT_TYPE_PATH} data-part="account-type-link">
+                {ACCOUNT_TYPE_COPY.title}
               </Link>
             </li>
             {/* Plan 2 Task 18: the way to the Team screen until a board places it (NEEDS_DESIGN_TEAM). */}

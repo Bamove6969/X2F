@@ -30,6 +30,7 @@ import { Blocked } from './screens/settings/Blocked.js';
 import { DevicesRoute } from './screens/settings/Devices.js';
 import { Security } from './screens/settings/Security.js';
 import { Team } from './screens/settings/Team.js';
+import { AccountType } from './screens/settings/AccountType.js';
 import { MEMBER_TRADE_COPY } from './screens/settings/teamCopy.js';
 import { SetupFlow } from './screens/setup/SetupFlow.js';
 import { Terms } from './screens/setup/Terms.js';
@@ -197,6 +198,7 @@ export function App() {
           <Route path="/settings/devices" element={<DevicesRoute />} />
           <Route path="/settings/blocked" element={<Blocked />} />
           <Route path="/settings/team" element={<Team />} />
+          <Route path="/settings/account-type" element={<AccountType />} />
           <Route path="/team/join" element={<MemberInvite />} />
           <Route path="/news" element={<News />} />
           <Route path="/feedback" element={<Feedback />} />

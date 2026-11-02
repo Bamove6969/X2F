@@ -13,7 +13,7 @@
  * security key) works at once; a password or authenticator code means the wait, shared by a batch.
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
-import { confirmWithWebAuthn, describeAction, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
+import { confirmWithWebAuthn, describeAction, needsStrongConfirm, type ConfirmAction, type MethodType, type PgpChallenge, type WalletRule } from '@x2f/auth-client';
 import { Button, type ButtonVariant } from '../../ui/Button.js';
 import { Sheet } from '../../ui/Sheet.js';
 import { authApi } from './authApi.js';
@@ -93,7 +93,8 @@ export function ConfirmSheet({
   onToken: (token: string) => void;
   onCancel: () => void;
 }) {
-  const hasPassword = methods.includes('password');
+  // Owner 2 Nov 2026: some actions (switching to vendor) only a passkey, security key or PGP key confirms.
+  const hasPassword = methods.includes('password') && !needsStrongConfirm(action);
   const hasTotp = methods.includes('totp');
   const [busy, setBusy] = useState<MethodType | null>(null);
   const [error, setError] = useState<string | null>(null);
