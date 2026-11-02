@@ -25,6 +25,8 @@ import { StatusIcon } from '../../ui/icons.js';
 import { lastActive, utcWhen } from '../../ui/lastActive.js';
 import { Notice } from '../../ui/Notice.js';
 import { Sheet } from '../../ui/Sheet.js';
+import { forgetLocalSession } from '../../push/usePush.js';
+import { refreshSession } from '../../session/useSession.js';
 import { DEVICES_PATH } from '../settings/devicesCopy.js';
 import { mmss } from './ApproveOnDevice.js';
 import { authApi } from './authApi.js';
@@ -127,6 +129,9 @@ export function LoginApprove({ approval, onDone }: { approval: ApprovalView; onD
             variant="primary"
             onClick={() => {
               onDone();
+              // The server ended this device's session: forget it here before Log in (review N6).
+              forgetLocalSession();
+              refreshSession();
               void navigate('/login');
             }}
             data-part="approve-ok"

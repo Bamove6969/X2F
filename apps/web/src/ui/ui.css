@@ -1121,6 +1121,12 @@
   color: var(--x2f-team);
 }
 
+/* Devices board: "Log out all team members", outlined in the team colour (disabled keeps the shared look). */
+.x2f-button--secondary[data-tone='team']:not(:disabled) {
+  border-color: var(--x2f-team);
+  color: var(--x2f-team);
+}
+
 /* Initials avatar for a team member. */
 .x2f-avatar {
   display: flex;

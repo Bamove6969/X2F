@@ -9,6 +9,8 @@ import type { ApprovalView, ApprovalWait } from '@x2f/auth-client';
 import { ApproveOnDevice } from '../src/screens/auth/ApproveOnDevice.js';
 import { LoginApprove } from '../src/screens/auth/LoginApprove.js';
 import { Devices } from '../src/screens/settings/Devices.js';
+import { loadFeedbackDraft, saveFeedbackDraft } from '../src/screens/feedbackDraft.js';
+import { refreshSession, useSession } from '../src/session/useSession.js';
 import { fire, render } from './render.js';
 
 const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
@@ -58,6 +60,10 @@ function nameOf(el: Element): string {
   return el.textContent?.trim() ?? '';
 }
 
+function Who() {
+  return <span data-part="who">{useSession().status}</span>;
+}
+
 function Where() {
   const l = useLocation();
   return <span data-part="where">{l.pathname}</span>;
@@ -73,6 +79,18 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
     render(
       <MemoryRouter>
         <ApproveOnDevice wait={WAIT} returnTo="/buy" onLoggedIn={() => undefined} onRestart={o.onRestart ?? (() => undefined)} pollMs={60_000} />
+      </MemoryRouter>,
+    );
+  const mountWith = (o: { onLoggedIn?: () => void; onRestart?: () => void }) =>
+    render(
+      <MemoryRouter>
+        <ApproveOnDevice
+          wait={WAIT}
+          returnTo="/buy"
+          onLoggedIn={o.onLoggedIn ?? (() => undefined)}
+          onRestart={o.onRestart ?? (() => undefined)}
+          pollMs={60_000}
+        />
       </MemoryRouter>,
     );
 
@@ -93,7 +111,9 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
     const { host } = mount();
     const num = part(host, 'approve-number')!;
     expect(num.textContent).toBe('47');
-    expect(nameOf(num)).toBe('Your number');
+    // Review N3: no aria-labelledby on a generic span; the label is read just before the number.
+    expect(num.hasAttribute('aria-labelledby')).toBe(false);
+    expect(num.previousElementSibling?.textContent).toBe('Your number');
     expect(num.classList.contains('x2f-big-number')).toBe(true);
     expect(part(host, 'approve-countdown')?.textContent).toMatch(/This ends in 0[45]:\d\d\./);
   });
@@ -145,6 +165,60 @@ describe('LoginApprove board, new-device side (ApproveOnDevice)', () => {
     expect(b.querySelector('[data-icon-tone="danger"]')).not.toBeNull();
     expect(host.querySelector('footer [data-part="approve-retry"]')?.hasAttribute('data-primary')).toBe(true);
     expect(host.querySelector('footer [data-part="approve-backup"]')?.getAttribute('href')).toBe('/login/backup?returnTo=%2Fbuy');
+  });
+
+  // Review M1: once let in, the back control goes on into the app (the device is logged in), not to
+  // the login chooser; blocked and expired still start again.
+  it('let in: the back control goes on like Continue, never back to the login chooser', async () => {
+    handler = (url) => (url.endsWith('/poll') ? json(200, { status: 'ok', loggedOut: [] }) : undefined);
+    const onLoggedIn = vi.fn();
+    const onRestart = vi.fn();
+    const { host } = mountWith({ onLoggedIn, onRestart });
+    await settle();
+    expect(part(host, 'approve-in')).not.toBeNull();
+    click(host.querySelector('header [aria-label="Back to log in"]'));
+    expect(onLoggedIn).toHaveBeenCalledOnce();
+    expect(onRestart).not.toHaveBeenCalled();
+  });
+
+  it('blocked: the back control starts again', async () => {
+    handler = (url) => (url.endsWith('/poll') ? json(200, { status: 'blocked' }) : undefined);
+    const onLoggedIn = vi.fn();
+    const onRestart = vi.fn();
+    const { host } = mountWith({ onLoggedIn, onRestart });
+    await settle();
+    click(host.querySelector('header [aria-label="Back to log in"]'));
+    expect(onRestart).toHaveBeenCalledOnce();
+    expect(onLoggedIn).not.toHaveBeenCalled();
+  });
+
+  // Review M2: a stage change moves focus to the new stage's h2, and the footer button is a new
+  // node, so a press meant for Cancel can't land on Continue.
+  it('a stage change focuses the new h2 and replaces the footer button', async () => {
+    let release!: (r: Response) => void;
+    const gate = new Promise<Response>((r) => {
+      release = r;
+    });
+    handler = (url) => (url.endsWith('/poll') ? (gate as unknown as Response) : undefined);
+    const { host } = mountWith({});
+    await settle();
+    const cancelBtn = host.querySelector<HTMLButtonElement>('footer [data-part="approve-cancel"]')!;
+    cancelBtn.focus();
+    expect(document.activeElement).toBe(cancelBtn);
+    release(json(200, { status: 'ok', loggedOut: [] }));
+    await settle();
+    const h2 = part(host, 'approve-in')!.querySelector('h2')!;
+    expect(h2.getAttribute('tabindex')).toBe('-1');
+    expect(document.activeElement).toBe(h2);
+    expect(cancelBtn.isConnected).toBe(false);
+    expect(host.querySelector('footer button')).not.toBe(cancelBtn);
+  });
+
+  it('the first stage does not take focus on mount', async () => {
+    handler = (url) => (url.endsWith('/poll') ? json(200, { status: 'waiting', expiresAt: WAIT.expiresAt }) : undefined);
+    const { host } = mountWith({});
+    await settle();
+    expect(host.contains(document.activeElement)).toBe(false);
   });
 });
 
@@ -273,6 +347,38 @@ describe('LoginApprove board, logged-in side (LoginApprove)', () => {
     expect(part(document, 'where')?.textContent).toBe('/login');
   });
 
+  // Review N6: this device's session ended on the server, so OK forgets the signed-in state here
+  // (the shared session answer, the feedback draft) before going to Log in.
+  it('OK after this device logged itself out clears the local session state first', async () => {
+    let meStatus = 200;
+    handler = (url, init) => {
+      if (url === '/v1/account/me') return meStatus === 200 ? json(200, { displayName: 'nightowl', kind: 'trader', level: 'full' }) : json(401, { error: 'unauthenticated' });
+      if (init?.method === 'POST') return json(200, { outcome: 'approved' });
+      return undefined;
+    };
+    refreshSession();
+    saveFeedbackDraft({ kind: 'feedback', text: 'half-written', anonymous: false, owner: 'nightowl' });
+    render(
+      <MemoryRouter initialEntries={['/sell']}>
+        <Routes>
+          <Route path="*" element={<><LoginApprove approval={{ ...VIEW, oneDevice: true }} onDone={() => undefined} /><Where /><Who /></>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    expect(part(document, 'who')?.textContent).toBe('signed-in');
+    // The server has ended this session by the time the approval is answered.
+    meStatus = 401;
+    click(dialog().querySelectorAll('input[type="radio"]')[1]!);
+    click(part(dialog(), 'approve-yes'));
+    await settle();
+    click(part(dialog(), 'approve-ok'));
+    await settle();
+    expect(part(document, 'where')?.textContent).toBe('/login');
+    expect(part(document, 'who')?.textContent).toBe('signed-out');
+    expect(loadFeedbackDraft(null)).toBeNull();
+  });
+
   it('blocked: a danger shield, the h2 "Login blocked", and the change-method box', async () => {
     handler = (_u, init) => (init?.method === 'POST' ? json(200, { outcome: 'blocked' }) : undefined);
     mount();
@@ -293,9 +399,9 @@ const SESSIONS = [
 ];
 
 describe('"Devices and sessions" board (Devices)', () => {
-  const mount = () => {
+  const mount = (sessions: unknown[] = SESSIONS) => {
     handler = (url, init) => {
-      if (url === '/v1/account/sessions') return json(200, SESSIONS);
+      if (url === '/v1/account/sessions') return json(200, sessions);
       if (url === '/v1/account/security/devices') return json(200, { oneDevice: false, maxDevices: 3 });
       if (url.startsWith('/v1/account/sessions/') && init?.method === 'DELETE') return json(200, {});
       return undefined;
@@ -377,6 +483,41 @@ describe('"Devices and sessions" board (Devices)', () => {
     expect(row.textContent).toContain('Safari on macOS');
     expect(row.querySelector('[data-part="end-session"]')?.getAttribute('aria-label')).toBe('Log out desk_ana on Safari on macOS');
     expect(team.querySelector('a[href="/settings/team"]')).not.toBeNull();
+  });
+
+  // Review I1 (owner, via the Devices board): "Log out all team members" in the team card, asked
+  // first, ending every team member's session (and only those), plus the line that says
+  // "Log out all other devices" covers only your own devices.
+  it('"Log out all team members" asks first, then ends every team session and only those', async () => {
+    const { host } = mount([
+      ...SESSIONS,
+      { id: 'd', deviceLabel: 'Edge on Windows', level: 'full', createdAt: new Date(NOW).toISOString(), lastSeenAt: new Date(NOW).toISOString(), current: false, member: 'basil' },
+    ]);
+    await settle();
+    const team = part(host, 'team-sessions')!;
+    expect(team.textContent).toContain('"Log out all other devices" covers only your own devices. Use "Log out all team members" for your team.');
+    const btn = team.querySelector('[data-part="end-team"]')!;
+    expect(btn.textContent).toBe('Log out all team members');
+    click(btn);
+    const d = document.querySelector('[role="dialog"]')!;
+    expect(document.getElementById(d.getAttribute('aria-labelledby')!)?.textContent).toBe('Log out all team members?');
+    expect(part(d, 'end-confirm')?.textContent).toBe('Log out all team members');
+    expect(part(d, 'end-cancel')?.textContent).toBe('Keep them logged in');
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
+    click(part(d, 'end-confirm'));
+    await settle();
+    expect(calls.filter((c) => c.method === 'DELETE').map((c) => c.url)).toEqual(['/v1/account/sessions/c', '/v1/account/sessions/d']);
+    expect(part(host, 'devices-note')?.textContent).toBe('All team members were logged out.');
+  });
+
+  it('"Keep them logged in" closes the ask without ending anything', async () => {
+    const { host } = mount();
+    await settle();
+    click(part(host, 'end-team'));
+    click(part(document.querySelector('[role="dialog"]')!, 'end-cancel'));
+    await settle();
+    expect(document.querySelector('[role="dialog"]')).toBeNull();
+    expect(calls.some((c) => c.method === 'DELETE')).toBe(false);
   });
 
   it('One device at a time is a switch named by its label and described by its hint', async () => {
