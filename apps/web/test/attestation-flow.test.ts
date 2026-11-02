@@ -1454,6 +1454,7 @@ describe('after the trade closes: the escrow store is kept for 30 days or until 
     await until(async () => (await seller.store.load(CODE))?.closedSeenAt != null);
     t.parties.funds = { balance: 5n, unlocked: 0n, incoming: [{ txHash: 'late', amountAtomic: 5n, confirmations: 0, unlocked: false }] };
     await until(async () => (await seller.store.load(CODE))?.fundedSeen === true);
+    expect((await seller.store.load(CODE))?.fundedSeen).toBe(true);
     void clock;
   });
 
