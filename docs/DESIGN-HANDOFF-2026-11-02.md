@@ -6,7 +6,7 @@ Written by the design session (cloud, "Continuation") so that a fresh design ses
 
 ## 0. State at handover (19:30 UTC, 2 Nov)
 
-- **Canvas:** version 111. **Branch head:** `760393ac` on `wip/design-brief`.
+- **Canvas:** https://claude.ai/artifact/NRhrWVvBrSwJ1Dt8oxp4eH, version 111. **Branch head:** see the latest commit on `wip/design-brief` (`760393ac` holds the last board change). Board inventory: Appendix A.
 - **Every board is on visual system v2**, published and pushed. Nothing is half-done on the canvas.
 - **In flight:** nothing. The multi-currency correction (section 0.1) is published (canvas v111) and pushed in `760393ac`. The lead has been told.
 - **Owed to the lead:** nothing.
@@ -226,7 +226,7 @@ A ready-to-paste prompt is in `docs/DESIGN-KICKOFF-PROMPT.md`.
 8. The Matrix and Telegram addresses (placeholders: "[address to come]").
 9. ProofBlur: can the buyer remove an automatic blur, or only add more? Should the app warn if the amount or memo is blurred?
 10. Blank the code, amount and time on blur templates?
-11. CancelRequest: does the payment clock pause while a cancel request waits? Can the buyer withdraw the request?
+11. ~~CancelRequest: payment clock and withdrawal~~ Mostly moot since option B (buyer cancels alone, 2 Nov). Still open: nothing, unless the lead wants the mutual-cancel path kept for the seller-asks case.
 12. Whether SetupTerms counts as an onboarding step ("of 5" vs "of 6").
 13. Whether to keep the key mark on SelfDestruct's trade view (design kept it).
 
@@ -243,3 +243,140 @@ A ready-to-paste prompt is in `docs/DESIGN-KICKOFF-PROMPT.md`.
 - **Showing work:** show it visually. The owner reviews on a Pixel Fold, often split-screen. Use `SendUserFile` with `display: render` for PNGs, or open the canvas with Artifact `open`. Tell them to use **Fit**, not Fill, on the canvas.
 - **Quoting:** quote the owner's own words when relaying decisions to the lead.
 - **Usage limits:** when the owner warns about a limit, push everything at once.
+
+---
+
+## Appendix A. Board inventory (canvas v111, 128 boards)
+
+Every board below is on visual system v2, published to the canvas and committed in `docs/design-boards/` at `760393ac` or later. "-Wide" is the ≥1000 px layout; "Fold-*" are the foldable boards.
+
+| Board | Size | State |
+|---|---|---|
+| Alerts-Wide | 1280×1034 | v2, published |
+| Alerts | 390×2159 | v2, published |
+| Appeal-Notice-Wide | 1280×978 | v2, published |
+| Appeal-Notice | 390×1041 | v2, published |
+| Artboard-5odu | 800×600 | stray artboard, ignore |
+| BadgeSettings | 390×1393 | v2, published |
+| Ban-Notice-Wide | 1280×895 | v2, published |
+| Ban-Notice | 390×957 | v2, published |
+| BecomeVendor-Wide | 1280×1457 | v2, published |
+| BecomeVendor | 390×2194 | v2, published |
+| Block-Wide | 1280×895 | v2, published |
+| Block | 390×939 | v2, published |
+| BlockQueued | 390×1540 | superseded, kept for reference |
+| BuyMain | 390×1180 | v2, published |
+| BuyOffers | 390×1076 | v2, published |
+| BuyQuote | 390×1150 | v2, published |
+| BuyerPaidWaiting-Wide | 1280×1234 | v2, published |
+| BuyerPaidWaiting | 390×1389 | v2, published |
+| BuyerPay | 390×1076 | v2, published |
+| CancelRequest-Wide | 1280×800 | v2, published |
+| CancelRequest | 390×1187 | v2, published |
+| CantDoThat-Wide | 1280×1051 | v2, published |
+| CantDoThat | 390×1195 | v2, published |
+| Compromised-Wide | 1280×1424 | v2, published |
+| Compromised | 390×1626 | v2, published |
+| DeleteAccount-Wide | 1280×800 | v2, published |
+| DeleteAccount | 390×844 | v2, published |
+| Desktop | 1280×958 | v2, published |
+| Devices-Wide | 1280×1872 | v2, published |
+| Devices | 390×3320 | v2, published |
+| DisputeOpen | 390×1461 | v2, published |
+| DisputeRoom | 390×1237 | v2, published |
+| DisputeRuling | 390×1117 | v2, published |
+| Feedback-Wide | 1280×800 | v2, published |
+| Feedback | 390×844 | v2, published |
+| FlexOffer-Post-Wide | 1280×2700 | v2, published |
+| FlexOffer-Post | 390×4140 | v2, published |
+| FlexOffer-Quote-Wide | 1280×1174 | v2, published |
+| FlexOffer-Quote | 390×2084 | v2, published |
+| Fold-Cover | 360×380 | v2, published |
+| Fold-MyOffers | 840×1000 | v2, published |
+| Fold-Notes | 840×1775 | v2, published |
+| Fold-Offers | 840×1000 | v2, published |
+| Fold-Tabletop | 1000×840 | v2, published |
+| Fold-Trade | 840×1000 | v2, published |
+| Fold-TriFold | 1280×900 | v2, published |
+| HoldChange-Wide | 1280×1479 | v2, published |
+| HoldChange | 390×1775 | v2, published |
+| InviteInvalid-Wide | 1280×800 | v2, published |
+| InviteInvalid | 390×844 | v2, published |
+| Lien-Notice-Wide | 1280×860 | v2, published |
+| Lien-Notice | 390×1362 | v2, published |
+| Login-Backup-Wide | 1280×1163 | v2, published |
+| Login-Backup | 390×1110 | v2, published |
+| Login-Wide | 1280×1121 | v2, published |
+| Login | 390×1058 | v2, published |
+| LoginApprove-Wide | 1280×800 | v2, published |
+| LoginApprove | 390×844 | v2, published |
+| Main | 390×1180 | v2, published |
+| Maintenance-Wide | 1280×800 | v2, published |
+| Maintenance | 390×927 | v2, published |
+| MemberApproval-Wide | 1280×800 | v2, published |
+| MemberApproval | 390×844 | v2, published |
+| MemberPermissions-Wide | 1280×2472 | v2, published |
+| MemberPermissions | 390×4263 | v2, published |
+| ModCase | 1280×2046 | v2, published |
+| ModQueue | 1280×825 | v2, published |
+| MyOffers-Wide | 1280×1060 | v2, published |
+| MyOffers | 390×1705 | v2, published |
+| News-Wide | 1280×800 | v2, published |
+| News | 390×844 | v2, published |
+| OfferAd-Wide | 1280×1854 | v2, published |
+| OfferAd | 390×3743 | v2, published |
+| OwnerSetup | 1280×1295 | v2, published |
+| PostOffer | 390×1620 | v2, published |
+| Profile | 390×1577 | v2, published |
+| ProfileVisibility | 390×1631 | v2, published |
+| ProofBlur-Wide | 1280×1478 | v2, published |
+| ProofBlur | 390×2353 | v2, published |
+| RecoveryCode-Wide | 1280×1531 | v2, published |
+| RecoveryCode | 390×1642 | v2, published |
+| RecoveryHold-Wide | 1280×960 | v2, published |
+| RecoveryHold | 390×1794 | v2, published |
+| Refunded-Wide | 1280×860 | v2, published |
+| Refunded | 390×1030 | v2, published |
+| Review | 390×1403 | v2, published |
+| Reviews-Wide | 1280×1279 | v2, published |
+| Reviews | 390×1638 | v2, published |
+| SelfDestruct-Wide | 1280×800 | v2, published |
+| SelfDestruct | 390×876 | v2, published |
+| SellOffers | 390×1074 | v2, published |
+| SellerConfirm | 390×1124 | v2, published |
+| SellerRefund | 390×1075 | v2, published |
+| SessionExtend-Wide | 1280×1351 | v2, published |
+| SessionExtend | 390×1479 | v2, published |
+| SessionLength-Wide | 1280×1289 | v2, published |
+| SessionLength | 390×1453 | v2, published |
+| SetupBackup | 390×939 | v2, published |
+| SetupLogin | 390×1149 | v2, published |
+| SetupPassword | 390×863 | v2, published |
+| SetupPgpChallenge | 390×919 | v2, published |
+| SetupPgpKey | 390×1041 | v2, published |
+| SetupTerms | 390×844 | v2, published |
+| SetupUsername | 390×844 | v2, published |
+| SetupWallet | 390×871 | v2, published |
+| SetupWelcome | 390×844 | v2, published |
+| SignupSecurity-Wide | 1280×2289 | v2, published |
+| SignupSecurity | 390×3282 | v2, published |
+| StaffList | 1280×1126 | v2, published |
+| StaffLog | 1280×1074 | v2, published |
+| StaffOverview | 1280×1140 | v2, published |
+| StaffPerformance | 1280×1104 | v2, published |
+| StaffSettings | 1280×1527 | v2, published |
+| Support-Wide | 1280×996 | v2, published |
+| Support | 390×1305 | v2, published |
+| Team-Wide | 1280×1430 | v2, published |
+| Team | 390×2499 | v2, published |
+| TeamChat-Wide | 1280×1046 | v2, published |
+| TeamChat | 390×864 | v2, published |
+| TeamRefusal | 390×878 | v2, published |
+| TradeFund | 390×1226 | v2, published |
+| TradeTechIssue-Wide | 1280×1205 | v2, published |
+| TradeTechIssue | 390×1627 | v2, published |
+| Wallet | 390×1193 | v2, published |
+| Warn-IvePaid-Wide | 1280×800 | v2, published |
+| Warn-IvePaid | 390×844 | v2, published |
+| Warn-Release-Wide | 1280×800 | v2, published |
+| Warn-Release | 390×844 | v2, published |
