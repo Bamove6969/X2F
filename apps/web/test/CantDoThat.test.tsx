@@ -50,6 +50,36 @@ describe('CantDoThat', () => {
     expect(document.querySelector('[data-testid="where"]')?.textContent).toBe('/feedback?from=starter-limit');
   });
 
+  // Design v2 batch 2 (board CantDoThat / CantDoThat-Wide, wip/design-brief 0955ab95): the one
+  // shared refusal dialog. Phone: a bottom sheet with a grab handle; wide: a centred dialog. An info
+  // tile above the title, the title defaulting to the board's, the message describing the dialog,
+  // the feedback line in an info block, OK the one orange button, no X; scrim and a swipe down close it.
+  it('follows the v2 board: grab handle, info tile, default title, message as description, feedback info block', () => {
+    const onClose = vi.fn();
+    render(
+      <MemoryRouter>
+        <CantDoThat body="Sorry, you're limited to 2 offers per side (buying or selling) for each currency." from="too-many-offers" onClose={onClose} />
+      </MemoryRouter>,
+    );
+    const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!;
+    expect(dialog.querySelector('h2')?.textContent).toBe("You can't do that yet");
+    expect(dialog.querySelector('[data-part="sheet-handle"]')?.getAttribute('aria-hidden')).toBe('true');
+    expect(dialog.querySelector('[data-part="cant-do-tile"]')?.getAttribute('aria-hidden')).toBe('true');
+    const msg = dialog.querySelector('[role="alert"]')!;
+    expect(dialog.getAttribute('aria-describedby')).toBe(msg.id);
+    expect(dialog.querySelector('[data-part="feedback-line"]')?.classList.contains('x2f-info-block')).toBe(true);
+    expect(document.querySelector('.x2f-sheet-layer')?.getAttribute('data-wide')).toBe('dialog');
+    // A swipe down on the sheet closes it like OK; a short drag does not.
+    const drag = (dy: number) => {
+      fire(dialog, new MouseEvent('pointerdown', { bubbles: true, clientY: 100 }) as unknown as Event);
+      fire(dialog, new MouseEvent('pointerup', { bubbles: true, clientY: 100 + dy }) as unknown as Event);
+    };
+    drag(20);
+    expect(onClose).not.toHaveBeenCalled();
+    drag(120);
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
   it('a code without the API shape is left off the link', () => {
     expect(feedbackHref('Bad Code')).toBe('/feedback');
     expect(feedbackHref(null)).toBe('/feedback');

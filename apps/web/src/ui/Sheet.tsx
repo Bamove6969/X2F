@@ -23,7 +23,13 @@ const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), selec
  * and the backdrop still close), `focusKey` moves focus back to the sheet whenever it changes (a
  * step that removes the focused button), and `wide="dialog"` centres the sheet as a dialog on the
  * Desktop layout instead of a bottom sheet.
+ *
+ * For the CantDoThat board (design v2 batch 2): `handle` draws the grab handle at the top of the
+ * bottom sheet, and a swipe down on the sheet (a pointer drag of SWIPE_CLOSE_PX or more) calls
+ * `onClose`, like a tap on the backdrop.
  */
+const SWIPE_CLOSE_PX = 64;
+
 export function Sheet({
   open,
   title,
@@ -35,6 +41,7 @@ export function Sheet({
   closeButton = true,
   focusKey,
   wide,
+  handle = false,
   onClose,
   children,
 }: {
@@ -48,11 +55,13 @@ export function Sheet({
   closeButton?: boolean;
   focusKey?: string;
   wide?: 'dialog';
+  handle?: boolean;
   onClose: () => void;
   children: ReactNode;
 }) {
   const titleId = useId();
   const panel = useRef<HTMLDivElement>(null);
+  const dragFrom = useRef<number | null>(null);
   // Read while rendering the opening, before focus moves into the sheet.
   const pane = useMemo(() => (open ? paneOf(document.activeElement) : null), [open]);
 
@@ -106,7 +115,18 @@ export function Sheet({
         aria-describedby={describedBy}
         tabIndex={-1}
         onKeyDown={onKeyDown}
+        onPointerDown={handle ? (e) => void (dragFrom.current = (panel.current?.scrollTop ?? 0) === 0 ? e.clientY : null) : undefined}
+        onPointerUp={
+          handle
+            ? (e) => {
+                const from = dragFrom.current;
+                dragFrom.current = null;
+                if (from !== null && e.clientY - from >= SWIPE_CLOSE_PX) onClose();
+              }
+            : undefined
+        }
       >
+        {handle ? <span className="x2f-sheet__handle" data-part="sheet-handle" aria-hidden="true" /> : null}
         <div className="x2f-sheet__head">
           {eyebrow === undefined && kicker === undefined && lead === undefined ? (
             <h2 id={titleId} className="x2f-sheet__title">

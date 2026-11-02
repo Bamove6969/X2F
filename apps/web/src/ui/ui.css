@@ -537,11 +537,45 @@
   text-transform: uppercase;
 }
 
+/* The bottom sheet's grab handle (CantDoThat board, design v2 batch 2); the dialog form has none. */
+.x2f-sheet__handle {
+  align-self: center;
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--x2f-line);
+}
+
+/* An icon on a raised tile above a sheet's title (CantDoThat board's info tile). */
+.x2f-icon-tile {
+  display: flex;
+  width: 40px;
+  height: 40px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink);
+}
+
+/* A muted line in a raised block (CantDoThat board's feedback line). */
+.x2f-info-block {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: var(--x2f-radius-md);
+  background: var(--x2f-surface-raised);
+  color: var(--x2f-ink-muted);
+}
+
 /* On the Desktop layout a `wide="dialog"` sheet is a centred 520 px dialog (LoginApprove-Wide). */
 @media (min-width: 1000px) {
   .x2f-sheet-layer[data-wide='dialog']:not([data-pane-of]) {
     align-items: center;
     justify-content: center;
+  }
+
+  .x2f-sheet-layer[data-wide='dialog']:not([data-pane-of]) .x2f-sheet__handle {
+    display: none;
   }
 
   .x2f-sheet-layer[data-wide='dialog']:not([data-pane-of]) .x2f-sheet {

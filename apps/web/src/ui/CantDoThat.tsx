@@ -1,5 +1,7 @@
+import { useId } from 'react';
 import { Link } from 'react-router';
 import { Button } from './Button.js';
+import { Icon } from './icons.js';
 import { feedbackHref } from './cantDoCodes.js';
 import { Sheet } from './Sheet.js';
 
@@ -14,14 +16,21 @@ import { Sheet } from './Sheet.js';
  *
  * The body sits in a `role="alert"` paragraph so a screen reader hears it when the popup opens.
  *
- * Board CantDoThat.dc.html (wip/design-brief; design review 2026-11-01, X2): no X close (OK, a tap
- * on the scrim and Escape close it), and OK is the popup's one filled primary. Built from the kit's
- * Sheet and Button only, with no styling of its own. The board is not in design/x2f-app yet, so
- * there is no parity entry (tripwire NEEDS_DESIGN_CANTDOTHAT in test/cantDoThat-lint.test.ts).
+ * Boards CantDoThat / CantDoThat-Wide (design v2 batch 2, wip/design-brief 0955ab95; supersede the
+ * review's X2 note): the one shared refusal dialog. Phone: a bottom sheet with a grab handle;
+ * Desktop: a centred dialog (`wide="dialog"`). An info tile above the title, the title defaulting
+ * to the board's "You can't do that yet", the message as the dialog's description, the feedback
+ * line in an info block, and OK the one orange button. No X: OK, a tap on the scrim, a swipe down
+ * and Escape close it. Built from the kit's Sheet, Button and classes only. The board is not in
+ * design/x2f-app yet, so there is no parity entry (tripwire NEEDS_DESIGN_CANTDOTHAT in
+ * test/cantDoThat-lint.test.ts).
  */
 
 /** The owner's sentence, split around the linked word. */
 export const FEEDBACK_LINE = { before: 'If you feel this feature can be improved please leave ', link: 'feedback', after: '' } as const;
+
+/** The board's title, used when a refusal gives none. */
+export const CANT_DO_DEFAULT_TITLE = "You can't do that yet";
 
 export { CANT_DO_CODES, feedbackHref, isCantDoCode, type CantDoCode } from './cantDoCodes.js';
 
@@ -33,19 +42,33 @@ export function CantDoThat({
   onClose,
 }: {
   open?: boolean;
-  title: string;
+  title?: string;
   body: string;
   /** The refusal code, passed on to the form (`/feedback?from=`). */
   from: string;
   onClose: () => void;
 }) {
+  const msgId = useId();
   return (
-    <Sheet open={open} title={title} closeButton={false} onClose={onClose}>
+    <Sheet
+      open={open}
+      title={title ?? CANT_DO_DEFAULT_TITLE}
+      lead={
+        <span className="x2f-icon-tile" data-part="cant-do-tile" aria-hidden="true">
+          <Icon name="info" size={20} />
+        </span>
+      }
+      describedBy={msgId}
+      closeButton={false}
+      handle
+      wide="dialog"
+      onClose={onClose}
+    >
       <div className="x2f-stack" data-part="cant-do-that" data-from={from}>
-        <p role="alert">
+        <p role="alert" id={msgId}>
           {body}
         </p>
-        <p className="x2f-note" data-part="feedback-line">
+        <p className="x2f-info-block" data-part="feedback-line">
           {FEEDBACK_LINE.before}
           <Link className="x2f-link" to={feedbackHref(from)}>
             {FEEDBACK_LINE.link}
