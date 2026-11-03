@@ -52,6 +52,9 @@ export function publicSite(s: SiteState): PublicSite {
   };
 }
 
+/** The gate's one read (exported for tests that list a route's queries). */
+export const MAINTENANCE_GATE_SQL = 'select maintenance_since is not null as on from site_flags';
+
 /** The trader API routes that answer during maintenance: the site state itself (`/healthz` is not under `/v1/`). */
 export const MAINTENANCE_OPEN = ['/v1/site'] as const;
 
@@ -66,7 +69,7 @@ export const MAINTENANCE_OPEN = ['/v1/site'] as const;
 export async function maintenanceGate(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const route = req.routeOptions.url;
   if (route === undefined || !route.startsWith('/v1/') || (MAINTENANCE_OPEN as readonly string[]).includes(route)) return;
-  const { rows } = await req.server.deps.db.query<{ on: boolean }>('select maintenance_since is not null as on from site_flags');
+  const { rows } = await req.server.deps.db.query<{ on: boolean }>(MAINTENANCE_GATE_SQL);
   if (rows[0]?.on === true) throw new ApiError(503, 'maintenance');
 }
 

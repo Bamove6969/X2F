@@ -43,7 +43,8 @@ alter table site_flags
   add column stopped_at timestamptz,
   add column log_alarm timestamptz,
   add constraint site_flags_banner_whole check ((banner_text is null) = (banner_kind is null)),
+  -- Plan 3 code and tests may set maintenance_since alone: a missing kind reads as emergency.
   add constraint site_flags_maintenance_whole check (
-    (maintenance_since is null) = (maintenance_kind is null) and (maintenance_message is null or maintenance_since is not null)
+    maintenance_since is not null or (maintenance_kind is null and maintenance_message is null)
   ),
   add constraint site_flags_stopped check (stopped_at is null or trading_paused);
