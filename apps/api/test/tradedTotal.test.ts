@@ -159,10 +159,26 @@ describe('the opt-in line (off by default)', () => {
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
   });
 
-  it('opted in at exactly $10,000: the $10,000 line shows (owner 2026-11-02: "at least $10,000")', async () => {
+  it('opted in at exactly $10,000: nothing shows (owner 2026-11-03: a plus needs MORE than the step)', async () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, dollars(10_000));
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+  });
+
+  it('opted in at $10,000.01: the $10,000+ line shows (owner 2026-11-03: more than the step)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(10_000) + 1n);
+    expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
+  });
+
+  it('opted in at $10,001: the $10,000+ line shows (owner 2026-11-03)', async () => {
+    const seller = await trader();
+    const buyer = await trader();
+    const code = await trade(seller, buyer, dollars(10_001));
     expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
   });
@@ -282,12 +298,16 @@ describe('moderator-verified imported volume (past reputation)', () => {
     expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
   });
 
-  it('a verified figure that brings the total to exactly a step earns it (owner: "at least")', async () => {
+  it('a verified figure must bring the total to MORE than a step (owner 2026-11-03)', async () => {
     const seller = await trader();
     const buyer = await trader();
     const code = await trade(seller, buyer, dollars(9_000));
     expect((await optIn(seller, true)).json()).toEqual({ show: true, tradedOverUsd: null });
-    await verify(await claim(seller.id), dollars(1_000)); // exactly $10,000.00
+    const exact = await claim(seller.id);
+    await verify(exact, dollars(1_000)); // exactly $10,000.00: not more than the step
+    expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: null });
+    expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBeNull();
+    await verify(exact, dollars(1_000) + 1n); // $10,000.01
     expect((await setting(seller)).json()).toEqual({ show: true, tradedOverUsd: 10_000 });
     expect((await summaryOf(buyer, code)).summary.tradedOverUsd).toBe(10_000);
   });
