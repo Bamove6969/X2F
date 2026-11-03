@@ -56,8 +56,8 @@ alter table disputes
   alter column ruling_due_at set not null,
   alter column usd_cents set not null,
   alter column limit_usd_cents set not null,
-  add constraint disputes_round1_check check ((round = 2) = (round1 is not null)),
-  add constraint disputes_appeal_window_check check ((published_at is null) = (appeal_ends_at is null));
+  add constraint disputes_round2_has_round1 check ((round = 2) = (round1 is not null)),
+  add constraint disputes_published_has_window check ((published_at is null) = (appeal_ends_at is null));
 
 -- The queue: unassigned open disputes by reply deadline (the trader's queue position).
 create index disputes_queue on disputes (reply_due_at) where status = 'open' and assignee is null;
