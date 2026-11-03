@@ -177,7 +177,8 @@ describe('owner lockout', () => {
       expect((await owner.browser.get('/staff/v1/me')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/members')).statusCode).toBe(200);
       expect((await owner.browser.get('/staff/v1/owner/keys')).statusCode).toBe(200);
-      const { res } = await ownerLogin(owner.keys[0]!);
+      // keys[0] was removed by the owner-key test above; the spare logs in.
+      const { res } = await ownerLogin(owner.keys[1]!);
       expect(res.json()).toEqual({ status: 'ok' });
     } finally {
       await t.deps.db.query('update site_flags set trading_paused = false, maintenance_since = null');

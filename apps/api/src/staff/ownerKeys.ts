@@ -62,7 +62,6 @@ export function ownerKeyRoutes(app: FastifyInstance): void {
 
   app.post('/staff/v1/owner/keys/finish', opts, async (req, reply) => {
     const deps = req.server.deps;
-    req.server.budgets.register.take();
     const b = body(req);
     const owner = req.staff.accountId;
     if (typeof b.challengeId !== 'string') throw new ApiError(400, 'challenge-expired');
@@ -74,6 +73,7 @@ export function ownerKeyRoutes(app: FastifyInstance): void {
       [challengeId, owner, req.auth.sessionId, PURPOSE, deps.clock()],
     );
     if (!open[0]) throw new ApiError(400, 'challenge-expired');
+    req.server.budgets.register.take();
     const cred = await verifyWebAuthnRegistrationOnly(deps, owner, b.response, open[0].webauthn_challenge, {
       kind: 'security-key', ...(label !== undefined ? { label } : {}),
     });

@@ -28,7 +28,8 @@ import { attestedKeyCount, body, hoursOf, idParam, log, roleOf, tapIdOf, type In
 // - `DELETE /staff/v1/invites/:id` → 204 (404 when used, cancelled or unknown).
 //
 // The invitee's side (perm `public-invite`, no session; every step checks that the token's invite
-// is unused, not cancelled and not expired, else 404 `invite-invalid`):
+// is unused, not cancelled and not expired, else 404 `invite-invalid`; only then does it spend the
+// process-wide start or register budget, so made-up tokens cannot drain it for a real invitee):
 // - `GET /staff/v1/invites/accept/:token` → `{ role, hours, expiresAt }`;
 // - `POST …/:token/account { username, loginName }` → 201: the public name and the private login
 //   name (FU-D), once (409 `wrong-state` after that). The account is created disabled: it cannot
@@ -160,16 +161,16 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   // The invitee
 
   app.get('/staff/v1/invites/accept/:token', pub, async (req) => {
-    req.server.budgets.start.take();
     const i = await openInvite(req.server.deps.db, tokenOf(req), req.server.deps.clock());
+    req.server.budgets.start.take();
     return { role: i.role, hours: i.hours, expiresAt: i.expires_at.toISOString() };
   });
 
   app.post('/staff/v1/invites/accept/:token/account', pub, async (req, reply) => {
-    req.server.budgets.register.take();
     const deps = req.server.deps;
     const open = await openInvite(deps.db, tokenOf(req), deps.clock());
     if (open.account_id !== null) throw new ApiError(409, 'wrong-state');
+    req.server.budgets.register.take();
     const b = body(req);
     const names = await assertNewNames(deps.db, b.username, b.loginName);
     const now = deps.clock();
@@ -185,20 +186,20 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   });
 
   app.post('/staff/v1/invites/accept/:token/key/start', pub, async (req) => {
-    req.server.budgets.start.take();
     const deps = req.server.deps;
     const i = await openInvite(deps.db, tokenOf(req), deps.clock());
     const accountId = accountOfInvite(i);
+    req.server.budgets.start.take();
     const kind = credentialKind(body(req).kind);
     const options = await webauthnRegistrationOptions(deps, accountId, { kind, challenge: inviteRegistrationChallenge(i.token_hash) });
     return { options };
   });
 
   app.post('/staff/v1/invites/accept/:token/key/finish', pub, async (req, reply) => {
-    req.server.budgets.register.take();
     const deps = req.server.deps;
     const i = await openInvite(deps.db, tokenOf(req), deps.clock());
     const accountId = accountOfInvite(i);
+    req.server.budgets.register.take();
     const b = body(req);
     const kind = credentialKind(b.kind);
     const label = b.label === undefined ? undefined : str(b, 'label');
@@ -215,10 +216,10 @@ export function staffInviteRoutes(app: FastifyInstance): void {
 
   app.post('/staff/v1/invites/accept/:token/pgp/start', { ...pub, bodyLimit: PGP_BODY_LIMIT }, async (req, reply) => {
     ensureDeviceCookie(req, reply);
-    req.server.budgets.start.take();
     const deps = req.server.deps;
     const i = await openInvite(deps.db, tokenOf(req), deps.clock());
     const accountId = accountOfInvite(i);
+    req.server.budgets.start.take();
     const publicKey = str(body(req), 'publicKey');
     const issued = await issueTeamJoinChallenge(deps, req, { accountId, publicKey, payload: { inviteId: i.id }, purpose: 'staff-join' });
     return { challengeId: issued.challengeId, encryptedMessage: issued.encryptedMessage, expiresAt: issued.expiresAt };
@@ -226,10 +227,10 @@ export function staffInviteRoutes(app: FastifyInstance): void {
 
   app.post('/staff/v1/invites/accept/:token/pgp/finish', pub, async (req, reply) => {
     ensureDeviceCookie(req, reply);
-    req.server.budgets.register.take();
     const deps = req.server.deps;
     const i = await openInvite(deps.db, tokenOf(req), deps.clock());
     const accountId = accountOfInvite(i);
+    req.server.budgets.register.take();
     const b = body(req);
     if (deviceHash(req) === null) throw new ApiError(400, 'challenge-expired');
     const proved = await checkTeamJoinCode(deps, req, str(b, 'challengeId'), str(b, 'code'), accountId, 'staff-join');
@@ -243,11 +244,11 @@ export function staffInviteRoutes(app: FastifyInstance): void {
   });
 
   app.post('/staff/v1/invites/accept/:token/finish', pub, async (req, reply) => {
-    req.server.budgets.register.take();
     const deps = req.server.deps;
     const now = deps.clock();
     const first = await openInvite(deps.db, tokenOf(req), now);
     const accountId = accountOfInvite(first);
+    req.server.budgets.register.take();
     const code = await withTx(deps.db, async (c) => {
       const i = await lockInvite(c, req, accountId);
       const keys = await attestedKeyCount(c, accountId);
