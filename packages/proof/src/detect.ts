@@ -883,3 +883,40 @@ export function detectSensitiveText(s: string, opts: DetectOptions = {}): Hidden
   });
   return TEXT_ORDER.filter((k) => found.has(k));
 }
+
+/**
+ * The boxes of the trade code (the memo) in OCR words, in any grouping or case, cut by character
+ * position like `amountBoxes`. The uploader's app compares them with the uploader's own blur (owner
+ * 2026-11-02 08:17: warn when their blur covers the amount or the memo; posting is still allowed).
+ */
+export function codeBoxes(words: OcrWord[], tradeCode: string): Box[] {
+  const code = normalizeTradeCode(tradeCode);
+  if (code === null) throw new RangeError('tradeCode is not a trade code');
+  const codeRe = codePattern(code);
+  const out: Box[] = [];
+  for (const l of linesOf(words)) {
+    const n = normalize(l.text);
+    const kept: boolean[] = new Array<boolean>(n.text.length).fill(false);
+    for (const m of n.text.matchAll(codeRe)) mark(kept, m.index, m.index + m[0].length);
+    const k = toOriginal(n, new Array<Span | null>(n.text.length).fill(null), kept).keep;
+    for (const { word, start, end } of l.words) {
+      const charW = (word.x1 - word.x0) / (end - start);
+      for (let c = start; c < end; ) {
+        if (!k[c]) {
+          c++;
+          continue;
+        }
+        let d = c;
+        while (d < end && k[d]) d++;
+        out.push({
+          x0: c === start ? word.x0 : Math.floor(word.x0 + charW * (c - start)),
+          y0: word.y0,
+          x1: d === end ? word.x1 : Math.ceil(word.x0 + charW * (d - start)),
+          y1: word.y1,
+        });
+        c = d;
+      }
+    }
+  }
+  return out;
+}
