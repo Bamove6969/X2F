@@ -349,7 +349,7 @@ export async function applyEvent(
       ]);
       // Task 27: a system escalation writes its dispute row with the trade (a trader's own
       // opening writes it through `within`, with the reason they gave).
-      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, code, now);
+      if (e.type === 'escalate' && next.state === 'disputed') await openSystemDispute(client, next, now);
       if (within) await within(client, prev, next, now);
       // Plan 4 Task 3: one activity-log entry per stored event, in the same transaction. It is the
       // last statement before the commit (M2): the log lock serialises every append on the site,

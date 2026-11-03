@@ -15,6 +15,7 @@ import { loadFxSettings } from './price/settings.js';
 import { priceSources } from './price/sources.js';
 import { startRetention } from './retention.js';
 import { settleDueHolds } from './auth/hold.js';
+import { startDisputeTimers } from './disputes/timers.js';
 import { RETENTION_JOBS } from './retentionJobs.js';
 import { serveWeb, webOptionsFromEnv } from './static/serve.js';
 import { moneroAddressValidator } from './wallets/address.js';
@@ -86,6 +87,8 @@ const app = await buildApi(deps, monerod ? { txConfirmations: daemonConfirmation
 onAlert = ownerAlertSink({ db, clock, push: app.push });
 // Plan 2 Task 17: holds whose 24 hours are up end every minute, and their waiting change applies.
 const stopHolds = startRetention(deps, [settleDueHolds(config, app.events, app.log)], 60_000);
+// Plan 4 Task 10: every 30 s, appeal windows close and maintenance shifts dispute deadlines (A7).
+const stopDisputeTimers = startDisputeTimers(deps, app.events);
 alertLog = app.log;
 prices.start();
 if (web) await serveWeb(app, web);
@@ -107,6 +110,7 @@ if (internal) {
 
 const shutdown = async () => {
   await stopHolds();
+  await stopDisputeTimers();
   await stopRetention(); // lets a purge in flight finish before the pool closes
   await prices.stop();
   if (internal) await internal.close();
