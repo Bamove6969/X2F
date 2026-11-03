@@ -13,7 +13,7 @@ export const TRADER_ORIGIN = 'https://x2f.test';
 /** The moderation client stub (Task 11 builds the real one). */
 export const MODERATION_STUB: ModerationClient = { name: 'moderation' };
 
-/** The trader API and the staff API on one database and one clock. */
+/** The trader API and the staff API on one database and one clock (`overrides`: e.g. an attestation policy). */
 export async function staffApps(overrides: Partial<Deps> = {}): Promise<{
   app: FastifyInstance;
   trader: FastifyInstance;

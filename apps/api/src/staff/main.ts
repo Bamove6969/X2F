@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { LISTEN_OPTIONS, type Deps } from '../app.js';
 import { buildStaffApi, type ModerationClient } from './app.js';
+import { ensureSetupCode, setupCodeLine } from './ownerSetup.js';
 import { startHoursSweeper } from './sweeper.js';
 
 /** The staff listener's settings; `null` when `X2F_STAFF_ORIGIN` is unset (no staff app on this host). */
@@ -36,12 +37,26 @@ export function staffListenFromEnv(env: Record<string, string | undefined>): Sta
 /** Until Plan 4 Task 11 builds the moderation client, nothing on the staff API calls it. */
 const NO_MODERATION: ModerationClient = { name: 'moderation' };
 
+export interface StartOptions {
+  /** Where the setup code line goes: stderr (default). Never the structured logger. */
+  stderr?: (line: string) => void;
+  /** The structured logger's destination (tests). */
+  logStream?: { write(line: string): void };
+}
+
 /**
  * Builds the staff API, starts the login-hours sweeper and listens on `X2F_STAFF_PORT` (default
  * 8082, bound to `X2F_STAFF_HOST`, default 127.0.0.1). Called by `main.ts`; `close()` stops both.
+ * While no owner has finished setup (Plan 4 Task 6), it writes exactly one line to stderr with the
+ * owner setup code, the only place the code is ever shown: the structured logger never sees it.
  */
-export async function startStaffApi(deps: Deps, s: StaffListen): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
-  const app = await buildStaffApi({ ...deps, staffOrigin: s.origin, ...(s.rpId ? { staffRpId: s.rpId } : {}), moderation: NO_MODERATION });
+export async function startStaffApi(deps: Deps, s: StaffListen, o: StartOptions = {}): Promise<{ app: FastifyInstance; close(): Promise<void> }> {
+  const code = await ensureSetupCode(deps);
+  const app = await buildStaffApi(
+    { ...deps, staffOrigin: s.origin, ...(s.rpId ? { staffRpId: s.rpId } : {}), moderation: NO_MODERATION },
+    o.logStream ? { logStream: o.logStream } : {},
+  );
+  if (code !== null) (o.stderr ?? ((line: string) => void process.stderr.write(line)))(setupCodeLine(code));
   const sweeper = startHoursSweeper({ db: deps.db, clock: deps.clock, events: app.events }, (err) => app.log.error({ err }, 'staff hours sweep failed'));
   await app.listen({ ...LISTEN_OPTIONS, host: s.host, port: s.port });
   return {

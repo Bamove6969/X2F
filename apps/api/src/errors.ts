@@ -105,7 +105,10 @@ export type ApiErrorCode =
   | 'security-key-required'
   | 'two-factors-required'
   | 'owner-protected'
-  | 'owner-needs-two-keys';
+  | 'owner-needs-two-keys'
+  // Plan 4, Task 6: owner first-run setup.
+  | 'setup-locked'
+  | 'owner-needs-pgp';
 
 /** An error the client may see: the handler replies `{ error: code, ...extra }` with `status`. */
 export class ApiError extends Error {
