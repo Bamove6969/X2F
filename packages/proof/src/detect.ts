@@ -599,8 +599,12 @@ function visible(text: string, best: Array<Span | null>): Array<Span | null> {
 
 /**
  * Amount labels: a whole number right after one, equal to the trade amount, is the amount even with
- * no currency marker or decimals (`Amount: 12345678`, `Total 250,000`). Without a label a bare whole
- * number may be a reference or an account, so it is not kept.
+ * no currency marker or decimals (`Amount: 12345678`, `Total 250,000`).
+ *
+ * Owner Q17 (2026-11-02): without a label too, a number exactly equal to the trade amount stays
+ * clear ("highly doubtful it's a reference number; most likely just another spot where the amount is
+ * displayed"). Only a number standing on its own (see `standsAlone`): a longer number that merely
+ * contains the amount (a card, phone, IBAN or account group) is still masked.
  */
 const AMOUNT_LABEL = new RegExp(
   `(?<![\\p{L}])(?:${[
@@ -613,18 +617,34 @@ const AMOUNT_LABEL = new RegExp(
 /** A run of 16 or more digits, which the amount reader does not take. */
 const LONG_DIGITS = /(?<![\p{L}\p{N}])\d{16,}(?![\p{N}])/gu;
 
+/** Before a bare number: a digit, or a digit and one joining character (a group of a longer number), or `#` or `+`. */
+const JOINED_BEFORE = /(?:\p{N}[^\p{L}\p{N}]?|[#+])$/u;
+/** After a bare number: a letter or digit, or one joining character and a digit. */
+const JOINED_AFTER = /^(?:[\p{L}\p{N}]|[^\p{L}\p{N}\s]?\p{N}|\s\p{N})/u;
+
+/**
+ * A bare number (no marker, no decimals, no label) on its own: no leading zero, and not one part of a
+ * longer number (`4111 1111`, `555-201-3344`, `DE89 3704`), nor glued to letters, nor after `#` or `+`.
+ */
+function standsAlone(text: string, start: number, end: number): boolean {
+  if (text[start] === '0') return false;
+  return !JOINED_BEFORE.test(text.slice(0, start)) && !JOINED_AFTER.test(text.slice(end));
+}
+
 /** Per character of a normalised line: whether it is part of the trade amount. */
 function amountKept(text: string, keep: Keep): boolean[] {
   const k: boolean[] = new Array<boolean>(text.length).fill(false);
   for (const a of findAmounts(text, keep.exponent)) {
     if (a.value !== keep.fiatCents) continue;
-    if (a.marker !== null || a.decimals || AMOUNT_LABEL.test(text.slice(0, a.start))) mark(k, a.start, a.end);
+    if (a.marker !== null || a.decimals || AMOUNT_LABEL.test(text.slice(0, a.start)) || standsAlone(text, a.start, a.end)) mark(k, a.start, a.end);
   }
   const unit = 10n ** BigInt(keep.exponent);
   if (keep.fiatCents % unit === 0n) {
     const whole = (keep.fiatCents / unit).toString();
     for (const m of text.matchAll(LONG_DIGITS)) {
-      if (m[0].replace(/^0+(?=\d)/, '') === whole && AMOUNT_LABEL.test(text.slice(0, m.index))) mark(k, m.index, m.index + m[0].length);
+      const end = m.index + m[0].length;
+      if (m[0].replace(/^0+(?=\d)/, '') !== whole) continue;
+      if (AMOUNT_LABEL.test(text.slice(0, m.index)) || standsAlone(text, m.index, end)) mark(k, m.index, end);
     }
   }
   return k;
