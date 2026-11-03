@@ -521,6 +521,8 @@ function usedFingerprints(payload: Record<string, unknown>): string[] {
 export interface PgpLoginOptions {
   kinds: AccountKind[];
   afterAuthenticate?: (accountId: string) => Promise<void>;
+  /** Route `config` for both routes (Plan 4's staff app marks them `{ perm: 'public-login' }`). */
+  routeConfig?: Record<string, unknown>;
 }
 
 /**
@@ -531,7 +533,8 @@ export interface PgpLoginOptions {
  * `completeLogin`.
  */
 export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): void {
-  app.post('/start', { bodyLimit: PGP_BODY_LIMIT }, async (req, reply) => {
+  const config = opts.routeConfig ?? {};
+  app.post('/start', { bodyLimit: PGP_BODY_LIMIT, config }, async (req, reply) => {
     const deps = req.server.deps;
     // Every answer, refusals included, gives the browser a device cookie (`loginStart` sets it before
     // binding the challenge).
@@ -543,7 +546,7 @@ export function pgpLoginRoutes(app: FastifyInstance, opts: PgpLoginOptions): voi
     }
   });
 
-  app.post('/finish', async (req, reply) => {
+  app.post('/finish', { config }, async (req, reply) => {
     const deps = req.server.deps;
     ensureDeviceCookie(req, reply);
     const b = body(req);

@@ -7,10 +7,10 @@ import { listNews } from './store.js';
  * `publishedAt`. No `POST /v1/news/seen`: new versus seen is kept on the reader's device
  * (lead, 2026-10-29), so a read leaves nothing on the server.
  *
- * Writing is the owner's (perm `site.control`, each change in the activity log). Plan 4's staff
- * API is not on the main line yet, so until it is the operator posts with
- * `npm run news -w @x2f/api` (tools/news.ts); `test/news-tripwire.test.ts` fires when the staff
- * pieces land.
+ * Writing is the owner's, on the staff API (`staff/news.ts`: perm `site.control`, each change in the
+ * activity log). The operator's offline CLI, `npm run news -w @x2f/api` (tools/news.ts), stays
+ * until the lead decides it is not needed; `test/news-tripwire.test.ts` fires when the staff web
+ * app (NewsEditor) lands.
  */
 export function newsRoutes(app: FastifyInstance): void {
   app.get('/v1/news', async (req) => ({

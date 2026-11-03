@@ -126,6 +126,21 @@ describe('opening a dispute', () => {
     expect((await other.browser.get(dispute(t.code))).statusCode).toBe(404);
   });
 
+  it('snapshots the large-trade limit and first-reply time: a later settings edit changes neither', async () => {
+    try {
+      await deps.db.query('update settings set large_trade_limit_usd = 300, first_response_h = 2');
+      const { buyer, t } = await disputed();
+      await deps.db.query('update settings set large_trade_limit_usd = 5000, first_response_h = 8');
+      const d = (await loadDispute(deps.db, t.code))!;
+      expect(d).toMatchObject({ limitUsdCents: 30_000n, replyDueAt: at(2 * H) });
+      // $412.50 against the $300 snapshot: a ruling on it needs two people, whatever the setting is now.
+      expect(d.usdCents >= d.limitUsdCents).toBe(true);
+      expect(((await buyer.browser.get(dispute(t.code))).json() as Record<string, unknown>).replyDueAt).toBe(iso(2 * H));
+    } finally {
+      await deps.db.query('update settings set large_trade_limit_usd = 1000, first_response_h = 4');
+    }
+  });
+
   it('places no trading hold on either side (owner 2026-11-02: a dispute alone never blocks trading)', async () => {
     const { buyer, seller } = await disputed();
     const { rows } = await deps.db.query('select 1 from trading_holds where account_id = any($1)', [[buyer.id, seller.id]]);
@@ -330,11 +345,6 @@ describe('live delivery', () => {
 
 describe('tripwires (local tree only)', () => {
   const src = (p: string) => fileURLToPath(new URL(`../../src/${p}`, import.meta.url));
-  it('NEEDS_TASK_8_SETTINGS: once Task 8\'s getSettings exists, disputeSettings must read it', () => {
-    // disputes/settings.ts returns the plan defaults until Task 8 lands; then it must call
-    // getSettings (and this tripwire is replaced by a test that the limit snapshot ignores a later edit).
-    expect(existsSync(src('staff/settings.ts')), 'NEEDS_TASK_8_SETTINGS').toBe(false);
-  });
   it('NEEDS_TASK_25_LIEN_ON_APPEAL: once liens exist, filing an appeal must suspend the round-1 lien', () => {
     expect(existsSync(src('disputes/lien.ts')), 'NEEDS_TASK_25_LIEN_ON_APPEAL').toBe(false);
   });
