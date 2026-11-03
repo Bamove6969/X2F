@@ -8,13 +8,15 @@ import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
 import { staffInviteRoutes } from './invites.js';
-import { keyTapRoutes } from './keyTap.js';
 import { staffMemberRoutes } from './members.js';
 import { ownerKeyRoutes } from './ownerKeys.js';
 import { staffFeedbackRoutes } from './feedback.js';
+import { keyTapRoutes } from './keyTap.js';
 import { staffLoginRoutes } from './login.js';
 import { staffNewsRoutes } from './news.js';
 import { ownerSetupRoutes } from './ownerSetup.js';
+import { staffSettingsRoutes } from './settings.js';
+import { staffSiteRoutes } from './site.js';
 
 /**
  * The moderation process as the staff API sees it (Plan 4 Task 11 builds it; until then nothing
@@ -119,6 +121,9 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   ownerKeyRoutes(app);
   // Plan 4 Task 6: owner first-run setup (public-setup; locked for good once it finishes).
   ownerSetupRoutes(app);
+  // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
+  staffSettingsRoutes(app);
+  staffSiteRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).

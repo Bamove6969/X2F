@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { LoginHours, StaffRole } from '@x2f/staff';
+import { canonicalJson, type KeyTapIntent, type LoginHours, type StaffRole } from '@x2f/staff';
 import type { FastifyInstance, LightMyRequestResponse } from 'fastify';
 import type { Deps } from '../../src/app.js';
 import { SESSION_COOKIE, STAFF_SESSION_COOKIE } from '../../src/auth/sessions.js';
@@ -102,4 +102,17 @@ export async function logEntries(deps: Deps, action: string): Promise<Array<{ ac
     [action],
   );
   return rows;
+}
+
+/**
+ * Plan 4 Task 8: a finished (answered, unused) key tap for `intent`, inserted directly. The tapped
+ * routes only `consumeKeyTap` it; Task 5's own tests cover starting and finishing a real one.
+ */
+export async function seedTap(deps: Deps, accountId: string, intent: KeyTapIntent, startedAt = deps.clock()): Promise<string> {
+  const { rows } = await deps.db.query<{ id: string }>(
+    `insert into key_taps (account_id, credential_id, intent, nonce, response, started_at, finished_at)
+     values ($1, $2, $3, $4, $5, $6, $6) returning id`,
+    [accountId, randomBytes(16).toString('base64url'), canonicalJson(intent), randomBytes(16), JSON.stringify({ id: 'test' }), startedAt],
+  );
+  return rows[0]!.id;
 }

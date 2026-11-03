@@ -79,8 +79,11 @@ describe('privilege matrix', () => {
       for (const c of CALLERS) {
         const res = await (await browserFor(c)).send(r.method, urlOf(r), r.body);
         const want = expected(c, r);
-        const error = (res.json() as { error?: string }).error;
-        if (want === 'allowed') {
+        const error = res.body === '' ? undefined : (res.json() as { error?: string }).error; // a 204 has no body
+        if (want === 'allowed' && r.allowedAnswer) {
+          // Past the guard, the route's own check answers (e.g. no valid tap): exactly that, never a guard refusal.
+          expect({ status: res.statusCode, error }, `${c}: ${res.body}`).toEqual(r.allowedAnswer);
+        } else if (want === 'allowed') {
           // Allowed: the handler ran. It may still refuse with its own code (a tap that does not
           // exist is 403 `tap-invalid`, a target that is the owner 409 `owner-protected`), never
           // with one of the guard's.

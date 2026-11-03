@@ -218,7 +218,9 @@ describe('keys and finish', () => {
     expect(p.statusCode, p.body).toBe(201);
     const done = await b.post('/staff/v1/setup/finish', { deviceLabel: 'Desk' });
     expect(done.statusCode, done.body).toBe(200);
-    expect(done.json()).toEqual({ keyCheckCodes: [keyCheckCode(k1.cosePublicKey), keyCheckCode(k2.cosePublicKey)] });
+    // Both keys share the test clock's created_at, so their order falls to the random row id.
+    const codes = (done.json() as { keyCheckCodes: string[] }).keyCheckCodes;
+    expect([...codes].sort()).toEqual([keyCheckCode(k1.cosePublicKey), keyCheckCode(k2.cosePublicKey)].sort());
 
     const me = await b.get('/staff/v1/me');
     expect(me.statusCode, me.body).toBe(200);

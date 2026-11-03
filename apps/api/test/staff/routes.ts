@@ -11,6 +11,12 @@ export interface StaffRouteRow {
   body?: unknown;
   /** A `self` route for the owner only (Task 7's owner keys): every other role gets 403 `forbidden`. */
   ownerOnly?: true;
+  /**
+   * Plan 4 Task 8: what an allowed caller gets instead of a 2xx, for a route whose own check answers
+   * 401 or 403 past the guard (a tapped action without a valid tap: 403 `tap-invalid`). The allowed
+   * roles must get exactly this, the others the guard's refusal.
+   */
+  allowedAnswer?: { status: number; error: string };
 }
 
 export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
@@ -22,9 +28,9 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self' },
-  // Task 5: security-key taps.
-  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', body: { kind: 'emergency-stop' } },
-  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', body: { response: {} } },
+  // Plan 4 Task 5: security-key taps (the body is the intent; a sample tap id finishes nothing).
+  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', body: { kind: 'emergency-stop' }, allowedAnswer: { status: 403, error: 'method-not-allowed' } },
+  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', body: { response: {} }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
   // Task 7: staff management (staff.manage), invite acceptance (public-invite), owner keys.
   { method: 'GET', url: '/staff/v1/members', perm: 'staff.manage' },
   { method: 'POST', url: '/staff/v1/invites', perm: 'staff.manage', body: { role: 'mod', hours: 'any' } },
@@ -53,6 +59,15 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/setup/pgp/start', perm: 'public-setup', body: {} },
   { method: 'POST', url: '/staff/v1/setup/pgp/finish', perm: 'public-setup', body: {} },
   { method: 'POST', url: '/staff/v1/setup/finish', perm: 'public-setup', body: {} },
+  // Plan 4 Task 8: the owner's settings and the site controls (a sample tap id is never valid).
+  { method: 'GET', url: '/staff/v1/settings', perm: 'settings.write' },
+  { method: 'PUT', url: '/staff/v1/settings', perm: 'settings.write', body: { firstResponseH: 5 } },
+  { method: 'GET', url: '/staff/v1/site', perm: 'site.control' },
+  { method: 'POST', url: '/staff/v1/site/stop', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'POST', url: '/staff/v1/site/resume', perm: 'site.control', body: { tapId: '00000000-0000-4000-8000-000000000000' }, allowedAnswer: { status: 403, error: 'tap-invalid' } },
+  { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', body: { text: 'Matrix is down for an hour.', kind: 'info' } },
+  { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control' },
+  { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', body: { on: false } },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },
