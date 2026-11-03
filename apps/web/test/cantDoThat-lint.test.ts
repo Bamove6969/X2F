@@ -127,8 +127,11 @@ describe('copy-lint: every refusal goes through CantDoThat, judged piece by piec
     // what blocking a login did, the advice after a block, why no place is shown, the blocked new
     // device's note, and how approval works. 50 -> 51 (C11, design review fix 2): the DisputeRuling
     // board's "If an appeal overturns the ruling, you get a lien. You can't trade until you pay the
-    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien).
-    expect(notARefusal).toBeLessThanOrEqual(51);
+    // XMR back." explains a consequence before any appeal (dispute/rules.ts overturnLien). 51 -> 52
+    // (owner item 64, 3 Nov 2026): screens/proof/ProofPrompts.tsx's "Our automated system was unable
+    // to detect the amount ..." is a check on the screenshot asking for an explanation; the proof
+    // can still be sent.
+    expect(notARefusal).toBeLessThanOrEqual(52);
     // Parses every file under apps/web/src: give it room on a loaded machine.
   }, 60_000);
 });
