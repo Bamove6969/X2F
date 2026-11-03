@@ -784,6 +784,31 @@ describe('owner answers (2026-11-02)', () => {
     }
   });
 
+  it("owner Q15: notes allow the apostrophe thousands separator (Swiss style) like commas", () => {
+    for (const s of [
+      "Paid 1'250'000 CHF, smooth",
+      "sent 250'000",
+      "about 123'456'789 VND",
+      "1'250'000.50 CHF",
+      'Paid 1\u2019250\u2019000 CHF',
+      'about 123\u2019456\u2019789',
+    ]) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+  });
+
+  it('owner Q15: an apostrophe-grouped number is treated exactly like a comma-grouped one, in notes and images', () => {
+    // Commas are not refused in notes in any length today (item 37: other separators stay best
+    // effort); the apostrophe follows the comma, nothing more and nothing less.
+    for (const c of ['1,250,000', '123,456,789', '1,234,567,890', '4,111,111,111,111,111', '012,345,678', '1,2345,678', '+41,612,345,678', 'Ref 1,250,000', '4111,1111,1111,1111', 'acct 1,250,000.50']) {
+      for (const q of ["'", '\u2019']) {
+        const a = c.replaceAll(',', q);
+        expect(detectSensitiveText(a), a).toEqual(detectSensitiveText(c));
+        expect(masked(ocr(a)).map(([, k]) => k), a).toEqual(masked(ocr(c)).map(([, k]) => k));
+      }
+    }
+  });
+
   it('item 29: proof images are unchanged (a grouped number is still masked)', () => {
     expect(maskedTexts(ocr('Ref 1 250 000'))).toEqual(['1', '250', '000']);
     expect(maskedTexts(ocr('Ref 1.250.000'))).toEqual(['1.250.000']);
