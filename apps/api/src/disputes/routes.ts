@@ -1,5 +1,5 @@
 import { addressEnd } from '@x2f/accounts';
-import { DisputeRuleError, applyDispute, involvedIn, traderStatus, type InvolvementEntry, type TraderDisputeStatus } from '@x2f/staff';
+import { DisputeRuleError, RULING_DEADLINE_H, RULING_GOAL_H, applyDispute, involvedIn, traderStatus, type InvolvementEntry, type TraderDisputeStatus } from '@x2f/staff';
 import { TradeRuleError, type Party, type Trade } from '@x2f/trade';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { requireSession } from '../auth/sessions.js';
@@ -41,6 +41,13 @@ export interface DisputeView {
   afterRefund: boolean;
   /** The current round's ruling deadline ("ruling due by …"; the plan's `rulingDueAt`). */
   dueAt: string | null;
+  /**
+   * The target time: round 1 aims to be resolved within 24 hours (RULING_GOAL_H; owner 2026-11-03,
+   * "every dispute within 24 hours or less"), before the 48-hour hard deadline `dueAt`; the appeal
+   * round aims at its own 48 hours (APPEAL_GOAL_H), so its goal is its deadline. Derived from
+   * `dueAt`, so a maintenance shift moves it too.
+   */
+  goalAt: string;
   /** The current round's first-reply deadline (the owner's first-response setting). */
   replyDueAt: string;
   firstReplyAt: string | null;
@@ -166,6 +173,7 @@ async function loadView(q: Queryable, row: TradeRow, side: Party, accountId: str
     openedAt: d.openedAt.toISOString(),
     afterRefund: d.afterRefund,
     dueAt: d.rulingDueAt.toISOString(),
+    goalAt: new Date(d.rulingDueAt.getTime() - (d.round === 1 ? (RULING_DEADLINE_H - RULING_GOAL_H) * 3_600_000 : 0)).toISOString(),
     replyDueAt: d.replyDueAt.toISOString(),
     firstReplyAt: d.firstReplyAt?.toISOString() ?? null,
     queuePosition,

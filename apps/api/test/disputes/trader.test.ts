@@ -104,6 +104,8 @@ describe('opening a dispute', () => {
       status: 'open',
       round: 1,
       dueAt: iso(48 * H),
+      // Owner 2026-11-03: the goal is every dispute resolved within 24 hours (RULING_GOAL_H).
+      goalAt: iso(24 * H),
       replyDueAt: iso(4 * H),
       firstReplyAt: null,
       complyBy: null,
@@ -190,7 +192,8 @@ describe('the appeal (one only, within 48 hours of the ruling)', () => {
     await relogin(seller, buyer);
     const res = await seller.browser.post(appeal(t.code), { why: WHY });
     expect(res.statusCode, res.body).toBe(200);
-    expect(res.json()).toMatchObject({ status: 'appealed', round: 2, appeal: { by: 'seller', at: iso(2 * H) } });
+    // The appeal is aimed at 48 hours (APPEAL_GOAL_H, owner): its goal is its deadline.
+    expect(res.json()).toMatchObject({ status: 'appealed', round: 2, appeal: { by: 'seller', at: iso(2 * H) }, dueAt: iso(50 * H), goalAt: iso(50 * H) });
     const d = (await loadDispute(deps.db, t.code))!;
     expect(d).toMatchObject({ status: 'appealed', round: 2, appealBy: 'seller', appealedAt: at(2 * H), assignee: null, ruling: null });
     expect(d.round1!.involved).toContain(modId);
@@ -317,6 +320,8 @@ describe('startDisputeTimers', () => {
     expect(d.replyDueAt).toEqual(at(base + 6 * H));
     expect(d.appealEndsAt).toEqual(at(base + 50 * H));
     expect(d.rulingDueAt).toEqual(at(base + 50 * H));
+    await relogin(c.buyer);
+    expect(((await c.buyer.browser.get(dispute(c.t.code))).json() as Record<string, unknown>).goalAt).toBe(iso(base + 26 * H));
     // The traders' view of round 1's window moves with it.
     await relogin(c.buyer);
     expect((await c.buyer.browser.get(dispute(c.t.code))).json()).toMatchObject({ replyDueAt: iso(base + 6 * H), ruling: { appealUntil: iso(base + 50 * H) } });
