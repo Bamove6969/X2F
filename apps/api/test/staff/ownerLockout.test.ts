@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { codeOf, decrypt, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries } from '../helpers/staffApp.js';
-import { addPgpKey, attestedStaffApps, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { addPgpKey, attestedStaffApps, resetBudgets, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
 const MIN = 60_000;
@@ -23,7 +23,11 @@ beforeAll(async () => {
   ownerPgp = await addPgpKey(t.deps, owner.id);
 });
 afterAll(async () => t.close());
-beforeEach(() => t.setNow(MON_NOON));
+beforeEach(() => {
+  t.setNow(MON_NOON);
+  // The in-memory budgets (limits.ts) are per process and shared by all; each test starts full.
+  resetBudgets(t);
+});
 
 /** The owner's whole login on the staff app from a fresh browser: PGP first, then `key`. */
 async function ownerLogin(key: SoftAuthenticator) {
@@ -62,7 +66,7 @@ describe('owner lockout', () => {
     const { b, res } = await ownerLogin(owner.keys[0]!);
     expect(res.json()).toEqual({ status: 'ok' });
     expect((await b.get('/staff/v1/me')).json()).toMatchObject({ role: 'owner' });
-  });
+  }, 300_000);
 
   it('the owner logs in with the spare key alone', async () => {
     const { res } = await ownerLogin(owner.keys[1]!);

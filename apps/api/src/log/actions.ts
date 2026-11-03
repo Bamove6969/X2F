@@ -112,6 +112,7 @@ export const LOG_ACTIONS = {
   'staff.joined': { staffId: 'uuid', role: 'id' },
   'staff.switched-off': { staffId: 'uuid' },
   'staff.switched-on': { staffId: 'uuid', role: 'id' },
+  'staff.removed': { staffId: 'uuid' },
   'staff.role-set': { staffId: 'uuid', from: 'id', to: 'id' },
   'staff.hours-set': { staffId: 'uuid' },
   'staff.grants-set': { staffId: 'uuid', ticketsHandle: 'bool' },

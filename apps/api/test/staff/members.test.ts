@@ -7,7 +7,7 @@ import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
-import { attestedStaffApps, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
+import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
 const HOUR = 3_600_000;
@@ -22,7 +22,11 @@ beforeAll(async () => {
   owner = await staffWithKeys(t, { role: 'owner' });
 });
 afterAll(async () => t.close());
-beforeEach(() => t.setNow(MON_NOON));
+beforeEach(() => {
+  t.setNow(MON_NOON);
+  // The in-memory budgets (limits.ts) are per process and shared by all; each test starts full.
+  resetBudgets(t);
+});
 
 let names = 0;
 const loginName = () => `invitee${++names}${Date.now().toString(36)}`;
@@ -108,7 +112,7 @@ describe('invites', () => {
 
     // A second use of the link.
     expect(errorOf(await invitee().get(acceptUrl(inv.token)))).toBe('invite-invalid');
-    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Again1', loginName: 'again1' }))).toBe('invite-invalid');
+    expect(errorOf(await invitee().post(acceptUrl(inv.token, '/account'), { username: 'Again1', loginName: 'againlogin1' }))).toBe('invite-invalid');
     expect(errorOf(await s.b.post(acceptUrl(inv.token, '/finish'), {}))).toBe('invite-invalid');
   });
 
@@ -173,7 +177,7 @@ describe('invites', () => {
     const id = await accountOf(n.loginName);
     const { rows } = await t.deps.db.query<{ disabled_at: Date | null }>('select disabled_at from accounts where id = $1', [id]);
     expect(rows[0]!.disabled_at).not.toBeNull();
-    const again = await b.post(acceptUrl(inv.token, '/account'), { username: 'Other1x', loginName: 'other1x' });
+    const again = await b.post(acceptUrl(inv.token, '/account'), { username: 'Other1x', loginName: 'otherlogin1x' });
     expect(again.statusCode).toBe(409);
     // Keys and PGP before the names: refused.
     const fresh = await createInvite('mod');
@@ -235,9 +239,10 @@ describe('members', () => {
     const before = (await t.deps.db.query('select id, hash from activity_log order by id')).rows;
     const res = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
     expect(res.statusCode, res.body).toBe(200);
+    // Its session is ended: the next request is refused.
     const me = await mod.browser.get('/staff/v1/me');
-    expect(me.statusCode).toBe(403);
-    expect(errorOf(me)).toBe('account-disabled');
+    expect(me.statusCode).toBe(401);
+    expect(errorOf(me)).toBe('not-authenticated');
     const { rows: live } = await t.deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [mod.id]);
     expect(live).toEqual([]);
     const { rows: a } = await t.deps.db.query<{ disabled_at: Date | null; switched_off_at: Date | null }>(
@@ -301,7 +306,9 @@ describe('members', () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     const res = await owner.browser.send('DELETE', `/staff/v1/members/${mod.id}`);
     expect(res.statusCode, res.body).toBe(204);
-    expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('account-disabled');
+    expect(errorOf(await mod.browser.get('/staff/v1/me'))).toBe('not-authenticated');
+    const { token } = await insertSession(t.deps, mod.id, 'staff');
+    expect(errorOf(await new StaffBrowser(t.app).withSession(token).get('/staff/v1/me'))).toBe('account-disabled');
     expect((await owner.browser.get('/staff/v1/members')).json().members.map((r: { accountId: string }) => r.accountId)).not.toContain(mod.id);
     const tapId = await tap(owner, { kind: 'switch-on', accountId: mod.id, role: 'mod' });
     expect((await owner.browser.post(`/staff/v1/members/${mod.id}/switch-on`, { tapId })).statusCode).toBe(404);

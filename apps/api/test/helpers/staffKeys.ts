@@ -9,6 +9,7 @@ import type { KeyTapIntent, LoginHours, StaffRole } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../src/app.js';
 import { fileAttestationPolicy } from '../../src/auth/attestation.js';
+import { newBudgets } from '../../src/limits.js';
 import { insertPgpKey } from '../../src/auth/pgp.js';
 import { verifyWebAuthnRegistration, webauthnRegistrationOptions } from '../../src/auth/webauthn.js';
 import { genKey, type Pair } from './pgpKeys.js';
@@ -95,4 +96,10 @@ export function newInvite(now: Date, o: { role: Exclude<StaffRole, 'owner'>; ttl
   const expiresAt = new Date(now.getTime() + (o.ttlMs ?? 24 * 3_600_000)).toISOString();
   const intent: KeyTapIntent = { kind: 'create-invite', inviteId, role: o.role, tokenHash, expiresAt };
   return { token, tokenHash, inviteId, expiresAt, intent };
+}
+
+/** Fresh in-memory budgets for both apps (tests only: a file of sign-ups outruns the 20-a-minute register bucket). */
+export function resetBudgets(t: AttestedStaffApps): void {
+  (t.app as { budgets: unknown }).budgets = newBudgets(t.deps.clock);
+  (t.trader as { budgets: unknown }).budgets = newBudgets(t.deps.clock);
 }
