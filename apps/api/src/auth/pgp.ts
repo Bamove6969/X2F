@@ -204,7 +204,9 @@ export const PGP_BODY_LIMIT = 64 * 1024;
 const START_WINDOW_MS = 5 * 60_000;
 const STARTS_PER_DEVICE = 5;
 
-type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join';
+type Purpose = 'register' | 'login' | 'confirm' | 'add-key' | 'team-join' | 'staff-join';
+/** The sign-ups that prove a pasted key before it is stored: a team member's (Plan 2 Task 18) and a staff invitee's (Plan 4 Task 7). */
+export type JoinPurpose = 'team-join' | 'staff-join';
 
 export interface IssuedChallenge {
   challengeId: string;
@@ -807,13 +809,14 @@ async function addKeyFinish(req: FastifyRequest, reply: FastifyReply) {
 export async function issueTeamJoinChallenge(
   deps: Deps,
   req: FastifyRequest,
-  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown> },
+  a: { accountId: string | null; publicKey: string; payload: Record<string, unknown>; purpose?: JoinPurpose },
 ): Promise<IssuedChallenge & { fingerprint: string }> {
+  const purpose = a.purpose ?? 'team-join';
   const now = deps.clock();
   const inspection = await inspectOrRefuse(a.publicKey, now);
   const { storable, pending } = await pendingKey(deps.config, a.publicKey, inspection.fingerprint, now);
   const issued = await issuePgpChallenge(deps, req, {
-    accountId: a.accountId, sessionId: null, purpose: 'team-join', purposeText: PGP_PURPOSE['team-join'],
+    accountId: a.accountId, sessionId: null, purpose, purposeText: PGP_PURPOSE[purpose],
     armoredKeys: [storable], payload: { ...a.payload, key: pending },
   });
   return { ...issued, fingerprint: inspection.fingerprint };
@@ -830,8 +833,9 @@ export async function checkTeamJoinCode(
   challengeId: string,
   code: string,
   accountId: string | null,
+  purpose: JoinPurpose = 'team-join',
 ): Promise<{ payload: Record<string, unknown>; fingerprint: string; armored: string }> {
-  const row = await checkPgpCode(deps, req, challengeId, code, { purpose: 'team-join' });
+  const row = await checkPgpCode(deps, req, challengeId, code, { purpose });
   const device = deviceHash(req);
   const sameDevice = device !== null && row.device_hash !== null && row.device_hash.equals(device);
   if (row.account_id !== accountId || !sameDevice) throw new ApiError(400, 'challenge-expired');

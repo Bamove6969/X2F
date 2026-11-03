@@ -15,6 +15,8 @@ export interface StaffRouteRow {
    * roles must get exactly this, the others the guard's refusal.
    */
   allowedAnswer?: { status: number; error: string };
+  /** A `self` route for the owner only (Task 7's owner keys): every other role gets 403 `forbidden`. */
+  ownerOnly?: true;
 }
 
 export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
@@ -38,6 +40,26 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'PUT', url: '/staff/v1/site/banner', perm: 'site.control', body: { text: 'Matrix is down for an hour.', kind: 'info' } },
   { method: 'DELETE', url: '/staff/v1/site/banner', perm: 'site.control' },
   { method: 'PUT', url: '/staff/v1/site/maintenance', perm: 'site.control', body: { on: false } },
+  // Task 7: staff management (staff.manage), invite acceptance (public-invite), owner keys.
+  { method: 'GET', url: '/staff/v1/members', perm: 'staff.manage' },
+  { method: 'POST', url: '/staff/v1/invites', perm: 'staff.manage', body: { role: 'mod', hours: 'any' } },
+  { method: 'DELETE', url: '/staff/v1/invites/:id', perm: 'staff.manage' },
+  { method: 'POST', url: '/staff/v1/members/:id/switch-off', perm: 'staff.manage', body: {} },
+  { method: 'POST', url: '/staff/v1/members/:id/switch-on', perm: 'staff.manage', body: {} },
+  { method: 'PUT', url: '/staff/v1/members/:id/hours', perm: 'staff.manage', body: { hours: 'any' } },
+  { method: 'PUT', url: '/staff/v1/members/:id/role', perm: 'staff.manage', body: { role: 'mod' } },
+  { method: 'DELETE', url: '/staff/v1/members/:id', perm: 'staff.manage' },
+  { method: 'GET', url: '/staff/v1/invites/accept/:token', perm: 'public-invite' },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/account', perm: 'public-invite', body: { username: 'Matrix1', loginName: 'matrix1' } },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/key/start', perm: 'public-invite', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/key/finish', perm: 'public-invite', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/start', perm: 'public-invite', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/pgp/finish', perm: 'public-invite', body: {} },
+  { method: 'POST', url: '/staff/v1/invites/accept/:token/finish', perm: 'public-invite', body: {} },
+  { method: 'GET', url: '/staff/v1/owner/keys', perm: 'self', ownerOnly: true },
+  { method: 'POST', url: '/staff/v1/owner/keys/start', perm: 'self', ownerOnly: true, body: {} },
+  { method: 'POST', url: '/staff/v1/owner/keys/finish', perm: 'self', ownerOnly: true, body: {} },
+  { method: 'DELETE', url: '/staff/v1/owner/keys/:id', perm: 'self', ownerOnly: true },
   // Plan 4 Task 28: News, written by the owner.
   { method: 'POST', url: '/staff/v1/news', perm: 'site.control', body: { title: 'Matrix', body: 'A message.' } },
   { method: 'PUT', url: '/staff/v1/news/:id', perm: 'site.control', body: { title: 'Matrix', body: 'Edited.' } },

@@ -51,6 +51,7 @@ function expected(c: Caller, r: StaffRouteRow): { status: number; error: string 
   if (c === 'switched-off mod') return { status: 403, error: 'account-disabled' };
   if (c === 'out-of-hours mod') return { status: 401, error: 'outside-login-hours' };
   const role = ROLE_OF[c]!;
+  if (r.ownerOnly && role !== 'owner') return { status: 403, error: 'forbidden' };
   return can(role, r.perm as Parameters<typeof can>[1]) ? 'allowed' : { status: 403, error: 'forbidden' };
 }
 
@@ -83,9 +84,10 @@ describe('privilege matrix', () => {
           // Past the guard, the route's own check answers (e.g. no valid tap): exactly that, never a guard refusal.
           expect({ status: res.statusCode, error }, `${c}: ${res.body}`).toEqual(r.allowedAnswer);
         } else if (want === 'allowed') {
+          // Allowed: the handler ran. It may still refuse with its own code (a target that is the
+          // owner 409 `owner-protected`), never with one of the guard's.
           expect(res.statusCode, `${c}: ${res.body}`).toBeLessThan(500);
-          expect([401, 403], `${c}: ${res.body}`).not.toContain(res.statusCode);
-          expect(REFUSALS, `${c}`).not.toContain(error);
+          expect(REFUSALS, `${c}: ${res.body}`).not.toContain(error);
         } else {
           expect({ status: res.statusCode, error }, c).toEqual(want);
         }

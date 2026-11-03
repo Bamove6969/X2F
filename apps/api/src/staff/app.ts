@@ -7,6 +7,9 @@ import { EventBus } from '../events/bus.js';
 import { newBudgets } from '../limits.js';
 import { addSecurityHeaders } from '../static/serve.js';
 import { assertRoutePerm, requireStaff, type StaffRoutePerm } from './guard.js';
+import { staffInviteRoutes } from './invites.js';
+import { staffMemberRoutes } from './members.js';
+import { ownerKeyRoutes } from './ownerKeys.js';
 import { staffFeedbackRoutes } from './feedback.js';
 import { keyTapRoutes } from './keyTap.js';
 import { staffLoginRoutes } from './login.js';
@@ -114,6 +117,10 @@ export async function buildStaffApi(deps: StaffDeps, options: { logStream?: { wr
   // Plan 4 Task 8: the owner's settings (settings.write) and the site controls (site.control).
   staffSettingsRoutes(app);
   staffSiteRoutes(app);
+  // Plan 4 Task 7: staff management, invites and the owner's keys.
+  staffMemberRoutes(app);
+  staffInviteRoutes(app);
+  ownerKeyRoutes(app);
   // Plan 4 Task 28: the owner writes News (site.control).
   staffNewsRoutes(app);
   // Plan 5 Tasks 4 and 21: the owner reads platform feedback and the feedback form (feedback.read).
