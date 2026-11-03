@@ -784,6 +784,31 @@ describe('owner answers (2026-11-02)', () => {
     }
   });
 
+  it("owner Q15: notes allow the apostrophe thousands separator (Swiss style) like commas", () => {
+    for (const s of [
+      "Paid 1'250'000 CHF, smooth",
+      "sent 250'000",
+      "about 123'456'789 VND",
+      "1'250'000.50 CHF",
+      'Paid 1\u2019250\u2019000 CHF',
+      'about 123\u2019456\u2019789',
+    ]) {
+      expect(detectSensitiveText(s), s).toEqual([]);
+    }
+  });
+
+  it('owner Q15: an apostrophe-grouped number is treated exactly like a comma-grouped one, in notes and images', () => {
+    // Commas are not refused in notes in any length today (item 37: other separators stay best
+    // effort); the apostrophe follows the comma, nothing more and nothing less.
+    for (const c of ['1,250,000', '123,456,789', '1,234,567,890', '4,111,111,111,111,111', '012,345,678', '1,2345,678', '+41,612,345,678', 'Ref 1,250,000', '4111,1111,1111,1111', 'acct 1,250,000.50']) {
+      for (const q of ["'", '\u2019']) {
+        const a = c.replaceAll(',', q);
+        expect(detectSensitiveText(a), a).toEqual(detectSensitiveText(c));
+        expect(masked(ocr(a)).map(([, k]) => k), a).toEqual(masked(ocr(c)).map(([, k]) => k));
+      }
+    }
+  });
+
   it('item 29: proof images are unchanged (a grouped number is still masked)', () => {
     expect(maskedTexts(ocr('Ref 1 250 000'))).toEqual(['1', '250', '000']);
     expect(maskedTexts(ocr('Ref 1.250.000'))).toEqual(['1.250.000']);
@@ -873,6 +898,15 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     [['You sent 1250000'], ['1250000'], 125000000n, 2],
     // 16 digits: longer than the amount reader takes, still the trade's amount after a label.
     [['Amount 1234567890123456 VND'], ['1234567890123456'], 1234567890123456n, 0],
+    // Owner Q17 (2026-11-02): a number exactly equal to the trade amount stays clear with no label.
+    [['Ref 12345678'], ['12345678'], 1234567800n, 2],
+    [['12345678'], ['12345678'], 1234567800n, 2],
+    [['Transfer 250,000 completed'], ['250,000'], 25000000n, 2],
+    [['Fee 1.250.000'], ['1.250.000'], 125000000n, 2],
+    [["1'250'000"], ["1'250'000"], 125000000n, 2],
+    [['Acct 98765432', '250000'], ['250000'], 25000000n, 2],
+    [['Amount sent to acct 12345678'], ['12345678'], 1234567800n, 2],
+    [['Ref 1234567890123456'], ['1234567890123456'], 1234567890123456n, 0],
     // Next to details that are masked.
     [['Paid to Mira Kowalski $412.50'], ['$412.50'], 41250n, 2],
     [['To: Mira Kowalski 412.50'], ['412.50'], 41250n, 2],
@@ -919,13 +953,34 @@ describe('owner (2026-11-02): the automatic blur never hides the amount', () => 
     expect(amountBoxes(ocr('Amount 1 234,56 €'), { ...KEEP, fiatCents: 123456n })).toHaveLength(3);
   });
 
-  it('a whole number is kept only when it is the trade amount right after an amount label', () => {
-    // Not the trade amount: still masked.
+  it('a whole number is kept only when it equals the trade amount, label or not (owner Q17)', () => {
+    // Not the trade amount: still masked, even after a label.
     expect(maskedTexts(ocr('Amount: 12345678'))).toEqual(['12345678']);
-    // The trade amount without a label: a bare number could be a reference, still masked.
-    expect(maskedTexts(ocr('Ref 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
     expect(maskedTexts(ocr('Amount 1234567890123456'))).toEqual(['1234567890123456']);
-    // The label must be right before the number.
-    expect(maskedTexts(ocr('Amount sent to acct 12345678'), { ...KEEP, fiatCents: 1234567800n })).toEqual(['12345678']);
+    // The trade amount without a label: "most likely just another spot where the amount is shown".
+    const keep = { ...KEEP, fiatCents: 1234567800n };
+    expect(maskedTexts(ocr('Ref 12345678'), keep)).toEqual([]);
+    expect(maskedTexts(ocr('Amount sent to acct 12345678'), keep)).toEqual([]);
+    expect(amountBoxes(ocr('Ref 12345678'), keep)).toEqual([{ x0: 40, y0: 0, x1: 120, y1: 16 }]);
+  });
+
+  it('owner Q17: a longer number that merely contains the trade amount is still masked', () => {
+    const at = (fiatCents: bigint): typeof KEEP => ({ ...KEEP, fiatCents });
+    // A longer digit run.
+    expect(maskedTexts(ocr('Acct 9912345678'), at(1234567800n))).toEqual(['9912345678']);
+    expect(maskedTexts(ocr('Acct 1234567899'), at(1234567800n))).toEqual(['1234567899']);
+    // Leading zeros: an account or reference, not an amount.
+    expect(maskedTexts(ocr('Acct 0012345678'), at(1234567800n))).toEqual(['0012345678']);
+    // One group of a card, a phone, an IBAN or a grouped account.
+    expect(maskedTexts(ocr('Card 4111 1111 1111 1111'), at(111100n))).toEqual(['4111', '1111', '1111', '1111']);
+    expect(maskedTexts(ocr('Card 4111-1111-1111-1111'), at(111100n))).toEqual(['4111-1111-1111-1111']);
+    expect(maskedTexts(ocr('Tel 555-201-3344'), at(334400n))).toEqual(['555-201-3344']);
+    expect(maskedTexts(ocr('Tel +44 7700 900123'), at(90012300n))).toEqual(['+44', '7700', '900123']);
+    expect(maskedTexts(ocr('IBAN DE89 3704 0044 0532 0130 00'), at(370400n))).toEqual(['DE89', '3704', '0044', '0532', '0130', '00']);
+    expect(maskedTexts(ocr('Acct 1234 567890'), at(56789000n))).toEqual(['1234', '567890']);
+    // Glued to letters or after '#': a reference.
+    expect(maskedTexts(ocr('Ref #12345678'), at(1234567800n))).toEqual(['#12345678']);
+    expect(maskedTexts(ocr('Ref 12345678AB'), at(1234567800n))).toEqual(['12345678AB']);
+    expect(amountBoxes(ocr('Card 4111 1111 1111 1111'), at(111100n))).toEqual([]);
   });
 });
