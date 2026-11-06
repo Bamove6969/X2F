@@ -1,0 +1,30 @@
+{
+  "name": "@x2f/staff-web",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "dev": "vite"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "happy-dom": "20.14.5",
+    "vite": "8.3.3"
+  },
+  "dependencies": {
+    "@fontsource/atkinson-hyperlegible-mono": "5.3.0",
+    "@fontsource/atkinson-hyperlegible-next": "5.3.0",
+    "@fontsource/familjen-grotesk": "5.3.0",
+    "@simplewebauthn/browser": "14.0.0",
+    "@x2f/auth-client": "0.0.0",
+    "@x2f/staff": "0.0.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router": "8.4.0"
+  }
+}
