@@ -156,3 +156,31 @@ Every open owner question design holds, as of canvas v118. Nothing on this list 
 - Not done: no React bundle. The cards are static HTML and boards copy their inline styles, as before. The cover still draws the v1 palette, which is unchanged in v2.
 
 Section 6 of the handoff is complete. Next: the proof pop-ups (63/64/65) when you send them.
+
+## 6 Nov 2026: design review, proof pop-ups 63/64/65
+
+Reviewed from code: `origin/wip/third-p5-proof-popups` @ `e5780990`. Files: `apps/web/src/screens/proof/ProofPrompts.tsx` (PP below), `apps/web/src/proof/uploaderChecks.ts`, and the kit pieces they use (`ui/Sheet.tsx`, `ui/Notice.tsx`, `ui/Button.tsx`, `ui/ui.css`, `screens/screens.css`). The boards are ProofBlur (+Wide), SellerConfirm, Warn-Release and CantDoThat.
+
+**Verdict:** the structure is right. Each pop-up is the CantDoThat sheet pattern (a phone sheet, a centred dialog on Desktop, no X, closing it goes back), each has one primary, the own-blur warning is a caution callout announced as a status, and nothing blocks a send that the owner said to allow. One P1 (the warning must not depend on the text box styling being wrong), five P2, three P3. Nothing here is a wording or rule call by design; those are listed separately as owner questions.
+
+**P1**
+- **P1-1 · the text box on 64 is invisible against the sheet.** File and line: PP:91 uses `.x2f-input` (screens.css:56): `background: var(--x2f-surface)`, the same colour as the sheet (ui.css:305). So the box is only a 1px line on an identical ground, and its focus ring is orange (`monero-ink`, offset 1). Fix (v2 §11, also build-review X4): `.x2f-input { background: var(--x2f-surface-raised); padding: 0 14px; min-height: 48px; border-radius: var(--x2f-radius-sm); }` and `textarea.x2f-input { padding: 12px 14px; min-height: 96px; }`. `.x2f-input:focus-visible { outline: 2px solid var(--x2f-ink); outline-offset: 2px; }`. This is kit-wide, so every form gets it.
+
+**P2**
+- **P2-1 · the tile doesn't say anything is wrong.** PP:33-39 InfoTile is the neutral raised tile with an info icon, which on CantDoThat means "X2F rule, nothing wrong with you". Here the app found a problem with the screenshot. Fix: a toned tile for both 63 and 64: `.x2f-icon-tile[data-tone='caution'] { background: color-mix(in srgb, var(--x2f-caution) 14%, transparent); color: var(--x2f-caution); }`. Use `<Icon name="clock">` for 63 (wrong date) and `<Icon name="alert">` for 64 (no amount). Pass `data-tone="caution"` from PP:35.
+- **P2-2 · backdrop colour.** ui.css:298-303 uses `ground` at 0.8 opacity. v2 uses `--scrim` (night `rgba(0,0,0,0.6)`, day `rgba(18,22,28,0.45)`). Fix: `.x2f-sheet-backdrop { background: var(--x2f-scrim); opacity: 1; }`, with `--x2f-scrim` added to the theme tokens. Kit-wide.
+- **P2-3 · 64 has no way back except a gesture.** PP:82 `closeButton={false}`. The handle is hidden on Desktop (ui.css:697), so leaving without sending takes Escape or a backdrop click, and "Choose another screenshot" leaves the editor. Fix: a third button under the two, `<Button variant="tertiary" onClick={onClose}>Back</Button>`. Its word is COPY-UNSIGNED.
+- **P2-4 · 64's buttons on Desktop.** PP:93-98 stacks both full width inside the 520 dialog. v2 §18: wide actions sit inline. Fix: on `[data-wide='dialog']` at ≥1000px, wrap the buttons in `.x2f-sheet__actions { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 12px; }`, primary 48h min-width 160. Phone stays stacked, primary first. The same applies to 63's single button (right-aligned, 48h).
+- **P2-5 · the item 65 disclaimer is a loose muted line.** PP:116-121 uses `.x2f-note` (13px muted, screens.css:106). v2: warnings go in a callout. Fix: on the seller's proof card (Task 16), put it in the existing caution callout under "Screenshots can be faked." (SellerConfirm), as its second sentence. Don't add a separate `<p>`. Placement only; the sentence itself is COPY-UNSIGNED.
+
+**P3**
+- **P3-1 · dialog width.** ui.css:697 sets 520px. CantDoThat-Wide and the v2 design system use 480. Fix: `width: 480px` (it also affects LoginApprove-Wide).
+- **P3-2 · no character count on 64.** PP:91 caps at 500 silently. Fix: a helper under the box, `<span class="x2f-help"><mono>{n}</mono> of <mono>500</mono></span>` (13/18 muted, digits mono).
+- **P3-3 · the disabled Send proof gives no reason.** PP:93 is disabled until text is typed. Fix: `aria-describedby` from the button to the helper in P3-2, so a screen reader hears why it is disabled.
+
+**For the owner (wording and rules; design's recommendation beside each, nothing changed in code)**
+- 63, block or allow? `uploaderChecks.ts:6` OWNER-Q. Recommendation: block, as the owner's "redo proof and resubmit" reads. Blocks: Task 15 wiring.
+- 63, show the dates? Recommendation: add one line under the owner's sentence, "Your screenshot shows <date>; this trade started <date>." (dates in mono). It tells people what to fix. It's new wording, so it's the owner's call.
+- 64, required, and who reads it? PP:61-62 OWNER-Q. Recommendation: required (the owner's "leave an explanation"). It goes to the seller with the proof, and to a moderator if there's a dispute. Not to detector feedback.
+- Hidden-by-you text, PP:107: when both are hidden, two sentences each ending "the seller may not be able to…". The ProofBlur board's draft is one sentence: "The amount or memo is hidden, so satoshi_ghost may not be able to check your payment." Recommendation: one sentence that names the seller, using "memo" (the board's word, not "the note with this trade's code"). This is wording, so it's the owner's call.
+- All five strings (PP:18-28), the titles "Screenshot not current" and "Amount not found", the label "Your explanation", and the buttons "Redo proof", "Send proof" and "Choose another screenshot" are COPY-UNSIGNED.
