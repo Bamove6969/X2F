@@ -301,34 +301,53 @@ async function traderPgpLogin(b: StaffBrowser, key: { publicKey: string; private
 
 /**
  * Owner 2026-11-03 (Q19): staff have two separate logins, an ordinary trader account for trading and
- * the staff account for staff work. A staff account logs in only on the staff API: on the trader
- * API it is refused with 403 `wrong-account-kind`, and only after its key or PGP code verified, so
- * someone without the credential gets Plan 2's ordinary refusal and learns nothing about the
- * account. OWNER-Q 19a: the owner still logs in on both (the price-health page lives on the trader
- * API) until the owner decides. Traders and team members are unchanged.
+ * the staff account for staff work. A staff account logs in only on the staff API. On the trader
+ * API's login mounts it is EXACTLY an unknown login name or key (security review RV5 I1): the
+ * staff kind is "not found" at the lookup, so start and finish answer with the same status and body
+ * as for a name or key that does not exist, before and after the credential, and nothing is made.
+ * OWNER-Q 19a: the owner still logs in on both sites until the owner decides. Traders and team
+ * members are unchanged.
  */
-describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19)', () => {
+describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19; RV5 I1)', () => {
   const noSessions = async (accountId: string) =>
     (await deps.db.query('select 1 from sessions where account_id = $1', [accountId])).rows.length === 0;
-  const noPendingLogins = async (accountId: string) =>
-    (await deps.db.query("select 1 from challenges where account_id = $1 and purpose = 'second-factor'", [accountId])).rows.length === 0;
+  const noChallenges = async (accountId: string) =>
+    (await deps.db.query('select 1 from challenges where account_id = $1', [accountId])).rows.length === 0;
+  const challengeAccount = async (challengeId: string) =>
+    (await deps.db.query<{ account_id: string | null }>('select account_id from challenges where id = $1', [challengeId])).rows[0]!.account_id;
+  /** The start answer's shape, without its random values. */
+  const keyStartShape = (body: { challengeId: string; options: Record<string, unknown> & { allowCredentials: unknown[] } }) => ({
+    keys: Object.keys(body).sort(), options: Object.keys(body.options).sort(), listed: body.options.allowCredentials.length,
+  });
 
-  it('refuses a staff security key on the trader API with 403 wrong-account-kind, after the key verifies; it works on the staff site', async () => {
+  it('security key by name: a staff name answers exactly as an unknown name (start and finish), with its own real key', async () => {
     const s = await seedStaff(deps, { role: 'mod' });
     const key = await addKey(s.id);
-    const staffTry = await traderKeyLogin(traderBrowser(), s.loginName, key);
-    expect([staffTry.finish.statusCode, errorOf(staffTry.finish)]).toEqual([403, 'wrong-account-kind']);
-    // A key that is not the account's gets Plan 2's refusal, never this one (nothing to learn without the key).
-    const stranger = createSoftAuthenticator({ backedUp: false, userVerified: true });
-    const bad = await traderKeyLogin(traderBrowser(), s.loginName, stranger);
-    expect([bad.finish.statusCode, errorOf(bad.finish)]).toEqual([401, 'webauthn-failed']);
+    const results = [];
+    for (const name of [s.loginName, uniqueTrader()]) {
+      const b = traderBrowser();
+      const start = await b.post('/v1/login/webauthn/start', { loginName: name });
+      const finish = await b.post('/v1/login/webauthn/finish', {
+        challengeId: start.json().challengeId, response: key.authenticate(start.json().options, TRADER_ORIGIN), deviceLabel: 'Desk',
+      });
+      results.push({
+        start: [start.statusCode, keyStartShape(start.json())],
+        listedTheKey: start.json().options.allowCredentials.some((c: { id: string }) => c.id === key.credentialId),
+        boundTo: await challengeAccount(start.json().challengeId),
+        finish: [finish.statusCode, finish.json()],
+        session: b.cookies[SESSION_COOKIE] !== undefined,
+      });
+    }
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]!.finish).toEqual([401, { error: 'webauthn-failed' }]);
+    expect(results[0]!.boundTo).toBeNull();
     expect(await noSessions(s.id)).toBe(true);
-    expect(await noPendingLogins(s.id)).toBe(true);
+    expect(await noChallenges(s.id)).toBe(true);
     // The same key on the staff site works.
     expect((await keyFirstStep(new StaffBrowser(app), s.loginName, key)).json()).toMatchObject({ status: 'second-factor' });
   });
 
-  it('refuses a staff second step on the trader API (a pendingId of a staff first factor) with 403 wrong-account-kind', async () => {
+  it('security key second step: a staff pendingId answers exactly as an unknown pendingId', async () => {
     const s = await seedStaff(deps, { role: 'senior' });
     const key = await addKey(s.id);
     const b = traderBrowser();
@@ -342,41 +361,53 @@ describe('staff accounts log in only on the staff site (owner 2026-11-03, Q19)',
        values ($1, $2, 'second-factor', 'pair', $3, $4, $5) returning id`,
       [s.id, dev, JSON.stringify({ first: { method: 'pgp', fingerprint: 'a'.repeat(40), fingerprints: ['a'.repeat(40)] } }), now, new Date(now.getTime() + 5 * MIN)],
     );
-    const pendingId = rows[0]!.id;
-    const start = (await b.post('/v1/login/webauthn/start', { pendingId })).json();
-    const finish = await b.post('/v1/login/webauthn/finish', {
-      challengeId: start.challengeId, response: key.authenticate(start.options, TRADER_ORIGIN), deviceLabel: 'Desk', pendingId,
-    });
-    expect([finish.statusCode, errorOf(finish)]).toEqual([403, 'wrong-account-kind']);
+    const results = [];
+    for (const pendingId of [rows[0]!.id, '00000000-0000-4000-8000-0000000000aa']) {
+      const start = await b.post('/v1/login/webauthn/start', { pendingId });
+      const finish = await b.post('/v1/login/webauthn/finish', {
+        challengeId: start.json().challengeId, response: key.authenticate(start.json().options, TRADER_ORIGIN), deviceLabel: 'Desk', pendingId,
+      });
+      results.push({
+        start: [start.statusCode, keyStartShape(start.json())],
+        boundTo: await challengeAccount(start.json().challengeId),
+        finish: [finish.statusCode, finish.json()],
+      });
+    }
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]!.finish).toEqual([401, { error: 'webauthn-failed' }]);
     expect(b.cookies[SESSION_COOKIE]).toBeUndefined();
     expect(await noSessions(s.id)).toBe(true);
   });
 
-  it('refuses a staff PGP key on the trader API with 403 wrong-account-kind, after the code verifies', async () => {
+  it('PGP: a staff key answers exactly as an unknown key (start and finish), even with the right code', async () => {
     const s = await seedStaff(deps, { role: 'mod' });
     const k = await genKey();
     await insertPgpKey(deps.db, deps.config, { accountId: s.id, fingerprint: k.fingerprint, armored: k.publicKey, now: deps.clock() });
-    const staffTry = await traderPgpLogin(traderBrowser(), k);
-    expect([staffTry.finish.statusCode, errorOf(staffTry.finish)]).toEqual([403, 'wrong-account-kind']);
-    // A wrong code gets Plan 2's refusal.
-    const b = traderBrowser();
-    const start = await b.post('/v1/login/pgp/start', { key: k.publicKey });
-    const wrong = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code: '000000', deviceLabel: 'Desk' });
-    expect([wrong.statusCode, errorOf(wrong)]).toEqual([401, 'code-invalid']);
-    // An unknown key: unchanged.
-    const unknown = await traderPgpLogin(traderBrowser(), await genKey());
-    expect(unknown.decoy).toBe(true);
-    expect([unknown.finish.statusCode, errorOf(unknown.finish)]).toEqual([401, 'code-invalid']);
+    const results = [];
+    for (const key of [k, await genKey()]) {
+      const b = traderBrowser();
+      const start = await b.post('/v1/login/pgp/start', { key: key.publicKey });
+      const code = codeOf(await decrypt(start.json().encryptedMessage, key.privateKey, undefined, deps.clock()));
+      const finish = await b.post('/v1/login/pgp/finish', { challengeId: start.json().challengeId, code, deviceLabel: 'Desk' });
+      results.push({
+        start: [start.statusCode, Object.keys(start.json()).sort()],
+        boundTo: await challengeAccount(start.json().challengeId),
+        finish: [finish.statusCode, finish.json()],
+        session: b.cookies[SESSION_COOKIE] !== undefined,
+      });
+    }
+    expect(results[0]).toEqual(results[1]);
+    expect(results[0]!.finish).toEqual([401, { error: 'code-invalid' }]);
     expect(await noSessions(s.id)).toBe(true);
-    expect(await noPendingLogins(s.id)).toBe(true);
+    expect(await noChallenges(s.id)).toBe(true);
   });
 
-  it('refuses a staff backup-code login on the trader API as for an unknown name (staff have none)', async () => {
+  it('backup codes: a staff name answers as an unknown name (staff have none)', async () => {
     const s = await seedStaff(deps, { role: 'mod' });
     for (const kind of ['totp', 'recovery-code']) {
       const res = await traderBrowser().post('/v1/login/backup', { loginName: s.loginName, kind, code: '123456', deviceLabel: 'D' });
       const unknown = await traderBrowser().post('/v1/login/backup', { loginName: uniqueTrader(), kind, code: '123456', deviceLabel: 'D' });
-      expect([res.statusCode, errorOf(res)]).toEqual([unknown.statusCode, errorOf(unknown)]);
+      expect([res.statusCode, res.json()]).toEqual([unknown.statusCode, unknown.json()]);
     }
   });
 
