@@ -13,7 +13,12 @@
 // feedback link (Plan 5 Task 21); the rest (maintenance, no wallet, a method off the catalog) are
 // not refusals and stay inline. Not built yet: the board's per-offer Edit link (no edit screen until
 // Task 35), and the Wide board's table layout (tripwire NEEDS_DESIGN_MYOFFERS).
-import { useCallback, useEffect, useId, useState } from 'react';
+//
+// Two panes (a fold open, 600-999 px; Fold-MyOffers board): the list in the first pane, each card's
+// text a "show details" row (kit PickButton, inside the SelectCard's body), and the shown offer's
+// details with its own switch in the next pane (myoffers/MyOfferDetail.tsx). The first offer is
+// shown until another is picked. The screen stays mounted when the layout changes (src/ui/Panes.tsx).
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react';
 import { Link } from 'react-router';
 import { ApiCallError } from '../api/client.js';
 import { ActionBar } from '../ui/ActionBar.js';
@@ -23,10 +28,14 @@ import { CANT_DO_TITLE, MY_OFFERS_HOLD, TRADING_HOLD_CODE, myOffersCantDoText, p
 import { Checkbox } from '../ui/Checkbox.js';
 import { EmptyState } from '../ui/EmptyState.js';
 import { Icon } from '../ui/icons.js';
+import { hasPanes, useFoldLayout } from '../ui/fold.js';
 import { Notice, type NoticeTone } from '../ui/Notice.js';
+import { Panes } from '../ui/Panes.js';
+import { PickButton } from '../ui/PickButton.js';
 import { SelectAll } from '../ui/SelectAll.js';
 import { SelectCard } from '../ui/SelectCard.js';
 import { Switch } from '../ui/Switch.js';
+import { MyOfferDetail } from './myoffers/MyOfferDetail.js';
 import { fetchMyOffers, switchOffers, type MyOffer, type OfferState, type SwitchResult } from './myoffers/api.js';
 import {
   FOOTNOTE,
@@ -63,6 +72,9 @@ export function MyOffers() {
   // line per offer kept off (design session 2 Nov 2026).
   const [cantDo, setCantDo] = useState<{ title: string; body: string; from: CantDoCode; items?: string[] | undefined } | null>(null);
   const ids = useId();
+  const layout = useFoldLayout();
+  const panes = hasPanes(layout);
+  const [shownId, setShownId] = useState<string | null>(null);
 
   const reload = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -88,6 +100,12 @@ export function MyOffers() {
   const nSelected = offers.filter((o) => selected.has(o.id)).length;
   const allSelected = offers.length > 0 && nSelected === offers.length;
   const held = isHeld(offers, refusedHold);
+  const shown = offers.find((o) => o.id === shownId) ?? offers[0] ?? null;
+  // A refusal's line, left out during a hold: every offer already says "Paused · trading hold".
+  const whyFor = (id: string): string | undefined => {
+    const code = refusals.get(id);
+    return code === undefined || (held && code === TRADING_HOLD_CODE) ? undefined : refusalLine(code);
+  };
 
   /** Switches `target` (explicit ids, in batches of SWITCH_BATCH) and shows what happened. */
   async function run(target: string[], status: OfferState, clearSelection: boolean): Promise<void> {
@@ -161,7 +179,7 @@ export function MyOffers() {
   const ready = load.kind === 'ready';
   const listed = ready && offers.length > 0;
 
-  return (
+  const list = (
     <main className="x2f-screen" data-screen="my-offers">
       <header className="x2f-row">
         <Link to="/sell" aria-label="Back" className="x2f-icon-button">
@@ -233,9 +251,7 @@ export function MyOffers() {
 
           <ul className="x2f-list" aria-label="My offers">
             {offers.map((o) => {
-              const code = refusals.get(o.id);
-              // During a hold every row already says "Hidden · trading hold"; a second line would repeat it.
-              const why = code === undefined || (held && code === TRADING_HOLD_CODE) ? undefined : refusalLine(code);
+              const why = whyFor(o.id);
               const status = statusLine(o, held);
               const [price, priceSub] = offerPriceParts(o);
               const p = `${ids}-${o.id}`;
@@ -269,26 +285,40 @@ export function MyOffers() {
                   <span id={`${p}-select`} hidden>
                     Select
                   </span>
-                  <span className="x2f-select-card__eyebrow" id={`${p}-title`}>
-                    {offerTitle(o)}
-                  </span>
-                  <span className="x2f-select-card__title" id={`${p}-methods`}>
-                    {offerMethods(o)}
-                  </span>
-                  <span className="x2f-select-card__line" id={`${p}-price`}>
-                    <span className="x2f-select-card__mono">{price}</span> · {priceSub}
-                  </span>
-                  <span className="x2f-select-card__line" id={`${p}-limits`}>
-                    <span className="x2f-select-card__mono">{offerLimitsRange(o)}</span> per trade
-                  </span>
-                  <span className="x2f-select-card__status" id={`${p}-status`} data-tone={status.tone} data-chip={held ? 'true' : undefined} data-part="status">
-                    {status.text}
-                  </span>
-                  {why ? (
-                    <span className="x2f-select-card__why" id={`${p}-why`} data-part="refused">
-                      {why}
+                  <RowText
+                    pick={
+                      panes
+                        ? {
+                            pressed: shown?.id === o.id,
+                            onPick: () => setShownId(o.id),
+                            // Named by the title and methods; the status and refusal describe it (review N5).
+                            labelledBy: `${p}-title ${p}-methods`,
+                            describedBy: why ? `${p}-status ${p}-why` : `${p}-status`,
+                          }
+                        : null
+                    }
+                  >
+                    <span className="x2f-select-card__eyebrow" id={`${p}-title`}>
+                      {offerTitle(o)}
                     </span>
-                  ) : null}
+                    <span className="x2f-select-card__title" id={`${p}-methods`}>
+                      {offerMethods(o)}
+                    </span>
+                    <span className="x2f-select-card__line" id={`${p}-price`}>
+                      <span className="x2f-select-card__mono">{price}</span> · {priceSub}
+                    </span>
+                    <span className="x2f-select-card__line" id={`${p}-limits`}>
+                      <span className="x2f-select-card__mono">{offerLimitsRange(o)}</span> per trade
+                    </span>
+                    <span className="x2f-select-card__status" id={`${p}-status`} data-tone={status.tone} data-chip={held ? 'true' : undefined} data-part="status">
+                      {status.text}
+                    </span>
+                    {why ? (
+                      <span className="x2f-select-card__why" id={`${p}-why`} data-part="refused">
+                        {why}
+                      </span>
+                    ) : null}
+                  </RowText>
                 </SelectCard>
               );
             })}
@@ -342,5 +372,43 @@ export function MyOffers() {
         </ActionBar>
       ) : null}
     </main>
+  );
+
+  return (
+    <Panes
+      layout={layout}
+      main={list}
+      side={
+        panes && shown ? (
+          <MyOfferDetail
+            offer={shown}
+            busy={busy}
+            held={held}
+            why={whyFor(shown.id)}
+            onSwitch={() => void run([shown.id], shown.status === 'live' ? 'paused' : 'live', false)}
+          />
+        ) : null
+      }
+      {...(shown ? { sideLabel: `Details: ${offerTitle(shown)}` } : {})}
+    />
+  );
+}
+
+/**
+ * An offer card's text: as it is on a phone; in two panes, the row that shows the offer's details
+ * beside the list (kit PickButton, drawn bare inside the SelectCard, ui.css).
+ */
+function RowText({
+  pick,
+  children,
+}: {
+  pick: { pressed: boolean; onPick: () => void; labelledBy: string; describedBy: string } | null;
+  children: ReactNode;
+}) {
+  if (pick === null) return <>{children}</>;
+  return (
+    <PickButton pressed={pick.pressed} onPick={pick.onPick} labelledBy={pick.labelledBy} describedBy={pick.describedBy} className="x2f-select-card__pick">
+      {children}
+    </PickButton>
   );
 }

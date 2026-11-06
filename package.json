@@ -15,7 +15,7 @@
     "tokens": "tsx tools/tokens-to-css.ts",
     "copy-lint": "tsx tools/copy-lint.ts",
     "audit": "npm audit --omit=dev",
-    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --error --metrics=off packages apps tools",
+    "semgrep": "~/.local/semgrep-venv/bin/semgrep scan --config p/typescript --config p/nodejs --config p/secrets --config tools/semgrep --error --metrics=off packages apps tools",
     "separation-check": "tsx tools/separation-check.ts",
     "check": "bash tools/check.sh"
   },

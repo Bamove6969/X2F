@@ -152,6 +152,9 @@ describe('the model', () => {
     // Design session 2 Nov 2026: one caution chip, on or off.
     expect(statusLine(a, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
     expect(statusLine(b, true)).toEqual({ text: 'Paused · trading hold', tone: 'caution' });
+    // Plan 5 Task 3 review M3: hidden until the poster rates their last trade.
+    expect(statusLine({ ...a, hidden: 'review-pending' })).toEqual({ text: 'On, hidden until you rate your last trade', tone: 'caution' });
+    expect(parseMyOffers([{ ...RAW[0], hidden: 'review-pending' }])[0]!.hidden).toBe('review-pending');
     expect(countLine([a, b, c])).toBe('1 of 3 offers on');
     expect(countLine([a, b, c], true)).toBe('Trading hold · all offers paused');
     expect(isHeld([a, b], false)).toBe(false);
@@ -468,5 +471,43 @@ describe('the My offers screen', () => {
     vi.stubGlobal('fetch', vi.fn(async () => json(401, { error: 'not-authenticated' })));
     host = await mount();
     expect(q<HTMLAnchorElement>(host, 'a.x2f-link').getAttribute('href')).toBe('/login?returnTo=%2Fprofile%2Foffers');
+  });
+});
+
+describe('My offers on a fold: two panes (Fold-MyOffers)', () => {
+  const twoPanes = (q: string) => ({ matches: q === '(min-width: 600px)', addEventListener() {}, removeEventListener() {} });
+  beforeEach(() => vi.stubGlobal('matchMedia', twoPanes));
+
+  it('the list in the first pane, the shown offer in the next; a row picks the offer, its switch works there too', async () => {
+    const host = await mount();
+    const side = q(host, '[data-pane="side"]');
+    expect(q(host, '[data-pane="main"] [data-screen="my-offers"]')).not.toBeNull();
+    expect(side.getAttribute('aria-label')).toBe('Details: Selling XMR · USD');
+    expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(A);
+    const picks = [...host.querySelectorAll('[data-pane="main"] button[aria-pressed]')];
+    expect(picks.map((b) => b.getAttribute('aria-pressed'))).toEqual(['true', 'false', 'false']);
+    // Review N5: named by its title and methods, described by its status (not the whole row).
+    expect(picks[0]!.getAttribute('aria-labelledby')).toMatch(/-title \S+-methods$/);
+    expect(picks[0]!.getAttribute('aria-describedby')).toMatch(/-status$/);
+    await click(picks[1]!);
+    expect(q(side, '[data-detail-offer]').getAttribute('data-detail-offer')).toBe(B);
+    expect(side.textContent).toContain('Who can trade');
+    expect(side.textContent).toContain('5+ completed trades');
+    expect(side.textContent).toContain('A fixed price doesn’t follow the market.');
+    const detailSwitch = q<HTMLButtonElement>(side, '[data-part="detail-switch"]');
+    // Review N6: the pane's switch is the kit Switch, the same part as each card's.
+    expect(detailSwitch.className).toBe(q(host, '[data-pane="main"] [data-part="switch"]').className);
+    expect(detailSwitch.getAttribute('aria-checked')).toBe('false');
+    await click(detailSwitch);
+    expect(posts().map((c) => c.body)).toEqual([{ ids: [B], status: 'live' }]);
+    expect(isOn(host, B)).toBe(true);
+    expect(q(side, '[data-part="detail-switch"]').getAttribute('aria-checked')).toBe('true');
+  });
+
+  it('on a phone there are no panes and no pick rows', async () => {
+    vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener() {}, removeEventListener() {} }));
+    const host = await mount();
+    expect(host.querySelector('[data-pane="side"]')).toBeNull();
+    expect(host.querySelector('button[aria-pressed]')).toBeNull();
   });
 });

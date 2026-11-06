@@ -35,6 +35,12 @@ textarea:focus-visible,
   outline-offset: 2px;
 }
 
+/* Selection is ink, never orange (design conventions, 2 Nov 2026; review 1 Nov X1). */
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: var(--x2f-ink);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--x2f-ink-muted);

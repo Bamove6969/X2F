@@ -102,7 +102,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
             ))}
           </div>
         </div>
-        <h1 className="x2f-browse__title">{copy.heading}</h1>
+        <h1 className="x2f-browse__title x2f-screen-title">{copy.heading}</h1>
         <RadioChips
           label={{ by: 'browse-currency' }}
           options={CURRENCIES.map((c) => ({ id: c, label: c }))}
@@ -117,14 +117,17 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
           <label htmlFor="browse-search" className="x2f-visually-hidden">
             Search payment methods
           </label>
-          <input
-            id="browse-search"
-            className="x2f-input x2f-browse__search"
-            type="search"
-            value={query}
-            placeholder={total === null ? 'Search payment methods' : `Search ${total} payment methods`}
-            onChange={(e) => setQuery(e.target.value)}
-          />
+          <span className="x2f-browse__search-box">
+            <Icon name="search" size={20} stroke={1.75} />
+            <input
+              id="browse-search"
+              className="x2f-input x2f-browse__search"
+              type="search"
+              value={query}
+              placeholder={total === null ? 'Search payment methods' : `Search ${total} payment methods`}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+          </span>
         </div>
         <RadioChips label={{ name: 'Sort' }} options={SORT_IDS.map((id, i) => ({ id, label: copy.methodSorts[i]! }))} value={sort} onChange={setSort}>
           <span className="x2f-browse__sort-label">Sort</span>
@@ -141,7 +144,7 @@ export function MethodList({ side, copy }: { side: Side; copy: BrowseCopy }) {
         ) : null}
         {sections.map((sec) => (
           <section key={sec.title} className="x2f-browse__section">
-            <h2 className="x2f-browse__section-title">{sec.title}</h2>
+            <h2 className="x2f-browse__section-title x2f-section-title">{sec.title}</h2>
             {sec.rows.map((m) => (
               <Link key={m.id} to={withCurrency(`/${side}/${encodeURIComponent(m.id)}`)} className="x2f-method">
                 <span className="x2f-method__text">
