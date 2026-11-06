@@ -26,7 +26,8 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
 /**
  * The staff login, logout and `me` routes:
  * - `POST /staff/v1/login/security-key/{start,finish}` and `POST /staff/v1/login/pgp/{start,finish}`
- *   (Plan 2's plugins, kinds staff and owner, always two factors);
+ *   (Plan 2's plugins, kinds staff and owner, always two factors); a security key whose AAGUID is no
+ *   longer on the current allowlist is not offered and is refused (`recheckAllowlist`, Plan 4 M1);
  * - `POST /staff/v1/logout` (never 401, clears the staff cookie);
  * - `GET /staff/v1/me` → `{ username, role, nav, sessionEndsAt }`, where `sessionEndsAt` is the
  *   earliest of the idle limit, the absolute limit and the end of the login window.
@@ -34,7 +35,9 @@ export function staffLoginCheck(deps: { db: Queryable; clock: () => Date }): (ac
 export async function staffLoginRoutes(app: FastifyInstance): Promise<void> {
   const afterAuthenticate = staffLoginCheck(app.deps);
   const kinds = ['staff', 'owner'] as const;
-  await app.register(securityKeyLoginRoutes, { prefix: '/staff/v1/login/security-key', kinds: [...kinds], afterAuthenticate, routeConfig: PUBLIC_LOGIN });
+  await app.register(securityKeyLoginRoutes, {
+    prefix: '/staff/v1/login/security-key', kinds: [...kinds], realm: 'staff', afterAuthenticate, routeConfig: PUBLIC_LOGIN, recheckAllowlist: true,
+  });
   await app.register(async (sub) => pgpLoginRoutes(sub, { kinds: [...kinds], afterAuthenticate, routeConfig: PUBLIC_LOGIN }), {
     prefix: '/staff/v1/login/pgp',
   });

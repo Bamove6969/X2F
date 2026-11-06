@@ -33,14 +33,17 @@ const LABEL = 'Browser on Linux';
  * and the events route; Task 8: the identity and attestation routes; Task 19: live events, Web
  * Push and the final-alert receipts; Task 24: the release confirmations; Task 26: nudges, nudge settings
   * and blocks; Task 27: the dispute and the appeal; Task 36: My offers; Task 37: the Blocked list and unblock; Plan 5 Tasks 4 and 21: the two feedback
- * routes). Any other new route still needs a client method.
+ * routes; Plan 5 Task 3 and C12b: reviews, Skip review, the pending reviews and the traded-total setting; Plan 5 Task 10: the four past-reputation routes). Any other new route still needs a client method.
  */
 const NOT_AUTH_CLIENT = [
   'DELETE /v1/account/blocks/:displayName',
+  'DELETE /v1/account/past-rep/:id',
   'DELETE /v1/account/push',
   'GET /v1/account/blocks',
   'GET /v1/account/nudges',
   'GET /v1/account/offers',
+  'GET /v1/account/past-rep',
+  'GET /v1/account/profile/traded-total',
   'GET /v1/account/push',
   'GET /v1/chats',
   'GET /v1/chats/:chat',
@@ -51,15 +54,18 @@ const NOT_AUTH_CLIENT = [
   'GET /v1/news',
   'GET /v1/offers',
   'GET /v1/offers/:id',
-  'GET /v1/owner/price-health',
   'GET /v1/price',
+  'GET /v1/reviews/pending',
   'GET /v1/trades/:code',
   'GET /v1/trades/:code/attestation',
   'GET /v1/trades/:code/confirmations',
   'GET /v1/trades/:code/dispute',
+  'GET /v1/trades/:code/review',
   'PATCH /v1/offers/:id',
   'POST /v1/account/blocks',
   'POST /v1/account/offers/status',
+  'POST /v1/account/past-rep/finish',
+  'POST /v1/account/past-rep/start',
   'POST /v1/account/push',
   'POST /v1/chats',
   'POST /v1/chats/:chat/envelopes',
@@ -76,8 +82,11 @@ const NOT_AUTH_CLIENT = [
   'POST /v1/trades/:code/events',
   'POST /v1/trades/:code/final-alert-seen',
   'POST /v1/trades/:code/identity',
+  'POST /v1/trades/:code/review',
+  'POST /v1/trades/:code/review/skip',
   'POST /v1/trades/:code/wallet',
   'PUT /v1/account/nudges',
+  'PUT /v1/account/profile/traded-total',
 ] as const;
 
 let srv: Server;
@@ -316,9 +325,11 @@ describe('sending the visitor away after about 10 misses', () => {
   });
 });
 
-describe('a flood of bad passwords against a staff username (Review Focus 2)', () => {
-  it('security key then PGP: second-factor, then a session, at once after 12 anonymous wrong passwords', async () => {
-    const { username, soft, key } = await staffWithKeyAndPgp(srv);
+describe('a flood of bad passwords against a two-factor username (Review Focus 2)', () => {
+  // Staff log in only on the staff API (owner 2026-11-03); the owner still logs in here (OWNER-Q),
+  // with the same two-factor flow staff had, so the owner carries this check now.
+  it('owner: security key then PGP: second-factor, then a session, at once after 12 anonymous wrong passwords', async () => {
+    const { username, soft, key } = await staffWithKeyAndPgp(srv, 'owner');
     const stranger = jar(false);
     for (let i = 0; i < 13; i++) {
       const e = apiError(await failure(stranger.api.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL })));
@@ -334,10 +345,21 @@ describe('a flood of bad passwords against a staff username (Review Focus 2)', (
     await expect(
       browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId }),
     ).resolves.toEqual({ status: 'ok' });
-    // me() (Task 11) is checked in flows-t11-t12; the session's login methods are this staff account's.
+    // me() (Task 11) is checked in flows-t11-t12; the session's login methods are this owner account's.
     await expect(browser.listMethods()).resolves.toEqual([
       expect.objectContaining({ type: 'pgp' }),
       expect.objectContaining({ type: 'security-key', label: 'YubiKey' }),
     ]);
+  });
+
+  it('staff: the trader site answers a staff username as an unknown one (password, security key, PGP)', async () => {
+    const { username, soft, key } = await staffWithKeyAndPgp(srv);
+    const browser: AuthApi = jar().api;
+    expect(apiError(await failure(browser.loginPassword({ loginName: username, password: WRONG, deviceLabel: LABEL }))).code).toBe('credentials-invalid');
+    expect(apiError(await failure(loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft))))).toMatchObject({ status: 401, code: 'webauthn-failed' });
+    const start = await browser.loginPgpStart({ key: key.publicKey });
+    expect(apiError(await failure(browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL }))))
+      .toMatchObject({ status: 401, code: 'code-invalid' });
+    await expect(browser.listMethods()).rejects.toMatchObject({ status: 401 });
   });
 });

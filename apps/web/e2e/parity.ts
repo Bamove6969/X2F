@@ -551,9 +551,13 @@ export async function expectParity(
   const refsDir = o.refsDir ?? `${BOARDS_DIR}refs`;
   const failures: string[] = [];
 
-  const primaries = await page
-    .locator('[data-primary]')
-    .evaluateAll((els) => els.filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length);
+  // One page.evaluate, not locator.evaluateAll: evaluateAll finds the elements in one round trip and
+  // runs the function in another, so a screen React swaps in between (a router navigation commits in a
+  // transition, after the URL has changed) left it checking the old screen's detached button: found 0.
+  const primaries = await page.evaluate(
+    () =>
+      [...document.querySelectorAll('[data-primary]')].filter((e) => e.checkVisibility({ visibilityProperty: true, opacityProperty: true })).length,
+  );
   if (o.primary === false) {
     if (primaries !== 0) failures.push(`no [data-primary] on a board without a primary action, found ${primaries}`);
   } else if (primaries !== 1) {

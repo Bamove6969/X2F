@@ -256,16 +256,18 @@ describe('several wallets under one confirm, and the rule (owner, 2026-10-24)', 
   });
 });
 
-describe('after a staff two-factor login (Task 10 flow in flows.test.ts)', () => {
-  it('me() shows the staff account', async () => {
-    const { username, soft, key } = await staffWithKeyAndPgp(srv);
+// Staff log in only on the staff API (owner 2026-11-03; the staff me() is GET /staff/v1/me, tested in
+// apps/api/test/staff/login.test.ts). The owner still logs in here (OWNER-Q), with the same flow.
+describe('after an owner two-factor login (Task 10 flow in flows.test.ts)', () => {
+  it('me() shows the owner account', async () => {
+    const { username, soft, key } = await staffWithKeyAndPgp(srv, 'owner');
     const browser: AuthApi = jar().api;
     const first = await loginWithSecurityKey(browser, username, LABEL, ceremonyOf(soft));
     if (first.status !== 'second-factor') throw new Error('expected a second factor');
     const start = await browser.loginPgpStart({ key: key.publicKey, pendingId: first.pendingId });
     await browser.loginPgpFinish({ challengeId: start.challengeId, code: await codeFrom(start.encryptedMessage, key), deviceLabel: LABEL, pendingId: first.pendingId });
     await expect(browser.me()).resolves.toMatchObject({
-      displayName: `D${username}`, needsLoginName: false, kind: 'staff', logoutTimer: { idleHours: 2, adjustable: false },
+      displayName: `D${username}`, needsLoginName: false, kind: 'owner', logoutTimer: { idleHours: 2, adjustable: false },
     });
   });
 });

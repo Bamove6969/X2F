@@ -91,6 +91,10 @@ export default async function setup(project: TestProject): Promise<() => Promise
     const tpl = new pg.Pool({ connectionString: `${url}/${TEMPLATE_DB}`, max: 1 });
     try {
       await migrate(tpl);
+      // 301 records when it ran as the review gate's cutoff (site_flags.reviews_since, the real
+      // clock); tests run on fixed fake clocks from before that, so the template counts every trade.
+      // reviews-gate.test.ts sets its own cutoff to test it.
+      await tpl.query(`update site_flags set reviews_since = '-infinity'`);
     } finally {
       await tpl.end();
     }
