@@ -1,5 +1,5 @@
 // Settings → Security (Task 30): the login methods with the last-method guard, the new
-// payout-wallet wait explanation (no opt-in toggle), the logout-timer dropdown, remote device
+// payout-wallet wait explanation (no opt-in toggle), no logout-timer card (retired for the session length, 2 Nov), remote device
 // log-out, and the one confirm sheet for an action-bound confirm (here: making recovery codes).
 import { expect, test, type Page, type Route } from '@playwright/test';
 import { PHONE_VIEWPORTS, expectPhoneLayout, setPhone } from './phone.js';
