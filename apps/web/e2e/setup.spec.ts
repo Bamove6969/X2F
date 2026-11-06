@@ -155,6 +155,8 @@ for (const v of PHONES) {
     await acceptTerms(page);
 
     await expect(page).toHaveURL(/\/setup\/name\?/);
+    // The URL changes before the router commits the new screen: wait for the screen itself.
+    await expect(page.locator('[data-screen="setup-name"]')).toBeVisible();
     await expectParity(page, 'SetupUsername', { viewport: v });
     await pickNames(page, 'lumen.k', 'lumen-login-7');
 
@@ -180,6 +182,8 @@ for (const v of PHONES) {
     await page.click('[data-part="pgp-continue"]');
 
     await expect(page).toHaveURL(/\/setup\/backup\?/);
+    // The URL changes before the router commits the new screen: wait for the screen itself.
+    await expect(page.locator('[data-screen="setup-backup"]')).toBeVisible();
     await expectParity(page, 'SetupBackup', { viewport: v });
     await page.click('[data-part="backup-add"]');
     await page.click('[data-part="totp-start"]');
@@ -187,6 +191,8 @@ for (const v of PHONES) {
     await page.click('[data-part="totp-finish"]');
 
     await expect(page).toHaveURL(/\/setup\/wallet\?/);
+    // The URL changes before the router commits the new screen: wait for the screen itself.
+    await expect(page.locator('[data-screen="setup-wallet"]')).toBeVisible();
     await expectParity(page, 'SetupWallet', { viewport: v });
     await page.fill('#addr', ADDRESS);
     await page.click('[data-part="wallet-finish"]');
