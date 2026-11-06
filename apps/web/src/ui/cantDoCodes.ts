@@ -58,6 +58,9 @@ export const CANT_DO_CODES = [
   'review-pending',
   'lien',
   'trade-ban',
+  // Plan 4 Task 4: a staff member's login hours (a staff login, and a staff session when the
+  // window closes). The staff web app shows it (Plan 4 Task 16).
+  'outside-login-hours',
 ] as const;
 export type CantDoCode = (typeof CANT_DO_CODES)[number];
 
@@ -236,6 +239,9 @@ export const RECOVERY_SESSION_WALLETS =
 export function walletsCantDoText(code: CantDoCode): string | null {
   return code === 'recovery-session' ? RECOVERY_SESSION_WALLETS : null;
 }
+
+/** 403/401 `outside-login-hours` (Plan 4 Task 4): a staff login or session outside the login hours. COPY-UNSIGNED */
+export const OUTSIDE_LOGIN_HOURS = 'You can sign in to the staff site only during your work hours.';
 
 /** The code for the account's only login method. */
 export const LAST_METHOD_CODE = 'last-login-method' satisfies CantDoCode;

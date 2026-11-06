@@ -1,11 +1,14 @@
 // Plan 4 Task 4: the staff API shell, staff login with login hours, and staff sessions.
 import { randomBytes } from 'node:crypto';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import type { LoginHours } from '@x2f/staff';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import type { Deps } from '../../src/app.js';
 import { requireStaff } from '../../src/staff/guard.js';
 import { buildStaffApi } from '../../src/staff/app.js';
+import { staffListenFromEnv } from '../../src/staff/main.js';
 import { sweepHours, startHoursSweeper } from '../../src/staff/sweeper.js';
 import { createSoftAuthenticator, type SoftAuthenticator } from '../helpers/softAuthenticator.js';
 import {
@@ -274,6 +277,17 @@ describe('staff sessions are separate from trading sessions', () => {
 });
 
 describe('the staff app shell', () => {
+  it('X2F_STAFF_ORIGIN takes https, and http only for localhost or 127.0.0.1 (RV5 m3)', () => {
+    const origin = (o: string) => staffListenFromEnv({ X2F_STAFF_ORIGIN: o })?.origin;
+    expect(origin('https://staff.example.org')).toBe('https://staff.example.org');
+    expect(origin('http://localhost:5174')).toBe('http://localhost:5174');
+    expect(origin('http://127.0.0.1:8082')).toBe('http://127.0.0.1:8082');
+    for (const bad of ['http://staff.example.org', 'http://staffx2f.onion', 'http://localhost.example.org', 'http://127.0.0.2', 'ftp://localhost']) {
+      expect(() => staffListenFromEnv({ X2F_STAFF_ORIGIN: bad }), bad).toThrow(/X2F_STAFF_ORIGIN/);
+    }
+    expect(staffListenFromEnv({})).toBeNull();
+  });
+
   it('refuses a request whose Origin is the trader origin', async () => {
     const res = await new StaffBrowser(app, TRADER_ORIGIN).post('/staff/v1/logout');
     expect(res.statusCode).toBe(403);
@@ -345,5 +359,44 @@ describe('migration 202 (staff_members)', () => {
       deps.db.query(`insert into staff_members (account_id, role, hours, has_security_key, joined_at) values ($1, 'mod', '"any"', true, now())`, [traderId]),
     ).rejects.toMatchObject({ code: '23514' });
   });
+
+  it('stores only grantable perms in grants (RV5 m1)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    await deps.db.query("update staff_members set grants = '{tickets.handle}' where account_id = $1", [s.id]);
+    for (const bad of [['site.control'], ['tickets.handle', 'staff.manage'], ['owner'], ['']]) {
+      await expect(deps.db.query('update staff_members set grants = $2 where account_id = $1', [s.id, bad]), bad.join()).rejects.toMatchObject({ code: '23514' });
+    }
+  });
+
+  it('re-checks an account kind change against its staff_members row (RV5 m2)', async () => {
+    const s = await seedStaff(deps, { role: 'mod' });
+    // A staff account turned trader (or member) would keep a mod row on a non-staff account.
+    await expect(deps.db.query("update accounts set kind = 'trader' where id = $1", [s.id])).rejects.toMatchObject({ code: '23514' });
+    await expect(deps.db.query("update accounts set kind = 'member' where id = $1", [s.id])).rejects.toMatchObject({ code: '23514' });
+    // The owner account turned staff would keep the owner role (no hours) on a staff account.
+    await expect(deps.db.query("update accounts set kind = 'staff' where id = $1", [owner.id])).rejects.toMatchObject({ code: '23514' });
+    // An account with no staff row changes kind as before, and other columns of a staff account still update.
+    const t = await seedAccount(deps, { loginName: uniqueTrader(), kind: 'staff' });
+    await deps.db.query("update accounts set kind = 'trader' where id = $1", [t]);
+    await deps.db.query("update accounts set display_name = display_name where id = $1", [s.id]);
+  });
 });
 
+
+// TRIPWIRE (RV5 m5, looks at this checkout only): an owner or staff security key whose AAGUID a
+// FIDO snapshot refresh withdraws from the allowlist still logs in to the staff app, because the
+// allowlist is applied only when a key is registered (coordination.md, Plan 4 M1). Key taps re-check
+// it already (Task 5). Fires when Task 6 (owner setup) or Task 7 (staff management) lands, the tasks
+// that register owner and staff keys: then pass the credential to the staff login check (or check it
+// in the security-key login finish for kinds staff and owner) so a stored `attested` key whose
+// `aaguid` is no longer `deps.attestation.isAllowed(aaguid, 'packed', owner|staff)` is refused,
+// test it, and delete this tripwire.
+describe('Task 4 tripwires', () => {
+  const ROOT = fileURLToPath(new URL('../../../../', import.meta.url));
+  it('NEEDS_P4_STAFF_LOGIN_AAGUID: the AAGUID allowlist re-check at staff and owner login (Tasks 6/7)', () => {
+    expect(existsSync(ROOT + 'apps/api/src/staff/guard.ts'), 'the tripwire looks at the right tree').toBe(true);
+    for (const f of ['apps/api/src/staff/ownerSetup.ts', 'apps/api/src/staff/members.ts']) {
+      expect(existsSync(ROOT + f), `${f} landed: re-check the AAGUID allowlist at staff/owner login (see this test)`).toBe(false);
+    }
+  });
+});
