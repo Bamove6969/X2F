@@ -32,9 +32,10 @@ export const STAFF_ROUTE_ROWS: readonly StaffRouteRow[] = [
   { method: 'POST', url: '/staff/v1/login/pgp/finish', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'POST', url: '/staff/v1/logout', perm: 'public-login', allowed: 'public', body: {} },
   { method: 'GET', url: '/staff/v1/me', perm: 'self', allowed: EVERY_ROLE },
-  // Task 5: security-key taps.
-  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: OWNER, body: { kind: 'emergency-stop' } },
-  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', allowed: EVERY_ROLE, body: { response: {} } },
+  // Task 5: security-key taps. The bodies stop at validation (400), so the matrix checks the guard
+  // alone; which intents each role may start (RV5 m7) is keyTap.test.ts's.
+  { method: 'POST', url: '/staff/v1/taps/start', perm: 'self', allowed: EVERY_ROLE, body: { kind: 'matrix' } },
+  { method: 'POST', url: '/staff/v1/taps/:id/finish', perm: 'self', allowed: EVERY_ROLE, body: {} },
   // Task 7: staff management (staff.manage), invite acceptance (public-invite), owner keys.
   { method: 'GET', url: '/staff/v1/members', perm: 'staff.manage', allowed: OWNER },
   { method: 'POST', url: '/staff/v1/invites', perm: 'staff.manage', allowed: OWNER, body: { role: 'mod', hours: 'any' } },

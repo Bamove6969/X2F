@@ -182,7 +182,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
     await withTx(db, async (c) => {
       const target = await lockTarget(c, id);
       if (!target.switchedOff) throw new ApiError(409, 'wrong-state');
-      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'switch-on', accountId: id, role: target.role as InvitableRole }, now);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'switch-on', accountId: id, role: target.role as InvitableRole }, now, { sessionId: req.auth.sessionId });
       await c.query('update accounts set disabled_at = null where id = $1', [id]);
       await c.query('update staff_members set switched_off_at = null where account_id = $1', [id]);
       await log(c, req, 'staff.switched-on', { staffId: id, role: target.role });
@@ -211,7 +211,7 @@ export function staffMemberRoutes(app: FastifyInstance): void {
       const target = await lockTarget(c, id);
       const keys = await attestedKeyCount(c, id);
       if ((role === 'mod' || role === 'senior') && keys === 0) throw new ApiError(409, 'security-key-required');
-      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now);
+      await consumeKeyTap(c, tapId, req.staff.accountId, { kind: 'set-role', accountId: id, role }, now, { sessionId: req.auth.sessionId });
       await c.query('update staff_members set role = $2, has_security_key = $3 where account_id = $1', [id, role, keys > 0]);
       await log(c, req, 'staff.role-set', { staffId: id, from: target.role, to: role });
     });

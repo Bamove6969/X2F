@@ -133,7 +133,7 @@ export function staffInviteRoutes(app: FastifyInstance): void {
     const n = newInviteOf(body(req), now);
     const tokenHash = inviteTokenHash(n.token);
     await withTx(db, async (c) => {
-      const tap = await consumeKeyTap(c, n.tapId, req.staff.accountId, { kind: 'create-invite', inviteId: n.inviteId, role: n.role, tokenHash, expiresAt: n.expiresAt }, now);
+      const tap = await consumeKeyTap(c, n.tapId, req.staff.accountId, { kind: 'create-invite', inviteId: n.inviteId, role: n.role, tokenHash, expiresAt: n.expiresAt }, now, { sessionId: req.auth.sessionId });
       const r = await c.query(
         `insert into staff_invites (id, token_hash, role, hours, created_by, created_at, expires_at, tap_id)
          values ($1, $2, $3, $4, $5, $6, $7, $8) on conflict do nothing`,

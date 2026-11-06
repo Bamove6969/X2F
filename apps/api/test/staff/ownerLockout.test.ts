@@ -125,9 +125,15 @@ describe('owner lockout', () => {
     expect(await logEntries(t.deps, 'owner.key-added')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: fin.json().id }) });
     expect(await list()).toHaveLength(3);
 
-    // Three keys: one may go, then no more.
-    expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${before[0]!.id}`)).statusCode).toBe(204);
-    expect(await logEntries(t.deps, 'owner.key-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: before[0]!.id }) });
+    // Three keys: one may go, then no more. It is keys[0], picked by its credential: both keys were
+    // added at the same clock time, so the list's order between them follows their random ids.
+    const { rows: k0 } = await t.deps.db.query<{ id: string }>('select id from webauthn_credentials where credential_id = $1', [
+      Buffer.from(owner.keys[0]!.credentialId, 'base64url'),
+    ]);
+    const gone = k0[0]!.id;
+    expect(before.map((k) => k.id)).toContain(gone);
+    expect((await owner.browser.send('DELETE', `/staff/v1/owner/keys/${gone}`)).statusCode).toBe(204);
+    expect(await logEntries(t.deps, 'owner.key-removed')).toContainEqual({ actor_kind: 'staff', detail: JSON.stringify({ credentialId: gone }) });
     expect(errorOf(await owner.browser.send('DELETE', `/staff/v1/owner/keys/${fin.json().id}`))).toBe('owner-needs-two-keys');
     // Not the owner's key: 404.
     expect((await owner.browser.send('DELETE', '/staff/v1/owner/keys/00000000-0000-4000-8000-000000000000')).statusCode).toBe(404);

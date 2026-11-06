@@ -83,7 +83,7 @@ export function ownerKeyRoutes(app: FastifyInstance): void {
       await lockAccount(c, owner);
       const ch = await consumeChallenge(c, challengeId, now);
       if (!ch || ch.purpose !== PURPOSE || ch.account_id !== owner) throw new ApiError(400, 'challenge-expired');
-      await consumeKeyTap(c, tapIdOf(b), owner, { kind: 'add-owner-key', credentialId: cred.credentialId, publicKeySha256 }, now);
+      await consumeKeyTap(c, tapIdOf(b), owner, { kind: 'add-owner-key', credentialId: cred.credentialId, publicKeySha256 }, now, { sessionId: req.auth.sessionId });
       const rowId = await cred.store(c);
       await log(c, req, 'owner.key-added', { credentialId: rowId });
       return rowId;

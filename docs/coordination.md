@@ -536,3 +536,9 @@ Review: `~/x2f-comms/review-task40-2026-10-29.md`. Built: the app shell (one tre
 - m11: a NUL in a tap answer is 400 `bad-request` before the assertion is checked.
 - m12: at most 5 open (unfinished, unexpired) taps per account; the 6th is 429 `slow-down`.
 - m7 (taps/start checks the intent's perm) is done with Task 7, where the routes are mounted.
+
+### Task 7: lead queue items (claude3, 6 Nov)
+- Switch-off already set `accounts.disabled_at` and called `endAllSessions` (every app); the test now also proves a pre-split trader-site session ends and the trader API refuses it (RV5 Q5).
+- RV5 m7: `taps/start` checks `tapPermOf(intent)` through the mount's `allows` (ruling propose `disputes.handle`, approve `rulings.approve`, stop/resume `site.control`, invites/switch-on/set-role `staff.manage`, settings `settings.write`, add-owner-key the owner role); refused → 403 `forbidden`, nothing stored.
+- RV5 m10 wired: the staff mount passes `sessionOf: req.auth.sessionId`, and members, invites and ownerKeys pass `{ sessionId }` to `consumeKeyTap`. Task 8's settings and site routes must do the same when they merge.
+- Flake fixed in ownerLockout.test.ts: the owner's two keys share a creation time, so "the first key" followed random ids; the test now removes keys[0] by its credential.

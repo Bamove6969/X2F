@@ -6,7 +6,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { verifyLogChain } from '../../src/log/verify.js';
 import { codeOf, decrypt, genKey, type Pair } from '../helpers/pgpKeys.js';
 import type { SoftAuthenticator } from '../helpers/softAuthenticator.js';
-import { STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
+import { SESSION_COOKIE, STAFF_ORIGIN, StaffBrowser, errorOf, insertSession, logEntries, seedStaff } from '../helpers/staffApp.js';
 import { attestedStaffApps, resetBudgets, newInvite, registerKey, staffWithKeys, tap, type AttestedStaffApps, type Person } from '../helpers/staffKeys.js';
 
 const MON_NOON = new Date('2026-11-02T12:00:00Z');
@@ -236,6 +236,8 @@ describe('members', () => {
   it('switch-off takes effect at once; past log entries stay and the chain verifies', async () => {
     const mod = await staffWithKeys(t, { role: 'mod' });
     expect((await mod.browser.get('/staff/v1/me')).statusCode).toBe(200);
+    // A trader-site session left from before the split (RV5 Q5): switch-off ends it as well.
+    const old = await insertSession(t.deps, mod.id, 'trader');
     const before = (await t.deps.db.query('select id, hash from activity_log order by id')).rows;
     const res = await owner.browser.post(`/staff/v1/members/${mod.id}/switch-off`, {});
     expect(res.statusCode, res.body).toBe(200);
@@ -245,6 +247,8 @@ describe('members', () => {
     expect(errorOf(me)).toBe('not-authenticated');
     const { rows: live } = await t.deps.db.query('select 1 from sessions where account_id = $1 and revoked_at is null', [mod.id]);
     expect(live).toEqual([]);
+    const onTrader = await t.trader.inject({ method: 'GET', url: '/v1/account/me', headers: { cookie: `${SESSION_COOKIE}=${old.token}` } });
+    expect(onTrader.statusCode).toBe(401);
     const { rows: a } = await t.deps.db.query<{ disabled_at: Date | null; switched_off_at: Date | null }>(
       'select a.disabled_at, m.switched_off_at from accounts a join staff_members m on m.account_id = a.id where a.id = $1',
       [mod.id],
