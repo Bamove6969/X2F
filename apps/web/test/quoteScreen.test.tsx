@@ -10,6 +10,9 @@ import { SellQuote } from '../src/screens/quote/SellQuote.js';
 import { readConfirmed } from '../src/screens/quote/confirmed.js';
 import { PENDING_TAKE_KEY, PENDING_TAKE_MS, rememberTake } from '../src/screens/quote/pendingTake.js';
 import { quotePath } from '../src/screens/quote/quoteModel.js';
+import { forgetQuotes } from '../src/screens/quote/quoteKept.js';
+import { OffersRoute } from '../src/screens/browse/OffersRoute.js';
+import { BUY_COPY } from '../src/screens/browse/BuyCopy.js';
 import { fire, render } from './render.js';
 
 const session = vi.hoisted(() => ({ status: 'signed-in' as 'signed-in' | 'signed-out' | 'loading' }));
@@ -54,6 +57,8 @@ interface Api {
   wallets: unknown[];
   take: (body: TakeBody) => { status: number; json: unknown };
   takes: TakeBody[];
+  /** When set, a take's answer waits for it (a take still in flight). */
+  gate?: Promise<void>;
 }
 
 let stub: Api;
@@ -87,6 +92,7 @@ beforeEach(() => {
     if (take && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as TakeBody;
       stub.takes.push(body);
+      if (stub.gate) await stub.gate;
       const r = stub.take(body);
       return json(r.status, r.json);
     }
@@ -94,7 +100,10 @@ beforeEach(() => {
   }) as typeof fetch;
 });
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.restoreAllMocks();
+  forgetQuotes();
+});
 
 /** Where the router went, and the navigation state it carried (read by `arrived`). */
 let arrivedState: unknown = null;
@@ -399,6 +408,8 @@ describe('BuyQuote', () => {
     await settle();
     expect(first.host.querySelector('[role="status"]')).not.toBeNull();
     first.unmount();
+    // Opening it again is a later visit, not a fold in the same commit (quoteKept.ts).
+    await settle();
     const again = await open(url);
     await settle();
     expect(again.host.querySelector('[role="status"]')).toBeNull();
@@ -566,5 +577,130 @@ describe('SellQuote', () => {
     };
     expect(arrivedState).toEqual({ confirmed });
     expect(readConfirmed('K7M2-9QXA-4FTR-8WPN')).toEqual(confirmed);
+  });
+});
+
+// Review 2026-11-01 M1-M3: a fold or unfold moves the quote between the phone screen and the pane
+// beside the offers, which mounts a new QuoteScreen. What the person typed and picked, and the
+// take's state (in flight, refused, "You're back", the blocked poster), stay with the offer.
+describe('the quote across a fold (review M1, M2, M3)', () => {
+  let panes = false;
+  beforeEach(() => {
+    panes = false;
+    window.matchMedia = ((query: string) => ({
+      matches: panes && query === '(min-width: 600px)',
+      media: query,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    })) as unknown as typeof window.matchMedia;
+  });
+
+  async function openRoute(url: string) {
+    const r = render(
+      <MemoryRouter initialEntries={[url]}>
+        <Routes>
+          <Route path="/buy/:methodId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+          <Route path="/buy/:methodId/:offerId" element={<OffersRoute side="buy" copy={BUY_COPY} />} />
+          <Route path="*" element={<Where />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    await settle();
+    return r;
+  }
+
+  async function layout(two: boolean) {
+    panes = two;
+    await act(async () => {
+      window.dispatchEvent(new Event('resize'));
+    });
+    await settle();
+  }
+
+  const quotes = (host: HTMLElement) => host.querySelectorAll('[data-screen="quote"]');
+  const amount = (host: HTMLElement) => host.querySelector<HTMLInputElement>('#quote-amount')!;
+  const unitShown = (host: HTMLElement) => host.querySelector('.x2f-quote__unit')?.textContent;
+  const picked = (host: HTMLElement) => host.querySelector<HTMLInputElement>('input[name][type="radio"]:checked')?.value ?? null;
+  const MIRA_QUOTE = quotePath('sell', 'ZELLE', 'offer-mira', 'USD');
+
+  it('unfold and fold back keep the amount, its unit, the wallet and the picked offer, with one quote mounted', async () => {
+    const { host } = await openRoute(MIRA_QUOTE);
+    type(host, '1.5');
+    fire(host.querySelector('.x2f-quote__switch')!, new MouseEvent('click', { bubbles: true }));
+    expect(unitShown(host)).toBe('XMR');
+    const typed = amount(host).value;
+    pick(host, 'w-ledger');
+
+    await layout(true);
+    expect(quotes(host)).toHaveLength(1);
+    expect(host.querySelector('[data-pane="side"] [data-screen="quote"]')).not.toBeNull();
+    expect(amount(host).value).toBe(typed);
+    expect(unitShown(host)).toBe('XMR');
+    expect(picked(host)).toBe('w-ledger');
+    const pressed = host.querySelector('[data-pane="main"] button[aria-pressed="true"]');
+    expect(pressed?.textContent).toContain('mira.k');
+
+    await layout(false);
+    expect(quotes(host)).toHaveLength(1);
+    expect(host.querySelector('[data-pane="side"]')).toBeNull();
+    expect(host.textContent).toContain('mira.k');
+    expect(amount(host).value).toBe(typed);
+    expect(unitShown(host)).toBe('XMR');
+    expect(picked(host)).toBe('w-ledger');
+
+    await layout(true);
+    expect(quotes(host)).toHaveLength(1);
+    expect(amount(host).value).toBe(typed);
+    expect(picked(host)).toBe('w-ledger');
+  });
+
+  it('a take in flight stays in flight across an unfold: Trade is off, and a tap takes nothing twice (M1)', async () => {
+    let answer: () => void = () => undefined;
+    stub.gate = new Promise<void>((r) => (answer = r));
+    stub.take = () => ({ status: 409, json: { error: 'price-changed' } });
+    const { host } = await openRoute(`${MIRA_QUOTE}&amount=412.50`);
+    pick(host, 'w-cake');
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+
+    await layout(true);
+    expect(quotes(host)).toHaveLength(1);
+    expect(primary(host).disabled).toBe(true);
+    fire(primary(host), new MouseEvent('click', { bubbles: true }));
+    await settle();
+    expect(stub.takes).toHaveLength(1);
+
+    answer();
+    await settle();
+    // The refusal reaches the quote now on screen, and stays across a fold back.
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+    await layout(false);
+    expect(host.querySelector('[role="alert"]')?.textContent).toBe('The price moved. Check the new total and tap Trade again.');
+  });
+
+  it('"You\'re back" stays across an unfold (M1)', async () => {
+    stub.wallets = [WALLETS[0]];
+    const nonce = rememberTake({ offerId: 'offer-mira', unit: 'fiat', text: '412.50' })!;
+    const { host } = await openRoute(`${MIRA_QUOTE}&amount=412.50&unit=fiat&resume=${nonce}`);
+    await settle();
+    expect(host.querySelector('[role="status"]')?.textContent).toBe("You're back. Check the total, then tap Trade.");
+    await layout(true);
+    expect(host.textContent).toContain("You're back. Check the total, then tap Trade.");
+    expect(stub.takes).toHaveLength(0);
+  });
+
+  it('on a phone a typed amount stays with its offer: another offer, or the same one opened again, starts empty (M2)', async () => {
+    const { host } = await openRoute(quotePath('sell', 'ZELLE', 'offer-ghost', 'USD'));
+    type(host, '412');
+    fire(host.querySelector('a[aria-label^="Back"]')!, new MouseEvent('click', { bubbles: true, button: 0 }));
+    await settle();
+    expect(quotes(host)).toHaveLength(0);
+    const trades = [...host.querySelectorAll<HTMLAnchorElement | HTMLButtonElement>('[data-primary], a, button')].filter((e) => e.textContent === 'Trade');
+    expect(trades.length).toBeGreaterThan(0);
+    fire(trades[0]!, new MouseEvent('click', { bubbles: true, button: 0 }));
+    await settle();
+    expect(quotes(host)).toHaveLength(1);
+    expect(amount(host).value).toBe('');
   });
 });

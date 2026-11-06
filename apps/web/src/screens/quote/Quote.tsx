@@ -13,6 +13,7 @@ import type { ConfirmedTrade } from './confirmed.js';
 import { STAGE_NAMES, amountText, currencySign, fiatWhole, formatMinor, quote, quoteExponent, xmrText, type AdSide, type MarketNow, type Quote, type QuoteOffer, type Unit } from './quoteModel.js';
 import { claimTake, rememberTake } from './pendingTake.js';
 import { TAKE_CANT_TITLE, takeCantDo, takeRefusal } from './takeErrors.js';
+import { useQuoteKept } from './quoteKept.js';
 import { useTake } from './useTake.js';
 import { WalletPicker, walletName } from './WalletPicker.js';
 import './quote.css';
@@ -96,13 +97,32 @@ function rateOf(q: Quote): Price | null {
   return 'rate' in q ? q.rate : null;
 }
 
-export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
-  const { methodId = '', offerId = '' } = useParams();
+/**
+ * `pane`: the quote in the pane beside the offers (two panes, Fold-Offers). The offer comes from
+ * the props, not the route (the route may be the list's), the back link is left out (the list is
+ * beside it) and the screen draws no `<main>` landmark of its own (it is in the panes' aside).
+ */
+export function QuoteScreen({ copy, pane }: { copy: QuoteCopy; pane?: { methodId: string; offerId: string } }) {
+  const route = useParams();
+  const methodId = pane?.methodId ?? route.methodId ?? '';
+  const offerId = pane?.offerId ?? route.offerId ?? '';
+  const Main = pane ? 'div' : 'main';
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const currency = params.get('currency') ?? 'USD';
-  const [text, setText] = useState(params.get('amount') ?? '');
-  const [unit, setUnit] = useState<Unit>(params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : copy.defaultUnit);
+  // The amount and its unit, the take's state and the notes below live above the layout switch,
+  // per offer (quoteKept.ts, review 2026-11-01 M1, M2): a fold or unfold moves the quote between
+  // the screen and the pane beside the offers, and the URL may not have caught up with the last
+  // keystroke yet. Picking another offer beside it carries the amount through the URL (OffersRoute).
+  const [kept, keep] = useQuoteKept(offerId);
+  const [text, setTextState] = useState(params.get('amount') ?? kept.amount?.text ?? '');
+  const [unit, setUnitState] = useState<Unit>(
+    params.get('unit') === 'xmr' ? 'xmr' : params.get('unit') === 'fiat' ? 'fiat' : (kept.amount?.unit ?? copy.defaultUnit),
+  );
+  const setText = (t: string) => {
+    setTextState(t);
+    keep({ amount: t === '' ? null : { text: t, unit } });
+  };
   const [picked, setPicked] = useState<string | null>(params.get('wallet'));
 
   const { market, refresh: refreshMarket } = useMarket(currency);
@@ -110,8 +130,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   const session = useSession();
   const myName = session.status === 'signed-in' ? ((session.me as { displayName?: string }).displayName ?? null) : null;
   // Task 37: once the person blocks the poster, this offer is gone for them (the take would 404).
-  const [blockedPoster, setBlockedPoster] = useState(false);
-  const [closedError, setClosedError] = useState<unknown>(null);
+  const { blockedPoster, closedError } = kept;
   const offer = useLoad((signal) => fetchOffer(copy.adSide, methodId, currency, offerId, signal), [copy.adSide, methodId, currency, offerId]);
   const method = useLoad((signal) => fetchMethodName(copy.adSide, methodId, currency, signal), [copy.adSide, methodId, currency]);
   const wallets = useLoad<PickWallet[]>(signedIn === true ? (signal) => fetchWallets(signal) : null, [signedIn]);
@@ -161,8 +180,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   // Nothing is ever taken without a tap: the person may be back up to 30 minutes later and the rate
   // they confirm must be the one they see (spec 2.2 step 3). With exactly one usable wallet it is
   // picked for them; with more, they pick (OD-11).
-  const [back, setBack] = useState(false);
-  const [chatHint, setChatHint] = useState(false);
+  const { back, chatHint } = kept;
   useEffect(() => {
     const nonce = params.get('resume');
     if (resumed.current || nonce === null || signedIn !== true || wallets.kind !== 'ready' || q === null) return;
@@ -172,14 +190,14 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
     setParams(next, { replace: true });
     // The marker is cleared here whether or not it matches, so it counts once.
     if (!claimTake(pending, nonce)) return;
-    setBack(true);
+    keep({ back: true });
     if (usable.length === 1) setPicked(usable[0]!.id);
   });
 
-  if (offer.kind === 'loading') return <main className="x2f-quote" data-screen="quote" aria-busy="true" />;
+  if (offer.kind === 'loading') return <Main className="x2f-quote" data-screen="quote" aria-busy="true" />;
   if (o === null) {
     return (
-      <main className="x2f-quote" data-screen="quote">
+      <Main className="x2f-quote" data-screen="quote">
         <p className="x2f-quote__note">
           {/* not-a-refusal: the offer is gone */}
           {offer.kind === 'failed' ? 'The offer could not be loaded right now. Try again in a moment.' : 'This offer is no longer listed.'}
@@ -187,7 +205,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         <Link to={backHref} className="x2f-quote__add">
           Back to the offers
         </Link>
-      </main>
+      </Main>
     );
   }
 
@@ -211,8 +229,10 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   const switchUnit = () => {
     const to: Unit = unit === 'fiat' ? 'xmr' : 'fiat';
     // The exact amount travels across the switch: nothing is re-rounded behind the person's back.
-    setText(ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '');
-    setUnit(to);
+    const next = ok ? (to === 'xmr' ? xmrText(ok.amountAtomic) : amountText(ok.fiatCents, 'fiat', ok.rate, exponent)) : '';
+    setTextState(next);
+    setUnitState(to);
+    keep({ amount: next === '' ? null : { text: next, unit: to } });
   };
 
   const noWallet = signedIn === true && wallets.kind === 'ready' && usable.length === 0;
@@ -242,9 +262,11 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
   return (
     <div className="x2f-quote" data-screen="quote">
       <header className="x2f-quote__header">
-        <Link to={backHref} aria-label={copy.back(methodName)} className="x2f-icon-button">
-          <Icon name="chevron-left" size={24} />
-        </Link>
+        {pane ? null : (
+          <Link to={backHref} aria-label={copy.back(methodName)} className="x2f-icon-button">
+            <Icon name="chevron-left" size={24} />
+          </Link>
+        )}
         <div className="x2f-quote__head-text">
           <span className="x2f-quote__title x2f-screen-title">{copy.title(posterName)}</span>
           <span className="x2f-quote__muted-sm">
@@ -257,7 +279,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           the poster has a way to reach it (a chats inbox and a notice, owed: docs/coordination.md).
           aria-disabled, not disabled, so it stays focusable and reads its hint; a tap shows the hint.
         */}
-        <button type="button" className="x2f-quote__chat" aria-disabled="true" aria-describedby="quote-chat-hint" onClick={() => setChatHint(true)}>
+        <button type="button" className="x2f-quote__chat" aria-disabled="true" aria-describedby="quote-chat-hint" onClick={() => keep({ chatHint: true })}>
           <Icon name="chat" size={18} stroke={1.75} />
           Chat
         </button>
@@ -266,7 +288,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
         Chat opens once the trade starts.
       </p>
 
-      <main className="x2f-quote__main">
+      <Main className="x2f-quote__main">
         <section aria-label="Amount" className="x2f-quote__amount">
           <div className="x2f-quote__amount-head">
             <label htmlFor="quote-amount" className="x2f-quote__label">
@@ -351,9 +373,9 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           {copy.footnote(poster)}
         </Notice>
         {signedIn === true && myName !== null && myName !== poster ? (
-          <BlockAction displayName={poster} onBlocked={() => setBlockedPoster(true)} />
+          <BlockAction displayName={poster} onBlocked={() => keep({ blockedPoster: true })} />
         ) : null}
-      </main>
+      </Main>
 
       <footer className="x2f-quote__footer">
         {back && refusal === null ? (
@@ -367,7 +389,7 @@ export function QuoteScreen({ copy }: { copy: QuoteCopy }) {
           </p>
         ) : null}
         {cantDo !== null && refusal !== null ? (
-          <CantDoThat open={cantDoOpen} title={TAKE_CANT_TITLE} body={refusal} from={cantDo} onClose={() => setClosedError(state.error)} />
+          <CantDoThat open={cantDoOpen} title={TAKE_CANT_TITLE} body={refusal} from={cantDo} onClose={() => keep({ closedError: state.error })} />
         ) : null}
         {noWallet ? (
           <Button variant="primary" onClick={() => void navigate(addWalletHref(true))}>

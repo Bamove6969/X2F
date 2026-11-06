@@ -613,3 +613,12 @@ a.x2f-method:last-of-type {
   font-size: 15px;
   font-weight: 600;
 }
+
+/* Two panes (Fold-Offers): the offer as a row that picks the quote beside it (kit PickButton). */
+.x2f-offer__pick-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--x2f-space-2);
+  min-width: 0;
+}

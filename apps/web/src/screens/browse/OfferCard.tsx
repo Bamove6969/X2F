@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { BadgePill } from '../../ui/BadgePill.js';
 import { Button } from '../../ui/Button.js';
 import { Icon, type IconName } from '../../ui/icons.js';
+import { PickButton } from '../../ui/PickButton.js';
 import { formatMinor, type Offer, type OpensAt } from './api.js';
 import type { BrowseCopy } from './SellCopy.js';
 import './browse.css';
@@ -142,14 +143,41 @@ export interface OfferCardProps {
   onTrade?: (offer: Offer) => void;
   onMessage?: (offer: Offer) => void;
   onNudge?: (offer: Offer) => void;
+  /**
+   * Two panes (Fold-Offers): the card is a row that picks the offer whose quote the next pane
+   * shows; the quote has the one Trade. An offline poster's card stays as on the phone (Message,
+   * Nudge): its offer is not taken from here.
+   */
+  pick?: { pressed: boolean; onPick: (offer: Offer) => void };
 }
 
-export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge }: OfferCardProps) {
+export function OfferCard({ offer, currency, copy, primary, now, market = null, onTrade, onMessage, onNudge, pick }: OfferCardProps) {
   const name = offer.poster.displayName;
   const closed = offer.opensAt !== undefined;
   const margin = marginLine(offer, currency, copy, market);
   const range = `${formatMinor(offer.minFiatCents, currency, { whole: true })} – ${formatMinor(offer.maxFiatCents, currency, { whole: true })}`;
   const time = offer.poster.typicalMinutes === null ? null : copy.typicalTime(offer.poster.typicalMinutes);
+
+  if (pick && (closed || offer.poster.online)) {
+    return (
+      <PickButton pressed={pick.pressed} onPick={() => pick.onPick(offer)} className="x2f-offer__pick">
+        <span className="x2f-offer__pick-line">
+          <span className="x2f-offer__name">
+            <span className="x2f-offer__dot" data-online={offer.poster.online} aria-hidden="true" />
+            <span data-username>{name}</span>
+          </span>
+          <span className="x2f-offer__rate" data-part="rate">
+            {offer.rate === null ? 'Price unavailable right now' : formatMinor(offer.rate, currency)}
+          </span>
+        </span>
+        <span className="x2f-offer__pick-line">
+          <span className="x2f-offer__sub">{posterLine(offer, now)}</span>
+          <span className="x2f-offer__limits">{range}</span>
+        </span>
+        {closed ? <span className="x2f-offer__opens">Opens at {STAGE_NAME[offer.opensAt!]}</span> : null}
+      </PickButton>
+    );
+  }
 
   let action;
   if (offer.opensAt !== undefined) {
